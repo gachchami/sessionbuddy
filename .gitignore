@@ -45,8 +45,7 @@ tool-config/
 *.prompt.md
 *.private.md
 
-# Agent harnesses, sandboxes, and worktrees
-harness/
+# Private agent harnesses, sandboxes, and worktrees
 harnesses/
 .harness/
 .harnesses/
