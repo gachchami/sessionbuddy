@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local-only secrets. Never commit .dev.vars.
+SESSION_HMAC_KEY=replace-with-at-least-32-random-bytes
+CSRF_HMAC_KEY=replace-with-a-different-at-least-32-random-bytes

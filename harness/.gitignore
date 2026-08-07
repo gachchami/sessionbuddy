@@ -1,0 +1,45 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Python environment and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node dependencies
+node_modules/
+.npm/
+
+# Generated fixtures, seeds, and runtime state
+.local/
+generated/
+output/
+outputs/
+tmp/
+temp/
+*.db
+*.sqlite
+*.sqlite3
+
+# Browser-test artifacts
+test-results/
+playwright-report/
+blob-report/
+screenshots/
+videos/
+traces/
+*.trace
+*.trace.zip
+
+# Logs and operating-system files
+*.log
+.DS_Store
+Thumbs.db

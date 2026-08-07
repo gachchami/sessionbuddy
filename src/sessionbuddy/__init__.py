@@ -1,0 +1,1 @@
+"""Sessionbuddy application package."""

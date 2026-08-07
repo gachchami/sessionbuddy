@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "api_routes": {
+    "GET /api/v1/health": {
+      "owner": "foundation",
+      "slo": {
+        "p95_ms": 250,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "foundation-health",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /health": {
+      "owner": "foundation",
+      "slo": {
+        "p95_ms": 250,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "foundation-health",
+      "dashboards": ["release-health"],
+      "runbook": "docs/debugging-runbook.md#availability"
+    }
+  },
+  "pages": {},
+  "async_handlers": {}
+}

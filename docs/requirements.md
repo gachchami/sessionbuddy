@@ -1,870 +1,578 @@
-# Sessionboard Clone — Product Requirements Document
+# Sessionbuddy — Performance-first product requirements
 
-## 1. Document purpose
+## 1. Purpose and source of truth
 
-This document defines the requirements for building a focused clone of the Sessionboard workflow demonstrated in the supplied video. It is intended to be the product and engineering reference for design, implementation, and acceptance testing.
+Sessionbuddy is an open-source replacement for the subset of Sessionboard used by the AI Engineer events team. It covers the path from call-for-speakers through speaker onboarding, review, scheduling, and event operations.
 
-The product is an event program-management application. It should let an event team collect session proposals, maintain speakers and session records, evaluate submissions, accept content, arrange accepted sessions into an agenda, communicate with participants, and publish or embed the resulting program.
+This document is the implementation and acceptance-testing contract. When sources disagree, use this priority:
 
-### Source
+1. The six firm requirements in the competition brief and its author comments.
+2. The supplied walkthrough video and screenshots for workflow intent, not visual parity.
+3. The engineering decisions in this document.
 
-- Demo video: [YouTube — Sessionboard demo](https://www.youtube.com/watch?v=vUuK4Knl7oc)
-- Video duration reviewed: approximately 9 minutes 55 seconds
-- Review date: 2026-08-08
+Sources reviewed on 2026-08-08:
 
-### Interpretation rule
+- [Competition brief and comments](https://docs.google.com/document/d/1rBHJtiNKHv4i43tdf2Rm0sDEYuIcajhmAPoBKR_Az-A/edit?tab=t.0)
+- [Sessionboard walkthrough](https://www.youtube.com/watch?v=vUuK4Knl7oc) (approximately 9:55)
+- The repository and its private `harness/` test scaffolding
 
-The demo is exploratory and does not specify every validation, permission, or error state. Requirements labeled **Core** are directly demonstrated or explicitly requested. Requirements labeled **Recommended** are implementation details inferred as necessary for a usable product. Requirements labeled **Future** are intentionally outside the first release.
+The brief explicitly says exact design cloning is unnecessary, the six requirements below are firm, and everything else is negotiable or best-effort. Comments further mark AI review as very optional and waive Accelevents, portal wiki/resources, and public embeds for the competition.
 
-## 2. Product goals
+## 2. Product outcome and priorities
 
-1. Replace spreadsheets and disconnected forms used to run a call for proposals.
-2. Give event administrators one place to manage programs, sessions, speakers, evaluations, and agendas.
-3. Give submitters a self-service portal in which they can submit and update content and maintain their profile.
-4. Support the full session lifecycle from draft proposal through evaluation, acceptance, scheduling, and publication.
-5. Make public programs reusable through a hosted agenda and embeddable output.
+An event team must be able to:
 
-## 3. First-release scope
+1. Publish a routed call-for-speakers form.
+2. Collect a complete speaker and proposal record without spreadsheet re-entry.
+3. Review and score submissions.
+4. Accept speakers, collect outstanding assets through tasks, and communicate automatically.
+5. Build a conflict-free agenda quickly.
+6. See onboarding progress in real time.
 
-### 3.1 Included
+Priority order for trade-offs:
 
-- Authentication and role-based access
-- Organization/event workspace
-- Event settings
-- Programs within an event
-- Session and abstract records
-- Configurable submission forms
-- Public submission links
-- Submitter/speaker portal
-- Speaker profiles
-- Submission administration
-- Email notifications and basic direct email
-- Evaluation plans, evaluators, assignments, and scores
-- Session status management
-- Agenda scheduling for accepted sessions
-- Public agenda view
-- Embeddable agenda/program output
-- Basic dashboard counts and lists
+1. Correctness, authorization, and no cross-event data leakage.
+2. Perceived and measured speed.
+3. Completion of the six end-to-end MVP journeys.
+4. Accessibility and operational reliability.
+5. Additional features and visual polish.
 
-### 3.2 Explicitly out of scope for the first release
+The product must not trade responsiveness for feature breadth. Deferred features must not add synchronous work to MVP request paths.
 
-The video either rejects or does not require the following Sessionboard capabilities:
+## 3. Scope vocabulary
 
-- AI-assisted workflows or AI agenda generation
-- Payment collection and submission fees
-- Multilingual forms or portals
-- Full marketing suite
-- Full website CMS
-- Sponsor/exhibitor management
-- Awards, certificates, and advanced document workflows
-- SMS campaigns
-- Advanced analytics and marketing attribution
-- Broad third-party integration marketplace
-- Sessionboard feature-for-feature visual parity
+- **MVP / P0:** required for a valid first deployment and the release-level acceptance scenario.
+- **P1:** first post-MVP improvements after the MVP is measured and stable.
+- **P2:** advanced or waived features; build only after P0 and P1 budgets pass.
+- **Not planned:** outside this product unless requirements change.
 
-These may be considered later, but must not block the core workflow.
+## 4. API, security, and RBAC Foundation Gate
 
-## 4. User roles
+No feature work may be considered integration-ready until this gate passes. Feature agents must consume these shared controls; they must not implement independent authentication, authorization, tenant scoping, API errors, or audit conventions.
 
-### 4.1 Organization administrator
+### 4.1 Versioned API contract
 
-Can create and manage events, event team members, global settings, programs, forms, sessions, people, evaluations, agendas, embeds, and communications.
+- All application features use the versioned JSON API under `/api/v1`; UI-only back doors to domain data are prohibited.
+- OpenAPI is generated from or verified against the implementation and checked in CI. Undocumented endpoints and schema drift fail CI.
+- Requests and responses use stable opaque identifiers, ISO 8601 timestamps with explicit offsets, consistent validation errors, and documented status codes.
+- List endpoints use bounded cursor pagination, allow-listed sorting, and server-side filtering. They never return an unbounded event dataset.
+- Retriable create and action endpoints accept an idempotency key scoped to the authenticated principal, route, and event.
+- State-changing endpoints validate content type, input size, and a strict server-side schema. Unknown security-sensitive fields are rejected.
+- Rate-limit responses use `429`, include machine-readable retry information, and do not reveal account existence.
 
-### 4.2 Event administrator
+### 4.2 Authentication and session security
 
-Can manage assigned events and all program content within them. Cannot manage unrelated organizations or events.
+- MVP authentication uses single-use, short-lived passwordless email links generated from cryptographically secure random values and stored only as hashes.
+- Login responses do not disclose whether an email address is registered.
+- Redirect targets are restricted to allow-listed local application paths.
+- Sessions use rotated, signed, secure, HTTP-only, same-site cookies with idle and absolute expiry. Logout and administrator revocation invalidate the server-side session.
+- State-changing cookie-authenticated requests receive CSRF protection. CORS is deny-by-default and explicitly allow-lists trusted origins when needed.
+- Authentication, verification, refresh, and upload-signing endpoints have principal/IP-aware rate limits and abuse telemetry.
+- Secrets come from managed environment bindings, never source control, logs, client bundles, preview fixtures, or error responses.
 
-### 4.3 Evaluator
+### 4.3 Centralized authorization model
 
-Can view only the sessions assigned to them, enter or update evaluations while an evaluation plan is open, and view their own completion state.
+Authorization evaluates authenticated identity, organization membership, event membership, permission, and record ownership before domain logic runs:
 
-### 4.4 Submitter/speaker
+```text
+authenticate
+  -> resolve active organization and event membership
+  -> authorize permission and record ownership
+  -> execute a tenant-scoped query or mutation
+  -> audit sensitive actions
+```
 
-Can use the public submission flow, create or access an account, view their submissions and tasks, update permitted submission data, and maintain their own profile.
+The request's `organizationId`, `eventId`, `userId`, or resource ID is lookup input, never proof of access. Every protected database query includes its authorized organization/event boundary. For cross-tenant and unauthorized-record access, APIs use the documented non-disclosing response consistently.
 
-### 4.5 Public visitor
+MVP permissions:
 
-Can open published pages, view a published agenda, and start a public submission form. No administrative information is visible.
+| Capability | Organization admin | Event admin | Evaluator | Speaker |
+| --- | --- | --- | --- | --- |
+| Manage organization and memberships | Allowed | Denied | Denied | Denied |
+| Manage assigned event settings and programs | Allowed | Assigned events | Denied | Denied |
+| Manage forms, submissions, speakers, tasks, and agenda | Allowed | Assigned events | Denied | Own records only where explicitly permitted |
+| Read submission for evaluation | Allowed | Assigned events | Assigned submissions only | Own connected submissions only |
+| Save/finalize evaluation | Denied unless separately assigned | Denied unless separately assigned | Assigned submissions and open round only | Denied |
+| Read evaluation results/internal notes | Allowed | Assigned events | Own evaluation only | Denied |
+| Read or replace speaker assets | Allowed | Assigned events | Denied | Own authorized assets only |
+| Send communications | Allowed | Assigned events | Denied | Denied |
+| View operational dashboard | Allowed | Assigned events | Denied | Denied |
 
-### 4.6 Permission requirements
+Policies are centralized, deny by default, and accept a named permission plus resource context. Handlers may narrow access further but may not bypass the shared policy layer. Database constraints and query scoping provide defense in depth.
 
-- **Core:** Every protected server operation must validate role and event membership.
-- **Core:** Evaluators must not see unassigned submissions unless an administrator explicitly enables broader access.
-- **Core:** Submitters must only see submissions and profiles connected to their account.
-- **Recommended:** Keep an audit record of changes to session status, schedule, evaluator assignment, and published state.
+### 4.4 Security controls and auditability
 
-## 5. Primary information architecture
+- Rich text is sanitized against an allow-list on write and safely rendered on read.
+- Upload signing verifies tenant, ownership, purpose, type, and size. Objects remain private and use unguessable keys; download authorization is checked before issuing a short-lived URL.
+- Security headers include a restrictive Content Security Policy, frame policy, MIME sniffing protection, referrer policy, and least-privilege permissions policy.
+- Sensitive mutations record actor, organization, event, action, target, result, timestamp, and correlation ID without storing secrets or unnecessary private content.
+- Database changes and outbound effects use a transactional outbox. Consumers are idempotent and authenticate webhook/provider callbacks.
+- Logs and traces redact tokens, cookies, email-link secrets, form answers, private asset URLs, and message bodies.
+- Dependencies and deployed configuration receive automated vulnerability and secret scanning in CI.
 
-The administrative application should expose an event-scoped navigation structure equivalent to:
+### 4.5 Foundation acceptance gate
 
-- Dashboard
-- Program
-  - All submissions
-  - Sessions
-  - Abstracts
-  - Submission forms
-  - Agenda
-- People
-  - Contacts
-  - Speakers
-  - Evaluators
-- Evaluations
-  - Summary
-  - Evaluation plans
-  - Assignments/evaluators
-- Communications
-- Embeds
-- Settings
-
-Exact labels may vary, but all core destinations must be reachable without changing events or leaving the administrative application.
-
-## 6. Core domain model
-
-### 6.1 Organization
-
-- Name
-- Branding defaults
-- Users and roles
-- One or more events
-
-### 6.2 Event
-
-- Name
-- Slug or unique identifier
-- Start and end date/time
-- Time zone
-- Location or delivery mode
-- Description
-- Branding: logo, primary color, optional cover image
-- Publication status
-- One or more programs
-
-### 6.3 Program
-
-A program groups related submissions, sessions, forms, evaluations, and agenda items within an event.
-
-- Name
-- Description
-- Status: draft, open, closed, archived
-- Event relationship
-
-### 6.4 Person/profile
-
-- First name
-- Last name
-- Email address
-- Mobile phone, optional
-- Job title, optional
-- Organization/company, optional
-- Biography, optional
-- Profile image, optional
-- Location, optional
-- Links/social fields, optional
-- Roles in the event: submitter, speaker, evaluator, administrator
-
-Email should be unique within the authentication boundary and used to link a submission participant to an existing account where possible.
-
-### 6.5 Submission/session
-
-The system may store a proposal and its eventual scheduled session as one lifecycle record or as linked records. The UI must preserve a clear lifecycle.
-
-- Internal ID and human-readable reference number
-- Program
-- Submission form used
-- Title
-- Abstract/description
-- Session type or format
-- Topic/category/tags
-- Participant/speaker list with one primary submitter
-- Status
-- Created and updated timestamps
-- Answers to custom form questions
-- Evaluation results
-- Schedule fields: date, start time, end time, room/track
-- Publication flag
-
-Suggested statuses:
-
-- Draft
-- Submitted
-- Under review
-- Accepted
-- Waitlisted
-- Rejected
-- Withdrawn
-- Scheduled
-- Published
-
-### 6.6 Submission form
-
-- Name
-- Program
-- Form type: abstract, session, or participation/application
-- Welcome content
-- Configurable sections and questions
-- Open and close dates
-- Confirmation/thank-you content
-- Notification settings
-- Public URL and active state
-
-### 6.7 Evaluation plan
-
-- Name
-- Program/form scope
-- Open and close dates, optional
-- Included submissions or filter
-- Evaluation questions/rubric
-- Evaluators
-- Assignments
-- Completion and score summary
-
-### 6.8 Agenda item
-
-- Linked accepted session
-- Date
-- Start/end time
-- Room/stage
-- Track/category
-- Sort order
-- Visibility/publish state
-
-## 7. End-to-end demonstration workflow
-
-## Step 1 — Create or open an event
-
-### Administrator flow
-
-1. Sign in to the administrative application.
-2. Select an existing event or create a new event.
-3. Enter the event name, dates, time zone, and basic description.
-4. Optionally configure branding and location.
-5. Save the event.
-6. Land on the event dashboard.
-
-### Requirements
-
-- **Core:** An event is the security and data boundary for its programs and content.
-- **Core:** Required fields are event name, start date, end date, and time zone.
-- **Core:** End date cannot precede start date.
-- **Recommended:** Switching events must update all event-scoped navigation and prevent data leakage from the prior event.
-
-### Acceptance criteria
-
-- A valid event can be created and reopened after signing out and back in.
-- Invalid dates display an inline validation error and are not saved.
-- A user without event access cannot open its administrative URLs.
-
-## Step 2 — Configure event settings
-
-### Administrator flow
-
-1. Open **Settings** from the event navigation.
-2. Review general event information.
-3. Configure program-related defaults as needed.
-4. Configure public-page or embed details where applicable.
-5. Save changes and receive success feedback.
-
-### Requirements
-
-- **Core:** Settings must be persisted per event.
-- **Core:** The page must warn about unsaved changes before navigation.
-- **Recommended:** Changes to published branding should update public views without requiring code changes.
-
-## Step 3 — Create a program
-
-### Administrator flow
-
-1. Open **Program**.
-2. Choose **Add program** or the equivalent action.
-3. Enter a program name and description.
-4. Save it.
-5. Open its session/abstract workspace.
-
-### Requirements
-
-- **Core:** One event may contain multiple programs.
-- **Core:** Sessions, forms, evaluations, and agenda items must retain their program association.
-- **Recommended:** Programs may be archived without deleting historical records.
-
-## Step 4 — Create a submission form
-
-The demo shows a form builder used to create a public call-for-submissions workflow.
-
-### Administrator flow
-
-1. Navigate to **Program → Submission forms**.
-2. Click **Add form**.
-3. Choose what information the form will collect:
-   - Abstract
-   - Session
-   - Participation/application
-4. Give the form a recognizable internal name.
-5. Configure its welcome screen.
-6. Configure form questions and participant fields.
-7. Configure dates and notifications.
-8. Save and activate the form.
-9. Copy its public URL.
-
-### 4.1 Welcome screen
-
-- **Core:** Rich-text heading and instructions
-- **Core:** Event or program identity
-- **Core:** Continue/start action
-- **Recommended:** Preview in desktop and mobile widths
-
-### 4.2 Form question builder
-
-The demonstrated builder includes standard questions and configurable participant fields.
-
-Supported field types for the first release:
-
-- Short text
-- Long text/rich text
-- Email
-- Phone
-- Single choice
-- Multiple choice
-- Dropdown
-- Date
-- File upload, optional for first release
-- Consent/checkbox
-
-For every field, the administrator can configure:
-
-- Label
-- Help text
-- Placeholder where relevant
-- Required/optional toggle
-- Display order
-- Visibility/active state
-- Choice values where relevant
-
-Standard session fields should include title, description/abstract, type, topic, and speaker/participant information.
-
-### 4.3 Participant information
-
-- **Core:** Collect first name, last name, and email.
-- **Core:** Permit profile fields such as job title, company, phone, and biography.
-- **Core:** Allow one submission to contain one or more participants/speakers.
-- **Core:** Identify a primary submitter/contact.
-- **Recommended:** Reuse an existing profile when the email matches rather than creating uncontrolled duplicates.
-
-### 4.4 Open/close dates
-
-- **Core:** Set an opening date/time and closing date/time.
-- **Core:** Display a not-yet-open message before opening.
-- **Core:** Prevent new submissions after closing and display a closed message.
-- **Recommended:** Administrators can still view and edit submissions outside the public window.
-
-### 4.5 Confirmation and notifications
-
-- **Core:** Configure an on-screen thank-you message.
-- **Core:** Send the submitter a confirmation email after successful submission.
-- **Core:** Optionally notify one or more administrators of a new submission.
-- **Recommended:** Configure a reminder email before the deadline for saved drafts or incomplete submissions.
-- **Recommended:** Email templates support event name, submitter name, submission title, and portal link variables.
-
-### 4.6 Form validation
-
-- Required fields must be visibly marked.
-- Validation errors must appear next to the corresponding field.
-- Entered values must be preserved after a recoverable validation error.
-- Invalid email and date values must be rejected.
-- Duplicate submission caused by a repeated request must be prevented.
-
-### Acceptance criteria
-
-- An administrator can build and publish a form without code changes.
-- The public form reflects the configured field order and required state.
-- A closed form rejects new entries.
-- Submission creates exactly one record and sends the configured confirmation.
-
-## Step 5 — Complete the public submission journey
-
-### Submitter flow
-
-1. Open the public form URL.
-2. Read the welcome/instruction screen.
-3. Start the submission.
-4. Sign in to an existing account or create/access an account using email.
-5. Complete the proposal/session questions.
-6. Complete personal and additional participant information.
-7. Resolve any required-field errors.
-8. Review the submission.
-9. Submit it.
-10. See the confirmation screen and receive the confirmation email.
-11. Enter the submitter portal.
-
-### Requirements
-
-- **Core:** Public submission pages must not expose admin navigation.
-- **Core:** The form must work on current desktop and mobile browsers.
-- **Core:** Authentication state must link the resulting submission to the submitter.
-- **Core:** A final submitted record must appear in the admin submission list.
-- **Recommended:** Save progress as a draft and allow later continuation before the deadline.
-- **Recommended:** Rate-limit submission and authentication endpoints.
-
-## Step 6 — Use the submitter/speaker portal
-
-The demo shows a separate portal with primary tabs for home, submissions, profile, and tasks.
-
-### Portal home
-
-Display:
-
-- Greeting or event identity
-- **My submissions** summary
-- **My profile** summary/completion state
-- Submission tasks
-- General tasks
-- Important status or deadline notices
-
-### My submissions
-
-1. Open the **Submissions** tab.
-2. View all submissions connected to the signed-in account.
-3. See title, reference, program/event, and current status.
-4. Open a submission to review its details and participants.
-5. Edit fields only when allowed by form dates and status.
-6. Withdraw a submission if the event permits it.
-
-### My profile
-
-1. Open **Profile**.
-2. View existing personal information.
-3. Edit biography and other allowed profile fields.
-4. Save changes.
-5. Reuse the updated profile wherever the person appears as a speaker.
-
-### Tasks
-
-- **Core:** Show actionable items assigned to the submitter/speaker.
-- **Core:** A task has title, status, due date when applicable, and destination/action.
-- **Recommended:** Mark tasks complete automatically when the underlying required information is supplied.
-
-### Portal acceptance criteria
-
-- A submitter only sees their own connected records.
-- Updating a biography updates the linked speaker profile visible to administrators.
-- A submission status change made by an administrator becomes visible in the portal.
-- Portal URLs remain protected after sign-out.
-
-## Step 7 — Manage submissions in the admin application
-
-### Submission list
-
-The admin view must provide a table of all submissions in the current event/program.
-
-Required table capabilities:
-
-- Columns for title, type/category, status, primary submitter, and last updated date
-- Search by title, reference, or person
-- Filter by form, program, type, category, and status
-- Sort by common columns
-- Pagination or scalable incremental loading
-- Open a record for details
-- Add a submission manually
-
-### Submission detail
-
-Display:
-
-- Core session/proposal fields
-- All custom answers
-- Participants/speakers
-- Current status and status history
-- Evaluation assignments and results, subject to permissions
-- Schedule information if accepted/scheduled
-- Communication history, if implemented
-
-### Administrator actions
-
-- Edit the submission
-- Add, remove, or replace participants
-- Change status
-- Assign evaluators
-- Add an internal note
-- Email a connected person
-- Schedule an accepted session
-- Archive or delete according to retention policy
-
-### Status transition requirements
-
-- **Core:** Administrators can move submitted content through review and decision statuses.
-- **Core:** Status changes persist and appear in the submitter portal.
-- **Core:** The system records who changed status and when.
-- **Recommended:** Acceptance/rejection may trigger a configurable email, but requires confirmation before sending.
-- **Recommended:** Only accepted content can be placed on the public agenda.
-
-## Step 8 — Manage speakers and people
-
-### Administrator flow
-
-1. Open **People** or **Speakers**.
-2. Search and filter profiles.
-3. Open a speaker profile.
-4. Review contact details, biography, and connected submissions/sessions.
-5. Edit information or email the speaker.
-
-### Requirements
-
-- **Core:** A person may be connected to multiple submissions or sessions.
-- **Core:** Editing a shared profile must not silently overwrite submission-specific answers that were intentionally captured separately.
-- **Core:** Administrators can manually create a person/profile.
-- **Core:** Basic email can be initiated from the person or submission context.
-- **Recommended:** Detect likely duplicate people by normalized email.
-- **Recommended:** Show profile completeness.
-
-## Step 9 — Create an evaluation plan
-
-The demo shows evaluation summary, evaluation plans, and evaluators/assignments.
-
-### Administrator flow
-
-1. Open **Evaluations**.
-2. Click **Add plan**.
-3. Name the evaluation plan.
-4. Choose the relevant program, form, or subset of submissions.
-5. Define the rubric/questions.
-6. Add evaluators.
-7. Assign sessions to evaluators.
-8. Open the evaluation period.
-9. Monitor progress in the evaluation summary.
-10. Close the plan and use the results to make decisions.
-
-### Evaluation rubric
-
-For the first release, support:
-
-- Numeric rating, with configurable minimum and maximum
-- Single-choice decision
-- Long-text reviewer comment
-- Optional vs required questions
-- Optional internal guidance visible only to evaluators
-
-### Assignment
-
-- **Core:** Assign one or more evaluators to each included submission.
-- **Core:** Support manual assignment.
-- **Recommended:** Support balanced automatic assignment by desired evaluator count.
-- **Recommended:** Prevent assignment where an evaluator has declared a conflict.
-
-### Evaluator experience
-
-1. Sign in.
-2. Open assigned evaluations.
-3. Select an assigned submission.
-4. Read the submission content permitted by the plan.
-5. Complete all required rubric questions.
-6. Save a draft or submit the evaluation.
-7. See completion progress.
-
-### Evaluation summary
-
-Display:
-
-- Total included submissions
-- Assigned vs unassigned submissions
-- Total evaluators
-- Completed vs outstanding evaluations
-- Aggregate or average score per submission
-- Drill-down to individual evaluations for authorized administrators
-
-### Acceptance criteria
-
-- An evaluator cannot open a submission that was not assigned to them.
-- An incomplete required rubric cannot be finalized.
-- Submitted scores appear in the administrator summary.
-- Multiple evaluator scores aggregate consistently and retain their individual source records.
-
-## Step 10 — Decide and accept sessions
-
-### Administrator flow
-
-1. Review evaluation results.
-2. Open a submission.
-3. Set the decision to accepted, waitlisted, or rejected.
-4. Optionally send the corresponding decision email.
-5. Verify that accepted sessions become eligible for scheduling.
-
-### Requirements
-
-- **Core:** Decision status is distinct from evaluation completion.
-- **Core:** Decision email must not be sent accidentally when merely saving internal edits.
-- **Core:** Accepted content remains linked to its original submission and speakers.
-- **Recommended:** Bulk decision/status changes are supported with a preview and confirmation step.
-
-## Step 11 — Build the agenda
-
-The demo identifies the agenda as the place to arrange accepted sessions and ultimately expose them publicly.
-
-### Administrator flow
-
-1. Open **Program → Agenda**.
-2. Select the relevant date or view.
-3. Add an accepted session to the agenda.
-4. Set date, start time, end time, room/stage, and optional track.
-5. Reorder or move scheduled items.
-6. Resolve schedule conflicts.
-7. Save the agenda.
-8. Preview the public result.
-9. Publish it.
-
-### Requirements
-
-- **Core:** Only event dates may be selected unless an administrator confirms an exception.
-- **Core:** Start time must precede end time.
-- **Core:** A session cannot occupy two agenda slots simultaneously.
-- **Core:** Warn about room overlap.
-- **Core:** Warn when the same speaker is scheduled in overlapping sessions.
-- **Core:** Support agenda filtering or grouping by date, room, and track.
-- **Core:** Draft schedule changes must not appear publicly until published.
-- **Recommended:** Provide drag-and-drop scheduling in addition to an accessible form-based editor.
-- **Recommended:** Maintain a published revision or last-published timestamp.
-
-### Acceptance criteria
-
-- An accepted session can be scheduled and appears at the correct date/time/room after publishing.
-- A rejected submission cannot be scheduled without first changing its decision status.
-- Conflicts are clearly surfaced before publication.
-- Unpublished edits are not visible on the public agenda.
-
-## Step 12 — Publish and embed the program
-
-### Public agenda
-
-The public agenda should support:
-
-- Event/program identity
-- Date navigation
-- Session cards with time, title, room, track/type, and speakers
-- Session detail view
-- Speaker name and profile summary when allowed
-- Responsive layout
-- Empty state when no sessions are published
-
-### Embed management
-
-1. Open **Embeds**.
-2. Create or select an agenda/program embed.
-3. Configure basic display options.
-4. Preview the embedded view.
-5. Copy generated embed code.
-6. Paste it into an external website.
-
-### Requirements
-
-- **Core:** Generate a copyable iframe or equivalent embed snippet.
-- **Core:** The embed must show only published content.
-- **Core:** The embed must remain readable at common container widths.
-- **Core:** Public/embed access must not expose authenticated APIs or private fields.
-- **Recommended:** Permit theme options such as light/dark and accent color.
-- **Recommended:** Use a restrictive, documented `postMessage` contract if dynamic iframe resizing is supported.
-
-### Acceptance criteria
-
-- The generated snippet renders on a separate test page without admin authentication.
-- Republishing agenda changes updates the embedded view.
-- Private contact information and evaluation data never appear in the public output.
-
-## Step 13 — Communicate with participants
-
-### Core communication use cases
+All of the following must pass locally and in an isolated preview before feature branches are integrated:
+
+1. OpenAPI validation, representative contract tests, and API error-shape tests pass.
+2. Anonymous requests cannot reach protected endpoints.
+3. Expired, reused, tampered, and open-redirect login links are rejected without account disclosure.
+4. Revoked sessions, invalid CSRF requests, disallowed origins, and oversized/malformed inputs are rejected.
+5. Organization and event administrators cannot cross their authorized tenant boundary by changing any URL, body, or query identifier.
+6. Evaluators cannot enumerate or access unassigned submissions, other evaluations, or closed-round mutations.
+7. Speakers cannot enumerate or access another person's profile, submission, task, or asset.
+8. Public endpoints never serialize private contacts, evaluations, internal notes, tasks, or private asset locations.
+9. Idempotent retries create one domain record and one outbox effect.
+10. Rate limits activate predictably and recovery does not require application restart.
+11. Audit events identify the correct actor, tenant, action, target, and result for sensitive operations.
+12. Tenant-scoped large-list queries are indexed, bounded, and meet the applicable performance budget.
+
+## 5. MVP scope: the six firm capabilities
+
+### 5.1 Custom call-for-speakers forms
+
+Administrators can create, preview, open, close, and copy a public URL for a program-specific form.
+
+MVP fields:
+
+- Short text, long text, email, phone, URL
+- Single choice, multiple choice, dropdown, consent checkbox
+- Headshot/image upload and supporting document upload
+- Standard proposal fields: title, abstract, format, category, and primary speaker
+
+For each field, administrators can set label, help text, required state, order, active state, and choices where applicable.
+
+Conditional logic and routing are P0, not roadmap items:
+
+- A choice can show or hide later fields or sections.
+- A rule can route a submission to a category, track, or review queue.
+- Hidden fields are excluded from client and server required-field validation.
+- The builder rejects cycles, missing targets, and ambiguous routing rules before publication.
+- The active published form is an immutable version. Editing creates a draft version and never changes already submitted answers.
+
+Public submission behavior:
+
+- A visitor sees welcome text, completes the form, reviews it, and submits once.
+- The form displays not-yet-open and closed states based on the event time zone.
+- Server validation is authoritative; inline errors preserve recoverable input.
+- Every final submission uses an idempotency key. Retries create neither a second record nor a second confirmation.
+- A submitter can save a draft and resume before the deadline.
+- A successful submission appears immediately in the admin list and speaker portal.
+
+### 5.2 Self-service speaker portal and assets
+
+Passwordless email sign-in is the MVP authentication method. Links are single-use, short-lived, and return users only to an allow-listed application path.
+
+The portal provides:
+
+- **Home:** event identity, deadlines, and outstanding tasks.
+- **Submissions:** the signed-in person's proposals and current status.
+- **Profile:** name, email, job title, company, biography, location, links, and headshot.
+- **Assets:** slides and supporting documents attached to an accepted session or task.
+- **Tasks:** required onboarding work, due date, state, and destination action.
+
+Rules:
+
+- A speaker sees only their own profile, connected submissions, assets, and tasks.
+- Email is normalized for matching, but account linking requires verified ownership.
+- Profile edits update the shared speaker profile. Submission-specific answers remain immutable snapshots unless explicitly edited.
+- Uploads use direct signed upload URLs, are private by default, have type and size allow-lists, and are scanned asynchronously before staff download.
+- Replacing an asset retains an audit entry and makes the latest clean version current.
+- Completing the underlying action automatically completes its task.
+
+### 5.3 Automated speaker communications and calendar delivery
+
+MVP communication types:
 
 - Submission confirmation
-- Administrator notification of a new submission
-- Decision notification
-- Direct email from a speaker or submission record
-- Task/deadline reminder
+- Acceptance/rejection decision
+- Task assignment and due-date reminder
+- Schedule confirmation or change
+- Direct admin-to-speaker email
 
-### Requirements
+Requirements:
 
-- Email messages must have subject, body, recipients, delivery state, and timestamp.
-- Template variables must be escaped and show a preview before bulk send.
-- The system must avoid sending duplicate transactional messages for the same action.
-- Failed deliveries must be visible to an administrator.
-- Recipients must not see other recipients' private email addresses in bulk messages.
-- **Recommended:** Store an event-scoped email history associated with the relevant person/submission.
+- Templates support escaped variables for event, speaker, submission, task, deadline, and schedule.
+- Admins preview recipients and rendered content before a manual or bulk send.
+- Transactional sends are queued after the database commit and never block submission or scheduling UI.
+- A deterministic message key prevents duplicate delivery.
+- Delivery attempts, provider ID, state, and last error are visible to administrators.
+- Reminder schedules are durable, cancellable, and recomputed when a due date changes.
+- Accepted speakers receive an RFC 5545 `.ics` invitation that works with Google Calendar, Outlook, and Apple Calendar. Stable UIDs and increasing sequence numbers update an existing event rather than creating duplicates.
+- Bulk recipients never see other recipients' email addresses.
 
-## 8. Dashboard requirements
+Use Cloudflare Workflows for durable reminder/schedule orchestration and Queues for asynchronous delivery. Resend is the default email provider unless a later operational decision selects another provider.
 
-The event dashboard should give administrators a quick operational summary.
+### 5.4 Submission evaluation and scoring
 
-Minimum widgets:
+Administrators can create an evaluation round, select submissions, define a rubric, assign evaluators, monitor completion, and make a decision.
 
-- Submission count by status
-- Recent submissions
-- Evaluation progress
-- Accepted/scheduled session count
-- Outstanding participant tasks, if tasks are implemented
-- Important event/form deadlines
+MVP rubric fields:
 
-Dashboard cards must link to the corresponding filtered list where applicable.
+- Numeric rating with configurable minimum and maximum
+- Single-choice recommendation
+- Long-text internal comment
+- Required or optional state and evaluator-only guidance
 
-## 9. Cross-cutting UX requirements
+Rules:
 
-### 9.1 Feedback and state
+- Evaluators can open only assigned submissions.
+- Evaluations can be saved as drafts and cannot be finalized with missing required answers.
+- Individual evaluations are immutable after the round closes unless an admin reopens them with an audit reason.
+- Aggregate scores use one documented calculation and retain individual source records.
+- Evaluation completion and acceptance/rejection are separate states.
+- Decision email is an explicit confirmed action; saving a decision never sends accidentally.
+- Multiple sequential review rounds are supported by the data model; the MVP UI needs one active round at a time.
 
-- Every create/update/delete action shows a clear result.
-- Long-running operations show progress and prevent accidental double submission.
-- Empty states explain what the user can do next.
-- Destructive actions require confirmation and explain impact.
+AI-assisted scoring or summarization is P2 and must never make or send a decision autonomously.
 
-### 9.2 Accessibility
+### 5.5 Drag-and-drop agenda with conflict detection and views
 
-- Target WCAG 2.1 AA for core admin, portal, form, and agenda workflows.
-- All form inputs require programmatic labels and accessible errors.
-- All functions must be keyboard operable.
-- Color must not be the only indicator of status or validation.
-- Drag-and-drop agenda actions require a keyboard-accessible alternative.
+Admins can place accepted sessions on a schedule, move them by drag-and-drop, edit them with a keyboard-accessible form, and view the result by list, day, week, track, or room.
 
-### 9.3 Responsive behavior
+Each agenda item has a session, event date, start and end time, event time zone, room, optional track, and draft/published revision.
 
-- Public forms, portal, and agenda must support mobile widths.
-- Administrative tables may use responsive columns, horizontal scrolling, or card views without losing required actions.
+Rules:
 
-### 9.4 Search and filtering
+- Only accepted sessions are schedulable.
+- Start precedes end; default scheduling stays within event dates.
+- The server rejects, rather than merely warns about, overlapping use of the same room.
+- The server rejects overlapping sessions for the same speaker.
+- Track overlap is allowed unless the track is configured as exclusive.
+- Conflict checks run during drag preview for instant feedback and again transactionally on save.
+- Optimistic updates roll back visibly when the server rejects a stale or conflicting move.
+- Draft edits do not affect a published schedule revision.
+- A calendar change queues an updated `.ics` invitation only after save succeeds.
 
-- Preserve filters while opening and returning from a detail record.
-- Clearly show active filters and provide a reset action.
-- Search should be case-insensitive for common text fields.
+The MVP must include a responsive read-only schedule view for event staff and speakers. A public website embed is P2.
 
-## 10. Non-functional requirements
+### 5.6 Real-time onboarding dashboard
 
-### 10.1 Security and privacy
+The event dashboard answers one operational question immediately: who is blocked and what do they still owe?
 
-- Encrypt traffic using HTTPS in production.
-- Store passwords only through a proven identity provider or strong adaptive password hashing.
-- Use secure, HTTP-only session cookies where cookie sessions are used.
-- Enforce server-side authorization for every protected resource.
-- Protect state-changing requests against CSRF where applicable.
-- Validate and sanitize rich text and uploaded files.
-- Do not expose private profile fields, emails, evaluations, or internal notes publicly.
-- Log important administrative and authentication events.
-- Provide a retention/deletion approach for personal data.
+It includes:
 
-### 10.2 Reliability
+- Counts of speakers complete, incomplete, overdue, and due soon
+- A filterable list of speaker, session, missing tasks, due date, and last activity
+- Filters for program, task type, completion state, and deadline
+- Direct links to the speaker/session and a reminder action
+- Submission counts by state and evaluation completion as secondary cards
 
-- Transactional operations must avoid duplicate submissions and duplicate emails.
-- Data must survive service restarts and deployments.
-- Use database backups with a tested restoration process.
-- A failed email must not roll back an otherwise valid submission; it must be retriable and visible.
+“Real time” means a successful task/profile/asset update is reflected for other connected admin clients within 5 seconds without a full page reload. Reconnect falls back to a fresh snapshot; correctness must not depend on receiving every push event.
 
-### 10.3 Performance targets
+## 6. Supporting MVP capabilities
 
-- Typical authenticated and public pages should render useful content within 2 seconds at the 95th percentile under expected launch load.
-- Search/filter interactions should respond within 1 second for ordinary event sizes.
-- Submission actions should acknowledge success or failure within 3 seconds, excluding large file uploads.
-- Lists must remain usable with at least 10,000 submissions per event through pagination and indexed queries.
+### 6.1 Tenancy and roles
 
-### 10.4 Browser support
+Core entities are Organization, Event, Program, User, Person, Submission, FormVersion, Task, Asset, EvaluationRound, Evaluation, AgendaRevision, AgendaItem, Message, and AuditEvent.
 
-Support current and previous major versions of Chrome, Edge, Firefox, and Safari. Public submitter flows should degrade gracefully when nonessential JavaScript fails.
+Roles:
 
-## 11. Data and API behavior
+- Organization admin: all events in the organization.
+- Event admin: the assigned event only.
+- Evaluator: assigned evaluation content only.
+- Speaker/submitter: their own connected records only.
 
-### 11.1 General API rules
+Every protected server query and mutation enforces organization, event, and role scope. Client-side hiding is not authorization. Public identifiers are non-sequential. Status changes, assignment changes, schedule publication, asset replacement, and manual communication are audited with actor and timestamp.
 
-- Use stable IDs that do not expose sequential private data where public URLs are involved.
-- Return consistent validation and authorization errors.
-- Support pagination, filtering, and sorting for list endpoints.
-- Record created/updated timestamps and the responsible user for critical entities.
+### 6.2 Basic event configuration
 
-### 11.2 Concurrency
+Admins can create an event and program with name, start/end, IANA time zone, location or delivery mode, description, logo, and accent color. End cannot precede start. Event switching clears event-scoped client state and cache keys.
 
-- **Recommended:** Detect stale edits to submissions, forms, and agenda items and warn instead of silently overwriting newer data.
-- Publishing should use an atomic revision so public readers do not see a partially updated agenda.
+### 6.3 Admin lists
 
-### 11.3 Deletion
+Submissions, speakers, evaluations, and tasks support server-side cursor pagination, sorting, search, and relevant filters. Opening and returning from detail preserves filters. No MVP list endpoint may fetch an entire event dataset.
 
-- Prefer archive/soft delete for events, programs, submissions, profiles, and evaluation plans.
-- Prevent deletion when doing so would corrupt linked agenda or evaluation history.
-- Explain whether an action is reversible before confirmation.
+### 6.4 API
 
-## 12. Suggested delivery phases
+The UI consumes the same versioned JSON API available for approved integrations. It provides consistent validation errors, stable opaque IDs, cursor pagination, idempotency on retriable writes, and machine-readable rate-limit responses. An OpenAPI document is generated and checked in CI.
 
-### Phase 1 — Foundation
+## 7. Explicitly deferred roadmap
 
-- Authentication and roles
-- Organization/event creation
-- Event settings
-- Program creation
-- Core people/session data model
+The following items must not block MVP. Items marked waived or optional in the source are kept here so they are not accidentally promoted back into launch scope.
 
-### Phase 2 — Submission collection
+### P1 — hardening and workflow depth
 
-- Form builder
-- Public form
-- Confirmation email
-- Admin submission list/detail
-- Submitter portal and profile
+- Balanced automatic evaluator assignment and conflict-of-interest declarations
+- Multiple simultaneously active evaluation rounds
+- Bulk status changes with preview, dry run, and confirmation
+- Communication history filters and resend tooling
+- Saved admin views and CSV export
+- Richer audit log viewer and configurable retention
+- Offline-friendly form draft recovery
+- Advanced dashboard drill-down and operational alerts
+- Airtable operational mirror/import after its rate limits and failure behavior are tested
 
-### Phase 3 — Review and decisions
+### P2 — advanced and source-marked optional/waived
 
-- Evaluation plans and rubrics
-- Evaluator assignment and workspace
-- Evaluation summary
-- Decision statuses and notifications
+- AI-assisted review, scoring suggestions, or evaluation summaries (**very optional**)
+- One-way Accelevents integration (**waived**)
+- Speaker-portal resource/wiki pages and arbitrary HTML embeds (**waived**)
+- Embeddable public speaker gallery and schedule itinerary (**waived**, impressive if completed)
+- Public agenda theme editor and dynamic iframe resizing
+- Automatic schedule generation or optimization
+- Multilingual forms and portals
+- Payments/submission fees, SMS, sponsors/exhibitors, awards/certificates
+- Full marketing suite, website CMS, advanced attribution, and broad integration marketplace
 
-### Phase 4 — Schedule and publish
+Any P2 integration runs asynchronously and may not increase P0 page or mutation latency. Arbitrary portal HTML is prohibited until a sandboxing and content-security-policy design is approved.
 
-- Agenda editor
-- Conflict warnings
-- Public agenda
-- Embed generation
+## 8. Performance requirements
 
-### Phase 5 — Operational hardening
+Performance is a release gate, not a polish phase.
 
-- Dashboard refinements
-- Audit log
-- Accessibility and performance verification
-- Backup/restore and security review
-- Bulk operations and communication history
+### 8.1 User-facing service-level objectives
 
-## 13. Release-level acceptance scenario
+Measured at the 75th and 95th percentiles on production-like data and expected launch concurrency:
 
-The first release is complete when the following scenario succeeds end to end:
+| Journey | p75 | p95 | Notes |
+| --- | ---: | ---: | --- |
+| Public form or portal initial useful render | 1.0 s | 2.0 s | Warm edge, mid-tier mobile network |
+| Admin dashboard/list useful render | 1.2 s | 2.0 s | 10,000 submissions, 2,000 speakers |
+| Filter/search response | 300 ms | 750 ms | Server response plus visible update |
+| Form/task/profile mutation acknowledgment | 500 ms | 1.5 s | Excludes upload bytes and email delivery |
+| Agenda move save | 300 ms | 750 ms | Includes authoritative conflict check |
+| Real-time dashboard propagation | 2 s | 5 s | Successful committed change to other client |
 
-1. An administrator creates an event and a program.
-2. The administrator creates and publishes a submission form with custom and required questions.
-3. A new user opens the public link, authenticates, submits a session with a speaker, and receives confirmation.
-4. The submission appears once in the admin table and in the submitter's portal.
-5. The submitter edits their biography, and the administrator sees the updated speaker profile.
-6. The administrator creates an evaluation plan and assigns the submission to two evaluators.
-7. Each evaluator sees only their assignment and submits a valid score.
-8. The administrator sees both evaluations and an aggregate result.
-9. The administrator accepts the session and optionally sends the decision email.
-10. The accepted session becomes available to the agenda editor.
-11. The administrator schedules it, previews the agenda, and publishes it.
-12. A public visitor sees the session in the hosted agenda and in an external page using the generated embed code.
-13. No public or submitter view exposes internal evaluations, notes, private email addresses, or other events' data.
+Public pages target Core Web Vitals at the 75th percentile: LCP at most 2.5 s, INP at most 200 ms, and CLS at most 0.1.
 
-## 14. Open product decisions
+### 8.2 Load envelope
 
-These decisions are not resolved by the video and should be confirmed before their respective phase begins:
+The MVP is verified with at least:
 
-1. Whether submitters use passwords, passwordless email links, or both.
-2. Whether a proposal and accepted session are one record with statuses or separate linked records.
-3. Whether submitters may edit after final submission and, if so, until which status/date.
-4. Whether evaluators are anonymous to submitters and/or to one another.
-5. Whether evaluation comments are ever shared with submitters.
-6. Whether agenda publication is event-wide or separately controlled by program/date.
-7. Whether outgoing email is sent from a shared platform address or an event-specific verified sender.
-8. Whether file uploads are needed in the initial submission form release.
-9. Required legal/privacy consent wording and data retention period.
-10. Expected peak submissions, concurrent users, and email volume for infrastructure sizing.
+- 10,000 submissions, 2,000 speakers, 50,000 tasks, and 2,000 agenda items in one event
+- 100 concurrent public form readers, 25 concurrent submitters, and 25 admin/evaluator users
+- A burst of 50 final submissions per minute without duplicates or lost work
 
-## 15. Definition of done for each feature
+These are validation assumptions, not infrastructure limits. Replace them when actual launch estimates are known.
 
-A feature is done only when:
+### 8.3 Design constraints
 
-- Its happy path and specified validation/error paths are implemented.
-- Server-side authorization is covered by automated tests.
-- Core business rules have unit or integration tests.
-- The primary user journey has an end-to-end test.
-- Empty, loading, success, and failure states are designed and implemented.
-- Keyboard and screen-reader basics have been verified.
-- Event-to-event data isolation has been tested.
-- User-facing copy and email templates have been reviewed.
-- Observability exists for failures that require operator action.
-- Product acceptance criteria in this document pass in a production-like environment.
+- Render public and read-heavy views at the Cloudflare edge where authorization permits.
+- Cache only event-scoped, versioned public data; never share personalized responses.
+- Use bounded, indexed database queries and cursor pagination. CI reviews query plans for large-list paths.
+- Avoid request waterfalls: page loaders fetch independent summary data concurrently and stream noncritical panels.
+- Images use explicit dimensions, responsive variants, and lazy loading below the fold.
+- Upload clients write directly to object storage with signed URLs.
+- Email, scanning, calendar generation, exports, and integration sync are asynchronous.
+- Instrument server timing, database duration, cache state, queue delay, and client Web Vitals.
+- Set per-route latency/error alerts and retain traces for slow requests without recording private form content.
+
+### 8.4 Observability and benchmark history
+
+Observability is part of the Foundation Gate. It must answer both “is the system healthy?” and “did this change make a specific API or page slower?” without collecting private form content.
+
+API instrumentation:
+
+- Every request receives a correlation/request ID and records environment, deployment version, route template, method, response class, duration, response bytes, D1 statement count/time/rows read, cache state, queue-publication time, and authorization outcome category.
+- Responses include a safe `Server-Timing` header for total application, authentication/authorization, database, and serialization durations. It contains durations and stable metric names, never tenant IDs or private values.
+- Metrics use route templates such as `/api/v1/events/{event_id}` rather than raw URLs. Organization/event identifiers are omitted or irreversibly transformed when a tenant dimension is operationally necessary.
+- Errors and requests exceeding their route budget are always traced; healthy traffic is sampled at a documented rate.
+
+Browser instrumentation:
+
+- Capture LCP, INP, CLS, TTFB, first contentful paint, navigation type, route template, device class, and deployment version.
+- Record route transitions and the API calls on the critical path so page regressions can be attributed to browser, network, Worker, or D1 time.
+- Sampling excludes full URLs, user identity, form values, speaker data, and asset names. Telemetry failure never blocks or delays user interaction.
+
+Benchmark workflow and retention:
+
+- First-party benchmark scripts exercise named API endpoints and page journeys against the deterministic small and 10k-event seeds.
+- CI runs a fast smoke benchmark and stores a machine-readable artifact containing commit, environment, dataset version, concurrency, cold/warm state, p50/p75/p95/p99, error rate, throughput, response bytes, query count/time, and Web Vitals.
+- Staging runs the full Section 8 load envelope and compares results with the most recent accepted baseline and a rolling history.
+- Reports distinguish cold-start from warm performance and desktop from mid-tier mobile conditions.
+- A greater than 10% regression in a gated metric, any missed p95 target, an unindexed hot query, or a material error-rate increase blocks promotion unless a waiver has an owner, reason, and expiry.
+- Production dashboards show API latency/error rate, page Web Vitals, D1 failures/time/rows read, queue age/retries, Workflow lateness, and real-time propagation delay by deployment version.
+- Benchmark artifacts and aggregate time series follow an approved operational retention policy; raw sensitive request or response bodies are never retained.
+
+### 8.5 Human-ready operational consoles
+
+Human-readable consoles are a P0 operational capability. They are not a replacement for structured telemetry, and Sessionbuddy must not build a general-purpose observability platform. The implementation should configure the chosen managed observability surface and provide narrowly scoped application views only where domain context materially shortens recovery.
+
+Minimum dashboards:
+
+1. **Release health:** deployment version, traffic, error rate, API p50/p75/p95/p99, page Web Vitals, cold-start/import failures, and comparison with the accepted baseline.
+2. **API explorer:** route-template latency, throughput, error class, response size, D1 duration/query count/rows read, cache state, and slow-trace links. It supports environment, deployment, route, method, and time filters.
+3. **Page performance:** LCP, INP, CLS, TTFB, route-transition duration, critical-path API time, device class, and browser family for each page template.
+4. **Async operations:** outbox age, queue depth/oldest message, retry and dead-letter counts, Workflow lateness/failure, email/provider status, and replay links restricted to authorized operators.
+5. **Security and access:** authentication failures, rate-limit activity, CSRF/origin failures, authorization-denial trends, session revocations, and suspicious cross-tenant probes without exposing raw credentials, emails, or request bodies.
+6. **Storage and real time:** D1 failure/latency/rows-read trends, migration version, R2 quarantine mismatches, WebSocket connection failures, and dashboard propagation delay.
+
+Console requirements:
+
+- Default views answer “what changed?”, “who is affected?”, “where is time spent?”, and “what is the safe next action?” within five minutes.
+- Every chart shows units, time range, environment, deployment version, sample size, and whether data is sampled.
+- Dashboards link from an aggregate anomaly to a redacted trace or correlated job without constructing queries from private identifiers.
+- Access is least privilege and audited. Product event admins do not automatically receive infrastructure or cross-tenant telemetry.
+- Consoles never expose form answers, biographies, message bodies, tokens, cookies, signed URLs, raw emails/IPs, asset names, or unrestricted SQL.
+- Missing/stale telemetry is visibly distinct from a healthy zero value.
+- Dashboard definitions, alert thresholds, and runbook links are version-controlled where the provider supports it.
+
+### 8.6 Required debugging methodology
+
+Every production issue and performance regression uses the same evidence chain:
+
+1. Identify environment, deployment version, affected route/page template, time window, and user-visible symptom.
+2. Reproduce with synthetic or redacted data locally or in an isolated preview; never copy production private content into development.
+3. Follow the correlation ID from browser navigation through API request, authorization, D1 work, outbox/queue, Workflow, and provider callback as applicable.
+4. Split latency using browser Navigation Timing, Web Vitals, `Server-Timing`, Worker spans, and D1 query metadata before proposing a fix.
+5. Compare the affected measurement with the accepted benchmark using the same seed, concurrency, viewport/device, and cold/warm conditions.
+6. Verify query plans, query count, response bytes, cache behavior, bundle changes, queue age, and error/retry state.
+7. Add or strengthen an automated regression test and benchmark before changing production behavior.
+8. Validate the fix in preview/staging, record before/after evidence, deploy progressively, and confirm the production signal recovers.
+9. Document root cause, detection gap, corrective action, owner, and follow-up deadline for material incidents.
+
+Debug endpoints and tools must be disabled in production unless explicitly authenticated, authorized, rate-limited, audited, and proven not to disclose tenant or secret data. Production debugging must use existing redacted telemetry rather than ad hoc request-body logging.
+
+### 8.7 Instrumentation contract for every future API and page
+
+No new API route, background consumer, Workflow, or user-facing page is done until it registers the standard instrumentation and dashboard dimensions.
+
+For every API route:
+
+- Stable route template and owning feature
+- Request/correlation ID propagation
+- Total, authorization, database, domain, and serialization timings where applicable
+- Status class, response bytes, D1 query count/time/rows read, and cache state
+- Route-specific SLO and benchmark scenario
+- Redaction test, error-path test, and dashboard/alert coverage
+
+For every browser page or route transition:
+
+- Stable page template and owning feature
+- LCP, INP, CLS, TTFB, and route-transition capture where applicable
+- Critical-path API association through correlation and `Server-Timing`
+- Desktop and mid-tier mobile benchmark journey
+- Loading/error/empty-state measurements and telemetry-failure isolation
+
+For every asynchronous handler:
+
+- Versioned job type, correlation and deterministic idempotency key
+- Queue delay, execution time, attempt, outcome, and safe error code
+- Dead-letter/recovery signal and an authorized runbook
+
+The shared observability package owns field names, cardinality limits, redaction, sampling, and exporters. Feature agents may add allow-listed low-cardinality dimensions but may not create incompatible logging formats or include arbitrary request/domain values.
+
+## 9. Technical baseline
+
+The brief gives bonus weight to Cloudflare infrastructure, Airtable persistence, speed, and an API. The default implementation uses:
+
+- Cloudflare Workers for the web application and versioned API
+- Cloudflare D1 as the transactional source of truth
+- Cloudflare R2 for headshots, slides, and supporting documents
+- Cloudflare Queues for email, scanning, and integration work
+- Cloudflare Workflows for durable reminders and scheduled communications
+- Cloudflare Durable Objects or an equivalent event-scoped channel for dashboard fan-out, with snapshot reconciliation
+- Resend for transactional email
+- OpenAPI for the integration contract
+
+D1 is chosen over Airtable for the authoritative MVP write path because form idempotency, transactional conflict checks, indexed pagination, and predictable latency are mandatory. Airtable remains a P1 asynchronous operational mirror: queue changes, batch them, expose sync lag/failures, and never read Airtable during a user request. If the team later requires Airtable as the system of record, it must first pass the same load, consistency, backup, and recovery gates.
+
+Source hosting may use GitHub or Forge; it has no runtime impact and is not a product requirement.
+
+## 10. Security, privacy, reliability, and accessibility
+
+- Production uses HTTPS, secure HTTP-only cookies, CSRF protection where applicable, and a proven identity implementation.
+- Rich text is sanitized. Uploads are private, validated, scanned, and served through authorized or expiring URLs.
+- Public responses never contain private emails, evaluations, internal notes, task details, or unscanned assets.
+- Rate limits protect authentication, submission, upload signing, and communication endpoints.
+- Database commits and outbound side effects use an outbox/idempotent consumer pattern.
+- Data survives deploys and restarts. Automated backups have a quarterly restore test with recorded recovery time and point.
+- Failure of email, scanning, or dashboard push does not roll back valid domain data; failures are retriable and visible.
+- MVP workflows target WCAG 2.1 AA, are keyboard operable, use programmatic labels/errors, and never use color alone.
+- Drag-and-drop has an equivalent form/keyboard interaction.
+- Current and previous major Chrome, Edge, Firefox, and Safari versions are supported.
+
+## 11. Local-first verification and deployment workflow
+
+No change goes directly from implementation to production.
+
+### 11.1 One-time local setup
+
+The repository must provide checked-in setup instructions, `.env.example`, schema migrations, and deterministic seed commands. Secrets stay outside source control. Cloudflare services use local Wrangler bindings or documented emulators; email uses a captured test inbox/provider mode.
+
+The existing private harness remains useful for independent acceptance checks:
+
+```bash
+cd harness
+uv sync
+uv run pytest
+uv run python seed.py --submissions 10000 --output .local/seed-10k.json
+npm install
+npx playwright install chromium
+SESSIONBUDDY_BASE_URL=http://127.0.0.1:3000 npm test
+```
+
+The application repository must add equivalent first-party seed/load commands; MVP acceptance must not depend on ignored private files.
+
+### 11.2 Required local checks
+
+Run before opening a deployment change:
+
+1. Formatting, linting, type checking, unit tests, and migration checks.
+2. API/integration tests against isolated local storage.
+3. Authorization matrix tests, including cross-event and unassigned-evaluator denial.
+4. End-to-end tests for all six MVP journeys at desktop and mobile widths.
+5. Axe checks for public form, portal tasks, evaluator form, dashboard, and agenda editor.
+6. Idempotency tests for final submission, outbound email, reminders, and calendar updates.
+7. Schedule race test: two clients attempt conflicting moves; exactly one succeeds.
+8. Load tests using the 10k-event seed and the Section 8 concurrency envelope.
+9. Bundle-size and Core Web Vitals budgets.
+10. Backup/restore smoke test for schema or persistence changes.
+
+### 11.3 Preview and staging
+
+- Every merge request gets an isolated Cloudflare preview with synthetic data and no production secrets.
+- Database migrations first run against a disposable copy and include a compatible rollback or roll-forward plan.
+- Staging runs the release-level scenario, security smoke tests, load smoke test, queue retry test, and email/calendar delivery to test accounts.
+- Compare staging p75/p95 results to the last accepted baseline. A regression greater than 10% or any missed Section 8 p95 budget blocks promotion unless explicitly waived with an owner and expiry.
+
+### 11.4 Production release
+
+- Deploy progressively, run synthetic form/dashboard/agenda checks, and watch error rate, tail latency, queue age, and D1 failures.
+- Roll back application code on a breached error/latency threshold; use forward-compatible migrations so rollback remains safe.
+- After release, run the public smoke and accessibility checks against production and record the performance result.
+
+## 12. Release-level acceptance scenario
+
+MVP is complete only when a production-like environment passes this scenario:
+
+1. An admin creates an event and program.
+2. The admin publishes a form with a required upload, conditional question, and category route.
+3. A new speaker signs in by email, saves a draft, submits once under a retry, and receives one confirmation.
+4. The routed submission appears in the correct admin queue and only in that speaker's portal.
+5. Evaluators see only their assignments, save drafts, finalize valid rubrics, and produce the documented aggregate.
+6. The admin accepts the session; the speaker receives one decision message and onboarding tasks.
+7. The speaker updates their biography and headshot, uploads slides, and the dashboard reflects completed/missing work within 5 seconds.
+8. A scheduled reminder is delivered once; rescheduling updates the same calendar event.
+9. The admin drags the session onto the agenda. Room and speaker conflicts are rejected, and list/day/week/track/room views agree.
+10. A keyboard-only user can complete the form, task, evaluation, and agenda-edit alternatives.
+11. The same scenario meets the Section 8 budgets on the large seed dataset.
+12. No public, evaluator, or speaker response exposes another event, private contact data, internal comments, or unauthorized assets.
+
+## 13. Definition of done
+
+A feature is done when:
+
+- Its acceptance criteria and failure states are automated at the appropriate layer.
+- Server authorization and event isolation tests pass.
+- Loading, empty, success, retry, and failure states are implemented.
+- Side effects are idempotent and observable.
+- Keyboard and automated accessibility checks pass.
+- Its large-dataset query is indexed, bounded, and within the performance budget.
+- Logging and tracing omit secrets and private content.
+- Operator-facing recovery instructions exist for non-self-healing failures.
+- Documentation and the OpenAPI contract are updated.
+- Preview, staging, and production verification steps in Section 11 pass.
+
+## 14. Decisions required before implementation
+
+Only decisions that materially change the MVP remain open:
+
+1. Maximum upload size/type and malware-scanning provider.
+2. Resend sender domain, reply-to behavior, and test-account ownership.
+3. Exact scoring aggregate and tie-breaking rule.
+4. Whether room conflicts are ever overrideable and who can override them.
+5. Actual peak traffic and data volume for replacing the provisional load envelope.
+6. Data retention and legal/privacy consent wording.
+7. Framework choice for the Cloudflare application, provided it satisfies the budgets and local workflow above.

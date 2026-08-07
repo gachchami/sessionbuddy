@@ -1,0 +1,29 @@
+[project]
+name = "sessionbuddy-harness"
+version = "0.1.0"
+description = "Private tests, fixtures, and seed tooling for Sessionbuddy"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<10",
+  "pytest-cov>=5,<8",
+  "pytest-xdist>=3,<5",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "integration: requires a running Sessionbuddy service",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["tests"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
