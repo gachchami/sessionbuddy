@@ -48,6 +48,7 @@ def test_activation_preflight_distinguishes_core_and_provider_secrets() -> None:
 def test_bootstrap_payload_requires_offset_dates_and_orders_them() -> None:
     arguments = argparse.Namespace(
         organization_name="Example Events",
+        admin_name="Example Admin",
         event_name="Example Conference",
         admin_email="admin@example.test",
         starts_at="2026-11-01T09:00:00+05:30",
@@ -59,6 +60,7 @@ def test_bootstrap_payload_requires_offset_dates_and_orders_them() -> None:
 
     assert payload["ends_at_ms"] > payload["starts_at_ms"]
     assert payload["admin_email"] == "admin@example.test"
+    assert payload["admin_name"] == "Example Admin"
     with pytest.raises(ValueError, match="UTC offset"):
         timestamp_ms("2026-11-01T09:00:00")
 
@@ -66,6 +68,7 @@ def test_bootstrap_payload_requires_offset_dates_and_orders_them() -> None:
 def test_bootstrap_payload_allows_an_organization_without_an_event() -> None:
     arguments = argparse.Namespace(
         organization_name="SessionBuddy Development",
+        admin_name="Development Admin",
         admin_email="admin@example.test",
         event_name=None,
         starts_at=None,
@@ -75,6 +78,7 @@ def test_bootstrap_payload_allows_an_organization_without_an_event() -> None:
 
     assert bootstrap_payload(arguments) == {
         "organization_name": "SessionBuddy Development",
+        "admin_name": "Development Admin",
         "admin_email": "admin@example.test",
     }
 
@@ -127,6 +131,8 @@ def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, cap
             "bootstrap_cloudflare.py",
             "--organization-name",
             "Example Events",
+            "--admin-name",
+            "Example Admin",
             "--admin-email",
             "admin@example.test",
         ],

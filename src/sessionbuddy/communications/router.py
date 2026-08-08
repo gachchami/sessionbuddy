@@ -107,7 +107,7 @@ def create_communications_router(service_provider: ServiceProvider) -> APIRouter
         "/api/v1/admin/events/{event_id}/communications/dispatch-local",
         response_model=DispatchResponse,
         operation_id="dispatchLocalEventCommunications",
-        tags=["communications", "demo"],
+        tags=["communications"],
     )
     async def dispatch_local(event_id: str, request: Request):
         authenticated = await authenticate_request(request)

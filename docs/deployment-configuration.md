@@ -27,8 +27,8 @@ docker compose run --rm --no-deps worker npx wrangler secret put NAME --env dev
 - `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`: scoped R2 S3 credentials required
   for browser-to-R2 upload authorization.
 
-`BOOTSTRAP_TOKEN` is also a Worker secret, but do not create or retain it
-manually. The bootstrap command below generates, streams, uses, and removes it.
+`BOOTSTRAP_TOKEN` is a one-time setup secret of at least 32 random characters.
+Install it only for first-run setup and delete it immediately afterward.
 
 Never put real secrets or the administrator email in `wrangler.jsonc`, and never commit `.dev.vars`.
 
@@ -39,20 +39,35 @@ testing invitations with other recipients or deploying to production.
 
 ## Initial administrator bootstrap
 
-Apply every D1 migration first. Then supply the approved administrator/event
-details to the guarded command:
+Apply every D1 migration first. In a private terminal, choose a one-time key and
+install it without putting it in source or chat:
+
+```sh
+docker compose run --rm --no-deps worker npx wrangler secret put BOOTSTRAP_TOKEN --env dev
+```
+
+Open `/setup`, enter that same key, and provide the organization name plus the
+administrator's full name and email. The setup creates no sample events or
+speakers. After the page confirms completion, remove the secret:
+
+```sh
+docker compose run --rm --no-deps worker npx wrangler secret delete BOOTSTRAP_TOKEN --env dev
+```
+
+For non-interactive automation, the guarded command remains available:
 
 ```sh
 docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
   --organization-name "Example Events" \
+  --admin-name "Example Administrator" \
   --admin-email "admin@example.com"
 ```
 
 The endpoint refuses a second organization. The command always attempts to
 remove `BOOTSTRAP_TOKEN`, never prints it, and exits non-zero if removal cannot
-be confirmed. After success, open `/sign-in?redirect=/admin/events` and request
-a magic link for that administrator email. An event is intentionally optional;
-the initial administrator can create the first event from the empty-state UI.
+be confirmed. Browser setup requests the administrator's first magic link
+automatically. An event is intentionally optional; the initial administrator
+creates the first event from the empty-state UI.
 
 ## Development deployment with scanning disabled
 

@@ -1,6 +1,126 @@
 {
   "components": {
     "schemas": {
+      "AccountProfileUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "version"
+        ],
+        "title": "AccountProfileUpdate",
+        "type": "object"
+      },
+      "AccountProfileView": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title"
+          },
+          "time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "email",
+          "version"
+        ],
+        "title": "AccountProfileView",
+        "type": "object"
+      },
       "AdminSpeakerTaskView": {
         "properties": {
           "due_at_ms": {
@@ -218,11 +338,60 @@
       "BootstrapCreate": {
         "additionalProperties": false,
         "properties": {
+          "admin_company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Company"
+          },
           "admin_email": {
             "maxLength": 320,
             "minLength": 3,
             "title": "Admin Email",
             "type": "string"
+          },
+          "admin_job_title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Job Title"
+          },
+          "admin_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Name"
+          },
+          "admin_time_zone": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Time Zone"
           },
           "ends_at_ms": {
             "anyOf": [
@@ -569,6 +738,17 @@
             "title": "Csrf Token",
             "type": "string"
           },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -659,80 +839,6 @@
           "query_ms"
         ],
         "title": "DatabaseStatus",
-        "type": "object"
-      },
-      "DemoContext": {
-        "additionalProperties": false,
-        "properties": {
-          "event_id": {
-            "title": "Event Id",
-            "type": "string"
-          },
-          "organization_id": {
-            "title": "Organization Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "organization_id",
-          "event_id"
-        ],
-        "title": "DemoContext",
-        "type": "object"
-      },
-      "DemoSession": {
-        "additionalProperties": false,
-        "properties": {
-          "csrf_token": {
-            "title": "Csrf Token",
-            "type": "string"
-          },
-          "event_id": {
-            "title": "Event Id",
-            "type": "string"
-          },
-          "organization_id": {
-            "title": "Organization Id",
-            "type": "string"
-          },
-          "role": {
-            "const": "organization_admin",
-            "default": "organization_admin",
-            "title": "Role",
-            "type": "string"
-          },
-          "user_id": {
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "organization_id",
-          "event_id",
-          "user_id",
-          "csrf_token"
-        ],
-        "title": "DemoSession",
-        "type": "object"
-      },
-      "DemoSpeakerSession": {
-        "additionalProperties": false,
-        "properties": {
-          "authenticated": {
-            "const": true,
-            "default": true,
-            "title": "Authenticated",
-            "type": "boolean"
-          },
-          "csrf_token": {
-            "title": "Csrf Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "csrf_token"
-        ],
-        "title": "DemoSpeakerSession",
         "type": "object"
       },
       "DispatchResponse": {
@@ -3320,6 +3426,19 @@
         "title": "SessionView",
         "type": "object"
       },
+      "SetupStatus": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "SetupStatus",
+        "type": "object"
+      },
       "SpeakerAssetList": {
         "additionalProperties": false,
         "properties": {
@@ -4552,6 +4671,66 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/account/profile": {
+      "get": {
+        "operationId": "getAccountProfile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Account Profile",
+        "tags": [
+          "authentication"
+        ]
+      },
+      "patch": {
+        "operationId": "updateAccountProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Account Profile",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
     "/api/v1/admin/evaluation-assignments/{assignment_id}/reassign": {
       "post": {
         "operationId": "reassignConflictedEvaluation",
@@ -5270,8 +5449,7 @@
         },
         "summary": "Dispatch Local",
         "tags": [
-          "communications",
-          "demo"
+          "communications"
         ]
       }
     },
@@ -6768,112 +6946,6 @@
         ]
       }
     },
-    "/api/v1/demo/agenda-context": {
-      "post": {
-        "operationId": "initialize_demo_agenda_api_v1_demo_agenda_context_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "title": "Event Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Initialize Demo Agenda Api V1 Demo Agenda Context Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Initialize Demo Agenda",
-        "tags": [
-          "demo"
-        ]
-      }
-    },
-    "/api/v1/demo/context": {
-      "post": {
-        "operationId": "initializeLocalDemoContext",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DemoContext"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Initialize Demo Context",
-        "tags": [
-          "demo"
-        ]
-      }
-    },
-    "/api/v1/demo/session": {
-      "post": {
-        "operationId": "createLocalDemoSession",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DemoSession"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Create Demo Session",
-        "tags": [
-          "demo"
-        ]
-      }
-    },
-    "/api/v1/demo/speaker-session": {
-      "post": {
-        "operationId": "createLocalDemoSpeakerSession",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DemoSpeakerSession"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Create Demo Speaker Session",
-        "tags": [
-          "demo"
-        ]
-      }
-    },
     "/api/v1/engine-room/database": {
       "get": {
         "description": "Exercise the configured D1 binding without returning tenant or schema data.",
@@ -7546,6 +7618,27 @@
         "summary": "Refresh Session",
         "tags": [
           "authentication"
+        ]
+      }
+    },
+    "/api/v1/setup/status": {
+      "get": {
+        "operationId": "getSetupStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Setup Status",
+        "tags": [
+          "administration"
         ]
       }
     },

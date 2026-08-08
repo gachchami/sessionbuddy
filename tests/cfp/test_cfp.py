@@ -31,13 +31,13 @@ def test_cfp_write_models_are_strict_and_bounded() -> None:
 
     telemetry = BrowserTelemetryPayload(
         schema_version=1,
-        page_template="/cfp-integration",
+        page_template="/admin/programs",
         navigation_type="navigate",
         device_class="desktop",
         sampled=False,
         critical_api_ms=25,
     )
-    assert telemetry.page_template == "/cfp-integration"
+    assert telemetry.page_template == "/admin/programs"
 
 
 def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
@@ -109,7 +109,7 @@ def test_published_form_uses_default_accent_for_pre_branding_events() -> None:
     assert form.accent_color == "#3159d9"
 
 
-async def test_demo_page_and_admin_routes_fail_closed_outside_local() -> None:
+async def test_admin_routes_require_authentication_outside_local() -> None:
     environment = SimpleNamespace(
         APP_ENV="development",
         DB=object(),
@@ -124,20 +124,16 @@ async def test_demo_page_and_admin_routes_fail_closed_outside_local() -> None:
     async with AsyncClient(
         transport=ASGITransport(app=inject_environment), base_url="http://test"
     ) as client:
-        page = await client.get("/cfp-integration")
-        context = await client.post("/api/v1/demo/context")
-        session = await client.post("/api/v1/demo/session")
         admin = await client.post(
             "/api/v1/admin/programs",
             headers={"Idempotency-Key": "x" * 16},
             json={
                 "organization_id": "11111111-1111-4111-8111-111111111111",
                 "event_id": "22222222-2222-4222-8222-222222222222",
-                "name": "Demo",
+                "name": "Example Program",
             },
         )
 
-    assert {page.status_code, context.status_code, session.status_code} == {404}
     assert admin.status_code == 401
 
 
@@ -162,29 +158,11 @@ async def test_local_admin_route_requires_authenticated_session() -> None:
             json={
                 "organization_id": "11111111-1111-4111-8111-111111111111",
                 "event_id": "22222222-2222-4222-8222-222222222222",
-                "name": "Demo",
+                "name": "Example Program",
             },
         )
 
     assert response.status_code == 401
-
-
-async def test_cfp_page_is_local_dependency_free_demo() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        page = await client.get("/cfp-integration")
-        css = await client.get("/cfp-integration/assets/cfp_integration.css")
-        javascript = await client.get("/cfp-integration/assets/cfp_integration.js")
-
-    assert page.status_code == css.status_code == javascript.status_code == 200
-    assert "local synthetic demo" in page.text
-    assert "Signed out. Admin actions are locked." in page.text
-    assert "Sign in as local demo admin" in page.text
-    assert "<button disabled>Create program</button>" in page.text
-    assert "https://" not in page.text
-    assert "innerHTML" not in javascript.text
-    assert "__sessionbuddyTelemetryDraft" in javascript.text
-    assert "X-Demo-Actor" not in javascript.text
-    assert "x-csrf-token" in javascript.text
 
 
 async def test_product_pages_are_separate_safe_surfaces() -> None:
@@ -198,6 +176,9 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         public_js = await client.get("/product/assets/public-cfp.js")
         submissions_js = await client.get("/product/assets/admin-submissions.js")
         sign_in = await client.get("/sign-in")
+        setup = await client.get("/setup")
+        setup_css = await client.get("/setup/assets/setup.css")
+        setup_js = await client.get("/setup/assets/setup.js")
         access = await client.get("/admin/events/22222222-2222-4222-8222-222222222222/access")
         events = await client.get("/admin/events")
         events_js = await client.get("/admin/events/assets/events.js")
@@ -214,6 +195,8 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         200
     }
     assert sign_in.status_code == access.status_code == events.status_code == 200
+    assert setup.status_code == setup_css.status_code == setup_js.status_code == 200
+    assert "Events and speakers start empty" in setup.text
     assert {
         admin_home.status_code,
         event_overview.status_code,

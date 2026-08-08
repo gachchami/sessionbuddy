@@ -5,6 +5,9 @@ test.describe("MVP experience accessibility", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
   test("home page has no automatically detectable serious violations", async ({ page }) => {
+    await page.route("**/api/v1/setup/status", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: true }) });
+    });
     await page.goto("/");
     await expect(page.locator("body")).toBeVisible();
 
@@ -33,50 +36,88 @@ test.describe("MVP experience accessibility", () => {
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
   });
 
-  const routes: Array<{ path: string; sessionEndpoint?: string }> = [
-    { path: "/cfp-integration" },
-    { path: "/admin", sessionEndpoint: "/api/v1/demo/session" },
-    { path: "/admin/events", sessionEndpoint: "/api/v1/demo/session" },
+  test("first-time setup has no automatically detectable serious violations", async ({ page }) => {
+    await page.route("**/api/v1/setup/status", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: false }) });
+    });
+    await page.goto("/setup");
+    await expect(page.locator("main")).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const blocking = results.violations.filter(
+      ({ impact }) => impact === "critical" || impact === "serious",
+    );
+    expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
+  });
+
+  const routes: Array<{ path: string; sessionRole?: "organizer" | "speaker" }> = [
+    { path: "/admin", sessionRole: "organizer" },
+    { path: "/admin/events", sessionRole: "organizer" },
     {
       path: "/admin/events/22222222-2222-4222-8222-222222222222",
-      sessionEndpoint: "/api/v1/demo/session",
+      sessionRole: "organizer",
     },
-    { path: "/admin/speakers", sessionEndpoint: "/api/v1/demo/session" },
-    { path: "/account", sessionEndpoint: "/api/v1/demo/session" },
-    { path: "/admin/programs", sessionEndpoint: "/api/v1/demo/session" },
-    { path: "/reviews", sessionEndpoint: "/api/v1/demo/session" },
-    { path: "/speaker", sessionEndpoint: "/api/v1/demo/speaker-session" },
+    { path: "/admin/speakers", sessionRole: "organizer" },
+    { path: "/account", sessionRole: "organizer" },
+    { path: "/admin/programs", sessionRole: "organizer" },
+    { path: "/reviews", sessionRole: "organizer" },
+    { path: "/speaker", sessionRole: "speaker" },
     {
       path: "/admin/events/22222222-2222-4222-8222-222222222222/access",
-      sessionEndpoint: "/api/v1/demo/session",
+      sessionRole: "organizer",
     },
     {
       path: "/admin/events/22222222-2222-4222-8222-222222222222/onboarding",
-      sessionEndpoint: "/api/v1/demo/session",
+      sessionRole: "organizer",
     },
     {
       path: "/admin/events/22222222-2222-4222-8222-222222222222/agenda",
-      sessionEndpoint: "/api/v1/demo/session",
+      sessionRole: "organizer",
     },
     {
       path: "/admin/events/22222222-2222-4222-8222-222222222222/workspace",
-      sessionEndpoint: "/api/v1/demo/session",
+      sessionRole: "organizer",
     },
     {
       path: "/events/22222222-2222-4222-8222-222222222222/speakers",
-      sessionEndpoint: "/api/v1/demo/session",
+      sessionRole: "organizer",
     },
     { path: "/events/22222222-2222-4222-8222-222222222222/schedule" },
     { path: "/embeds/events/22222222-2222-4222-8222-222222222222/schedule" },
   ];
 
-  routes.forEach((route, routeIndex) => {
+  routes.forEach((route) => {
     test(`${route.path} has no automatically detectable serious violations`, async ({ page }) => {
-      if (route.sessionEndpoint) {
-        const session = await page.request.post(route.sessionEndpoint, {
-          headers: { "cf-connecting-ip": `192.0.2.${routeIndex + 1}` },
+      if (route.sessionRole) {
+        const speaker = route.sessionRole === "speaker";
+        const session = {
+          authenticated: true,
+          user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          email: speaker ? "speaker@example.com" : "admin@example.com",
+          display_name: speaker ? "Example Speaker" : "Example Admin",
+          csrf_token: "browser-test-csrf",
+          organization_id: "11111111-1111-4111-8111-111111111111",
+          event_id: "22222222-2222-4222-8222-222222222222",
+          organization_access: speaker ? [] : [{ organization_id: "11111111-1111-4111-8111-111111111111", roles: ["organization_admin"] }],
+          event_access: [{
+            organization_id: "11111111-1111-4111-8111-111111111111",
+            event_id: "22222222-2222-4222-8222-222222222222",
+            roles: speaker ? ["speaker"] : ["event_admin", "evaluator"],
+          }],
+        };
+        await page.route("**/api/v1/auth/session", async (apiRoute) => {
+          await apiRoute.fulfill({ contentType: "application/json", body: JSON.stringify(session) });
         });
-        expect(session.ok()).toBeTruthy();
+        await page.route("**/api/v1/session", async (apiRoute) => {
+          await apiRoute.fulfill({ contentType: "application/json", body: JSON.stringify(session) });
+        });
+        await page.route("**/api/v1/account/profile", async (apiRoute) => {
+          await apiRoute.fulfill({
+            contentType: "application/json",
+            body: JSON.stringify({ email: session.email, display_name: session.display_name, job_title: null, company: null, time_zone: "UTC", version: 1 }),
+          });
+        });
       }
       const response = await page.goto(route.path);
       expect(response?.ok()).toBeTruthy();

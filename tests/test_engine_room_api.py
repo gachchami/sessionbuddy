@@ -73,6 +73,8 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
     assert response.status_code == 200
     assert set(response.json()["paths"]) == {
         "/api/v1/bootstrap",
+        "/api/v1/setup/status",
+        "/api/v1/account/profile",
         "/api/v1/auth/magic-links",
         "/api/v1/auth/session",
         "/api/v1/auth/verify",
@@ -120,10 +122,6 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
         "/api/v1/admin/events/{event_id}/communications/preview",
         "/api/v1/admin/events/{event_id}/communications/send",
         "/api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders",
-        "/api/v1/demo/context",
-        "/api/v1/demo/session",
-        "/api/v1/demo/speaker-session",
-        "/api/v1/demo/agenda-context",
         "/api/v1/engine-room/database",
         "/api/v1/engine-room/status",
         "/api/v1/forms/{slug}",

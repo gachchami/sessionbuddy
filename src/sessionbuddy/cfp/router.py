@@ -10,15 +10,9 @@ from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth import (
     authenticate_request,
-    generate_token,
-    hash_token,
-    issue_csrf_token,
     normalize_email,
-    validate_session,
 )
-from sessionbuddy.platform.auth.cookies import sign_session_cookie, verify_session_cookie
-from sessionbuddy.platform.auth.d1 import D1SessionStore
-from sessionbuddy.platform.auth.http import require_permission, secret
+from sessionbuddy.platform.auth.http import require_permission
 from sessionbuddy.platform.authorization import Permission, ResourceContext
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
@@ -30,8 +24,6 @@ from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 
 from .models import (
-    DemoContext,
-    DemoSession,
     FormPublish,
     ProgramCreate,
     ProgramView,
@@ -44,14 +36,6 @@ from .models import (
 )
 
 cfp_router = APIRouter()
-DEMO_ORG_ID = "11111111-1111-4111-8111-111111111111"
-DEMO_EVENT_ID = "22222222-2222-4222-8222-222222222222"
-DEMO_USER_ID = "33333333-3333-4333-8333-333333333333"
-DEMO_ORG_MEMBERSHIP_ID = "44444444-4444-4444-8444-444444444444"
-DEMO_EVALUATOR_MEMBERSHIP_ID = "55555555-5555-4555-8555-555555555555"
-DEMO_REVIEWER_USER_ID = "66666666-6666-4666-8666-666666666666"
-DEMO_REVIEWER_ORG_MEMBERSHIP_ID = "77777777-7777-4777-8777-777777777777"
-DEMO_REVIEWER_EVENT_MEMBERSHIP_ID = "88888888-8888-4888-8888-888888888888"
 
 
 def _asset(name: str) -> str:
@@ -127,237 +111,6 @@ async def public_cfp_js() -> Response:
 )
 async def admin_submissions_js() -> Response:
     return Response(_asset("admin_submissions.js"), media_type="text/javascript")
-
-
-@cfp_router.get("/cfp-integration", response_class=HTMLResponse, include_in_schema=False)
-async def cfp_integration(request: Request) -> HTMLResponse:
-    if getattr(_env(request), "APP_ENV", "local") != "local":
-        raise HTTPException(status_code=404)
-    return HTMLResponse(_asset("cfp_integration.html"), headers={"Cache-Control": "no-store"})
-
-
-@cfp_router.get(
-    "/cfp-integration/assets/cfp_integration.css",
-    response_class=Response,
-    include_in_schema=False,
-)
-async def cfp_integration_css() -> Response:
-    return Response(
-        _asset("cfp_integration.css"), media_type="text/css", headers={"Cache-Control": "no-store"}
-    )
-
-
-@cfp_router.get(
-    "/cfp-integration/assets/cfp_integration.js",
-    response_class=Response,
-    include_in_schema=False,
-)
-async def cfp_integration_js() -> Response:
-    return Response(
-        _asset("cfp_integration.js"),
-        media_type="text/javascript",
-        headers={"Cache-Control": "no-store"},
-    )
-
-
-@cfp_router.post(
-    "/api/v1/demo/context",
-    response_model=DemoContext,
-    operation_id="initializeLocalDemoContext",
-    tags=["demo"],
-)
-async def initialize_demo_context(request: Request) -> DemoContext:
-    if getattr(_env(request), "APP_ENV", "production") != "local":
-        raise HTTPException(status_code=404)
-    db = _db(request)
-    now = utc_now_ms()
-    await db.batch(
-        [
-            db.prepare(
-                """INSERT OR IGNORE INTO organizations
-                   (id, name, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, 'SessionBuddy Demo', 'active', ?2, ?2)"""
-            ).bind(DEMO_ORG_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO events
-                   (id, organization_id, name, starts_at_ms, ends_at_ms, time_zone,
-                    delivery_mode, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, 'Demo Conference', ?3, ?4, 'UTC', 'hybrid',
-                           'active', ?3, ?3)"""
-            ).bind(DEMO_EVENT_ID, DEMO_ORG_ID, now, now + 86_400_000),
-        ]
-    )
-    return DemoContext(organization_id=DEMO_ORG_ID, event_id=DEMO_EVENT_ID)
-
-
-@cfp_router.post(
-    "/api/v1/demo/session",
-    response_model=DemoSession,
-    operation_id="createLocalDemoSession",
-    tags=["demo"],
-)
-async def create_demo_session(request: Request, response: Response) -> DemoSession:
-    if getattr(_env(request), "APP_ENV", "production") != "local":
-        raise HTTPException(status_code=404)
-    await enforce_rate_limit(
-        request,
-        binding_name="AUTH_RATE_LIMITER",
-        policy=RateLimitPolicy("auth.request", limit=10, window_seconds=60),
-        subject=_request_source(request),
-    )
-    db = _db(request)
-    now = utc_now_ms()
-    signing_secret = secret(request, "SESSION_HMAC_KEY")
-    existing_token = verify_session_cookie(
-        request.cookies.get("sessionbuddy-local", ""), signing_secret
-    )
-    if existing_token is not None:
-        existing = await D1SessionStore(db).resolve(hash_token(existing_token), now)
-        if (
-            existing is not None
-            and existing.user_id == DEMO_USER_ID
-            and validate_session(existing, now).active
-        ):
-            await db.batch(
-                [
-                    db.prepare(
-                        """INSERT OR IGNORE INTO users
-                       (id, email, normalized_email, status, email_verified_at_ms,
-                        created_at_ms, updated_at_ms)
-                       VALUES (?1, 'reviewer@local.invalid', 'reviewer@local.invalid',
-                               'active', ?2, ?2, ?2)"""
-                    ).bind(DEMO_REVIEWER_USER_ID, now),
-                    db.prepare(
-                        """INSERT OR IGNORE INTO organization_memberships
-                       (id, organization_id, user_id, role, status, created_at_ms, updated_at_ms)
-                       VALUES (?1, ?2, ?3, 'member', 'active', ?4, ?4)"""
-                    ).bind(
-                        DEMO_REVIEWER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_REVIEWER_USER_ID, now
-                    ),
-                    db.prepare(
-                        """INSERT OR IGNORE INTO event_memberships
-                       (id, organization_id, event_id, user_id, role, status,
-                        created_at_ms, updated_at_ms)
-                       VALUES (?1, ?2, ?3, ?4, 'evaluator', 'active', ?5, ?5)"""
-                    ).bind(
-                        DEMO_EVALUATOR_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_EVENT_ID, DEMO_USER_ID, now
-                    ),
-                    db.prepare(
-                        """INSERT OR IGNORE INTO event_memberships
-                       (id, organization_id, event_id, user_id, role, status,
-                        created_at_ms, updated_at_ms)
-                       VALUES (?1, ?2, ?3, ?4, 'evaluator', 'active', ?5, ?5)"""
-                    ).bind(
-                        DEMO_REVIEWER_EVENT_MEMBERSHIP_ID,
-                        DEMO_ORG_ID,
-                        DEMO_EVENT_ID,
-                        DEMO_REVIEWER_USER_ID,
-                        now,
-                    ),
-                ]
-            )
-            return DemoSession(
-                organization_id=DEMO_ORG_ID,
-                event_id=DEMO_EVENT_ID,
-                user_id=DEMO_USER_ID,
-                csrf_token=issue_csrf_token(existing.id, secret(request, "CSRF_HMAC_KEY")),
-            )
-    session_id = new_id()
-    token = generate_token()
-    csrf_token = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
-    await db.batch(
-        [
-            db.prepare(
-                """INSERT OR IGNORE INTO organizations
-                   (id, name, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, 'SessionBuddy Demo', 'active', ?2, ?2)"""
-            ).bind(DEMO_ORG_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO events
-                   (id, organization_id, name, starts_at_ms, ends_at_ms, time_zone,
-                    delivery_mode, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, 'Demo Conference', ?3, ?4, 'UTC', 'hybrid',
-                           'active', ?3, ?3)"""
-            ).bind(DEMO_EVENT_ID, DEMO_ORG_ID, now, now + 86_400_000),
-            db.prepare(
-                """INSERT OR IGNORE INTO users
-                   (id, email, normalized_email, status, email_verified_at_ms,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, 'admin@local.invalid', 'admin@local.invalid',
-                           'active', ?2, ?2, ?2)"""
-            ).bind(DEMO_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO organization_memberships
-                   (id, organization_id, user_id, role, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, 'organization_admin', 'active', ?4, ?4)"""
-            ).bind(DEMO_ORG_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO users
-                   (id, email, normalized_email, status, email_verified_at_ms,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, 'reviewer@local.invalid', 'reviewer@local.invalid',
-                           'active', ?2, ?2, ?2)"""
-            ).bind(DEMO_REVIEWER_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO organization_memberships
-                   (id, organization_id, user_id, role, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, 'member', 'active', ?4, ?4)"""
-            ).bind(DEMO_REVIEWER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_REVIEWER_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_memberships
-                   (id, organization_id, event_id, user_id, role, status,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 'evaluator', 'active', ?5, ?5)"""
-            ).bind(
-                DEMO_EVALUATOR_MEMBERSHIP_ID,
-                DEMO_ORG_ID,
-                DEMO_EVENT_ID,
-                DEMO_USER_ID,
-                now,
-            ),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_memberships
-                   (id, organization_id, event_id, user_id, role, status,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 'evaluator', 'active', ?5, ?5)"""
-            ).bind(
-                DEMO_REVIEWER_EVENT_MEMBERSHIP_ID,
-                DEMO_ORG_ID,
-                DEMO_EVENT_ID,
-                DEMO_REVIEWER_USER_ID,
-                now,
-            ),
-            db.prepare(
-                """INSERT INTO sessions
-                   (id, user_id, token_hash, csrf_secret_hash, authorization_version,
-                    created_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5, ?6, ?7)"""
-            ).bind(
-                session_id,
-                DEMO_USER_ID,
-                hash_token(token),
-                hash_token(csrf_token),
-                now,
-                now + 12 * 60 * 60 * 1000,
-                now + 30 * 24 * 60 * 60 * 1000,
-            ),
-        ]
-    )
-    response.set_cookie(
-        key="sessionbuddy-local",
-        value=sign_session_cookie(token, signing_secret),
-        max_age=30 * 24 * 60 * 60,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        path="/",
-    )
-    return DemoSession(
-        organization_id=DEMO_ORG_ID,
-        event_id=DEMO_EVENT_ID,
-        user_id=DEMO_USER_ID,
-        csrf_token=csrf_token,
-    )
 
 
 @cfp_router.post(

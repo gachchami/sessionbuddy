@@ -28,15 +28,14 @@ docker compose up --build --detach worker
 docker compose run --rm --no-deps worker npm run worker:migrate
 ```
 
-Open the speaker portal once and use its local sign-in to create the synthetic
-accepted speaker/session data. Then sign in as the local admin from `/cfp-integration` and
-open:
+Complete first-run setup, sign in as an administrator, create an event, and accept
+at least one proposal. Then open:
 
-- `http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/agenda`
-- `http://localhost:8787/events/22222222-2222-4222-8222-222222222222/schedule`
+- `http://localhost:8787/admin/events/{event-id}/agenda`
+- `http://localhost:8787/events/{event-id}/schedule`
 
-The admin page initializes only local synthetic agenda configuration when needed.
-That helper is unavailable outside `APP_ENV=local`.
+The admin page never manufactures agenda content. Empty events remain empty until
+an administrator accepts and schedules real sessions.
 
 ## Automated evidence
 
@@ -47,9 +46,9 @@ Scheduling Workerd smoke:    passed
 Ruff and diff check:     passed
 ```
 
-The Workerd smoke covers demo initialization, conflict preview, atomic creation,
-stale-version rejection, publication, calendar queue planning, and authenticated
-read-only schedule retrieval.
+The scheduling tests cover conflict preview, atomic creation, stale-version
+rejection, publication, calendar queue planning, and authenticated read-only
+schedule retrieval using isolated fixtures.
 
 Provider delivery remains an activation task: configure a verified sender and
 provider secret before enabling real outbound email. The public schedule embed and

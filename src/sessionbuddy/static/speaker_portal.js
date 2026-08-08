@@ -339,7 +339,7 @@
     } catch (_) { setStatus("We couldn’t reload the latest profile.", "error"); }
   });
 
-  byId("start-demo").addEventListener("click", async () => {
+  byId("speaker-sign-in").addEventListener("click", () => {
     location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
   });
 

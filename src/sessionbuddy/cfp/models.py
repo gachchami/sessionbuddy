@@ -221,15 +221,3 @@ class SubmissionDraftView(BaseModel):
     answers: dict[str, str | list[str] | bool | int | float | None]
     version: int
     updated_at_ms: int
-
-
-class DemoContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    organization_id: str
-    event_id: str
-
-
-class DemoSession(DemoContext):
-    user_id: str
-    csrf_token: str
-    role: Literal["organization_admin"] = "organization_admin"

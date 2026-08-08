@@ -32,9 +32,6 @@ curl --fail --silent http://127.0.0.1:8787/api/v1/engine-room/database >/dev/nul
 curl --fail --silent http://127.0.0.1:8787/engine-room >/dev/null
 curl --fail --silent http://127.0.0.1:8787/engine-room/assets/console.css >/dev/null
 curl --fail --silent http://127.0.0.1:8787/engine-room/assets/console.js >/dev/null
-curl --fail --silent http://127.0.0.1:8787/cfp-integration >/dev/null
-uv run python scripts/smoke_cfp.py
-
 uv run python scripts/benchmark_api.py \
   --base-url http://127.0.0.1:8787 \
   --output .local/benchmarks/engine-room-worker.json

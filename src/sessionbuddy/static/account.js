@@ -8,8 +8,11 @@
     speaker: "Speaker"
   };
 
-  async function api(path) {
-    const response = await fetch(path, { credentials: "same-origin" });
+  let session;
+  let version;
+
+  async function api(path, options = {}) {
+    const response = await fetch(path, { credentials: "same-origin", ...options });
     const body = await response.json();
     if (!response.ok) {
       const error = new Error(body?.error?.message || `Request failed (${response.status})`);
@@ -17,6 +20,16 @@
       throw error;
     }
     return body;
+  }
+
+  function setProfile(profile) {
+    const form = byId("profile-form");
+    byId("account-email").value = profile.email;
+    form.elements.display_name.value = profile.display_name || "";
+    form.elements.job_title.value = profile.job_title || "";
+    form.elements.company.value = profile.company || "";
+    form.elements.time_zone.value = profile.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    version = profile.version;
   }
 
   function accessCard(title, subtitle, roles, href) {
@@ -40,8 +53,7 @@
   }
 
   async function initialize() {
-    const session = await api("/api/v1/auth/session");
-    byId("account-email").textContent = session.email;
+    [session] = await Promise.all([api("/api/v1/auth/session"), api("/api/v1/account/profile").then(setProfile)]);
     const access = [];
     for (const item of session.organization_access || []) {
       access.push(accessCard("Organizer workspace", "Organization access", item.roles, "/admin"));
@@ -55,8 +67,41 @@
     if (!access.length) access.push(accessCard("No workspace roles", "Account", [], null));
     byId("access-list").replaceChildren(...access);
     byId("access-count").textContent = String(access.length);
+    byId("save-profile").disabled = false;
     byId("status").textContent = "Your account is up to date.";
   }
+
+  byId("profile-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = byId("save-profile");
+    button.disabled = true;
+    byId("status").className = "status";
+    byId("status").textContent = "Saving your profile…";
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const profile = await api("/api/v1/account/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+        body: JSON.stringify({
+          display_name: values.display_name,
+          job_title: values.job_title || null,
+          company: values.company || null,
+          time_zone: values.time_zone || null,
+          version
+        })
+      });
+      setProfile(profile);
+      byId("status").className = "status success";
+      byId("status").textContent = "Profile saved.";
+      window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
+    } catch (error) {
+      byId("status").className = "status error";
+      byId("status").textContent = error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : error.message;
+      byId("status").focus();
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   initialize().catch((error) => {
     if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);

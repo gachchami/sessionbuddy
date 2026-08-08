@@ -73,25 +73,29 @@
     return roles;
   }
 
-  function initials(email) {
-    const local = String(email || "U").split("@", 1)[0];
-    const parts = local.split(/[._+-]+/).filter(Boolean);
-    return (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : local.slice(0, 2)).toUpperCase();
+  function displayName(session) {
+    return session.display_name || String(session.email || "Account").split("@", 1)[0];
+  }
+
+  function initials(session) {
+    const value = displayName(session);
+    const parts = value.trim().split(/[\s._+-]+/).filter(Boolean);
+    return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : value.slice(0, 2)).toUpperCase();
   }
 
   function accountMenu(session, roles) {
     const details = make("details", undefined, "sb-account");
     const summary = make("summary");
     summary.setAttribute("aria-label", `Profile and account for ${session.email}`);
-    const avatar = make("span", initials(session.email), "sb-account__avatar");
+    const avatar = make("span", initials(session), "sb-account__avatar");
     avatar.setAttribute("aria-hidden", "true");
     const identity = make("span", undefined, "sb-account__identity");
-    identity.append(make("strong", session.email.split("@", 1)[0]), make("span", "Account"));
+    identity.append(make("strong", displayName(session)), make("span", "Account"));
     summary.append(avatar, identity);
 
     const menu = make("div", undefined, "sb-account__menu");
     const menuHeader = make("div", undefined, "sb-account__menu-header");
-    menuHeader.append(make("strong", session.email), make("span", "Signed in"));
+    menuHeader.append(make("strong", displayName(session)), make("span", session.email));
     menu.append(menuHeader, navLink("Account & access", "/account", "account"));
     if (roles.has("organization_admin") || roles.has("event_admin")) {
       menu.append(navLink("Organizer workspace", "/admin", "overview"));
@@ -271,6 +275,15 @@
   async function initialize() {
     const response = await fetch("/api/v1/auth/session", { credentials: "same-origin" });
     if (!response.ok) {
+      if (landingAccount) {
+        try {
+          const setupResponse = await fetch("/api/v1/setup/status", { credentials: "same-origin" });
+          if (setupResponse.ok && !(await setupResponse.json()).configured) {
+            location.assign("/setup");
+            return;
+          }
+        } catch (_) { /* The public landing page remains available if setup status is unavailable. */ }
+      }
       if (shell?.hasAttribute("data-allow-guest")) renderGuestShell();
       else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
       return;

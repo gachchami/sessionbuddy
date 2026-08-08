@@ -15,6 +15,7 @@ CORE_HTML = [
     "event_overview.html",
     "speaker_directory.html",
     "account.html",
+    "setup.html",
 ]
 
 

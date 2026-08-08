@@ -5,11 +5,11 @@ are no longer used as product or architecture terminology.
 
 ## Platform and Engine Room
 
-Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded one-time
-administrator bootstrap, passwordless email identity, invitation and
+Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded browser-based first-run setup for a named
+administrator, passwordless email identity, invitation and
 submission-context provisioning, opaque sessions, RBAC, CSRF/origin protection,
 rate limiting, structured errors, request IDs, observability, containerized
-development, browser-friendly expired-link recovery, and the read-only
+development, editable account profiles, browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
 
 ## CFP management
@@ -63,8 +63,9 @@ health checks, browser-route checks, and the anonymous identity boundary.
 
 The isolated Cloudflare development rehearsal is complete with 23 passing
 preflight checks. Resend and direct-R2 credentials are configured, the
-organization and first administrator are bootstrapped, and the authenticated
-zero-event journey created the reusable rehearsal event. Live organization/event
+organization and first administrator were bootstrapped for the previous rehearsal.
+The application no longer contains synthetic identities or data-seeding endpoints, and
+fresh instances begin with no organizations, events, or speakers. Live organization/event
 edits, invitation creation/revocation/acceptance, speaker ownership, conditional
 draft restore and submission, and a direct R2 upload all pass. The run exposed
 three integration defects—an asynchronous invitation reset, conditional draft and

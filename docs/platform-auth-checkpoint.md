@@ -1,9 +1,8 @@
 # Production identity and CFP authentication checkpoint
 
 The CFP journey now crosses the deployed authentication and authorization
-boundary. Local synthetic session adapters remain available only under
-`APP_ENV=local`; product environments use guarded initial bootstrap and
-passwordless email verification.
+boundary. No synthetic identities exist in the application. Fresh
+instances use guarded initial setup and passwordless email verification.
 
 ## Implemented
 
@@ -20,7 +19,7 @@ passwordless email verification.
 - Origin, JSON media-type, and session-bound CSRF validation for admin mutations
 - Tenant-scoped submission listing and bounded membership/list queries
 - Actor identity attached to successful program and form audit events
-- Cloudflare Rate Limiting bindings on local session creation and public submission,
+- Cloudflare Rate Limiting bindings on passwordless sign-in and public submission,
   using keyed subject digests rather than raw identity or source values
 - Standard `429 rate_limited` envelopes with a machine-readable `Retry-After` header
 - Session introspection, atomic rotation, server-side logout revocation, and lifecycle audits
@@ -28,15 +27,6 @@ passwordless email verification.
   ignored `.dev.vars` file and are excluded from the Docker build context
 
 ## Runtime evidence
-
-`scripts/smoke_cfp.py` verifies through Workerd/Pyodide/D1 that:
-
-1. anonymous admin access returns `401`;
-2. a cookie-authenticated mutation without CSRF returns `403`;
-3. a cross-tenant identifier returns non-disclosing `404`;
-4. an authorized organization administrator can create and publish a program;
-5. a public proposal is idempotent and appears in the authorized admin list.
-6. rotation revokes the old session and logout makes the cookie unusable.
 
 `tests/security/test_production_identity_flow.py` additionally verifies an
 in-memory production-mode journey from one-time bootstrap through real admin
@@ -59,10 +49,10 @@ MVP. The development Resend key/test sender is configured and has accepted a liv
 administrator message; a verified client domain remains a production-promotion
 input for delivery to arbitrary recipients. The first administrator is not
 configured through source or Wrangler variables. The approved organization and
-administrator were supplied once to `scripts/bootstrap_cloudflare.py`, which
-generated, used, and removed the temporary bootstrap token without printing or
-storing it. Bootstrap intentionally created no placeholder event; the verified
-administrator creates the first real event from the application.
+named administrator can be supplied through `/setup` using a one-time Worker
+secret. The command-line bootstrap remains available for automation and removes
+its temporary token. Bootstrap creates no placeholder event; the verified
+administrator creates the first event from the application.
 
 An existing verified user can also accept a later event-role invitation. The
 invitation takes precedence when issuing that user's next challenge, acceptance

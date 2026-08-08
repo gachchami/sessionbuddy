@@ -4,6 +4,9 @@ test.describe("public smoke checks", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
   test("public homepage presents the product and role entry points", async ({ page }) => {
+    await page.route("**/api/v1/setup/status", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: true }) });
+    });
     const response = await page.goto("/");
     expect(response?.ok()).toBeTruthy();
     await expect(page).toHaveTitle(/SessionBuddy/);
@@ -19,6 +22,9 @@ test.describe("public smoke checks", () => {
   });
 
   test("public homepage remains usable at a mobile viewport", async ({ page }) => {
+    await page.route("**/api/v1/setup/status", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: true }) });
+    });
     await page.setViewportSize({ width: 390, height: 844 });
     const response = await page.goto("/");
     expect(response?.ok()).toBeTruthy();
@@ -65,52 +71,37 @@ test.describe("public smoke checks", () => {
     await expect(email).toBeFocused();
     await expect(page.getByRole("button", { name: "Send sign-in link" })).toBeEnabled();
   });
-});
 
-test.describe("competition gap-closure APIs", () => {
-  test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
-
-  test("resources, custom tasks, and the read-only event feed work together", async ({ page }, testInfo) => {
-    const eventId = "22222222-2222-4222-8222-222222222222";
-    const origin = "http://localhost:8787";
-    const sourceIp = `198.51.100.${testInfo.workerIndex + 20}`;
-    await page.request.post("/api/v1/demo/speaker-session", { headers: { "cf-connecting-ip": sourceIp } });
-    const adminSession = await page.request.post("/api/v1/demo/session", { headers: { "cf-connecting-ip": sourceIp } });
-    expect(adminSession.ok()).toBeTruthy();
-    const csrf = (await adminSession.json()).csrf_token;
-    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const mutationHeaders = (suffix: string) => ({
-      "content-type": "application/json",
-      "x-csrf-token": csrf,
-      "idempotency-key": `${testInfo.project.name}-${unique}-${suffix}`,
-      origin,
+  test("an empty instance starts with secured administrator onboarding", async ({ page }) => {
+    let bootstrapBody: Record<string, unknown> | null = null;
+    let bootstrapKey = "";
+    await page.route("**/api/v1/setup/status", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: false }) });
+    });
+    await page.route("**/api/v1/bootstrap", async (route) => {
+      bootstrapBody = route.request().postDataJSON();
+      bootstrapKey = route.request().headers()["x-bootstrap-token"] || "";
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ organization_id: "org", event_id: null, admin_user_id: "user" }) });
+    });
+    await page.route("**/api/v1/auth/magic-links", async (route) => {
+      await route.fulfill({ status: 202, contentType: "application/json", body: "{}" });
     });
 
-    const resource = await page.request.post(`/api/v1/admin/events/${eventId}/resources`, {
-      headers: mutationHeaders("resource"),
-      data: { title: `Speaker guide ${unique}`, slug: `speaker-guide-${unique}`, summary: "Contest rehearsal", body_text: "Arrive 20 minutes early.", embed_url: null, status: "published", sort_order: 10 },
-    });
-    expect(resource.status()).toBe(201);
+    await page.goto("/setup");
+    await expect(page.getByRole("heading", { name: "Create your workspace." })).toBeVisible();
+    await page.getByLabel("Organization name").fill("Noneli Events");
+    await page.getByLabel("Administrator name").fill("Devang Hanushali");
+    await page.getByLabel("Administrator email").fill("me@example.com");
+    await page.getByLabel("Deployment setup key").fill("x".repeat(40));
+    await page.getByRole("button", { name: "Create workspace" }).click();
 
-    const targets = await page.request.get(`/api/v1/admin/events/${eventId}/speaker-targets`);
-    expect(targets.ok()).toBeTruthy();
-    const accepted = (await targets.json()).data.find((target: { selection_status: string }) => target.selection_status === "accepted");
-    expect(accepted).toBeTruthy();
-    const task = await page.request.post(`/api/v1/admin/events/${eventId}/speaker-tasks`, {
-      headers: mutationHeaders("task"),
-      data: { event_speaker_id: accepted.event_speaker_id, submission_id: null, title: `Confirm arrival ${unique}`, help_text: "Tell the team you are ready.", due_at_ms: null, fields: [{ key: "ready", label: "I am ready", type: "checkbox", required: true, choices: [] }] },
+    await expect(page.getByRole("status")).toContainText("Workspace created");
+    expect(bootstrapKey).toBe("x".repeat(40));
+    expect(bootstrapBody).toMatchObject({
+      organization_name: "Noneli Events",
+      admin_name: "Devang Hanushali",
+      admin_email: "me@example.com",
     });
-    expect(task.status()).toBe(201);
-
-    const tokenResponse = await page.request.post(`/api/v1/admin/events/${eventId}/integrations/accelevents/tokens`, {
-      headers: mutationHeaders("token"), data: { label: `E2E ${unique}` },
-    });
-    expect(tokenResponse.status()).toBe(201);
-    const token = (await tokenResponse.json()).token;
-    expect(token.length).toBeGreaterThan(32);
-    const feed = await page.request.post(`/v1/event/${eventId}/speakers`, { headers: { "x-access-token": token } });
-    expect(feed.ok()).toBeTruthy();
-    expect((await feed.json()).results.length).toBeGreaterThan(0);
   });
 });
 

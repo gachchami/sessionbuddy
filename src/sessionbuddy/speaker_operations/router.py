@@ -10,11 +10,9 @@ from urllib.parse import quote
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from sessionbuddy.cfp.router import DEMO_EVENT_ID, DEMO_ORG_ID
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
-from sessionbuddy.platform.auth import generate_token, hash_token, issue_csrf_token
-from sessionbuddy.platform.auth.cookies import sign_session_cookie
+from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     guard_mutation,
@@ -40,7 +38,6 @@ from .asset_boundary import AssetAccessScope, AssetRepository, ScanJob
 from .models import (
     AssetDownloadGrantView,
     AssetDownloadToken,
-    DemoSpeakerSession,
     OnboardingDashboardView,
     OnboardingRow,
     OnboardingSummary,
@@ -61,17 +58,6 @@ from .models import (
 from .scanner_adapter import SignedScannerAdapter
 
 speaker_operations_router = APIRouter()
-
-DEMO_SPEAKER_USER_ID = "99999999-9999-4999-8999-999999999999"
-DEMO_SPEAKER_ORG_MEMBERSHIP_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-DEMO_SPEAKER_EVENT_MEMBERSHIP_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-DEMO_PERSON_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-DEMO_EVENT_SPEAKER_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-DEMO_PROGRAM_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-DEMO_FORM_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff"
-DEMO_SUBMISSION_ID = "12121212-1212-4212-8212-121212121212"
-DEMO_SUBMISSION_SPEAKER_ID = "13131313-1313-4313-8313-131313131313"
-DEMO_PROFILE_TASK_ID = "14141414-1414-4414-8414-141414141414"
 
 
 def _asset(name: str) -> str:
@@ -133,155 +119,6 @@ async def admin_onboarding_css(request: Request) -> Response:
 )
 async def admin_onboarding_js(request: Request) -> Response:
     return _product_asset(request, "admin_onboarding.js", "text/javascript")
-
-
-@speaker_operations_router.post(
-    "/api/v1/demo/speaker-session",
-    response_model=DemoSpeakerSession,
-    operation_id="createLocalDemoSpeakerSession",
-    tags=["demo"],
-)
-async def create_demo_speaker_session(request: Request, response: Response) -> DemoSpeakerSession:
-    if getattr(request.scope.get("env"), "APP_ENV", "production") != "local":
-        raise HTTPException(status_code=404)
-    db = _db(request)
-    now = utc_now_ms()
-    session_id = new_id()
-    token = generate_token()
-    csrf_token = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
-    await db.batch(
-        [
-            db.prepare(
-                """INSERT OR IGNORE INTO organizations
-                   (id, name, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, 'SessionBuddy Demo', 'active', ?2, ?2)"""
-            ).bind(DEMO_ORG_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO events
-                   (id, organization_id, name, starts_at_ms, ends_at_ms, time_zone,
-                    delivery_mode, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, 'Demo Conference', ?3, ?4, 'Asia/Kolkata', 'hybrid',
-                           'active', ?3, ?3)"""
-            ).bind(DEMO_EVENT_ID, DEMO_ORG_ID, now, now + 30 * 86_400_000),
-            db.prepare(
-                """INSERT OR IGNORE INTO users
-                   (id, email, normalized_email, status, email_verified_at_ms,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, 'speaker@local.invalid', 'speaker@local.invalid',
-                           'active', ?2, ?2, ?2)"""
-            ).bind(DEMO_SPEAKER_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO organization_memberships
-                   (id, organization_id, user_id, role, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, 'member', 'active', ?4, ?4)"""
-            ).bind(DEMO_SPEAKER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_SPEAKER_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_memberships
-                   (id, organization_id, event_id, user_id, role, status,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 'speaker', 'active', ?5, ?5)"""
-            ).bind(
-                DEMO_SPEAKER_EVENT_MEMBERSHIP_ID,
-                DEMO_ORG_ID,
-                DEMO_EVENT_ID,
-                DEMO_SPEAKER_USER_ID,
-                now,
-            ),
-            db.prepare(
-                """INSERT OR IGNORE INTO programs
-                   (id, organization_id, event_id, name, status, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, 'Main stage', 'closed', ?4, ?4)"""
-            ).bind(DEMO_PROGRAM_ID, DEMO_ORG_ID, DEMO_EVENT_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO call_for_speaker_forms
-                   (id, organization_id, event_id, program_id, version, slug, welcome_text,
-                    schema_json, status, published_at_ms, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 1, 'speaker-portal-demo', 'Welcome', '{}',
-                           'published', ?5, ?5, ?5)"""
-            ).bind(DEMO_FORM_ID, DEMO_ORG_ID, DEMO_EVENT_ID, DEMO_PROGRAM_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO submissions
-                   (id, organization_id, event_id, program_id, form_id, public_session_id,
-                    proposal_title, proposal_abstract, speaker_name, status, submitted_at_ms,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, ?5, 'speaker-portal-demo',
-                           'Building reliable AI systems', 'A practical session.',
-                           'Demo Speaker', 'submitted', ?6, ?6, ?6)"""
-            ).bind(
-                DEMO_SUBMISSION_ID,
-                DEMO_ORG_ID,
-                DEMO_EVENT_ID,
-                DEMO_PROGRAM_ID,
-                DEMO_FORM_ID,
-                now,
-            ),
-            db.prepare(
-                """INSERT OR IGNORE INTO people
-                   (id, organization_id, user_id, display_name, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, 'Demo Speaker', ?4, ?4)"""
-            ).bind(DEMO_PERSON_ID, DEMO_ORG_ID, DEMO_SPEAKER_USER_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_speakers
-                   (id, organization_id, event_id, person_id, status, accepted_at_ms,
-                    last_activity_at_ms, created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 'onboarding', ?5, ?5, ?5, ?5)"""
-            ).bind(DEMO_EVENT_SPEAKER_ID, DEMO_ORG_ID, DEMO_EVENT_ID, DEMO_PERSON_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO submission_speakers
-                   (id, organization_id, event_id, submission_id, event_speaker_id, role,
-                    snapshot_name, created_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, ?5, 'primary', 'Demo Speaker', ?6)"""
-            ).bind(
-                DEMO_SUBMISSION_SPEAKER_ID,
-                DEMO_ORG_ID,
-                DEMO_EVENT_ID,
-                DEMO_SUBMISSION_ID,
-                DEMO_EVENT_SPEAKER_ID,
-                now,
-            ),
-            db.prepare(
-                """INSERT OR IGNORE INTO speaker_tasks
-                   (id, organization_id, event_id, event_speaker_id, submission_id,
-                    task_type, title, help_text, destination_type, state, due_at_ms,
-                    created_at_ms, updated_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, ?5, 'profile', 'Complete your biography',
-                           'Add a biography for the event program.', 'profile', 'open',
-                           ?6, ?7, ?7)"""
-            ).bind(
-                DEMO_PROFILE_TASK_ID,
-                DEMO_ORG_ID,
-                DEMO_EVENT_ID,
-                DEMO_EVENT_SPEAKER_ID,
-                DEMO_SUBMISSION_ID,
-                now + 7 * 86_400_000,
-                now,
-            ),
-            db.prepare(
-                """INSERT INTO sessions
-                   (id, user_id, token_hash, csrf_secret_hash, authorization_version,
-                    created_at_ms, last_seen_at_ms, idle_expires_at_ms, absolute_expires_at_ms)
-                   VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5, ?6, ?7)"""
-            ).bind(
-                session_id,
-                DEMO_SPEAKER_USER_ID,
-                hash_token(token),
-                hash_token(csrf_token),
-                now,
-                now + 12 * 60 * 60 * 1000,
-                now + 30 * 24 * 60 * 60 * 1000,
-            ),
-        ]
-    )
-    response.set_cookie(
-        "sessionbuddy-local",
-        sign_session_cookie(token, secret(request, "SESSION_HMAC_KEY")),
-        max_age=30 * 24 * 60 * 60,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        path="/",
-    )
-    return DemoSpeakerSession(csrf_token=csrf_token)
 
 
 async def _timed_first(request: Request, statement):

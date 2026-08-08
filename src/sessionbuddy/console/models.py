@@ -70,7 +70,6 @@ class BrowserTelemetryPayload(BaseModel):
     schema_version: Literal[1]
     page_template: Literal[
         "/engine-room",
-        "/cfp-integration",
         "/admin/programs",
         "/cfp/{slug}",
         "/admin/programs/{program_id}/submissions",

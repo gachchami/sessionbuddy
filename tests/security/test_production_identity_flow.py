@@ -168,6 +168,77 @@ async def test_missing_browser_magic_link_token_has_same_recovery_page(
     assert ">Sign in</a>" in response.text
 
 
+async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        page = await client.get("/setup")
+        initial = await client.get("/api/v1/setup/status")
+        assert page.status_code == 200
+        assert "Create your workspace" in page.text
+        assert initial.json() == {"configured": False}
+
+        created = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            json={
+                "organization_name": "Example Events",
+                "admin_name": "Asha Rao",
+                "admin_email": "asha@example.com",
+                "admin_job_title": "Event director",
+                "admin_company": "Example Events",
+                "admin_time_zone": "Asia/Kolkata",
+            },
+        )
+        assert created.status_code == 200
+        assert (await client.get("/api/v1/setup/status")).json() == {"configured": True}
+        user = connection.execute(
+            """SELECT display_name,job_title,company,time_zone FROM users
+               WHERE normalized_email='asha@example.com'"""
+        ).fetchone()
+        assert tuple(user) == ("Asha Rao", "Event director", "Example Events", "Asia/Kolkata")
+
+        assert (
+            await client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "asha@example.com", "redirect_path": "/account"},
+            )
+        ).status_code == 202
+        assert (
+            await client.get(
+                f"/auth/verify?token={_token(connection, 'asha@example.com')}",
+                follow_redirects=False,
+            )
+        ).status_code == 303
+        session = (await client.get("/api/v1/auth/session")).json()
+        assert session["display_name"] == "Asha Rao"
+        profile = (await client.get("/api/v1/account/profile")).json()
+        assert profile["email"] == "asha@example.com"
+        assert profile["version"] == 1
+
+        body = {
+            "display_name": "Asha R. Rao",
+            "job_title": "Program director",
+            "company": "Example Events",
+            "time_zone": "Asia/Kolkata",
+            "version": profile["version"],
+        }
+        denied = await client.patch("/api/v1/account/profile", json=body)
+        assert denied.status_code == 403
+        updated = await client.patch(
+            "/api/v1/account/profile",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json=body,
+        )
+        assert updated.status_code == 200
+        assert updated.json()["display_name"] == "Asha R. Rao"
+        assert updated.json()["version"] == 2
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='account.profile.update'"
+        ).fetchone()[0] == 1
+
+
 async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
     production_environment,
 ) -> None:

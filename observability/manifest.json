@@ -103,6 +103,27 @@
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#identity"
     },
+    "GET /api/v1/setup/status": {
+      "owner": "identity",
+      "slo": {"p95_ms": 250, "error_rate_max": 0.001},
+      "benchmark": "identity-setup-status",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/account/profile": {
+      "owner": "identity",
+      "slo": {"p95_ms": 250, "error_rate_max": 0.001},
+      "benchmark": "identity-account-profile",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "PATCH /api/v1/account/profile": {
+      "owner": "identity",
+      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
+      "benchmark": "identity-account-profile-update",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
     "POST /api/v1/admin/events/{event_id}/invitations": {
       "owner": "identity",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
@@ -198,34 +219,6 @@
       "benchmark": "engine-room-d1-probe",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "POST /api/v1/demo/context": {
-      "owner": "program-management",
-      "slo": {"p95_ms": 250, "error_rate_max": 0.001},
-      "benchmark": "cfp-demo-context",
-      "dashboards": ["release-health", "api-explorer"],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/demo/session": {
-      "owner": "identity",
-      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "cfp-demo-session",
-      "dashboards": ["release-health", "api-explorer"],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/demo/speaker-session": {
-      "owner": "speaker-onboarding",
-      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "speaker-operations-demo-speaker-session",
-      "dashboards": ["release-health", "api-explorer"],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/demo/agenda-context": {
-      "owner": "agenda",
-      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "scheduling-demo-context",
-      "dashboards": ["release-health", "api-explorer"],
-      "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/programs": {
       "owner": "program-management",
@@ -518,15 +511,6 @@
         "inp_p75_ms": 200,
         "cls_p75_max": 0.1
       },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": ["release-health", "page-performance"],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/cfp-integration": {
-      "owner": "program-management",
-      "classification": "synthetic/local",
-      "journeys": ["cfp-cfp-happy-path"],
-      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
       "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
       "dashboards": ["release-health", "page-performance"],
       "runbook": "docs/debugging-runbook.md#page-regression"

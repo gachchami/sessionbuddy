@@ -64,16 +64,15 @@ def build_seed_bundle(seed: int = 20260808, submission_count: int = 12) -> SeedB
         )
 
     return SeedBundle(
-        organization={"id": "org-demo", "name": "Sessionbuddy Demo Organization"},
+        organization={"id": "org-fixture", "name": "Synthetic Fixture Organization"},
         event={
-            "id": "event-demo",
-            "name": "Sessionbuddy Demo Conference",
+            "id": "event-fixture",
+            "name": "Synthetic Fixture Conference",
             "timezone": "Asia/Kolkata",
             "starts_at": starts_at.isoformat(),
             "ends_at": (starts_at + timedelta(days=2)).isoformat(),
         },
-        program={"id": "program-demo", "name": "Main Program", "status": "open"},
+        program={"id": "program-fixture", "name": "Main Program", "status": "open"},
         people=people,
         submissions=submissions,
     )
-

@@ -1,4 +1,4 @@
-"""Tenant-scoped D1 communications service used by HTTP and local demos."""
+"""Tenant-scoped D1 communications service used by HTTP and local development."""
 
 import hashlib
 from html import escape

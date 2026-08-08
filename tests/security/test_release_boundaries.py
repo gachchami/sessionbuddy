@@ -38,13 +38,14 @@ def test_r2_scanner_adapter_uses_fixed_length_stream_not_full_body_buffering() -
     assert "arrayBuffer" not in source
 
 
-@pytest.mark.asyncio
-async def test_missing_environment_never_enables_privileged_demo_sessions() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        admin = await client.post("/api/v1/demo/session")
-        speaker = await client.post("/api/v1/demo/speaker-session")
-        agenda = await client.post("/api/v1/demo/agenda-context?event_id=event")
-    assert {admin.status_code, speaker.status_code, agenda.status_code} == {404}
+def test_product_schema_has_no_test_identity_routes() -> None:
+    schema = app.openapi()
+    assert not any(
+        "test" in operation.get("tags", []) or "synthetic" in operation.get("tags", [])
+        for methods in schema["paths"].values()
+        for operation in methods.values()
+        if isinstance(operation, dict)
+    )
 
 
 @pytest.mark.asyncio

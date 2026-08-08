@@ -37,10 +37,10 @@ Review the product-shaped CFP management flow at these local URLs:
 - `http://localhost:8787/admin/programs/{program-id}/submissions` — authorized
   submission review; use the link shown after publishing.
 
-`http://localhost:8787/cfp-integration` remains the engineering integration harness. It
-uses synthetic local data and exposes the full sequence on one page for rapid
-diagnosis. Product environments use guarded one-time administrator bootstrap and
-passwordless email challenges. Invitations provision event administrators,
+Fresh instances open `/setup` and contain no organizations, events, speakers, or
+synthetic identities. The one-time setup creates the first organization and named
+administrator through the guarded bootstrap API. Passwordless email challenges
+handle subsequent sign-in. Invitations provision event administrators,
 evaluators, or speakers only after email verification; public-form registration
 provisions only the owning speaker. Every authenticated mutation uses the same
 opaque HTTP-only session, live D1 membership, origin, and session-bound CSRF checks.
@@ -65,27 +65,20 @@ assignment strategies: `balanced` distributes submissions round-robin, while
 server validates evaluator membership and submission scope before creating the
 atomic assignment batch.
 
-Speaker operations starts at `http://localhost:8787/speaker`. Local development
-retains **Start local speaker demo** for deterministic testing. In a deployed
-environment, a speaker signs in after an administrator invitation or after
+Speaker operations starts at `http://localhost:8787/speaker`. A speaker signs in
+after an administrator invitation or after
 registering through a published proposal form. The portal is derived from the
 verified user's explicit ownership records, never from a browser-supplied email.
 
-Scheduling is available after the local speaker and admin demo
-sessions have been initialized:
+Scheduling is available after an administrator has accepted sessions and created
+the agenda from the event workspace:
 
-- Admin editor: `http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/agenda`
-- Staff/speaker schedule: `http://localhost:8787/events/22222222-2222-4222-8222-222222222222/schedule`
+- Admin editor: `http://localhost:8787/admin/events/{event-id}/agenda`
+- Staff/speaker schedule: `http://localhost:8787/events/{event-id}/schedule`
 
 The editor includes list/day/week/track/room views, Firefox-compatible drag/drop,
 a keyboard scheduling form, transactional conflict rejection, visible stale-write
-rollback, publication, and per-speaker calendar update planning. Run its full
-Worker journey inside the container with:
-
-```bash
-docker compose run --rm --no-deps worker uv run python \
-  scripts/smoke_scheduling.py --base-url http://worker:8787
-```
+rollback, publication, and per-speaker calendar update planning.
 
 See `docs/product-status.md` for the implemented boundary and remaining provider
 activation work.
@@ -98,51 +91,36 @@ Pywrangler, Wrangler, tests, builds, and benchmarks execute in containers:
 ./scripts/release_gate.sh
 ```
 
-It runs the full suite, large deterministic seed, query-plan checks,
-backup/restore rehearsal, all capability smokes, desktop/mobile Axe checks, local API
+It runs the full suite, large isolated test seed, query-plan checks,
+backup/restore rehearsal, desktop/mobile Axe checks, local API
 benchmarks, Lighthouse, and a Wrangler dry run entirely through containers. See
 `docs/product-status.md` for accepted local evidence and the remaining
 Cloudflare staging promotion gates.
 
-The admin operational view for the seeded event is available at
-`http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/onboarding`.
+The admin operational view for an event is available at
+`http://localhost:8787/admin/events/{event-id}/onboarding`.
 It refreshes a bounded D1 snapshot every five seconds, pauses while hidden, and
 shows completion, overdue/due-soon speakers, submission states, evaluation
 progress, and filterable task rows. The explicit event path is lookup input;
 the server independently resolves its organization and enforces dashboard RBAC.
 
-The speaker portal also exercises private asset upload at
-`http://localhost:8787/speaker`. Headshots, slides, and supporting documents use
+The speaker portal supports private asset upload at `http://localhost:8787/speaker`.
+Headshots, slides, and supporting documents use
 kind-specific MIME/size limits, browser SHA-256, a signed upload intent, the
-local R2 binding, and an explicit completion step. Run the same flow without a
-browser inside the container:
-
-```bash
-docker compose run --rm worker uv run python scripts/smoke_speaker_assets.py \
-  --base-url http://worker:8787
-```
+local R2 binding, and an explicit completion step.
 
 The local Worker streams quarantined bytes from R2 to the authenticated ClamAV
 container through a fixed-length body; it does not copy a full 50 MiB object into
 Worker memory. Only the scanner's signed clean result promotes the exact
 generation. Deployed environments issue a direct R2 SigV4 PUT and publish a
 versioned Queue job for the replay-safe scanner consumer, which uses the same
-streaming adapter. The same smoke also proves single-use private download grants
-and captured reminder delivery.
+streaming adapter.
 
 Evaluators may declare a conflict before finalization; the assignment is revoked
 and exposed for admin reassignment. A round closes only after every selected
 submission remains covered and every active assignment is final. The accepted
 calculation, tie, immutability, and lifecycle rules are recorded in
 `docs/product-status.md`.
-
-After the Worker is running, repeat the complete CFP compatibility smoke
-without generating benchmark traffic:
-
-```bash
-docker compose run --rm worker uv run python scripts/smoke_cfp.py \
-  --base-url http://worker:8787
-```
 
 Authenticate Wrangler without exposing host credentials to the container:
 

@@ -8,8 +8,8 @@ Release readiness turns the product capabilities into a repeatable, container-fi
 
 ## Security and privacy
 
-- Privileged demo/local behaviors now default to `production` when `APP_ENV` is
-  missing. A missing binding cannot enable demo admin/speaker sessions, local
+- Test-only behaviors default to `production` when `APP_ENV` is
+  missing. A missing binding cannot enable privileged identities or local
   uploads, scanner bypass behavior, or local communication dispatch.
 - The existing permission matrix, event/organization substitution, evaluator
   assignment, speaker ownership, signed session, CSRF/origin, upload quarantine,

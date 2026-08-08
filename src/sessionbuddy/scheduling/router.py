@@ -23,19 +23,11 @@ from sessionbuddy.platform.db.commands import (
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
-from sessionbuddy.speaker_operations.router import DEMO_PROGRAM_ID, DEMO_SUBMISSION_ID
 
 from .models import AgendaCandidate, AgendaPublish
 
 scheduling_router = APIRouter()
 
-DEMO_AGENDA_ROUND_ID = "15151515-1515-4515-8515-151515151515"
-DEMO_AGENDA_DECISION_ID = "16161616-1616-4616-8616-161616161616"
-DEMO_ACCEPTED_SESSION_ID = "17171717-1717-4717-8717-171717171717"
-DEMO_ROOM_MAIN_ID = "18181818-1818-4818-8818-181818181818"
-DEMO_ROOM_STUDIO_ID = "19191919-1919-4919-8919-191919191919"
-DEMO_TRACK_ID = "20202020-2020-4020-8020-202020202020"
-DEMO_REVISION_ID = "21212121-2121-4121-8121-212121212121"
 
 
 def _db(request: Request):
@@ -131,82 +123,6 @@ async def _revision(db, organization_id: str, event_id: str, state: str = "draft
         .bind(organization_id, event_id, state)
         .first()
     )
-
-
-@scheduling_router.post("/api/v1/demo/agenda-context", tags=["demo"])
-async def initialize_demo_agenda(event_id: str, request: Request) -> dict[str, object]:
-    if getattr(request.scope.get("env"), "APP_ENV", "production") != "local":
-        raise HTTPException(status_code=404)
-    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
-    db, now, organization_id = _db(request), utc_now_ms(), str(event["organization_id"])
-    submission = (
-        await db.prepare(
-            """SELECT 1 AS found FROM submissions WHERE organization_id=?1
-           AND event_id=?2 AND id=?3"""
-        )
-        .bind(organization_id, event_id, DEMO_SUBMISSION_ID)
-        .first("found")
-    )
-    if submission is None:
-        raise HTTPException(status_code=404)
-    await db.batch(
-        [
-            db.prepare(
-                """INSERT OR IGNORE INTO evaluation_rounds
-                   (id,organization_id,event_id,program_id,name,rubric_json,status,
-                    created_at_ms,updated_at_ms,closed_at_ms)
-                   VALUES (?1,?2,?3,?4,'Agenda demo','{}','closed',?5,?5,?5)"""
-            ).bind(DEMO_AGENDA_ROUND_ID, organization_id, event_id, DEMO_PROGRAM_ID, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO submission_decisions
-                   (id,organization_id,event_id,round_id,submission_id,decision,
-                    internal_reason,decided_by_user_id,decided_at_ms,updated_at_ms)
-                   VALUES (?1,?2,?3,?4,?5,'accepted','Local agenda demo',?6,?7,?7)"""
-            ).bind(
-                DEMO_AGENDA_DECISION_ID,
-                organization_id,
-                event_id,
-                DEMO_AGENDA_ROUND_ID,
-                DEMO_SUBMISSION_ID,
-                auth.actor.user_id,
-                now,
-            ),
-            db.prepare(
-                """INSERT OR IGNORE INTO accepted_sessions
-                   (id,organization_id,event_id,submission_id,decision_id,created_at_ms)
-                   VALUES (?1,?2,?3,?4,?5,?6)"""
-            ).bind(
-                DEMO_ACCEPTED_SESSION_ID,
-                organization_id,
-                event_id,
-                DEMO_SUBMISSION_ID,
-                DEMO_AGENDA_DECISION_ID,
-                now,
-            ),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_rooms
-                   (id,organization_id,event_id,name,status,created_at_ms,updated_at_ms)
-                   VALUES (?1,?2,?3,'Main room','active',?4,?4)"""
-            ).bind(DEMO_ROOM_MAIN_ID, organization_id, event_id, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_rooms
-                   (id,organization_id,event_id,name,status,created_at_ms,updated_at_ms)
-                   VALUES (?1,?2,?3,'Studio','active',?4,?4)"""
-            ).bind(DEMO_ROOM_STUDIO_ID, organization_id, event_id, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO event_tracks
-                   (id,organization_id,event_id,name,is_exclusive,status,created_at_ms,updated_at_ms)
-                   VALUES (?1,?2,?3,'Main stage',1,'active',?4,?4)"""
-            ).bind(DEMO_TRACK_ID, organization_id, event_id, now),
-            db.prepare(
-                """INSERT OR IGNORE INTO schedule_revisions
-                   (id,organization_id,event_id,revision_number,name,status,version,
-                    created_by_user_id,created_at_ms,updated_at_ms)
-                   VALUES (?1,?2,?3,1,'Draft 1','draft',1,?4,?5,?5)"""
-            ).bind(DEMO_REVISION_ID, organization_id, event_id, auth.actor.user_id, now),
-        ]
-    )
-    return {"event_id": event_id, "revision_id": DEMO_REVISION_ID}
 
 
 async def _speaker_ids(db, organization_id: str, event_id: str, accepted_session_id: str):

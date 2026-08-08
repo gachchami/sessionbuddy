@@ -95,13 +95,6 @@ class SpeakerPortalView(BaseModel):
     total_tasks: int
 
 
-class DemoSpeakerSession(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    authenticated: Literal[True] = True
-    csrf_token: str
-
-
 class OnboardingSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

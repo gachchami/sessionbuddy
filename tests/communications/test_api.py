@@ -15,7 +15,7 @@ async def test_communications_routes_fail_closed_without_runtime_dependencies() 
         reminder = await client.post(
             "/api/v1/admin/events/event/speaker-tasks/task/reminders",
             json={},
-            headers={"Idempotency-Key": "a-secure-demo-key"},
+            headers={"Idempotency-Key": "a-secure-fixture-key"},
         )
     assert {statuses.status_code, preview.status_code, reminder.status_code} == {503}
 

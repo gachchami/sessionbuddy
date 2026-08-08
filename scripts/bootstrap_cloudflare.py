@@ -35,6 +35,7 @@ def bootstrap_payload(arguments: argparse.Namespace) -> dict[str, str | int]:
         raise ValueError("--admin-email must be a valid email address")
     payload: dict[str, str | int] = {
         "organization_name": arguments.organization_name,
+        "admin_name": arguments.admin_name,
         "admin_email": arguments.admin_email,
     }
     event_values = (
@@ -105,6 +106,7 @@ def main() -> int:
     parser.add_argument("--env", default="dev", help="Wrangler environment name")
     parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "wrangler.jsonc")
     parser.add_argument("--organization-name", required=True)
+    parser.add_argument("--admin-name", required=True)
     parser.add_argument("--admin-email", required=True)
     parser.add_argument("--event-name")
     parser.add_argument(

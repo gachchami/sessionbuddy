@@ -18,7 +18,7 @@ from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limi
 
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
-from .http import authenticate_request, database, require_permission, secret
+from .http import authenticate_request, database, guard_mutation, require_permission, secret
 from .tokens import generate_token, hash_token, normalize_email
 
 access_router = APIRouter()
@@ -33,6 +33,23 @@ async def sign_in_page() -> Response:
     return Response(
         _asset("sign_in.html"), media_type="text/html", headers={"Cache-Control": "no-store"}
     )
+
+
+@access_router.get("/setup", include_in_schema=False)
+async def setup_page() -> Response:
+    return Response(
+        _asset("setup.html"), media_type="text/html", headers={"Cache-Control": "no-store"}
+    )
+
+
+@access_router.get("/setup/assets/setup.css", include_in_schema=False)
+async def setup_stylesheet() -> Response:
+    return Response(_asset("setup.css"), media_type="text/css")
+
+
+@access_router.get("/setup/assets/setup.js", include_in_schema=False)
+async def setup_javascript() -> Response:
+    return Response(_asset("setup.js"), media_type="text/javascript")
 
 
 @access_router.get("/auth/assets/sign-in.js", include_in_schema=False)
@@ -143,7 +160,11 @@ async def events_javascript() -> Response:
 class BootstrapCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     organization_name: str = Field(min_length=1, max_length=200)
+    admin_name: str | None = Field(default=None, min_length=1, max_length=200)
     admin_email: str = Field(min_length=3, max_length=320)
+    admin_job_title: str | None = Field(default=None, max_length=200)
+    admin_company: str | None = Field(default=None, max_length=200)
+    admin_time_zone: str | None = Field(default=None, max_length=100)
     event_name: str | None = Field(default=None, min_length=1, max_length=200)
     starts_at_ms: int | None = None
     ends_at_ms: int | None = None
@@ -154,6 +175,10 @@ class BootstrapView(BaseModel):
     organization_id: str
     event_id: str | None
     admin_user_id: str
+
+
+class SetupStatus(BaseModel):
+    configured: bool
 
 
 class MagicLinkRequest(BaseModel):
@@ -286,11 +311,30 @@ class CurrentSession(BaseModel):
     authenticated: bool = True
     user_id: str
     email: str
+    display_name: str | None = None
     csrf_token: str
     organization_id: str | None = None
     event_id: str | None = None
     organization_access: list[SessionOrganizationAccess] = Field(default_factory=list)
     event_access: list[SessionEventAccess] = Field(default_factory=list)
+
+
+class AccountProfileView(BaseModel):
+    email: str
+    display_name: str | None = None
+    job_title: str | None = None
+    company: str | None = None
+    time_zone: str | None = None
+    version: int
+
+
+class AccountProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    display_name: str = Field(min_length=1, max_length=200)
+    job_title: str | None = Field(default=None, max_length=200)
+    company: str | None = Field(default=None, max_length=200)
+    time_zone: str | None = Field(default=None, max_length=100)
+    version: int = Field(ge=1)
 
 
 def _valid_redirect(value: str) -> bool:
@@ -304,6 +348,19 @@ def _email(value: str) -> tuple[str, str]:
     if not separator or not local or "." not in domain or domain.startswith("."):
         raise HTTPException(status_code=422)
     return display, normalized
+
+
+@access_router.get(
+    "/api/v1/setup/status",
+    response_model=SetupStatus,
+    operation_id="getSetupStatus",
+    tags=["administration"],
+)
+async def setup_status(request: Request) -> SetupStatus:
+    existing = row_mapping(
+        await database(request).prepare("SELECT id FROM organizations LIMIT 1").first()
+    )
+    return SetupStatus(configured=existing is not None)
 
 
 @access_router.post("/api/v1/bootstrap", response_model=BootstrapView, tags=["administration"])
@@ -347,9 +404,19 @@ async def bootstrap_tenant(
     batch.add_statement(
         db.prepare(
             """INSERT INTO users
-           (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
-           VALUES(?1,?2,?3,'active',?4,?4,?4)"""
-        ).bind(user_id, admin_email, normalized, now)
+           (id,email,normalized_email,display_name,job_title,company,time_zone,status,
+            email_verified_at_ms,created_at_ms,updated_at_ms)
+           VALUES(?1,?2,?3,?4,?5,?6,?7,'active',?8,?8,?8)"""
+        ).bind(
+            user_id,
+            admin_email,
+            normalized,
+            body.admin_name,
+            body.admin_job_title or None,
+            body.admin_company or None,
+            body.admin_time_zone or None,
+            now,
+        )
     )
     batch.add_statement(
         db.prepare(
@@ -397,6 +464,77 @@ async def bootstrap_tenant(
     )
     await batch.execute()
     return BootstrapView(organization_id=organization_id, event_id=event_id, admin_user_id=user_id)
+
+
+@access_router.get(
+    "/api/v1/account/profile",
+    response_model=AccountProfileView,
+    operation_id="getAccountProfile",
+    tags=["authentication"],
+)
+async def account_profile(request: Request) -> AccountProfileView:
+    authenticated = await authenticate_request(request)
+    row = row_mapping(
+        await database(request)
+        .prepare(
+            """SELECT email,display_name,job_title,company,time_zone,version
+               FROM users WHERE id=?1 AND status='active' LIMIT 1"""
+        )
+        .bind(authenticated.actor.user_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=401)
+    return AccountProfileView(**row)
+
+
+@access_router.patch(
+    "/api/v1/account/profile",
+    response_model=AccountProfileView,
+    operation_id="updateAccountProfile",
+    tags=["authentication"],
+)
+async def update_account_profile(
+    body: AccountProfileUpdate, request: Request
+) -> AccountProfileView:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    db, now = database(request), utc_now_ms()
+    row = row_mapping(
+        await db.prepare(
+            """UPDATE users SET display_name=?1,job_title=?2,company=?3,time_zone=?4,
+               version=version+1,updated_at_ms=?5
+               WHERE id=?6 AND status='active' AND version=?7
+               RETURNING email,display_name,job_title,company,time_zone,version"""
+        )
+        .bind(
+            body.display_name,
+            body.job_title or None,
+            body.company or None,
+            body.time_zone or None,
+            now,
+            authenticated.actor.user_id,
+            body.version,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=409)
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="account.profile.update",
+            target_type="user",
+            target_id=authenticated.actor.user_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+        )
+    )
+    await audit.execute()
+    return AccountProfileView(**row)
 
 
 @access_router.get(
@@ -1278,7 +1416,7 @@ async def current_session(request: Request) -> CurrentSession:
     authenticated = await authenticate_request(request)
     user = row_mapping(
         await database(request)
-        .prepare("SELECT email FROM users WHERE id=?1 LIMIT 1")
+        .prepare("SELECT email,display_name FROM users WHERE id=?1 LIMIT 1")
         .bind(authenticated.actor.user_id)
         .first()
     )
@@ -1308,6 +1446,7 @@ async def current_session(request: Request) -> CurrentSession:
     return CurrentSession(
         user_id=authenticated.actor.user_id,
         email=str(user["email"]),
+        display_name=str(user["display_name"]) if user["display_name"] is not None else None,
         csrf_token=issue_csrf_token(authenticated.session_id, secret(request, "CSRF_HMAC_KEY")),
         organization_id=organization_id,
         event_id=event_scope[1] if event_scope is not None else None,

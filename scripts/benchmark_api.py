@@ -55,7 +55,6 @@ async def benchmark(
     warmup: int,
     base_url: str | None = None,
     route: str = "/api/v1/health",
-    local_demo_session: bool = False,
     concurrency: int = 1,
     timeout_seconds: float = 30.0,
     dataset_version: str = "small-v1",
@@ -71,9 +70,6 @@ async def benchmark(
     async with AsyncClient(
         transport=transport, base_url=target_url, timeout=timeout_seconds
     ) as client:
-        if local_demo_session:
-            session = await client.post("/api/v1/demo/session")
-            session.raise_for_status()
         for _ in range(warmup):
             await client.get(route)
         semaphore = asyncio.Semaphore(concurrency)
@@ -156,11 +152,6 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Maximum in-flight requests (default: 1)",
     )
-    parser.add_argument(
-        "--local-demo-session",
-        action="store_true",
-        help="Establish the local-only demo cookie before benchmarking protected GET routes",
-    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--dataset-version", default="small-v1")
@@ -172,8 +163,6 @@ def parse_args() -> argparse.Namespace:
         parser.error("--concurrency cannot exceed --requests")
     if not args.route.startswith("/") or args.route.startswith("//"):
         parser.error("--route must be an absolute application path")
-    if args.local_demo_session and not args.base_url:
-        parser.error("--local-demo-session requires --base-url")
     return args
 
 
@@ -185,7 +174,6 @@ def main() -> None:
             args.warmup,
             args.base_url,
             args.route,
-            args.local_demo_session,
             args.concurrency,
             args.timeout_seconds,
             args.dataset_version,
