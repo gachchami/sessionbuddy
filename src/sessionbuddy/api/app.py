@@ -1,7 +1,10 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from sessionbuddy.api.errors import ErrorDetail, ErrorEnvelope
+from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
+from sessionbuddy.console import foundation_console_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
 from sessionbuddy.security import SecurityHeadersMiddleware
 
@@ -17,22 +20,71 @@ app = FastAPI(
 # measures and identifies failures from every subsequent middleware and route.
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
+app.include_router(foundation_console_router)
 
 
-@app.get("/health", tags=["operations"])
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/foundation", status_code=307)
 
 
-@app.get("/api/v1/health", tags=["operations"])
-async def api_health() -> dict[str, str]:
-    return {"status": "ok", "api_version": "v1"}
+@app.get(
+    "/health",
+    tags=["operations"],
+    operation_id="getHealth",
+    response_model=HealthResponse,
+)
+async def health() -> HealthResponse:
+    return HealthResponse()
+
+
+@app.get(
+    "/api/v1/health",
+    tags=["operations"],
+    operation_id="getApiHealth",
+    response_model=ApiHealthResponse,
+)
+async def api_health() -> ApiHealthResponse:
+    return ApiHealthResponse()
+
+
+def _error_response(request: Request, status: int, code: str, message: str) -> JSONResponse:
+    envelope = ErrorEnvelope(
+        error=ErrorDetail(code=code, message=message),
+        request_id=request.state.request_id,
+    )
+    return JSONResponse(status_code=status, content=envelope.model_dump(exclude_none=True))
 
 
 @app.exception_handler(404)
 async def not_found(request: Request, _exception: Exception) -> JSONResponse:
-    envelope = ErrorEnvelope(
-        error=ErrorDetail(code="resource_not_found", message="Resource not found"),
-        request_id=request.state.request_id,
+    return _error_response(request, 404, "resource_not_found", "Resource not found")
+
+
+@app.exception_handler(HTTPException)
+async def http_error(request: Request, exception: HTTPException) -> JSONResponse:
+    errors = {
+        400: ("invalid_request", "The request could not be processed"),
+        401: ("authentication_required", "Authentication is required"),
+        403: ("forbidden", "The action is not permitted"),
+        404: ("resource_not_found", "Resource not found"),
+        409: ("conflict", "The request conflicts with current state"),
+        413: ("payload_too_large", "The request body is too large"),
+        415: ("unsupported_media_type", "The media type is not supported"),
+        429: ("rate_limited", "Too many requests"),
+        503: ("dependency_unavailable", "A required dependency is unavailable"),
+    }
+    code, message = errors.get(
+        exception.status_code, ("request_failed", "The request could not be processed")
     )
-    return JSONResponse(status_code=404, content=envelope.model_dump(exclude_none=True))
+    return _error_response(request, exception.status_code, code, message)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, _exception: RequestValidationError) -> JSONResponse:
+    return _error_response(
+        request,
+        422,
+        "validation_failed",
+        "The request could not be processed",
+    )

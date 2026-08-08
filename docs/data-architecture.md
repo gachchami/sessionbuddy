@@ -1,6 +1,6 @@
 # Sessionbuddy data architecture
 
-Status: Wave 0 decision proposal  
+Status: accepted Wave 0 decision
 Scope: P0 persistence foundation only  
 Target: Python 3.13 on Cloudflare Workers, FastAPI/Pydantic, and Cloudflare D1 (SQLite semantics)
 

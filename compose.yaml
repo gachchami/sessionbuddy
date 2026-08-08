@@ -1,0 +1,22 @@
+services:
+  worker:
+    build:
+      context: .
+    ports:
+      - "8787:8787"
+    volumes:
+      - .:/workspace
+      - node-modules:/workspace/node_modules
+      - python-venv:/workspace/.venv
+      - tool-cache:/workspace/.cache
+      - wrangler-config:/root/.config/.wrangler
+    environment:
+      UV_CACHE_DIR: /workspace/.cache/uv
+      UV_PYTHON_INSTALL_DIR: /workspace/.cache/uv-python
+    command: ["npm", "run", "worker:dev", "--", "--ip", "0.0.0.0", "--port", "8787"]
+
+volumes:
+  node-modules:
+  python-venv:
+  tool-cache:
+  wrangler-config:

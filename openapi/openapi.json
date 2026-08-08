@@ -1,23 +1,312 @@
 {
+  "components": {
+    "schemas": {
+      "ApiHealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "const": "v1",
+            "default": "v1",
+            "title": "Api Version",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "ApiHealthResponse",
+        "type": "object"
+      },
+      "BuildProgressItem": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "title": "Capability",
+            "type": "string"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "complete",
+              "in_progress",
+              "pending"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "wave": {
+            "title": "Wave",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wave",
+          "capability",
+          "state",
+          "evidence"
+        ],
+        "title": "BuildProgressItem",
+        "type": "object"
+      },
+      "CoverageItem": {
+        "additionalProperties": false,
+        "properties": {
+          "signal": {
+            "title": "Signal",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "planned",
+              "missing"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal",
+          "state",
+          "source"
+        ],
+        "title": "CoverageItem",
+        "type": "object"
+      },
+      "DatabaseStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "enum": [
+              "local",
+              "development",
+              "preview",
+              "staging",
+              "production"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "provider": {
+            "const": "cloudflare-d1",
+            "default": "cloudflare-d1",
+            "title": "Provider",
+            "type": "string"
+          },
+          "query_ms": {
+            "minimum": 0.0,
+            "title": "Query Ms",
+            "type": "number"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment",
+          "query_ms"
+        ],
+        "title": "DatabaseStatus",
+        "type": "object"
+      },
+      "FoundationStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "default": "v1",
+            "title": "Api Version",
+            "type": "string"
+          },
+          "build_progress": {
+            "items": {
+              "$ref": "#/components/schemas/BuildProgressItem"
+            },
+            "title": "Build Progress",
+            "type": "array"
+          },
+          "coverage": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageItem"
+            },
+            "title": "Coverage",
+            "type": "array"
+          },
+          "data_classification": {
+            "default": "synthetic/local",
+            "enum": [
+              "synthetic/local",
+              "synthetic/non-production"
+            ],
+            "title": "Data Classification",
+            "type": "string"
+          },
+          "environment": {
+            "default": "local",
+            "enum": [
+              "local",
+              "development",
+              "preview",
+              "staging",
+              "production"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "measurements_are_live": {
+            "default": false,
+            "title": "Measurements Are Live",
+            "type": "boolean"
+          },
+          "runtime": {
+            "default": "Python / FastAPI",
+            "title": "Runtime",
+            "type": "string"
+          },
+          "slos": {
+            "items": {
+              "$ref": "#/components/schemas/SLODefinition"
+            },
+            "title": "Slos",
+            "type": "array"
+          },
+          "status": {
+            "const": "review",
+            "default": "review",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slos",
+          "coverage",
+          "build_progress"
+        ],
+        "title": "FoundationStatus",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "SLODefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "benchmark": {
+            "title": "Benchmark",
+            "type": "string"
+          },
+          "error_rate_max": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Error Rate Max",
+            "type": "number"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "p95_ms": {
+            "exclusiveMinimum": 0.0,
+            "title": "P95 Ms",
+            "type": "integer"
+          },
+          "route": {
+            "title": "Route",
+            "type": "string"
+          }
+        },
+        "required": [
+          "route",
+          "owner",
+          "p95_ms",
+          "error_rate_max",
+          "benchmark"
+        ],
+        "title": "SLODefinition",
+        "type": "object"
+      }
+    }
+  },
   "info": {
     "title": "Sessionbuddy API",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/v1/health": {
+    "/api/v1/foundation/database": {
       "get": {
-        "operationId": "api_health_api_v1_health_get",
+        "description": "Exercise the configured D1 binding without returning tenant or schema data.",
+        "operationId": "getFoundationDatabaseStatus",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Api Health Api V1 Health Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/DatabaseStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Foundation Database",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/foundation/status": {
+      "get": {
+        "operationId": "getFoundationStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoundationStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Foundation Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getApiHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiHealthResponse"
                 }
               }
             },
@@ -32,17 +321,13 @@
     },
     "/health": {
       "get": {
-        "operationId": "health_health_get",
+        "operationId": "getHealth",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Health Health Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/HealthResponse"
                 }
               }
             },

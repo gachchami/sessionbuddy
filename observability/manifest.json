@@ -20,8 +20,42 @@
       "benchmark": "foundation-health",
       "dashboards": ["release-health"],
       "runbook": "docs/debugging-runbook.md#availability"
+    },
+    "GET /api/v1/foundation/status": {
+      "owner": "foundation",
+      "slo": {
+        "p95_ms": 250,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "foundation-console-status",
+      "dashboards": ["release-health", "api-explorer", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/foundation/database": {
+      "owner": "foundation",
+      "slo": {
+        "p95_ms": 250,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "foundation-d1-probe",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
     }
   },
-  "pages": {},
+  "pages": {
+    "/foundation": {
+      "owner": "foundation",
+      "classification": "synthetic/local",
+      "journeys": ["foundation-console-desktop", "foundation-console-mid-tier-mobile"],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": ["release-health", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    }
+  },
   "async_handlers": {}
 }

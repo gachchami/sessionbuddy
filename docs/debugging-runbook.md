@@ -39,3 +39,9 @@ This is the common diagnostic path for API, page, and asynchronous failures. Use
 ## Closing an incident
 
 Add or strengthen a regression test and benchmark, verify the fix in preview/staging, record before/after results, deploy progressively, and confirm recovery in production. Material incidents record root cause, detection gap, corrective action, owner, and follow-up deadline.
+## Database regression
+
+1. Compare end-to-end latency with the `db` duration in `Server-Timing`; the difference is Worker startup, application, and network time.
+2. Re-run the route benchmark with at least 20 warmups and retain its JSON artifact.
+3. Inspect D1 row metrics and query plans. Confirm tenant predicates use indexed columns and that list limits remain bounded.
+4. Compare from the target user region before changing the SLO. Do not hide a regression by increasing the budget without a recorded decision.

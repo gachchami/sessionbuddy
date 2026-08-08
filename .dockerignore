@@ -1,0 +1,13 @@
+.git
+.DS_Store
+.dev.vars
+.local
+.venv
+.venv-workers
+.cache
+node_modules
+python_modules
+__pycache__
+.pytest_cache
+.ruff_cache
+harness

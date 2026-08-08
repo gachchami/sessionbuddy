@@ -109,6 +109,8 @@ pytestdebug.log
 
 # Python environments and packaging
 .venv/
+.venv-workers/
+python_modules/
 venv/
 env/
 ENV/
@@ -127,6 +129,7 @@ MANIFEST
 
 # JavaScript tooling often used by web frontends
 node_modules/
+.wrangler/
 .npm/
 .yarn/
 .pnpm-store/

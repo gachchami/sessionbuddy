@@ -5,7 +5,8 @@ description = "Performance-first event program management on Cloudflare Python W
 requires-python = ">=3.13,<3.15"
 dependencies = [
   "fastapi>=0.116,<1",
-  "pydantic>=2.11,<3",
+  # Must match the pydantic-core WebAssembly wheel shipped by Pyodide 0.28.3.
+  "pydantic==2.10.6",
 ]
 
 [dependency-groups]
@@ -26,7 +27,7 @@ asyncio_mode = "auto"
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = ["harness"]
+extend-exclude = ["harness", "python_modules", ".venv-workers"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "S"]

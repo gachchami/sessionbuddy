@@ -31,11 +31,11 @@ def test_every_api_route_has_observability_registration() -> None:
         (PROJECT_ROOT / "observability" / "manifest.json").read_text(encoding="utf-8")
     )
     registered = set(manifest["api_routes"])
+    openapi = app.openapi()
     runtime_routes = {
-        f"{method} {route.path}"
-        for route in app.routes
-        for method in (route.methods or set())
-        if method not in {"HEAD", "OPTIONS"} and route.path not in {app.openapi_url}
+        f"{method.upper()} {path}"
+        for path, operations in openapi["paths"].items()
+        for method in operations
     }
 
     assert runtime_routes == registered

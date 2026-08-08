@@ -2,8 +2,11 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "sessionbuddy",
   "main": "src/entry.py",
-  "compatibility_date": "2026-08-08",
+  "compatibility_date": "2026-08-01",
   "compatibility_flags": ["python_workers"],
+  "placement": {
+    "mode": "smart"
+  },
   "observability": {
     "enabled": true,
     "logs": {
@@ -28,5 +31,23 @@
     "APP_ENV": "local",
     "APP_VERSION": "development",
     "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787"
+  },
+  "env": {
+    "dev": {
+      "name": "sessionbuddy-development",
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sessionbuddy-development",
+          "database_id": "bafabb77-7cbd-4b3b-bc30-7df9b9d078e2",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "APP_ENV": "development",
+        "APP_VERSION": "development",
+        "ALLOWED_ORIGINS": ""
+      }
+    }
   }
 }
