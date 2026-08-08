@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Events · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=6">
+  <script src="/admin/events/assets/events.js?v=2" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to event management</a>
+  <header><div class="shell"><strong>SessionBuddy</strong><a href="/admin/programs">Programs</a></div></header>
+  <main id="main" class="shell" tabindex="-1">
+    <p class="eyebrow">Organization administration</p>
+    <h1>Events</h1>
+    <p class="lede">Create events and manage their people, submissions, agenda, and onboarding.</p>
+    <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Checking your session…</div>
+
+    <section class="card">
+      <h2>Organization</h2>
+      <form id="organization-form">
+        <label>Organization<select name="organization_id" id="organization" required></select></label>
+        <label>Name<input name="name" maxlength="200" required></label>
+        <input name="version" type="hidden">
+        <button>Update organization</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2 id="event-form-heading">Create an event</h2>
+      <form id="event-form">
+        <input name="event_id" type="hidden">
+        <input name="version" type="hidden">
+        <label>Event name<input name="name" maxlength="200" required></label>
+        <label>Starts<input name="starts_at" type="datetime-local" required></label>
+        <label>Ends<input name="ends_at" type="datetime-local" required></label>
+        <label>Time zone<input name="time_zone" value="Asia/Kolkata" maxlength="100" required></label>
+        <label>Delivery<select name="delivery_mode"><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid" selected>Hybrid</option></select></label>
+        <label>Location<input name="location" maxlength="500"></label>
+        <label>Description<textarea name="description" maxlength="5000"></textarea></label>
+        <label id="event-status-label" hidden>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
+        <button id="save-event">Create event</button>
+        <button id="cancel-event-edit" type="button" class="secondary" hidden>Cancel edit</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Existing events</h2>
+      <ul id="event-list" class="result"><li>Loading…</li></ul>
+    </section>
+  </main>
+</body>
+</html>

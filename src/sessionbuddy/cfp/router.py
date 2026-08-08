@@ -8,9 +8,11 @@ from fastapi.responses import HTMLResponse, Response
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth import (
+    authenticate_request,
     generate_token,
     hash_token,
     issue_csrf_token,
+    normalize_email,
     validate_session,
 )
 from sessionbuddy.platform.auth.cookies import sign_session_cookie, verify_session_cookie
@@ -35,12 +37,13 @@ from .models import (
     ProgramView,
     PublishedFormView,
     SubmissionCreate,
+    SubmissionDraftUpsert,
+    SubmissionDraftView,
     SubmissionList,
     SubmissionView,
 )
 
 cfp_router = APIRouter()
-FIELDS = ("speaker_name", "proposal_title", "proposal_abstract")
 DEMO_ORG_ID = "11111111-1111-4111-8111-111111111111"
 DEMO_EVENT_ID = "22222222-2222-4222-8222-222222222222"
 DEMO_USER_ID = "33333333-3333-4333-8333-333333333333"
@@ -77,15 +80,13 @@ def _fingerprint(model) -> bytes:
     return hashlib.sha256(canonical.encode()).digest()
 
 
-def _local_page(request: Request, asset: str) -> HTMLResponse:
-    if getattr(_env(request), "APP_ENV", "local") != "local":
-        raise HTTPException(status_code=404)
+def _product_page(request: Request, asset: str) -> HTMLResponse:
     return HTMLResponse(_asset(asset), headers={"Cache-Control": "no-store"})
 
 
 @cfp_router.get("/admin/programs", response_class=HTMLResponse, include_in_schema=False)
 async def admin_programs_page(request: Request) -> HTMLResponse:
-    return _local_page(request, "admin_programs.html")
+    return _product_page(request, "admin_programs.html")
 
 
 @cfp_router.get(
@@ -94,7 +95,7 @@ async def admin_programs_page(request: Request) -> HTMLResponse:
     include_in_schema=False,
 )
 async def admin_submissions_page(program_id: str, request: Request) -> HTMLResponse:
-    return _local_page(request, "admin_submissions.html")
+    return _product_page(request, "admin_submissions.html")
 
 
 @cfp_router.get("/cfp/{slug}", response_class=HTMLResponse, include_in_schema=False)
@@ -114,9 +115,7 @@ async def admin_programs_js() -> Response:
     return Response(_asset("admin_programs.js"), media_type="text/javascript")
 
 
-@cfp_router.get(
-    "/product/assets/public-cfp.js", response_class=Response, include_in_schema=False
-)
+@cfp_router.get("/product/assets/public-cfp.js", response_class=Response, include_in_schema=False)
 async def public_cfp_js() -> Response:
     return Response(_asset("public_cfp.js"), media_type="text/javascript")
 
@@ -219,42 +218,49 @@ async def create_demo_session(request: Request, response: Response) -> DemoSessi
             and existing.user_id == DEMO_USER_ID
             and validate_session(existing, now).active
         ):
-            await db.batch([
-                db.prepare(
-                    """INSERT OR IGNORE INTO users
+            await db.batch(
+                [
+                    db.prepare(
+                        """INSERT OR IGNORE INTO users
                        (id, email, normalized_email, status, email_verified_at_ms,
                         created_at_ms, updated_at_ms)
                        VALUES (?1, 'reviewer@local.invalid', 'reviewer@local.invalid',
                                'active', ?2, ?2, ?2)"""
-                ).bind(DEMO_REVIEWER_USER_ID, now),
-                db.prepare(
-                    """INSERT OR IGNORE INTO organization_memberships
+                    ).bind(DEMO_REVIEWER_USER_ID, now),
+                    db.prepare(
+                        """INSERT OR IGNORE INTO organization_memberships
                        (id, organization_id, user_id, role, status, created_at_ms, updated_at_ms)
                        VALUES (?1, ?2, ?3, 'member', 'active', ?4, ?4)"""
-                ).bind(DEMO_REVIEWER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID,
-                       DEMO_REVIEWER_USER_ID, now),
-                db.prepare(
-                    """INSERT OR IGNORE INTO event_memberships
+                    ).bind(
+                        DEMO_REVIEWER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_REVIEWER_USER_ID, now
+                    ),
+                    db.prepare(
+                        """INSERT OR IGNORE INTO event_memberships
                        (id, organization_id, event_id, user_id, role, status,
                         created_at_ms, updated_at_ms)
                        VALUES (?1, ?2, ?3, ?4, 'evaluator', 'active', ?5, ?5)"""
-                ).bind(DEMO_EVALUATOR_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_EVENT_ID,
-                       DEMO_USER_ID, now),
-                db.prepare(
-                    """INSERT OR IGNORE INTO event_memberships
+                    ).bind(
+                        DEMO_EVALUATOR_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_EVENT_ID, DEMO_USER_ID, now
+                    ),
+                    db.prepare(
+                        """INSERT OR IGNORE INTO event_memberships
                        (id, organization_id, event_id, user_id, role, status,
                         created_at_ms, updated_at_ms)
                        VALUES (?1, ?2, ?3, ?4, 'evaluator', 'active', ?5, ?5)"""
-                ).bind(DEMO_REVIEWER_EVENT_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_EVENT_ID,
-                       DEMO_REVIEWER_USER_ID, now),
-            ])
+                    ).bind(
+                        DEMO_REVIEWER_EVENT_MEMBERSHIP_ID,
+                        DEMO_ORG_ID,
+                        DEMO_EVENT_ID,
+                        DEMO_REVIEWER_USER_ID,
+                        now,
+                    ),
+                ]
+            )
             return DemoSession(
                 organization_id=DEMO_ORG_ID,
                 event_id=DEMO_EVENT_ID,
                 user_id=DEMO_USER_ID,
-                csrf_token=issue_csrf_token(
-                    existing.id, secret(request, "CSRF_HMAC_KEY")
-                ),
+                csrf_token=issue_csrf_token(existing.id, secret(request, "CSRF_HMAC_KEY")),
             )
     session_id = new_id()
     token = generate_token()
@@ -296,8 +302,7 @@ async def create_demo_session(request: Request, response: Response) -> DemoSessi
                 """INSERT OR IGNORE INTO organization_memberships
                    (id, organization_id, user_id, role, status, created_at_ms, updated_at_ms)
                    VALUES (?1, ?2, ?3, 'member', 'active', ?4, ?4)"""
-            ).bind(DEMO_REVIEWER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID,
-                   DEMO_REVIEWER_USER_ID, now),
+            ).bind(DEMO_REVIEWER_ORG_MEMBERSHIP_ID, DEMO_ORG_ID, DEMO_REVIEWER_USER_ID, now),
             db.prepare(
                 """INSERT OR IGNORE INTO event_memberships
                    (id, organization_id, event_id, user_id, role, status,
@@ -386,9 +391,7 @@ async def create_program(
         raise HTTPException(status_code=404)
     key = _idempotency_key(idempotency_key)
     fingerprint = _fingerprint(body)
-    replay = await _find_replay(
-        db, auth.actor.user_id, "POST /api/v1/admin/programs", key
-    )
+    replay = await _find_replay(db, auth.actor.user_id, "POST /api/v1/admin/programs", key)
     if replay:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
@@ -517,7 +520,13 @@ async def publish_form(
             version,
             body.slug,
             body.welcome_text,
-            json.dumps({"fields": FIELDS}, separators=(",", ":")),
+            json.dumps(
+                {
+                    "fields": [field.model_dump() for field in body.fields],
+                    "conditions": [condition.model_dump() for condition in body.conditions],
+                },
+                separators=(",", ":"),
+            ),
             now,
         )
     )
@@ -556,7 +565,8 @@ async def publish_form(
         version=int(version),
         slug=body.slug,
         welcome_text=body.welcome_text,
-        fields=FIELDS,
+        fields=body.fields,
+        conditions=body.conditions,
     )
 
 
@@ -570,7 +580,8 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
     row = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT id, program_id, version, slug, welcome_text FROM call_for_speaker_forms
+            """SELECT id, program_id, version, slug, welcome_text, schema_json
+               FROM call_for_speaker_forms
                WHERE slug = ?1 AND status = 'published'"""
         )
         .bind(slug)
@@ -578,7 +589,120 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
     )
     if row is None:
         raise HTTPException(status_code=404)
-    return PublishedFormView.model_validate({**row, "fields": FIELDS})
+    schema = json.loads(str(row.pop("schema_json")))
+    return PublishedFormView.model_validate({**row, **schema})
+
+
+async def _form_context(db, slug: str):
+    return row_mapping(
+        await db.prepare(
+            """SELECT id,organization_id,event_id,program_id,schema_json
+           FROM call_for_speaker_forms WHERE slug=?1 AND status='published' LIMIT 1"""
+        )
+        .bind(slug)
+        .first()
+    )
+
+
+@cfp_router.get(
+    "/api/v1/forms/{slug}/draft",
+    response_model=SubmissionDraftView | None,
+    tags=["submissions"],
+)
+async def get_submission_draft(slug: str, request: Request) -> SubmissionDraftView | None:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    form = await _form_context(db, slug)
+    if form is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(form["organization_id"]),
+            str(form["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=False,
+    )
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id,form_id,answers_json,version,updated_at_ms FROM submission_drafts
+           WHERE form_id=?1 AND user_id=?2 LIMIT 1"""
+        )
+        .bind(form["id"], authenticated.actor.user_id)
+        .first()
+    )
+    if row is None:
+        return None
+    answers = json.loads(str(row.pop("answers_json")))
+    return SubmissionDraftView.model_validate({**row, "answers": answers})
+
+
+@cfp_router.put(
+    "/api/v1/forms/{slug}/draft",
+    response_model=SubmissionDraftView,
+    tags=["submissions"],
+)
+async def save_submission_draft(
+    slug: str, body: SubmissionDraftUpsert, request: Request
+) -> SubmissionDraftView:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    form = await _form_context(db, slug)
+    if form is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(form["organization_id"]),
+            str(form["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    schema = json.loads(str(form["schema_json"]))
+    known = {str(field.get("key")) for field in schema.get("fields", []) if isinstance(field, dict)}
+    if not set(body.answers) <= known:
+        raise HTTPException(status_code=422)
+    now, draft_id = utc_now_ms(), new_id()
+    answers_json = json.dumps(body.answers, separators=(",", ":"), sort_keys=True)
+    await (
+        db.prepare(
+            """INSERT INTO submission_drafts
+           (id,organization_id,event_id,program_id,form_id,user_id,answers_json,version,
+            created_at_ms,updated_at_ms)
+           VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8)
+           ON CONFLICT(form_id,user_id) DO UPDATE SET answers_json=excluded.answers_json,
+             version=submission_drafts.version+1,updated_at_ms=excluded.updated_at_ms
+           WHERE submission_drafts.version=?9"""
+        )
+        .bind(
+            draft_id,
+            form["organization_id"],
+            form["event_id"],
+            form["program_id"],
+            form["id"],
+            authenticated.actor.user_id,
+            answers_json,
+            now,
+            body.version,
+        )
+        .run()
+    )
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id,form_id,answers_json,version,updated_at_ms FROM submission_drafts
+           WHERE form_id=?1 AND user_id=?2 LIMIT 1"""
+        )
+        .bind(form["id"], authenticated.actor.user_id)
+        .first()
+    )
+    if row is None or int(row["version"]) != body.version + 1:
+        raise HTTPException(status_code=409)
+    answers = json.loads(str(row.pop("answers_json")))
+    return SubmissionDraftView.model_validate({**row, "answers": answers})
 
 
 @cfp_router.post(
@@ -607,7 +731,8 @@ async def create_submission(
     db = _db(request)
     form = row_mapping(
         await db.prepare(
-            """SELECT id, organization_id, event_id, program_id FROM call_for_speaker_forms
+            """SELECT id, organization_id, event_id, program_id, schema_json
+               FROM call_for_speaker_forms
                WHERE slug = ?1 AND status = 'published'"""
         )
         .bind(slug)
@@ -615,9 +740,28 @@ async def create_submission(
     )
     if form is None:
         raise HTTPException(status_code=404)
+    _validate_submission_schema(json.loads(str(form["schema_json"])), body)
+    deployed = getattr(_env(request), "APP_ENV", "production") != "local"
+    authenticated = None
+    if (
+        deployed
+        or request.cookies.get("__Host-session")
+        or request.cookies.get("sessionbuddy-local")
+    ):
+        authenticated = await authenticate_request(request)
+    submitter_user_id = authenticated.actor.user_id if authenticated is not None else None
+    if authenticated is not None:
+        user_email = (
+            await db.prepare("SELECT normalized_email FROM users WHERE id=?1")
+            .bind(submitter_user_id)
+            .first("normalized_email")
+        )
+        if user_email is None or normalize_email(body.speaker_email) != str(user_email):
+            raise HTTPException(status_code=403)
+    principal_key = submitter_user_id or public_session
     fingerprint = _fingerprint(body)
     route_key = "POST /api/v1/forms/{slug}/submissions"
-    replay = await _find_replay(db, public_session, route_key, key)
+    replay = await _find_replay(db, principal_key, route_key, key)
     if replay:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
@@ -625,7 +769,7 @@ async def create_submission(
     now = utc_now_ms()
     submission_id = new_id()
     record = IdempotencyRecord(
-        principal_key=public_session,
+        principal_key=principal_key,
         organization_id=str(form["organization_id"]),
         event_id=str(form["event_id"]),
         route_key=route_key,
@@ -639,9 +783,10 @@ async def create_submission(
         db.prepare(
             """INSERT INTO submissions
                (id, organization_id, event_id, program_id, form_id, public_session_id,
-                proposal_title, proposal_abstract, speaker_name, status, submitted_at_ms,
-                created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'submitted', ?10, ?10, ?10)"""
+                proposal_title, proposal_abstract, speaker_name, speaker_email, answers_json,
+                submitter_user_id, status, submitted_at_ms, created_at_ms, updated_at_ms)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                       ?12, 'submitted', ?13, ?13, ?13)"""
         ).bind(
             submission_id,
             form["organization_id"],
@@ -652,12 +797,73 @@ async def create_submission(
             body.proposal_title,
             body.proposal_abstract,
             body.speaker_name,
+            body.speaker_email,
+            json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
+            submitter_user_id,
             now,
         )
     )
+    if submitter_user_id is not None:
+        batch.add_statement(
+            db.prepare("DELETE FROM submission_drafts WHERE form_id=?1 AND user_id=?2").bind(
+                form["id"], submitter_user_id
+            )
+        )
+        person = row_mapping(
+            await db.prepare(
+                "SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1"
+            )
+            .bind(form["organization_id"], submitter_user_id)
+            .first()
+        )
+        person_id = str(person["id"]) if person is not None else new_id()
+        if person is None:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO people
+                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?5)"""
+                ).bind(
+                    person_id, form["organization_id"], submitter_user_id, body.speaker_name, now
+                )
+            )
+        speaker = row_mapping(
+            await db.prepare(
+                """SELECT id FROM event_speakers
+               WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
+            )
+            .bind(form["organization_id"], form["event_id"], person_id)
+            .first()
+        )
+        event_speaker_id = str(speaker["id"]) if speaker is not None else new_id()
+        if speaker is None:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO event_speakers
+                   (id,organization_id,event_id,person_id,status,accepted_at_ms,last_activity_at_ms,
+                    created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5)"""
+                ).bind(event_speaker_id, form["organization_id"], form["event_id"], person_id, now)
+            )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,snapshot_name,
+                created_at_ms) VALUES(?1,?2,?3,?4,?5,'primary',?6,?7)"""
+            ).bind(
+                new_id(),
+                form["organization_id"],
+                form["event_id"],
+                submission_id,
+                event_speaker_id,
+                body.speaker_name,
+                now,
+            )
+        )
     batch.audit(
         AuditEvent(
-            actor_type="anonymous",
+            actor_type="user" if submitter_user_id is not None else "anonymous",
+            actor_user_id=submitter_user_id,
             action="submission.create",
             target_type="submission",
             target_id=submission_id,
@@ -767,7 +973,7 @@ def _blob(value: object) -> bytes:
 async def _form_by_id(db, form_id: str) -> PublishedFormView:
     row = row_mapping(
         await db.prepare(
-            """SELECT id, program_id, version, slug, welcome_text
+            """SELECT id, program_id, version, slug, welcome_text, schema_json
                FROM call_for_speaker_forms WHERE id = ?1"""
         )
         .bind(form_id)
@@ -775,21 +981,24 @@ async def _form_by_id(db, form_id: str) -> PublishedFormView:
     )
     if row is None:
         raise HTTPException(status_code=404)
-    return PublishedFormView.model_validate({**row, "fields": FIELDS})
+    schema = json.loads(str(row.pop("schema_json")))
+    return PublishedFormView.model_validate({**row, **schema})
 
 
 async def _submission_by_id(db, submission_id: str) -> SubmissionView:
     row = row_mapping(
         await db.prepare(
-            """SELECT id, program_id, speaker_name, proposal_title, proposal_abstract,
-                      status, submitted_at_ms FROM submissions WHERE id = ?1"""
+            """SELECT id, program_id, speaker_name, speaker_email, proposal_title,
+                      proposal_abstract, answers_json, status, submitted_at_ms
+               FROM submissions WHERE id = ?1"""
         )
         .bind(submission_id)
         .first()
     )
     if row is None:
         raise HTTPException(status_code=404)
-    return SubmissionView.model_validate(row)
+    answers = json.loads(str(row.pop("answers_json")))
+    return SubmissionView.model_validate({**row, "answers": answers})
 
 
 def _request_source(request: Request) -> str:
@@ -797,3 +1006,47 @@ def _request_source(request: Request) -> str:
     if connecting_ip:
         return connecting_ip
     return request.client.host if request.client is not None else "unknown"
+
+
+def _validate_submission_schema(schema: dict[str, object], body: SubmissionCreate) -> None:
+    raw_fields = schema.get("fields", [])
+    if not isinstance(raw_fields, list):
+        raise HTTPException(status_code=409)
+    values: dict[str, object] = {
+        "speaker_name": body.speaker_name,
+        "speaker_email": body.speaker_email,
+        "proposal_title": body.proposal_title,
+        "proposal_abstract": body.proposal_abstract,
+        **body.answers,
+    }
+    known = {str(field.get("key")) for field in raw_fields if isinstance(field, dict)}
+    if not set(body.answers) <= known:
+        raise HTTPException(status_code=422)
+    inactive_targets: set[str] = set()
+    raw_conditions = schema.get("conditions", [])
+    if not isinstance(raw_conditions, list):
+        raise HTTPException(status_code=409)
+    for condition in raw_conditions:
+        if not isinstance(condition, dict):
+            raise HTTPException(status_code=409)
+        source_value = str(values.get(str(condition.get("source_key", "")), ""))
+        expected = str(condition.get("value", ""))
+        matches = source_value == expected
+        visible = matches if condition.get("operator") == "equals" else not matches
+        if not visible:
+            inactive_targets.add(str(condition.get("target_key", "")))
+    for field in raw_fields:
+        if not isinstance(field, dict):
+            raise HTTPException(status_code=409)
+        field_key = str(field.get("key", ""))
+        if field_key in inactive_targets:
+            continue
+        value = values.get(field_key)
+        if field.get("required") and (value is None or value == "" or value == []):
+            raise HTTPException(status_code=422)
+        if (
+            field.get("type") == "select"
+            and value not in (None, "")
+            and value not in field.get("choices", [])
+        ):
+            raise HTTPException(status_code=422)

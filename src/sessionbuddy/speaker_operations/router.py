@@ -31,6 +31,8 @@ from sessionbuddy.platform.db.commands import (
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.storage import (
+    ScanResult,
+    malware_scan_disabled,
     parse_signed_scan_response,
     presign_r2_put,
     scan_request_headers,
@@ -82,29 +84,27 @@ def _db(request: Request):
     return db
 
 
-def _local_asset(request: Request, name: str, media_type: str) -> Response:
-    if getattr(request.scope.get("env"), "APP_ENV", "local") != "local":
-        raise HTTPException(status_code=404)
+def _product_asset(request: Request, name: str, media_type: str) -> Response:
     return Response(_asset(name), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @speaker_operations_router.get("/speaker", response_class=HTMLResponse, include_in_schema=False)
 async def speaker_page(request: Request) -> Response:
-    return _local_asset(request, "speaker_portal.html", "text/html")
+    return _product_asset(request, "speaker_portal.html", "text/html")
 
 
 @speaker_operations_router.get(
     "/speaker/assets/speaker.css", response_class=Response, include_in_schema=False
 )
 async def speaker_css(request: Request) -> Response:
-    return _local_asset(request, "speaker.css", "text/css")
+    return _product_asset(request, "speaker.css", "text/css")
 
 
 @speaker_operations_router.get(
     "/speaker/assets/speaker-portal.js", response_class=Response, include_in_schema=False
 )
 async def speaker_js(request: Request) -> Response:
-    return _local_asset(request, "speaker_portal.js", "text/javascript")
+    return _product_asset(request, "speaker_portal.js", "text/javascript")
 
 
 @speaker_operations_router.get(
@@ -113,7 +113,7 @@ async def speaker_js(request: Request) -> Response:
     include_in_schema=False,
 )
 async def admin_onboarding_page(event_id: str, request: Request) -> Response:
-    return _local_asset(request, "admin_onboarding.html", "text/html")
+    return _product_asset(request, "admin_onboarding.html", "text/html")
 
 
 @speaker_operations_router.get(
@@ -122,7 +122,7 @@ async def admin_onboarding_page(event_id: str, request: Request) -> Response:
     include_in_schema=False,
 )
 async def admin_onboarding_css(request: Request) -> Response:
-    return _local_asset(request, "admin_onboarding.css", "text/css")
+    return _product_asset(request, "admin_onboarding.css", "text/css")
 
 
 @speaker_operations_router.get(
@@ -131,7 +131,7 @@ async def admin_onboarding_css(request: Request) -> Response:
     include_in_schema=False,
 )
 async def admin_onboarding_js(request: Request) -> Response:
-    return _local_asset(request, "admin_onboarding.js", "text/javascript")
+    return _product_asset(request, "admin_onboarding.js", "text/javascript")
 
 
 @speaker_operations_router.post(
@@ -1547,9 +1547,19 @@ async def complete_speaker_upload(
     if stored is None or int(stored.size) != int(row["expected_byte_size"]):
         raise HTTPException(status_code=409)
     now = utc_now_ms()
-    local = getattr(request.scope.get("env"), "APP_ENV", "production") == "local"
+    environment = request.scope.get("env")
+    local = getattr(environment, "APP_ENV", "production") == "local"
+    scan_bypassed = malware_scan_disabled(environment)
+    inline_completion = local or scan_bypassed
     scan_result = None
-    if local:
+    if scan_bypassed:
+        scan_result = ScanResult(
+            job_id=str(row["version_id"]),
+            verdict="clean",
+            engine="disabled",
+            signature=None,
+        )
+    elif local:
         stored_body = await _bucket(request).get(str(row["object_key"]))
         if stored_body is None:
             raise HTTPException(status_code=409)
@@ -1559,7 +1569,7 @@ async def complete_speaker_upload(
             raise HTTPException(status_code=503) from exc
         scan_result = await _scan_local_asset(request, str(row["version_id"]), content)
     batch = CommandBatch(db)
-    if local and scan_result is not None:
+    if inline_completion and scan_result is not None:
         batch.add_statement(
             db.prepare(
                 """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
@@ -1589,7 +1599,7 @@ async def complete_speaker_upload(
                 row["version_id"],
                 row["generation"],
                 row["expected_checksum_sha256"],
-                f"local:{row['version_id']}",
+                f"{'bypass' if scan_bypassed else 'local'}:{row['version_id']}",
                 row["version_id"],
                 scan_result.verdict,
                 scan_result.engine,
@@ -1597,7 +1607,7 @@ async def complete_speaker_upload(
                 now,
             )
         )
-    if local and scan_result is not None and scan_result.verdict == "clean":
+    if inline_completion and scan_result is not None and scan_result.verdict == "clean":
         batch.add_statement(
             db.prepare(
                 """UPDATE speaker_asset_versions SET is_current = 0, scan_state = 'superseded',
@@ -1610,9 +1620,9 @@ async def complete_speaker_upload(
                 """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
                       checksum_sha256 = ?3, scan_state = 'clean', is_current = 1,
                       scanned_at_ms = ?4,
-                      scan_result_code = 'clamav_clean'
-               WHERE id = ?5 AND scan_state = 'scanning'
-                 AND generation = ?6 AND checksum_sha256 = ?3
+                      scan_result_code = ?5
+               WHERE id = ?6 AND scan_state = 'scanning'
+                 AND generation = ?7 AND checksum_sha256 = ?3
                  AND EXISTS (
                    SELECT 1 FROM asset_scan_events receipt
                    WHERE receipt.organization_id = speaker_asset_versions.organization_id
@@ -1632,6 +1642,7 @@ async def complete_speaker_upload(
                 row["expected_byte_size"],
                 row["expected_checksum_sha256"],
                 now,
+                "development_bypass" if scan_bypassed else "clamav_clean",
                 row["version_id"],
                 row["generation"],
             )
@@ -1701,14 +1712,22 @@ async def complete_speaker_upload(
             result="succeeded",
             correlation_id=request.state.request_id,
             occurred_at_ms=now,
-            metadata={"local_scan": int(local), "generation": int(row["generation"])},
+            metadata={
+                "local_scan": int(local and not scan_bypassed),
+                "malware_scan_bypassed": int(scan_bypassed),
+                "generation": int(row["generation"]),
+            },
         )
     )
     batch.outbox(
         OutboxMessage(
             organization_id=str(speaker["organization_id"]),
             event_id=event_id,
-            topic="speaker.asset.scan_requested" if not local else "speaker.onboarding.changed",
+            topic=(
+                "speaker.onboarding.changed"
+                if inline_completion
+                else "speaker.asset.scan_requested"
+            ),
             aggregate_type="speaker_asset_version",
             aggregate_id=str(row["version_id"]),
             deduplication_key=f"asset:{row['version_id']}:uploaded",

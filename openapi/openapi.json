@@ -170,6 +170,76 @@
         "title": "AssignmentReassign",
         "type": "object"
       },
+      "BootstrapCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "admin_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Admin Email",
+            "type": "string"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "event_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Event Name",
+            "type": "string"
+          },
+          "organization_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "time_zone": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_name",
+          "event_name",
+          "admin_email",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone"
+        ],
+        "title": "BootstrapCreate",
+        "type": "object"
+      },
+      "BootstrapView": {
+        "properties": {
+          "admin_user_id": {
+            "title": "Admin User Id",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_id",
+          "admin_user_id"
+        ],
+        "title": "BootstrapView",
+        "type": "object"
+      },
       "CapabilityProgressItem": {
         "additionalProperties": false,
         "properties": {
@@ -410,6 +480,51 @@
           "source"
         ],
         "title": "CoverageItem",
+        "type": "object"
+      },
+      "CurrentSession": {
+        "properties": {
+          "authenticated": {
+            "default": true,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "csrf_token"
+        ],
+        "title": "CurrentSession",
         "type": "object"
       },
       "DatabaseStatus": {
@@ -1106,9 +1221,459 @@
         "title": "EvaluatorView",
         "type": "object"
       },
+      "EventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "default": "hybrid",
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "time_zone": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone"
+        ],
+        "title": "EventCreate",
+        "type": "object"
+      },
+      "EventList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EventView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "EventList",
+        "type": "object"
+      },
+      "EventMemberList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EventMemberView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "EventMemberList",
+        "type": "object"
+      },
+      "EventMemberView": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "event_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "role",
+          "status"
+        ],
+        "title": "EventMemberView",
+        "type": "object"
+      },
+      "EventUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "default": "hybrid",
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "status": {
+            "default": "active",
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "time_zone": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone",
+          "version"
+        ],
+        "title": "EventUpdate",
+        "type": "object"
+      },
+      "EventView": {
+        "properties": {
+          "delivery_mode": {
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone",
+          "delivery_mode",
+          "status",
+          "version"
+        ],
+        "title": "EventView",
+        "type": "object"
+      },
+      "FormCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "operator": {
+            "enum": [
+              "equals",
+              "not_equals"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "source_key": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Source Key",
+            "type": "string"
+          },
+          "target_key": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Target Key",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 500,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_key",
+          "operator",
+          "value",
+          "target_key"
+        ],
+        "title": "FormCondition",
+        "type": "object"
+      },
+      "FormFieldDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Choices",
+            "type": "array"
+          },
+          "help_text": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Help Text",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "textarea",
+              "email",
+              "url",
+              "select"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "label"
+        ],
+        "title": "FormFieldDefinition",
+        "type": "object"
+      },
       "FormPublish": {
         "additionalProperties": false,
         "properties": {
+          "conditions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormCondition"
+            },
+            "maxItems": 200,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "fields": {
+            "default": [
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "speaker_name",
+                "label": "Speaker name",
+                "required": true,
+                "type": "text"
+              },
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "speaker_email",
+                "label": "Email",
+                "required": true,
+                "type": "email"
+              },
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "proposal_title",
+                "label": "Proposal title",
+                "required": true,
+                "type": "text"
+              },
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "proposal_abstract",
+                "label": "Proposal abstract",
+                "required": true,
+                "type": "textarea"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FormFieldDefinition"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
           "slug": {
             "maxLength": 80,
             "minLength": 3,
@@ -1128,6 +1693,17 @@
           "welcome_text"
         ],
         "title": "FormPublish",
+        "type": "object"
+      },
+      "GenericAccepted": {
+        "properties": {
+          "accepted": {
+            "default": true,
+            "title": "Accepted",
+            "type": "boolean"
+          }
+        },
+        "title": "GenericAccepted",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1154,6 +1730,134 @@
           }
         },
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "InvitationCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_in_days": {
+            "default": 14,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Expires In Days",
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "event_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "InvitationCreate",
+        "type": "object"
+      },
+      "InvitationList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/InvitationView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "InvitationList",
+        "type": "object"
+      },
+      "InvitationView": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "event_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "email",
+          "role"
+        ],
+        "title": "InvitationView",
+        "type": "object"
+      },
+      "MagicLinkRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "form_slug": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form Slug"
+          },
+          "redirect_path": {
+            "default": "/",
+            "maxLength": 500,
+            "title": "Redirect Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "MagicLinkRequest",
         "type": "object"
       },
       "ManualSendRequest": {
@@ -1381,6 +2085,76 @@
         "title": "OnboardingSummary",
         "type": "object"
       },
+      "OrganizationList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "OrganizationList",
+        "type": "object"
+      },
+      "OrganizationUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "OrganizationUpdate",
+        "type": "object"
+      },
+      "OrganizationView": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "version"
+        ],
+        "title": "OrganizationView",
+        "type": "object"
+      },
       "ProgramCreate": {
         "additionalProperties": false,
         "properties": {
@@ -1454,14 +2228,17 @@
       "PublishedFormView": {
         "additionalProperties": false,
         "properties": {
+          "conditions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormCondition"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
           "fields": {
             "items": {
-              "enum": [
-                "speaker_name",
-                "proposal_title",
-                "proposal_abstract"
-              ],
-              "type": "string"
+              "$ref": "#/components/schemas/FormFieldDefinition"
             },
             "title": "Fields",
             "type": "array"
@@ -1655,6 +2432,34 @@
           "benchmark"
         ],
         "title": "SLODefinition",
+        "type": "object"
+      },
+      "SessionCreated": {
+        "properties": {
+          "authenticated": {
+            "default": true,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "redirect_path": {
+            "title": "Redirect Path",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "csrf_token",
+          "redirect_path"
+        ],
+        "title": "SessionCreated",
         "type": "object"
       },
       "SessionView": {
@@ -2028,6 +2833,35 @@
       "SubmissionCreate": {
         "additionalProperties": false,
         "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Answers",
+            "type": "object"
+          },
           "proposal_abstract": {
             "maxLength": 5000,
             "minLength": 1,
@@ -2038,6 +2872,12 @@
             "maxLength": 200,
             "minLength": 1,
             "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_email": {
+            "default": "",
+            "maxLength": 320,
+            "title": "Speaker Email",
             "type": "string"
           },
           "speaker_name": {
@@ -2123,6 +2963,109 @@
         "title": "SubmissionDecisionView",
         "type": "object"
       },
+      "SubmissionDraftUpsert": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Answers",
+            "type": "object"
+          },
+          "version": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "title": "SubmissionDraftUpsert",
+        "type": "object"
+      },
+      "SubmissionDraftView": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Answers",
+            "type": "object"
+          },
+          "form_id": {
+            "title": "Form Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "title": "Updated At Ms",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "form_id",
+          "answers",
+          "version",
+          "updated_at_ms"
+        ],
+        "title": "SubmissionDraftView",
+        "type": "object"
+      },
       "SubmissionEvaluationResult": {
         "additionalProperties": false,
         "properties": {
@@ -2205,6 +3148,35 @@
       "SubmissionView": {
         "additionalProperties": false,
         "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Answers",
+            "type": "object"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2223,6 +3195,12 @@
             "maxLength": 200,
             "minLength": 1,
             "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_email": {
+            "default": "",
+            "maxLength": 320,
+            "title": "Speaker Email",
             "type": "string"
           },
           "speaker_name": {
@@ -2679,6 +3657,58 @@
         "summary": "Record Submission Decision",
         "tags": [
           "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}": {
+      "patch": {
+        "operationId": "update_event_api_v1_admin_events__event_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Event",
+        "tags": [
+          "administration"
         ]
       }
     },
@@ -3228,6 +4258,242 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/invitations": {
+      "get": {
+        "operationId": "list_invitations_api_v1_admin_events__event_id__invitations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Invitations",
+        "tags": [
+          "administration"
+        ]
+      },
+      "post": {
+        "operationId": "create_invitation_api_v1_admin_events__event_id__invitations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Invitation",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/invitations/{invitation_id}": {
+      "delete": {
+        "operationId": "revoke_invitation_api_v1_admin_events__event_id__invitations__invitation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Invitation",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/members": {
+      "get": {
+        "operationId": "list_event_members_api_v1_admin_events__event_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventMemberList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Members",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/members/{user_id}/roles/{role}": {
+      "delete": {
+        "operationId": "revoke_event_member_api_v1_admin_events__event_id__members__user_id__roles__role__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "enum": [
+                "event_admin",
+                "evaluator",
+                "speaker"
+              ],
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Event Member",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/onboarding": {
       "get": {
         "operationId": "getAdminOnboardingDashboard",
@@ -3401,6 +4667,171 @@
         "summary": "Remind",
         "tags": [
           "communications"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations": {
+      "get": {
+        "operationId": "list_organizations_api_v1_admin_organizations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Organizations",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations/{organization_id}": {
+      "patch": {
+        "operationId": "update_organization_api_v1_admin_organizations__organization_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Organization",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations/{organization_id}/events": {
+      "get": {
+        "operationId": "list_events_api_v1_admin_organizations__organization_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Events",
+        "tags": [
+          "administration"
+        ]
+      },
+      "post": {
+        "operationId": "create_event_api_v1_admin_organizations__organization_id__events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Event",
+        "tags": [
+          "administration"
         ]
       }
     },
@@ -3764,6 +5195,169 @@
         "summary": "Consume Asset Download Grant",
         "tags": [
           "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/auth/magic-links": {
+      "post": {
+        "operationId": "request_magic_link_api_v1_auth_magic_links_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MagicLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Magic Link",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "current_session_api_v1_auth_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current Session",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/verify": {
+      "get": {
+        "operationId": "verify_magic_link_api_v1_auth_verify_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Magic Link",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/bootstrap": {
+      "post": {
+        "operationId": "bootstrap_tenant_api_v1_bootstrap_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Bootstrap-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bootstrap-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootstrapCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bootstrap Tenant",
+        "tags": [
+          "administration"
         ]
       }
     },
@@ -4155,6 +5749,106 @@
         "summary": "Get Form",
         "tags": [
           "forms"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/draft": {
+      "get": {
+        "operationId": "get_submission_draft_api_v1_forms__slug__draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SubmissionDraftView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Submission Draft Api V1 Forms  Slug  Draft Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Submission Draft",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "put": {
+        "operationId": "save_submission_draft_api_v1_forms__slug__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionDraftUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDraftView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Submission Draft",
+        "tags": [
+          "submissions"
         ]
       }
     },

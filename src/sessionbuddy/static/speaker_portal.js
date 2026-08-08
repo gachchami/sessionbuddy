@@ -285,16 +285,7 @@
   });
 
   byId("start-demo").addEventListener("click", async () => {
-    const button = byId("start-demo");
-    button.disabled = true;
-    setStatus("Creating an isolated local speaker session…");
-    try {
-      await api("/api/v1/demo/speaker-session", { method: "POST" });
-      await load();
-    } catch (_) {
-      setStatus("The local speaker demo could not be started.", "error");
-      button.disabled = false;
-    }
+    location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
   });
 
   function updateBiographyCount() {

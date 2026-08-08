@@ -132,11 +132,12 @@ def main() -> None:
     }
     submission_body = {
         "speaker_name": "Synthetic Speaker",
+        "speaker_email": "speaker@example.test",
         "proposal_title": "Observable Workers",
         "proposal_abstract": "Workerd, Pyodide, FastAPI, and D1 compatibility check.",
     }
     status, submission = call(
-        opener,
+        anonymous,
         args.base_url,
         f"/api/v1/forms/{slug}/submissions",
         method="POST",
@@ -145,7 +146,7 @@ def main() -> None:
     )
     expect(status == 201, "submission failed")
     replay_status, replay = call(
-        opener,
+        anonymous,
         args.base_url,
         f"/api/v1/forms/{slug}/submissions",
         method="POST",

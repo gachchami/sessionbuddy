@@ -28,27 +28,68 @@ This record resolves the choices raised by `architecture.md`, `data-architecture
 19. **Operator consoles:** human-ready release, API, page, async, security, and storage/real-time dashboards are P0. Prefer managed/provider consoles backed by the shared telemetry contract; build only thin domain-specific operator views. Console access is least-privilege and audited.
 20. **Future-feature gate:** every API, page, queue consumer, and Workflow must ship its instrumentation, SLO/benchmark scenario, redaction test, dashboard dimensions, and recovery/runbook coverage with the feature.
 
+## Delivery hardening decisions accepted 2026-08-09
+
+1. **MVP identity:** passwordless email is the production authenticator. Unknown
+   addresses receive the same accepted response; users are provisioned only from
+   a valid invitation or published-form context. Passkeys and external identity
+   providers are later options, not release dependencies.
+2. **Initial access:** the first administrator is created only by the one-time,
+   one-organization bootstrap. Its random token is a temporary Worker secret and
+   is removed immediately after the request.
+3. **Uploads:** headshots allow JPEG/PNG/WebP through 5 MiB; slides allow
+   PDF/PPT/PPTX/ODP through 50 MiB; supporting documents allow PDF through
+   20 MiB. Development may record an audited scan bypass. Staging and production
+   fail closed and require an authenticated scanner; quarantined content never
+   becomes current without the exact clean verdict.
+4. **Evaluation:** aggregates are arithmetic means rounded to two decimals for
+   display. Equal scores remain ties and only an authorized human records a
+   decision.
+5. **Agenda conflicts:** MVP room, speaker, event-bound, and exclusive-track
+   conflicts are never overrideable. A later override workflow requires a new
+   audited authorization design rather than a hidden flag.
+6. **Framework:** Python/FastAPI/Pydantic on Python Workers and a compiled
+   React/Vite frontend are accepted, subject to the Worker package and deployed
+   performance gates.
+7. **Retention safety:** until the client approves legal/privacy retention and
+   consent wording, the product performs no silent bulk purge of submissions,
+   audit history, or assets. Production promotion remains gated on that policy.
+8. **Capacity:** the documented large seed remains the provisional envelope.
+   Actual peak traffic/data supplied by the client and a deployed concurrency
+   baseline are promotion inputs, not assumptions embedded in authorization or
+   data design.
+
 ## Foundation scope boundary
 
 platform foundation scaffolds configuration, API conventions, health/readiness surfaces, schema migrations, authentication/RBAC interfaces, tenant-scoped persistence primitives, audit/outbox/idempotency primitives, deterministic foundation seeds, and test commands. It does not implement submission, speaker, evaluation, communication, agenda, or dashboard product journeys.
 
 ## Current verification status
 
-- The Docker gate passes lint, 143 tests, local migrations, Workerd/Pyodide route checks, and a 200-request local health benchmark (0% errors, 8.7 ms p95 on the accepted 2026-08-08 run).
-- The `development` Worker and its isolated D1 database are deployed and report their runtime environment from Cloudflare bindings.
+- The Docker gate passes lint, the full automated suite, local migrations,
+  Workerd/Pyodide route checks, and containerized benchmarks.
+- The `development` Worker is deployed with fully migrated D1, R2,
+  Queues/DLQs, queue consumers, a Workflow, rate-limit bindings, and core HMAC
+  secrets. The read-only remote preflight reports zero deployment failures.
 - `GET /api/v1/engine-room/database` performs a bounded `SELECT 1`, exposes only provider/environment/query duration, and records a `db` Server-Timing phase.
 - The 2026-08-08 APAC client measurement of that route had zero errors but a 362 ms p95, above the provisional 250 ms SLO. Server-Timing decomposition attributed 227 ms p95 to the D1 binding call and approximately 135 ms to client/network overhead. Smart Placement is enabled for a measured before/after comparison; platform foundation remains open until placement has enough traffic to decide and the result is either improved or assigned a justified regional SLO.
 - The development console still requires a Cloudflare Access policy before it may expose non-synthetic operational or tenant data.
 - Zero Trust Free activation was stopped at checkout because Cloudflare requires a payment card and explicit authorization for usage above the free allowance. No billing details or charge authorization were submitted by the implementation agent.
 - The first post-placement request entered Cloudflare at MRS while D1 remained APAC. The initial 20-request result (242 ms D1 p95, 367 ms end-to-end p95) is a pre-decision baseline; the absence of a `cf-placement` response header indicates that Smart Placement had not yet selected a remote execution location.
-- Signed-cookie verification, live-session validation, CSRF/origin/media-type guards, deterministic local rate limiting, and the cookie-to-actor-to-RBAC authentication pipeline are implemented and adversarially tested.
+- Guarded bootstrap, passwordless email challenges, invitation/submission
+  provisioning, signed-cookie verification, live-session validation,
+  CSRF/origin/media-type guards, rate limiting, and the cookie-to-actor-to-RBAC
+  pipeline are implemented and adversarially tested.
 - The synthetic foundation console remains public by design and is constrained by an explicit response DTO and serialization tests. It must be protected before adding identity, tenant, incident, or other non-public operational data.
 - The detailed local acceptance evidence and capability handoff rules are recorded in `docs/platform-acceptance.md`.
 
 ## Deferred decisions with named gates
 
-- Malware scanner and quarantine timeout: decide before speaker assets.
+- Production scanner service/timeout ownership and a reachable endpoint remain
+  provider activation inputs; the application behavior is fail-closed.
 - Exact rate thresholds and WAF rules: decide before public preview load testing.
 - Audit/export access and retention: decide before production data.
 - Per-PR stateful resource provisioning mechanism: decide before enabling automatic remote previews.
-- Real email domain and sender policy: decide before communication staging tests.
+- Client-approved Resend domain, sender/reply-to policy, and test-account
+  ownership remain provider activation inputs.
+- Client-approved retention/consent wording and actual peak traffic remain
+  production-promotion inputs.

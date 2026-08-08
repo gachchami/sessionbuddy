@@ -24,7 +24,7 @@ async def test_speaker_portal_shell_is_local_and_safe(client) -> None:
 
     assert page.status_code == 200
     assert page.headers["cache-control"] == "no-store"
-    assert "Start local speaker demo" in page.text
+    assert ">Sign in</button>" in page.text
     assert javascript.status_code == 200
     assert "innerHTML" not in javascript.text
     assert stylesheet.status_code == 200

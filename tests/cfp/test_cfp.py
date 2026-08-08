@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
 from sessionbuddy.cfp.models import FormPublish, ProgramCreate, SubmissionCreate
+from sessionbuddy.cfp.router import _validate_submission_schema
 from sessionbuddy.console.models import BrowserTelemetryPayload
 
 
@@ -36,6 +37,48 @@ def test_cfp_write_models_are_strict_and_bounded() -> None:
         critical_api_ms=25,
     )
     assert telemetry.page_template == "/cfp-integration"
+
+
+def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
+    schema = FormPublish(
+        slug="conditional-cfp",
+        welcome_text="Welcome",
+        fields=[
+            {"key": "speaker_name", "type": "text", "label": "Name", "required": True},
+            {"key": "speaker_email", "type": "email", "label": "Email", "required": True},
+            {"key": "proposal_title", "type": "text", "label": "Title", "required": True},
+            {
+                "key": "proposal_abstract",
+                "type": "textarea",
+                "label": "Abstract",
+                "required": True,
+            },
+            {
+                "key": "format",
+                "type": "select",
+                "label": "Format",
+                "choices": ["talk", "workshop"],
+            },
+            {"key": "materials", "type": "url", "label": "Materials", "required": True},
+        ],
+        conditions=[
+            {
+                "source_key": "format",
+                "operator": "equals",
+                "value": "workshop",
+                "target_key": "materials",
+            }
+        ],
+    ).model_dump(mode="json")
+    submission = SubmissionCreate(
+        speaker_name="Speaker",
+        speaker_email="speaker@example.com",
+        proposal_title="Title",
+        proposal_abstract="Abstract",
+        answers={"format": "talk"},
+    )
+
+    _validate_submission_schema(schema, submission)
 
 
 async def test_demo_page_and_admin_routes_fail_closed_outside_local() -> None:
@@ -126,18 +169,32 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         admin_js = await client.get("/product/assets/admin-programs.js")
         public_js = await client.get("/product/assets/public-cfp.js")
         submissions_js = await client.get("/product/assets/admin-submissions.js")
+        sign_in = await client.get("/sign-in")
+        access = await client.get("/admin/events/22222222-2222-4222-8222-222222222222/access")
+        events = await client.get("/admin/events")
+        events_js = await client.get("/admin/events/assets/events.js")
         css = await client.get("/product/assets/product.css")
 
     assert {admin.status_code, public.status_code, submissions.status_code, css.status_code} == {
         200
     }
+    assert sign_in.status_code == access.status_code == events.status_code == 200
+    assert "one-time link" in sign_in.text
+    assert "People and invitations" in access.text
+    assert "Organization administration" in events.text
+    assert "Update organization" in events.text
     assert "Program management" in admin.text
+    assert 'href="/admin/events"' in admin.text
     assert "Submit a proposal" in public.text
     assert "Submissions" in submissions.text
     for javascript in (admin_js.text, public_js.text, submissions_js.text):
         assert "innerHTML" not in javascript
         assert "__sessionbuddyTelemetryDraft" in javascript
     assert 'page_template: "/admin/programs"' in admin_js.text
+    assert 'fields.id = "form-fields"' in admin_js.text
+    assert "conditions" in admin_js.text
+    assert "/admin/programs?event_id=" in events_js.text
+    assert 'button("Edit"' in events_js.text
     assert 'page_template: "/cfp/{slug}"' in public_js.text
     assert "const form = event.currentTarget" in public_js.text
     assert "event.currentTarget.querySelectorAll" not in public_js.text

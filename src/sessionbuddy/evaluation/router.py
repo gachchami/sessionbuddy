@@ -44,8 +44,6 @@ def _asset(name: str) -> str:
 
 @evaluation_router.get("/reviews", response_class=HTMLResponse, include_in_schema=False)
 async def reviews_page(request: Request) -> HTMLResponse:
-    if getattr(request.scope.get("env"), "APP_ENV", "local") != "local":
-        raise HTTPException(status_code=404)
     return HTMLResponse(_asset("app/index.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -55,8 +53,6 @@ async def reviews_page(request: Request) -> HTMLResponse:
     include_in_schema=False,
 )
 async def admin_round_page(round_id: str, request: Request) -> HTMLResponse:
-    if getattr(request.scope.get("env"), "APP_ENV", "local") != "local":
-        raise HTTPException(status_code=404)
     return HTMLResponse(_asset("app/index.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -130,9 +126,9 @@ async def create_evaluation_round(
 ) -> EvaluationRoundView:
     db = _db(request)
     program = row_mapping(
-        await db.prepare(
-            "SELECT organization_id, event_id FROM programs WHERE id = ?1"
-        ).bind(program_id).first()
+        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
+        .bind(program_id)
+        .first()
     )
     if program is None:
         raise HTTPException(status_code=404)
@@ -152,30 +148,40 @@ async def create_evaluation_round(
             """SELECT request_fingerprint, response_resource_id FROM idempotency_records
                WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
                  AND state = 'completed'"""
-        ).bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest()).first()
+        )
+        .bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest())
+        .first()
     )
     if replay:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
         return await _round_view(db, str(replay["response_resource_id"]))
 
-    active_round = await db.prepare(
-        """SELECT 1 AS found FROM evaluation_rounds
+    active_round = (
+        await db.prepare(
+            """SELECT 1 AS found FROM evaluation_rounds
            WHERE organization_id = ?1 AND event_id = ?2 AND program_id = ?3
              AND status = 'open' LIMIT 1"""
-    ).bind(organization_id, event_id, program_id).first("found")
+        )
+        .bind(organization_id, event_id, program_id)
+        .first("found")
+    )
     if active_round is not None:
         raise HTTPException(status_code=409)
 
     evaluator_placeholders = ",".join(
         f"?{index + 3}" for index in range(len(body.evaluator_user_ids))
     )
-    evaluators = result_rows(await db.prepare(
-        f"""SELECT user_id FROM event_memberships
+    evaluators = result_rows(
+        await db.prepare(
+            f"""SELECT user_id FROM event_memberships
             WHERE organization_id = ?1 AND event_id = ?2
               AND user_id IN ({evaluator_placeholders})
               AND role = 'evaluator' AND status = 'active'"""  # noqa: S608
-    ).bind(organization_id, event_id, *body.evaluator_user_ids).all())
+        )
+        .bind(organization_id, event_id, *body.evaluator_user_ids)
+        .all()
+    )
     if {str(row["user_id"]) for row in evaluators} != set(body.evaluator_user_ids):
         raise HTTPException(status_code=400)
     placeholders = ",".join(f"?{index + 4}" for index in range(len(body.submission_ids)))
@@ -183,7 +189,9 @@ async def create_evaluation_round(
         await db.prepare(
             f"""SELECT id FROM submissions WHERE organization_id = ?1 AND event_id = ?2
                   AND program_id = ?3 AND id IN ({placeholders})"""  # noqa: S608
-        ).bind(organization_id, event_id, program_id, *body.submission_ids).all()
+        )
+        .bind(organization_id, event_id, program_id, *body.submission_ids)
+        .all()
     )
     if {str(row["id"]) for row in submissions} != set(body.submission_ids):
         raise HTTPException(status_code=400)
@@ -213,8 +221,15 @@ async def create_evaluation_round(
                (id, organization_id, event_id, program_id, name, rubric_json, status,
                 created_at_ms, updated_at_ms)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?7)"""
-        ).bind(round_id, organization_id, event_id, program_id, body.name,
-               json.dumps(rubric, separators=(",", ":"), sort_keys=True), now)
+        ).bind(
+            round_id,
+            organization_id,
+            event_id,
+            program_id,
+            body.name,
+            json.dumps(rubric, separators=(",", ":"), sort_keys=True),
+            now,
+        )
     )
     assignment_pairs = _assignment_pairs(
         body.submission_ids, body.evaluator_user_ids, body.assignment_strategy
@@ -226,27 +241,43 @@ async def create_evaluation_round(
                    (id, organization_id, event_id, round_id, submission_id,
                     evaluator_user_id, status, created_at_ms, updated_at_ms)
                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'assigned', ?7, ?7)"""
-            ).bind(new_id(), organization_id, event_id, round_id, submission_id,
-                   evaluator_id, now)
+            ).bind(new_id(), organization_id, event_id, round_id, submission_id, evaluator_id, now)
         )
     batch.audit(
         AuditEvent(
-            actor_type="user", actor_user_id=auth.actor.user_id,
-            action="evaluation_round.create", target_type="evaluation_round",
-            target_id=round_id, result="succeeded",
-            correlation_id=request.state.request_id, occurred_at_ms=now,
-            organization_id=organization_id, event_id=event_id,
-            metadata={"assignment_count": len(assignment_pairs),
-                      "evaluator_count": len(body.evaluator_user_ids),
-                      "assignment_strategy": body.assignment_strategy},
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="evaluation_round.create",
+            target_type="evaluation_round",
+            target_id=round_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={
+                "assignment_count": len(assignment_pairs),
+                "evaluator_count": len(body.evaluator_user_ids),
+                "assignment_strategy": body.assignment_strategy,
+            },
         )
     )
-    batch.complete_idempotency(record, status=201, resource_type="evaluation_round",
-                               resource_id=round_id, completed_at_ms=now)
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="evaluation_round",
+        resource_id=round_id,
+        completed_at_ms=now,
+    )
     await _execute(request, batch)
-    return EvaluationRoundView(id=round_id, program_id=program_id, name=body.name,
-                               status="open", assignment_count=len(assignment_pairs),
-                               evaluator_count=len(body.evaluator_user_ids))
+    return EvaluationRoundView(
+        id=round_id,
+        program_id=program_id,
+        name=body.name,
+        status="open",
+        assignment_count=len(assignment_pairs),
+        evaluator_count=len(body.evaluator_user_ids),
+    )
 
 
 @evaluation_router.get(
@@ -259,23 +290,30 @@ async def get_current_evaluation_round(
     program_id: str, request: Request
 ) -> EvaluationRoundView | None:
     db = _db(request)
-    program = row_mapping(await db.prepare(
-        "SELECT organization_id, event_id FROM programs WHERE id = ?1"
-    ).bind(program_id).first())
+    program = row_mapping(
+        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
+        .bind(program_id)
+        .first()
+    )
     if program is None:
         raise HTTPException(status_code=404)
     await require_permission(
-        request, Permission.EVALUATION_RESULTS_READ,
+        request,
+        Permission.EVALUATION_RESULTS_READ,
         ResourceContext(str(program["organization_id"]), str(program["event_id"])),
         mutation=False,
     )
-    row = row_mapping(await db.prepare(
-        """SELECT r.id, r.program_id, r.name, r.status, COUNT(a.id) AS assignment_count,
+    row = row_mapping(
+        await db.prepare(
+            """SELECT r.id, r.program_id, r.name, r.status, COUNT(a.id) AS assignment_count,
                   COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
            FROM evaluation_rounds r LEFT JOIN evaluation_assignments a ON a.round_id = r.id
            WHERE r.program_id = ?1 AND r.status = 'open'
            GROUP BY r.id ORDER BY r.created_at_ms DESC LIMIT 1"""
-    ).bind(program_id).first())
+        )
+        .bind(program_id)
+        .first()
+    )
     return EvaluationRoundView.model_validate(row) if row is not None else None
 
 
@@ -287,23 +325,30 @@ async def get_current_evaluation_round(
 )
 async def list_program_evaluators(program_id: str, request: Request) -> EvaluatorList:
     db = _db(request)
-    program = row_mapping(await db.prepare(
-        "SELECT organization_id, event_id FROM programs WHERE id = ?1"
-    ).bind(program_id).first())
+    program = row_mapping(
+        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
+        .bind(program_id)
+        .first()
+    )
     if program is None:
         raise HTTPException(status_code=404)
     await require_permission(
-        request, Permission.SUBMISSION_MANAGE,
+        request,
+        Permission.SUBMISSION_MANAGE,
         ResourceContext(str(program["organization_id"]), str(program["event_id"])),
         mutation=False,
     )
-    rows = result_rows(await db.prepare(
-        """SELECT u.id AS user_id, u.email AS display_name
+    rows = result_rows(
+        await db.prepare(
+            """SELECT u.id AS user_id, u.email AS display_name
            FROM event_memberships em JOIN users u ON u.id = em.user_id
            WHERE em.organization_id = ?1 AND em.event_id = ?2
              AND em.role = 'evaluator' AND em.status = 'active' AND u.status = 'active'
            ORDER BY u.normalized_email LIMIT 100"""
-    ).bind(program["organization_id"], program["event_id"]).all())
+        )
+        .bind(program["organization_id"], program["event_id"])
+        .all()
+    )
     return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
 
 
@@ -316,8 +361,11 @@ async def list_program_evaluators(program_id: str, request: Request) -> Evaluato
 async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
     authenticated = await authenticate_request(request)
     rows = result_rows(
-        await _timed_all(request, _db(request).prepare(
-            """SELECT a.id, a.round_id, r.name AS round_name, a.submission_id,
+        await _timed_all(
+            request,
+            _db(request)
+            .prepare(
+                """SELECT a.id, a.round_id, r.name AS round_name, a.submission_id,
                       s.proposal_title, s.proposal_abstract, s.speaker_name,
                       r.organization_id, r.event_id, r.rubric_json,
                       COALESCE(e.state, 'not_started') AS evaluation_state,
@@ -329,31 +377,45 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                LEFT JOIN evaluations e ON e.assignment_id = a.id
                WHERE a.evaluator_user_id = ?1 AND a.status != 'revoked'
                ORDER BY a.created_at_ms DESC, a.id DESC LIMIT 100"""
-        ).bind(authenticated.actor.user_id))
+            )
+            .bind(authenticated.actor.user_id),
+        )
     )
     data: list[EvaluationAssignmentView] = []
     for row in rows:
         await require_permission(
-            request, Permission.SUBMISSION_READ_FOR_EVALUATION,
-            ResourceContext(str(row["organization_id"]), str(row["event_id"]),
-                            evaluator_assigned=True, evaluation_round_open=True),
+            request,
+            Permission.SUBMISSION_READ_FOR_EVALUATION,
+            ResourceContext(
+                str(row["organization_id"]),
+                str(row["event_id"]),
+                evaluator_assigned=True,
+                evaluation_round_open=True,
+            ),
             mutation=False,
         )
         rubric = json.loads(str(row["rubric_json"]))
-        data.append(EvaluationAssignmentView(
-            id=str(row["id"]), round_id=str(row["round_id"]),
-            round_name=str(row["round_name"]), submission_id=str(row["submission_id"]),
-            proposal_title=str(row["proposal_title"]),
-            proposal_abstract=str(row["proposal_abstract"]), speaker_name=str(row["speaker_name"]),
-            rating_min=int(rubric["rating"]["min"]), rating_max=int(rubric["rating"]["max"]),
-            recommendations=list(rubric["recommendation"]["choices"]),
-            evaluator_guidance=str(rubric.get("guidance", "")),
-            evaluation_state=str(row["evaluation_state"]),
-            rating=int(row["rating"]) if row["rating"] is not None else None,
-            recommendation=(str(row["recommendation"])
-                            if row["recommendation"] is not None else None),
-            internal_comment=str(row["internal_comment"]),
-        ))
+        data.append(
+            EvaluationAssignmentView(
+                id=str(row["id"]),
+                round_id=str(row["round_id"]),
+                round_name=str(row["round_name"]),
+                submission_id=str(row["submission_id"]),
+                proposal_title=str(row["proposal_title"]),
+                proposal_abstract=str(row["proposal_abstract"]),
+                speaker_name=str(row["speaker_name"]),
+                rating_min=int(rubric["rating"]["min"]),
+                rating_max=int(rubric["rating"]["max"]),
+                recommendations=list(rubric["recommendation"]["choices"]),
+                evaluator_guidance=str(rubric.get("guidance", "")),
+                evaluation_state=str(row["evaluation_state"]),
+                rating=int(row["rating"]) if row["rating"] is not None else None,
+                recommendation=(
+                    str(row["recommendation"]) if row["recommendation"] is not None else None
+                ),
+                internal_comment=str(row["internal_comment"]),
+            )
+        )
     return EvaluationAssignmentList(data=data)
 
 
@@ -370,20 +432,28 @@ async def save_evaluation(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EvaluationView:
     db = _db(request)
-    assignment = row_mapping(await db.prepare(
-        """SELECT a.id, a.organization_id, a.event_id, a.round_id, a.evaluator_user_id,
+    assignment = row_mapping(
+        await db.prepare(
+            """SELECT a.id, a.organization_id, a.event_id, a.round_id, a.evaluator_user_id,
                   a.status, r.status AS round_status, r.rubric_json, e.id AS evaluation_id,
                   e.state AS existing_state, COALESCE(e.version, 0) AS existing_version
            FROM evaluation_assignments a JOIN evaluation_rounds r ON r.id = a.round_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id WHERE a.id = ?1 LIMIT 1"""
-    ).bind(assignment_id).first())
+        )
+        .bind(assignment_id)
+        .first()
+    )
     if assignment is None:
         raise HTTPException(status_code=404)
     authenticated = await require_permission(
-        request, Permission.EVALUATION_SAVE,
-        ResourceContext(str(assignment["organization_id"]), str(assignment["event_id"]),
-                        evaluator_assigned=True,
-                        evaluation_round_open=assignment["round_status"] == "open"),
+        request,
+        Permission.EVALUATION_SAVE,
+        ResourceContext(
+            str(assignment["organization_id"]),
+            str(assignment["event_id"]),
+            evaluator_assigned=True,
+            evaluation_round_open=assignment["round_status"] == "open",
+        ),
         mutation=True,
     )
     if str(assignment["evaluator_user_id"]) != authenticated.actor.user_id:
@@ -401,11 +471,15 @@ async def save_evaluation(
     fingerprint = hashlib.sha256(
         json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
     ).digest()
-    replay = row_mapping(await db.prepare(
-        """SELECT request_fingerprint, response_resource_id FROM idempotency_records
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint, response_resource_id FROM idempotency_records
            WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
              AND state = 'completed'"""
-    ).bind(authenticated.actor.user_id, route, hashlib.sha256(key.encode()).digest()).first())
+        )
+        .bind(authenticated.actor.user_id, route, hashlib.sha256(key.encode()).digest())
+        .first()
+    )
     if replay:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
@@ -418,13 +492,17 @@ async def save_evaluation(
     record = IdempotencyRecord(
         principal_key=authenticated.actor.user_id,
         organization_id=str(assignment["organization_id"]),
-        event_id=str(assignment["event_id"]), route_key=route, idempotency_key=key,
-        request_fingerprint=fingerprint, expires_at_ms=now + 86_400_000,
+        event_id=str(assignment["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
-    batch.add_statement(db.prepare(
-        """INSERT INTO evaluations
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO evaluations
            (id, organization_id, event_id, round_id, assignment_id, evaluator_user_id,
             rating, recommendation, internal_comment, state, version, created_at_ms,
             updated_at_ms, finalized_at_ms)
@@ -435,28 +513,55 @@ async def save_evaluation(
              version = excluded.version, updated_at_ms = excluded.updated_at_ms,
              finalized_at_ms = excluded.finalized_at_ms
            WHERE evaluations.state = 'draft'"""
-    ).bind(evaluation_id, assignment["organization_id"], assignment["event_id"],
-           assignment["round_id"], assignment_id, authenticated.actor.user_id,
-           body.rating, body.recommendation, body.internal_comment, body.state,
-           version, now, finalized_at))
+        ).bind(
+            evaluation_id,
+            assignment["organization_id"],
+            assignment["event_id"],
+            assignment["round_id"],
+            assignment_id,
+            authenticated.actor.user_id,
+            body.rating,
+            body.recommendation,
+            body.internal_comment,
+            body.state,
+            version,
+            now,
+            finalized_at,
+        )
+    )
     if body.state == "final":
-        batch.add_statement(db.prepare(
-            """UPDATE evaluation_assignments SET status = 'completed', updated_at_ms = ?1
+        batch.add_statement(
+            db.prepare(
+                """UPDATE evaluation_assignments SET status = 'completed', updated_at_ms = ?1
                WHERE id = ?2 AND evaluator_user_id = ?3 AND status = 'assigned'"""
-        ).bind(now, assignment_id, authenticated.actor.user_id))
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=authenticated.actor.user_id,
-        action=f"evaluation.{body.state}", target_type="evaluation",
-        target_id=evaluation_id, result="succeeded", correlation_id=request.state.request_id,
-        occurred_at_ms=now, organization_id=str(assignment["organization_id"]),
-        event_id=str(assignment["event_id"]),
-        metadata={"state": body.state, "version": version},
-    ))
-    batch.complete_idempotency(record, status=200, resource_type="evaluation",
-                               resource_id=evaluation_id, completed_at_ms=now)
+            ).bind(now, assignment_id, authenticated.actor.user_id)
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action=f"evaluation.{body.state}",
+            target_type="evaluation",
+            target_id=evaluation_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(assignment["organization_id"]),
+            event_id=str(assignment["event_id"]),
+            metadata={"state": body.state, "version": version},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation",
+        resource_id=evaluation_id,
+        completed_at_ms=now,
+    )
     await _execute(request, batch)
-    return EvaluationView(id=evaluation_id, assignment_id=assignment_id,
-                          version=version, **body.model_dump())
+    return EvaluationView(
+        id=evaluation_id, assignment_id=assignment_id, version=version, **body.model_dump()
+    )
 
 
 @evaluation_router.post(
@@ -472,20 +577,28 @@ async def declare_conflict(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> ConflictView:
     db = _db(request)
-    assignment = row_mapping(await db.prepare(
-        """SELECT a.organization_id, a.event_id, a.round_id, a.evaluator_user_id,
+    assignment = row_mapping(
+        await db.prepare(
+            """SELECT a.organization_id, a.event_id, a.round_id, a.evaluator_user_id,
                   a.status, r.status AS round_status, e.state AS evaluation_state
            FROM evaluation_assignments a JOIN evaluation_rounds r ON r.id = a.round_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            WHERE a.id = ?1 LIMIT 1"""
-    ).bind(assignment_id).first())
+        )
+        .bind(assignment_id)
+        .first()
+    )
     if assignment is None:
         raise HTTPException(status_code=404)
     auth = await require_permission(
-        request, Permission.EVALUATION_SAVE,
-        ResourceContext(str(assignment["organization_id"]), str(assignment["event_id"]),
-                        evaluator_assigned=True,
-                        evaluation_round_open=assignment["round_status"] == "open"),
+        request,
+        Permission.EVALUATION_SAVE,
+        ResourceContext(
+            str(assignment["organization_id"]),
+            str(assignment["event_id"]),
+            evaluator_assigned=True,
+            evaluation_round_open=assignment["round_status"] == "open",
+        ),
         mutation=True,
     )
     if str(assignment["evaluator_user_id"]) != auth.actor.user_id:
@@ -501,33 +614,62 @@ async def declare_conflict(
     now = utc_now_ms()
     conflict_id = new_id()
     record = IdempotencyRecord(
-        principal_key=auth.actor.user_id, organization_id=str(assignment["organization_id"]),
-        event_id=str(assignment["event_id"]), route_key=route, idempotency_key=key,
-        request_fingerprint=fingerprint, expires_at_ms=now + 86_400_000,
+        principal_key=auth.actor.user_id,
+        organization_id=str(assignment["organization_id"]),
+        event_id=str(assignment["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
-    batch.add_statement(db.prepare(
-        """INSERT INTO evaluation_conflicts
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO evaluation_conflicts
            (id, organization_id, event_id, round_id, assignment_id, evaluator_user_id,
             conflict_type, explanation, declared_at_ms)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"""
-    ).bind(conflict_id, assignment["organization_id"], assignment["event_id"],
-           assignment["round_id"], assignment_id, auth.actor.user_id,
-           body.conflict_type, body.explanation, now))
-    batch.add_statement(db.prepare(
-        """UPDATE evaluation_assignments SET status = 'revoked', updated_at_ms = ?1
+        ).bind(
+            conflict_id,
+            assignment["organization_id"],
+            assignment["event_id"],
+            assignment["round_id"],
+            assignment_id,
+            auth.actor.user_id,
+            body.conflict_type,
+            body.explanation,
+            now,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_assignments SET status = 'revoked', updated_at_ms = ?1
            WHERE id = ?2 AND evaluator_user_id = ?3 AND status = 'assigned'"""
-    ).bind(now, assignment_id, auth.actor.user_id))
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=auth.actor.user_id,
-        action="evaluation.conflict.declare", target_type="evaluation_assignment",
-        target_id=assignment_id, result="succeeded", correlation_id=request.state.request_id,
-        occurred_at_ms=now, organization_id=str(assignment["organization_id"]),
-        event_id=str(assignment["event_id"]), metadata={"conflict_type": body.conflict_type},
-    ))
-    batch.complete_idempotency(record, status=200, resource_type="evaluation_conflict",
-                               resource_id=conflict_id, completed_at_ms=now)
+        ).bind(now, assignment_id, auth.actor.user_id)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="evaluation.conflict.declare",
+            target_type="evaluation_assignment",
+            target_id=assignment_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(assignment["organization_id"]),
+            event_id=str(assignment["event_id"]),
+            metadata={"conflict_type": body.conflict_type},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_conflict",
+        resource_id=conflict_id,
+        completed_at_ms=now,
+    )
     await _execute(request, batch)
     return ConflictView(id=conflict_id, assignment_id=assignment_id, **body.model_dump())
 
@@ -545,28 +687,36 @@ async def reassign_conflict(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> ReassignmentView:
     db = _db(request)
-    assignment = row_mapping(await db.prepare(
-        """SELECT a.organization_id, a.event_id, a.round_id, a.submission_id,
+    assignment = row_mapping(
+        await db.prepare(
+            """SELECT a.organization_id, a.event_id, a.round_id, a.submission_id,
                   a.status, r.status AS round_status
            FROM evaluation_assignments a JOIN evaluation_rounds r ON r.id = a.round_id
            JOIN evaluation_conflicts c ON c.assignment_id = a.id
            WHERE a.id = ?1 LIMIT 1"""
-    ).bind(assignment_id).first())
+        )
+        .bind(assignment_id)
+        .first()
+    )
     if assignment is None:
         raise HTTPException(status_code=404)
     auth = await require_permission(
-        request, Permission.SUBMISSION_MANAGE,
+        request,
+        Permission.SUBMISSION_MANAGE,
         ResourceContext(str(assignment["organization_id"]), str(assignment["event_id"])),
         mutation=True,
     )
     if assignment["status"] != "revoked" or assignment["round_status"] != "open":
         raise HTTPException(status_code=409)
-    evaluator = await db.prepare(
-        """SELECT 1 AS found FROM event_memberships WHERE organization_id = ?1
+    evaluator = (
+        await db.prepare(
+            """SELECT 1 AS found FROM event_memberships WHERE organization_id = ?1
            AND event_id = ?2 AND user_id = ?3 AND role = 'evaluator'
            AND status = 'active' LIMIT 1"""
-    ).bind(assignment["organization_id"], assignment["event_id"],
-           body.evaluator_user_id).first("found")
+        )
+        .bind(assignment["organization_id"], assignment["event_id"], body.evaluator_user_id)
+        .first("found")
+    )
     if evaluator is None:
         raise HTTPException(status_code=400)
     key = _key(idempotency_key)
@@ -574,41 +724,73 @@ async def reassign_conflict(
     fingerprint = _fingerprint(body)
     replay = await _idempotency_replay(db, auth.actor.user_id, route, key, fingerprint)
     if replay is not None:
-        row = row_mapping(await db.prepare(
-            "SELECT id, evaluator_user_id FROM evaluation_assignments WHERE id = ?1"
-        ).bind(replay).first())
+        row = row_mapping(
+            await db.prepare(
+                "SELECT id, evaluator_user_id FROM evaluation_assignments WHERE id = ?1"
+            )
+            .bind(replay)
+            .first()
+        )
         if row is None:
             raise HTTPException(status_code=404)
-        return ReassignmentView(assignment_id=str(row["id"]),
-                                evaluator_user_id=str(row["evaluator_user_id"]))
+        return ReassignmentView(
+            assignment_id=str(row["id"]), evaluator_user_id=str(row["evaluator_user_id"])
+        )
     now = utc_now_ms()
     new_assignment_id = new_id()
     record = IdempotencyRecord(
-        principal_key=auth.actor.user_id, organization_id=str(assignment["organization_id"]),
-        event_id=str(assignment["event_id"]), route_key=route, idempotency_key=key,
-        request_fingerprint=fingerprint, expires_at_ms=now + 86_400_000,
+        principal_key=auth.actor.user_id,
+        organization_id=str(assignment["organization_id"]),
+        event_id=str(assignment["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
-    batch.add_statement(db.prepare(
-        """INSERT INTO evaluation_assignments
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO evaluation_assignments
            (id, organization_id, event_id, round_id, submission_id, evaluator_user_id,
             status, created_at_ms, updated_at_ms)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'assigned', ?7, ?7)"""
-    ).bind(new_assignment_id, assignment["organization_id"], assignment["event_id"],
-           assignment["round_id"], assignment["submission_id"], body.evaluator_user_id, now))
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=auth.actor.user_id,
-        action="evaluation.assignment.reassign", target_type="evaluation_assignment",
-        target_id=new_assignment_id, result="succeeded", correlation_id=request.state.request_id,
-        occurred_at_ms=now, organization_id=str(assignment["organization_id"]),
-        event_id=str(assignment["event_id"]), metadata={"replaced_assignment_id": assignment_id},
-    ))
-    batch.complete_idempotency(record, status=200, resource_type="evaluation_assignment",
-                               resource_id=new_assignment_id, completed_at_ms=now)
+        ).bind(
+            new_assignment_id,
+            assignment["organization_id"],
+            assignment["event_id"],
+            assignment["round_id"],
+            assignment["submission_id"],
+            body.evaluator_user_id,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="evaluation.assignment.reassign",
+            target_type="evaluation_assignment",
+            target_id=new_assignment_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(assignment["organization_id"]),
+            event_id=str(assignment["event_id"]),
+            metadata={"replaced_assignment_id": assignment_id},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_assignment",
+        resource_id=new_assignment_id,
+        completed_at_ms=now,
+    )
     await _execute(request, batch)
-    return ReassignmentView(assignment_id=new_assignment_id,
-                            evaluator_user_id=body.evaluator_user_id)
+    return ReassignmentView(
+        assignment_id=new_assignment_id, evaluator_user_id=body.evaluator_user_id
+    )
 
 
 @evaluation_router.get(
@@ -619,19 +801,28 @@ async def reassign_conflict(
 )
 async def get_round_results(round_id: str, request: Request) -> EvaluationRoundResults:
     db = _db(request)
-    round_row = row_mapping(await _timed_first(request, db.prepare(
-        """SELECT id, organization_id, event_id, name, status
+    round_row = row_mapping(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT id, organization_id, event_id, name, status
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
-    ).bind(round_id)))
+            ).bind(round_id),
+        )
+    )
     if round_row is None:
         raise HTTPException(status_code=404)
     await require_permission(
-        request, Permission.EVALUATION_RESULTS_READ,
+        request,
+        Permission.EVALUATION_RESULTS_READ,
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=False,
     )
-    rows = result_rows(await _timed_all(request, db.prepare(
-        """SELECT s.id AS submission_id, s.speaker_name, s.proposal_title,
+    rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT s.id AS submission_id, s.speaker_name, s.proposal_title,
                   COUNT(a.id) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
                   AVG(CASE WHEN e.state = 'final' THEN e.rating END) AS average_rating,
@@ -644,19 +835,32 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
            WHERE a.round_id = ?1 AND a.status != 'revoked'
            GROUP BY s.id, s.speaker_name, s.proposal_title, d.decision
            ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 100"""
-    ).bind(round_id)))
-    submissions = [SubmissionEvaluationResult(
-        submission_id=str(row["submission_id"]), speaker_name=str(row["speaker_name"]),
-        proposal_title=str(row["proposal_title"]), assigned_count=int(row["assigned_count"]),
-        completed_count=int(row["completed_count"] or 0),
-        average_rating=(round(float(row["average_rating"]), 2)
-                        if row["average_rating"] is not None else None),
-        decision=(str(row["decision"]) if row["decision"] is not None else None),
-    ) for row in rows]
+            ).bind(round_id),
+        )
+    )
+    submissions = [
+        SubmissionEvaluationResult(
+            submission_id=str(row["submission_id"]),
+            speaker_name=str(row["speaker_name"]),
+            proposal_title=str(row["proposal_title"]),
+            assigned_count=int(row["assigned_count"]),
+            completed_count=int(row["completed_count"] or 0),
+            average_rating=(
+                round(float(row["average_rating"]), 2)
+                if row["average_rating"] is not None
+                else None
+            ),
+            decision=(str(row["decision"]) if row["decision"] is not None else None),
+        )
+        for row in rows
+    ]
     assigned_count = sum(item.assigned_count for item in submissions)
     completed_count = sum(item.completed_count for item in submissions)
-    evaluator_rows = result_rows(await _timed_all(request, db.prepare(
-        """SELECT a.evaluator_user_id, u.email AS display_name,
+    evaluator_rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT a.evaluator_user_id, u.email AS display_name,
                   SUM(CASE WHEN a.status != 'revoked' THEN 1 ELSE 0 END) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
                   COUNT(c.id) AS conflict_count
@@ -665,15 +869,24 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
            LEFT JOIN evaluation_conflicts c ON c.assignment_id = a.id
            WHERE a.round_id = ?1 GROUP BY a.evaluator_user_id, u.email
            ORDER BY u.normalized_email LIMIT 100"""
-    ).bind(round_id)))
-    evaluator_progress = [EvaluatorProgress(
-        evaluator_user_id=str(row["evaluator_user_id"]),
-        display_name=str(row["display_name"]), assigned_count=int(row["assigned_count"] or 0),
-        completed_count=int(row["completed_count"] or 0),
-        conflict_count=int(row["conflict_count"] or 0),
-    ) for row in evaluator_rows]
-    conflict_rows = result_rows(await _timed_all(request, db.prepare(
-        """SELECT c.assignment_id, c.evaluator_user_id, u.email AS evaluator_name,
+            ).bind(round_id),
+        )
+    )
+    evaluator_progress = [
+        EvaluatorProgress(
+            evaluator_user_id=str(row["evaluator_user_id"]),
+            display_name=str(row["display_name"]),
+            assigned_count=int(row["assigned_count"] or 0),
+            completed_count=int(row["completed_count"] or 0),
+            conflict_count=int(row["conflict_count"] or 0),
+        )
+        for row in evaluator_rows
+    ]
+    conflict_rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT c.assignment_id, c.evaluator_user_id, u.email AS evaluator_name,
                   s.proposal_title, c.conflict_type,
                   NOT EXISTS (
                     SELECT 1 FROM evaluation_assignments replacement
@@ -687,7 +900,9 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
            JOIN submissions s ON s.id = a.submission_id
            WHERE c.round_id = ?1 AND a.status = 'revoked'
            ORDER BY c.declared_at_ms DESC LIMIT 100"""
-    ).bind(round_id)))
+            ).bind(round_id),
+        )
+    )
     conflicts = [ConflictProgress.model_validate(row) for row in conflict_rows]
     weighted_ratings = [
         (item.average_rating, item.completed_count)
@@ -695,8 +910,11 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         if item.average_rating is not None
     ]
     return EvaluationRoundResults(
-        round_id=round_id, round_name=str(round_row["name"]), status=str(round_row["status"]),
-        assigned_count=assigned_count, completed_count=completed_count,
+        round_id=round_id,
+        round_name=str(round_row["name"]),
+        status=str(round_row["status"]),
+        assigned_count=assigned_count,
+        completed_count=completed_count,
         average_rating=_weighted_mean(weighted_ratings),
         submissions=submissions,
         evaluators=evaluator_progress,
@@ -716,14 +934,19 @@ async def close_evaluation_round(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EvaluationRoundClosed:
     db = _db(request)
-    round_row = row_mapping(await db.prepare(
-        """SELECT id, organization_id, event_id, status
+    round_row = row_mapping(
+        await db.prepare(
+            """SELECT id, organization_id, event_id, status
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
-    ).bind(round_id).first())
+        )
+        .bind(round_id)
+        .first()
+    )
     if round_row is None:
         raise HTTPException(status_code=404)
     auth = await require_permission(
-        request, Permission.SUBMISSION_MANAGE,
+        request,
+        Permission.SUBMISSION_MANAGE,
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=True,
     )
@@ -735,8 +958,9 @@ async def close_evaluation_round(
     replay = await _idempotency_replay(db, auth.actor.user_id, route, key, fingerprint)
     if replay is not None:
         return EvaluationRoundClosed(round_id=round_id)
-    counts = row_mapping(await db.prepare(
-        """SELECT COUNT(DISTINCT submission_id) AS total_submissions,
+    counts = row_mapping(
+        await db.prepare(
+            """SELECT COUNT(DISTINCT submission_id) AS total_submissions,
                   COUNT(DISTINCT CASE WHEN status != 'revoked' THEN submission_id END)
                     AS covered_submissions,
                   SUM(CASE WHEN status != 'revoked' AND
@@ -744,7 +968,10 @@ async def close_evaluation_round(
                                 WHERE e.assignment_id = evaluation_assignments.id
                                   AND e.state = 'final') THEN 1 ELSE 0 END) AS outstanding
            FROM evaluation_assignments WHERE round_id = ?1"""
-    ).bind(round_id).first())
+        )
+        .bind(round_id)
+        .first()
+    )
     if (
         counts is None
         or int(counts["total_submissions"] or 0) == 0
@@ -754,25 +981,44 @@ async def close_evaluation_round(
         raise HTTPException(status_code=409)
     now = utc_now_ms()
     record = IdempotencyRecord(
-        principal_key=auth.actor.user_id, organization_id=str(round_row["organization_id"]),
-        event_id=str(round_row["event_id"]), route_key=route, idempotency_key=key,
-        request_fingerprint=fingerprint, expires_at_ms=now + 86_400_000,
+        principal_key=auth.actor.user_id,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
-    batch.add_statement(db.prepare(
-        """UPDATE evaluation_rounds SET status = 'closed', closed_at_ms = ?1,
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_rounds SET status = 'closed', closed_at_ms = ?1,
              updated_at_ms = ?1 WHERE id = ?2 AND status = 'open'"""
-    ).bind(now, round_id))
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=auth.actor.user_id,
-        action="evaluation_round.close", target_type="evaluation_round",
-        target_id=round_id, result="succeeded", correlation_id=request.state.request_id,
-        occurred_at_ms=now, organization_id=str(round_row["organization_id"]),
-        event_id=str(round_row["event_id"]), metadata={"evaluations_read_only": True},
-    ))
-    batch.complete_idempotency(record, status=200, resource_type="evaluation_round",
-                               resource_id=round_id, completed_at_ms=now)
+        ).bind(now, round_id)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="evaluation_round.close",
+            target_type="evaluation_round",
+            target_id=round_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            metadata={"evaluations_read_only": True},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_round",
+        resource_id=round_id,
+        completed_at_ms=now,
+    )
     await _execute(request, batch)
     return EvaluationRoundClosed(round_id=round_id)
 
@@ -791,19 +1037,24 @@ async def record_submission_decision(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> SubmissionDecisionView:
     db = _db(request)
-    context = row_mapping(await db.prepare(
-        """SELECT r.organization_id, r.event_id, COUNT(a.id) AS assigned_count,
+    context = row_mapping(
+        await db.prepare(
+            """SELECT r.organization_id, r.event_id, COUNT(a.id) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count
            FROM evaluation_rounds r
            JOIN evaluation_assignments a ON a.round_id = r.id
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            WHERE r.id = ?1 AND a.submission_id = ?2
            GROUP BY r.organization_id, r.event_id"""
-    ).bind(round_id, submission_id).first())
+        )
+        .bind(round_id, submission_id)
+        .first()
+    )
     if context is None:
         raise HTTPException(status_code=404)
     auth = await require_permission(
-        request, Permission.SUBMISSION_MANAGE,
+        request,
+        Permission.SUBMISSION_MANAGE,
         ResourceContext(str(context["organization_id"]), str(context["event_id"])),
         mutation=True,
     )
@@ -812,91 +1063,148 @@ async def record_submission_decision(
     key = _key(idempotency_key)
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
     fingerprint = _fingerprint(body)
-    replay = row_mapping(await db.prepare(
-        """SELECT request_fingerprint, response_resource_id FROM idempotency_records
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint, response_resource_id FROM idempotency_records
            WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
              AND state = 'completed'"""
-    ).bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest()).first())
+        )
+        .bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest())
+        .first()
+    )
     if replay:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
         return await _decision_view(db, str(replay["response_resource_id"]))
-    existing = row_mapping(await db.prepare(
-        "SELECT id, version FROM submission_decisions WHERE round_id = ?1 AND submission_id = ?2"
-    ).bind(round_id, submission_id).first())
+    existing = row_mapping(
+        await db.prepare(
+            """SELECT id, version FROM submission_decisions
+               WHERE round_id = ?1 AND submission_id = ?2"""
+        )
+        .bind(round_id, submission_id)
+        .first()
+    )
     if existing is not None:
         raise HTTPException(status_code=409)
     decision_id = new_id()
     version = 1
     now = utc_now_ms()
     record = IdempotencyRecord(
-        principal_key=auth.actor.user_id, organization_id=str(context["organization_id"]),
-        event_id=str(context["event_id"]), route_key=route, idempotency_key=key,
-        request_fingerprint=fingerprint, expires_at_ms=now + 86_400_000,
+        principal_key=auth.actor.user_id,
+        organization_id=str(context["organization_id"]),
+        event_id=str(context["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
-    batch.add_statement(db.prepare(
-        """INSERT INTO submission_decisions
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO submission_decisions
            (id, organization_id, event_id, round_id, submission_id, decision,
             internal_reason, version, decided_by_user_id, decided_at_ms, updated_at_ms)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
            """
-    ).bind(decision_id, context["organization_id"], context["event_id"], round_id,
-           submission_id, body.decision, body.internal_reason, version,
-           auth.actor.user_id, now))
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=auth.actor.user_id,
-        action="submission.decision.record", target_type="submission",
-        target_id=submission_id, result="succeeded", correlation_id=request.state.request_id,
-        occurred_at_ms=now, organization_id=str(context["organization_id"]),
-        event_id=str(context["event_id"]),
-        metadata={"decision": body.decision, "version": version, "communication_sent": False},
-    ))
-    batch.complete_idempotency(record, status=200, resource_type="submission_decision",
-                               resource_id=decision_id, completed_at_ms=now)
+        ).bind(
+            decision_id,
+            context["organization_id"],
+            context["event_id"],
+            round_id,
+            submission_id,
+            body.decision,
+            body.internal_reason,
+            version,
+            auth.actor.user_id,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="submission.decision.record",
+            target_type="submission",
+            target_id=submission_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(context["organization_id"]),
+            event_id=str(context["event_id"]),
+            metadata={"decision": body.decision, "version": version, "communication_sent": False},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="submission_decision",
+        resource_id=decision_id,
+        completed_at_ms=now,
+    )
     await _execute(request, batch)
-    return SubmissionDecisionView(id=decision_id, submission_id=submission_id,
-                                  round_id=round_id, version=version, **body.model_dump())
+    return SubmissionDecisionView(
+        id=decision_id,
+        submission_id=submission_id,
+        round_id=round_id,
+        version=version,
+        **body.model_dump(),
+    )
 
 
 async def _round_view(db, round_id: str) -> EvaluationRoundView:
-    row = row_mapping(await db.prepare(
-        """SELECT r.id, r.program_id, r.name, r.status, COUNT(a.id) AS assignment_count,
+    row = row_mapping(
+        await db.prepare(
+            """SELECT r.id, r.program_id, r.name, r.status, COUNT(a.id) AS assignment_count,
                   COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
            FROM evaluation_rounds r LEFT JOIN evaluation_assignments a ON a.round_id = r.id
            WHERE r.id = ?1 GROUP BY r.id"""
-    ).bind(round_id).first())
+        )
+        .bind(round_id)
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=404)
     return EvaluationRoundView.model_validate(row)
 
 
 async def _evaluation_view(db, evaluation_id: str) -> EvaluationView:
-    row = row_mapping(await db.prepare(
-        """SELECT id, assignment_id, rating, recommendation, internal_comment, state, version
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id, assignment_id, rating, recommendation, internal_comment, state, version
            FROM evaluations WHERE id = ?1"""
-    ).bind(evaluation_id).first())
+        )
+        .bind(evaluation_id)
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=404)
     return EvaluationView.model_validate(row)
 
 
 async def _decision_view(db, decision_id: str) -> SubmissionDecisionView:
-    row = row_mapping(await db.prepare(
-        """SELECT id, submission_id, round_id, decision, internal_reason, version
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id, submission_id, round_id, decision, internal_reason, version
            FROM submission_decisions WHERE id = ?1"""
-    ).bind(decision_id).first())
+        )
+        .bind(decision_id)
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=404)
     return SubmissionDecisionView.model_validate(row)
 
 
 async def _conflict_view(db, conflict_id: str) -> ConflictView:
-    row = row_mapping(await db.prepare(
-        """SELECT id, assignment_id, conflict_type, explanation
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id, assignment_id, conflict_type, explanation
            FROM evaluation_conflicts WHERE id = ?1"""
-    ).bind(conflict_id).first())
+        )
+        .bind(conflict_id)
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=404)
     return ConflictView.model_validate(row)
@@ -905,11 +1213,15 @@ async def _conflict_view(db, conflict_id: str) -> ConflictView:
 async def _idempotency_replay(
     db, principal: str, route: str, key: str, fingerprint: bytes
 ) -> str | None:
-    replay = row_mapping(await db.prepare(
-        """SELECT request_fingerprint, response_resource_id FROM idempotency_records
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint, response_resource_id FROM idempotency_records
            WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
              AND state = 'completed'"""
-    ).bind(principal, route, hashlib.sha256(key.encode()).digest()).first())
+        )
+        .bind(principal, route, hashlib.sha256(key.encode()).digest())
+        .first()
+    )
     if replay is None:
         return None
     if _blob(replay["request_fingerprint"]) != fingerprint:

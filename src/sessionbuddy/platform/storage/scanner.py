@@ -15,6 +15,15 @@ class ScanResult:
     signature: str | None
 
 
+def malware_scan_disabled(environment: object | None) -> bool:
+    """Allow an explicit scanner bypass only in non-production environments."""
+    if environment is None:
+        return False
+    app_env = str(getattr(environment, "APP_ENV", "production")).strip().lower()
+    mode = str(getattr(environment, "MALWARE_SCAN_MODE", "required")).strip().lower()
+    return app_env in {"local", "development"} and mode == "disabled"
+
+
 def scan_request_headers(
     secret: bytes, *, job_id: str, timestamp_ms: int, content: bytes
 ) -> dict[str, str]:

@@ -11,7 +11,10 @@
     "worker:dev": "uv run pywrangler dev",
     "worker:migrate": "uv run pywrangler d1 migrations apply DB --local",
     "worker:migrate:dev": "uv run pywrangler d1 migrations apply DB --remote --env dev",
-    "worker:deploy:dev": "uv run pywrangler deploy --env dev"
+    "worker:deploy:dev": "uv run pywrangler deploy --env dev",
+    "worker:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev --deployment-only",
+    "worker:activation:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev",
+    "worker:bootstrap:dev": "uv run python scripts/bootstrap_cloudflare.py --env dev"
   },
   "devDependencies": {
     "@types/react": "^19.1.10",

@@ -78,6 +78,8 @@
     "APP_ENV": "local",
     "APP_VERSION": "development",
     "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787",
+    "MALWARE_SCAN_MODE": "required",
+    "PUBLIC_BASE_URL": "http://localhost:8787",
     "RESEND_FROM_ADDRESS": "SessionBuddy Local <events@example.test>",
     "SCANNER_URL": "http://scanner:8080"
   },
@@ -142,7 +144,11 @@
       "vars": {
         "APP_ENV": "development",
         "APP_VERSION": "development",
-        "ALLOWED_ORIGINS": "",
+        "ALLOWED_ORIGINS": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
+        "CLOUDFLARE_ACCOUNT_ID": "11b5e48aa7648b805e4602b5e980beb2",
+        "MALWARE_SCAN_MODE": "disabled",
+        "PUBLIC_BASE_URL": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
+        "R2_BUCKET_NAME": "sessionbuddy-assets-development",
         "RESEND_FROM_ADDRESS": "SessionBuddy <events@example.com>",
         "SCANNER_URL": ""
       }

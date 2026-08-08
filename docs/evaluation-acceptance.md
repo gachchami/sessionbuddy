@@ -1,6 +1,6 @@
 # Evaluation evaluation acceptance record
 
-Status: local vertical slice accepted
+Status: application complete and included in the deployed Cloudflare development Worker
 
 Evaluation implements the MVP submission-review lifecycle:
 

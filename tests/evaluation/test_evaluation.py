@@ -98,7 +98,7 @@ async def test_review_workspace_is_local_only_and_bundled() -> None:
     assert telemetry.page_template == "/reviews"
 
 
-async def test_review_workspace_and_api_fail_closed_outside_local() -> None:
+async def test_review_workspace_deploys_but_api_requires_identity() -> None:
     environment = SimpleNamespace(
         APP_ENV="development",
         DB=object(),
@@ -119,6 +119,6 @@ async def test_review_workspace_and_api_fail_closed_outside_local() -> None:
             "/admin/evaluation-rounds/11111111-1111-4111-8111-111111111111"
         )
 
-    assert page.status_code == 404
-    assert admin.status_code == 404
+    assert page.status_code == 200
+    assert admin.status_code == 200
     assert assignments.status_code == 401

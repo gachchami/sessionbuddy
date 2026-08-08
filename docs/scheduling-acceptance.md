@@ -1,6 +1,6 @@
 # Scheduling agenda acceptance record
 
-Status: local MVP complete
+Status: application complete and included in the deployed Cloudflare development Worker
 
 Scheduling implements the conflict-safe agenda slice from `requirements.md` Section 5.5:
 

@@ -11,6 +11,7 @@ from sessionbuddy.console import engine_room_router
 from sessionbuddy.evaluation import evaluation_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
 from sessionbuddy.platform.auth import session_router
+from sessionbuddy.platform.auth.access import access_router
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
@@ -29,6 +30,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
 app.include_router(engine_room_router)
 app.include_router(session_router)
+app.include_router(access_router)
 app.include_router(cfp_router)
 app.include_router(evaluation_router)
 app.include_router(speaker_operations_router)

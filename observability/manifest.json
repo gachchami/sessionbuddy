@@ -1,6 +1,104 @@
 {
   "schema_version": 1,
   "api_routes": {
+    "GET /api/v1/admin/organizations": {
+      "owner": "identity",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "admin-list-organizations",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "PATCH /api/v1/admin/organizations/{organization_id}": {
+      "owner": "identity",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "admin-update-organization",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/events": {
+      "owner": "identity",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "admin-list-events",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/events": {
+      "owner": "identity",
+      "slo": {"p95_ms": 600, "error_rate_max": 0.001},
+      "benchmark": "admin-create-event",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "PATCH /api/v1/admin/events/{event_id}": {
+      "owner": "identity",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "admin-update-event",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/bootstrap": {
+      "owner": "identity",
+      "slo": {"p95_ms": 750, "error_rate_max": 0.001},
+      "benchmark": "identity-bootstrap",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/admin/events/{event_id}/invitations": {
+      "owner": "identity",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "identity-create-invitation",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/events/{event_id}/invitations": {
+      "owner": "identity",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "identity-list-invitations",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "DELETE /api/v1/admin/events/{event_id}/invitations/{invitation_id}": {
+      "owner": "identity",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "identity-revoke-invitation",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/events/{event_id}/members": {
+      "owner": "identity",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "identity-list-members",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "DELETE /api/v1/admin/events/{event_id}/members/{user_id}/roles/{role}": {
+      "owner": "identity",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "identity-revoke-member-role",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/auth/magic-links": {
+      "owner": "identity",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "identity-magic-link-request",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/auth/verify": {
+      "owner": "identity",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "identity-magic-link-verify",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/auth/session": {
+      "owner": "identity",
+      "slo": {"p95_ms": 250, "error_rate_max": 0.001},
+      "benchmark": "identity-current-session",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
     "GET /api/v1/health": {
       "owner": "platform-operations",
       "slo": {
@@ -109,6 +207,20 @@
       "slo": {"p95_ms": 250, "error_rate_max": 0.001},
       "benchmark": "cfp-get-form",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/forms/{slug}/draft": {
+      "owner": "program-management",
+      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
+      "benchmark": "cfp-get-draft",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "PUT /api/v1/forms/{slug}/draft": {
+      "owner": "program-management",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "cfp-save-draft",
+      "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/forms/{slug}/submissions": {

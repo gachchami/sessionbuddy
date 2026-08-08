@@ -37,7 +37,7 @@
   }
   async function load() {
     try {
-      const session = await api("/api/v1/demo/session", { method: "POST" });
+      const session = await api("/api/v1/auth/session");
       state.csrf = session.csrf_token;
       state.userId = session.user_id;
       const result = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/submissions`);

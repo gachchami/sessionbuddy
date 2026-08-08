@@ -1,6 +1,7 @@
 # Release readiness release-hardening acceptance record
 
-Status: local release gate complete; isolated Cloudflare staging rehearsal pending
+Status: local release gate and isolated Cloudflare development rehearsal complete;
+provider activation and first-administrator bootstrap pending
 
 Release readiness turns the product capabilities into a repeatable, container-first release candidate.
 
@@ -65,15 +66,31 @@ the full test suite, executes the large seed and restore rehearsal, runs all cap
 smokes, desktop/mobile browser accessibility checks, API benchmarks, Lighthouse,
 and a Wrangler deployment dry run. It does not deploy or mutate remote resources.
 
+After an authorized development deployment, run the read-only remote audit:
+
+```bash
+docker compose run --rm --no-deps worker npm run worker:preflight:dev
+```
+
+The accepted 2026-08-09 rehearsal reported 18 passing deployment checks, four
+explicit activation inputs, and zero failures. D1 had no pending migrations;
+the R2 bucket, Queues/DLQs, producer/consumer triggers, Workflow, core HMAC
+secrets, health route, browser routes, and anonymous `401` identity boundary
+were present. No Cloudflare Container was configured.
+
 ## Remaining promotion gates
 
 Before production promotion:
 
-1. Run this same gate against an isolated Cloudflare preview D1/R2/Queue/Workflow
-   environment with synthetic data.
-2. Configure a verified Resend test sender and production scanner endpoint/secrets.
+1. Configure a verified Resend test sender/key and direct-R2 access credentials,
+   then provide the client-approved first administrator/event details.
+2. Run `worker:activation:preflight:dev`, bootstrap once, and exercise delivered
+   magic-link/invitation email plus a direct R2 upload. Development scanning is
+   explicitly bypassed; a production promotion additionally requires a reachable
+   scanner endpoint and secret.
 3. Run the full Section 8 concurrency envelope and compare it with an accepted
    staging baseline; local SQLite/query-plan evidence is not a substitute for D1.
 4. Exercise provider retry/dead-letter recovery and record the D1 restore operator,
    recovery point, recovery time, and application smoke result.
-5. Resolve the remaining product decisions in `requirements.md` Section 14.
+5. Record the client-approved retention/consent policy and actual traffic/data
+   envelope listed in `requirements.md` Section 14.

@@ -4,8 +4,22 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from pydantic import ValidationError
 
-from sessionbuddy.platform.storage import presign_r2_put
+from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
 from sessionbuddy.speaker_operations.models import UploadAuthorizationCreate
+
+
+class _Environment:
+    def __init__(self, app_env: str, mode: str) -> None:
+        self.APP_ENV = app_env
+        self.MALWARE_SCAN_MODE = mode
+
+
+def test_malware_scan_bypass_is_explicit_and_non_production_only() -> None:
+    assert malware_scan_disabled(_Environment("development", "disabled"))
+    assert malware_scan_disabled(_Environment("local", "disabled"))
+    assert not malware_scan_disabled(_Environment("development", "required"))
+    assert not malware_scan_disabled(_Environment("production", "disabled"))
+    assert not malware_scan_disabled(None)
 
 
 def test_upload_contract_rejects_paths_and_invalid_checksums() -> None:

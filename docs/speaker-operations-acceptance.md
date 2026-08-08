@@ -1,6 +1,6 @@
 # Speaker operations speaker onboarding acceptance record
 
-Status: local MVP acceptance complete; production provider activation pending
+Status: application and Cloudflare development deployment complete; provider activation pending
 
 This slice establishes the security and persistence boundary for accepted-speaker
 onboarding:
@@ -19,9 +19,11 @@ onboarding:
 - Portal and dashboard task queries have separate tenant-scoped indexes for the
   MVP load envelope.
 
-The local-only speaker-session bootstrap exists solely to make this flow
-reviewable before the production passwordless email provider is selected. It is
-unavailable outside `APP_ENV=local`.
+The local-only speaker-session bootstrap remains a deterministic test adapter and
+is unavailable outside `APP_ENV=local`. Product environments use the production
+passwordless flow: an administrator invitation or a published-form registration
+creates a scoped challenge, and verification provisions the user, memberships,
+person, and event-speaker ownership records before opening `/speaker`.
 
 The second and third local slices add the operational dashboard and private
 speaker assets:
@@ -62,7 +64,9 @@ The completed Speaker operations foundation also includes:
   Correctness does not depend on receiving a push notification.
 
 The local acceptance smoke proves clean promotion and download, EICAR rejection,
-and deterministic reminder queue/delivery through Workerd. Activating production
-delivery requires creating the configured queues/DLQs and setting the Resend and
-scanner secrets; those account operations are deployment configuration, not an
-alternate application path.
+and deterministic reminder queue/delivery through Workerd. The Cloudflare
+development R2 bucket, Queues/DLQs, consumers, and Workflow are provisioned and
+deployed. Activating delivered email and direct browser uploads still requires a
+verified Resend sender/key and R2 S3 credentials. Development scanning is
+explicitly bypassed; staging/production remain fail-closed until a scanner
+endpoint and secret are configured.

@@ -30,8 +30,8 @@ docker compose up --build worker
 
 Review the product-shaped CFP management flow at these local URLs:
 
-- `http://localhost:8787/admin/programs` — local admin sign-in, program creation,
-  and immutable public-form publication.
+- `http://localhost:8787/admin/programs` — administrator sign-in, program creation,
+  and configurable public-form publication.
 - `http://localhost:8787/cfp/{published-slug}` — public proposal submission; use
   the exact link shown after publishing.
 - `http://localhost:8787/admin/programs/{program-id}/submissions` — authorized
@@ -39,17 +39,17 @@ Review the product-shaped CFP management flow at these local URLs:
 
 `http://localhost:8787/cfp-integration` remains the engineering integration harness. It
 uses synthetic local data and exposes the full sequence on one page for rapid
-diagnosis. The local bootstrap creates an opaque HTTP-only session; admin
-requests are authorized from D1 memberships and require a session-bound CSRF
-proof. The bootstrap and admin product pages deliberately return 404 outside
-`APP_ENV=local` until the production identity provider is selected.
+diagnosis. Product environments use guarded one-time administrator bootstrap and
+passwordless email challenges. Invitations provision event administrators,
+evaluators, or speakers only after email verification; public-form registration
+provisions only the owning speaker. Every authenticated mutation uses the same
+opaque HTTP-only session, live D1 membership, origin, and session-bound CSRF checks.
 
 Evaluation workflow starts from a program's submission-review page. Open the
 initial round there, then use `http://localhost:8787/reviews` for the React/Vite
 evaluator workspace. The current vertical slice supports assignment-scoped
-reads, resumable drafts, rubric validation, and immutable finalization. It
-remains local-only until production identity and evaluator invitation flows are
-selected.
+reads, resumable drafts, rubric validation, and immutable finalization. Evaluator
+access in deployed environments is granted through an administrator invitation.
 
 After a round is opened, its submission page links to
 `/admin/evaluation-rounds/{round-id}`. That admin dashboard shows completion and
@@ -65,13 +65,11 @@ assignment strategies: `balanced` distributes submissions round-robin, while
 server validates evaluator membership and submission scope before creating the
 atomic assignment batch.
 
-Speaker operations starts at `http://localhost:8787/speaker`. If the
-browser currently holds an admin session, choose **Start local speaker demo** to
-replace it with an isolated speaker session. The first reviewable slice shows an
-accepted proposal and outstanding biography task; saving the profile completes
-that task atomically and emits the audit/outbox records required by later
-communications and real-time dashboard slices. The accepted contract and
-remaining speaker-operations work are recorded in `docs/product-status.md`.
+Speaker operations starts at `http://localhost:8787/speaker`. Local development
+retains **Start local speaker demo** for deterministic testing. In a deployed
+environment, a speaker signs in after an administrator invitation or after
+registering through a published proposal form. The portal is derived from the
+verified user's explicit ownership records, never from a browser-supplied email.
 
 Scheduling is available after the local speaker and admin demo
 sessions have been initialized:
@@ -92,7 +90,9 @@ docker compose run --rm --no-deps worker uv run python \
 See `docs/product-status.md` for the implemented boundary and remaining provider
 activation work.
 
-Release readiness provides the complete local release-hardening gate:
+Release readiness provides the complete local release-hardening gate. The shell
+launcher runs on the host only to orchestrate Docker Compose; Node, Python,
+Pywrangler, Wrangler, tests, builds, and benchmarks execute in containers:
 
 ```bash
 ./scripts/release_gate.sh
@@ -145,7 +145,7 @@ docker compose run --rm worker uv run python scripts/smoke_cfp.py \
 Authenticate Wrangler without exposing host credentials to the container:
 
 ```bash
-docker compose run --rm worker npx wrangler login --device --browser=false
+docker compose run --rm --no-deps worker npx wrangler login --device --browser=false
 ```
 
 The OAuth credentials are stored in the Docker-managed `wrangler-config`
@@ -154,8 +154,24 @@ volume, not in the repository or host configuration directory.
 Apply migrations and deploy the isolated Cloudflare development environment:
 
 ```bash
-docker compose run --rm worker npm run worker:migrate:dev
-docker compose run --rm worker npm run worker:deploy:dev
+docker compose run --rm --no-deps worker npm run worker:migrate:dev
+docker compose run --rm --no-deps worker npm run worker:deploy:dev
+docker compose run --rm --no-deps worker npm run worker:preflight:dev
+```
+
+The deployment preflight is read-only. The stricter
+`worker:activation:preflight:dev` command remains non-zero until email, direct
+R2 upload credentials, and initial bootstrap are complete. Perform the one-time
+bootstrap without exposing or retaining its token:
+
+```bash
+docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
+  --organization-name "Example Events" \
+  --event-name "Example Conference" \
+  --admin-email "admin@example.com" \
+  --starts-at "2026-11-01T09:00:00+05:30" \
+  --ends-at "2026-11-01T18:00:00+05:30" \
+  --time-zone "Asia/Kolkata"
 ```
 
 The commands below are available inside the container for focused development:
@@ -171,6 +187,8 @@ npm run worker:sync
 npm run worker:dev
 ```
 
+See [deployment configuration](docs/deployment-configuration.md) for Cloudflare variables, secrets, the one-time administrator bootstrap, and the development malware-scan bypass.
+
 `pywrangler sync` is the dependency compatibility gate. It resolves against the
 Pyodide index selected by `compatibility_date`, writes the reviewed `pylock.toml`,
 and installs generated Worker packages into ignored local directories. Commit
@@ -182,17 +200,18 @@ Apply the local D1 migration after Pywrangler is available:
 npm run worker:migrate
 ```
 
-Run the fast host-ASGI benchmark:
+Run the fast ASGI benchmark inside the worker container:
 
 ```bash
-uv run python scripts/benchmark_api.py --output .local/benchmarks/engine-room.json
+docker compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
+  --output .local/benchmarks/engine-room.json
 ```
 
 With the local Worker running, exercise Pyodide, Workerd, and the HTTP boundary:
 
 ```bash
-uv run python scripts/benchmark_api.py \
-  --base-url http://127.0.0.1:8787 \
+docker compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
+  --base-url http://worker:8787 \
   --output .local/benchmarks/engine-room-worker.json
 ```
 

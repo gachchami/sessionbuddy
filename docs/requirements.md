@@ -565,14 +565,25 @@ A feature is done when:
 - Documentation and the OpenAPI contract are updated.
 - Preview, staging, and production verification steps in Section 11 pass.
 
-## 14. Decisions required before implementation
+## 14. Production inputs and resolved defaults
 
-Only decisions that materially change the MVP remain open:
+Implementation-changing MVP defaults are resolved in `platform-decisions.md`:
 
-1. Maximum upload size/type and malware-scanning provider.
-2. Resend sender domain, reply-to behavior, and test-account ownership.
-3. Exact scoring aggregate and tie-breaking rule.
-4. Whether room conflicts are ever overrideable and who can override them.
-5. Actual peak traffic and data volume for replacing the provisional load envelope.
-6. Data retention and legal/privacy consent wording.
-7. Framework choice for the Cloudflare application, provided it satisfies the budgets and local workflow above.
+1. Upload kinds, MIME types, and byte ceilings are fixed; development may record
+   an audited scan bypass, while staging/production require an authenticated
+   scanner and fail closed.
+2. Evaluation uses arithmetic means; equal scores remain ties for an authorized
+   human decision.
+3. Room, speaker, event-bound, and exclusive-track conflicts are not overrideable.
+4. The Cloudflare application uses Python/FastAPI/Pydantic with a compiled
+   React/Vite frontend.
+
+The following remain client/provider production-promotion inputs rather than
+unspecified application behavior:
+
+1. Verified Resend sender domain, reply-to policy, API key, and test-account ownership.
+2. Actual peak traffic and data volume for replacing the provisional load envelope.
+3. Data-retention schedule and approved legal/privacy consent wording.
+4. Production scanner service ownership, timeout, endpoint, and secret. The
+   application behavior on absence/failure is already fixed as quarantined and
+   fail-closed.

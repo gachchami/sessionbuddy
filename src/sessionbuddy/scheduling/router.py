@@ -49,25 +49,23 @@ def _asset(name: str) -> str:
     return getattr(embedded_assets, embedded_assets.ASSETS[name])
 
 
-def _local_asset(request: Request, name: str, media_type: str) -> Response:
-    if getattr(request.scope.get("env"), "APP_ENV", "local") != "local":
-        raise HTTPException(status_code=404)
+def _product_asset(request: Request, name: str, media_type: str) -> Response:
     return Response(_asset(name), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @scheduling_router.get("/admin/events/{event_id}/agenda", include_in_schema=False)
 async def agenda_page(event_id: str, request: Request) -> Response:
-    return _local_asset(request, "agenda_admin.html", "text/html")
+    return _product_asset(request, "agenda_admin.html", "text/html")
 
 
 @scheduling_router.get("/admin/agenda/assets/agenda.css", include_in_schema=False)
 async def agenda_css(request: Request) -> Response:
-    return _local_asset(request, "agenda.css", "text/css")
+    return _product_asset(request, "agenda.css", "text/css")
 
 
 @scheduling_router.get("/admin/agenda/assets/agenda.js", include_in_schema=False)
 async def agenda_js(request: Request) -> Response:
-    return _local_asset(request, "agenda.js", "text/javascript")
+    return _product_asset(request, "agenda.js", "text/javascript")
 
 
 @scheduling_router.get("/events/{event_id}/schedule", include_in_schema=False)
