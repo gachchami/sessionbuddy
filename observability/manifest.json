@@ -2,77 +2,77 @@
   "schema_version": 1,
   "api_routes": {
     "GET /api/v1/health": {
-      "owner": "foundation",
+      "owner": "platform-operations",
       "slo": {
         "p95_ms": 250,
         "error_rate_max": 0.001
       },
-      "benchmark": "foundation-health",
+      "benchmark": "engine-room-health",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /health": {
-      "owner": "foundation",
+      "owner": "platform-operations",
       "slo": {
         "p95_ms": 250,
         "error_rate_max": 0.001
       },
-      "benchmark": "foundation-health",
+      "benchmark": "engine-room-health",
       "dashboards": ["release-health"],
       "runbook": "docs/debugging-runbook.md#availability"
     },
-    "GET /api/v1/foundation/status": {
-      "owner": "foundation",
+    "GET /api/v1/engine-room/status": {
+      "owner": "platform-operations",
       "slo": {
         "p95_ms": 250,
         "error_rate_max": 0.001
       },
-      "benchmark": "foundation-console-status",
+      "benchmark": "engine-room-console-status",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
-    "GET /api/v1/foundation/database": {
-      "owner": "foundation",
+    "GET /api/v1/engine-room/database": {
+      "owner": "platform-operations",
       "slo": {
         "p95_ms": 250,
         "error_rate_max": 0.001
       },
-      "benchmark": "foundation-d1-probe",
+      "benchmark": "engine-room-d1-probe",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },
     "POST /api/v1/demo/context": {
       "owner": "program-management",
       "slo": {"p95_ms": 250, "error_rate_max": 0.001},
-      "benchmark": "wave1-demo-context",
+      "benchmark": "cfp-demo-context",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/demo/session": {
       "owner": "identity",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave1-demo-session",
+      "benchmark": "cfp-demo-session",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/demo/speaker-session": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave3-demo-speaker-session",
+      "benchmark": "speaker-operations-demo-speaker-session",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/demo/agenda-context": {
       "owner": "agenda",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave4-demo-context",
+      "benchmark": "scheduling-demo-context",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/programs": {
       "owner": "program-management",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave1-create-program",
+      "benchmark": "cfp-create-program",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
@@ -100,247 +100,247 @@
     "POST /api/v1/admin/programs/{program_id}/forms/publish": {
       "owner": "program-management",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave1-publish-form",
+      "benchmark": "cfp-publish-form",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/forms/{slug}": {
       "owner": "program-management",
       "slo": {"p95_ms": 250, "error_rate_max": 0.001},
-      "benchmark": "wave1-get-form",
+      "benchmark": "cfp-get-form",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/forms/{slug}/submissions": {
       "owner": "program-management",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave1-create-submission",
+      "benchmark": "cfp-create-submission",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/programs/{program_id}/submissions": {
       "owner": "program-management",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave1-list-submissions",
+      "benchmark": "cfp-list-submissions",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/programs/{program_id}/evaluation-rounds": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-create-evaluation-round",
+      "benchmark": "evaluation-create-evaluation-round",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/programs/{program_id}/evaluation-rounds/current": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-current-evaluation-round",
+      "benchmark": "evaluation-current-evaluation-round",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/programs/{program_id}/evaluators": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-list-evaluators",
+      "benchmark": "evaluation-list-evaluators",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/evaluator/assignments": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-list-evaluator-assignments",
+      "benchmark": "evaluation-list-evaluator-assignments",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-save-evaluation",
+      "benchmark": "evaluation-save-evaluation",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/evaluator/assignments/{assignment_id}/conflict": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-declare-conflict",
+      "benchmark": "evaluation-declare-conflict",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/evaluation-assignments/{assignment_id}/reassign": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-reassign-conflict",
+      "benchmark": "evaluation-reassign-conflict",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/evaluation-rounds/{round_id}/results": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-round-results",
+      "benchmark": "evaluation-round-results",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/evaluation-rounds/{round_id}/close": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-close-round",
+      "benchmark": "evaluation-close-round",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave2-record-decision",
+      "benchmark": "evaluation-record-decision",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/speaker/portal": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 750, "error_rate_max": 0.001},
-      "benchmark": "wave3-speaker-portal",
+      "benchmark": "speaker-operations-speaker-portal",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/events/{event_id}/onboarding": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 750, "error_rate_max": 0.001},
-      "benchmark": "wave3-admin-onboarding",
+      "benchmark": "speaker-operations-admin-onboarding",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "PATCH /api/v1/speaker/profile": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-speaker-profile-update",
+      "benchmark": "speaker-operations-speaker-profile-update",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/speaker/events/{event_id}/assets": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-speaker-assets",
+      "benchmark": "speaker-operations-speaker-assets",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/speaker/events/{event_id}/upload-authorizations": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-upload-authorize",
+      "benchmark": "speaker-operations-upload-authorize",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/speaker/events/{event_id}/upload-intents/{intent_id}/complete": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 1500, "error_rate_max": 0.001},
-      "benchmark": "wave3-upload-complete",
+      "benchmark": "speaker-operations-upload-complete",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/communications/preview": {
       "owner": "communications",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-communication-preview",
+      "benchmark": "speaker-operations-communication-preview",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/communications/send": {
       "owner": "communications",
       "slo": {"p95_ms": 750, "error_rate_max": 0.001},
-      "benchmark": "wave3-communication-send",
+      "benchmark": "speaker-operations-communication-send",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders": {
       "owner": "communications",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-task-reminder",
+      "benchmark": "speaker-operations-task-reminder",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/events/{event_id}/communications": {
       "owner": "communications",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-communication-status",
+      "benchmark": "speaker-operations-communication-status",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/communications/dispatch-local": {
       "owner": "communications",
       "slo": {"p95_ms": 750, "error_rate_max": 0.001},
-      "benchmark": "wave3-local-delivery",
+      "benchmark": "speaker-operations-local-delivery",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-speaker-download-grant",
+      "benchmark": "speaker-operations-speaker-download-grant",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-admin-download-grant",
+      "benchmark": "speaker-operations-admin-download-grant",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/assets/download": {
       "owner": "speaker-onboarding",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave3-private-asset-download",
+      "benchmark": "speaker-operations-private-asset-download",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/admin/events/{event_id}/agenda": {
       "owner": "agenda",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave4-admin-agenda",
+      "benchmark": "scheduling-admin-agenda",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/agenda/preview": {
       "owner": "agenda",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
-      "benchmark": "wave4-conflict-preview",
+      "benchmark": "scheduling-conflict-preview",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },
     "POST /api/v1/admin/events/{event_id}/agenda/items": {
       "owner": "agenda",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave4-create-agenda-item",
+      "benchmark": "scheduling-create-agenda-item",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },
     "PATCH /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
       "owner": "agenda",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave4-move-agenda-item",
+      "benchmark": "scheduling-move-agenda-item",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },
     "POST /api/v1/admin/events/{event_id}/agenda/publish": {
       "owner": "agenda",
       "slo": {"p95_ms": 1000, "error_rate_max": 0.001},
-      "benchmark": "wave4-publish-agenda",
+      "benchmark": "scheduling-publish-agenda",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },
     "GET /api/v1/events/{event_id}/schedule": {
       "owner": "agenda",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
-      "benchmark": "wave4-read-schedule",
+      "benchmark": "scheduling-read-schedule",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     }
   },
   "pages": {
-    "/foundation": {
-      "owner": "foundation",
+    "/engine-room": {
+      "owner": "platform-operations",
       "classification": "synthetic/local",
-      "journeys": ["foundation-console-desktop", "foundation-console-mid-tier-mobile"],
+      "journeys": ["engine-room-console-desktop", "engine-room-console-mid-tier-mobile"],
       "web_vitals": {
         "lcp_p75_ms": 2500,
         "inp_p75_ms": 200,
@@ -350,10 +350,10 @@
       "dashboards": ["release-health", "page-performance"],
       "runbook": "docs/debugging-runbook.md#page-regression"
     },
-    "/wave-1": {
+    "/cfp-integration": {
       "owner": "program-management",
       "classification": "synthetic/local",
-      "journeys": ["wave1-cfp-happy-path"],
+      "journeys": ["cfp-cfp-happy-path"],
       "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
       "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
       "dashboards": ["release-health", "page-performance"],

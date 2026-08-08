@@ -39,7 +39,7 @@
     const width = window.innerWidth;
     return {
       schema_version: 1,
-      page_template: "/foundation",
+      page_template: "/engine-room",
       navigation_type: navigation?.type || "unknown",
       device_class: width < 640 ? "mobile" : width < 1024 ? "tablet" : "desktop",
       sampled: false,
@@ -56,7 +56,7 @@
   async function load() {
     const started = performance.now();
     try {
-      const response = await fetch("/api/v1/foundation/status", { headers: { accept: "application/json" } });
+      const response = await fetch("/api/v1/engine-room/status", { headers: { accept: "application/json" } });
       if (!response.ok) throw new Error(`Status API returned ${response.status}`);
       const model = await response.json();
       const requestId = response.headers.get("x-request-id");
@@ -95,7 +95,7 @@
       const progress = byId("build-progress"); progress.replaceChildren();
       model.build_progress.forEach((item) => {
         const row = document.createElement("tr");
-        [item.wave, item.capability, item.state.replace("_", " "), item.evidence]
+        [item.area, item.capability, item.state.replace("_", " "), item.evidence]
           .forEach((value) => row.append(cell("td", value)));
         progress.append(row);
       });

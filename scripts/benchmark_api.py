@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import re
 import statistics
 import sys
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, HTTPError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -56,13 +57,20 @@ async def benchmark(
     route: str = "/api/v1/health",
     local_demo_session: bool = False,
     concurrency: int = 1,
+    timeout_seconds: float = 30.0,
+    dataset_version: str = "small-v1",
+    cold_warm: str = "warm",
 ) -> dict[str, Any]:
     durations_ms: list[float] = []
     server_phases: dict[str, list[float]] = {}
     failures = 0
+    failure_classes: dict[str, int] = {}
+    response_bytes: list[float] = []
     transport = None if base_url else ASGITransport(app=app)
     target_url = base_url.rstrip("/") if base_url else "http://benchmark"
-    async with AsyncClient(transport=transport, base_url=target_url) as client:
+    async with AsyncClient(
+        transport=transport, base_url=target_url, timeout=timeout_seconds
+    ) as client:
         if local_demo_session:
             session = await client.post("/api/v1/demo/session")
             session.raise_for_status()
@@ -74,9 +82,20 @@ async def benchmark(
             nonlocal failures
             async with semaphore:
                 request_started = time.perf_counter_ns()
-                response = await client.get(route)
+                try:
+                    response = await client.get(route)
+                except HTTPError as exc:
+                    failures += 1
+                    name = type(exc).__name__
+                    failure_classes[name] = failure_classes.get(name, 0) + 1
+                    durations_ms.append((time.perf_counter_ns() - request_started) / 1_000_000)
+                    return
             durations_ms.append((time.perf_counter_ns() - request_started) / 1_000_000)
-            failures += int(response.status_code != 200)
+            response_bytes.append(float(len(response.content)))
+            if response.status_code != 200:
+                failures += 1
+                name = f"http_{response.status_code // 100}xx"
+                failure_classes[name] = failure_classes.get(name, 0) + 1
             timing_phases = parse_server_timing(response.headers.get("server-timing"))
             for name, duration in timing_phases.items():
                 server_phases.setdefault(name, []).append(duration)
@@ -100,15 +119,22 @@ async def benchmark(
 
     return {
         "schema_version": 1,
+        "commit": os.environ.get("GITHUB_SHA", "working-tree"),
         "recorded_at": datetime.now(UTC).isoformat(),
+        "environment": "local" if runtime != "cloudflare-worker-remote" else "remote",
+        "deployment_version": os.environ.get("SESSIONBUDDY_DEPLOYMENT_VERSION", "development"),
+        "dataset_version": dataset_version,
+        "cold_warm": cold_warm,
         "runtime": runtime,
         "route": route,
         "requests": requests,
         "warmup_requests": warmup,
         "concurrency": concurrency,
         "error_rate": failures / requests,
+        "failure_classes": failure_classes,
         "throughput_rps": round(requests / elapsed, 3),
         "latency_ms": latency_summary(durations_ms),
+        "response_bytes": latency_summary(response_bytes) if response_bytes else None,
         "server_timing_ms": {
             name: latency_summary(values) for name, values in sorted(server_phases.items())
         },
@@ -116,7 +142,7 @@ async def benchmark(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the foundation API smoke benchmark")
+    parser = argparse.ArgumentParser(description="Run the engine-room API smoke benchmark")
     parser.add_argument("--requests", type=int, default=200)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument(
@@ -136,8 +162,11 @@ def parse_args() -> argparse.Namespace:
         help="Establish the local-only demo cookie before benchmarking protected GET routes",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--dataset-version", default="small-v1")
+    parser.add_argument("--cold-warm", choices=("cold", "warm"), default="warm")
     args = parser.parse_args()
-    if args.requests < 1 or args.warmup < 0 or args.concurrency < 1:
+    if args.requests < 1 or args.warmup < 0 or args.concurrency < 1 or args.timeout_seconds <= 0:
         parser.error("--requests/--concurrency must be positive; --warmup cannot be negative")
     if args.concurrency > args.requests:
         parser.error("--concurrency cannot exceed --requests")
@@ -158,6 +187,9 @@ def main() -> None:
             args.route,
             args.local_demo_session,
             args.concurrency,
+            args.timeout_seconds,
+            args.dataset_version,
+            args.cold_warm,
         )
     )
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"

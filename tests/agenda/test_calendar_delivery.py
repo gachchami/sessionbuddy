@@ -3,8 +3,8 @@ import sqlite3
 import pytest
 
 from sessionbuddy.agenda import AgendaCalendarChange, ScheduleSpeaker, queue_calendar_changes
-from tests.wave3.test_asset_boundary import AsyncSqlite
-from tests.wave3.test_speaker_onboarding_schema import MIGRATIONS, seed_foundation
+from tests.speaker_operations.test_asset_boundary import AsyncSqlite
+from tests.speaker_operations.test_speaker_onboarding_schema import MIGRATIONS, seed_platform
 
 
 @pytest.fixture
@@ -14,7 +14,7 @@ def database() -> tuple[AsyncSqlite, sqlite3.Connection]:
     connection.execute("PRAGMA foreign_keys=ON")
     for migration in MIGRATIONS:
         connection.executescript(migration.read_text())
-    seed_foundation(connection)
+    seed_platform(connection)
     return AsyncSqlite(connection), connection
 
 

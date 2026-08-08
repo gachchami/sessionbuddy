@@ -33,6 +33,8 @@
     const form = event.currentTarget;
     const button = form.querySelector("button");
     button.disabled = true;
+    button.textContent = "Submitting…";
+    byId("status").classList.remove("error");
     try {
       const submission = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": key, "x-public-session-id": publicSession }, body: JSON.stringify(Object.fromEntries(new FormData(form))) });
       byId("status").textContent = "Proposal submitted.";
@@ -41,7 +43,9 @@
     } catch (error) {
       byId("status").textContent = error.message;
       byId("status").classList.add("error");
+      byId("status").focus();
       button.disabled = false;
+      button.textContent = "Submit proposal";
     }
   });
   load();

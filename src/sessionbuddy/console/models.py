@@ -24,16 +24,16 @@ class CoverageItem(BaseModel):
     source: str
 
 
-class BuildProgressItem(BaseModel):
+class CapabilityProgressItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    wave: str
+    area: str
     capability: str
     state: Literal["complete", "in_progress", "pending"]
     evidence: str
 
 
-class FoundationStatus(BaseModel):
+class EngineRoomStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["review"] = "review"
@@ -46,7 +46,7 @@ class FoundationStatus(BaseModel):
     measurements_are_live: bool = False
     slos: list[SLODefinition]
     coverage: list[CoverageItem]
-    build_progress: list[BuildProgressItem]
+    build_progress: list[CapabilityProgressItem]
 
 
 class DatabaseStatus(BaseModel):
@@ -69,8 +69,8 @@ class BrowserTelemetryPayload(BaseModel):
 
     schema_version: Literal[1]
     page_template: Literal[
-        "/foundation",
-        "/wave-1",
+        "/engine-room",
+        "/cfp-integration",
         "/admin/programs",
         "/cfp/{slug}",
         "/admin/programs/{program_id}/submissions",
@@ -99,8 +99,8 @@ class BrowserTelemetryPayload(BaseModel):
         return value
 
 
-def public_foundation_status(*, environment: str = "local") -> FoundationStatus:
-    return FoundationStatus(
+def public_engine_room_status(*, environment: str = "local") -> EngineRoomStatus:
+    return EngineRoomStatus(
         environment=environment,
         data_classification=(
             "synthetic/local" if environment == "local" else "synthetic/non-production"
@@ -108,31 +108,31 @@ def public_foundation_status(*, environment: str = "local") -> FoundationStatus:
         slos=[
             SLODefinition(
                 route="GET /health",
-                owner="foundation",
+                owner="platform-operations",
                 p95_ms=250,
                 error_rate_max=0.001,
-                benchmark="foundation-health",
+                benchmark="engine-room-health",
             ),
             SLODefinition(
                 route="GET /api/v1/health",
-                owner="foundation",
+                owner="platform-operations",
                 p95_ms=250,
                 error_rate_max=0.001,
-                benchmark="foundation-health",
+                benchmark="engine-room-health",
             ),
             SLODefinition(
-                route="GET /api/v1/foundation/status",
-                owner="foundation",
+                route="GET /api/v1/engine-room/status",
+                owner="platform-operations",
                 p95_ms=250,
                 error_rate_max=0.001,
                 benchmark="foundation-console-status",
             ),
             SLODefinition(
-                route="GET /api/v1/foundation/database",
-                owner="foundation",
+                route="GET /api/v1/engine-room/database",
+                owner="platform-operations",
                 p95_ms=250,
                 error_rate_max=0.001,
-                benchmark="foundation-d1-probe",
+                benchmark="engine-room-d1-probe",
             ),
         ],
         coverage=[
@@ -143,39 +143,39 @@ def public_foundation_status(*, environment: str = "local") -> FoundationStatus:
             CoverageItem(
                 signal="D1 query timing",
                 state="available",
-                source="GET /api/v1/foundation/database",
+                source="GET /api/v1/engine-room/database",
             ),
         ],
         build_progress=[
-            BuildProgressItem(
-                wave="Wave 0",
+            CapabilityProgressItem(
+                area="Platform",
                 capability="Cloudflare-compatible Python runtime and D1",
                 state="complete",
                 evidence="Docker, Workerd/Pyodide, migrations, deployed smoke checks",
             ),
-            BuildProgressItem(
-                wave="Wave 0",
+            CapabilityProgressItem(
+                area="Platform",
                 capability="API security, sessions, CSRF, RBAC and tenant isolation",
                 state="complete",
                 evidence="Automated adversarial foundation suite",
             ),
-            BuildProgressItem(
-                wave="Wave 0",
+            CapabilityProgressItem(
+                area="Platform",
                 capability="Observability, SLOs, runbooks and benchmark tooling",
                 state="complete",
-                evidence="Route manifest, Server-Timing and foundation console",
+                evidence="Route manifest, Server-Timing and Engine Room",
             ),
-            BuildProgressItem(
-                wave="Wave 1",
+            CapabilityProgressItem(
+                area="CFP management",
                 capability="Call-for-speakers program, form and submission journey",
                 state="in_progress",
                 evidence="Next reviewable product slice",
             ),
-            BuildProgressItem(
-                wave="Wave 2+",
+            CapabilityProgressItem(
+                area="Evaluation, speaker operations, and scheduling",
                 capability="Speaker portal, evaluation, communications and agenda",
                 state="pending",
-                evidence="Sequenced after the measured Wave 1 slice",
+                evidence="Sequenced after the measured CFP management slice",
             ),
         ],
     )

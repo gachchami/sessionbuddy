@@ -9,12 +9,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 OUTPUT = ROOT / "src" / "sessionbuddy" / "console" / "embedded_assets.py"
 ASSETS = {
-    "foundation.html": "FOUNDATION_HTML",
+    "engine_room.html": "ENGINE_ROOM_HTML",
     "console.css": "CONSOLE_CSS",
     "console.js": "CONSOLE_JS",
-    "wave1.html": "WAVE1_HTML",
-    "wave1.css": "WAVE1_CSS",
-    "wave1.js": "WAVE1_JS",
+    "cfp_integration.html": "CFP_INTEGRATION_HTML",
+    "cfp_integration.css": "CFP_INTEGRATION_CSS",
+    "cfp_integration.js": "CFP_INTEGRATION_JS",
     "product.css": "PRODUCT_CSS",
     "admin_programs.html": "ADMIN_PROGRAMS_HTML",
     "admin_programs.js": "ADMIN_PROGRAMS_JS",

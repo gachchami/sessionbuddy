@@ -22,6 +22,8 @@ table { width: 100%; border-collapse: collapse; }
 th, td { padding: .65rem; text-align: left; border-bottom: 1px solid #dce5e0; }
 .coverage-list { padding: 0; list-style: none; }
 .coverage-list li { display: flex; justify-content: space-between; gap: .75rem; padding: .65rem 0; border-bottom: 1px solid #dce5e0; }
+.review-links { display: grid; gap: .6rem; }
+.review-links a { min-height: 2.75rem; display: flex; align-items: center; padding: .55rem .7rem; border: 1px solid #cbd8d1; border-radius: .5rem; text-decoration: none; }
 .state-available { color: #17613e; }
 .state-planned { color: #765300; }
 .state-missing { color: #9a2929; }

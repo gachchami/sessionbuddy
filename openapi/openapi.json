@@ -170,9 +170,13 @@
         "title": "AssignmentReassign",
         "type": "object"
       },
-      "BuildProgressItem": {
+      "CapabilityProgressItem": {
         "additionalProperties": false,
         "properties": {
+          "area": {
+            "title": "Area",
+            "type": "string"
+          },
           "capability": {
             "title": "Capability",
             "type": "string"
@@ -189,19 +193,15 @@
             ],
             "title": "State",
             "type": "string"
-          },
-          "wave": {
-            "title": "Wave",
-            "type": "string"
           }
         },
         "required": [
-          "wave",
+          "area",
           "capability",
           "state",
           "evidence"
         ],
-        "title": "BuildProgressItem",
+        "title": "CapabilityProgressItem",
         "type": "object"
       },
       "CommunicationStatus": {
@@ -537,6 +537,81 @@
           "delivered"
         ],
         "title": "DispatchResponse",
+        "type": "object"
+      },
+      "EngineRoomStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "api_version": {
+            "default": "v1",
+            "title": "Api Version",
+            "type": "string"
+          },
+          "build_progress": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityProgressItem"
+            },
+            "title": "Build Progress",
+            "type": "array"
+          },
+          "coverage": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageItem"
+            },
+            "title": "Coverage",
+            "type": "array"
+          },
+          "data_classification": {
+            "default": "synthetic/local",
+            "enum": [
+              "synthetic/local",
+              "synthetic/non-production"
+            ],
+            "title": "Data Classification",
+            "type": "string"
+          },
+          "environment": {
+            "default": "local",
+            "enum": [
+              "local",
+              "development",
+              "preview",
+              "staging",
+              "production"
+            ],
+            "title": "Environment",
+            "type": "string"
+          },
+          "measurements_are_live": {
+            "default": false,
+            "title": "Measurements Are Live",
+            "type": "boolean"
+          },
+          "runtime": {
+            "default": "Python / FastAPI",
+            "title": "Runtime",
+            "type": "string"
+          },
+          "slos": {
+            "items": {
+              "$ref": "#/components/schemas/SLODefinition"
+            },
+            "title": "Slos",
+            "type": "array"
+          },
+          "status": {
+            "const": "review",
+            "default": "review",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slos",
+          "coverage",
+          "build_progress"
+        ],
+        "title": "EngineRoomStatus",
         "type": "object"
       },
       "EvaluationAssignmentList": {
@@ -1053,81 +1128,6 @@
           "welcome_text"
         ],
         "title": "FormPublish",
-        "type": "object"
-      },
-      "FoundationStatus": {
-        "additionalProperties": false,
-        "properties": {
-          "api_version": {
-            "default": "v1",
-            "title": "Api Version",
-            "type": "string"
-          },
-          "build_progress": {
-            "items": {
-              "$ref": "#/components/schemas/BuildProgressItem"
-            },
-            "title": "Build Progress",
-            "type": "array"
-          },
-          "coverage": {
-            "items": {
-              "$ref": "#/components/schemas/CoverageItem"
-            },
-            "title": "Coverage",
-            "type": "array"
-          },
-          "data_classification": {
-            "default": "synthetic/local",
-            "enum": [
-              "synthetic/local",
-              "synthetic/non-production"
-            ],
-            "title": "Data Classification",
-            "type": "string"
-          },
-          "environment": {
-            "default": "local",
-            "enum": [
-              "local",
-              "development",
-              "preview",
-              "staging",
-              "production"
-            ],
-            "title": "Environment",
-            "type": "string"
-          },
-          "measurements_are_live": {
-            "default": false,
-            "title": "Measurements Are Live",
-            "type": "boolean"
-          },
-          "runtime": {
-            "default": "Python / FastAPI",
-            "title": "Runtime",
-            "type": "string"
-          },
-          "slos": {
-            "items": {
-              "$ref": "#/components/schemas/SLODefinition"
-            },
-            "title": "Slos",
-            "type": "array"
-          },
-          "status": {
-            "const": "review",
-            "default": "review",
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "slos",
-          "coverage",
-          "build_progress"
-        ],
-        "title": "FoundationStatus",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3873,6 +3873,49 @@
         ]
       }
     },
+    "/api/v1/engine-room/database": {
+      "get": {
+        "description": "Exercise the configured D1 binding without returning tenant or schema data.",
+        "operationId": "getFoundationDatabaseStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Engine Room Database",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/engine-room/status": {
+      "get": {
+        "operationId": "getEngineRoomStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineRoomStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Engine Room Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/evaluator/assignments": {
       "get": {
         "operationId": "listMyEvaluationAssignments",
@@ -4196,49 +4239,6 @@
         "summary": "Create Submission",
         "tags": [
           "submissions"
-        ]
-      }
-    },
-    "/api/v1/foundation/database": {
-      "get": {
-        "description": "Exercise the configured D1 binding without returning tenant or schema data.",
-        "operationId": "getFoundationDatabaseStatus",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DatabaseStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Foundation Database",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/foundation/status": {
-      "get": {
-        "operationId": "getFoundationStatus",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FoundationStatus"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Foundation Status",
-        "tags": [
-          "operations"
         ]
       }
     },

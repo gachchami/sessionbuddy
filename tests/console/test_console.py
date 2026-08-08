@@ -5,14 +5,14 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
-from sessionbuddy.console import embedded_assets, foundation_console_router
+from sessionbuddy.console import embedded_assets, engine_room_router
 from sessionbuddy.console.models import BrowserTelemetryPayload
 
 
 @pytest.fixture
 def console_app() -> FastAPI:
     app = FastAPI()
-    app.include_router(foundation_console_router)
+    app.include_router(engine_room_router)
     return app
 
 
@@ -21,7 +21,7 @@ async def test_console_is_semantic_accessible_and_labels_synthetic(console_app: 
     async with AsyncClient(
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
-        response = await client.get("/foundation")
+        response = await client.get("/engine-room")
 
     assert response.status_code == 200
     html = response.text
@@ -31,9 +31,9 @@ async def test_console_is_semantic_accessible_and_labels_synthetic(console_app: 
     assert 'id="content"' in html
     assert 'role="status"' in html
     assert "Synthetic / local" in html
-    assert "console.css?v=wave0-2" in html
-    assert "console.js?v=wave0-2" in html
-    assert "<h1>Runtime and performance</h1>" in html
+    assert "console.css?v=engine-room-1" in html
+    assert "console.js?v=engine-room-1" in html
+    assert "<h1>Engine Room</h1>" in html
     assert 'id="build-progress"' in html
     assert '<th scope="col">' in html
 
@@ -43,8 +43,8 @@ async def test_console_assets_are_dependency_free_and_responsive(console_app: Fa
     async with AsyncClient(
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
-        css = await client.get("/foundation/assets/console.css")
-        js = await client.get("/foundation/assets/console.js")
+        css = await client.get("/engine-room/assets/console.css")
+        js = await client.get("/engine-room/assets/console.js")
 
     assert css.status_code == js.status_code == 200
     assert "@media (max-width: 48rem)" in css.text
@@ -65,7 +65,7 @@ async def test_public_status_model_is_safe_and_explicit_about_missing_data(
     async with AsyncClient(
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/v1/foundation/status")
+        response = await client.get("/api/v1/engine-room/status")
 
     assert response.status_code == 200
     payload = response.json()
@@ -84,7 +84,7 @@ async def test_public_status_model_is_safe_and_explicit_about_missing_data(
 def test_browser_telemetry_contract_rejects_private_or_arbitrary_dimensions() -> None:
     valid = {
         "schema_version": 1,
-        "page_template": "/foundation",
+        "page_template": "/engine-room",
         "navigation_type": "navigate",
         "device_class": "desktop",
         "sampled": False,
@@ -101,7 +101,7 @@ def test_browser_telemetry_contract_rejects_private_or_arbitrary_dimensions() ->
 
 def test_static_page_has_no_external_dependencies() -> None:
     static_dir = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
-    html = (static_dir / "foundation.html").read_text()
+    html = (static_dir / "engine_room.html").read_text()
     assert "https://" not in html
     assert "http://" not in html
 

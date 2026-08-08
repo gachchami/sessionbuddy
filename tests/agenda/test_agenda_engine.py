@@ -4,8 +4,12 @@ import pytest
 
 from sessionbuddy.agenda import AgendaRepository, AgendaSlot
 from sessionbuddy.platform.db.d1 import PersistenceError
-from tests.wave3.test_asset_boundary import AsyncSqlite
-from tests.wave3.test_speaker_onboarding_schema import MIGRATIONS, add_speaker, seed_foundation
+from tests.speaker_operations.test_asset_boundary import AsyncSqlite
+from tests.speaker_operations.test_speaker_onboarding_schema import (
+    MIGRATIONS,
+    add_speaker,
+    seed_platform,
+)
 
 
 @pytest.fixture
@@ -15,7 +19,7 @@ def connection() -> sqlite3.Connection:
     db.execute("PRAGMA foreign_keys=ON")
     for migration in MIGRATIONS:
         db.executescript(migration.read_text(encoding="utf-8"))
-    seed_foundation(db)
+    seed_platform(db)
     add_speaker(db, "a")
     db.execute(
         """INSERT INTO submission_speakers

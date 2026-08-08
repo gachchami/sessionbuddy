@@ -16,7 +16,7 @@ from sessionbuddy.communications.runtime import ReminderWorkflow as _ReminderWor
 from sessionbuddy.platform.db.d1 import to_python
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.platform.storage import parse_signed_scan_response, scan_request_headers
-from sessionbuddy.wave3.asset_boundary import ScanResult, consume_scan_job
+from sessionbuddy.speaker_operations.asset_boundary import ScanResult, consume_scan_job
 
 ReminderWorkflow = _ReminderWorkflow
 

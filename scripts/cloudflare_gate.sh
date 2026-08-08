@@ -27,14 +27,14 @@ done
 
 curl --fail --silent http://127.0.0.1:8787/api/v1/health >/dev/null
 curl --fail --silent http://127.0.0.1:8787/api/v1/openapi.json >/dev/null
-curl --fail --silent http://127.0.0.1:8787/api/v1/foundation/status >/dev/null
-curl --fail --silent http://127.0.0.1:8787/api/v1/foundation/database >/dev/null
-curl --fail --silent http://127.0.0.1:8787/foundation >/dev/null
-curl --fail --silent http://127.0.0.1:8787/foundation/assets/console.css >/dev/null
-curl --fail --silent http://127.0.0.1:8787/foundation/assets/console.js >/dev/null
-curl --fail --silent http://127.0.0.1:8787/wave-1 >/dev/null
-uv run python scripts/smoke_wave1.py
+curl --fail --silent http://127.0.0.1:8787/api/v1/engine-room/status >/dev/null
+curl --fail --silent http://127.0.0.1:8787/api/v1/engine-room/database >/dev/null
+curl --fail --silent http://127.0.0.1:8787/engine-room >/dev/null
+curl --fail --silent http://127.0.0.1:8787/engine-room/assets/console.css >/dev/null
+curl --fail --silent http://127.0.0.1:8787/engine-room/assets/console.js >/dev/null
+curl --fail --silent http://127.0.0.1:8787/cfp-integration >/dev/null
+uv run python scripts/smoke_cfp.py
 
 uv run python scripts/benchmark_api.py \
   --base-url http://127.0.0.1:8787 \
-  --output .local/benchmarks/foundation-worker.json
+  --output .local/benchmarks/engine-room-worker.json

@@ -6,7 +6,7 @@ The Worker uses Smart Placement so database-backed handlers can execute near
 the D1 primary. Keep client, `app`, and `db` timings separate when evaluating
 the result; placement may need traffic and up to 15 minutes before it decides.
 
-## Foundation development
+## Engine Room and local development
 
 The supported development and compatibility environment is Docker. It pins
 Node.js 24, Wrangler, uv, Python, and the Debian base rather than depending on
@@ -28,7 +28,7 @@ For an interactive development server:
 docker compose up --build worker
 ```
 
-Review the product-shaped Wave 1 call-for-speakers flow at these local URLs:
+Review the product-shaped CFP management flow at these local URLs:
 
 - `http://localhost:8787/admin/programs` — local admin sign-in, program creation,
   and immutable public-form publication.
@@ -37,14 +37,14 @@ Review the product-shaped Wave 1 call-for-speakers flow at these local URLs:
 - `http://localhost:8787/admin/programs/{program-id}/submissions` — authorized
   submission review; use the link shown after publishing.
 
-`http://localhost:8787/wave-1` remains the engineering integration harness. It
+`http://localhost:8787/cfp-integration` remains the engineering integration harness. It
 uses synthetic local data and exposes the full sequence on one page for rapid
 diagnosis. The local bootstrap creates an opaque HTTP-only session; admin
 requests are authorized from D1 memberships and require a session-bound CSRF
 proof. The bootstrap and admin product pages deliberately return 404 outside
 `APP_ENV=local` until the production identity provider is selected.
 
-Wave 2 evaluation starts from a program's submission-review page. Open the
+Evaluation workflow starts from a program's submission-review page. Open the
 initial round there, then use `http://localhost:8787/reviews` for the React/Vite
 evaluator workspace. The current vertical slice supports assignment-scoped
 reads, resumable drafts, rubric validation, and immutable finalization. It
@@ -65,15 +65,15 @@ assignment strategies: `balanced` distributes submissions round-robin, while
 server validates evaluator membership and submission scope before creating the
 atomic assignment batch.
 
-Wave 3 speaker onboarding starts at `http://localhost:8787/speaker`. If the
+Speaker operations starts at `http://localhost:8787/speaker`. If the
 browser currently holds an admin session, choose **Start local speaker demo** to
 replace it with an isolated speaker session. The first reviewable slice shows an
 accepted proposal and outstanding biography task; saving the profile completes
 that task atomically and emits the audit/outbox records required by later
 communications and real-time dashboard slices. The accepted contract and
-remaining Wave 3 work are recorded in `docs/wave-3-acceptance.md`.
+remaining speaker-operations work are recorded in `docs/product-status.md`.
 
-Wave 4 agenda scheduling is available after the local speaker and admin demo
+Scheduling is available after the local speaker and admin demo
 sessions have been initialized:
 
 - Admin editor: `http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/agenda`
@@ -86,11 +86,23 @@ Worker journey inside the container with:
 
 ```bash
 docker compose run --rm --no-deps worker uv run python \
-  scripts/smoke_wave4_agenda.py --base-url http://worker:8787
+  scripts/smoke_scheduling.py --base-url http://worker:8787
 ```
 
-See `docs/wave-4-acceptance.md` for the implemented boundary and remaining provider
+See `docs/product-status.md` for the implemented boundary and remaining provider
 activation work.
+
+Release readiness provides the complete local release-hardening gate:
+
+```bash
+./scripts/release_gate.sh
+```
+
+It runs the full suite, large deterministic seed, query-plan checks,
+backup/restore rehearsal, all capability smokes, desktop/mobile Axe checks, local API
+benchmarks, Lighthouse, and a Wrangler dry run entirely through containers. See
+`docs/product-status.md` for accepted local evidence and the remaining
+Cloudflare staging promotion gates.
 
 The admin operational view for the seeded event is available at
 `http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/onboarding`.
@@ -106,7 +118,7 @@ local R2 binding, and an explicit completion step. Run the same flow without a
 browser inside the container:
 
 ```bash
-docker compose run --rm worker uv run python scripts/smoke_wave3_assets.py \
+docker compose run --rm worker uv run python scripts/smoke_speaker_assets.py \
   --base-url http://worker:8787
 ```
 
@@ -120,13 +132,13 @@ Evaluators may declare a conflict before finalization; the assignment is revoked
 and exposed for admin reassignment. A round closes only after every selected
 submission remains covered and every active assignment is final. The accepted
 calculation, tie, immutability, and lifecycle rules are recorded in
-`docs/wave-2-acceptance.md`.
+`docs/product-status.md`.
 
-After the Worker is running, repeat the complete Wave 1 compatibility smoke
+After the Worker is running, repeat the complete CFP compatibility smoke
 without generating benchmark traffic:
 
 ```bash
-docker compose run --rm worker uv run python scripts/smoke_wave1.py \
+docker compose run --rm worker uv run python scripts/smoke_cfp.py \
   --base-url http://worker:8787
 ```
 
@@ -173,7 +185,7 @@ npm run worker:migrate
 Run the fast host-ASGI benchmark:
 
 ```bash
-uv run python scripts/benchmark_api.py --output .local/benchmarks/foundation.json
+uv run python scripts/benchmark_api.py --output .local/benchmarks/engine-room.json
 ```
 
 With the local Worker running, exercise Pyodide, Workerd, and the HTTP boundary:
@@ -181,7 +193,7 @@ With the local Worker running, exercise Pyodide, Workerd, and the HTTP boundary:
 ```bash
 uv run python scripts/benchmark_api.py \
   --base-url http://127.0.0.1:8787 \
-  --output .local/benchmarks/foundation-worker.json
+  --output .local/benchmarks/engine-room-worker.json
 ```
 
 Any API route can use the same benchmark contract. For example, benchmark the
@@ -190,12 +202,12 @@ deployed D1 probe from inside the container:
 ```bash
 uv run python scripts/benchmark_api.py \
   --base-url https://sessionbuddy-development.shiny-cloud-dd47.workers.dev \
-  --route /api/v1/foundation/database \
-  --output .local/benchmarks/foundation-d1-cloudflare-dev.json
+  --route /api/v1/engine-room/database \
+  --output .local/benchmarks/engine-room-d1-cloudflare-dev.json
 ```
 
 This host benchmark catches application-level regressions quickly. Release measurements must also run against `pywrangler dev` and an isolated deployed preview because only those environments exercise Pyodide, `workerd`, and real Cloudflare bindings.
 
 Architecture and delivery requirements are documented under `docs/`. The
-accepted Wave 0 gate and the contracts every feature must reuse are summarized
-in `docs/wave-0-acceptance.md`.
+accepted platform gate and the contracts every feature must reuse are summarized
+in `docs/product-status.md`.

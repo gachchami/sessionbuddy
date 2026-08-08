@@ -1,6 +1,6 @@
 # Sessionbuddy API, authentication, and authorization foundation
 
-Status: accepted Wave 0 architecture decision
+Status: accepted platform foundation architecture decision
 Scope: the shared foundation required by `requirements.md` Section 4; no product-feature API is specified here.
 
 ## 1. Decisions and constraints

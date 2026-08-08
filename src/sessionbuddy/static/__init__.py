@@ -1,1 +1,1 @@
-"""Packaged static assets for the dependency-free foundation console."""
+"""Packaged static assets for the dependency-free Engine Room."""

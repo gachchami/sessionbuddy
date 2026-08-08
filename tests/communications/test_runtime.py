@@ -15,8 +15,12 @@ from sessionbuddy.communications.runtime import (
     consume_delivery,
     consume_reminder,
 )
-from tests.wave3.test_asset_boundary import AsyncSqlite
-from tests.wave3.test_speaker_onboarding_schema import MIGRATIONS, add_speaker, seed_foundation
+from tests.speaker_operations.test_asset_boundary import AsyncSqlite
+from tests.speaker_operations.test_speaker_onboarding_schema import (
+    MIGRATIONS,
+    add_speaker,
+    seed_platform,
+)
 
 
 def claim() -> DeliveryClaim:
@@ -195,7 +199,7 @@ async def test_reminder_consumer_materializes_due_version_once_and_marks_dispatc
     connection.execute("PRAGMA foreign_keys=ON")
     for migration in MIGRATIONS:
         connection.executescript(migration.read_text())
-    seed_foundation(connection)
+    seed_platform(connection)
     add_speaker(connection, "a")
     connection.execute(
         """INSERT INTO speaker_tasks

@@ -1,6 +1,6 @@
 # Sessionbuddy application architecture
 
-Status: Wave 0 decision record  
+Status: platform foundation decision record
 Last verified: 2026-08-08  
 Scope: runtime, deployment, module, and operational architecture. Domain schema, API semantics, and authorization policy are specified separately.
 

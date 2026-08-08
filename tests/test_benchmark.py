@@ -27,6 +27,10 @@ async def test_benchmark_records_selected_route() -> None:
     assert result["route"] == "/health"
     assert result["concurrency"] == 1
     assert result["error_rate"] == 0
+    assert result["dataset_version"] == "small-v1"
+    assert result["cold_warm"] == "warm"
+    assert result["response_bytes"]["p95"] > 0
+    assert result["failure_classes"] == {}
 
 
 @pytest.mark.asyncio

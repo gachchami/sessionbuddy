@@ -78,15 +78,15 @@
           <form id="profile-form" novalidate>
             <div class="form-grid">
               <label for="display-name">Name <span>required</span></label>
-              <div><input id="display-name" name="display_name" autocomplete="name" maxlength="200" required><p id="display-name-error" class="field-error"></p></div>
+              <div><input id="display-name" name="display_name" autocomplete="name" maxlength="200" required aria-describedby="display-name-error"><p id="display-name-error" class="field-error"></p></div>
               <label for="job-title">Job title</label>
-              <div><input id="job-title" name="job_title" autocomplete="organization-title" maxlength="200"><p id="job-title-error" class="field-error"></p></div>
+              <div><input id="job-title" name="job_title" autocomplete="organization-title" maxlength="200" aria-describedby="job-title-error"><p id="job-title-error" class="field-error"></p></div>
               <label for="company">Company</label>
-              <div><input id="company" name="company" autocomplete="organization" maxlength="200"><p id="company-error" class="field-error"></p></div>
+              <div><input id="company" name="company" autocomplete="organization" maxlength="200" aria-describedby="company-error"><p id="company-error" class="field-error"></p></div>
               <label for="location">Location</label>
-              <div><input id="location" name="location" autocomplete="address-level2" maxlength="200"><p id="location-error" class="field-error"></p></div>
+              <div><input id="location" name="location" autocomplete="address-level2" maxlength="200" aria-describedby="location-error"><p id="location-error" class="field-error"></p></div>
               <label for="website">Website</label>
-              <div><input id="website" name="website" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com" maxlength="500"><p id="website-error" class="field-error"></p></div>
+              <div><input id="website" name="website" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com" maxlength="500" aria-describedby="website-error"><p id="website-error" class="field-error"></p></div>
               <label for="biography">Biography <span>required</span></label>
               <div><textarea id="biography" name="biography" rows="7" maxlength="5000" required aria-describedby="biography-help biography-count biography-error"></textarea><div class="field-meta"><p id="biography-help" class="help">Write a short introduction for event materials.</p><p id="biography-count" class="help">0 of 5,000 characters</p></div><p id="biography-error" class="field-error"></p></div>
             </div>

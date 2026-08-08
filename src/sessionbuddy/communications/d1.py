@@ -40,7 +40,7 @@ class D1CommunicationsService:
 
     async def _publish_delivery_requests(self, message_ids: list[str]) -> None:
         environment = self.request.scope.get("env")
-        if getattr(environment, "APP_ENV", "local") == "local":
+        if getattr(environment, "APP_ENV", "production") == "local":
             return
         queue = getattr(environment, "COMMUNICATION_QUEUE", None)
         if queue is None:
@@ -377,7 +377,7 @@ class D1CommunicationsService:
         return CommunicationStatusList(data=[CommunicationStatus(**row) for row in rows])
 
     async def dispatch_local(self, event_id: str) -> DispatchResponse:
-        if getattr(self.request.scope.get("env"), "APP_ENV", "local") != "local":
+        if getattr(self.request.scope.get("env"), "APP_ENV", "production") != "local":
             raise HTTPException(status_code=404)
         if self.organization_id is None:
             raise HTTPException(status_code=404)

@@ -5,33 +5,33 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.console import embedded_assets
-from sessionbuddy.console.models import DatabaseStatus, FoundationStatus, public_foundation_status
+from sessionbuddy.console.models import DatabaseStatus, EngineRoomStatus, public_engine_room_status
 from sessionbuddy.observability import record_timing
 
 EnvironmentName = Literal["local", "development", "preview", "staging", "production"]
 
-foundation_console_router = APIRouter()
+engine_room_router = APIRouter()
 
 
 def _asset(name: str) -> str:
     return getattr(embedded_assets, embedded_assets.ASSETS[name])
 
 
-@foundation_console_router.get(
-    "/foundation",
+@engine_room_router.get(
+    "/engine-room",
     response_class=HTMLResponse,
     include_in_schema=False,
 )
-async def foundation_console() -> HTMLResponse:
-    return HTMLResponse(_asset("foundation.html"), headers={"Cache-Control": "no-store"})
+async def engine_room() -> HTMLResponse:
+    return HTMLResponse(_asset("engine_room.html"), headers={"Cache-Control": "no-store"})
 
 
-@foundation_console_router.get(
-    "/foundation/assets/console.css",
+@engine_room_router.get(
+    "/engine-room/assets/console.css",
     response_class=Response,
     include_in_schema=False,
 )
-async def foundation_console_css() -> Response:
+async def engine_room_css() -> Response:
     return Response(
         _asset("console.css"),
         media_type="text/css",
@@ -39,12 +39,12 @@ async def foundation_console_css() -> Response:
     )
 
 
-@foundation_console_router.get(
-    "/foundation/assets/console.js",
+@engine_room_router.get(
+    "/engine-room/assets/console.js",
     response_class=Response,
     include_in_schema=False,
 )
-async def foundation_console_js() -> Response:
+async def engine_room_js() -> Response:
     return Response(
         _asset("console.js"),
         media_type="text/javascript",
@@ -52,23 +52,23 @@ async def foundation_console_js() -> Response:
     )
 
 
-@foundation_console_router.get(
-    "/api/v1/foundation/status",
-    response_model=FoundationStatus,
+@engine_room_router.get(
+    "/api/v1/engine-room/status",
+    response_model=EngineRoomStatus,
     tags=["operations"],
-    operation_id="getFoundationStatus",
+    operation_id="getEngineRoomStatus",
 )
-async def foundation_status(request: Request) -> FoundationStatus:
-    return public_foundation_status(environment=_environment(request))
+async def engine_room_status(request: Request) -> EngineRoomStatus:
+    return public_engine_room_status(environment=_environment(request))
 
 
-@foundation_console_router.get(
-    "/api/v1/foundation/database",
+@engine_room_router.get(
+    "/api/v1/engine-room/database",
     response_model=DatabaseStatus,
     tags=["operations"],
     operation_id="getFoundationDatabaseStatus",
 )
-async def foundation_database(request: Request) -> DatabaseStatus:
+async def engine_room_database(request: Request) -> DatabaseStatus:
     """Exercise the configured D1 binding without returning tenant or schema data."""
     env = request.scope.get("env")
     db = getattr(env, "DB", None) if env is not None else None

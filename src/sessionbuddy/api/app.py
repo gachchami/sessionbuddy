@@ -4,16 +4,16 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from sessionbuddy.api.errors import ErrorDetail, ErrorEnvelope
 from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
+from sessionbuddy.cfp import cfp_router
 from sessionbuddy.communications.d1 import communications_service
 from sessionbuddy.communications.router import create_communications_router
-from sessionbuddy.console import foundation_console_router
+from sessionbuddy.console import engine_room_router
+from sessionbuddy.evaluation import evaluation_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
 from sessionbuddy.platform.auth import session_router
+from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
-from sessionbuddy.wave1 import wave1_router
-from sessionbuddy.wave2 import wave2_router
-from sessionbuddy.wave3 import wave3_router
-from sessionbuddy.wave4 import wave4_router
+from sessionbuddy.speaker_operations import speaker_operations_router
 
 app = FastAPI(
     title="Sessionbuddy API",
@@ -27,18 +27,18 @@ app = FastAPI(
 # measures and identifies failures from every subsequent middleware and route.
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
-app.include_router(foundation_console_router)
+app.include_router(engine_room_router)
 app.include_router(session_router)
-app.include_router(wave1_router)
-app.include_router(wave2_router)
-app.include_router(wave3_router)
-app.include_router(wave4_router)
+app.include_router(cfp_router)
+app.include_router(evaluation_router)
+app.include_router(speaker_operations_router)
+app.include_router(scheduling_router)
 app.include_router(create_communications_router(communications_service))
 
 
 @app.get("/", include_in_schema=False)
 async def root() -> RedirectResponse:
-    return RedirectResponse(url="/foundation", status_code=307)
+    return RedirectResponse(url="/engine-room", status_code=307)
 
 
 @app.get(

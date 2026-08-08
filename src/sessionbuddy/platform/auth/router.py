@@ -27,7 +27,7 @@ class SessionView(BaseModel):
 
 
 def _cookie_settings(request: Request) -> tuple[str, bool]:
-    deployed = getattr(environment(request), "APP_ENV", "local") != "local"
+    deployed = getattr(environment(request), "APP_ENV", "production") != "local"
     return ("__Host-session", True) if deployed else ("sessionbuddy-local", False)
 
 

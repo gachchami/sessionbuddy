@@ -1,6 +1,16 @@
 (() => {
   "use strict";
   const byId = (id) => document.getElementById(id);
+  const main = document.querySelector("main");
+  main.id = "main";
+  main.tabIndex = -1;
+  const skip = document.createElement("a");
+  skip.className = "skip-link";
+  skip.href = "#main";
+  skip.textContent = "Skip to content";
+  document.body.prepend(skip);
+  document.querySelectorAll("th").forEach((heading) => heading.setAttribute("scope", "col"));
+  byId("status").tabIndex = -1;
   const parts = location.pathname.split("/").filter(Boolean);
   const programId = parts[2] || "";
   const state = { csrf: "", userId: "", submissions: [], evaluators: [] };

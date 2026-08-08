@@ -49,8 +49,23 @@ services:
         condition: service_healthy
     command: ["npm", "run", "worker:dev", "--", "--ip", "0.0.0.0", "--port", "8787"]
 
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.62.1-noble
+    working_dir: /workspace/harness
+    volumes:
+      - .:/workspace
+      - e2e-node-modules:/workspace/harness/node_modules
+    environment:
+      SESSIONBUDDY_BASE_URL: http://worker:8787
+      CI: "1"
+    depends_on:
+      worker:
+        condition: service_started
+    command: ["sh", "-lc", "npm ci && npx playwright test"]
+
 volumes:
   node-modules:
   python-venv:
   tool-cache:
   wrangler-config:
+  e2e-node-modules:
