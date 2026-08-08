@@ -87,6 +87,15 @@ def _token(connection: sqlite3.Connection, email: str) -> str:
     return match.group(1)
 
 
+def _deployment_key(connection: sqlite3.Connection) -> str:
+    row = connection.execute(
+        """SELECT deployment_key FROM instance_setup_credentials
+           WHERE singleton_key='primary'"""
+    ).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
 @pytest.fixture
 def production_environment():
     connection = sqlite3.connect(":memory:")
@@ -100,7 +109,6 @@ def production_environment():
         SESSION_HMAC_KEY="s" * 32,
         CSRF_HMAC_KEY="c" * 32,
         RATE_LIMIT_HMAC_KEY="r" * 32,
-        BOOTSTRAP_TOKEN="b" * 40,
         AUTH_RATE_LIMITER=AllowingRateLimiter(),
         PUBLIC_RATE_LIMITER=AllowingRateLimiter(),
         PUBLIC_BASE_URL="https://test",
@@ -126,7 +134,7 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
     async with _client(environment) as client:
         bootstrap = await client.post(
             "/api/v1/bootstrap",
-            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            headers={"x-bootstrap-token": _deployment_key(connection)},
             json={"organization_name": "Expired Link Events", "admin_email": "admin@example.com"},
         )
         assert bootstrap.status_code == 200
@@ -181,7 +189,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
 
         created = await client.post(
             "/api/v1/bootstrap",
-            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            headers={"x-bootstrap-token": _deployment_key(connection)},
             json={
                 "organization_name": "Example Events",
                 "admin_name": "Asha Rao",
@@ -193,6 +201,16 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         )
         assert created.status_code == 200
         assert (await client.get("/api/v1/setup/status")).json() == {"configured": True}
+        closed_setup = await client.get("/setup", follow_redirects=False)
+        assert closed_setup.status_code == 303
+        assert closed_setup.headers["location"] == "/sign-in?redirect=%2Fadmin"
+        assert "Create your workspace" not in closed_setup.text
+        assert connection.execute(
+            "SELECT COUNT(*) FROM instance_setup WHERE singleton_key='primary'"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM instance_setup_credentials"
+        ).fetchone()[0] == 0
         user = connection.execute(
             """SELECT display_name,job_title,company,time_zone FROM users
                WHERE normalized_email='asha@example.com'"""
@@ -239,14 +257,78 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         ).fetchone()[0] == 1
 
 
+async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    deployment_key = _deployment_key(connection)
+    async with _client(environment) as client:
+        created = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": deployment_key},
+            json={"organization_name": "One Time Events", "admin_email": "owner@example.com"},
+        )
+        assert created.status_code == 200
+
+        connection.execute("DELETE FROM audit_events")
+        connection.execute("DELETE FROM organization_memberships")
+        connection.execute("DELETE FROM users")
+        connection.execute("DELETE FROM organizations")
+        connection.commit()
+
+        assert (await client.get("/api/v1/setup/status")).json() == {"configured": True}
+        repeated = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": deployment_key},
+            json={"organization_name": "Second Setup", "admin_email": "other@example.com"},
+        )
+        assert repeated.status_code == 409
+        assert connection.execute("SELECT COUNT(*) FROM organizations").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM instance_setup").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM instance_setup_credentials"
+        ).fetchone()[0] == 0
+
+
+async def test_setup_uses_the_current_migration_generated_key(production_environment) -> None:
+    connection, _queue, environment = production_environment
+    old_key = _deployment_key(connection)
+    replacement = "a" * 64 if old_key != "a" * 64 else "b" * 64
+    connection.execute(
+        """UPDATE instance_setup_credentials SET deployment_key=?
+           WHERE singleton_key='primary'""",
+        (replacement,),
+    )
+    connection.commit()
+
+    async with _client(environment) as client:
+        rejected = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": old_key},
+            json={"organization_name": "Old Key", "admin_email": "old@example.com"},
+        )
+        accepted = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": replacement},
+            json={"organization_name": "New Key", "admin_email": "new@example.com"},
+        )
+
+    assert rejected.status_code == 404
+    assert accepted.status_code == 200
+    assert connection.execute(
+        "SELECT COUNT(*) FROM instance_setup_credentials"
+    ).fetchone()[0] == 0
+
+
 async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
     production_environment,
 ) -> None:
     connection, queue, environment = production_environment
+    deployment_key = _deployment_key(connection)
     async with _client(environment) as admin:
         bootstrap = await admin.post(
             "/api/v1/bootstrap",
-            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            headers={"x-bootstrap-token": deployment_key},
             json={
                 "organization_name": "Integration Events",
                 "admin_email": "admin@example.com",
@@ -258,7 +340,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert (
             await admin.post(
                 "/api/v1/bootstrap",
-                headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+                headers={"x-bootstrap-token": deployment_key},
                 json={
                     "organization_name": "Second",
                     "admin_email": "other@example.com",
@@ -449,7 +531,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
     async with _client(environment) as client:
         bootstrap = await client.post(
             "/api/v1/bootstrap",
-            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            headers={"x-bootstrap-token": _deployment_key(connection)},
             json={
                 "organization_name": "Existing User Events",
                 "admin_email": "admin@example.com",

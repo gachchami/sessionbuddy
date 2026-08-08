@@ -15,6 +15,7 @@
     "worker:r2-cors:dev": "wrangler r2 bucket cors set sessionbuddy-assets-development --file r2-cors.dev.json --force",
     "worker:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev --deployment-only",
     "worker:activation:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev",
+    "worker:setup-key:dev": "uv run python scripts/setup_key.py --env dev",
     "worker:bootstrap:dev": "uv run python scripts/bootstrap_cloudflare.py --env dev"
   },
   "devDependencies": {

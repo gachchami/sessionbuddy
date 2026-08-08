@@ -161,15 +161,15 @@ def secret_checks(secret_names: set[str], organization_count: int) -> list[Check
             f"missing: {', '.join(missing_r2)}" if missing_r2 else "upload credentials installed",
         )
     )
-    bootstrap_missing = organization_count == 0 and "BOOTSTRAP_TOKEN" not in secret_names
+    bootstrap_missing = organization_count == 0
     checks.append(
         Check(
             "PENDING" if bootstrap_missing else "PASS",
             "initial bootstrap",
             (
-                "organization database is empty; run the one-time bootstrap command"
+                "organization database is empty; use the migration-generated setup key"
                 if bootstrap_missing
-                else "already bootstrapped or token is installed"
+                else "already bootstrapped"
             ),
         )
     )

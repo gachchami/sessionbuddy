@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import secrets
-import shutil
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,11 +12,12 @@ from urllib.request import Request, urlopen
 
 try:
     from scripts.cloudflare_preflight import load_environment
+    from scripts.setup_key import SetupKeyError, read_setup_key
 except ModuleNotFoundError:  # Direct `python scripts/bootstrap_cloudflare.py` execution.
     from cloudflare_preflight import load_environment
+    from setup_key import SetupKeyError, read_setup_key
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-NPX = shutil.which("npx") or "/usr/local/bin/npx"
 
 
 def timestamp_ms(value: str) -> int:
@@ -61,23 +58,6 @@ def bootstrap_payload(arguments: argparse.Namespace) -> dict[str, str | int]:
         }
     )
     return payload
-
-
-def wrangler_secret(arguments: list[str], *, value: str | None = None) -> None:
-    environment = {**os.environ, "CI": "1", "NO_COLOR": "1"}
-    result = subprocess.run(  # noqa: S603 - arguments are assembled by this trusted CLI
-        [NPX, "wrangler", "secret", *arguments],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        input=f"{value}\n" if value is not None else None,
-        capture_output=True,
-        text=True,
-        timeout=180,
-        check=False,
-    )
-    if result.returncode != 0:
-        safe_output = f"{result.stdout}\n{result.stderr}".strip()
-        raise RuntimeError(f"Wrangler secret operation failed:\n{safe_output}")
 
 
 def post_bootstrap(base_url: str, token: str, payload: dict[str, str | int]) -> dict:
@@ -125,34 +105,17 @@ def main() -> int:
         if not base_url.startswith("https://") or ".example." in base_url:
             raise ValueError("the selected environment needs an exact HTTPS PUBLIC_BASE_URL")
         payload = bootstrap_payload(arguments)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+        token = read_setup_key(arguments.env)
+    except (OSError, SetupKeyError, ValueError, json.JSONDecodeError) as error:
         print(f"Bootstrap input error: {error}", file=sys.stderr)
         return 1
 
-    token = secrets.token_urlsafe(48)
-    installed = False
-    cleanup_error: RuntimeError | None = None
     try:
-        wrangler_secret(["put", "BOOTSTRAP_TOKEN", "--env", arguments.env], value=token)
-        installed = True
         result = post_bootstrap(base_url, token, payload)
     except RuntimeError as error:
         print(str(error), file=sys.stderr)
         return 1
-    finally:
-        if installed:
-            try:
-                wrangler_secret(["delete", "BOOTSTRAP_TOKEN", "--env", arguments.env])
-            except RuntimeError as error:
-                cleanup_error = error
-                print(
-                    f"SECURITY ACTION REQUIRED: remove BOOTSTRAP_TOKEN manually. {error}",
-                    file=sys.stderr,
-                )
-
-    if cleanup_error is not None:
-        return 1
-    print("Initial administrator bootstrap completed; BOOTSTRAP_TOKEN was removed.")
+    print("Initial administrator bootstrap completed; the setup key was permanently consumed.")
     print(f"Organization ID: {result['organization_id']}")
     if result.get("event_id"):
         print(f"Event ID: {result['event_id']}")

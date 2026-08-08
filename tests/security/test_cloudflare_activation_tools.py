@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import bootstrap_cloudflare
+from scripts import bootstrap_cloudflare, setup_key
 from scripts.bootstrap_cloudflare import bootstrap_payload, timestamp_ms
 from scripts.cloudflare_preflight import (
     CORE_SECRETS,
@@ -101,8 +101,9 @@ exposed_headers:  ETag
     assert not r2_cors_ready(wrong_method, origin)
 
 
-def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, capsys) -> None:
-    operations: list[tuple[list[str], str | None]] = []
+def test_bootstrap_command_uses_migration_key_without_printing_it(monkeypatch, capsys) -> None:
+    deployment_key = "a" * 64
+    supplied_keys: list[str] = []
     monkeypatch.setattr(
         bootstrap_cloudflare,
         "load_environment",
@@ -113,17 +114,20 @@ def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, cap
     )
     monkeypatch.setattr(
         bootstrap_cloudflare,
-        "wrangler_secret",
-        lambda arguments, value=None: operations.append((arguments, value)),
+        "read_setup_key",
+        lambda _environment: deployment_key,
     )
     monkeypatch.setattr(
         bootstrap_cloudflare,
         "post_bootstrap",
-        lambda _base_url, _token, _payload: {
-            "organization_id": "organization",
-            "event_id": None,
-            "admin_user_id": "admin",
-        },
+        lambda _base_url, token, _payload: (
+            supplied_keys.append(token)
+            or {
+                "organization_id": "organization",
+                "event_id": None,
+                "admin_user_id": "admin",
+            }
+        ),
     )
     monkeypatch.setattr(
         "sys.argv",
@@ -139,7 +143,21 @@ def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, cap
     )
 
     assert bootstrap_cloudflare.main() == 0
-    assert operations[0][0][:2] == ["put", "BOOTSTRAP_TOKEN"]
-    assert operations[0][1] is not None and len(operations[0][1]) >= 32
-    assert operations[1] == (["delete", "BOOTSTRAP_TOKEN", "--env", "dev"], None)
-    assert operations[0][1] not in capsys.readouterr().out
+    assert supplied_keys == [deployment_key]
+    assert deployment_key not in capsys.readouterr().out
+
+
+def test_setup_key_commands_parse_only_valid_d1_keys(monkeypatch) -> None:
+    generated = "b" * 64
+    operations: list[str] = []
+    monkeypatch.setattr(
+        setup_key,
+        "_execute",
+        lambda _environment, sql, local=False: (
+            operations.append(sql) or [{"results": [{"deployment_key": generated}]}]
+        ),
+    )
+
+    assert setup_key.read_setup_key("dev") == generated
+    assert setup_key.regenerate_setup_key("dev") == generated
+    assert operations == [setup_key.READ_KEY_SQL, setup_key.REGENERATE_KEY_SQL]

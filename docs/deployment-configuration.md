@@ -27,9 +27,6 @@ docker compose run --rm --no-deps worker npx wrangler secret put NAME --env dev
 - `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`: scoped R2 S3 credentials required
   for browser-to-R2 upload authorization.
 
-`BOOTSTRAP_TOKEN` is a one-time setup secret of at least 32 random characters.
-Install it only for first-run setup and delete it immediately afterward.
-
 `RESEND_API_KEY` and `RESEND_FROM_ADDRESS` are site-level settings owned by the
 SessionBuddy operator. Organization administrators never enter provider secrets.
 When creating or editing an event, they can set an optional sender display name
@@ -44,20 +41,25 @@ replace `RESEND_FROM_ADDRESS` with another address on a verified domain.
 
 ## Initial administrator bootstrap
 
-Apply every D1 migration first. In a private terminal, choose a one-time key and
-install it without putting it in source or chat:
+Applying the D1 migrations creates a random 256-bit, instance-specific
+setup key. Retrieve it in a private terminal without putting it in source or chat:
 
 ```sh
-docker compose run --rm --no-deps worker npx wrangler secret put BOOTSTRAP_TOKEN --env dev
+docker compose run --rm --no-deps worker npm run worker:setup-key:dev
 ```
 
 Open `/setup`, enter that same key, and provide the organization name plus the
 administrator's full name and email. The setup creates no sample events or
-speakers. After the page confirms completion, remove the secret:
+speakers. To invalidate a key before setup and generate a replacement:
 
 ```sh
-docker compose run --rm --no-deps worker npx wrangler secret delete BOOTSTRAP_TOKEN --env dev
+docker compose run --rm --no-deps worker npm run worker:setup-key:dev -- --regenerate
 ```
+
+Retrieval and regeneration are refused after setup completes. Successful setup
+deletes the key in the same D1 transaction, and database triggers prevent another
+key from being inserted or rotated while the permanent completion marker exists.
+The key is never returned by the Worker API.
 
 For non-interactive automation, the guarded command remains available:
 
@@ -68,11 +70,16 @@ docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
   --admin-email "admin@example.com"
 ```
 
-The endpoint refuses a second organization. The command always attempts to
-remove `BOOTSTRAP_TOKEN`, never prints it, and exits non-zero if removal cannot
-be confirmed. Browser setup requests the administrator's first magic link
-automatically. An event is intentionally optional; the initial administrator
+The endpoint refuses a second organization. The command reads the migration-generated
+key without printing it. Browser setup requests the administrator's first magic
+link automatically. An event is intentionally optional; the initial administrator
 creates the first event from the empty-state UI.
+
+Completion is also recorded by an atomic, singleton D1 marker. The marker is
+claimed in the same transaction as the first organization and administrator,
+so concurrent setup attempts cannot both succeed. It is independent of business
+records: deleting or archiving organizations does not reopen first-time setup.
+The database rejects changing or deleting this marker through normal SQL.
 
 ## Development deployment with scanning disabled
 

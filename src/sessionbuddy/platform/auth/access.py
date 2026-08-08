@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.authorization import Permission, ResourceContext, Role
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch
-from sessionbuddy.platform.db.d1 import result_rows, row_mapping
+from sessionbuddy.platform.db.d1 import D1Database, PersistenceError, result_rows, row_mapping
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 
@@ -23,6 +23,13 @@ from .http import authenticate_request, database, guard_mutation, require_permis
 from .tokens import generate_token, hash_token, normalize_email
 
 access_router = APIRouter()
+
+_SETUP_COMPLETED_SQL = """SELECT singleton_key
+FROM instance_setup
+WHERE singleton_key='primary'
+UNION ALL
+SELECT 'legacy' FROM organizations
+LIMIT 1"""
 
 
 def _asset(name: str) -> str:
@@ -36,8 +43,20 @@ async def sign_in_page() -> Response:
     )
 
 
+async def _setup_is_configured(db: D1Database) -> bool:
+    return row_mapping(await db.prepare(_SETUP_COMPLETED_SQL).first()) is not None
+
+
 @access_router.get("/setup", include_in_schema=False)
-async def setup_page() -> Response:
+async def setup_page(request: Request) -> Response:
+    environment = request.scope.get("env")
+    db = getattr(environment, "DB", None) if environment is not None else None
+    if db is not None and await _setup_is_configured(db):
+        return RedirectResponse(
+            "/sign-in?redirect=%2Fadmin",
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
     return Response(
         _asset("setup.html"), media_type="text/html", headers={"Cache-Control": "no-store"}
     )
@@ -382,10 +401,7 @@ def _email(value: str) -> tuple[str, str]:
     tags=["administration"],
 )
 async def setup_status(request: Request) -> SetupStatus:
-    existing = row_mapping(
-        await database(request).prepare("SELECT id FROM organizations LIMIT 1").first()
-    )
-    return SetupStatus(configured=existing is not None)
+    return SetupStatus(configured=await _setup_is_configured(database(request)))
 
 
 @access_router.post("/api/v1/bootstrap", response_model=BootstrapView, tags=["administration"])
@@ -394,10 +410,6 @@ async def bootstrap_tenant(
     request: Request,
     bootstrap_token: str | None = Header(default=None, alias="X-Bootstrap-Token"),
 ) -> BootstrapView:
-    expected = str(getattr(request.scope.get("env"), "BOOTSTRAP_TOKEN", "")).encode()
-    supplied = (bootstrap_token or "").encode()
-    if len(expected) < 32 or not hmac.compare_digest(expected, supplied):
-        raise HTTPException(status_code=404)
     event_values = (body.event_name, body.starts_at_ms, body.ends_at_ms, body.time_zone)
     has_event = any(value is not None for value in event_values)
     if has_event:
@@ -411,13 +423,33 @@ async def bootstrap_tenant(
         if body.ends_at_ms <= body.starts_at_ms:
             raise HTTPException(status_code=422)
     db = database(request)
-    existing = row_mapping(await db.prepare("SELECT id FROM organizations LIMIT 1").first())
-    if existing is not None:
+    if await _setup_is_configured(db):
         raise HTTPException(status_code=409)
+    credential = row_mapping(
+        await db.prepare(
+            """SELECT deployment_key FROM instance_setup_credentials
+               WHERE singleton_key='primary'"""
+        ).first()
+    )
+    expected = str(credential.get("deployment_key", "") if credential else "").encode()
+    supplied = (bootstrap_token or "").encode()
+    if len(expected) < 32 or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(status_code=404)
     now = utc_now_ms()
     organization_id, user_id = new_id(), new_id()
     event_id = new_id() if has_event else None
     batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO instance_setup (singleton_key,completed_at_ms)
+               VALUES('primary',?1)"""
+        ).bind(now)
+    )
+    batch.add_statement(
+        db.prepare(
+            "DELETE FROM instance_setup_credentials WHERE singleton_key='primary'"
+        )
+    )
     batch.add_statement(
         db.prepare(
             """INSERT INTO organizations
@@ -487,7 +519,17 @@ async def bootstrap_tenant(
             metadata={"initial_admin": 1, "initial_event": int(has_event)},
         )
     )
-    await batch.execute()
+    try:
+        await batch.execute()
+    except PersistenceError:
+        claimed = row_mapping(
+            await db.prepare(
+                "SELECT singleton_key FROM instance_setup WHERE singleton_key='primary'"
+            ).first()
+        )
+        if claimed is not None:
+            raise HTTPException(status_code=409) from None
+        raise
     return BootstrapView(organization_id=organization_id, event_id=event_id, admin_user_id=user_id)
 
 
