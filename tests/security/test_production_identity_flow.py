@@ -119,6 +119,55 @@ def _client(environment) -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=inject_environment), base_url="https://test")
 
 
+async def test_expired_browser_magic_link_has_html_recovery_without_changing_api_contract(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        bootstrap = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            json={"organization_name": "Expired Link Events", "admin_email": "admin@example.com"},
+        )
+        assert bootstrap.status_code == 200
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin/events"},
+        )
+        assert requested.status_code == 202
+        token = _token(connection, "admin@example.com")
+        connection.execute("UPDATE authentication_challenges SET expires_at_ms=0")
+        connection.commit()
+
+        browser = await client.get(f"/auth/verify?token={token}")
+        assert browser.status_code == 404
+        assert browser.headers["content-type"].startswith("text/html")
+        assert browser.headers["cache-control"] == "no-store"
+        assert "This sign-in link can’t be used." in browser.text
+        assert 'href="/sign-in"' in browser.text
+        assert token not in browser.text
+
+        api = await client.get(f"/api/v1/auth/verify?token={token}")
+        assert api.status_code == 404
+        assert api.headers["content-type"].startswith("application/json")
+        assert api.json()["error"] == {
+            "code": "resource_not_found",
+            "message": "Resource not found",
+        }
+
+
+async def test_missing_browser_magic_link_token_has_same_recovery_page(
+    production_environment,
+) -> None:
+    _connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        response = await client.get("/auth/verify")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Request a new sign-in link" in response.text
+
+
 async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
     production_environment,
 ) -> None:

@@ -20,11 +20,27 @@ async def test_versioned_health_contract(client: AsyncClient) -> None:
     assert response.headers["cache-control"] == "no-store"
 
 
-async def test_root_redirects_to_review_console(client: AsyncClient) -> None:
-    response = await client.get("/", follow_redirects=False)
+async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
+    response = await client.get("/")
 
-    assert response.status_code == 307
-    assert response.headers["location"] == "/engine-room"
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["cache-control"] == "no-store"
+    assert "Turn a call for speakers into a schedule" in response.text
+    assert 'href="/admin/events"' in response.text
+    assert 'href="/speaker"' in response.text
+    assert 'href="/engine-room"' in response.text
+
+
+async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:
+    response = await client.get("/landing/assets/landing.css")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+    assert response.headers["cache-control"] == "public, max-age=300"
+    assert ".hero-grid" in response.text
+    assert "focus-visible" in response.text
+    assert "prefers-reduced-motion" in response.text
 
 
 async def test_invalid_request_id_is_replaced(client: AsyncClient) -> None:

@@ -18,6 +18,21 @@ test.describe("MVP experience accessibility", () => {
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
   });
 
+  test("expired-link recovery has no automatically detectable serious violations", async ({ page }) => {
+    const expiredToken = "expired-link".padEnd(32, "x");
+    const response = await page.goto(`/auth/verify?token=${expiredToken}`);
+    expect(response?.status()).toBe(404);
+    await expect(page.locator("main")).toBeVisible();
+
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    const blocking = results.violations.filter(
+      ({ impact }) => impact === "critical" || impact === "serious",
+    );
+    expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
+  });
+
   const routes: Array<{ path: string; sessionEndpoint?: string }> = [
     { path: "/cfp-integration" },
     { path: "/admin/events", sessionEndpoint: "/api/v1/demo/session" },

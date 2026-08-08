@@ -5,11 +5,12 @@ are no longer used as product or architecture terminology.
 
 ## Platform and Engine Room
 
-Implemented: Cloudflare Worker packaging, D1/R2 boundaries, guarded one-time
+Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded one-time
 administrator bootstrap, passwordless email identity, invitation and
 submission-context provisioning, opaque sessions, RBAC, CSRF/origin protection,
 rate limiting, structured errors, request IDs, observability, containerized
-development, and the read-only `/engine-room` operator console.
+development, browser-friendly expired-link recovery, and the read-only
+`/engine-room` operator console.
 
 ## CFP management
 

@@ -1,13 +1,13 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from sessionbuddy.api.errors import ErrorDetail, ErrorEnvelope
 from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
 from sessionbuddy.cfp import cfp_router
 from sessionbuddy.communications.d1 import communications_service
 from sessionbuddy.communications.router import create_communications_router
-from sessionbuddy.console import engine_room_router
+from sessionbuddy.console import embedded_assets, engine_room_router
 from sessionbuddy.evaluation import evaluation_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
 from sessionbuddy.platform.auth import session_router
@@ -38,9 +38,21 @@ app.include_router(scheduling_router)
 app.include_router(create_communications_router(communications_service))
 
 
-@app.get("/", include_in_schema=False)
-async def root() -> RedirectResponse:
-    return RedirectResponse(url="/engine-room", status_code=307)
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root() -> HTMLResponse:
+    return HTMLResponse(
+        embedded_assets.LANDING_HTML,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/landing/assets/landing.css", response_class=Response, include_in_schema=False)
+async def landing_css() -> Response:
+    return Response(
+        embedded_assets.LANDING_CSS,
+        media_type="text/css",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @app.get(

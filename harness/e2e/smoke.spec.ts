@@ -3,10 +3,42 @@ import { expect, test } from "@playwright/test";
 test.describe("public smoke checks", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
-  test("application responds with visible content", async ({ page }) => {
+  test("public homepage presents the product and role entry points", async ({ page }) => {
     const response = await page.goto("/");
     expect(response?.ok()).toBeTruthy();
-    await expect(page.locator("body")).not.toBeEmpty();
+    await expect(page).toHaveTitle(/SessionBuddy/);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("heading", {
+      level: 1,
+      name: "Turn a call for speakers into a schedule everyone can trust.",
+    })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Start organizing/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open organizer workspace/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open review workspace/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open speaker portal/ })).toBeVisible();
+  });
+
+  test("public homepage remains usable at a mobile viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const response = await page.goto("/");
+    expect(response?.ok()).toBeTruthy();
+    await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Start organizing/ })).toBeVisible();
+    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(documentWidth).toBeLessThanOrEqual(390);
+  });
+
+  test("an expired magic link offers browser recovery instead of JSON", async ({ page }) => {
+    const expiredToken = "expired-link".padEnd(32, "x");
+    const response = await page.goto(`/auth/verify?token=${expiredToken}`);
+    expect(response?.status()).toBe(404);
+    await expect(page).toHaveTitle(/Sign-in link unavailable/);
+    await expect(page.getByRole("heading", {
+      level: 1,
+      name: "This sign-in link can’t be used.",
+    })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Request a new sign-in link" })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("resource_not_found");
   });
 });
 
@@ -44,8 +76,16 @@ test.describe("administration empty states", () => {
 
     const response = await page.goto("/admin/events");
     expect(response?.ok()).toBeTruthy();
-    await expect(page.getByText("No events yet.")).toBeVisible();
+    await expect(page.getByText(/No events yet\./)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Create an event" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Event name" })).toHaveValue("");
+    await expect(page.getByRole("textbox", { name: "Event name" })).toHaveAttribute(
+      "placeholder",
+      "e.g. Community Tech Summit 2026",
+    );
+    await expect(page.getByRole("combobox", { name: "Attendance format" })).toHaveValue("");
+    await expect(page.getByText("Choose one explicitly; SessionBuddy will not assume a format.")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Event time zone" })).not.toHaveValue("");
     await expect(page.getByRole("button", { name: "Create event" })).toBeEnabled();
   });
 

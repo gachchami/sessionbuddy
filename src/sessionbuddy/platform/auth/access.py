@@ -1134,9 +1134,19 @@ async def _add_speaker_profile(
 
 
 @access_router.get("/auth/verify", include_in_schema=False)
-async def verify_magic_link_in_browser(token: str, request: Request) -> RedirectResponse:
+async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> Response:
     cookie_response = Response()
-    session = await verify_magic_link(token, request, cookie_response)
+    try:
+        session = await verify_magic_link(token, request, cookie_response)
+    except HTTPException as exception:
+        if exception.status_code != 404:
+            raise
+        return Response(
+            _asset("auth_link_error.html"),
+            media_type="text/html",
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
     response = RedirectResponse(session.redirect_path, status_code=303)
     for key, value in cookie_response.raw_headers:
         if key.lower() == b"set-cookie":

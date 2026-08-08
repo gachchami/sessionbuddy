@@ -72,6 +72,44 @@ def test_public_form_and_portal_expose_errors_and_progress_accessibly() -> None:
     assert 'aria-label="Headshot upload progress"' in portal
 
 
+def test_landing_page_has_semantic_navigation_and_role_entry_points() -> None:
+    text, parser = parse("landing.html")
+    assert any(tag == "html" and attrs.get("lang") == "en" for tag, attrs in parser.tags)
+    assert any(tag == "meta" and attrs.get("name") == "viewport" for tag, attrs in parser.tags)
+    assert any(tag == "main" and attrs.get("id") == "main" for tag, attrs in parser.tags)
+    assert any(
+        tag == "nav" and attrs.get("aria-label") == "Primary navigation"
+        for tag, attrs in parser.tags
+    )
+    assert 'class="skip-link" href="#main"' in text
+    assert text.count("<h1") == 1
+    for path in ("/admin/events", "/reviews", "/speaker", "/engine-room"):
+        assert f'href="{path}"' in text
+    assert 'tabindex="1"' not in text and 'tabindex="2"' not in text
+
+
+def test_expired_link_recovery_page_has_accessible_actions() -> None:
+    text, parser = parse("auth_link_error.html")
+    assert any(tag == "html" and attrs.get("lang") == "en" for tag, attrs in parser.tags)
+    assert any(tag == "meta" and attrs.get("name") == "viewport" for tag, attrs in parser.tags)
+    assert any(tag == "main" and attrs.get("id") == "main" for tag, attrs in parser.tags)
+    assert 'class="skip-link" href="#main"' in text
+    assert text.count("<h1") == 1
+    assert 'href="/sign-in"' in text
+    assert 'href="/"' in text
+
+
+def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
+    text = (STATIC / "events_admin.html").read_text()
+    javascript = (STATIC / "events_admin.js").read_text()
+    assert 'placeholder="e.g. Community Tech Summit 2026"' in text
+    assert 'value="Asia/Kolkata"' not in text
+    assert '<option value="" selected disabled>Select how people will attend</option>' in text
+    assert 'aria-describedby="time-zone-help"' in text
+    assert 'aria-describedby="delivery-mode-help"' in text
+    assert 'form.elements.delivery_mode.value = ""' in javascript
+
+
 def test_evaluation_shell_and_runtime_admin_table_have_keyboard_repairs() -> None:
     reviews = (STATIC / "app/index.html").read_text()
     submissions_js = (STATIC / "admin_submissions.js").read_text()

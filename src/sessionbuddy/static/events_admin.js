@@ -51,6 +51,7 @@
     form.elements.event_id.value = "";
     form.elements.version.value = "";
     form.elements.time_zone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    form.elements.delivery_mode.value = "";
     byId("event-form-heading").textContent = "Create an event";
     byId("save-event").textContent = "Create event";
     byId("event-status-label").hidden = true;
@@ -120,7 +121,7 @@
     for (const event of result.data) list.append(eventItem(event));
     if (!result.data.length) {
       const empty = document.createElement("li");
-      empty.textContent = "No events yet.";
+      empty.textContent = "No events yet. Use the clearly labeled form above to create the first one.";
       list.append(empty);
     }
   }

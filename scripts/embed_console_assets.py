@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 OUTPUT = ROOT / "src" / "sessionbuddy" / "console" / "embedded_assets.py"
 ASSETS = {
+    "landing.html": "LANDING_HTML",
+    "landing.css": "LANDING_CSS",
     "engine_room.html": "ENGINE_ROOM_HTML",
     "console.css": "CONSOLE_CSS",
     "console.js": "CONSOLE_JS",
@@ -21,6 +23,7 @@ ASSETS = {
     "public_cfp.html": "PUBLIC_CFP_HTML",
     "public_cfp.js": "PUBLIC_CFP_JS",
     "sign_in.html": "SIGN_IN_HTML",
+    "auth_link_error.html": "AUTH_LINK_ERROR_HTML",
     "sign_in.js": "SIGN_IN_JS",
     "access_admin.html": "ACCESS_ADMIN_HTML",
     "access_admin.js": "ACCESS_ADMIN_JS",
