@@ -34,6 +34,35 @@ test.describe("public smoke checks", () => {
     expect(documentWidth).toBeLessThanOrEqual(390);
   });
 
+  test("an authenticated administrator never sees a sign-in call to action", async ({ page }) => {
+    await page.route("**/api/v1/auth/session", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          event_id: null,
+          csrf_token: "browser-test-csrf",
+          email: "admin@example.com",
+          display_name: "Admin User",
+          organization_access: [{
+            organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            roles: ["organization_admin"],
+          }],
+          event_access: [],
+        }),
+      });
+    });
+
+    await page.goto("/");
+    await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open app", exact: true })).toHaveCount(3);
+    await expect(page.locator("[data-auth-entry]")).toHaveCount(2);
+    await expect(page.locator("[data-auth-entry]")).toHaveText(["Open app", "Open app"]);
+    await expect(page.locator("[data-auth-entry]").first()).toHaveAttribute("href", "/admin");
+    await expect(page.locator("[data-auth-entry]").last()).toHaveAttribute("href", "/admin");
+  });
+
   test("an expired magic link offers browser recovery instead of JSON", async ({ page }) => {
     const expiredToken = "expired-link".padEnd(32, "x");
     const response = await page.goto(`/auth/verify?token=${expiredToken}`);

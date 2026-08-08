@@ -250,11 +250,18 @@
   function renderLandingAccount(session) {
     const roles = roleSet(session);
     const wrapper = make("span", undefined, "sb-landing-account");
-    if (roles.has("organization_admin") || roles.has("event_admin")) wrapper.append(link("Open app", "/admin"));
-    else if (roles.has("speaker")) wrapper.append(link("Open portal", "/speaker"));
-    else if (roles.has("evaluator")) wrapper.append(link("Open reviews", "/reviews"));
+    let label = "View account";
+    let href = "/account";
+    if (roles.has("organization_admin") || roles.has("event_admin")) [label, href] = ["Open app", "/admin"];
+    else if (roles.has("speaker")) [label, href] = ["Open portal", "/speaker"];
+    else if (roles.has("evaluator")) [label, href] = ["Open reviews", "/reviews"];
+    wrapper.append(link(label, href));
     wrapper.append(accountMenu(session, roles));
     landingAccount.replaceChildren(wrapper);
+    for (const entry of document.querySelectorAll("[data-auth-entry]")) {
+      entry.textContent = label;
+      entry.href = href;
+    }
   }
 
   function renderGuestShell() {
