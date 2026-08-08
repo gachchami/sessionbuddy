@@ -39,7 +39,7 @@
     submit.disabled = true;
     form.setAttribute("aria-busy", "true");
     status.className = "status";
-    status.textContent = "Creating the workspace…";
+    status.textContent = "Completing setup…";
     const values = Object.fromEntries(new FormData(form).entries());
     const deploymentKey = String(values.deployment_key || "");
     form.elements.deployment_key.value = "";
@@ -64,8 +64,8 @@
         body: JSON.stringify({ email: values.admin_email, redirect_path: "/admin" })
       });
       showConfigured(signIn.ok
-        ? `Workspace created. Check ${values.admin_email} for your sign-in link.`
-        : "Workspace created. Sign in with the administrator email.");
+        ? `Setup complete. Check ${values.admin_email} for your sign-in link.`
+        : "Setup complete. Sign in with the administrator email.");
     } catch (error) {
       status.className = "status error";
       status.textContent = error.status === 404

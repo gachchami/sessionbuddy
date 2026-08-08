@@ -1,5 +1,41 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in · SessionBuddy</title><link rel="stylesheet" href="/product/assets/product.css?v=7"><script src="/auth/assets/sign-in.js?v=7" defer></script></head>
-<body class="app-body"><a class="skip-link" href="#main">Skip to sign in</a><header class="app-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a></div></header><main id="main" class="shell page" tabindex="-1"><p class="eyebrow">Secure access</p><h1>Sign in</h1><p class="lede">We’ll email you a one-time sign-in link.</p><div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Enter your email.</div><section class="card"><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><div class="actions"><button id="send-sign-in-link">Send sign-in link</button><button id="change-sign-in-email" class="secondary" type="button" hidden>Use a different email</button></div></form></section></main></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <script src="/auth/assets/sign-in.js?v=8" defer></script>
+</head>
+<body class="app-body auth-body">
+  <a class="skip-link" href="#main">Skip to sign in</a>
+  <header class="app-header">
+    <div class="shell app-header__inner">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
+    </div>
+  </header>
+  <main id="main" class="auth-main" tabindex="-1">
+    <section class="auth-card" aria-labelledby="sign-in-title">
+      <div id="sign-in-entry">
+        <h1 id="sign-in-title">Sign in</h1>
+        <p class="auth-intro">Enter your email to receive a secure sign-in link.</p>
+        <form id="sign-in-form" class="auth-form">
+          <label>Email address
+            <input name="email" type="email" autocomplete="email" maxlength="320" placeholder="you@example.com" autofocus required>
+          </label>
+          <button id="send-sign-in-link">Sign in</button>
+        </form>
+        <p class="auth-note">No password required.</p>
+      </div>
+      <div id="sign-in-sent" class="auth-confirmation" tabindex="-1" hidden>
+        <div class="auth-confirmation__icon" aria-hidden="true">✓</div>
+        <h1>Check your email</h1>
+        <p id="sent-message"></p>
+        <p>Link expires in 15 minutes.</p>
+        <button id="change-sign-in-email" class="secondary" type="button">Change email</button>
+      </div>
+      <p id="status" class="auth-message" role="status" aria-live="polite" tabindex="-1" hidden></p>
+    </section>
+  </main>
+</body>
 </html>

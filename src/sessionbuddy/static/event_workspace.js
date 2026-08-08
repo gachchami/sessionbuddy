@@ -65,11 +65,11 @@
     } catch (error) { setStatus(error.message, true); }
   });
   async function initialize() {
-    if (!eventId) throw new Error("Invalid event workspace link.");
+    if (!eventId) throw new Error("Invalid event link.");
     const session = await api("/api/v1/session"); state.csrf = session.csrf_token;
     byId("event-id").textContent = eventId; byId("api-base").textContent = `${location.origin}/v1`;
     byId("onboarding-link").href = `/admin/events/${encodeURIComponent(eventId)}/onboarding`;
-    await Promise.all([loadResources(), loadTargets()]); setStatus("Workspace ready.");
+    await Promise.all([loadResources(), loadTargets()]); setStatus("Resources ready.");
   }
   initialize().catch((error) => { if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`); else setStatus(error.message, true); });
 })();

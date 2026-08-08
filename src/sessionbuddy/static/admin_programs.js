@@ -279,7 +279,12 @@
         body: JSON.stringify({ ...state.context, ...values })
       });
       const slug = byId("publish-form").elements.slug;
-      if (slug.value === "ai-engineer-summit") slug.value = `ai-engineer-summit-${state.program.id.slice(0, 8)}`;
+      if (!slug.value.trim()) {
+        slug.value = state.program.name.toLowerCase()
+          .normalize("NFKD")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || `program-${state.program.id.slice(0, 8)}`;
+      }
       byId("program-result").textContent = `${state.program.name} · ${state.program.status}`;
       byId("publish-form").querySelector('button[type="submit"], button:not([type])').disabled = false;
       setStatus("Program created. Review and publish its public form.");

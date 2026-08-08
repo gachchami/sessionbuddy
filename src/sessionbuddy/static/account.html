@@ -4,19 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=3" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/account/assets/account.js?v=2" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to account</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page account-page" tabindex="-1">
-    <div class="page-heading"><div><p class="eyebrow">Your profile</p><h1>Account & access</h1><p class="lede">Keep your administrator details current and review your workspace roles.</p></div></div>
-    <div id="status" class="status" role="status" aria-live="polite">Loading your account…</div>
+    <div class="page-heading"><div><h1>Account</h1><p class="lede">Profile details and access.</p></div></div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section class="card" aria-labelledby="profile-title">
-      <p class="eyebrow">Profile</p><h2 id="profile-title">Your details</h2>
+      <h2 id="profile-title">Profile</h2>
       <form id="profile-form">
         <div class="form-grid">
           <label>Full name<input name="display_name" autocomplete="name" maxlength="200" required></label>
@@ -30,7 +30,7 @@
       </form>
     </section>
     <section class="directory-section" aria-labelledby="access-title">
-      <div class="section-heading"><h2 id="access-title">Workspace access</h2><span id="access-count" class="badge">—</span></div>
+      <div class="section-heading"><h2 id="access-title">Access</h2><span id="access-count" class="badge">—</span></div>
       <div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div>
     </section>
   </main>

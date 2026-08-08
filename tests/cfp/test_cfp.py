@@ -196,7 +196,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     }
     assert sign_in.status_code == access.status_code == events.status_code == 200
     assert setup.status_code == setup_css.status_code == setup_js.status_code == 200
-    assert "Events and speakers start empty" in setup.text
+    assert "Create the first organization and administrator" in setup.text
     assert {
         admin_home.status_code,
         event_overview.status_code,
@@ -204,13 +204,13 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         account.status_code,
         app_shell_js.status_code,
     } == {200}
-    assert "one-time sign-in link" in sign_in.text
+    assert "secure sign-in link" in sign_in.text
     assert "People and invitations" in access.text
-    assert "Event workspaces" in events.text
+    assert "Create events and keep their details up to date" in events.text
     assert "Organization settings" in events.text
     assert "Save changes" in events.text
     assert "data-auth-shell" in events.text
-    assert "Program management" in admin.text
+    assert "Call for speakers" in admin.text
     assert "data-auth-shell" in admin.text
     assert "Submit a proposal" in public.text
     assert "Submissions" in submissions.text

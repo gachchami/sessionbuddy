@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event access · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/admin/access/assets/access.js?v=2" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to access management</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
-    <p class="eyebrow">Event administration</p><h1>People and invitations</h1>
-    <p class="lede">Invite administrators, reviewers, and speakers. Access starts after the recipient verifies their email.</p>
+    <h1>People and invitations</h1>
+    <p class="lede">Invite administrators, reviewers, and speakers.</p>
     <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Checking your session…</div>
     <div class="grid">
       <section class="card"><h2>Send invitation</h2><form id="invite-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Event role<select name="role"><option value="speaker">Speaker</option><option value="evaluator">Reviewer</option><option value="event_admin">Event administrator</option></select></label><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="14" selected>14 days</option><option value="30">30 days</option></select></label><button>Invite</button></form></section>

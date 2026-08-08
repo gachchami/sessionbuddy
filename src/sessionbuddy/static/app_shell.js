@@ -98,9 +98,9 @@
     menuHeader.append(make("strong", displayName(session)), make("span", session.email));
     menu.append(menuHeader, navLink("Account & access", "/account", "account"));
     if (roles.has("organization_admin") || roles.has("event_admin")) {
-      menu.append(navLink("Organizer workspace", "/admin", "overview"));
+      menu.append(navLink("Home", "/admin", "overview"));
     }
-    if (roles.has("evaluator")) menu.append(navLink("Review workspace", "/reviews", "review"));
+    if (roles.has("evaluator")) menu.append(navLink("Reviews", "/reviews", "review"));
     if (roles.has("speaker")) menu.append(navLink("Speaker profile", "/speaker#profile", "mic"));
     const signOut = make("button", "Sign out", "sb-account__sign-out");
     signOut.type = "button";
@@ -145,7 +145,7 @@
       if (location.pathname === "/admin/programs") return "Call for speakers";
       return "Event overview";
     }
-    return { home: "Organizer home", events: "Events", speakers: "Speakers", reviews: "Reviews", speaker: "Speaker portal", account: "Account" }[section] || "Workspace";
+    return { home: "Home", events: "Events", speakers: "Speakers", reviews: "Reviews", speaker: "Speaker portal", account: "Account" }[section] || "Home";
   }
 
   function eventNav(eventId) {
@@ -188,14 +188,14 @@
     const mark = make("span", "S", "sb-app-brand__mark");
     mark.setAttribute("aria-hidden", "true");
     const brandText = make("span", undefined, "sb-app-brand__text");
-    brandText.append(make("strong", "SessionBuddy"), make("small", organizer ? "Organizer" : "Workspace"));
+    brandText.append(make("strong", "SessionBuddy"));
     brand.append(mark, brandText);
     sidebar.append(brand);
 
     const primaryGroup = make("div", undefined, "sb-sidebar__group");
-    primaryGroup.append(make("p", "Workspace", "sb-sidebar__label"));
+    primaryGroup.append(make("p", "Main", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
-    nav.setAttribute("aria-label", "Workspace navigation");
+    nav.setAttribute("aria-label", "Main navigation");
     if (organizer) {
       nav.append(
         navLink("Home", "/admin", "home", section === "home"),
@@ -218,7 +218,7 @@
     menuButton.setAttribute("aria-expanded", "false");
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
-    crumb.append(make("span", currentEventId ? "Event workspace" : "SessionBuddy"), make("strong", pageLabel(section, currentEventId)));
+    crumb.append(make("strong", pageLabel(section, currentEventId)));
     topbar.append(menuButton, crumb, accountMenu(session, roles));
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");
@@ -250,7 +250,7 @@
   function renderLandingAccount(session) {
     const roles = roleSet(session);
     const wrapper = make("span", undefined, "sb-landing-account");
-    if (roles.has("organization_admin") || roles.has("event_admin")) wrapper.append(link("Open workspace", "/admin"));
+    if (roles.has("organization_admin") || roles.has("event_admin")) wrapper.append(link("Open app", "/admin"));
     else if (roles.has("speaker")) wrapper.append(link("Open portal", "/speaker"));
     else if (roles.has("evaluator")) wrapper.append(link("Open reviews", "/reviews"));
     wrapper.append(accountMenu(session, roles));

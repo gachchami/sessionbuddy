@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Call for speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/product/assets/admin-programs.js?v=8" defer></script>
 </head>
 <body class="app-body">
@@ -14,21 +14,21 @@
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
-      <div><p class="eyebrow">Program management</p><h1>Open your call for speakers</h1><p class="lede">Create a program, shape the proposal experience, and control when and where submissions arrive.</p></div>
+      <div><h1>Call for speakers</h1><p class="lede">Create the proposal form and choose when submissions are accepted.</p></div>
       <a id="manage-access" class="button secondary" href="/admin/programs" hidden>People & access</a>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
     <div class="grid">
       <section class="card" aria-labelledby="create-title">
-        <p class="eyebrow">Step 1</p><h2 id="create-title">Create program</h2>
+        <p class="eyebrow">Step 1</p><h2 id="create-title">Create a program</h2>
         <p class="help">A program contains the CFP form, submissions, evaluation rounds, and accepted sessions.</p>
-        <form id="program-form"><label>Program name<input name="name" value="AI Engineer Summit CFP" maxlength="200" required></label><button disabled>Create program</button></form>
+        <form id="program-form"><label>Program name<input name="name" placeholder="Call for speakers" maxlength="200" required></label><button disabled>Create program</button></form>
         <p id="program-result" class="result">No program created yet.</p>
       </section>
       <section class="card" aria-labelledby="publish-title">
         <p class="eyebrow">Step 2</p><h2 id="publish-title">Configure the proposal form</h2>
         <form id="publish-form">
-          <label>Public URL slug<input name="slug" value="ai-engineer-summit" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required><small>Lowercase letters, numbers, and hyphens.</small></label>
+          <label>Public URL slug<input name="slug" placeholder="conference-2026" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required><small>Lowercase letters, numbers, and hyphens.</small></label>
           <label>Welcome message<textarea name="welcome_text" required>Share the session you want to bring to our community.</textarea></label>
           <fieldset><legend>Availability</legend><div class="form-grid">
             <label>Opens <span class="optional">Optional</span><input name="opens_at" type="datetime-local"></label>
@@ -41,7 +41,7 @@
             <label>Confirmation email subject<input name="confirmation_subject" value="We received your proposal" maxlength="200" required></label>
             <label>Confirmation email message<textarea name="confirmation_body" maxlength="4000" required>Thank you for submitting. Your proposal is now ready for review.</textarea></label>
           </fieldset>
-          <section aria-labelledby="routing-title"><h3 id="routing-title">Automatic routing</h3><p class="help">Optionally route matching answers to a category, track, or review queue.</p><div id="routing-rules"></div><button id="add-routing" class="secondary" type="button">Add routing rule</button></section>
+          <section aria-labelledby="routing-title"><h3 id="routing-title">Automatic routing</h3><p class="help">Send matching answers to a category, track, or review queue.</p><div id="routing-rules"></div><button id="add-routing" class="secondary" type="button">Add routing rule</button></section>
           <button disabled>Publish form</button>
         </form>
         <div id="publish-result" class="result">Create a program first.</div>

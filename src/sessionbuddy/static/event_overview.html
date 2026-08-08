@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/admin/event-overview/assets/event-overview.js?v=2" defer></script>
 </head>
 <body class="app-body">
@@ -14,17 +14,17 @@
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
-      <div><p id="organization-name" class="eyebrow">Event workspace</p><h1 id="event-name">Loading event…</h1><p id="event-summary" class="lede"></p></div>
+      <div><p id="organization-name" class="eyebrow">Organization</p><h1 id="event-name">Loading event…</h1><p id="event-summary" class="lede"></p></div>
       <a id="public-schedule" class="button secondary" href="#">Public schedule</a>
     </div>
-    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading event workspace…</div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section class="metric-strip" aria-label="Event summary">
       <article><span>Status</span><strong id="event-status">—</strong></article>
       <article><span>Speakers</span><strong id="speaker-count">—</strong></article>
       <article><span>Time zone</span><strong id="event-time-zone">—</strong></article>
     </section>
     <section aria-labelledby="tools-title" class="directory-section">
-      <div class="section-heading"><div><p class="eyebrow">Manage this event</p><h2 id="tools-title">Event tools</h2><p class="section-summary">Choose an area from here or use the event navigation in the sidebar.</p></div></div>
+      <div class="section-heading"><div><h2 id="tools-title">Event tools</h2></div></div>
       <div id="event-tools" class="entity-grid"></div>
     </section>
   </main>

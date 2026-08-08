@@ -4,24 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign-in link unavailable · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=6">
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
 </head>
-<body>
-  <a class="skip-link" href="#main">Skip to recovery options</a>
-  <header>
-    <div class="shell"><strong>SessionBuddy</strong><a href="/">Home</a></div>
+<body class="auth-body">
+  <a class="skip-link" href="#main">Skip to sign in</a>
+  <header class="app-header">
+    <div class="shell app-header__inner">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
+    </div>
   </header>
-  <main id="main" class="shell" tabindex="-1">
-    <p class="eyebrow">Secure access</p>
-    <h1>This sign-in link can’t be used.</h1>
-    <p class="lede">It may have expired or already been opened. Sign in again, then use the newest SessionBuddy email.</p>
-    <section class="card" aria-labelledby="recovery-title">
-      <h2 id="recovery-title">Sign in again</h2>
-      <p>For your security, every sign-in link works once and expires after a short time. SessionBuddy will email you a fresh link.</p>
-      <div class="actions">
-        <a class="button" href="/sign-in">Sign in</a>
-        <a class="button secondary" href="/">Return home</a>
-      </div>
+  <main id="main" class="auth-main" tabindex="-1">
+    <section class="auth-card">
+      <h1>This link has expired</h1>
+      <p class="auth-intro">Sign in again to receive a new link.</p>
+      <a class="button" href="/sign-in">Sign in</a>
     </section>
   </main>
 </body>

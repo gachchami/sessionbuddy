@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Speaker portal · SessionBuddy</title>
-  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=7">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=8">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/speaker/assets/speaker-portal.js?v=7" defer></script>
 </head>
 <body class="app-body">
@@ -20,8 +20,7 @@
     </div>
 
     <section id="auth-state" class="state-panel" hidden aria-labelledby="auth-title">
-      <p class="eyebrow">Speaker access required</p>
-      <h1 id="auth-title">Open your speaker portal</h1>
+      <h1 id="auth-title">Speaker sign in</h1>
       <p>Use the email address connected to your invitation or proposal.</p>
       <button id="speaker-sign-in" type="button">Sign in</button>
     </section>
@@ -29,8 +28,7 @@
     <div id="portal" hidden>
       <section id="overview" class="hero" aria-labelledby="portal-title">
         <div>
-          <p class="eyebrow">Speaker portal</p>
-          <h1 id="portal-title">Welcome</h1>
+          <h1 id="portal-title">Your speaker portal</h1>
           <p id="event-summary" class="lede"></p>
           <p id="event-timezone" class="timezone"></p>
         </div>
@@ -45,7 +43,7 @@
       <div class="portal-grid">
         <section id="tasks" class="panel" aria-labelledby="tasks-title">
           <div class="section-heading">
-            <div><p class="eyebrow">What’s next</p><h2 id="tasks-title">Outstanding tasks</h2></div>
+            <h2 id="tasks-title">Outstanding tasks</h2>
             <span id="task-count" class="count-badge">0</span>
           </div>
           <ul id="task-list" class="item-list" aria-describedby="task-help"></ul>
@@ -54,19 +52,18 @@
 
         <section id="submissions" class="panel" aria-labelledby="submissions-title">
           <div class="section-heading">
-            <div><p class="eyebrow">Your proposals</p><h2 id="submissions-title">Submissions</h2></div>
+            <h2 id="submissions-title">Submissions</h2>
           </div>
           <ul id="submission-list" class="item-list"></ul>
         </section>
 
         <section id="resources" class="panel profile-panel" aria-labelledby="resources-title">
-          <div class="section-heading"><div><p class="eyebrow">Event information</p><h2 id="resources-title">Resources & wiki</h2></div><span id="resource-count" class="count-badge">0</span></div>
+          <div class="section-heading"><h2 id="resources-title">Resources</h2><span id="resource-count" class="count-badge">0</span></div>
           <p class="help">Guides, venue details, and documents shared by your event team.</p>
           <div id="resource-list" class="resource-list"><p class="empty">Loading resources…</p></div>
         </section>
 
         <section id="profile" class="panel profile-panel" aria-labelledby="profile-title">
-          <p class="eyebrow">Shared speaker details</p>
           <h2 id="profile-title">Profile</h2>
           <p class="help">Required fields are marked “required.” Changes apply to your shared speaker profile, not past proposal answers.</p>
           <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden>
@@ -97,8 +94,7 @@
         </section>
 
         <section id="assets" class="panel profile-panel" aria-labelledby="assets-title">
-          <p class="eyebrow">Private uploads</p>
-          <h2 id="assets-title">Assets</h2>
+          <h2 id="assets-title">Files</h2>
           <p class="help">Files stay private while they are checked. Only the latest clean version becomes current.</p>
           <div id="asset-status" class="inline-status" role="status" aria-live="polite">Loading current assets…</div>
           <ul id="asset-list" class="asset-list"><li>Loading…</li></ul>

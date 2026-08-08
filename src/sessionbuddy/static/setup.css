@@ -1,30 +1,28 @@
 :root { color-scheme: light; }
-.setup-body { min-height: 100vh; background: #0d182a; }
-.setup-header { min-height: 4.5rem; display: flex; align-items: center; padding-inline: max(1rem, calc((100vw - 76rem) / 2)); border-bottom: 1px solid rgba(255,255,255,.1); background: transparent; }
-.setup-brand { display: inline-flex; align-items: center; gap: .7rem; color: white; font-weight: 850; text-decoration: none; }
-.setup-brand span { width: 2.1rem; height: 2.1rem; display: grid; place-items: center; border-radius: .65rem; background: #b9ef75; color: #101b31; }
-.setup-shell { width: min(76rem, calc(100% - 2rem)); min-height: calc(100vh - 4.5rem); display: grid; grid-template-columns: minmax(0,.85fr) minmax(28rem,1.15fr); gap: clamp(2rem,7vw,6rem); align-items: center; margin-inline: auto; padding-block: clamp(2rem,7vw,6rem); }
-.setup-intro { color: white; }
-.setup-intro .eyebrow { color: #b9ef75; }
-.setup-intro h1 { max-width: 10ch; color: white; font-size: clamp(2.7rem,6vw,5rem); }
-.setup-intro > p:not(.eyebrow) { max-width: 34rem; margin: 1.25rem 0 2rem; color: #b8c4d4; font-size: 1.08rem; }
-.setup-intro ol { display: grid; gap: .8rem; margin: 0; padding: 0; list-style: none; }
-.setup-intro li { display: grid; grid-template-columns: 2.4rem 1fr; gap: .8rem; align-items: center; }
-.setup-intro li > span { width: 2.2rem; height: 2.2rem; display: grid; place-items: center; border: 1px solid #56647a; border-radius: 50%; color: #dce5f1; font-size: .8rem; font-weight: 850; }
-.setup-intro li div { display: grid; gap: .15rem; }
-.setup-intro small { color: #8fa0b5; }
-.setup-card { padding: clamp(1.25rem,4vw,2.25rem); border: 1px solid #dbe1eb; border-radius: 1.2rem; background: white; box-shadow: 0 2rem 6rem rgba(0,0,0,.28); }
+.setup-body { min-height: 100vh; background: #f7f8fa; }
+.setup-header { min-height: 4rem; display: flex; align-items: center; padding-inline: max(1rem, calc((100vw - 64rem) / 2)); border-bottom: 1px solid #e4e7ec; background: white; }
+.setup-brand { display: inline-flex; align-items: center; gap: .65rem; color: #182230; font-weight: 750; text-decoration: none; }
+.setup-brand span { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: .5rem; background: #2563eb; color: white; font-size: .8rem; }
+.setup-shell { width: min(64rem, calc(100% - 2rem)); min-height: calc(100vh - 4rem); display: grid; grid-template-columns: minmax(15rem,.7fr) minmax(28rem,1.3fr); gap: clamp(2rem,6vw,4.5rem); align-items: center; margin-inline: auto; padding-block: 3rem; }
+.setup-intro { color: #182230; }
+.setup-intro h1 { max-width: 12ch; font-size: clamp(2rem,4vw,2.8rem); }
+.setup-intro > p:not(.eyebrow) { max-width: 28rem; margin: .8rem 0 1.75rem; color: #667085; }
+.setup-intro ol { display: grid; gap: .9rem; margin: 0; padding: 0; list-style: none; }
+.setup-intro li { display: grid; grid-template-columns: 2rem 1fr; gap: .75rem; align-items: start; }
+.setup-intro li > span { width: 1.8rem; height: 1.8rem; display: grid; place-items: center; border: 1px solid #d0d5dd; border-radius: 50%; color: #475467; font-size: .75rem; font-weight: 700; }
+.setup-intro li div { display: grid; gap: .1rem; }
+.setup-intro small { color: #667085; }
+.setup-card { padding: clamp(1.25rem,4vw,2rem); border: 1px solid #e4e7ec; border-radius: .75rem; background: white; box-shadow: 0 8px 24px rgba(16,24,40,.06); }
 .setup-card .status { margin-top: 0; }
-.setup-card h2 { font-size: clamp(1.55rem,3vw,2.1rem); }
-.setup-card button, .setup-card .button { width: 100%; margin-top: .65rem; }
-.setup-card .help { margin: -.55rem 0 1rem; line-height: 1.55; }
-@media (max-width: 64rem) {
+.setup-card h2 { font-size: clamp(1.4rem,3vw,1.75rem); }
+.setup-card button, .setup-card .button { width: 100%; margin-top: .5rem; }
+.setup-card .help { margin: -.5rem 0 1rem; line-height: 1.5; }
+@media (max-width: 48rem) {
   .setup-shell { grid-template-columns: 1fr; align-items: start; }
-  .setup-intro h1 { max-width: 14ch; }
+  .setup-intro { max-width: 32rem; }
 }
 @media (max-width: 36rem) {
-  .setup-shell { width: min(100% - 1rem,76rem); }
-  .setup-card { border-radius: .85rem; }
+  .setup-shell { width: min(100% - 1rem,64rem); }
 }
 @media (prefers-reduced-motion: reduce) {
   *,*::before,*::after { scroll-behavior: auto !important; transition: none !important; }

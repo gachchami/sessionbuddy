@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/admin/events/assets/events.js?v=8" defer></script>
 </head>
 <body class="app-body">
@@ -15,9 +15,8 @@
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading page-heading--compact">
       <div>
-        <p class="eyebrow">Event workspaces</p>
         <h1>Events</h1>
-        <p class="lede">Open an event to manage its program, people, speakers, and schedule.</p>
+        <p class="lede">Create events and keep their details up to date.</p>
       </div>
       <button id="new-event" type="button">Create event</button>
     </div>
@@ -35,7 +34,7 @@
 
     <section class="directory-section directory-section--primary" aria-labelledby="event-list-title">
       <div class="section-heading">
-        <div><h2 id="event-list-title">Your events</h2><p class="section-summary">Select a workspace to continue where your team left off.</p></div>
+        <div><h2 id="event-list-title">All events</h2></div>
         <span id="event-count" class="badge">—</span>
       </div>
       <div id="event-list" class="entity-grid event-grid"><p class="empty">Loading your events…</p></div>
@@ -43,7 +42,7 @@
 
     <dialog id="organization-dialog" class="form-dialog" aria-labelledby="organization-dialog-title">
       <div class="dialog-heading">
-        <div><p class="eyebrow">Organization</p><h2 id="organization-dialog-title">Organization settings</h2><p class="result">This name appears across every event in this workspace.</p></div>
+        <div><h2 id="organization-dialog-title">Organization</h2><p class="result">Update the name shown across its events.</p></div>
         <button id="close-organization" type="button" class="icon-button" aria-label="Close organization settings">×</button>
       </div>
       <form id="organization-form">
@@ -56,7 +55,7 @@
 
     <dialog id="event-dialog" class="form-dialog form-dialog--wide" aria-labelledby="event-form-heading">
       <div class="dialog-heading">
-        <div><p class="eyebrow">Event workspace</p><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Add the essentials now. Brand settings can be completed later.</p></div>
+        <div><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Add the essential details.</p></div>
         <button id="close-event-dialog" type="button" class="icon-button" aria-label="Close event form">×</button>
       </div>
       <form id="event-form">

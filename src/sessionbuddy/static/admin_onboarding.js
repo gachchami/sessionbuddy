@@ -171,7 +171,7 @@
       setStatus(announce ? "Onboarding snapshot refreshed." : `${state.rows.length} speaker record${state.rows.length === 1 ? "" : "s"} shown.`);
     } catch (error) {
       const authMessage = error.status === 401 || error.status === 403
-        ? "Your admin session cannot access this onboarding dashboard."
+        ? "Your account cannot access this event."
         : "Live refresh failed. Showing the last successful snapshot while reconnecting.";
       setStatus(authMessage, true);
       setConnection("stale", error.status === 401 || error.status === 403 ? "Access unavailable" : "Reconnecting");
@@ -218,7 +218,7 @@
 
   async function initialize() {
     if (!eventId) {
-      setStatus("This onboarding dashboard link is invalid. Return to Programs and choose an event.", true);
+      setStatus("This onboarding link is invalid. Return to Programs and choose an event.", true);
       setConnection("stale", "Invalid event link");
       return;
     }

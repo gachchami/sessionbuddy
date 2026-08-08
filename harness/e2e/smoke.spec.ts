@@ -13,12 +13,12 @@ test.describe("public smoke checks", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("heading", {
       level: 1,
-      name: "Turn a call for speakers into a schedule everyone can trust.",
+      name: "Plan your conference program in one place.",
     })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Start organizing/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Open organizer workspace/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Open review workspace/ })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Open speaker portal/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Events" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Reviews" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Speaker portal", exact: true }).first()).toBeVisible();
   });
 
   test("public homepage remains usable at a mobile viewport", async ({ page }) => {
@@ -29,7 +29,7 @@ test.describe("public smoke checks", () => {
     const response = await page.goto("/");
     expect(response?.ok()).toBeTruthy();
     await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Start organizing/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(documentWidth).toBeLessThanOrEqual(390);
   });
@@ -41,7 +41,7 @@ test.describe("public smoke checks", () => {
     await expect(page).toHaveTitle(/Sign-in link unavailable/);
     await expect(page.getByRole("heading", {
       level: 1,
-      name: "This sign-in link can’t be used.",
+      name: "This link has expired",
     })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
     await expect(page.locator("body")).not.toContainText("resource_not_found");
@@ -57,19 +57,18 @@ test.describe("public smoke checks", () => {
     const response = await page.goto("/sign-in");
     expect(response?.ok()).toBeTruthy();
     const email = page.getByRole("textbox", { name: "Email address" });
-    const send = page.getByRole("button", { name: "Send sign-in link" });
+    const send = page.getByRole("button", { name: "Sign in" });
     await email.fill("speaker@example.com");
     await send.click();
 
-    await expect(page.getByRole("status")).toContainText("Check your email");
-    await expect(email).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Email sent" })).toBeDisabled();
+    await expect(email).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
     expect(requestCount).toBe(1);
 
-    await page.getByRole("button", { name: "Use a different email" }).click();
+    await page.getByRole("button", { name: "Change email" }).click();
     await expect(email).toBeEnabled();
     await expect(email).toBeFocused();
-    await expect(page.getByRole("button", { name: "Send sign-in link" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
   });
 
   test("an empty instance starts with secured administrator onboarding", async ({ page }) => {
@@ -88,14 +87,14 @@ test.describe("public smoke checks", () => {
     });
 
     await page.goto("/setup");
-    await expect(page.getByRole("heading", { name: "Create your workspace." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Set up SessionBuddy." })).toBeVisible();
     await page.getByLabel("Organization name").fill("Noneli Events");
     await page.getByLabel("Administrator name").fill("Devang Hanushali");
     await page.getByLabel("Administrator email").fill("me@example.com");
     await page.getByLabel("Deployment setup key").fill("x".repeat(40));
-    await page.getByRole("button", { name: "Create workspace" }).click();
+    await page.getByRole("button", { name: "Complete setup" }).click();
 
-    await expect(page.getByRole("status")).toContainText("Workspace created");
+    await expect(page.getByRole("status")).toContainText("Setup complete");
     expect(bootstrapKey).toBe("x".repeat(40));
     expect(bootstrapBody).toMatchObject({
       organization_name: "Noneli Events",

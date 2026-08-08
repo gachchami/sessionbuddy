@@ -280,7 +280,7 @@
     if (!result.data.length) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = "No events yet. Create the first workspace when you are ready.";
+      empty.textContent = "No events yet. Create your first event.";
       list.append(empty);
     }
   }

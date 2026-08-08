@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Organizer home · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <title>Home · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/admin/home/assets/home.js?v=2" defer></script>
 </head>
 <body class="app-body">
-  <a class="skip-link" href="#main">Skip to organizer workspace</a>
+  <a class="skip-link" href="#main">Skip to content</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
-      <div><p class="eyebrow">Organizer workspace</p><h1>Organizer dashboard</h1><p class="lede">A clear view of your events, speakers, and organization access.</p></div>
+      <div><h1>Home</h1><p class="lede">Events, speakers, and access at a glance.</p></div>
       <a class="button" href="/admin/events#event-form">Create event</a>
     </div>
-    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading your workspace…</div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
 
     <section class="metric-strip dashboard-metrics" aria-label="Workspace summary">
       <article><span>Organizations</span><strong id="metric-organizations">—</strong></article>
@@ -26,17 +26,17 @@
     </section>
 
     <section id="events" class="directory-section directory-section--primary" aria-labelledby="events-title">
-      <div class="section-heading"><div><p class="eyebrow">Continue working</p><h2 id="events-title">Events</h2><p class="section-summary">Open an event workspace to manage the full program.</p></div><a class="text-link" href="/admin/events">View all events</a></div>
+      <div class="section-heading"><div><h2 id="events-title">Events</h2></div><a class="text-link" href="/admin/events">View all</a></div>
       <div id="event-list" class="entity-grid"><p class="empty">Loading events…</p></div>
     </section>
 
     <section id="speakers" class="directory-section" aria-labelledby="speakers-title">
-      <div class="section-heading"><div><p class="eyebrow">People</p><h2 id="speakers-title">Recent speakers</h2></div><a class="text-link" href="/admin/speakers">View speaker directory</a></div>
+      <div class="section-heading"><div><h2 id="speakers-title">Recent speakers</h2></div><a class="text-link" href="/admin/speakers">View all</a></div>
       <div id="speaker-list" class="entity-grid"><p class="empty">Loading speakers…</p></div>
     </section>
 
     <section id="organizations" class="directory-section" aria-labelledby="organizations-title">
-      <div class="section-heading"><div><p class="eyebrow">Workspace ownership</p><h2 id="organizations-title">Organizations</h2></div><span id="organization-count" class="badge">—</span></div>
+      <div class="section-heading"><div><h2 id="organizations-title">Organizations</h2></div><span id="organization-count" class="badge">—</span></div>
       <div id="organization-list" class="entity-grid"><p class="empty">Loading organizations…</p></div>
     </section>
   </main>

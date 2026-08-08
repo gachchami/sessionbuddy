@@ -4,23 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=9">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
-  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=11">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
   <script src="/admin/speakers/assets/speakers.js?v=1" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to speakers</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading"><div><p class="eyebrow">Speaker directory</p><h1 id="page-title">Speakers</h1><p id="page-summary" class="lede">Browse speakers across the events you manage.</p></div></div>
-    <div id="status" class="status" role="status" aria-live="polite">Loading speakers…</div>
+    <div class="page-heading"><div><h1 id="page-title">Speakers</h1><p id="page-summary" class="lede">People speaking at your events.</p></div></div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section id="speaker-detail" class="card" hidden aria-labelledby="speaker-name">
       <p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p>
       <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="#">Back to event speakers</a></div>
     </section>
     <section class="directory-section" aria-labelledby="directory-title">
-      <div class="section-heading"><h2 id="directory-title">Directory</h2><span id="speaker-count" class="badge">—</span></div>
+      <div class="section-heading"><h2 id="directory-title">All speakers</h2><span id="speaker-count" class="badge">—</span></div>
       <div id="speaker-list" class="entity-grid"><p class="empty">Loading speaker directory…</p></div>
     </section>
   </main>

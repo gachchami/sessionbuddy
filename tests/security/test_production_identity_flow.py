@@ -151,7 +151,7 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
         assert browser.status_code == 404
         assert browser.headers["content-type"].startswith("text/html")
         assert browser.headers["cache-control"] == "no-store"
-        assert "This sign-in link can’t be used." in browser.text
+        assert "This link has expired" in browser.text
         assert 'href="/sign-in"' in browser.text
         assert token not in browser.text
 
@@ -184,7 +184,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         page = await client.get("/setup")
         initial = await client.get("/api/v1/setup/status")
         assert page.status_code == 200
-        assert "Create your workspace" in page.text
+        assert "Set up SessionBuddy" in page.text
         assert initial.json() == {"configured": False}
 
         created = await client.post(
@@ -204,7 +204,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         closed_setup = await client.get("/setup", follow_redirects=False)
         assert closed_setup.status_code == 303
         assert closed_setup.headers["location"] == "/sign-in?redirect=%2Fadmin"
-        assert "Create your workspace" not in closed_setup.text
+        assert "Set up SessionBuddy" not in closed_setup.text
         assert connection.execute(
             "SELECT COUNT(*) FROM instance_setup WHERE singleton_key='primary'"
         ).fetchone()[0] == 1
