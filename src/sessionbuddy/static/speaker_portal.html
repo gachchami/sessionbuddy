@@ -5,18 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Speaker portal · SessionBuddy</title>
-  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=1">
-  <script src="/speaker/assets/speaker-portal.js?v=1" defer></script>
+  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=7">
+  <script src="/speaker/assets/speaker-portal.js?v=7" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="shell header-layout">
-      <a class="brand" href="/speaker" aria-label="SessionBuddy speaker portal home">SessionBuddy</a>
+      <a class="brand" href="/speaker" aria-label="SessionBuddy speaker portal home"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
       <nav aria-label="Speaker portal">
         <a href="#overview" aria-current="page">Home</a>
         <a href="#tasks">Tasks</a>
         <a href="#submissions">Submissions</a>
+        <a href="#resources">Resources</a>
         <a href="#profile">Profile</a>
         <a href="#assets">Assets</a>
       </nav>
@@ -66,6 +67,12 @@
             <div><p class="eyebrow">Your proposals</p><h2 id="submissions-title">Submissions</h2></div>
           </div>
           <ul id="submission-list" class="item-list"></ul>
+        </section>
+
+        <section id="resources" class="panel profile-panel" aria-labelledby="resources-title">
+          <div class="section-heading"><div><p class="eyebrow">Event information</p><h2 id="resources-title">Resources & wiki</h2></div><span id="resource-count" class="count-badge">0</span></div>
+          <p class="help">Guides, venue details, and documents shared by your event team.</p>
+          <div id="resource-list" class="resource-list"><p class="empty">Loading resources…</p></div>
         </section>
 
         <section id="profile" class="panel profile-panel" aria-labelledby="profile-title">

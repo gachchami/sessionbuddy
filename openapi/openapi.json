@@ -1,6 +1,51 @@
 {
   "components": {
     "schemas": {
+      "AdminSpeakerTaskView": {
+        "properties": {
+          "due_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At Ms"
+          },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "completed",
+              "waived"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_speaker_id",
+          "title",
+          "state",
+          "due_at_ms"
+        ],
+        "title": "AdminSpeakerTaskView",
+        "type": "object"
+      },
       "AgendaCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -1255,6 +1300,19 @@
       "EventCreate": {
         "additionalProperties": false,
         "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "#3159d9",
+            "title": "Accent Color"
+          },
           "delivery_mode": {
             "default": "hybrid",
             "enum": [
@@ -1293,6 +1351,18 @@
             ],
             "title": "Location"
           },
+          "logo_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
           "name": {
             "maxLength": 200,
             "minLength": 1,
@@ -1308,6 +1378,18 @@
             "minLength": 1,
             "title": "Time Zone",
             "type": "string"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
           }
         },
         "required": [
@@ -1391,6 +1473,19 @@
       "EventUpdate": {
         "additionalProperties": false,
         "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "#3159d9",
+            "title": "Accent Color"
+          },
           "delivery_mode": {
             "default": "hybrid",
             "enum": [
@@ -1429,6 +1524,18 @@
             ],
             "title": "Location"
           },
+          "logo_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
           "name": {
             "maxLength": 200,
             "minLength": 1,
@@ -1459,6 +1566,18 @@
             "minimum": 1.0,
             "title": "Version",
             "type": "integer"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
           }
         },
         "required": [
@@ -1473,6 +1592,17 @@
       },
       "EventView": {
         "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
           "delivery_mode": {
             "enum": [
               "in_person",
@@ -1512,6 +1642,17 @@
             ],
             "title": "Location"
           },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1540,6 +1681,17 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
           }
         },
         "required": [
@@ -1625,6 +1777,12 @@
             "title": "Label",
             "type": "string"
           },
+          "placeholder": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Placeholder",
+            "type": "string"
+          },
           "required": {
             "default": false,
             "title": "Required",
@@ -1636,7 +1794,12 @@
               "textarea",
               "email",
               "url",
-              "select"
+              "phone",
+              "select",
+              "multiselect",
+              "checkbox",
+              "file",
+              "image"
             ],
             "title": "Type",
             "type": "string"
@@ -1653,6 +1816,18 @@
       "FormPublish": {
         "additionalProperties": false,
         "properties": {
+          "closes_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closes At Ms"
+          },
           "conditions": {
             "default": [],
             "items": {
@@ -1662,6 +1837,20 @@
             "title": "Conditions",
             "type": "array"
           },
+          "confirmation_body": {
+            "default": "Thank you for submitting. Your proposal is now ready for review.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Confirmation Body",
+            "type": "string"
+          },
+          "confirmation_subject": {
+            "default": "We received your proposal",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Confirmation Subject",
+            "type": "string"
+          },
           "fields": {
             "default": [
               {
@@ -1669,6 +1858,7 @@
                 "help_text": "",
                 "key": "speaker_name",
                 "label": "Speaker name",
+                "placeholder": "",
                 "required": true,
                 "type": "text"
               },
@@ -1677,6 +1867,7 @@
                 "help_text": "",
                 "key": "speaker_email",
                 "label": "Email",
+                "placeholder": "",
                 "required": true,
                 "type": "email"
               },
@@ -1685,6 +1876,7 @@
                 "help_text": "",
                 "key": "proposal_title",
                 "label": "Proposal title",
+                "placeholder": "",
                 "required": true,
                 "type": "text"
               },
@@ -1693,6 +1885,7 @@
                 "help_text": "",
                 "key": "proposal_abstract",
                 "label": "Proposal abstract",
+                "placeholder": "",
                 "required": true,
                 "type": "textarea"
               }
@@ -1705,11 +1898,64 @@
             "title": "Fields",
             "type": "array"
           },
+          "opens_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opens At Ms"
+          },
+          "redirect_to_portal": {
+            "default": true,
+            "title": "Redirect To Portal",
+            "type": "boolean"
+          },
+          "routing_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormRoutingRule"
+            },
+            "maxItems": 200,
+            "title": "Routing Rules",
+            "type": "array"
+          },
           "slug": {
             "maxLength": 80,
             "minLength": 3,
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "title": "Slug",
+            "type": "string"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "success_message": {
+            "default": "We sent a confirmation to your email address.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Success Message",
+            "type": "string"
+          },
+          "success_title": {
+            "default": "Proposal received",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Success Title",
             "type": "string"
           },
           "welcome_text": {
@@ -1724,6 +1970,77 @@
           "welcome_text"
         ],
         "title": "FormPublish",
+        "type": "object"
+      },
+      "FormRoutingRule": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "operator": {
+            "enum": [
+              "equals",
+              "not_equals",
+              "contains"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "review_queue": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Queue"
+          },
+          "source_key": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Source Key",
+            "type": "string"
+          },
+          "track": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track"
+          },
+          "value": {
+            "maxLength": 500,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_key",
+          "operator",
+          "value"
+        ],
+        "title": "FormRoutingRule",
         "type": "object"
       },
       "GenericAccepted": {
@@ -1761,6 +2078,53 @@
           }
         },
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "IntegrationTokenCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "default": "Accelevents",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "title": "IntegrationTokenCreate",
+        "type": "object"
+      },
+      "IntegrationTokenView": {
+        "properties": {
+          "created_at_ms": {
+            "title": "Created At Ms",
+            "type": "integer"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "label",
+          "token",
+          "created_at_ms"
+        ],
+        "title": "IntegrationTokenView",
         "type": "object"
       },
       "InvitationCreate": {
@@ -2256,9 +2620,135 @@
         "title": "ProgramView",
         "type": "object"
       },
+      "PublicSpeaker": {
+        "properties": {
+          "biography": {
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "headshot_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headshot Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_title": {
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "job_title",
+          "company",
+          "biography",
+          "location",
+          "links",
+          "headshot_url",
+          "sessions"
+        ],
+        "title": "PublicSpeaker",
+        "type": "object"
+      },
+      "PublicSpeakerGallery": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PublicSpeaker"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "event": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Event",
+            "type": "object"
+          }
+        },
+        "required": [
+          "event",
+          "data"
+        ],
+        "title": "PublicSpeakerGallery",
+        "type": "object"
+      },
       "PublishedFormView": {
         "additionalProperties": false,
         "properties": {
+          "accent_color": {
+            "default": "#3159d9",
+            "title": "Accent Color",
+            "type": "string"
+          },
+          "accepting_submissions": {
+            "default": true,
+            "title": "Accepting Submissions",
+            "type": "boolean"
+          },
+          "availability_message": {
+            "default": "Applications are open.",
+            "title": "Availability Message",
+            "type": "string"
+          },
+          "closes_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closes At Ms"
+          },
           "conditions": {
             "default": [],
             "items": {
@@ -2266,6 +2756,15 @@
             },
             "title": "Conditions",
             "type": "array"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "default": "Event",
+            "title": "Event Name",
+            "type": "string"
           },
           "fields": {
             "items": {
@@ -2278,12 +2777,73 @@
             "title": "Id",
             "type": "string"
           },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "opens_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opens At Ms"
+          },
           "program_id": {
             "title": "Program Id",
             "type": "string"
           },
+          "redirect_to_portal": {
+            "default": true,
+            "title": "Redirect To Portal",
+            "type": "boolean"
+          },
+          "routing_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormRoutingRule"
+            },
+            "title": "Routing Rules",
+            "type": "array"
+          },
           "slug": {
             "title": "Slug",
+            "type": "string"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "submissions_received": {
+            "default": 0,
+            "title": "Submissions Received",
+            "type": "integer"
+          },
+          "success_message": {
+            "default": "We sent a confirmation to your email address.",
+            "title": "Success Message",
+            "type": "string"
+          },
+          "success_title": {
+            "default": "Proposal received",
+            "title": "Success Title",
             "type": "string"
           },
           "version": {
@@ -2298,6 +2858,7 @@
         "required": [
           "id",
           "program_id",
+          "event_id",
           "version",
           "slug",
           "welcome_text",
@@ -2426,6 +2987,170 @@
           "message_id"
         ],
         "title": "ReminderQueuedResponse",
+        "type": "object"
+      },
+      "ResourceCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "body_text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Body Text",
+            "type": "string"
+          },
+          "embed_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Url"
+          },
+          "slug": {
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": -1000.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "status": {
+            "default": "published",
+            "enum": [
+              "draft",
+              "published"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "slug"
+        ],
+        "title": "ResourceCreate",
+        "type": "object"
+      },
+      "ResourceList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ResourceList",
+        "type": "object"
+      },
+      "ResourceView": {
+        "additionalProperties": false,
+        "properties": {
+          "body_text": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Body Text",
+            "type": "string"
+          },
+          "embed_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embed Url"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "sort_order": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": -1000.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "status": {
+            "default": "published",
+            "enum": [
+              "draft",
+              "published"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "title": "Updated At Ms",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "title",
+          "slug",
+          "id",
+          "event_id",
+          "version",
+          "updated_at_ms"
+        ],
+        "title": "ResourceView",
         "type": "object"
       },
       "SLODefinition": {
@@ -2793,6 +3518,186 @@
         "title": "SpeakerSubmissionView",
         "type": "object"
       },
+      "SpeakerTarget": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "selection_status": {
+            "enum": [
+              "submitted",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Selection Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_speaker_id",
+          "display_name",
+          "selection_status",
+          "proposal_title"
+        ],
+        "title": "SpeakerTarget",
+        "type": "object"
+      },
+      "SpeakerTargetList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerTarget"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SpeakerTargetList",
+        "type": "object"
+      },
+      "SpeakerTaskCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "due_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At Ms"
+          },
+          "event_speaker_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "fields": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TaskFormField"
+            },
+            "maxItems": 40,
+            "title": "Fields",
+            "type": "array"
+          },
+          "help_text": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Help Text",
+            "type": "string"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_speaker_id",
+          "title"
+        ],
+        "title": "SpeakerTaskCreate",
+        "type": "object"
+      },
+      "SpeakerTaskResponseCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 40,
+            "title": "Answers",
+            "type": "object"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "answers",
+          "version"
+        ],
+        "title": "SpeakerTaskResponseCreate",
+        "type": "object"
+      },
+      "SpeakerTaskResponseView": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "response": {
+            "title": "Response",
+            "type": "object"
+          },
+          "state": {
+            "const": "completed",
+            "default": "completed",
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "response",
+          "version"
+        ],
+        "title": "SpeakerTaskResponseView",
+        "type": "object"
+      },
       "SpeakerTaskView": {
         "additionalProperties": false,
         "properties": {
@@ -2822,6 +3727,13 @@
             ],
             "title": "Due At Ms"
           },
+          "form_fields": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Form Fields",
+            "type": "array"
+          },
           "help_text": {
             "title": "Help Text",
             "type": "string"
@@ -2829,6 +3741,10 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "response": {
+            "title": "Response",
+            "type": "object"
           },
           "state": {
             "enum": [
@@ -2846,6 +3762,11 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -2890,6 +3811,7 @@
                 }
               ]
             },
+            "maxProperties": 100,
             "title": "Answers",
             "type": "object"
           },
@@ -2942,6 +3864,17 @@
             "maxLength": 2000,
             "title": "Internal Reason",
             "type": "string"
+          },
+          "send_email": {
+            "default": false,
+            "title": "Send Email",
+            "type": "boolean"
+          },
+          "speaker_message": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Speaker Message",
+            "type": "string"
           }
         },
         "required": [
@@ -2953,6 +3886,11 @@
       "SubmissionDecisionView": {
         "additionalProperties": false,
         "properties": {
+          "communication_queued": {
+            "default": false,
+            "title": "Communication Queued",
+            "type": "boolean"
+          },
           "decision": {
             "enum": [
               "accepted",
@@ -2973,6 +3911,17 @@
           },
           "round_id": {
             "title": "Round Id",
+            "type": "string"
+          },
+          "send_email": {
+            "default": false,
+            "title": "Send Email",
+            "type": "boolean"
+          },
+          "speaker_message": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Speaker Message",
             "type": "string"
           },
           "submission_id": {
@@ -3023,6 +3972,7 @@
                 }
               ]
             },
+            "maxProperties": 100,
             "title": "Answers",
             "type": "object"
           },
@@ -3205,6 +4155,7 @@
                 }
               ]
             },
+            "maxProperties": 100,
             "title": "Answers",
             "type": "object"
           },
@@ -3227,6 +4178,39 @@
             "minLength": 1,
             "title": "Proposal Title",
             "type": "string"
+          },
+          "routed_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routed Category"
+          },
+          "routed_review_queue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routed Review Queue"
+          },
+          "routed_track": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routed Track"
           },
           "speaker_email": {
             "default": "",
@@ -3263,6 +4247,56 @@
           "submitted_at_ms"
         ],
         "title": "SubmissionView",
+        "type": "object"
+      },
+      "TaskFormField": {
+        "additionalProperties": false,
+        "properties": {
+          "choices": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Choices",
+            "type": "array"
+          },
+          "key": {
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "text",
+              "textarea",
+              "url",
+              "checkbox",
+              "select"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type"
+        ],
+        "title": "TaskFormField",
         "type": "object"
       },
       "UploadAuthorizationCreate": {
@@ -4289,6 +5323,58 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {
+      "post": {
+        "operationId": "create_accelevents_token_api_v1_admin_events__event_id__integrations_accelevents_tokens_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationTokenView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Accelevents Token",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/invitations": {
       "get": {
         "operationId": "list_invitations_api_v1_admin_events__event_id__invitations_get",
@@ -4629,6 +5715,224 @@
           }
         },
         "summary": "Get Admin Onboarding Dashboard",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/resources": {
+      "get": {
+        "operationId": "list_admin_resources_api_v1_admin_events__event_id__resources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Admin Resources",
+        "tags": [
+          "resources"
+        ]
+      },
+      "post": {
+        "operationId": "create_resource_api_v1_admin_events__event_id__resources_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Resource",
+        "tags": [
+          "resources"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speaker-targets": {
+      "get": {
+        "operationId": "list_speaker_targets_api_v1_admin_events__event_id__speaker_targets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerTargetList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Speaker Targets",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speaker-tasks": {
+      "post": {
+        "operationId": "create_custom_speaker_task_api_v1_admin_events__event_id__speaker_tasks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeakerTaskCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSpeakerTaskView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Custom Speaker Task",
         "tags": [
           "speaker-onboarding"
         ]
@@ -5988,6 +7292,135 @@
         ]
       }
     },
+    "/api/v1/public/events/{event_id}/schedule": {
+      "get": {
+        "operationId": "get_public_schedule_api_v1_public_events__event_id__schedule_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Public Schedule Api V1 Public Events  Event Id  Schedule Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Public Schedule",
+        "tags": [
+          "public-program"
+        ]
+      }
+    },
+    "/api/v1/public/events/{event_id}/speakers": {
+      "get": {
+        "operationId": "public_speakers_api_v1_public_events__event_id__speakers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSpeakerGallery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Speakers",
+        "tags": [
+          "public-program"
+        ]
+      }
+    },
+    "/api/v1/public/events/{event_id}/speakers/{event_speaker_id}/headshot": {
+      "get": {
+        "operationId": "public_speaker_headshot_api_v1_public_events__event_id__speakers__event_speaker_id__headshot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Speaker Headshot",
+        "tags": [
+          "public-program"
+        ]
+      }
+    },
     "/api/v1/session": {
       "get": {
         "operationId": "getCurrentSession",
@@ -6352,6 +7785,95 @@
         ]
       }
     },
+    "/api/v1/speaker/resources": {
+      "get": {
+        "operationId": "list_speaker_resources_api_v1_speaker_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Speaker Resources",
+        "tags": [
+          "speaker-portal"
+        ]
+      }
+    },
+    "/api/v1/speaker/tasks/{task_id}/response": {
+      "post": {
+        "operationId": "completeOwnCustomSpeakerTask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeakerTaskResponseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerTaskResponseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Custom Speaker Task",
+        "tags": [
+          "speaker-portal"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "getHealth",
@@ -6370,6 +7892,124 @@
         "summary": "Health",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/v1/event/{event_id}/sessions": {
+      "post": {
+        "operationId": "sessionboard_compatible_sessions_v1_event__event_id__sessions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-access-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Access-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sessionboard Compatible Sessions V1 Event  Event Id  Sessions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sessionboard Compatible Sessions",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/v1/event/{event_id}/speakers": {
+      "post": {
+        "operationId": "sessionboard_compatible_speakers_v1_event__event_id__speakers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-access-token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Access-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sessionboard Compatible Speakers V1 Event  Event Id  Speakers Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sessionboard Compatible Speakers",
+        "tags": [
+          "integrations"
         ]
       }
     }

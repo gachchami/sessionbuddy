@@ -1,2 +1,29 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Submit a proposal · SessionBuddy</title><link rel="stylesheet" href="/product/assets/product.css?v=6"><script src="/product/assets/public-cfp.js?v=3" defer></script></head><body><a class="skip-link" href="#main">Skip to form</a><header><div class="shell"><strong>SessionBuddy</strong></div></header><main id="main" class="shell" tabindex="-1"><p class="eyebrow">Call for speakers</p><h1 id="title">Submit a proposal</h1><p id="welcome" class="lede">Loading the published form…</p><div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div><section id="sign-in-card" class="card" hidden aria-labelledby="sign-in-title"><h2 id="sign-in-title">Sign in to submit</h2><p>Enter your email address. We will send a one-time sign-in link; no password is needed.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Send sign-in link</button></form></section><section id="proposal-card" class="card" hidden aria-labelledby="title"><form id="proposal-form"><div id="dynamic-fields"></div><div class="actions"><button id="save-draft" class="secondary" type="button">Save draft</button><button id="submit-proposal" type="submit">Submit proposal</button></div></form><div id="receipt" class="result" role="status" aria-live="polite"></div></section></main></body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Submit a proposal · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=7">
+  <script src="/product/assets/public-cfp.js?v=7" defer></script>
+</head>
+<body class="public-body">
+  <a class="skip-link" href="#main">Skip to proposal form</a>
+  <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span id="brand-name">SessionBuddy</span></a><img id="event-logo" class="event-logo" alt="" hidden></div></header>
+  <main id="main" class="shell page" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">Call for speakers</p><h1 id="title">Submit a proposal</h1><p id="welcome" class="lede">Loading the published form…</p></div></div>
+    <ol class="step-indicator" aria-label="Submission progress"><li id="step-details" aria-current="step">1 · Proposal</li><li id="step-review">2 · Review</li><li id="step-done">3 · Complete</li></ol>
+    <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div>
+    <section id="closed-card" class="card" hidden><h2>Submissions are not open</h2><p id="availability"></p></section>
+    <section id="sign-in-card" class="card" hidden aria-labelledby="sign-in-title"><h2 id="sign-in-title">Sign in to submit</h2><p>Enter your email address. We’ll send a one-time link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Send sign-in link</button></form></section>
+    <section id="proposal-card" class="card" hidden aria-labelledby="title">
+      <form id="proposal-form">
+        <div id="dynamic-fields"></div>
+        <section id="review-panel" class="review-panel" hidden aria-labelledby="review-title"><h2 id="review-title">Review your proposal</h2><p>Confirm these details before submitting.</p><dl id="review-list" class="review-list"></dl></section>
+        <div class="actions"><button id="save-draft" class="secondary" type="button">Save draft</button><button id="back-to-form" class="secondary" type="button" hidden>Back</button><button id="review-proposal" type="button">Review proposal</button><button id="submit-proposal" type="submit" hidden>Confirm submission</button></div>
+      </form>
+      <section id="receipt" class="result" role="status" aria-live="polite"></section>
+    </section>
+  </main>
+</body>
+</html>

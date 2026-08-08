@@ -51,6 +51,8 @@ from .models import (
     SpeakerProfileUpdate,
     SpeakerProfileView,
     SpeakerSubmissionView,
+    SpeakerTaskResponseCreate,
+    SpeakerTaskResponseView,
     SpeakerTaskView,
     UploadAuthorizationCreate,
     UploadAuthorizationView,
@@ -450,7 +452,8 @@ async def get_admin_onboarding_dashboard(
                          AND t.due_at_ms <= ?4) THEN 1 ELSE 0 END) AS due_soon
                    FROM event_speakers es
                    WHERE es.organization_id = ?1 AND es.event_id = ?2
-                     AND es.status IN ('onboarding', 'complete')"""
+                     AND es.status IN ('onboarding', 'complete')
+                     AND es.selection_status='accepted'"""
                 ).bind(event["organization_id"], event["id"], now, due_soon_at),
             )
         )
@@ -597,7 +600,8 @@ async def _speaker_row(request: Request):
                 """SELECT es.id AS event_speaker_id, es.organization_id, es.event_id,
                           p.id AS person_id, p.user_id, p.display_name, p.job_title,
                           p.company, p.biography, p.location, p.links_json, p.version,
-                          e.name AS event_name, e.starts_at_ms, e.ends_at_ms, e.time_zone
+                          e.name AS event_name, e.starts_at_ms, e.ends_at_ms, e.time_zone,
+                          es.selection_status
                    FROM people p
                    JOIN event_speakers es
                      ON es.organization_id = p.organization_id AND es.person_id = p.id
@@ -658,7 +662,8 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
             request,
             db.prepare(
                 """SELECT id, task_type, title, COALESCE(help_text, '') AS help_text,
-                          destination_type, state, due_at_ms, completed_at_ms
+                          destination_type, state, due_at_ms, completed_at_ms,
+                          form_schema_json,response_json,version
                    FROM speaker_tasks
                    WHERE organization_id = ?1 AND event_id = ?2 AND event_speaker_id = ?3
                    ORDER BY CASE state WHEN 'open' THEN 0 ELSE 1 END,
@@ -671,7 +676,10 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
             request,
             db.prepare(
                 """SELECT s.id, s.proposal_title,
-                          'accepted' AS status
+                          COALESCE((SELECT d.decision FROM submission_decisions d
+                            WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
+                              AND d.submission_id=s.id
+                            ORDER BY d.decided_at_ms DESC,d.id DESC LIMIT 1),'submitted') AS status
                    FROM submission_speakers ss
                    JOIN submissions s
                      ON s.organization_id = ss.organization_id
@@ -694,6 +702,13 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
             completed_at_ms=(
                 int(task["completed_at_ms"]) if task["completed_at_ms"] is not None else None
             ),
+            form_fields=(
+                json.loads(str(task["form_schema_json"])).get("fields", [])
+                if task["form_schema_json"]
+                else []
+            ),
+            response=(json.loads(str(task["response_json"])) if task["response_json"] else {}),
+            version=int(task["version"]),
         )
         for task in tasks
     ]
@@ -734,6 +749,165 @@ def _fingerprint(body) -> bytes:
 def _blob(value: object) -> bytes:
     converted = to_python(value)
     return converted if isinstance(converted, bytes) else bytes(converted)
+
+
+def _validate_task_response(schema: object, answers: dict[str, object]) -> None:
+    if not isinstance(schema, dict) or not isinstance(schema.get("fields", []), list):
+        raise HTTPException(status_code=409)
+    fields = schema.get("fields", [])
+    known = {str(field.get("key")) for field in fields if isinstance(field, dict)}
+    if not set(answers) <= known:
+        raise HTTPException(status_code=422)
+    if any(isinstance(value, str) and len(value) > 4000 for value in answers.values()):
+        raise HTTPException(status_code=422)
+    for field in fields:
+        if not isinstance(field, dict):
+            raise HTTPException(status_code=409)
+        value = answers.get(str(field.get("key", "")))
+        if field.get("required") and value in (None, "", []):
+            raise HTTPException(status_code=422)
+        if field.get("type") == "checkbox" and value not in (None, True, False):
+            raise HTTPException(status_code=422)
+        if field.get("type") == "select" and value not in (None, ""):
+            if value not in field.get("choices", []):
+                raise HTTPException(status_code=422)
+
+
+@speaker_operations_router.post(
+    "/api/v1/speaker/tasks/{task_id}/response",
+    response_model=SpeakerTaskResponseView,
+    operation_id="completeOwnCustomSpeakerTask",
+    tags=["speaker-portal"],
+)
+async def complete_custom_speaker_task(
+    task_id: str,
+    request: Request,
+    body: SpeakerTaskResponseCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> SpeakerTaskResponseView:
+    authenticated, speaker = await _speaker_row(request)
+    await require_permission(
+        request,
+        Permission.SPEAKER_PROFILE_EDIT_OWN,
+        ResourceContext(
+            str(speaker["organization_id"]),
+            str(speaker["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    key = _key(idempotency_key)
+    route = "POST /api/v1/speaker/tasks/{task_id}/response"
+    fingerprint = _fingerprint(body)
+    db = _db(request)
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND state='completed'"""
+        )
+        .bind(authenticated.actor.user_id, route, hashlib.sha256(key.encode()).digest())
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        current = row_mapping(
+            await db.prepare("SELECT id,state,response_json,version FROM speaker_tasks WHERE id=?1")
+            .bind(task_id)
+            .first()
+        )
+        if current is None or current["response_json"] is None:
+            raise HTTPException(status_code=409)
+        return SpeakerTaskResponseView(
+            id=task_id,
+            response=json.loads(str(current["response_json"])),
+            version=int(current["version"]),
+        )
+    task = row_mapping(
+        await db.prepare(
+            """SELECT id,form_schema_json,version,state FROM speaker_tasks
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3 AND event_speaker_id=?4
+                 AND task_type='custom' LIMIT 1"""
+        )
+        .bind(
+            task_id,
+            speaker["organization_id"],
+            speaker["event_id"],
+            speaker["event_speaker_id"],
+        )
+        .first()
+    )
+    if task is None:
+        raise HTTPException(status_code=404)
+    if task["state"] != "open" or int(task["version"]) != body.version:
+        raise HTTPException(status_code=409)
+    schema = json.loads(str(task["form_schema_json"] or "{}"))
+    _validate_task_response(schema, body.answers)
+    now = utc_now_ms()
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        organization_id=str(speaker["organization_id"]),
+        event_id=str(speaker["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE speaker_tasks SET response_json=?1,responded_at_ms=?2,state='completed',
+                      completed_at_ms=?2,version=version+1,updated_at_ms=?2
+               WHERE id=?3 AND organization_id=?4 AND event_id=?5 AND event_speaker_id=?6
+                 AND state='open' AND version=?7"""
+        ).bind(
+            json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
+            now,
+            task_id,
+            speaker["organization_id"],
+            speaker["event_id"],
+            speaker["event_speaker_id"],
+            body.version,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE event_speakers SET last_activity_at_ms=?1,updated_at_ms=?1
+               WHERE id=?2 AND organization_id=?3 AND event_id=?4"""
+        ).bind(now, speaker["event_speaker_id"], speaker["organization_id"], speaker["event_id"])
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(speaker["organization_id"]),
+            event_id=str(speaker["event_id"]),
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="speaker.task.complete",
+            target_type="speaker_task",
+            target_id=task_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"custom_fields": len(body.answers)},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="speaker_task",
+        resource_id=task_id,
+        completed_at_ms=now,
+    )
+    started = perf_counter()
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    finally:
+        record_timing(request, "db", (perf_counter() - started) * 1000)
+    return SpeakerTaskResponseView(id=task_id, response=body.answers, version=body.version + 1)
 
 
 @speaker_operations_router.patch(

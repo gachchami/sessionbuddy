@@ -146,6 +146,8 @@ class SubmissionDecisionCreate(BaseModel):
 
     decision: Literal["accepted", "rejected"]
     internal_reason: str = Field(default="", max_length=2000)
+    send_email: bool = False
+    speaker_message: str = Field(default="", max_length=4000)
 
 
 class SubmissionDecisionView(SubmissionDecisionCreate):
@@ -153,6 +155,7 @@ class SubmissionDecisionView(SubmissionDecisionCreate):
     submission_id: str
     round_id: str
     version: int
+    communication_queued: bool = False
 
 
 class SubmissionEvaluationResult(BaseModel):

@@ -7,6 +7,7 @@ from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
 from sessionbuddy.cfp import cfp_router
 from sessionbuddy.communications.d1 import communications_service
 from sessionbuddy.communications.router import create_communications_router
+from sessionbuddy.competition import competition_router
 from sessionbuddy.console import embedded_assets, engine_room_router
 from sessionbuddy.evaluation import evaluation_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
@@ -35,6 +36,7 @@ app.include_router(cfp_router)
 app.include_router(evaluation_router)
 app.include_router(speaker_operations_router)
 app.include_router(scheduling_router)
+app.include_router(competition_router)
 app.include_router(create_communications_router(communications_service))
 
 

@@ -20,9 +20,12 @@ def db():
            VALUES ('user','a@b.test','a@b.test','active',1,1,1,1,1)"""
     )
     connection.execute(
-        """INSERT INTO events VALUES
-           ('event','org','Event',1,2,'UTC',NULL,'virtual',NULL,NULL,NULL,
-            'active',1,1,1,NULL)"""
+        """INSERT INTO events
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+            delivery_mode,description,accent_color,status,version,created_at_ms,
+            updated_at_ms,archived_at_ms)
+           VALUES ('event','org','Event',1,2,'UTC',NULL,'virtual',NULL,NULL,
+                   'active',1,1,1,NULL)"""
     )
     return connection
 

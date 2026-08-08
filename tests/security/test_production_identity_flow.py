@@ -165,7 +165,7 @@ async def test_missing_browser_magic_link_token_has_same_recovery_page(
 
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("text/html")
-    assert "Request a new sign-in link" in response.text
+    assert ">Sign in</a>" in response.text
 
 
 async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(

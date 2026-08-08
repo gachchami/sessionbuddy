@@ -14,10 +14,12 @@ development, browser-friendly expired-link recovery, and the read-only
 
 ## CFP management
 
-Implemented: program creation, browser-managed dynamic fields and conditional
-questions, published public CFP rendering, authenticated speaker registration,
-versioned drafts, owned submissions, admin submission listing, tenant scoping,
-and authenticated writes.
+Implemented: program creation, browser-managed text, choice, checkbox, phone,
+URL, image, and document questions; conditional display and answer-based
+routing; open/close times and submission limits; branded public CFP rendering;
+review-before-submit; confirmation email copy; authenticated speaker
+registration; versioned drafts; owned submissions; admin submission listing;
+tenant scoping; and authenticated writes.
 
 ## Organization and event administration
 
@@ -29,19 +31,25 @@ membership listing and role revocation, and verified invitation acceptance.
 
 Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
-records.
+records. Acceptance creates the accepted session and default onboarding tasks;
+rejection waives outstanding onboarding; either decision can queue a speaker
+email with organizer-controlled copy.
 
 ## Speaker operations
 
-Implemented: speaker portal, onboarding tasks, profile management, quarantined
-asset uploads, fixed-length R2-to-scanner streaming, asynchronous malware
-scanning, private download grants, communications, reminders, and admin progress
-views.
+Implemented: speaker portal, decision-aware status, default and custom form
+tasks, profile management, organizer-published resources/wiki content with
+allowlisted embeds, public branded speaker galleries, quarantined asset uploads,
+fixed-length R2-to-scanner streaming, asynchronous malware scanning, private
+download grants, communications, reminders, and admin progress views.
 
 ## Scheduling
 
 Implemented: conflict preview, atomic agenda edits, concurrency protection,
-publication, public schedule views, and versioned calendar invitations.
+publication, branded list/day/week/track/room schedule views, a browser-local
+attendee itinerary, embeddable public schedule and speaker views, versioned
+calendar invitations, and a read-only Sessionboard-compatible feed for pulling
+accepted speakers and sessions into Accelevents.
 
 ## Release readiness
 

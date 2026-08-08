@@ -51,7 +51,16 @@ test.describe("MVP experience accessibility", () => {
       path: "/admin/events/22222222-2222-4222-8222-222222222222/agenda",
       sessionEndpoint: "/api/v1/demo/session",
     },
+    {
+      path: "/admin/events/22222222-2222-4222-8222-222222222222/workspace",
+      sessionEndpoint: "/api/v1/demo/session",
+    },
+    {
+      path: "/events/22222222-2222-4222-8222-222222222222/speakers",
+      sessionEndpoint: "/api/v1/demo/session",
+    },
     { path: "/events/22222222-2222-4222-8222-222222222222/schedule" },
+    { path: "/embeds/events/22222222-2222-4222-8222-222222222222/schedule" },
   ];
 
   for (const route of routes) {

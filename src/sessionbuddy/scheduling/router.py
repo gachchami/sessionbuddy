@@ -69,6 +69,7 @@ async def agenda_js(request: Request) -> Response:
 
 
 @scheduling_router.get("/events/{event_id}/schedule", include_in_schema=False)
+@scheduling_router.get("/embeds/events/{event_id}/schedule", include_in_schema=False)
 async def schedule_page(event_id: str, request: Request) -> HTMLResponse:
     return HTMLResponse(_asset("schedule.html"), headers={"Cache-Control": "private, no-store"})
 
@@ -780,6 +781,52 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
     )
     return {
         "event": {"id": event["id"], "name": event["name"], "time_zone": event["time_zone"]},
+        "revision": {"id": revision["id"], "version": revision["version"]},
+        "items": items,
+    }
+
+
+@scheduling_router.get("/api/v1/public/events/{event_id}/schedule", tags=["public-program"])
+async def get_public_schedule(event_id: str, request: Request) -> dict[str, object]:
+    db = _db(request)
+    event = row_mapping(
+        await db.prepare(
+            """SELECT id,organization_id,name,time_zone,accent_color,logo_url,website_url
+               FROM events WHERE id=?1 AND status='active' LIMIT 1"""
+        )
+        .bind(event_id)
+        .first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    revision = await _revision(db, str(event["organization_id"]), event_id, "published")
+    if revision is None:
+        raise HTTPException(status_code=404)
+    items = result_rows(
+        await db.prepare(
+            """SELECT ai.id,s.proposal_title AS title,s.proposal_abstract AS description,
+                      ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
+                      r.name AS room_name,t.name AS track_name,
+                      COALESCE(group_concat(ss.snapshot_name, ', '),'') AS speaker_names
+               FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
+               JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
+               LEFT JOIN event_tracks t ON t.id=ai.track_id
+               LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
+               WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+               GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
+        )
+        .bind(event["organization_id"], event_id, revision["id"])
+        .all()
+    )
+    return {
+        "event": {
+            "id": event["id"],
+            "name": event["name"],
+            "time_zone": event["time_zone"],
+            "accent_color": event["accent_color"],
+            "logo_url": event["logo_url"],
+            "website_url": event["website_url"],
+        },
         "revision": {"id": revision["id"], "version": revision["version"]},
         "items": items,
     }

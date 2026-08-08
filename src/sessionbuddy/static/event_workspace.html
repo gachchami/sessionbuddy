@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Event workspace · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=7">
+  <script src="/admin/workspace/assets/workspace.js?v=1" defer></script>
+</head>
+<body class="app-body">
+  <a class="skip-link" href="#main">Skip to event workspace</a>
+  <header class="app-header">
+    <div class="shell app-header__inner">
+      <a class="brand" href="/admin/events"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
+      <nav class="app-nav" aria-label="Organizer navigation">
+        <a href="/admin/events">Events</a><a href="/admin/programs">Programs</a><a href="/reviews">Reviews</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="shell page" tabindex="-1">
+    <div class="page-heading">
+      <div><p class="eyebrow">Organizer workspace</p><h1>Prepare the speaker experience</h1><p class="lede">Create portal resources, assign one-off tasks, and connect the accepted program to Accelevents.</p></div>
+      <a id="onboarding-link" class="button secondary" href="#">View readiness</a>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite">Loading event workspace…</div>
+    <section class="grid workspace-grid">
+      <article class="card" aria-labelledby="resource-title">
+        <div class="section-heading"><div><p class="eyebrow">Portal content</p><h2 id="resource-title">Resources & wiki</h2></div><span id="resource-count" class="badge">0</span></div>
+        <p class="help">Publish guides, venue notes, or an approved video/document embed to the speaker portal.</p>
+        <form id="resource-form">
+          <label>Title<input name="title" maxlength="200" required></label>
+          <label>URL slug<input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="speaker-guide" required></label>
+          <label>Summary<input name="summary" maxlength="500"></label>
+          <label>Page content<textarea name="body_text" maxlength="20000" placeholder="Write the instructions speakers need…"></textarea></label>
+          <label>Approved embed URL <span class="optional">Optional</span><input name="embed_url" type="url" placeholder="https://docs.google.com/…"><small>Google Docs, Drive, Calendar, YouTube, or Vimeo.</small></label>
+          <div class="form-grid"><label>Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label>Order<input name="sort_order" type="number" value="0" min="-1000" max="1000"></label></div>
+          <button>Publish resource</button>
+        </form>
+        <ul id="resource-list" class="item-list" aria-label="Event resources"></ul>
+      </article>
+      <article class="card" aria-labelledby="task-title">
+        <div class="section-heading"><div><p class="eyebrow">Follow-up</p><h2 id="task-title">Custom speaker task</h2></div></div>
+        <p class="help">Assign a request or a short form to one accepted speaker.</p>
+        <form id="task-form">
+          <label>Speaker<select name="event_speaker_id" id="speaker-target" required><option value="">Choose a speaker…</option></select></label>
+          <label>Task title<input name="title" maxlength="200" required></label>
+          <label>Instructions<textarea name="help_text" maxlength="2000"></textarea></label>
+          <label>Due date <span class="optional">Optional</span><input name="due_at" type="datetime-local"></label>
+          <fieldset><legend>Optional response field</legend><label>Question label<input name="field_label" maxlength="200" placeholder="e.g. Dietary requirements"></label><div class="form-grid"><label>Answer type<select name="field_type"><option value="text">Short text</option><option value="textarea">Long text</option><option value="url">URL</option><option value="checkbox">Confirmation</option></select></label><label class="check-label"><input name="field_required" type="checkbox"> Required</label></div></fieldset>
+          <button>Assign task</button>
+        </form>
+      </article>
+      <article class="card wide" aria-labelledby="integration-title">
+        <div class="section-heading"><div><p class="eyebrow">One-way integration</p><h2 id="integration-title">Accelevents</h2></div><span class="badge success">Pull feed</span></div>
+        <p class="help">Generate a read-only API token. Accelevents can pull accepted speakers and sessions using this event ID; unpublished and rejected content is excluded.</p>
+        <div class="integration-grid"><div><strong>Event ID</strong><code id="event-id">—</code></div><div><strong>API base URL</strong><code id="api-base">—</code></div></div>
+        <form id="token-form" class="inline-form"><label>Token label<input name="label" value="Accelevents contest demo" maxlength="120" required></label><button>Generate token</button></form>
+        <div id="token-result" class="secret-result" hidden><strong>Copy this token now</strong><code id="token-value"></code><p>It is shown once and stored only as a secure hash.</p></div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

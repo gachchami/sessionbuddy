@@ -1,6 +1,66 @@
 {
   "schema_version": 1,
   "api_routes": {
+    "GET /api/v1/admin/events/{event_id}/resources": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "admin-list-event-resources", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "POST /api/v1/admin/events/{event_id}/resources": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 600, "error_rate_max": 0.001},
+      "benchmark": "admin-create-event-resource", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "GET /api/v1/admin/events/{event_id}/speaker-targets": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 600, "error_rate_max": 0.001},
+      "benchmark": "admin-list-speaker-targets", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "POST /api/v1/admin/events/{event_id}/speaker-tasks": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 650, "error_rate_max": 0.001},
+      "benchmark": "admin-create-custom-speaker-task", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "POST /api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {
+      "owner": "platform", "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "admin-create-accelevents-token", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#integration"
+    },
+    "GET /api/v1/speaker/resources": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "speaker-list-resources", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "POST /api/v1/speaker/tasks/{task_id}/response": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 600, "error_rate_max": 0.001},
+      "benchmark": "speaker-complete-custom-task", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "GET /api/v1/public/events/{event_id}/schedule": {
+      "owner": "agenda", "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "public-published-schedule", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#agenda"
+    },
+    "GET /api/v1/public/events/{event_id}/speakers": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 600, "error_rate_max": 0.001},
+      "benchmark": "public-speaker-gallery", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "GET /api/v1/public/events/{event_id}/speakers/{event_speaker_id}/headshot": {
+      "owner": "speaker-onboarding", "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "public-speaker-headshot", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
+    },
+    "POST /v1/event/{event_id}/sessions": {
+      "owner": "platform", "slo": {"p95_ms": 800, "error_rate_max": 0.001},
+      "benchmark": "accelevents-session-pull", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#integration"
+    },
+    "POST /v1/event/{event_id}/speakers": {
+      "owner": "platform", "slo": {"p95_ms": 800, "error_rate_max": 0.001},
+      "benchmark": "accelevents-speaker-pull", "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#integration"
+    },
     "GET /api/v1/admin/organizations": {
       "owner": "identity",
       "slo": {"p95_ms": 400, "error_rate_max": 0.001},

@@ -37,8 +37,80 @@ test.describe("public smoke checks", () => {
       level: 1,
       name: "This sign-in link can’t be used.",
     })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Request a new sign-in link" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
     await expect(page.locator("body")).not.toContainText("resource_not_found");
+  });
+
+  test("a sent sign-in link locks the email until the user chooses to change it", async ({ page }) => {
+    let requestCount = 0;
+    await page.route("**/api/v1/auth/magic-links", async (route) => {
+      requestCount += 1;
+      await route.fulfill({ status: 202, contentType: "application/json", body: "{}" });
+    });
+
+    const response = await page.goto("/sign-in");
+    expect(response?.ok()).toBeTruthy();
+    const email = page.getByRole("textbox", { name: "Email address" });
+    const send = page.getByRole("button", { name: "Send sign-in link" });
+    await email.fill("speaker@example.com");
+    await send.click();
+
+    await expect(page.getByRole("status")).toContainText("Check your email");
+    await expect(email).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Email sent" })).toBeDisabled();
+    expect(requestCount).toBe(1);
+
+    await page.getByRole("button", { name: "Use a different email" }).click();
+    await expect(email).toBeEnabled();
+    await expect(email).toBeFocused();
+    await expect(page.getByRole("button", { name: "Send sign-in link" })).toBeEnabled();
+  });
+});
+
+test.describe("competition gap-closure APIs", () => {
+  test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+
+  test("resources, custom tasks, and the read-only event feed work together", async ({ page }, testInfo) => {
+    const eventId = "22222222-2222-4222-8222-222222222222";
+    const origin = "http://localhost:8787";
+    const sourceIp = `198.51.100.${testInfo.workerIndex + 20}`;
+    await page.request.post("/api/v1/demo/speaker-session", { headers: { "cf-connecting-ip": sourceIp } });
+    const adminSession = await page.request.post("/api/v1/demo/session", { headers: { "cf-connecting-ip": sourceIp } });
+    expect(adminSession.ok()).toBeTruthy();
+    const csrf = (await adminSession.json()).csrf_token;
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const mutationHeaders = (suffix: string) => ({
+      "content-type": "application/json",
+      "x-csrf-token": csrf,
+      "idempotency-key": `${testInfo.project.name}-${unique}-${suffix}`,
+      origin,
+    });
+
+    const resource = await page.request.post(`/api/v1/admin/events/${eventId}/resources`, {
+      headers: mutationHeaders("resource"),
+      data: { title: `Speaker guide ${unique}`, slug: `speaker-guide-${unique}`, summary: "Contest rehearsal", body_text: "Arrive 20 minutes early.", embed_url: null, status: "published", sort_order: 10 },
+    });
+    expect(resource.status()).toBe(201);
+
+    const targets = await page.request.get(`/api/v1/admin/events/${eventId}/speaker-targets`);
+    expect(targets.ok()).toBeTruthy();
+    const accepted = (await targets.json()).data.find((target: { selection_status: string }) => target.selection_status === "accepted");
+    expect(accepted).toBeTruthy();
+    const task = await page.request.post(`/api/v1/admin/events/${eventId}/speaker-tasks`, {
+      headers: mutationHeaders("task"),
+      data: { event_speaker_id: accepted.event_speaker_id, submission_id: null, title: `Confirm arrival ${unique}`, help_text: "Tell the team you are ready.", due_at_ms: null, fields: [{ key: "ready", label: "I am ready", type: "checkbox", required: true, choices: [] }] },
+    });
+    expect(task.status()).toBe(201);
+
+    const tokenResponse = await page.request.post(`/api/v1/admin/events/${eventId}/integrations/accelevents/tokens`, {
+      headers: mutationHeaders("token"), data: { label: `E2E ${unique}` },
+    });
+    expect(tokenResponse.status()).toBe(201);
+    const token = (await tokenResponse.json()).token;
+    expect(token.length).toBeGreaterThan(32);
+    const feed = await page.request.post(`/v1/event/${eventId}/speakers`, { headers: { "x-access-token": token } });
+    expect(feed.ok()).toBeTruthy();
+    expect((await feed.json()).results.length).toBeGreaterThan(0);
   });
 });
 
@@ -46,6 +118,7 @@ test.describe("administration empty states", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
   test("an administrator can start with an organization and no events", async ({ page }) => {
+    let createdEvent: Record<string, unknown> | null = null;
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -71,7 +144,19 @@ test.describe("administration empty states", () => {
       });
     });
     await page.route("**/api/v1/admin/organizations/*/events", async (route) => {
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
+      if (route.request().method() === "POST") {
+        createdEvent = route.request().postDataJSON();
+        await route.fulfill({ status: 201, contentType: "application/json", body: "{}" });
+        return;
+      }
+      const data = createdEvent ? [{
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ...createdEvent,
+        status: "draft",
+        version: 1,
+      }] : [];
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) });
     });
 
     const response = await page.goto("/admin/events");
@@ -85,8 +170,33 @@ test.describe("administration empty states", () => {
     );
     await expect(page.getByRole("combobox", { name: "Attendance format" })).toHaveValue("");
     await expect(page.getByText("Choose one explicitly; SessionBuddy will not assume a format.")).toBeVisible();
-    await expect(page.getByRole("textbox", { name: "Event time zone" })).not.toHaveValue("");
+    const timeZone = page.getByLabel("Event time zone");
+    await expect(timeZone).not.toHaveValue("");
+    await expect(page.getByLabel("Start date")).toHaveValue("");
+    await expect(page.getByLabel("Start time")).toHaveValue("09:00");
+    await expect(page.getByLabel("End date")).toHaveValue("");
+    await expect(page.getByLabel("End time")).toHaveValue("17:00");
+    await page.getByLabel("Start date").fill("2026-09-12");
+    await page.getByLabel("Start date").dispatchEvent("change");
+    await expect(page.getByLabel("End date")).toHaveValue("2026-09-12");
+    await expect(page.getByRole("status").filter({ hasText: /2026|Sep/ })).toContainText(await timeZone.inputValue());
     await expect(page.getByRole("button", { name: "Create event" })).toBeEnabled();
+    await timeZone.fill("Asia/Kolkata");
+    await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
+    await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
+    await page.getByRole("button", { name: "Create event" }).click();
+    await expect(page.getByRole("status").first()).toHaveText("Event created.");
+    expect(createdEvent).toMatchObject({
+      name: "Timezone Rehearsal",
+      starts_at_ms: Date.UTC(2026, 8, 12, 3, 30),
+      ends_at_ms: Date.UTC(2026, 8, 12, 11, 30),
+      time_zone: "Asia/Kolkata",
+    });
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(page.getByLabel("Start date")).toHaveValue("2026-09-12");
+    await expect(page.getByLabel("Start time")).toHaveValue("09:00");
+    await expect(page.getByLabel("End date")).toHaveValue("2026-09-12");
+    await expect(page.getByLabel("End time")).toHaveValue("17:00");
   });
 
   test("an invitation form survives its asynchronous request and resets", async ({ page }) => {
@@ -253,8 +363,11 @@ test.describe("dynamic form drafts", () => {
     await expect(conditional).toHaveValue("Bring a laptop");
     await expect(conditional).toHaveAttribute("required", "");
 
-    await page.getByRole("button", { name: "Submit proposal" }).click();
-    await expect(page.getByRole("status").first()).toHaveText("Proposal submitted.");
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await page.getByRole("button", { name: "Confirm submission" }).click();
+    await expect(page.getByRole("status").first()).toHaveText(
+      "Proposal submitted successfully.",
+    );
     expect(submittedBody).toEqual({
       speaker_name: "Example Speaker",
       speaker_email: "speaker@example.com",

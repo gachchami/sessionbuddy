@@ -70,6 +70,56 @@
     return "#tasks";
   }
 
+  function customTaskForm(task) {
+    const form = make("form", undefined, "task-form");
+    form.dataset.taskId = task.id;
+    for (const field of task.form_fields || []) {
+      const label = make("label", field.label);
+      let input;
+      if (field.type === "textarea") input = document.createElement("textarea");
+      else if (field.type === "select") {
+        input = document.createElement("select");
+        input.append(new Option("Choose…", ""));
+        (field.choices || []).forEach((choice) => input.add(new Option(choice, choice)));
+      } else {
+        input = document.createElement("input");
+        input.type = field.type === "checkbox" ? "checkbox" : field.type === "url" ? "url" : "text";
+        if (field.type === "checkbox") label.classList.add("check-label");
+      }
+      input.name = field.key;
+      input.required = Boolean(field.required);
+      label.append(input);
+      form.append(label);
+    }
+    const submit = make("button", task.form_fields?.length ? "Send response" : "Mark complete");
+    submit.type = "submit";
+    form.append(submit);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submit.disabled = true;
+      const values = {};
+      for (const field of task.form_fields || []) {
+        const input = form.elements.namedItem(field.key);
+        values[field.key] = field.type === "checkbox" ? Boolean(input.checked) : input.value;
+      }
+      try {
+        await api(`/api/v1/speaker/tasks/${encodeURIComponent(task.id)}/response`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+          body: JSON.stringify({ answers: values, version: task.version })
+        });
+        const portal = await api("/api/v1/speaker/portal");
+        renderPortal(portal);
+        announceOnboardingChange();
+        setStatus("Task completed.", "success");
+      } catch (error) {
+        setStatus(error.status === 409 ? "This task changed. Reload the portal and try again." : error.message, "error");
+        submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
   function renderTasks(tasks, timezone) {
     const list = byId("task-list");
     list.replaceChildren();
@@ -92,11 +142,16 @@
         make("span", stateText, `state-badge${overdue ? " overdue" : ""}`),
         make("span", `Due ${formatDate(task.due_at_ms, timezone)} · ${timezone}`)
       );
-      const action = make("a", task.action_label || "Complete task", "task-link");
-      action.href = taskDestination(task);
       item.append(heading);
       if (help) item.append(help);
-      item.append(meta, action);
+      item.append(meta);
+      if (task.task_type === "custom") {
+        item.append(customTaskForm(task));
+      } else {
+        const action = make("a", task.action_label || "Complete task", "task-link");
+        action.href = taskDestination(task);
+        item.append(action);
+      }
       list.append(item);
     });
   }
@@ -112,7 +167,7 @@
       const item = make("li", undefined, "item-card");
       item.append(
         make("h3", submission.proposal_title),
-        make("p", submission.status.replaceAll("_", " "), "state-badge")
+        make("p", submission.status.replaceAll("_", " "), `state-badge${submission.status === "accepted" ? " success" : ""}`)
       );
       list.append(item);
     });
@@ -218,7 +273,7 @@
       state.csrf = session.csrf_token;
       const portal = await api("/api/v1/speaker/portal");
       renderPortal(portal);
-      await loadAssets();
+      await Promise.all([loadAssets(), loadResources()]);
       setStatus("Your speaker portal is ready.", "success");
     } catch (error) {
       if (error.status === 401 || error.status === 404) {
@@ -343,6 +398,47 @@
 
   function taskForKind(kind) {
     return state.portal?.tasks?.find((task) => task.task_type === kind && task.state === "open")?.id || null;
+  }
+
+  function safeEmbedUrl(value) {
+    try {
+      const url = new URL(value);
+      const allowed = new Set(["www.youtube.com", "youtube.com", "www.youtube-nocookie.com", "player.vimeo.com", "docs.google.com", "drive.google.com", "calendar.google.com"]);
+      return url.protocol === "https:" && allowed.has(url.hostname) ? url.toString() : null;
+    } catch (_) { return null; }
+  }
+
+  async function loadResources() {
+    const container = byId("resource-list");
+    try {
+      const result = await api("/api/v1/speaker/resources");
+      byId("resource-count").textContent = String(result.data.length);
+      if (!result.data.length) {
+        container.replaceChildren(make("p", "No resources have been published yet.", "empty"));
+        return;
+      }
+      const cards = result.data.map((resource) => {
+        const details = make("details", undefined, "resource-card");
+        details.append(make("summary", resource.title));
+        if (resource.summary) details.append(make("p", resource.summary, "help"));
+        if (resource.body_text) details.append(make("p", resource.body_text, "resource-card__body"));
+        const embed = safeEmbedUrl(resource.embed_url);
+        if (embed) {
+          const frame = document.createElement("iframe");
+          frame.className = "resource-embed";
+          frame.src = embed;
+          frame.title = resource.title;
+          frame.loading = "lazy";
+          frame.referrerPolicy = "no-referrer";
+          frame.sandbox = "allow-scripts allow-same-origin allow-popups";
+          details.append(frame);
+        }
+        return details;
+      });
+      container.replaceChildren(...cards);
+    } catch (_) {
+      container.replaceChildren(make("p", "Resources could not be loaded.", "empty"));
+    }
   }
 
   async function loadAssets() {

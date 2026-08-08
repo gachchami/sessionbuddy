@@ -3,10 +3,11 @@
 import hmac
 from html import escape
 from typing import Literal
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.authorization import Permission, ResourceContext, Role
@@ -151,6 +152,9 @@ class EventView(BaseModel):
     location: str | None = None
     delivery_mode: Literal["in_person", "virtual", "hybrid"]
     description: str | None = None
+    accent_color: str | None = None
+    logo_url: str | None = None
+    website_url: str | None = None
     status: Literal["draft", "active", "archived"]
     version: int
 
@@ -168,6 +172,19 @@ class EventCreate(BaseModel):
     location: str | None = Field(default=None, max_length=500)
     delivery_mode: Literal["in_person", "virtual", "hybrid"] = "hybrid"
     description: str | None = Field(default=None, max_length=5000)
+    accent_color: str | None = Field(default="#3159d9", pattern=r"^#[0-9A-Fa-f]{6}$")
+    logo_url: str | None = Field(default=None, max_length=2000)
+    website_url: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("logo_url", "website_url")
+    @classmethod
+    def validate_public_url(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        parsed = urlparse(value)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("branding URLs must be absolute HTTPS URLs")
+        return value
 
 
 class EventUpdate(EventCreate):
@@ -382,7 +399,7 @@ async def list_events(organization_id: str, request: Request) -> EventList:
         database(request)
         .prepare(
             """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                      delivery_mode,description,status,version
+                      delivery_mode,description,accent_color,logo_url,website_url,status,version
                FROM events WHERE organization_id=?1 ORDER BY starts_at_ms DESC,id DESC"""
         )
         .bind(organization_id)
@@ -419,8 +436,9 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
         db.prepare(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'active',?10,?10)"""
+                delivery_mode,description,accent_color,logo_url,website_url,status,
+                created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'active',?13,?13)"""
         ).bind(
             event_id,
             organization_id,
@@ -431,6 +449,9 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
             body.location,
             body.delivery_mode,
             body.description,
+            body.accent_color,
+            body.logo_url,
+            body.website_url,
             now,
         )
     )
@@ -491,10 +512,11 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
     row = row_mapping(
         await db.prepare(
             """UPDATE events SET name=?1,starts_at_ms=?2,ends_at_ms=?3,time_zone=?4,
-               location=?5,delivery_mode=?6,description=?7,status=?8,archived_at_ms=?9,
-               version=version+1,updated_at_ms=?10 WHERE id=?11 AND version=?12
+               location=?5,delivery_mode=?6,description=?7,accent_color=?8,logo_url=?9,
+               website_url=?10,status=?11,archived_at_ms=?12,
+               version=version+1,updated_at_ms=?13 WHERE id=?14 AND version=?15
                RETURNING id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                         delivery_mode,description,status,version"""
+                         delivery_mode,description,accent_color,logo_url,website_url,status,version"""
         )
         .bind(
             body.name,
@@ -504,6 +526,9 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             body.location,
             body.delivery_mode,
             body.description,
+            body.accent_color,
+            body.logo_url,
+            body.website_url,
             body.status,
             archived_at_ms,
             now,
@@ -1127,8 +1152,8 @@ async def _add_speaker_profile(
             db.prepare(
                 """INSERT INTO event_speakers
                    (id,organization_id,event_id,person_id,status,accepted_at_ms,
-                    last_activity_at_ms,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5)"""
+                    last_activity_at_ms,created_at_ms,updated_at_ms,selection_status)
+                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
             ).bind(new_id(), organization_id, event_id, person_id, now)
         )
 

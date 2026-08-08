@@ -6,7 +6,7 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, program: null, fields: structuredClone(coreFields) };
+  const state = { context: null, csrf: null, program: null, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
   const json = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...json(), "x-csrf-token": state.csrf });
@@ -71,6 +71,12 @@
     return input;
   }
 
+  function toEpoch(value) {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+  }
+
   function renderFields() {
     const list = byId("form-fields");
     list.replaceChildren();
@@ -84,7 +90,12 @@
       keyInput.readOnly = core;
       const type = document.createElement("select");
       type.name = "field_type";
-      ["text", "textarea", "email", "url", "select"].forEach((value) => type.add(new Option(value, value)));
+      [
+        ["Short text", "text"], ["Long text", "textarea"], ["Email", "email"],
+        ["URL", "url"], ["Phone", "phone"], ["Single choice", "select"],
+        ["Multiple choice", "multiselect"], ["Checkbox", "checkbox"],
+        ["File upload", "file"], ["Image upload", "image"]
+      ].forEach(([label, value]) => type.add(new Option(label, value)));
       type.value = field.type;
       if (core) type.disabled = true;
       const required = document.createElement("input");
@@ -109,7 +120,9 @@
         inputLabel("Label", textInput("field_label", field.label, true)),
         inputLabel("Type", type),
         inputLabel("Required", required),
-        inputLabel("Select choices (comma separated)", choices)
+        inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
+        inputLabel("Help text", textInput("field_help", field.help_text || "")),
+        inputLabel("Choices (comma separated)", choices)
       );
       if (!core) {
         card.append(
@@ -144,8 +157,9 @@
         type,
         label: card.elements.field_label.value.trim(),
         required: index < coreFields.length || card.elements.field_required.checked,
-        help_text: "",
-        choices: type === "select" ? choices : []
+        help_text: card.elements.field_help.value.trim(),
+        placeholder: card.elements.field_placeholder.value.trim(),
+        choices: ["select", "multiselect"].includes(type) ? choices : []
       };
       const source = card.elements.condition_source?.value.trim();
       const value = card.elements.condition_value?.value.trim();
@@ -157,6 +171,52 @@
     });
     state.fields = fields;
     return { fields: fields.map(({ condition, ...field }) => field), conditions };
+  }
+
+  function renderRoutingRules() {
+    const list = byId("routing-rules");
+    list.replaceChildren();
+    state.routingRules.forEach((rule, index) => {
+      const card = make("fieldset");
+      const source = textInput("routing_source", rule.source_key || "", true);
+      source.placeholder = "session_format";
+      const operator = document.createElement("select");
+      operator.name = "routing_operator";
+      [["Equals", "equals"], ["Does not equal", "not_equals"], ["Contains", "contains"]]
+        .forEach(([label, value]) => operator.add(new Option(label, value)));
+      operator.value = rule.operator || "equals";
+      card.append(
+        make("legend", `Routing rule ${index + 1}`),
+        inputLabel("Answer field key", source),
+        inputLabel("Match", operator),
+        inputLabel("Value", textInput("routing_value", rule.value || "", true)),
+        inputLabel("Category", textInput("routing_category", rule.category || "")),
+        inputLabel("Track", textInput("routing_track", rule.track || "")),
+        inputLabel("Review queue", textInput("routing_queue", rule.review_queue || ""))
+      );
+      const remove = make("button", "Remove rule");
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.addEventListener("click", () => {
+        readRoutingRules();
+        state.routingRules.splice(index, 1);
+        renderRoutingRules();
+      });
+      card.append(remove);
+      list.append(card);
+    });
+  }
+
+  function readRoutingRules() {
+    state.routingRules = [...byId("routing-rules").querySelectorAll("fieldset")].map((card) => ({
+      source_key: card.elements.routing_source.value.trim(),
+      operator: card.elements.routing_operator.value,
+      value: card.elements.routing_value.value.trim(),
+      category: card.elements.routing_category.value.trim() || null,
+      track: card.elements.routing_track.value.trim() || null,
+      review_queue: card.elements.routing_queue.value.trim() || null
+    }));
+    return state.routingRules;
   }
 
   function installBuilder() {
@@ -180,6 +240,12 @@
     publish.insertBefore(fields, submit);
     publish.insertBefore(add, submit);
     renderFields();
+    byId("add-routing").addEventListener("click", () => {
+      readRoutingRules();
+      state.routingRules.push({ source_key: "", operator: "equals", value: "", category: "", track: "", review_queue: "" });
+      renderRoutingRules();
+    });
+    renderRoutingRules();
   }
 
   async function restoreSession() {
@@ -229,10 +295,24 @@
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget));
       const schema = readFields();
+      const routingRules = readRoutingRules();
       const form = await api(`/api/v1/admin/programs/${state.program.id}/forms/publish`, {
         method: "POST",
         headers: { ...admin(), "idempotency-key": key() },
-        body: JSON.stringify({ slug: values.slug, welcome_text: values.welcome_text, ...schema })
+        body: JSON.stringify({
+          slug: values.slug,
+          welcome_text: values.welcome_text,
+          ...schema,
+          routing_rules: routingRules,
+          opens_at_ms: toEpoch(values.opens_at),
+          closes_at_ms: toEpoch(values.closes_at),
+          submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
+          success_title: values.success_title,
+          success_message: values.success_message,
+          redirect_to_portal: event.currentTarget.elements.redirect_to_portal.checked,
+          confirmation_subject: values.confirmation_subject,
+          confirmation_body: values.confirmation_body
+        })
       });
       const publicUrl = `${location.origin}/cfp/${form.slug}`;
       const wrap = byId("publish-result");

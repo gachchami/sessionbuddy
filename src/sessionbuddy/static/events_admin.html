@@ -4,16 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=6">
-  <script src="/admin/events/assets/events.js?v=3" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=7">
+  <script src="/admin/events/assets/events.js?v=5" defer></script>
 </head>
-<body>
+<body class="app-body">
   <a class="skip-link" href="#main">Skip to event management</a>
-  <header><div class="shell"><strong>SessionBuddy</strong><a href="/admin/programs">Programs</a></div></header>
-  <main id="main" class="shell" tabindex="-1">
-    <p class="eyebrow">Organization administration</p>
-    <h1>Events</h1>
-    <p class="lede">Create events and manage their people, submissions, agenda, and onboarding.</p>
+  <header class="app-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a><nav class="app-nav" aria-label="Organizer navigation"><a aria-current="page" href="/admin/events">Events</a><a href="/admin/programs">Programs</a><a href="/reviews">Reviews</a></nav></div></header>
+  <main id="main" class="shell page" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">Organization administration</p><h1>Events</h1><p class="lede">Create an event, then move through access, program, onboarding, and publishing from one place.</p></div></div>
     <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Checking your session…</div>
 
     <section class="card">
@@ -33,15 +31,23 @@
         <input name="event_id" type="hidden">
         <input name="version" type="hidden">
         <label>Event name<input name="name" placeholder="e.g. Community Tech Summit 2026" maxlength="200" aria-describedby="event-name-help" required><small id="event-name-help" class="result">The public name shown on CFP and schedule pages.</small></label>
-        <div class="form-grid">
-          <label>Event starts<input name="starts_at" type="datetime-local" aria-describedby="date-time-help" required></label>
-          <label>Event ends<input name="ends_at" type="datetime-local" aria-describedby="date-time-help" required></label>
-        </div>
-        <p id="date-time-help" class="result">Enter dates and times as they appear in your current browser time zone.</p>
-        <label>Event time zone<input name="time_zone" placeholder="e.g. Asia/Kolkata" maxlength="100" aria-describedby="time-zone-help" required><small id="time-zone-help" class="result">Detected from your browser. Use an IANA time-zone name if you need to change it.</small></label>
+        <label>Event time zone<input name="time_zone" list="time-zone-options" placeholder="e.g. Asia/Kolkata" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help" class="result"><span id="detected-time-zone">Detecting your time zone…</span> All dates and times below use this zone.</small></label>
+        <datalist id="time-zone-options"></datalist>
+        <fieldset aria-describedby="date-time-help date-time-preview">
+          <legend>Event dates and times</legend>
+          <div class="form-grid">
+            <label>Start date<input name="start_date" type="date" required></label>
+            <label>Start time<input name="start_time" type="time" value="09:00" step="900" required></label>
+            <label>End date<input name="end_date" type="date" required></label>
+            <label>End time<input name="end_time" type="time" value="17:00" step="900" required></label>
+          </div>
+          <p id="date-time-help" class="result">Choose the calendar dates for the event. When you select a start date, the end date initially follows it.</p>
+          <p id="date-time-preview" class="result" role="status" aria-live="polite">Choose a start and end date to preview the event.</p>
+        </fieldset>
         <label>Attendance format<select name="delivery_mode" aria-describedby="delivery-mode-help" required><option value="" selected disabled>Select how people will attend</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select><small id="delivery-mode-help" class="result">Choose one explicitly; SessionBuddy will not assume a format.</small></label>
         <label>Location <span class="result">(optional)</span><input name="location" placeholder="Venue, city, or meeting URL" maxlength="500"></label>
         <label>Description <span class="result">(optional)</span><textarea name="description" placeholder="What should speakers and reviewers know about this event?" maxlength="5000"></textarea></label>
+        <fieldset><legend>Public brand</legend><div class="form-grid"><label>Accent color<input name="accent_color" type="color" value="#3159d9"></label><label>Event website <span class="optional">Optional</span><input name="website_url" type="url" placeholder="https://…"></label></div><label>Logo URL <span class="optional">Optional</span><input name="logo_url" type="url" placeholder="https://…"><small>Use a public HTTPS image URL for the gallery and schedule.</small></label></fieldset>
         <label id="event-status-label" hidden>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
         <div class="actions">
           <button id="save-event">Create event</button>

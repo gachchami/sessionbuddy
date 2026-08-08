@@ -179,7 +179,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         200
     }
     assert sign_in.status_code == access.status_code == events.status_code == 200
-    assert "one-time link" in sign_in.text
+    assert "one-time sign-in link" in sign_in.text
     assert "People and invitations" in access.text
     assert "Organization administration" in events.text
     assert "Update organization" in events.text

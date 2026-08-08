@@ -106,8 +106,16 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'value="Asia/Kolkata"' not in text
     assert '<option value="" selected disabled>Select how people will attend</option>' in text
     assert 'aria-describedby="time-zone-help"' in text
+    assert '<legend>Event dates and times</legend>' in text
+    assert 'name="start_date" type="date"' in text
+    assert 'name="start_time" type="time" value="09:00"' in text
+    assert 'name="end_date" type="date"' in text
+    assert 'name="end_time" type="time" value="17:00"' in text
+    assert 'id="date-time-preview"' in text
     assert 'aria-describedby="delivery-mode-help"' in text
     assert 'form.elements.delivery_mode.value = ""' in javascript
+    assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
+    assert "zonedDateTimeToMillis" in javascript
 
 
 def test_evaluation_shell_and_runtime_admin_table_have_keyboard_repairs() -> None:

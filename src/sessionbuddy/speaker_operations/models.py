@@ -48,6 +48,22 @@ class SpeakerTaskView(BaseModel):
     state: Literal["open", "completed", "waived"]
     due_at_ms: int | None
     completed_at_ms: int | None
+    form_fields: list[dict[str, object]] = Field(default_factory=list)
+    response: dict[str, object] = Field(default_factory=dict)
+    version: int = 1
+
+
+class SpeakerTaskResponseCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answers: dict[str, str | bool | list[str] | None] = Field(max_length=40)
+    version: int = Field(ge=1)
+
+
+class SpeakerTaskResponseView(BaseModel):
+    id: str
+    state: Literal["completed"] = "completed"
+    response: dict[str, object]
+    version: int
 
 
 class SpeakerSubmissionView(BaseModel):

@@ -3,6 +3,16 @@
 
   const byId = (id) => document.getElementById(id);
   const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map() };
+  const timeZoneAliases = new Map([
+    ["Asia/Calcutta", "Asia/Kolkata"],
+    ["Europe/Kiev", "Europe/Kyiv"],
+    ["America/Godthab", "America/Nuuk"],
+    ["Asia/Saigon", "Asia/Ho_Chi_Minh"],
+    ["Pacific/Enderbury", "Pacific/Kanton"],
+    ["Pacific/Truk", "Pacific/Chuuk"],
+    ["Pacific/Ponape", "Pacific/Pohnpei"],
+    ["Etc/UTC", "UTC"]
+  ]);
 
   async function api(path, options = {}) {
     const response = await fetch(path, { credentials: "same-origin", ...options });
@@ -39,10 +49,121 @@
     return control;
   }
 
-  function localDateTime(timestamp) {
-    const date = new Date(timestamp);
-    const local = new Date(timestamp - date.getTimezoneOffset() * 60_000);
-    return local.toISOString().slice(0, 16);
+  function normalizeTimeZone(value) {
+    const trimmed = String(value || "").trim();
+    return timeZoneAliases.get(trimmed) || trimmed;
+  }
+
+  function browserTimeZone() {
+    return normalizeTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  }
+
+  function timeZoneIsValid(timeZone) {
+    try {
+      new Intl.DateTimeFormat(undefined, { timeZone }).format();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function populateTimeZones() {
+    const detected = browserTimeZone();
+    const values = new Set([detected, "UTC", ...timeZoneAliases.values()]);
+    if (typeof Intl.supportedValuesOf === "function") {
+      for (const value of Intl.supportedValuesOf("timeZone")) values.add(normalizeTimeZone(value));
+    }
+    const options = [...values].sort().map((value) => new Option(value, value));
+    byId("time-zone-options").replaceChildren(...options);
+    byId("detected-time-zone").textContent = `Detected from your browser: ${detected}.`;
+  }
+
+  function partsInTimeZone(timestamp, timeZone) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(new Date(timestamp));
+    return Object.fromEntries(
+      parts.filter(({ type }) => type !== "literal").map(({ type, value }) => [type, Number(value)])
+    );
+  }
+
+  function eventLocalDateTime(timestamp, timeZone) {
+    const parts = partsInTimeZone(timestamp, timeZone);
+    const pad = (value) => String(value).padStart(2, "0");
+    return {
+      date: `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`,
+      time: `${pad(parts.hour)}:${pad(parts.minute)}`
+    };
+  }
+
+  function zonedDateTimeToMillis(dateValue, timeValue, timeZone) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue) || !/^\d{2}:\d{2}$/.test(timeValue)) {
+      throw new Error("Choose complete start and end dates and times.");
+    }
+    if (!timeZoneIsValid(timeZone)) throw new Error("Enter a valid IANA time-zone name.");
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const [hour, minute] = timeValue.split(":").map(Number);
+    const intended = Date.UTC(year, month - 1, day, hour, minute);
+    let timestamp = intended;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const actual = partsInTimeZone(timestamp, timeZone);
+      const actualAsUtc = Date.UTC(
+        actual.year, actual.month - 1, actual.day, actual.hour, actual.minute
+      );
+      const adjustment = intended - actualAsUtc;
+      timestamp += adjustment;
+      if (adjustment === 0) break;
+    }
+    const resolved = eventLocalDateTime(timestamp, timeZone);
+    if (resolved.date !== dateValue || resolved.time !== timeValue) {
+      throw new Error(`That local time does not exist in ${timeZone}. Choose another time.`);
+    }
+    return timestamp;
+  }
+
+  function formatEventDateTime(timestamp, timeZone) {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone
+    }).format(new Date(timestamp));
+  }
+
+  function updateDateTimePreview() {
+    const form = byId("event-form");
+    const preview = byId("date-time-preview");
+    const timeZone = normalizeTimeZone(form.elements.time_zone.value);
+    form.elements.end_date.setCustomValidity("");
+    form.elements.time_zone.setCustomValidity("");
+    if (!form.elements.start_date.value || !form.elements.end_date.value) {
+      preview.textContent = "Choose a start and end date to preview the event.";
+      return;
+    }
+    try {
+      const startsAt = zonedDateTimeToMillis(
+        form.elements.start_date.value, form.elements.start_time.value, timeZone
+      );
+      const endsAt = zonedDateTimeToMillis(
+        form.elements.end_date.value, form.elements.end_time.value, timeZone
+      );
+      if (endsAt <= startsAt) {
+        form.elements.end_date.setCustomValidity("The event must end after it starts.");
+        preview.textContent = "The event must end after it starts.";
+        return;
+      }
+      preview.textContent = `${formatEventDateTime(startsAt, timeZone)} – ${formatEventDateTime(endsAt, timeZone)} · ${timeZone}`;
+    } catch (error) {
+      if (!timeZoneIsValid(timeZone)) {
+        form.elements.time_zone.setCustomValidity(error.message);
+      }
+      preview.textContent = error.message;
+    }
   }
 
   function resetEventForm() {
@@ -50,12 +171,18 @@
     form.reset();
     form.elements.event_id.value = "";
     form.elements.version.value = "";
-    form.elements.time_zone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    form.elements.time_zone.value = browserTimeZone();
+    form.elements.start_date.value = "";
+    form.elements.start_time.value = "09:00";
+    form.elements.end_date.value = "";
+    form.elements.end_time.value = "17:00";
     form.elements.delivery_mode.value = "";
+    form.elements.accent_color.value = "#3159d9";
     byId("event-form-heading").textContent = "Create an event";
     byId("save-event").textContent = "Create event";
     byId("event-status-label").hidden = true;
     byId("cancel-event-edit").hidden = true;
+    updateDateTimePreview();
   }
 
   function editEvent(event) {
@@ -63,17 +190,26 @@
     form.elements.event_id.value = event.id;
     form.elements.version.value = String(event.version);
     form.elements.name.value = event.name;
-    form.elements.starts_at.value = localDateTime(event.starts_at_ms);
-    form.elements.ends_at.value = localDateTime(event.ends_at_ms);
-    form.elements.time_zone.value = event.time_zone;
+    const timeZone = normalizeTimeZone(event.time_zone);
+    const startsAt = eventLocalDateTime(event.starts_at_ms, timeZone);
+    const endsAt = eventLocalDateTime(event.ends_at_ms, timeZone);
+    form.elements.start_date.value = startsAt.date;
+    form.elements.start_time.value = startsAt.time;
+    form.elements.end_date.value = endsAt.date;
+    form.elements.end_time.value = endsAt.time;
+    form.elements.time_zone.value = timeZone;
     form.elements.delivery_mode.value = event.delivery_mode;
     form.elements.location.value = event.location || "";
     form.elements.description.value = event.description || "";
+    form.elements.accent_color.value = event.accent_color || "#3159d9";
+    form.elements.logo_url.value = event.logo_url || "";
+    form.elements.website_url.value = event.website_url || "";
     form.elements.status.value = event.status;
     byId("event-form-heading").textContent = `Edit ${event.name}`;
     byId("save-event").textContent = "Update event";
     byId("event-status-label").hidden = false;
     byId("cancel-event-edit").hidden = false;
+    updateDateTimePreview();
     form.scrollIntoView({ behavior: "smooth", block: "start" });
     form.elements.name.focus();
   }
@@ -83,7 +219,8 @@
     const heading = document.createElement("strong");
     heading.textContent = event.name;
     const details = document.createElement("span");
-    details.textContent = ` · ${event.status} · ${new Date(event.starts_at_ms).toLocaleString()}`;
+    const timeZone = normalizeTimeZone(event.time_zone);
+    details.textContent = ` · ${event.status} · ${formatEventDateTime(event.starts_at_ms, timeZone)} · ${timeZone}`;
     item.append(
       heading,
       details,
@@ -94,9 +231,13 @@
       " ",
       link("Onboarding", `/admin/events/${encodeURIComponent(event.id)}/onboarding`),
       " ",
+      link("Workspace", `/admin/events/${encodeURIComponent(event.id)}/workspace`),
+      " ",
       link("Agenda", `/admin/events/${encodeURIComponent(event.id)}/agenda`),
       " ",
       link("Public schedule", `/events/${encodeURIComponent(event.id)}/schedule`),
+      " ",
+      link("Speakers", `/events/${encodeURIComponent(event.id)}/speakers`),
       " ",
       button("Edit", () => editEvent(event))
     );
@@ -169,24 +310,48 @@
     }
   });
 
+  byId("event-form").addEventListener("input", updateDateTimePreview);
+  byId("event-form").elements.start_date.addEventListener("change", (event) => {
+    const form = event.currentTarget.form;
+    if (!form.elements.end_date.value) form.elements.end_date.value = event.currentTarget.value;
+    updateDateTimePreview();
+  });
+  byId("event-form").elements.time_zone.addEventListener("change", (event) => {
+    event.currentTarget.value = normalizeTimeZone(event.currentTarget.value);
+    updateDateTimePreview();
+  });
+
   byId("event-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const eventId = values.event_id;
-    const body = {
-      name: values.name,
-      starts_at_ms: new Date(values.starts_at).getTime(),
-      ends_at_ms: new Date(values.ends_at).getTime(),
-      time_zone: values.time_zone,
-      delivery_mode: values.delivery_mode,
-      location: values.location || null,
-      description: values.description || null
-    };
-    if (eventId) {
-      body.version = Number(values.version);
-      body.status = values.status;
-    }
     try {
+      const timeZone = normalizeTimeZone(values.time_zone);
+      const startsAt = zonedDateTimeToMillis(values.start_date, values.start_time, timeZone);
+      const endsAt = zonedDateTimeToMillis(values.end_date, values.end_time, timeZone);
+      if (endsAt <= startsAt) {
+        form.elements.end_date.setCustomValidity("The event must end after it starts.");
+        form.elements.end_date.reportValidity();
+        updateDateTimePreview();
+        return;
+      }
+      const body = {
+        name: values.name,
+        starts_at_ms: startsAt,
+        ends_at_ms: endsAt,
+        time_zone: timeZone,
+        delivery_mode: values.delivery_mode,
+        location: values.location || null,
+        description: values.description || null,
+        accent_color: values.accent_color || "#3159d9",
+        logo_url: values.logo_url || null,
+        website_url: values.website_url || null
+      };
+      if (eventId) {
+        body.version = Number(values.version);
+        body.status = values.status;
+      }
       await api(
         eventId
           ? `/api/v1/admin/events/${encodeURIComponent(eventId)}`
@@ -200,12 +365,19 @@
       setStatus(eventId ? "Event updated." : "Event created.");
       await loadEvents(state.organizationId);
     } catch (error) {
+      if (!timeZoneIsValid(normalizeTimeZone(values.time_zone))) {
+        form.elements.time_zone.setCustomValidity(error.message);
+        form.elements.time_zone.reportValidity();
+        updateDateTimePreview();
+        return;
+      }
       setStatus(error.status === 409 ? "The event changed elsewhere. Reload and try again." : error.message, true);
     }
   });
 
   byId("cancel-event-edit").addEventListener("click", resetEventForm);
 
+  populateTimeZones();
   initialize().catch((error) => {
     if (error.status === 401) {
       location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);

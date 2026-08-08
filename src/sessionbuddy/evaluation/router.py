@@ -1,5 +1,6 @@
 import hashlib
 import json
+from html import escape
 from time import perf_counter
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -1060,6 +1061,23 @@ async def record_submission_decision(
     )
     if int(context["completed_count"] or 0) < int(context["assigned_count"]):
         raise HTTPException(status_code=409)
+    speaker = row_mapping(
+        await db.prepare(
+            """SELECT s.speaker_email,s.submitter_user_id,s.proposal_title,e.name AS event_name,
+                      ss.event_speaker_id
+               FROM submissions s
+               JOIN events e ON e.organization_id=s.organization_id AND e.id=s.event_id
+               LEFT JOIN submission_speakers ss ON ss.organization_id=s.organization_id
+                 AND ss.event_id=s.event_id AND ss.submission_id=s.id AND ss.role='primary'
+               WHERE s.id=?1 AND s.organization_id=?2 AND s.event_id=?3 LIMIT 1"""
+        )
+        .bind(submission_id, context["organization_id"], context["event_id"])
+        .first()
+    )
+    if speaker is None:
+        raise HTTPException(status_code=404)
+    if body.send_email and not str(speaker["speaker_email"] or "").strip():
+        raise HTTPException(status_code=409)
     key = _key(idempotency_key)
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
     fingerprint = _fingerprint(body)
@@ -1079,14 +1097,15 @@ async def record_submission_decision(
     existing = row_mapping(
         await db.prepare(
             """SELECT id, version FROM submission_decisions
-               WHERE round_id = ?1 AND submission_id = ?2"""
+               WHERE organization_id=?1 AND event_id=?2 AND submission_id=?3"""
         )
-        .bind(round_id, submission_id)
+        .bind(context["organization_id"], context["event_id"], submission_id)
         .first()
     )
     if existing is not None:
         raise HTTPException(status_code=409)
     decision_id = new_id()
+    communication_id = new_id() if body.send_email else None
     version = 1
     now = utc_now_ms()
     record = IdempotencyRecord(
@@ -1120,6 +1139,125 @@ async def record_submission_decision(
             now,
         )
     )
+    if body.decision == "accepted":
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO accepted_sessions
+                   (id,organization_id,event_id,submission_id,decision_id,created_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6)"""
+            ).bind(
+                new_id(),
+                context["organization_id"],
+                context["event_id"],
+                submission_id,
+                decision_id,
+                now,
+            )
+        )
+        if speaker["event_speaker_id"] is not None:
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_speakers SET selection_status='accepted',status='onboarding',
+                              accepted_at_ms=?1,last_activity_at_ms=?1,updated_at_ms=?1
+                       WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
+                ).bind(
+                    now,
+                    context["organization_id"],
+                    context["event_id"],
+                    speaker["event_speaker_id"],
+                )
+            )
+            tasks = (
+                (
+                    "profile",
+                    "Complete your speaker profile",
+                    "Add your biography and public details.",
+                    7,
+                ),
+                ("headshot", "Upload your headshot", "Add a program-ready profile photo.", 10),
+                (
+                    "slides",
+                    "Upload your presentation",
+                    "Share the final slide deck with the event team.",
+                    21,
+                ),
+                (
+                    "supporting_document",
+                    "Upload supporting material",
+                    "Share any final handout or supporting PDF.",
+                    21,
+                ),
+            )
+            for task_type, title, help_text, days in tasks:
+                batch.add_statement(
+                    db.prepare(
+                        """INSERT INTO speaker_tasks
+                           (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
+                            title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
+                           VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10)"""
+                    ).bind(
+                        new_id(),
+                        context["organization_id"],
+                        context["event_id"],
+                        speaker["event_speaker_id"],
+                        submission_id,
+                        task_type,
+                        title,
+                        help_text,
+                        now + days * 86_400_000,
+                        now,
+                    )
+                )
+    elif speaker["event_speaker_id"] is not None:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE event_speakers SET selection_status='rejected',last_activity_at_ms=?1,
+                          updated_at_ms=?1 WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
+            ).bind(
+                now,
+                context["organization_id"],
+                context["event_id"],
+                speaker["event_speaker_id"],
+            )
+        )
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_tasks SET state='waived',waived_at_ms=?1,updated_at_ms=?1,
+                          version=version+1 WHERE organization_id=?2 AND event_id=?3
+                          AND event_speaker_id=?4 AND state='open'"""
+            ).bind(
+                now,
+                context["organization_id"],
+                context["event_id"],
+                speaker["event_speaker_id"],
+            )
+        )
+    if communication_id is not None:
+        outcome = "accepted" if body.decision == "accepted" else "not selected"
+        message = body.speaker_message or (
+            "Congratulations — your session has been accepted. "
+            "Open your speaker portal for next steps."
+            if body.decision == "accepted"
+            else "Thank you for your proposal. It was not selected for this event."
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO communication_messages
+                   (id,organization_id,event_id,recipient_user_id,recipient_email,subject,
+                    html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)"""
+            ).bind(
+                communication_id,
+                context["organization_id"],
+                context["event_id"],
+                speaker["submitter_user_id"],
+                speaker["speaker_email"],
+                f"{speaker['event_name']}: proposal {outcome}",
+                f"<p>{escape(message)}</p><p><strong>{escape(str(speaker['proposal_title']))}</strong></p>",
+                f"submission-decision:{decision_id}:v1",
+                now,
+            )
+        )
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -1132,7 +1270,12 @@ async def record_submission_decision(
             occurred_at_ms=now,
             organization_id=str(context["organization_id"]),
             event_id=str(context["event_id"]),
-            metadata={"decision": body.decision, "version": version, "communication_sent": False},
+            metadata={
+                "decision": body.decision,
+                "version": version,
+                "communication_queued": bool(communication_id),
+                "onboarding_created": body.decision == "accepted",
+            },
         )
     )
     batch.complete_idempotency(
@@ -1143,11 +1286,19 @@ async def record_submission_decision(
         completed_at_ms=now,
     )
     await _execute(request, batch)
+    if communication_id is not None:
+        queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
+        if queue is not None:
+            try:
+                await queue.send({"schema_version": 1, "message_id": communication_id})
+            except Exception:
+                record_timing(request, "domain", 0)
     return SubmissionDecisionView(
         id=decision_id,
         submission_id=submission_id,
         round_id=round_id,
         version=version,
+        communication_queued=communication_id is not None,
         **body.model_dump(),
     )
 
@@ -1185,8 +1336,15 @@ async def _evaluation_view(db, evaluation_id: str) -> EvaluationView:
 async def _decision_view(db, decision_id: str) -> SubmissionDecisionView:
     row = row_mapping(
         await db.prepare(
-            """SELECT id, submission_id, round_id, decision, internal_reason, version
-           FROM submission_decisions WHERE id = ?1"""
+            """SELECT d.id,d.submission_id,d.round_id,d.decision,d.internal_reason,d.version,
+                      EXISTS(SELECT 1 FROM communication_messages cm
+                        WHERE cm.deterministic_key='submission-decision:' || d.id || ':v1')
+                        AS send_email,
+                      EXISTS(SELECT 1 FROM communication_messages cm
+                        WHERE cm.deterministic_key='submission-decision:' || d.id || ':v1')
+                        AS communication_queued,
+                      '' AS speaker_message
+               FROM submission_decisions d WHERE d.id = ?1"""
         )
         .bind(decision_id)
         .first()
