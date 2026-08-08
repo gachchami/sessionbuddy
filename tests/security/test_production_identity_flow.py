@@ -302,9 +302,13 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "ends_at_ms": 1_900_086_400_000,
                 "time_zone": "Asia/Kolkata",
                 "delivery_mode": "hybrid",
+                "email_sender_name": "Speaker Summit",
+                "email_reply_to": "program@example.com",
             },
         )
         assert event.status_code == 201
+        assert event.json()["email_sender_name"] == "Speaker Summit"
+        assert event.json()["email_reply_to"] == "program@example.com"
         event_id = event.json()["id"]
         refreshed_session = (await admin.get("/api/v1/auth/session")).json()
         assert refreshed_session["event_access"] == [
@@ -497,12 +501,31 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
                 "delivery_mode": "hybrid",
                 "location": "Development",
                 "description": "Disposable staging rehearsal.",
+                "email_sender_name": "Program Team",
+                "email_reply_to": "program-team@example.com",
                 "status": "active",
                 "version": 1,
             },
         )
         assert updated_event.status_code == 200
         assert updated_event.json()["version"] == 2
+        assert updated_event.json()["email_sender_name"] == "Program Team"
+        assert updated_event.json()["email_reply_to"] == "program-team@example.com"
+        invalid_email = await client.patch(
+            f"/api/v1/admin/events/{event_id}",
+            headers=headers,
+            json={
+                "name": "Multi-role Summit Updated",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+                "email_reply_to": "not-an-email",
+                "status": "active",
+                "version": 2,
+            },
+        )
+        assert invalid_email.status_code == 422
         temporary = await client.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=headers,

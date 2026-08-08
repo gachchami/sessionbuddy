@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from sessionbuddy.communications.runtime import (
+    D1DeliveryRepository,
     DeliveryClaim,
     DeliveryEnvelope,
     ProviderResult,
@@ -126,6 +127,63 @@ async def test_resend_adapter_uses_deterministic_key_without_logging_payload() -
     assert result == ProviderResult(True, "resend-id")
     assert captured["headers"]["idempotency-key"] == "key"
     assert captured["headers"]["authorization"] == "Bearer secret"
+
+
+@pytest.mark.asyncio
+async def test_resend_adapter_applies_event_identity_to_site_sender() -> None:
+    captured = {}
+
+    async def fetcher(url, **options):
+        captured.update(url=url, **options)
+        return Response()
+
+    event_claim = DeliveryClaim(
+        "message",
+        "org",
+        "event",
+        "speaker@example.test",
+        "Subject",
+        "<p>Body</p>",
+        "key",
+        1,
+        sender_name="Conference Team",
+        reply_to_email="program@example.test",
+    )
+    result = await ResendProvider(
+        "secret", "SessionBuddy <notifications@mail.noneli.com>", fetcher=fetcher
+    ).send(event_claim)
+
+    assert result == ProviderResult(True, "resend-id")
+    payload = json.loads(captured["body"])
+    assert payload["from"] == "Conference Team <notifications@mail.noneli.com>"
+    assert payload["reply_to"] == "program@example.test"
+
+
+@pytest.mark.asyncio
+async def test_delivery_claim_loads_event_email_identity() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_platform(connection)
+    connection.execute(
+        """UPDATE events SET email_sender_name='Conference Team',
+                  email_reply_to='program@example.test' WHERE id='event-a'"""
+    )
+    connection.execute(
+        """INSERT INTO communication_messages
+           (id,organization_id,event_id,recipient_email,subject,html_body,
+            deterministic_key,status,queued_at_ms,updated_at_ms)
+           VALUES ('event-message','org-a','event-a','speaker@example.test','Subject',
+                   '<p>Body</p>','event-message-key','queued',1,1)"""
+    )
+
+    item = await D1DeliveryRepository(AsyncSqlite(connection)).claim("event-message", 2)
+
+    assert item is not None
+    assert item.sender_name == "Conference Team"
+    assert item.reply_to_email == "program@example.test"
 
 
 @pytest.mark.asyncio

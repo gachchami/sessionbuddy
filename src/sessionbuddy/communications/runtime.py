@@ -5,6 +5,7 @@ from base64 import b64encode
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import formataddr, parseaddr
 from typing import Literal, Protocol
 
 from sessionbuddy.platform.db.d1 import (
@@ -68,6 +69,8 @@ class DeliveryClaim:
     deterministic_key: str
     attempt_number: int
     calendar_ics: str | None = None
+    sender_name: str | None = None
+    reply_to_email: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +105,10 @@ class D1DeliveryRepository:
                 """SELECT cm.id,cm.organization_id,cm.event_id,cm.recipient_email,
                           cm.subject,cm.html_body,cm.deterministic_key,cm.attempt_count,
                           cm.status,civ.ics_content
+                          ,e.email_sender_name,e.email_reply_to
                    FROM communication_messages cm
+                   LEFT JOIN events e
+                     ON e.organization_id=cm.organization_id AND e.id=cm.event_id
                    LEFT JOIN calendar_invitation_versions civ
                      ON civ.organization_id=cm.organization_id AND civ.event_id=cm.event_id
                     AND civ.communication_message_id=cm.id
@@ -150,6 +156,14 @@ class D1DeliveryRepository:
             deterministic_key=str(row["deterministic_key"]),
             attempt_number=attempt,
             calendar_ics=str(row["ics_content"]) if row.get("ics_content") is not None else None,
+            sender_name=(
+                str(row["email_sender_name"])
+                if row.get("email_sender_name") is not None
+                else None
+            ),
+            reply_to_email=(
+                str(row["email_reply_to"]) if row.get("email_reply_to") is not None else None
+            ),
         )
 
     async def delivered(self, claim: DeliveryClaim, provider_id: str, now_ms: int) -> None:
@@ -191,7 +205,11 @@ class ResendProvider:
     def __init__(self, api_key: str, from_address: str, *, fetcher=None) -> None:
         if not api_key or not from_address:
             raise ValueError("Resend configuration is required")
+        _, mailbox = parseaddr(from_address)
+        if not mailbox or "@" not in mailbox:
+            raise ValueError("Resend from address is invalid")
         self.api_key, self.from_address, self.fetcher = api_key, from_address, fetcher
+        self.from_mailbox = mailbox
 
     async def send(self, claim: DeliveryClaim) -> ProviderResult:
         fetcher = self.fetcher
@@ -201,11 +219,17 @@ class ResendProvider:
             fetcher = fetch
         try:
             payload: dict[str, object] = {
-                "from": self.from_address,
+                "from": (
+                    formataddr((claim.sender_name, self.from_mailbox))
+                    if claim.sender_name
+                    else self.from_address
+                ),
                 "to": [claim.recipient_email],
                 "subject": claim.subject,
                 "html": claim.html_body,
             }
+            if claim.reply_to_email is not None:
+                payload["reply_to"] = claim.reply_to_email
             if claim.calendar_ics is not None:
                 payload["attachments"] = [
                     {

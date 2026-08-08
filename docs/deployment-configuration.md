@@ -30,12 +30,17 @@ docker compose run --rm --no-deps worker npx wrangler secret put NAME --env dev
 `BOOTSTRAP_TOKEN` is a one-time setup secret of at least 32 random characters.
 Install it only for first-run setup and delete it immediately afterward.
 
+`RESEND_API_KEY` and `RESEND_FROM_ADDRESS` are site-level settings owned by the
+SessionBuddy operator. Organization administrators never enter provider secrets.
+When creating or editing an event, they can set an optional sender display name
+and reply-to email. Event messages combine that identity with the site's verified
+sending address; blank event fields inherit the site defaults.
+
 Never put real secrets or the administrator email in `wrangler.jsonc`, and never commit `.dev.vars`.
 
-The development environment uses Resend's `onboarding@resend.dev` testing
-sender. Resend restricts that sender to the email address associated with the
-Resend account. Replace it with an address on a verified client domain before
-testing invitations with other recipients or deploying to production.
+The development environment currently uses the operator-owned verified address
+`notifications@mail.noneli.com`. Keep its Resend domain verification active, or
+replace `RESEND_FROM_ADDRESS` with another address on a verified domain.
 
 ## Initial administrator bootstrap
 

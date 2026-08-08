@@ -181,6 +181,8 @@ test.describe("administration empty states", () => {
     await expect(eventDialog.getByRole("button", { name: "Create event" })).toBeEnabled();
     await timeZone.fill("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
+    await page.getByRole("textbox", { name: "Sender name" }).fill("Program Team");
+    await page.getByRole("textbox", { name: "Reply-to email" }).fill("program@example.test");
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
     await eventDialog.getByRole("button", { name: "Create event" }).click();
     await expect(page.getByRole("status").first()).toHaveText("Event created.");
@@ -189,6 +191,8 @@ test.describe("administration empty states", () => {
       starts_at_ms: Date.UTC(2026, 8, 12, 3, 30),
       ends_at_ms: Date.UTC(2026, 8, 12, 11, 30),
       time_zone: "Asia/Kolkata",
+      email_sender_name: "Program Team",
+      email_reply_to: "program@example.test",
     });
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByLabel("Start date")).toHaveValue("2026-09-12");

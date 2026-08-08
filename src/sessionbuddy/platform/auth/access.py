@@ -1,6 +1,7 @@
 """Production passwordless access and one-time tenant bootstrap."""
 
 import hmac
+from email.headerregistry import Address
 from html import escape
 from typing import Literal
 from urllib.parse import urlparse
@@ -252,6 +253,8 @@ class EventView(BaseModel):
     accent_color: str | None = None
     logo_url: str | None = None
     website_url: str | None = None
+    email_sender_name: str | None = None
+    email_reply_to: str | None = None
     status: Literal["draft", "active", "archived"]
     version: int
 
@@ -272,6 +275,8 @@ class EventCreate(BaseModel):
     accent_color: str | None = Field(default="#3159d9", pattern=r"^#[0-9A-Fa-f]{6}$")
     logo_url: str | None = Field(default=None, max_length=2000)
     website_url: str | None = Field(default=None, max_length=2000)
+    email_sender_name: str | None = Field(default=None, max_length=200)
+    email_reply_to: str | None = Field(default=None, max_length=320)
 
     @field_validator("logo_url", "website_url")
     @classmethod
@@ -281,6 +286,26 @@ class EventCreate(BaseModel):
         parsed = urlparse(value)
         if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
             raise ValueError("branding URLs must be absolute HTTPS URLs")
+        return value
+
+    @field_validator("email_sender_name", "email_reply_to", mode="before")
+    @classmethod
+    def empty_email_setting_is_inherited(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("email_reply_to")
+    @classmethod
+    def validate_reply_to_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if "\r" in value or "\n" in value:
+            raise ValueError("reply-to must be one email address")
+        try:
+            address = Address(addr_spec=value)
+        except (IndexError, ValueError) as exc:
+            raise ValueError("reply-to must be one valid email address") from exc
+        if not address.username or not address.domain:
+            raise ValueError("reply-to must be one valid email address")
         return value
 
 
@@ -631,7 +656,8 @@ async def list_events(organization_id: str, request: Request) -> EventList:
         database(request)
         .prepare(
             """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                      delivery_mode,description,accent_color,logo_url,website_url,status,version
+                      delivery_mode,description,accent_color,logo_url,website_url,
+                      email_sender_name,email_reply_to,status,version
                FROM events WHERE organization_id=?1 ORDER BY starts_at_ms DESC,id DESC"""
         )
         .bind(organization_id)
@@ -668,9 +694,9 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
         db.prepare(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,accent_color,logo_url,website_url,status,
-                created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'active',?13,?13)"""
+                delivery_mode,description,accent_color,logo_url,website_url,
+                email_sender_name,email_reply_to,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'active',?15,?15)"""
         ).bind(
             event_id,
             organization_id,
@@ -684,6 +710,8 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
             body.accent_color,
             body.logo_url,
             body.website_url,
+            body.email_sender_name,
+            body.email_reply_to,
             now,
         )
     )
@@ -745,10 +773,12 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         await db.prepare(
             """UPDATE events SET name=?1,starts_at_ms=?2,ends_at_ms=?3,time_zone=?4,
                location=?5,delivery_mode=?6,description=?7,accent_color=?8,logo_url=?9,
-               website_url=?10,status=?11,archived_at_ms=?12,
-               version=version+1,updated_at_ms=?13 WHERE id=?14 AND version=?15
+               website_url=?10,email_sender_name=?11,email_reply_to=?12,status=?13,
+               archived_at_ms=?14,version=version+1,updated_at_ms=?15
+               WHERE id=?16 AND version=?17
                RETURNING id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                         delivery_mode,description,accent_color,logo_url,website_url,status,version"""
+                         delivery_mode,description,accent_color,logo_url,website_url,
+                         email_sender_name,email_reply_to,status,version"""
         )
         .bind(
             body.name,
@@ -761,6 +791,8 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             body.accent_color,
             body.logo_url,
             body.website_url,
+            body.email_sender_name,
+            body.email_reply_to,
             body.status,
             archived_at_ms,
             now,

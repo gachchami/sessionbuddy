@@ -1460,6 +1460,30 @@
             ],
             "title": "Description"
           },
+          "email_reply_to": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Reply To"
+          },
+          "email_sender_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sender Name"
+          },
           "ends_at_ms": {
             "title": "Ends At Ms",
             "type": "integer"
@@ -1633,6 +1657,30 @@
             ],
             "title": "Description"
           },
+          "email_reply_to": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Reply To"
+          },
+          "email_sender_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sender Name"
+          },
           "ends_at_ms": {
             "title": "Ends At Ms",
             "type": "integer"
@@ -1747,6 +1795,28 @@
               }
             ],
             "title": "Description"
+          },
+          "email_reply_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Reply To"
+          },
+          "email_sender_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sender Name"
           },
           "ends_at_ms": {
             "title": "Ends At Ms",

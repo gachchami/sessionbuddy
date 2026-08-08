@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/product/assets/product.css?v=9">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
   <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
-  <script src="/admin/events/assets/events.js?v=7" defer></script>
+  <script src="/admin/events/assets/events.js?v=8" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to event management</a>
@@ -81,6 +81,14 @@
         </fieldset>
         <label>Location <span class="optional">Optional</span><input name="location" placeholder="Venue, city, or meeting URL" maxlength="500"></label>
         <label>Description <span class="optional">Optional</span><textarea name="description" rows="4" placeholder="What should speakers and reviewers know about this event?" maxlength="5000"></textarea></label>
+        <fieldset>
+          <legend>Email identity</legend>
+          <p class="result">Messages still use the site operator's verified sending address. Leave these blank to use the site defaults.</p>
+          <div class="form-grid">
+            <label>Sender name <span class="optional">Optional</span><input name="email_sender_name" maxlength="200" placeholder="Name recipients will see"></label>
+            <label>Reply-to email <span class="optional">Optional</span><input name="email_reply_to" type="email" maxlength="320" autocomplete="email" placeholder="Where replies should go"><small>Recipients' replies are sent to this address.</small></label>
+          </div>
+        </fieldset>
         <details class="advanced-settings">
           <summary>Brand and public website</summary>
           <div class="advanced-settings__content">

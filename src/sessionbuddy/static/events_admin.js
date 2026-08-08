@@ -213,6 +213,8 @@
     form.elements.delivery_mode.value = event.delivery_mode;
     form.elements.location.value = event.location || "";
     form.elements.description.value = event.description || "";
+    form.elements.email_sender_name.value = event.email_sender_name || "";
+    form.elements.email_reply_to.value = event.email_reply_to || "";
     form.elements.accent_color.value = event.accent_color || "#3159d9";
     form.elements.logo_url.value = event.logo_url || "";
     form.elements.website_url.value = event.website_url || "";
@@ -384,6 +386,8 @@
         delivery_mode: values.delivery_mode,
         location: values.location || null,
         description: values.description || null,
+        email_sender_name: values.email_sender_name || null,
+        email_reply_to: values.email_reply_to || null,
         accent_color: values.accent_color || "#3159d9",
         logo_url: values.logo_url || null,
         website_url: values.website_url || null
