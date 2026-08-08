@@ -24,6 +24,8 @@ class Permission(StrEnum):
     SPEAKER_PROFILE_READ_OWN = "speaker.profile.read_own"
     SPEAKER_PROFILE_EDIT_OWN = "speaker.profile.edit_own"
     SPEAKER_ASSET_READ = "speaker.asset.read"
+    SPEAKER_ASSET_READ_OWN = "speaker.asset.read_own"
+    SPEAKER_ASSET_UPLOAD_OWN = "speaker.asset.upload_own"
     SPEAKER_ASSET_REPLACE_OWN = "speaker.asset.replace_own"
     SPEAKER_TASK_READ_OWN = "speaker.task.read_own"
     AGENDA_MANAGE = "agenda.manage"

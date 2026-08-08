@@ -30,9 +30,7 @@ def verify_session_cookie(value: str, secret: bytes) -> str | None:
             return None
         token = _decode(encoded_token)
         supplied = _decode(encoded_signature)
-        expected = hmac.new(
-            secret, b"session-cookie:v1:" + token, hashlib.sha256
-        ).digest()
+        expected = hmac.new(secret, b"session-cookie:v1:" + token, hashlib.sha256).digest()
         if len(supplied) != len(expected) or not hmac.compare_digest(supplied, expected):
             return None
         return token.decode("utf-8")

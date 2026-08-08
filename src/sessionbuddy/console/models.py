@@ -68,7 +68,15 @@ class BrowserTelemetryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     schema_version: Literal[1]
-    page_template: Literal["/foundation"]
+    page_template: Literal[
+        "/foundation",
+        "/wave-1",
+        "/admin/programs",
+        "/cfp/{slug}",
+        "/admin/programs/{program_id}/submissions",
+        "/reviews",
+        "/admin/evaluation-rounds/{round_id}",
+    ]
     navigation_type: Literal["navigate", "reload", "back_forward", "prerender", "unknown"]
     device_class: Literal["mobile", "tablet", "desktop"]
     sampled: bool

@@ -27,10 +27,31 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "ASSETS",
+      "bucket_name": "sessionbuddy-assets-local"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": {"limit": 10, "period": 60}
+    },
+    {
+      "name": "PUBLIC_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": {"limit": 50, "period": 60}
+    }
+  ],
   "vars": {
     "APP_ENV": "local",
     "APP_VERSION": "development",
-    "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787"
+    "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787",
+    "SCANNER_URL": "http://scanner:8080",
+    "SCANNER_HMAC_KEY": "local-only-scanner-key-change-before-production-2026",
+    "UPLOAD_HMAC_KEY": "local-only-upload-key-change-before-production-2026"
   },
   "env": {
     "dev": {
@@ -41,6 +62,18 @@
           "database_name": "sessionbuddy-development",
           "database_id": "bafabb77-7cbd-4b3b-bc30-7df9b9d078e2",
           "migrations_dir": "migrations"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "AUTH_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": {"limit": 10, "period": 60}
+        },
+        {
+          "name": "PUBLIC_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": {"limit": 50, "period": 60}
         }
       ],
       "vars": {

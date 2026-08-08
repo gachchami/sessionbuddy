@@ -25,4 +25,15 @@ async def test_benchmark_records_selected_route() -> None:
     result = await benchmark(2, 1, route="/health")
 
     assert result["route"] == "/health"
+    assert result["concurrency"] == 1
     assert result["error_rate"] == 0
+
+
+@pytest.mark.asyncio
+async def test_benchmark_supports_bounded_concurrency() -> None:
+    result = await benchmark(8, 1, route="/health", concurrency=4)
+
+    assert result["requests"] == 8
+    assert result["concurrency"] == 4
+    assert result["error_rate"] == 0
+    assert result["throughput_rps"] > 0

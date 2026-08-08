@@ -63,6 +63,7 @@
       const requestMs = Math.max(0, performance.now() - started);
       byId("api-state").textContent = "Healthy response";
       byId("environment").textContent = `${model.environment} · ${model.data_classification}`;
+      byId("classification-badge").textContent = model.data_classification.replace("/", " / ");
       byId("runtime").textContent = model.runtime;
       byId("request-id").textContent = requestId || "Unavailable";
       byId("notice").textContent = "Current API evidence loaded. Historical charts are not connected yet.";

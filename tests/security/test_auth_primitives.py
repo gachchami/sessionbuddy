@@ -142,12 +142,18 @@ def test_cookie_mutation_guard_requires_origin_json_and_bound_csrf() -> None:
         "csrf_secret": secret,
     }
     assert guard_cookie_mutation(origin="https://evil.example", **common).reason == "origin_denied"
-    assert guard_cookie_mutation(
-        origin="https://app.example", **(common | {"content_type": "text/plain"})
-    ).reason == "media_type_invalid"
-    assert guard_cookie_mutation(
-        origin="https://app.example", **(common | {"csrf_token": "bad"})
-    ).reason == "csrf_invalid"
+    assert (
+        guard_cookie_mutation(
+            origin="https://app.example", **(common | {"content_type": "text/plain"})
+        ).reason
+        == "media_type_invalid"
+    )
+    assert (
+        guard_cookie_mutation(
+            origin="https://app.example", **(common | {"csrf_token": "bad"})
+        ).reason
+        == "csrf_invalid"
+    )
 
 
 def test_cookie_mutation_guard_accepts_same_origin_referer_fallback() -> None:

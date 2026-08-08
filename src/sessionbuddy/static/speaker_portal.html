@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Speaker portal · SessionBuddy</title>
+  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=1">
+  <script src="/speaker/assets/speaker-portal.js?v=1" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="shell header-layout">
+      <a class="brand" href="/speaker" aria-label="SessionBuddy speaker portal home">SessionBuddy</a>
+      <nav aria-label="Speaker portal">
+        <a href="#overview" aria-current="page">Home</a>
+        <a href="#tasks">Tasks</a>
+        <a href="#submissions">Submissions</a>
+        <a href="#profile">Profile</a>
+        <a href="#assets">Assets</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="shell" tabindex="-1">
+    <div id="status" class="status" role="status" aria-live="polite">
+      Loading your speaker portal…
+    </div>
+
+    <section id="auth-state" class="state-panel" hidden aria-labelledby="auth-title">
+      <p class="eyebrow">Speaker access required</p>
+      <h1 id="auth-title">Open your speaker portal</h1>
+      <p>In production, use the secure link in your email. For this local review, start the isolated speaker demo.</p>
+      <button id="start-demo" type="button">Start local speaker demo</button>
+    </section>
+
+    <div id="portal" hidden>
+      <section id="overview" class="hero" aria-labelledby="portal-title">
+        <div>
+          <p class="eyebrow">Speaker portal</p>
+          <h1 id="portal-title">Welcome</h1>
+          <p id="event-summary" class="lede"></p>
+          <p id="event-timezone" class="timezone"></p>
+        </div>
+        <div class="progress-card">
+          <span id="progress-label">Onboarding progress</span>
+          <strong id="progress-count">0 of 0 complete</strong>
+          <progress id="progress" value="0" max="1" aria-labelledby="progress-label progress-count"></progress>
+          <p id="next-deadline">No upcoming deadline.</p>
+        </div>
+      </section>
+
+      <div class="portal-grid">
+        <section id="tasks" class="panel" aria-labelledby="tasks-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">What’s next</p><h2 id="tasks-title">Outstanding tasks</h2></div>
+            <span id="task-count" class="count-badge">0</span>
+          </div>
+          <ul id="task-list" class="item-list" aria-describedby="task-help"></ul>
+          <p id="task-help" class="help">Completing the destination action completes its task automatically.</p>
+        </section>
+
+        <section id="submissions" class="panel" aria-labelledby="submissions-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">Your proposals</p><h2 id="submissions-title">Submissions</h2></div>
+          </div>
+          <ul id="submission-list" class="item-list"></ul>
+        </section>
+
+        <section id="profile" class="panel profile-panel" aria-labelledby="profile-title">
+          <p class="eyebrow">Shared speaker details</p>
+          <h2 id="profile-title">Profile</h2>
+          <p class="help">Required fields are marked “required.” Changes apply to your shared speaker profile, not past proposal answers.</p>
+          <div id="error-summary" class="error-summary" role="alert" tabindex="-1" hidden>
+            <h3>Check your profile</h3><ul></ul>
+          </div>
+          <form id="profile-form" novalidate>
+            <div class="form-grid">
+              <label for="display-name">Name <span>required</span></label>
+              <div><input id="display-name" name="display_name" autocomplete="name" maxlength="200" required><p id="display-name-error" class="field-error"></p></div>
+              <label for="job-title">Job title</label>
+              <div><input id="job-title" name="job_title" autocomplete="organization-title" maxlength="200"><p id="job-title-error" class="field-error"></p></div>
+              <label for="company">Company</label>
+              <div><input id="company" name="company" autocomplete="organization" maxlength="200"><p id="company-error" class="field-error"></p></div>
+              <label for="location">Location</label>
+              <div><input id="location" name="location" autocomplete="address-level2" maxlength="200"><p id="location-error" class="field-error"></p></div>
+              <label for="website">Website</label>
+              <div><input id="website" name="website" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com" maxlength="500"><p id="website-error" class="field-error"></p></div>
+              <label for="biography">Biography <span>required</span></label>
+              <div><textarea id="biography" name="biography" rows="7" maxlength="5000" required aria-describedby="biography-help biography-count biography-error"></textarea><div class="field-meta"><p id="biography-help" class="help">Write a short introduction for event materials.</p><p id="biography-count" class="help">0 of 5,000 characters</p></div><p id="biography-error" class="field-error"></p></div>
+            </div>
+            <div id="stale-warning" class="stale-warning" role="alert" tabindex="-1" hidden>
+              <strong>Your profile changed elsewhere.</strong>
+              <p>Reload the latest version before saving again. Copy any unsaved text first.</p>
+              <button id="reload-profile" class="secondary" type="button">Reload latest profile</button>
+            </div>
+            <div class="actions"><button id="save-profile" type="submit">Save profile</button></div>
+          </form>
+        </section>
+
+        <section id="assets" class="panel profile-panel" aria-labelledby="assets-title">
+          <p class="eyebrow">Private uploads</p>
+          <h2 id="assets-title">Assets</h2>
+          <p class="help">Files stay private while they are checked. Only the latest clean version becomes current.</p>
+          <div id="asset-status" class="inline-status" role="status" aria-live="polite">Loading current assets…</div>
+          <ul id="asset-list" class="asset-list"><li>Loading…</li></ul>
+          <div class="upload-grid">
+            <form class="upload-card" data-kind="headshot">
+              <h3>Headshot</h3><p>JPEG, PNG, or WebP · up to 5 MB</p>
+              <label for="headshot-file">Choose headshot</label>
+              <input id="headshot-file" name="file" type="file" accept="image/jpeg,image/png,image/webp" required>
+              <button type="submit">Upload headshot</button>
+              <progress max="100" value="0" hidden aria-label="Headshot upload progress"></progress>
+              <p class="upload-status" role="status"></p>
+            </form>
+            <form class="upload-card" data-kind="slides">
+              <h3>Slides</h3><p>PDF, PowerPoint, or OpenDocument · up to 50 MB</p>
+              <label for="slides-submission">Session</label><select id="slides-submission" name="submission_id" required><option value="">Choose a session</option></select>
+              <label for="slides-file">Choose slides</label>
+              <input id="slides-file" name="file" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation" required>
+              <button type="submit">Upload slides</button>
+              <progress max="100" value="0" hidden aria-label="Slides upload progress"></progress>
+              <p class="upload-status" role="status"></p>
+            </form>
+            <form class="upload-card" data-kind="supporting_document">
+              <h3>Supporting document</h3><p>PDF · up to 20 MB</p>
+              <label for="document-submission">Session</label><select id="document-submission" name="submission_id" required><option value="">Choose a session</option></select>
+              <label for="document-file">Choose document</label>
+              <input id="document-file" name="file" type="file" accept="application/pdf" required>
+              <button type="submit">Upload document</button>
+              <progress max="100" value="0" hidden aria-label="Document upload progress"></progress>
+              <p class="upload-status" role="status"></p>
+            </form>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

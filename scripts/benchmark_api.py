@@ -54,6 +54,8 @@ async def benchmark(
     warmup: int,
     base_url: str | None = None,
     route: str = "/api/v1/health",
+    local_demo_session: bool = False,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
     durations_ms: list[float] = []
     server_phases: dict[str, list[float]] = {}
@@ -61,17 +63,30 @@ async def benchmark(
     transport = None if base_url else ASGITransport(app=app)
     target_url = base_url.rstrip("/") if base_url else "http://benchmark"
     async with AsyncClient(transport=transport, base_url=target_url) as client:
+        if local_demo_session:
+            session = await client.post("/api/v1/demo/session")
+            session.raise_for_status()
         for _ in range(warmup):
             await client.get(route)
-        started = time.perf_counter()
-        for _ in range(requests):
-            request_started = time.perf_counter_ns()
-            response = await client.get(route)
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def measure_one() -> None:
+            nonlocal failures
+            async with semaphore:
+                request_started = time.perf_counter_ns()
+                response = await client.get(route)
             durations_ms.append((time.perf_counter_ns() - request_started) / 1_000_000)
             failures += int(response.status_code != 200)
             timing_phases = parse_server_timing(response.headers.get("server-timing"))
             for name, duration in timing_phases.items():
                 server_phases.setdefault(name, []).append(duration)
+
+        started = time.perf_counter()
+        if concurrency == 1:
+            for _ in range(requests):
+                await measure_one()
+        else:
+            await asyncio.gather(*(measure_one() for _ in range(requests)))
         elapsed = time.perf_counter() - started
 
     hostname = urlparse(target_url).hostname
@@ -79,7 +94,7 @@ async def benchmark(
     if base_url:
         runtime = (
             "cloudflare-worker-local"
-            if hostname in {"localhost", "127.0.0.1", "::1"}
+            if hostname in {"localhost", "127.0.0.1", "::1", "worker"}
             else "cloudflare-worker-remote"
         )
 
@@ -90,6 +105,7 @@ async def benchmark(
         "route": route,
         "requests": requests,
         "warmup_requests": warmup,
+        "concurrency": concurrency,
         "error_rate": failures / requests,
         "throughput_rps": round(requests / elapsed, 3),
         "latency_ms": latency_summary(durations_ms),
@@ -108,18 +124,42 @@ def parse_args() -> argparse.Namespace:
         help="Benchmark a running Worker, for example http://127.0.0.1:8787",
     )
     parser.add_argument("--route", default="/api/v1/health")
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Maximum in-flight requests (default: 1)",
+    )
+    parser.add_argument(
+        "--local-demo-session",
+        action="store_true",
+        help="Establish the local-only demo cookie before benchmarking protected GET routes",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    if args.requests < 1 or args.warmup < 0:
-        parser.error("--requests must be positive and --warmup cannot be negative")
+    if args.requests < 1 or args.warmup < 0 or args.concurrency < 1:
+        parser.error("--requests/--concurrency must be positive; --warmup cannot be negative")
+    if args.concurrency > args.requests:
+        parser.error("--concurrency cannot exceed --requests")
     if not args.route.startswith("/") or args.route.startswith("//"):
         parser.error("--route must be an absolute application path")
+    if args.local_demo_session and not args.base_url:
+        parser.error("--local-demo-session requires --base-url")
     return args
 
 
 def main() -> None:
     args = parse_args()
-    result = asyncio.run(benchmark(args.requests, args.warmup, args.base_url, args.route))
+    result = asyncio.run(
+        benchmark(
+            args.requests,
+            args.warmup,
+            args.base_url,
+            args.route,
+            args.local_demo_session,
+            args.concurrency,
+        )
+    )
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

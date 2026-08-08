@@ -59,6 +59,7 @@ async def execute_batch(db: D1Database, statements: Sequence[D1PreparedStatement
     if not statements:
         raise ValueError("a command batch must contain at least one statement")
     try:
-        return to_python(await db.batch(tuple(statements)))
+        # workers-py RPC rejects Python tuples; lists cross the JS FFI boundary.
+        return to_python(await db.batch(list(statements)))
     except Exception as exc:
         raise PersistenceError("database command failed") from exc

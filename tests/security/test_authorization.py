@@ -44,6 +44,35 @@ def test_speaker_cannot_change_owner_identifier() -> None:
     assert decision.reason == "ownership_required"
 
 
+@pytest.mark.parametrize(
+    "permission",
+    [
+        Permission.SPEAKER_ASSET_READ_OWN,
+        Permission.SPEAKER_ASSET_UPLOAD_OWN,
+        Permission.SPEAKER_ASSET_REPLACE_OWN,
+    ],
+)
+def test_speaker_asset_permissions_require_ownership(permission: Permission) -> None:
+    subject = actor(Role.SPEAKER)
+    own = authorize(subject, permission, ResourceContext(ORG, EVENT, subject.user_id))
+    foreign = authorize(subject, permission, ResourceContext(ORG, EVENT, "another-user"))
+    assert own.allowed
+    assert (foreign.allowed, foreign.reason) == (False, "ownership_required")
+
+
+@pytest.mark.parametrize(
+    "permission",
+    [Permission.SPEAKER_ASSET_READ_OWN, Permission.SPEAKER_ASSET_UPLOAD_OWN],
+)
+def test_staff_roles_do_not_inherit_speaker_own_permissions(permission: Permission) -> None:
+    assert not authorize(
+        actor(Role.ORGANIZATION_ADMIN), permission, ResourceContext(ORG, EVENT, "user-a")
+    ).allowed
+    assert not authorize(
+        actor(Role.EVENT_ADMIN), permission, ResourceContext(ORG, EVENT, "user-a")
+    ).allowed
+
+
 def test_evaluator_needs_assignment_and_open_round() -> None:
     subject = actor(Role.EVALUATOR)
     missing = authorize(subject, Permission.EVALUATION_SAVE, ResourceContext(ORG, EVENT))

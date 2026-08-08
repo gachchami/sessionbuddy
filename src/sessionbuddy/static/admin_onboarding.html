@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Speaker onboarding · SessionBuddy</title>
+  <link rel="stylesheet" href="/admin/onboarding/assets/onboarding.css?v=1">
+  <script src="/admin/onboarding/assets/onboarding.js?v=1" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="shell header-layout">
+      <a class="brand" href="/admin/programs">SessionBuddy</a>
+      <nav aria-label="Administration">
+        <a href="/admin/programs">Programs</a>
+        <a id="onboarding-link" href="#" aria-current="page">Onboarding</a>
+        <a href="/reviews">Evaluations</a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="shell" tabindex="-1">
+    <section class="hero" aria-labelledby="page-title">
+      <div><p class="eyebrow">Event operations</p><h1 id="page-title">Speaker onboarding</h1><p id="event-name">See who is blocked and what they still owe.</p></div>
+      <div class="connection"><span id="connection-dot" aria-hidden="true"></span><strong id="connection-state">Connecting</strong><span id="last-refreshed">Not refreshed yet</span></div>
+    </section>
+    <div id="status" class="status" role="status" aria-live="polite">Checking your admin session…</div>
+    <section class="summary-grid" aria-label="Onboarding summary">
+      <article><span>Complete</span><strong id="count-complete">—</strong></article>
+      <article><span>Incomplete</span><strong id="count-incomplete">—</strong></article>
+      <article><span>Overdue</span><strong id="count-overdue">—</strong></article>
+      <article><span>Due soon</span><strong id="count-due-soon">—</strong></article>
+    </section>
+    <section class="panel" aria-labelledby="filters-title">
+      <div class="section-heading"><div><p class="eyebrow">Current view</p><h2 id="filters-title">Filters</h2></div><button id="refresh" class="secondary" type="button">Refresh now</button></div>
+      <form id="filters" class="filters">
+        <label for="state">Task state<select id="state" name="state"><option value="">All tasks</option><option value="open">All outstanding</option><option value="completed">Completed</option><option value="overdue">Overdue outstanding</option><option value="due_soon">Due-soon outstanding</option></select></label>
+        <label for="task-type">Task type<select id="task-type" name="task_type"><option value="">All task types</option><option value="biography">Biography</option><option value="profile">Profile</option><option value="headshot">Headshot</option><option value="slides">Slides</option><option value="supporting_document">Supporting document</option></select></label>
+        <div class="filter-actions"><button type="submit">Apply filters</button><button id="clear-filters" class="secondary" type="button">Clear</button></div>
+      </form>
+    </section>
+    <section class="panel" aria-labelledby="list-title" aria-busy="true" id="results-panel">
+      <div class="section-heading"><div><p class="eyebrow">Action queue</p><h2 id="list-title">Speakers needing attention</h2></div><span id="result-count" class="count">—</span></div>
+      <div class="desktop-table"><table><thead><tr><th scope="col">Speaker</th><th scope="col">Session</th><th scope="col">Missing task</th><th scope="col">Due</th><th scope="col">Last activity</th><th scope="col">Action</th></tr></thead><tbody id="onboarding-rows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
+      <ul id="onboarding-cards" class="mobile-cards" aria-label="Onboarding results"><li>Loading…</li></ul>
+      <div id="empty" class="empty" hidden><strong>No speakers match this view.</strong><p>Try clearing a filter, or check again after new onboarding activity.</p></div>
+      <div class="pagination"><button id="load-more" class="secondary" type="button" hidden>Load more</button></div>
+    </section>
+  </main>
+</body>
+</html>

@@ -29,6 +29,8 @@ SPEAKER_GRANTS = frozenset(
         Permission.SUBMISSION_READ_OWN,
         Permission.SPEAKER_PROFILE_READ_OWN,
         Permission.SPEAKER_PROFILE_EDIT_OWN,
+        Permission.SPEAKER_ASSET_READ_OWN,
+        Permission.SPEAKER_ASSET_UPLOAD_OWN,
         Permission.SPEAKER_ASSET_REPLACE_OWN,
         Permission.SPEAKER_TASK_READ_OWN,
     }

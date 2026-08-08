@@ -1,4 +1,35 @@
 services:
+  clamav:
+    image: clamav/clamav:1.4.5-debian13-slim
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+
+  scanner:
+    build:
+      context: ./scanner
+    depends_on:
+      clamav:
+        condition: service_healthy
+    environment:
+      CLAMD_HOST: clamav
+      CLAMD_PORT: "3310"
+      SCANNER_HMAC_SECRET: local-only-scanner-key-change-before-production-2026
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   worker:
     build:
       context: .
@@ -13,6 +44,9 @@ services:
     environment:
       UV_CACHE_DIR: /workspace/.cache/uv
       UV_PYTHON_INSTALL_DIR: /workspace/.cache/uv-python
+    depends_on:
+      scanner:
+        condition: service_healthy
     command: ["npm", "run", "worker:dev", "--", "--ip", "0.0.0.0", "--port", "8787"]
 
 volumes:

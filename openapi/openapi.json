@@ -20,6 +20,22 @@
         "title": "ApiHealthResponse",
         "type": "object"
       },
+      "AssignmentReassign": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluator_user_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Evaluator User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluator_user_id"
+        ],
+        "title": "AssignmentReassign",
+        "type": "object"
+      },
       "BuildProgressItem": {
         "additionalProperties": false,
         "properties": {
@@ -52,6 +68,115 @@
           "evidence"
         ],
         "title": "BuildProgressItem",
+        "type": "object"
+      },
+      "ConflictDeclaration": {
+        "additionalProperties": false,
+        "properties": {
+          "conflict_type": {
+            "enum": [
+              "speaker_relationship",
+              "same_company",
+              "financial",
+              "other"
+            ],
+            "title": "Conflict Type",
+            "type": "string"
+          },
+          "explanation": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Explanation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conflict_type",
+          "explanation"
+        ],
+        "title": "ConflictDeclaration",
+        "type": "object"
+      },
+      "ConflictProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_id": {
+            "title": "Assignment Id",
+            "type": "string"
+          },
+          "conflict_type": {
+            "title": "Conflict Type",
+            "type": "string"
+          },
+          "evaluator_name": {
+            "title": "Evaluator Name",
+            "type": "string"
+          },
+          "evaluator_user_id": {
+            "title": "Evaluator User Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "replacement_required": {
+            "title": "Replacement Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "evaluator_user_id",
+          "evaluator_name",
+          "proposal_title",
+          "conflict_type",
+          "replacement_required"
+        ],
+        "title": "ConflictProgress",
+        "type": "object"
+      },
+      "ConflictView": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_id": {
+            "title": "Assignment Id",
+            "type": "string"
+          },
+          "conflict_type": {
+            "enum": [
+              "speaker_relationship",
+              "same_company",
+              "financial",
+              "other"
+            ],
+            "title": "Conflict Type",
+            "type": "string"
+          },
+          "explanation": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Explanation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "declared",
+            "default": "declared",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conflict_type",
+          "explanation",
+          "id",
+          "assignment_id"
+        ],
+        "title": "ConflictView",
         "type": "object"
       },
       "CoverageItem": {
@@ -120,6 +245,596 @@
           "query_ms"
         ],
         "title": "DatabaseStatus",
+        "type": "object"
+      },
+      "DemoContext": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_id"
+        ],
+        "title": "DemoContext",
+        "type": "object"
+      },
+      "DemoSession": {
+        "additionalProperties": false,
+        "properties": {
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "role": {
+            "const": "organization_admin",
+            "default": "organization_admin",
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_id",
+          "user_id",
+          "csrf_token"
+        ],
+        "title": "DemoSession",
+        "type": "object"
+      },
+      "DemoSpeakerSession": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "const": true,
+            "default": true,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrf_token"
+        ],
+        "title": "DemoSpeakerSession",
+        "type": "object"
+      },
+      "EvaluationAssignmentList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationAssignmentView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "EvaluationAssignmentList",
+        "type": "object"
+      },
+      "EvaluationAssignmentView": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluation_state": {
+            "enum": [
+              "not_started",
+              "draft",
+              "final"
+            ],
+            "title": "Evaluation State",
+            "type": "string"
+          },
+          "evaluator_guidance": {
+            "default": "",
+            "title": "Evaluator Guidance",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "internal_comment": {
+            "default": "",
+            "title": "Internal Comment",
+            "type": "string"
+          },
+          "proposal_abstract": {
+            "title": "Proposal Abstract",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "rating_max": {
+            "title": "Rating Max",
+            "type": "integer"
+          },
+          "rating_min": {
+            "title": "Rating Min",
+            "type": "integer"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "recommendations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "round_id": {
+            "title": "Round Id",
+            "type": "string"
+          },
+          "round_name": {
+            "title": "Round Name",
+            "type": "string"
+          },
+          "speaker_name": {
+            "title": "Speaker Name",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "round_id",
+          "round_name",
+          "submission_id",
+          "proposal_title",
+          "proposal_abstract",
+          "speaker_name",
+          "rating_min",
+          "rating_max",
+          "recommendations",
+          "evaluation_state"
+        ],
+        "title": "EvaluationAssignmentView",
+        "type": "object"
+      },
+      "EvaluationRoundClosed": {
+        "additionalProperties": false,
+        "properties": {
+          "round_id": {
+            "title": "Round Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "closed",
+            "default": "closed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "round_id"
+        ],
+        "title": "EvaluationRoundClosed",
+        "type": "object"
+      },
+      "EvaluationRoundCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_strategy": {
+            "enum": [
+              "all",
+              "balanced"
+            ],
+            "title": "Assignment Strategy",
+            "type": "string"
+          },
+          "evaluator_guidance": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Evaluator Guidance",
+            "type": "string"
+          },
+          "evaluator_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Evaluator User Ids",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "rating_max": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Rating Max",
+            "type": "integer"
+          },
+          "rating_min": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Rating Min",
+            "type": "integer"
+          },
+          "recommendations": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Submission Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "rating_min",
+          "rating_max",
+          "recommendations",
+          "submission_ids",
+          "evaluator_user_ids",
+          "assignment_strategy"
+        ],
+        "title": "EvaluationRoundCreate",
+        "type": "object"
+      },
+      "EvaluationRoundResults": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned_count": {
+            "title": "Assigned Count",
+            "type": "integer"
+          },
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "completed_count": {
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/ConflictProgress"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "evaluators": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluatorProgress"
+            },
+            "title": "Evaluators",
+            "type": "array"
+          },
+          "round_id": {
+            "title": "Round Id",
+            "type": "string"
+          },
+          "round_name": {
+            "title": "Round Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "open",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submissions": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionEvaluationResult"
+            },
+            "title": "Submissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "round_id",
+          "round_name",
+          "status",
+          "assigned_count",
+          "completed_count",
+          "average_rating",
+          "submissions",
+          "evaluators",
+          "conflicts"
+        ],
+        "title": "EvaluationRoundResults",
+        "type": "object"
+      },
+      "EvaluationRoundView": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_count": {
+            "title": "Assignment Count",
+            "type": "integer"
+          },
+          "evaluator_count": {
+            "title": "Evaluator Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "program_id": {
+            "title": "Program Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "open",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "program_id",
+          "name",
+          "status",
+          "assignment_count",
+          "evaluator_count"
+        ],
+        "title": "EvaluationRoundView",
+        "type": "object"
+      },
+      "EvaluationSave": {
+        "additionalProperties": false,
+        "properties": {
+          "internal_comment": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Internal Comment",
+            "type": "string"
+          },
+          "rating": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "recommendation": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "draft",
+              "final"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating",
+          "recommendation",
+          "state"
+        ],
+        "title": "EvaluationSave",
+        "type": "object"
+      },
+      "EvaluationView": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_id": {
+            "title": "Assignment Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "internal_comment": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Internal Comment",
+            "type": "string"
+          },
+          "rating": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "recommendation": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "draft",
+              "final"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rating",
+          "recommendation",
+          "state",
+          "id",
+          "assignment_id",
+          "version"
+        ],
+        "title": "EvaluationView",
+        "type": "object"
+      },
+      "EvaluatorList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluatorView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "EvaluatorList",
+        "type": "object"
+      },
+      "EvaluatorProgress": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned_count": {
+            "title": "Assigned Count",
+            "type": "integer"
+          },
+          "completed_count": {
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "conflict_count": {
+            "title": "Conflict Count",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "evaluator_user_id": {
+            "title": "Evaluator User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluator_user_id",
+          "display_name",
+          "assigned_count",
+          "completed_count",
+          "conflict_count"
+        ],
+        "title": "EvaluatorProgress",
+        "type": "object"
+      },
+      "EvaluatorView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name"
+        ],
+        "title": "EvaluatorView",
+        "type": "object"
+      },
+      "FormPublish": {
+        "additionalProperties": false,
+        "properties": {
+          "slug": {
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "welcome_text": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Welcome Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "welcome_text"
+        ],
+        "title": "FormPublish",
         "type": "object"
       },
       "FoundationStatus": {
@@ -197,6 +912,19 @@
         "title": "FoundationStatus",
         "type": "object"
       },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "HealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -208,6 +936,318 @@
           }
         },
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "OnboardingDashboardView": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingRow"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "generated_at_ms": {
+            "title": "Generated At Ms",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/OnboardingSummary"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_name",
+          "time_zone",
+          "generated_at_ms",
+          "summary",
+          "data",
+          "next_cursor"
+        ],
+        "title": "OnboardingDashboardView",
+        "type": "object"
+      },
+      "OnboardingRow": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "due_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At Ms"
+          },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "last_activity_at_ms": {
+            "title": "Last Activity At Ms",
+            "type": "integer"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "completed",
+              "overdue",
+              "due_soon",
+              "waived"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_title": {
+            "title": "Task Title",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_speaker_id",
+          "display_name",
+          "proposal_title",
+          "task_id",
+          "task_type",
+          "task_title",
+          "state",
+          "due_at_ms",
+          "last_activity_at_ms"
+        ],
+        "title": "OnboardingRow",
+        "type": "object"
+      },
+      "OnboardingSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "integer"
+          },
+          "due_soon": {
+            "title": "Due Soon",
+            "type": "integer"
+          },
+          "evaluations_finalized": {
+            "title": "Evaluations Finalized",
+            "type": "integer"
+          },
+          "evaluations_total": {
+            "title": "Evaluations Total",
+            "type": "integer"
+          },
+          "incomplete": {
+            "title": "Incomplete",
+            "type": "integer"
+          },
+          "overdue": {
+            "title": "Overdue",
+            "type": "integer"
+          },
+          "rejected": {
+            "title": "Rejected",
+            "type": "integer"
+          },
+          "submitted": {
+            "title": "Submitted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "complete",
+          "incomplete",
+          "overdue",
+          "due_soon",
+          "submitted",
+          "accepted",
+          "rejected",
+          "evaluations_finalized",
+          "evaluations_total"
+        ],
+        "title": "OnboardingSummary",
+        "type": "object"
+      },
+      "ProgramCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Organization Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_id",
+          "name"
+        ],
+        "title": "ProgramCreate",
+        "type": "object"
+      },
+      "ProgramView": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "open",
+              "closed",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "event_id",
+          "name",
+          "status"
+        ],
+        "title": "ProgramView",
+        "type": "object"
+      },
+      "PublishedFormView": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "enum": [
+                "speaker_name",
+                "proposal_title",
+                "proposal_abstract"
+              ],
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "program_id": {
+            "title": "Program Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "welcome_text": {
+            "title": "Welcome Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "program_id",
+          "version",
+          "slug",
+          "welcome_text",
+          "fields"
+        ],
+        "title": "PublishedFormView",
+        "type": "object"
+      },
+      "ReassignmentView": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_id": {
+            "title": "Assignment Id",
+            "type": "string"
+          },
+          "evaluator_user_id": {
+            "title": "Evaluator User Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "assigned",
+            "default": "assigned",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignment_id",
+          "evaluator_user_id"
+        ],
+        "title": "ReassignmentView",
         "type": "object"
       },
       "SLODefinition": {
@@ -246,6 +1286,778 @@
         ],
         "title": "SLODefinition",
         "type": "object"
+      },
+      "SessionView": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "const": true,
+            "default": true,
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "title": "Csrf Token",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "session_id",
+          "csrf_token"
+        ],
+        "title": "SessionView",
+        "type": "object"
+      },
+      "SpeakerAssetList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerAssetView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SpeakerAssetList",
+        "type": "object"
+      },
+      "SpeakerAssetView": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "state": {
+            "const": "clean",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "filename",
+          "content_type",
+          "byte_size",
+          "state",
+          "generation"
+        ],
+        "title": "SpeakerAssetView",
+        "type": "object"
+      },
+      "SpeakerEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone"
+        ],
+        "title": "SpeakerEventView",
+        "type": "object"
+      },
+      "SpeakerPortalView": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_tasks": {
+            "title": "Completed Tasks",
+            "type": "integer"
+          },
+          "event": {
+            "$ref": "#/components/schemas/SpeakerEventView"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/SpeakerProfileView"
+          },
+          "submissions": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerSubmissionView"
+            },
+            "title": "Submissions",
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerTaskView"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "total_tasks": {
+            "title": "Total Tasks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "event",
+          "profile",
+          "tasks",
+          "submissions",
+          "completed_tasks",
+          "total_tasks"
+        ],
+        "title": "SpeakerPortalView",
+        "type": "object"
+      },
+      "SpeakerProfileUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "biography": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "job_title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Location",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "biography",
+          "version"
+        ],
+        "title": "SpeakerProfileUpdate",
+        "type": "object"
+      },
+      "SpeakerProfileView": {
+        "additionalProperties": false,
+        "properties": {
+          "biography": {
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "job_title": {
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "job_title",
+          "company",
+          "biography",
+          "location",
+          "links",
+          "version"
+        ],
+        "title": "SpeakerProfileView",
+        "type": "object"
+      },
+      "SpeakerSubmissionView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_title",
+          "status"
+        ],
+        "title": "SpeakerSubmissionView",
+        "type": "object"
+      },
+      "SpeakerTaskView": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At Ms"
+          },
+          "destination_path": {
+            "title": "Destination Path",
+            "type": "string"
+          },
+          "due_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At Ms"
+          },
+          "help_text": {
+            "title": "Help Text",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "completed",
+              "waived"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "task_type": {
+            "title": "Task Type",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_type",
+          "title",
+          "help_text",
+          "destination_path",
+          "state",
+          "due_at_ms",
+          "completed_at_ms"
+        ],
+        "title": "SpeakerTaskView",
+        "type": "object"
+      },
+      "SubmissionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_abstract": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Proposal Abstract",
+            "type": "string"
+          },
+          "proposal_title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Speaker Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "speaker_name",
+          "proposal_title",
+          "proposal_abstract"
+        ],
+        "title": "SubmissionCreate",
+        "type": "object"
+      },
+      "SubmissionDecisionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "internal_reason": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Internal Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "SubmissionDecisionCreate",
+        "type": "object"
+      },
+      "SubmissionDecisionView": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "internal_reason": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Internal Reason",
+            "type": "string"
+          },
+          "round_id": {
+            "title": "Round Id",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision",
+          "id",
+          "submission_id",
+          "round_id",
+          "version"
+        ],
+        "title": "SubmissionDecisionView",
+        "type": "object"
+      },
+      "SubmissionEvaluationResult": {
+        "additionalProperties": false,
+        "properties": {
+          "assigned_count": {
+            "title": "Assigned Count",
+            "type": "integer"
+          },
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "completed_count": {
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_name": {
+            "title": "Speaker Name",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "speaker_name",
+          "proposal_title",
+          "assigned_count",
+          "completed_count",
+          "average_rating",
+          "decision"
+        ],
+        "title": "SubmissionEvaluationResult",
+        "type": "object"
+      },
+      "SubmissionList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SubmissionList",
+        "type": "object"
+      },
+      "SubmissionView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "program_id": {
+            "title": "Program Id",
+            "type": "string"
+          },
+          "proposal_abstract": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Proposal Abstract",
+            "type": "string"
+          },
+          "proposal_title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Speaker Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "submitted",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at_ms": {
+            "title": "Submitted At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "speaker_name",
+          "proposal_title",
+          "proposal_abstract",
+          "id",
+          "program_id",
+          "status",
+          "submitted_at_ms"
+        ],
+        "title": "SubmissionView",
+        "type": "object"
+      },
+      "UploadAuthorizationCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 52428800.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "checksum_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Checksum Sha256",
+            "type": "string"
+          },
+          "content_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "kind",
+          "filename",
+          "content_type",
+          "byte_size",
+          "checksum_sha256"
+        ],
+        "title": "UploadAuthorizationCreate",
+        "type": "object"
+      },
+      "UploadAuthorizationView": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at_ms": {
+            "title": "Expires At Ms",
+            "type": "integer"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "intent_id": {
+            "title": "Intent Id",
+            "type": "string"
+          },
+          "method": {
+            "const": "PUT",
+            "default": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "upload_url",
+          "headers",
+          "expires_at_ms"
+        ],
+        "title": "UploadAuthorizationView",
+        "type": "object"
+      },
+      "UploadCompletionView": {
+        "additionalProperties": false,
+        "properties": {
+          "intent_id": {
+            "title": "Intent Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "uploaded",
+              "scanning",
+              "clean",
+              "rejected"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_id",
+          "state"
+        ],
+        "title": "UploadCompletionView",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       }
     }
   },
@@ -255,6 +2067,1035 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/evaluation-assignments/{assignment_id}/reassign": {
+      "post": {
+        "operationId": "reassignConflictedEvaluation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentReassign"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReassignmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reassign Conflict",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/close": {
+      "post": {
+        "operationId": "closeEvaluationRound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundClosed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/results": {
+      "get": {
+        "operationId": "getEvaluationRoundResults",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundResults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Round Results",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision": {
+      "post": {
+        "operationId": "recordSubmissionDecision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionDecisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDecisionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record Submission Decision",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/onboarding": {
+      "get": {
+        "operationId": "getAdminOnboardingDashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "open",
+              "enum": [
+                "open",
+                "completed",
+                "overdue",
+                "due_soon"
+              ],
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "profile",
+                    "headshot",
+                    "slides",
+                    "supporting_document",
+                    "custom"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingDashboardView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Admin Onboarding Dashboard",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/programs": {
+      "post": {
+        "operationId": "createProgram",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProgramCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgramView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Program",
+        "tags": [
+          "programs"
+        ]
+      }
+    },
+    "/api/v1/admin/programs/{program_id}/evaluation-rounds": {
+      "post": {
+        "operationId": "createEvaluationRound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRoundCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/programs/{program_id}/evaluation-rounds/current": {
+      "get": {
+        "operationId": "getCurrentEvaluationRound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EvaluationRoundView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Getcurrentevaluationround"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Current Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/programs/{program_id}/evaluators": {
+      "get": {
+        "operationId": "listProgramEvaluators",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluatorList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Program Evaluators",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/programs/{program_id}/forms/publish": {
+      "post": {
+        "operationId": "publishCallForSpeakersForm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormPublish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedFormView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Form",
+        "tags": [
+          "forms"
+        ]
+      }
+    },
+    "/api/v1/admin/programs/{program_id}/submissions": {
+      "get": {
+        "operationId": "listProgramSubmissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Submissions",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/demo/context": {
+      "post": {
+        "operationId": "initializeLocalDemoContext",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoContext"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Initialize Demo Context",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/demo/session": {
+      "post": {
+        "operationId": "createLocalDemoSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Demo Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/demo/speaker-session": {
+      "post": {
+        "operationId": "createLocalDemoSpeakerSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoSpeakerSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Demo Speaker Session",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/evaluator/assignments": {
+      "get": {
+        "operationId": "listMyEvaluationAssignments",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationAssignmentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List My Assignments",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/evaluator/assignments/{assignment_id}/conflict": {
+      "post": {
+        "operationId": "declareEvaluationConflict",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConflictDeclaration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Declare Conflict",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/evaluator/assignments/{assignment_id}/evaluation": {
+      "put": {
+        "operationId": "saveMyEvaluation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assignment_id",
+            "required": true,
+            "schema": {
+              "title": "Assignment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Evaluation",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}": {
+      "get": {
+        "operationId": "getPublishedCallForSpeakersForm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedFormView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Form",
+        "tags": [
+          "forms"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions": {
+      "post": {
+        "operationId": "createCallForSpeakersSubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Public-Session-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Public-Session-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
     "/api/v1/foundation/database": {
       "get": {
         "description": "Exercise the configured D1 binding without returning tenant or schema data.",
@@ -316,6 +3157,319 @@
         "summary": "Api Health",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "operationId": "getCurrentSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Current Session",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/session/logout": {
+      "post": {
+        "operationId": "logoutCurrentSession",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout Session",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/session/refresh": {
+      "post": {
+        "operationId": "refreshCurrentSession",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Session",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/speaker/events/{event_id}/assets": {
+      "get": {
+        "operationId": "listOwnSpeakerAssets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerAssetList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Speaker Assets",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/events/{event_id}/upload-authorizations": {
+      "post": {
+        "operationId": "authorizeOwnSpeakerAssetUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadAuthorizationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadAuthorizationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize Speaker Upload",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/events/{event_id}/upload-intents/{intent_id}/complete": {
+      "post": {
+        "operationId": "completeOwnSpeakerAssetUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "intent_id",
+            "required": true,
+            "schema": {
+              "title": "Intent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadCompletionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Speaker Upload",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/portal": {
+      "get": {
+        "operationId": "getSpeakerPortal",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerPortalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Speaker Portal",
+        "tags": [
+          "speaker-portal"
+        ]
+      }
+    },
+    "/api/v1/speaker/profile": {
+      "patch": {
+        "operationId": "updateOwnSpeakerProfile",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeakerProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Speaker Profile",
+        "tags": [
+          "speaker-portal"
         ]
       }
     },

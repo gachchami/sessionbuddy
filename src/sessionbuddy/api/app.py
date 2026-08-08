@@ -4,9 +4,15 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from sessionbuddy.api.errors import ErrorDetail, ErrorEnvelope
 from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
+from sessionbuddy.communications.d1 import communications_service
+from sessionbuddy.communications.router import create_communications_router
 from sessionbuddy.console import foundation_console_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
+from sessionbuddy.platform.auth import session_router
 from sessionbuddy.security import SecurityHeadersMiddleware
+from sessionbuddy.wave1 import wave1_router
+from sessionbuddy.wave2 import wave2_router
+from sessionbuddy.wave3 import wave3_router
 
 app = FastAPI(
     title="Sessionbuddy API",
@@ -21,6 +27,11 @@ app = FastAPI(
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestObservabilityMiddleware)
 app.include_router(foundation_console_router)
+app.include_router(session_router)
+app.include_router(wave1_router)
+app.include_router(wave2_router)
+app.include_router(wave3_router)
+app.include_router(create_communications_router(communications_service))
 
 
 @app.get("/", include_in_schema=False)
@@ -48,12 +59,22 @@ async def api_health() -> ApiHealthResponse:
     return ApiHealthResponse()
 
 
-def _error_response(request: Request, status: int, code: str, message: str) -> JSONResponse:
+def _error_response(
+    request: Request,
+    status: int,
+    code: str,
+    message: str,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     envelope = ErrorEnvelope(
         error=ErrorDetail(code=code, message=message),
         request_id=request.state.request_id,
     )
-    return JSONResponse(status_code=status, content=envelope.model_dump(exclude_none=True))
+    return JSONResponse(
+        status_code=status,
+        content=envelope.model_dump(exclude_none=True),
+        headers=headers,
+    )
 
 
 @app.exception_handler(404)
@@ -77,7 +98,13 @@ async def http_error(request: Request, exception: HTTPException) -> JSONResponse
     code, message = errors.get(
         exception.status_code, ("request_failed", "The request could not be processed")
     )
-    return _error_response(request, exception.status_code, code, message)
+    return _error_response(
+        request,
+        exception.status_code,
+        code,
+        message,
+        headers=exception.headers,
+    )
 
 
 @app.exception_handler(RequestValidationError)

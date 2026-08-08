@@ -28,6 +28,87 @@ For an interactive development server:
 docker compose up --build worker
 ```
 
+Review the product-shaped Wave 1 call-for-speakers flow at these local URLs:
+
+- `http://localhost:8787/admin/programs` — local admin sign-in, program creation,
+  and immutable public-form publication.
+- `http://localhost:8787/cfp/{published-slug}` — public proposal submission; use
+  the exact link shown after publishing.
+- `http://localhost:8787/admin/programs/{program-id}/submissions` — authorized
+  submission review; use the link shown after publishing.
+
+`http://localhost:8787/wave-1` remains the engineering integration harness. It
+uses synthetic local data and exposes the full sequence on one page for rapid
+diagnosis. The local bootstrap creates an opaque HTTP-only session; admin
+requests are authorized from D1 memberships and require a session-bound CSRF
+proof. The bootstrap and admin product pages deliberately return 404 outside
+`APP_ENV=local` until the production identity provider is selected.
+
+Wave 2 evaluation starts from a program's submission-review page. Open the
+initial round there, then use `http://localhost:8787/reviews` for the React/Vite
+evaluator workspace. The current vertical slice supports assignment-scoped
+reads, resumable drafts, rubric validation, and immutable finalization. It
+remains local-only until production identity and evaluator invitation flows are
+selected.
+
+After a round is opened, its submission page links to
+`/admin/evaluation-rounds/{round-id}`. That admin dashboard shows completion and
+the documented arithmetic mean of finalized ratings. Decisions require all
+assignments for that submission to be final, are audited independently, and do
+not enqueue or send communication. Once recorded, a decision is permanently
+locked by both the API and UI; the product has no decision-change workflow.
+
+Round setup supports a configurable numeric range, recommendation choices,
+evaluator guidance, multiple active event evaluators, and two deterministic
+assignment strategies: `balanced` distributes submissions round-robin, while
+`all` assigns every selected submission to every selected evaluator. The
+server validates evaluator membership and submission scope before creating the
+atomic assignment batch.
+
+Wave 3 speaker onboarding starts at `http://localhost:8787/speaker`. If the
+browser currently holds an admin session, choose **Start local speaker demo** to
+replace it with an isolated speaker session. The first reviewable slice shows an
+accepted proposal and outstanding biography task; saving the profile completes
+that task atomically and emits the audit/outbox records required by later
+communications and real-time dashboard slices. The accepted contract and
+remaining Wave 3 work are recorded in `docs/wave-3-acceptance.md`.
+
+The admin operational view for the seeded event is available at
+`http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/onboarding`.
+It refreshes a bounded D1 snapshot every five seconds, pauses while hidden, and
+shows completion, overdue/due-soon speakers, submission states, evaluation
+progress, and filterable task rows. The explicit event path is lookup input;
+the server independently resolves its organization and enforces dashboard RBAC.
+
+The speaker portal also exercises private asset upload at
+`http://localhost:8787/speaker`. Headshots, slides, and supporting documents use
+kind-specific MIME/size limits, browser SHA-256, a signed upload intent, the
+local R2 binding, and an explicit completion step. Run the same flow without a
+browser inside the container:
+
+```bash
+docker compose run --rm worker uv run python scripts/smoke_wave3_assets.py \
+  --base-url http://worker:8787
+```
+
+The local adapter verifies and promotes the object deterministically. Deployed
+environments instead issue a direct R2 SigV4 PUT and keep the object quarantined
+until the asynchronous scanner promotes it.
+
+Evaluators may declare a conflict before finalization; the assignment is revoked
+and exposed for admin reassignment. A round closes only after every selected
+submission remains covered and every active assignment is final. The accepted
+calculation, tie, immutability, and lifecycle rules are recorded in
+`docs/wave-2-acceptance.md`.
+
+After the Worker is running, repeat the complete Wave 1 compatibility smoke
+without generating benchmark traffic:
+
+```bash
+docker compose run --rm worker uv run python scripts/smoke_wave1.py \
+  --base-url http://worker:8787
+```
+
 Authenticate Wrangler without exposing host credentials to the container:
 
 ```bash

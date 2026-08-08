@@ -1,9 +1,9 @@
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #14211c; background: #f3f6f4; }
+:root { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #14211c; background: #f3f6f4; }
 * { box-sizing: border-box; }
 body { margin: 0; line-height: 1.5; }
-header, main { width: min(72rem, calc(100% - 2rem)); margin-inline: auto; }
+header, main { width: calc(100% - 2rem); max-width: 72rem; margin-left: auto; margin-right: auto; margin-inline: auto; }
 header { padding: 3.5rem 0 1.5rem; }
-h1 { max-width: 15ch; margin: .15rem 0 .5rem; font-size: clamp(2rem, 7vw, 4rem); line-height: 1; }
+h1 { max-width: 15ch; margin: .15rem 0 .5rem; font-size: 3rem; font-size: clamp(2rem, 7vw, 4rem); line-height: 1; }
 h2 { margin-top: 0; }
 .eyebrow { text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: #27624d; }
 .badge { display: inline-block; padding: .3rem .65rem; border-radius: 999px; font-weight: 700; }
@@ -15,7 +15,7 @@ section, aside, .notice { padding: 1.25rem; border: 1px solid #cbd8d1; border-ra
 .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .metric-grid div { padding: .85rem; background: #edf4f0; border-radius: .5rem; min-width: 0; }
 dt { color: #496157; font-size: .85rem; }
-dd { margin: .15rem 0 0; font-weight: 700; overflow-wrap: anywhere; }
+dd { margin: .15rem 0 0; font-weight: 700; overflow-wrap: break-word; overflow-wrap: anywhere; }
 .context { color: #52645c; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
@@ -26,6 +26,8 @@ th, td { padding: .65rem; text-align: left; border-bottom: 1px solid #dce5e0; }
 .state-planned { color: #765300; }
 .state-missing { color: #9a2929; }
 a { color: #075e48; }
+a:focus { outline: 3px solid #e69b00; outline-offset: 3px; }
+a:focus:not(:focus-visible) { outline: none; }
 a:focus-visible { outline: 3px solid #e69b00; outline-offset: 3px; }
 .skip-link { position: absolute; left: .5rem; top: -4rem; padding: .5rem; background: #fff; z-index: 1; }
 .skip-link:focus { top: .5rem; }

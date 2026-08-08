@@ -31,6 +31,8 @@ async def test_console_is_semantic_accessible_and_labels_synthetic(console_app: 
     assert 'id="content"' in html
     assert 'role="status"' in html
     assert "Synthetic / local" in html
+    assert "console.css?v=wave0-2" in html
+    assert "console.js?v=wave0-2" in html
     assert "<h1>Runtime and performance</h1>" in html
     assert 'id="build-progress"' in html
     assert '<th scope="col">' in html
@@ -47,6 +49,8 @@ async def test_console_assets_are_dependency_free_and_responsive(console_app: Fa
     assert css.status_code == js.status_code == 200
     assert "@media (max-width: 48rem)" in css.text
     assert "prefers-reduced-motion" in css.text
+    assert "max-width: 72rem" in css.text
+    assert "overflow-wrap: break-word" in css.text
     assert "innerHTML" not in js.text
     assert "document.createTextNode" in js.text
     assert "__sessionbuddyTelemetryDraft" in js.text

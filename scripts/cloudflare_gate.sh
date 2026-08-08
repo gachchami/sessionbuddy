@@ -32,6 +32,8 @@ curl --fail --silent http://127.0.0.1:8787/api/v1/foundation/database >/dev/null
 curl --fail --silent http://127.0.0.1:8787/foundation >/dev/null
 curl --fail --silent http://127.0.0.1:8787/foundation/assets/console.css >/dev/null
 curl --fail --silent http://127.0.0.1:8787/foundation/assets/console.js >/dev/null
+curl --fail --silent http://127.0.0.1:8787/wave-1 >/dev/null
+uv run python scripts/smoke_wave1.py
 
 uv run python scripts/benchmark_api.py \
   --base-url http://127.0.0.1:8787 \

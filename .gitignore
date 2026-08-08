@@ -81,6 +81,7 @@ benchmarks/results/
 # Environment variables and local secrets
 .env
 .env.*
+.dev.vars
 !.env.example
 !.env.template
 *.local
