@@ -1,7 +1,8 @@
 # Release readiness release-hardening acceptance record
 
-Status: local release gate and isolated Cloudflare development rehearsal complete;
-provider activation and first-administrator bootstrap pending
+Status: local release gate, isolated Cloudflare development activation,
+organization-only first-administrator bootstrap, authenticated browser rehearsal,
+and direct-R2 upload complete
 
 Release readiness turns the product capabilities into a repeatable, container-first release candidate.
 
@@ -72,22 +73,35 @@ After an authorized development deployment, run the read-only remote audit:
 docker compose run --rm --no-deps worker npm run worker:preflight:dev
 ```
 
-The accepted 2026-08-09 rehearsal reported 18 passing deployment checks, four
-explicit activation inputs, and zero failures. D1 had no pending migrations;
-the R2 bucket, Queues/DLQs, producer/consumer triggers, Workflow, core HMAC
-secrets, health route, browser routes, and anonymous `401` identity boundary
-were present. No Cloudflare Container was configured.
+The accepted 2026-08-09 rehearsal reported 23 passing deployment checks and zero
+pending or failed checks. D1 had no pending migrations; the R2 bucket and strict
+CORS policy, Queues/DLQs, producer/consumer triggers, Workflow, HMAC and provider
+secrets, health route, browser routes, and anonymous `401` identity boundary were
+present. No Cloudflare Container was configured.
+
+The one-time bootstrap created `SessionBuddy Development` and its administrator
+without manufacturing an event. The administrator can create the first real event
+from the application when its details are known. Resend accepted the live magic-link
+message through the communications queue after the deployed Python queue-handler
+contract was verified.
+
+The authenticated development rehearsal then created and edited an event, accepted
+and revoked invitations, accepted an existing-user speaker role, published a
+conditional form, restored and submitted a draft, verified speaker ownership, and
+uploaded a 1,732-byte PNG directly to R2. D1 records the asset as clean/current
+under the explicit development scan bypass. Deployed Worker version
+`82c8daf7-9cc5-4c17-8324-0cabde887a25` receives 100% of traffic. Final verification
+passed 286 Python tests, 28 desktop/mobile browser checks, lint, embedded-asset
+consistency, and all 23 Cloudflare activation checks.
 
 ## Remaining promotion gates
 
 Before production promotion:
 
-1. Configure a verified Resend test sender/key and direct-R2 access credentials,
-   then provide the client-approved first administrator/event details.
-2. Run `worker:activation:preflight:dev`, bootstrap once, and exercise delivered
-   magic-link/invitation email plus a direct R2 upload. Development scanning is
-   explicitly bypassed; a production promotion additionally requires a reachable
-   scanner endpoint and secret.
+1. Verify a client-controlled sender domain before sending to arbitrary recipients;
+   Resend's shared test sender is limited to the account address.
+2. Development scanning is explicitly bypassed. A production promotion requires
+   a reachable scanner endpoint and secret; it must never inherit this bypass.
 3. Run the full Section 8 concurrency envelope and compare it with an accepted
    staging baseline; local SQLite/query-plan evidence is not a substitute for D1.
 4. Exercise provider retry/dead-letter recovery and record the D1 restore operator,

@@ -31,20 +31,35 @@ def timestamp_ms(value: str) -> int:
 
 
 def bootstrap_payload(arguments: argparse.Namespace) -> dict[str, str | int]:
+    if "@" not in arguments.admin_email or len(arguments.admin_email) > 320:
+        raise ValueError("--admin-email must be a valid email address")
+    payload: dict[str, str | int] = {
+        "organization_name": arguments.organization_name,
+        "admin_email": arguments.admin_email,
+    }
+    event_values = (
+        arguments.event_name,
+        arguments.starts_at,
+        arguments.ends_at,
+        arguments.time_zone,
+    )
+    if not any(value is not None for value in event_values):
+        return payload
+    if not all(value is not None for value in event_values):
+        raise ValueError("event name, start, end, and time zone must be supplied together")
     starts_at_ms = timestamp_ms(arguments.starts_at)
     ends_at_ms = timestamp_ms(arguments.ends_at)
     if ends_at_ms <= starts_at_ms:
         raise ValueError("--ends-at must be after --starts-at")
-    if "@" not in arguments.admin_email or len(arguments.admin_email) > 320:
-        raise ValueError("--admin-email must be a valid email address")
-    return {
-        "organization_name": arguments.organization_name,
-        "event_name": arguments.event_name,
-        "admin_email": arguments.admin_email,
-        "starts_at_ms": starts_at_ms,
-        "ends_at_ms": ends_at_ms,
-        "time_zone": arguments.time_zone,
-    }
+    payload.update(
+        {
+            "event_name": arguments.event_name,
+            "starts_at_ms": starts_at_ms,
+            "ends_at_ms": ends_at_ms,
+            "time_zone": arguments.time_zone,
+        }
+    )
+    return payload
 
 
 def wrangler_secret(arguments: list[str], *, value: str | None = None) -> None:
@@ -90,19 +105,17 @@ def main() -> int:
     parser.add_argument("--env", default="dev", help="Wrangler environment name")
     parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "wrangler.jsonc")
     parser.add_argument("--organization-name", required=True)
-    parser.add_argument("--event-name", required=True)
     parser.add_argument("--admin-email", required=True)
+    parser.add_argument("--event-name")
     parser.add_argument(
         "--starts-at",
-        required=True,
         help="ISO 8601 timestamp with UTC offset, such as 2026-11-01T09:00:00+05:30",
     )
     parser.add_argument(
         "--ends-at",
-        required=True,
         help="ISO 8601 timestamp with UTC offset, such as 2026-11-01T18:00:00+05:30",
     )
-    parser.add_argument("--time-zone", required=True, help="IANA name, such as Asia/Kolkata")
+    parser.add_argument("--time-zone", help="IANA name, such as Asia/Kolkata")
     arguments = parser.parse_args()
     try:
         _, variables = load_environment(arguments.config, arguments.env)
@@ -139,7 +152,10 @@ def main() -> int:
         return 1
     print("Initial administrator bootstrap completed; BOOTSTRAP_TOKEN was removed.")
     print(f"Organization ID: {result['organization_id']}")
-    print(f"Event ID: {result['event_id']}")
+    if result.get("event_id"):
+        print(f"Event ID: {result['event_id']}")
+    else:
+        print("Event: none (create the first event from the administrator UI)")
     print(f"Administrator user ID: {result['admin_user_id']}")
     return 0
 

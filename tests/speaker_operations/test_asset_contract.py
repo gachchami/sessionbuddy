@@ -1,10 +1,16 @@
+import hashlib
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from pydantic import ValidationError
 
-from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
+from sessionbuddy.platform.storage import (
+    malware_scan_disabled,
+    presign_r2_put,
+    scan_request_headers,
+    scan_request_headers_for_digest,
+)
 from sessionbuddy.speaker_operations.models import UploadAuthorizationCreate
 
 
@@ -50,7 +56,34 @@ def test_r2_presigned_put_is_single_object_and_header_bound() -> None:
     assert parsed.scheme == "https"
     assert parsed.hostname == "account.r2.cloudflarestorage.com"
     assert parsed.path == "/private-assets/private/version/object"
+    assert query["X-Amz-Content-Sha256"] == ["UNSIGNED-PAYLOAD"]
     assert query["X-Amz-Expires"] == ["600"]
     assert query["X-Amz-SignedHeaders"] == ["content-type;host"]
     assert len(query["X-Amz-Signature"][0]) == 64
     assert headers == {"content-type": "application/pdf"}
+
+
+def test_scan_request_can_be_signed_from_verified_digest_without_buffering() -> None:
+    content = b"private speaker asset"
+    secret = b"scanner-secret-with-at-least-32-bytes"
+    buffered = scan_request_headers(
+        secret, job_id="job-1", timestamp_ms=1_700_000_000_000, content=content
+    )
+    streamed = scan_request_headers_for_digest(
+        secret,
+        job_id="job-1",
+        timestamp_ms=1_700_000_000_000,
+        checksum_sha256=hashlib.sha256(content).digest(),
+    )
+
+    assert streamed == buffered
+
+
+def test_scan_request_rejects_invalid_preverified_digest() -> None:
+    with pytest.raises(ValueError, match="invalid scan checksum"):
+        scan_request_headers_for_digest(
+            b"scanner-secret-with-at-least-32-bytes",
+            job_id="job-1",
+            timestamp_ms=1_700_000_000_000,
+            checksum_sha256=b"short",
+        )

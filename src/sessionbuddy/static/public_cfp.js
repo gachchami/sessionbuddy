@@ -5,6 +5,7 @@
   const publicSession = crypto.randomUUID();
   let csrf = "";
   let draftVersion = 0;
+  let applyFormConditions = () => {};
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
     const width = innerWidth;
@@ -92,6 +93,7 @@
         target.required = visible && target.dataset.required === "true";
       }
     }
+    applyFormConditions = applyConditions;
     container.addEventListener("input", applyConditions);
     container.addEventListener("change", applyConditions);
     applyConditions();
@@ -107,6 +109,7 @@
       const field = byId("proposal-form").elements.namedItem(name);
       if (field) field.value = value;
     }
+    applyFormConditions();
     byId("status").textContent = "Your saved draft has been restored.";
   }
   byId("sign-in-form").addEventListener("submit", async (event) => {
@@ -133,7 +136,8 @@
     byId("status").classList.remove("error");
     try {
       const values = answers();
-      const submission = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`, "x-public-session-id": publicSession }, body: JSON.stringify({ ...values, answers: values }) });
+      const { speaker_name, speaker_email, proposal_title, proposal_abstract } = values;
+      const submission = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`, "x-public-session-id": publicSession }, body: JSON.stringify({ speaker_name, speaker_email, proposal_title, proposal_abstract, answers: values }) });
       byId("status").textContent = "Proposal submitted.";
       byId("receipt").textContent = `Receipt ${submission.id} · ${submission.status}`;
       form.querySelectorAll("input, textarea, select, button").forEach((field) => { field.disabled = true; });

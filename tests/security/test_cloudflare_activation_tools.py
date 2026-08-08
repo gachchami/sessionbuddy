@@ -10,6 +10,7 @@ from scripts.cloudflare_preflight import (
     CORE_SECRETS,
     load_environment,
     parse_organization_count,
+    r2_cors_ready,
     secret_checks,
     static_configuration_checks,
 )
@@ -62,9 +63,38 @@ def test_bootstrap_payload_requires_offset_dates_and_orders_them() -> None:
         timestamp_ms("2026-11-01T09:00:00")
 
 
+def test_bootstrap_payload_allows_an_organization_without_an_event() -> None:
+    arguments = argparse.Namespace(
+        organization_name="SessionBuddy Development",
+        admin_email="admin@example.test",
+        event_name=None,
+        starts_at=None,
+        ends_at=None,
+        time_zone=None,
+    )
+
+    assert bootstrap_payload(arguments) == {
+        "organization_name": "SessionBuddy Development",
+        "admin_email": "admin@example.test",
+    }
+
+
 def test_preflight_parses_wrangler_d1_json() -> None:
     output = json.dumps([{"results": [{"organization_count": 3}]}])
     assert parse_organization_count(output) == 3
+
+
+def test_preflight_requires_exact_r2_browser_upload_cors() -> None:
+    origin = "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev"
+    output = """allowed_origins:  https://sessionbuddy-development.shiny-cloud-dd47.workers.dev
+allowed_methods:  PUT
+allowed_headers:  Content-Type
+exposed_headers:  ETag
+    max_age_seconds:  3600"""
+
+    assert r2_cors_ready(output, origin)
+    wrong_method = output.replace("allowed_methods:  PUT", "allowed_methods:  GET")
+    assert not r2_cors_ready(wrong_method, origin)
 
 
 def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, capsys) -> None:
@@ -87,7 +117,7 @@ def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, cap
         "post_bootstrap",
         lambda _base_url, _token, _payload: {
             "organization_id": "organization",
-            "event_id": "event",
+            "event_id": None,
             "admin_user_id": "admin",
         },
     )
@@ -97,16 +127,8 @@ def test_bootstrap_command_streams_and_removes_temporary_secret(monkeypatch, cap
             "bootstrap_cloudflare.py",
             "--organization-name",
             "Example Events",
-            "--event-name",
-            "Example Conference",
             "--admin-email",
             "admin@example.test",
-            "--starts-at",
-            "2026-11-01T09:00:00+05:30",
-            "--ends-at",
-            "2026-11-01T18:00:00+05:30",
-            "--time-zone",
-            "Asia/Kolkata",
         ],
     )
 

@@ -51,6 +51,30 @@ def test_deterministic_message_key_prevents_duplicate_delivery(db) -> None:
         db.execute(sql, ("other", *values[1:]))
 
 
+def test_organization_level_auth_message_does_not_require_an_event(db) -> None:
+    values = (
+        "auth-message",
+        "org",
+        None,
+        None,
+        "user",
+        "a@b.test",
+        "Sign in",
+        "Body",
+        "auth:challenge",
+        "queued",
+        1,
+        1,
+    )
+    sql = """INSERT INTO communication_messages
+      (id,organization_id,event_id,template_id,recipient_user_id,recipient_email,subject,
+       html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
+    db.execute(sql, values)
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(sql, ("other-auth-message", *values[1:]))
+
+
 def test_reminder_recompute_slot_is_unique_and_due_query_indexed(db) -> None:
     db.execute(
         """INSERT INTO communication_templates VALUES

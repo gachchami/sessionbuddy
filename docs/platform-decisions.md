@@ -41,7 +41,10 @@ This record resolves the choices raised by `architecture.md`, `data-architecture
    PDF/PPT/PPTX/ODP through 50 MiB; supporting documents allow PDF through
    20 MiB. Development may record an audited scan bypass. Staging and production
    fail closed and require an authenticated scanner; quarantined content never
-   becomes current without the exact clean verdict.
+   becomes current without the exact clean verdict. The Worker streams the R2
+   body through a fixed-length request, while the isolated scanner recomputes and
+   compares its digest before signing a verdict; the 50 MiB ceiling therefore
+   does not require a full-body Worker allocation.
 4. **Evaluation:** aggregates are arithmetic means rounded to two decimals for
    display. Equal scores remain ties and only an authorized human records a
    decision.

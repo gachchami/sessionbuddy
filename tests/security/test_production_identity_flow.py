@@ -129,26 +129,19 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
             json={
                 "organization_name": "Integration Events",
-                "event_name": "Primary Conference",
                 "admin_email": "admin@example.com",
-                "starts_at_ms": 1_800_000_000_000,
-                "ends_at_ms": 1_800_086_400_000,
-                "time_zone": "Asia/Kolkata",
             },
         )
         assert bootstrap.status_code == 200
         organization_id = bootstrap.json()["organization_id"]
+        assert bootstrap.json()["event_id"] is None
         assert (
             await admin.post(
                 "/api/v1/bootstrap",
                 headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
                 json={
                     "organization_name": "Second",
-                    "event_name": "Rejected",
                     "admin_email": "other@example.com",
-                    "starts_at_ms": 1,
-                    "ends_at_ms": 2,
-                    "time_zone": "UTC",
                 },
             )
         ).status_code == 409
@@ -170,6 +163,11 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
 
         organizations = await admin.get("/api/v1/admin/organizations")
         assert organizations.json()["data"][0]["id"] == organization_id
+        empty_events = await admin.get(
+            f"/api/v1/admin/organizations/{organization_id}/events"
+        )
+        assert empty_events.status_code == 200
+        assert empty_events.json()["data"] == []
         event = await admin.post(
             f"/api/v1/admin/organizations/{organization_id}/events",
             headers=mutation_headers,
@@ -261,11 +259,170 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         portal = await speaker.get("/api/v1/speaker/portal")
         assert [item["id"] for item in portal.json()["submissions"]] == [submission.json()["id"]]
 
+    async with _client(environment) as admin_again:
+        await admin_again.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin/events"},
+        )
+        await admin_again.get(
+            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            follow_redirects=False,
+        )
+        session = (await admin_again.get("/api/v1/auth/session")).json()
+        headers = {
+            "content-type": "application/json",
+            "origin": "https://test",
+            "x-csrf-token": session["csrf_token"],
+        }
+        invitations = await admin_again.get(f"/api/v1/admin/events/{event_id}/invitations")
+        assert [(item["role"], item["status"]) for item in invitations.json()["data"]] == [
+            ("speaker", "accepted")
+        ]
+        members = await admin_again.get(f"/api/v1/admin/events/{event_id}/members")
+        speaker_member = next(
+            item for item in members.json()["data"] if item["email"] == "speaker@example.com"
+        )
+        revoked = await admin_again.delete(
+            f"/api/v1/admin/events/{event_id}/members/{speaker_member['user_id']}/roles/speaker",
+            headers=headers,
+        )
+        assert revoked.status_code == 204
+        assert (
+            await admin_again.delete(
+                f"/api/v1/admin/events/{event_id}/members/{session['user_id']}/roles/event_admin",
+                headers=headers,
+            )
+        ).status_code == 409
+
     assert len(queue.messages) >= 3
     members = connection.execute(
         "SELECT role,status FROM event_memberships WHERE event_id=? ORDER BY role", (event_id,)
     ).fetchall()
     assert [(row["role"], row["status"]) for row in members] == [
         ("event_admin", "active"),
-        ("speaker", "active"),
+        ("speaker", "revoked"),
     ]
+    assert connection.execute(
+        "SELECT 1 FROM audit_events WHERE action='event_membership.revoke'"
+    ).fetchone()
+
+
+async def test_existing_user_accepts_a_new_role_invitation(production_environment) -> None:
+    connection, _, environment = production_environment
+    async with _client(environment) as client:
+        bootstrap = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": environment.BOOTSTRAP_TOKEN},
+            json={
+                "organization_name": "Existing User Events",
+                "admin_email": "admin@example.com",
+            },
+        )
+        organization_id = bootstrap.json()["organization_id"]
+        await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin/events"},
+        )
+        verified = await client.get(
+            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            follow_redirects=False,
+        )
+        assert verified.status_code == 303
+        session = (await client.get("/api/v1/auth/session")).json()
+        headers = {
+            "content-type": "application/json",
+            "origin": "https://test",
+            "x-csrf-token": session["csrf_token"],
+        }
+        organization = await client.patch(
+            f"/api/v1/admin/organizations/{organization_id}",
+            headers=headers,
+            json={"name": "Existing User Events Updated", "version": 1},
+        )
+        assert organization.status_code == 200
+        assert organization.json()["version"] == 2
+        event = await client.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=headers,
+            json={
+                "name": "Multi-role Summit",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "UTC",
+                "delivery_mode": "in_person",
+            },
+        )
+        event_id = event.json()["id"]
+        updated_event = await client.patch(
+            f"/api/v1/admin/events/{event_id}",
+            headers=headers,
+            json={
+                "name": "Multi-role Summit Updated",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+                "location": "Development",
+                "description": "Disposable staging rehearsal.",
+                "status": "active",
+                "version": 1,
+            },
+        )
+        assert updated_event.status_code == 200
+        assert updated_event.json()["version"] == 2
+        temporary = await client.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=headers,
+            json={"email": "reviewer@example.com", "role": "evaluator"},
+        )
+        assert temporary.status_code == 201
+        listed = await client.get(f"/api/v1/admin/events/{event_id}/invitations")
+        assert listed.json()["data"][0]["id"] == temporary.json()["id"]
+        revoked = await client.delete(
+            f"/api/v1/admin/events/{event_id}/invitations/{temporary.json()['id']}",
+            headers=headers,
+        )
+        assert revoked.status_code == 204
+        invitation = await client.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=headers,
+            json={"email": "admin@example.com", "role": "speaker"},
+        )
+        assert invitation.status_code == 201
+
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/speaker"},
+        )
+        assert requested.status_code == 202
+        accepted = await client.get(
+            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            follow_redirects=False,
+        )
+        assert accepted.status_code == 303
+        assert accepted.headers["location"] == "/speaker"
+        portal = await client.get("/api/v1/speaker/portal")
+        assert portal.status_code == 200
+        assert portal.json()["event"]["id"] == event_id
+
+    roles = connection.execute(
+        "SELECT role FROM event_memberships WHERE event_id=? AND status='active' ORDER BY role",
+        (event_id,),
+    ).fetchall()
+    assert [row["role"] for row in roles] == ["event_admin", "speaker"]
+    audit = connection.execute(
+        "SELECT action,target_id FROM audit_events WHERE action='identity.invitation.accept'"
+    ).fetchone()
+    assert audit is not None
+    assert audit["target_id"] == invitation.json()["id"]
+    actions = {
+        row["action"]
+        for row in connection.execute(
+            "SELECT action FROM audit_events WHERE action LIKE 'identity.invitation.%'"
+        ).fetchall()
+    }
+    assert actions == {
+        "identity.invitation.accept",
+        "identity.invitation.create",
+        "identity.invitation.revoke",
+    }

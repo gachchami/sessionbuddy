@@ -33,8 +33,9 @@ records.
 ## Speaker operations
 
 Implemented: speaker portal, onboarding tasks, profile management, quarantined
-asset uploads, asynchronous malware scanning, private download grants,
-communications, reminders, and admin progress views.
+asset uploads, fixed-length R2-to-scanner streaming, asynchronous malware
+scanning, private download grants, communications, reminders, and admin progress
+views.
 
 ## Scheduling
 
@@ -49,10 +50,19 @@ tests, API benchmarks, Lighthouse audits, Cloudflare packaging, remote D1
 migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
 health checks, browser-route checks, and the anonymous identity boundary.
 
-The isolated Cloudflare development rehearsal is live. Remaining activation
-inputs are a verified Resend sender/key, R2 S3 access credentials for direct
-browser uploads, and the client's one-time administrator/event details. The
-development environment intentionally bypasses malware scanning; staging and
-production reject that bypass and require a scanner endpoint/secret. No
-Cloudflare Container is configured. Applied D1 migration filenames retain their
-original delivery-era names because migration identifiers are immutable.
+The isolated Cloudflare development rehearsal is complete with 23 passing
+preflight checks. Resend and direct-R2 credentials are configured, the
+organization and first administrator are bootstrapped, and the authenticated
+zero-event journey created the reusable rehearsal event. Live organization/event
+edits, invitation creation/revocation/acceptance, speaker ownership, conditional
+draft restore and submission, and a direct R2 upload all pass. The run exposed
+three integration defects—an asynchronous invitation reset, conditional draft and
+submission-payload handling, and CSP blocking R2—and each is fixed, covered by a
+regression, and deployed. The development environment intentionally bypasses
+malware scanning; staging and production reject that bypass and require a scanner
+endpoint/secret. No Cloudflare Container is configured. Applied D1 migration
+filenames retain their original delivery-era names because migration identifiers
+are immutable.
+
+The requirement-by-requirement evidence and the remaining authenticated
+development rehearsal are tracked in `delivery-completion-audit.md`.

@@ -27,7 +27,25 @@ def malware_scan_disabled(environment: object | None) -> bool:
 def scan_request_headers(
     secret: bytes, *, job_id: str, timestamp_ms: int, content: bytes
 ) -> dict[str, str]:
-    digest = hashlib.sha256(content).hexdigest()
+    return scan_request_headers_for_digest(
+        secret,
+        job_id=job_id,
+        timestamp_ms=timestamp_ms,
+        checksum_sha256=hashlib.sha256(content).digest(),
+    )
+
+
+def scan_request_headers_for_digest(
+    secret: bytes,
+    *,
+    job_id: str,
+    timestamp_ms: int,
+    checksum_sha256: bytes,
+) -> dict[str, str]:
+    """Sign a scan request without materializing the object body in Worker memory."""
+    if len(checksum_sha256) != hashlib.sha256().digest_size:
+        raise ValueError("invalid scan checksum")
+    digest = checksum_sha256.hex()
     canonical = f"{timestamp_ms}\n{job_id}\n{digest}".encode()
     return {
         "content-type": "application/octet-stream",

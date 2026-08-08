@@ -1,6 +1,7 @@
 # Speaker operations speaker onboarding acceptance record
 
-Status: application and Cloudflare development deployment complete; provider activation pending
+Status: application, Cloudflare development deployment, provider configuration,
+and authenticated direct-upload rehearsal complete
 
 This slice establishes the security and persistence boundary for accepted-speaker
 onboarding:
@@ -36,11 +37,14 @@ speaker assets:
 - Deployed environments generate a ten-minute, single-object R2 SigV4 PUT URL.
   Local Workerd uses a signed single-intent PUT adapter so byte length, MIME,
   checksum, private R2 storage, and completion can be tested without cloud keys.
-- New versions remain non-current until scanning succeeds. The local Worker sends
-  the quarantined bytes to an authenticated, isolated ClamAV container and only
-  a signed clean verdict for the exact generation and checksum can promote it;
-  deployed completion leaves it quarantined and emits a deterministic scan
-  request. A replacement leaves the prior clean version current until promotion.
+- New versions remain non-current until scanning succeeds. The local Worker
+  streams the quarantined R2 body through a fixed-length request to an
+  authenticated, isolated ClamAV container; the production Queue consumer uses
+  the same adapter and does not materialize the full object in Worker memory.
+  The scanner recomputes the digest while reading, and only a signed clean verdict
+  for the exact generation and checksum can promote it. Deployed completion
+  leaves the object quarantined and emits a deterministic scan request. A
+  replacement leaves the prior clean version current until promotion.
 - Asset APIs expose allow-listed metadata only. They never serialize an R2 key,
   token hash, upload capability after authorization, or scanner payload.
 
@@ -63,10 +67,14 @@ The completed Speaker operations foundation also includes:
   invalidation, plus refresh on visibility, reconnect, and history restoration.
   Correctness does not depend on receiving a push notification.
 
-The local acceptance smoke proves clean promotion and download, EICAR rejection,
-and deterministic reminder queue/delivery through Workerd. The Cloudflare
-development R2 bucket, Queues/DLQs, consumers, and Workflow are provisioned and
-deployed. Activating delivered email and direct browser uploads still requires a
-verified Resend sender/key and R2 S3 credentials. Development scanning is
-explicitly bypassed; staging/production remain fail-closed until a scanner
-endpoint and secret are configured.
+The local acceptance smoke proves the fixed-length R2-to-scanner stream, clean
+promotion and download, EICAR rejection, and deterministic reminder
+queue/delivery through Workerd. The Cloudflare development R2 bucket, strict
+browser CORS policy, account-scoped CSP connection, Queues/DLQs, consumers, and
+Workflow are provisioned and deployed. Resend and least-privilege R2 S3
+credentials are installed, and Resend accepted live passwordless messages. The
+authenticated browser rehearsal accepted the speaker role, displayed one owned
+proposal, uploaded a 1,732-byte PNG directly to R2, completed its intent, and
+listed that version as clean/current. Development scanning is explicitly
+bypassed; staging/production remain fail-closed until a scanner endpoint and
+secret are configured.

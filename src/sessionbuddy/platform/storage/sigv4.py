@@ -31,6 +31,7 @@ def presign_r2_put(
     scope = f"{date}/auto/s3/aws4_request"
     query = {
         "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+        "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
         "X-Amz-Credential": f"{access_key_id}/{scope}",
         "X-Amz-Date": timestamp,
         "X-Amz-Expires": str(expires_seconds),

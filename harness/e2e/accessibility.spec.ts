@@ -18,21 +18,39 @@ test.describe("MVP experience accessibility", () => {
     expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
   });
 
-  const routes = [
-    "/cfp-integration",
-    "/admin/programs",
-    "/reviews",
-    "/speaker",
-    "/admin/events/22222222-2222-4222-8222-222222222222/onboarding",
-    "/admin/events/22222222-2222-4222-8222-222222222222/agenda",
-    "/events/22222222-2222-4222-8222-222222222222/schedule",
+  const routes: Array<{ path: string; sessionEndpoint?: string }> = [
+    { path: "/cfp-integration" },
+    { path: "/admin/events", sessionEndpoint: "/api/v1/demo/session" },
+    { path: "/admin/programs", sessionEndpoint: "/api/v1/demo/session" },
+    { path: "/reviews", sessionEndpoint: "/api/v1/demo/session" },
+    { path: "/speaker", sessionEndpoint: "/api/v1/demo/speaker-session" },
+    {
+      path: "/admin/events/22222222-2222-4222-8222-222222222222/access",
+      sessionEndpoint: "/api/v1/demo/session",
+    },
+    {
+      path: "/admin/events/22222222-2222-4222-8222-222222222222/onboarding",
+      sessionEndpoint: "/api/v1/demo/session",
+    },
+    {
+      path: "/admin/events/22222222-2222-4222-8222-222222222222/agenda",
+      sessionEndpoint: "/api/v1/demo/session",
+    },
+    { path: "/events/22222222-2222-4222-8222-222222222222/schedule" },
   ];
 
   for (const route of routes) {
-    test(`${route} has no automatically detectable serious violations`, async ({ page }) => {
-      const response = await page.goto(route);
+    test(`${route.path} has no automatically detectable serious violations`, async ({ page }, testInfo) => {
+      if (route.sessionEndpoint) {
+        const session = await page.request.post(route.sessionEndpoint, {
+          headers: { "cf-connecting-ip": `192.0.2.${testInfo.workerIndex + 1}` },
+        });
+        expect(session.ok()).toBeTruthy();
+      }
+      const response = await page.goto(route.path);
       expect(response?.ok()).toBeTruthy();
       await expect(page.locator("main")).toBeVisible();
+      await page.waitForLoadState("networkidle");
 
       const results = await new AxeBuilder({ page })
         .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

@@ -194,6 +194,22 @@ def parse_organization_count(output: str) -> int:
     return int(payload[0]["results"][0]["organization_count"])
 
 
+def r2_cors_ready(output: str, public_origin: str) -> bool:
+    values: dict[str, str] = {}
+    for line in output.splitlines():
+        label, separator, value = line.partition(":")
+        if separator:
+            values[label.strip()] = value.strip()
+    expected = {
+        "allowed_origins": public_origin,
+        "allowed_methods": "PUT",
+        "allowed_headers": "Content-Type",
+        "exposed_headers": "ETag",
+        "max_age_seconds": "3600",
+    }
+    return all(values.get(label) == value for label, value in expected.items())
+
+
 def remote_checks(
     environment_name: str,
     environment: dict,
@@ -266,6 +282,21 @@ def remote_checks(
         )
     )
 
+    base_url = variables.get("PUBLIC_BASE_URL", "").rstrip("/")
+    r2_cors = run_command([NPX, "wrangler", "r2", "bucket", "cors", "list", r2_name])
+    cors_ready = r2_cors.returncode == 0 and r2_cors_ready(r2_cors.output, base_url)
+    checks.append(
+        Check(
+            "PASS" if cors_ready else "FAIL",
+            "R2 browser upload CORS",
+            (
+                "exact Worker origin, PUT, and Content-Type are allowed"
+                if cors_ready
+                else "apply the checked-in development R2 CORS policy"
+            ),
+        )
+    )
+
     queue_names = configured_queue_names(environment)
     queues = run_command([NPX, "wrangler", "queues", "list"])
     missing_queues = sorted(name for name in queue_names if name not in queues.output)
@@ -300,7 +331,6 @@ def remote_checks(
         )
     )
 
-    base_url = variables.get("PUBLIC_BASE_URL", "").rstrip("/")
     health_status, health_body = request_status(f"{base_url}/health")
     health_ready = health_status == 200 and '"status":"ok"' in health_body.replace(" ", "")
     checks.append(

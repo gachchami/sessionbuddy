@@ -12,6 +12,7 @@
     "worker:migrate": "uv run pywrangler d1 migrations apply DB --local",
     "worker:migrate:dev": "uv run pywrangler d1 migrations apply DB --remote --env dev",
     "worker:deploy:dev": "uv run pywrangler deploy --env dev",
+    "worker:r2-cors:dev": "wrangler r2 bucket cors set sessionbuddy-assets-development --file r2-cors.dev.json --force",
     "worker:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev --deployment-only",
     "worker:activation:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev",
     "worker:bootstrap:dev": "uv run python scripts/bootstrap_cloudflare.py --env dev"

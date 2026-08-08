@@ -149,7 +149,7 @@
         "MALWARE_SCAN_MODE": "disabled",
         "PUBLIC_BASE_URL": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
         "R2_BUCKET_NAME": "sessionbuddy-assets-development",
-        "RESEND_FROM_ADDRESS": "SessionBuddy <events@example.com>",
+        "RESEND_FROM_ADDRESS": "SessionBuddy <onboarding@resend.dev>",
         "SCANNER_URL": ""
       }
     }

@@ -47,11 +47,23 @@ The deployed Cloudflare preflight verifies the live sign-in/admin routes, exact
 origin configuration, core secret inventory, migrated D1, and an anonymous `401`
 from session introspection.
 
+The live development rehearsal verified administrator sign-in and existing-user
+speaker invitation acceptance without exposing either magic link. D1 shows one
+accepted speaker invitation and active event-admin/speaker memberships; the
+speaker portal returned only the actor-owned proposal and asset.
+
 ## Activation boundary
 
 The production authenticator decision is resolved as passwordless email for the
-MVP. Full live delivery still requires the client's verified Resend sender/key.
-The first administrator is not configured through source or Wrangler variables;
-the client-approved email and event details are supplied once to
-`scripts/bootstrap_cloudflare.py`, which generates, uses, and removes the
-temporary bootstrap token without printing or storing it.
+MVP. The development Resend key/test sender is configured and has accepted a live
+administrator message; a verified client domain remains a production-promotion
+input for delivery to arbitrary recipients. The first administrator is not
+configured through source or Wrangler variables. The approved organization and
+administrator were supplied once to `scripts/bootstrap_cloudflare.py`, which
+generated, used, and removed the temporary bootstrap token without printing or
+storing it. Bootstrap intentionally created no placeholder event; the verified
+administrator creates the first real event from the application.
+
+An existing verified user can also accept a later event-role invitation. The
+invitation takes precedence when issuing that user's next challenge, acceptance
+adds only the invited role/ownership records, and the transition is audited.

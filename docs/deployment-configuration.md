@@ -32,6 +32,11 @@ manually. The bootstrap command below generates, streams, uses, and removes it.
 
 Never put real secrets or the administrator email in `wrangler.jsonc`, and never commit `.dev.vars`.
 
+The development environment uses Resend's `onboarding@resend.dev` testing
+sender. Resend restricts that sender to the email address associated with the
+Resend account. Replace it with an address on a verified client domain before
+testing invitations with other recipients or deploying to production.
+
 ## Initial administrator bootstrap
 
 Apply every D1 migration first. Then supply the approved administrator/event
@@ -40,17 +45,14 @@ details to the guarded command:
 ```sh
 docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
   --organization-name "Example Events" \
-  --event-name "Example Conference" \
-  --admin-email "admin@example.com" \
-  --starts-at "2026-11-01T09:00:00+05:30" \
-  --ends-at "2026-11-01T18:00:00+05:30" \
-  --time-zone "Asia/Kolkata"
+  --admin-email "admin@example.com"
 ```
 
 The endpoint refuses a second organization. The command always attempts to
 remove `BOOTSTRAP_TOKEN`, never prints it, and exits non-zero if removal cannot
 be confirmed. After success, open `/sign-in?redirect=/admin/events` and request
-a magic link for that administrator email.
+a magic link for that administrator email. An event is intentionally optional;
+the initial administrator can create the first event from the empty-state UI.
 
 ## Development deployment with scanning disabled
 
@@ -64,6 +66,7 @@ docker compose run --rm --no-deps worker npm run frontend:check
 docker compose run --rm --no-deps worker npm run frontend:build
 docker compose run --rm --no-deps worker uv run python scripts/embed_console_assets.py
 docker compose run --rm --no-deps worker npm run worker:migrate:dev
+docker compose run --rm --no-deps worker npm run worker:r2-cors:dev
 docker compose run --rm --no-deps worker npm run worker:deploy:dev
 docker compose run --rm --no-deps worker npm run worker:preflight:dev
 ```
@@ -79,3 +82,8 @@ That command remains non-zero until verified email delivery, direct R2 upload
 credentials, and initial bootstrap are ready. After activation, check a delivered
 passwordless sign-in, a CFP draft/submission, an invitation, and an R2 upload.
 The code intentionally does not invent or commit provider/account values.
+
+The checked-in `r2-cors.dev.json` policy allows only browser `PUT` uploads from
+the exact development Worker origin with `Content-Type`, and exposes only
+`ETag`. Keep each environment's origin-specific policy separate; do not use a
+wildcard origin for authenticated speaker uploads.

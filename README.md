@@ -122,10 +122,12 @@ docker compose run --rm worker uv run python scripts/smoke_speaker_assets.py \
   --base-url http://worker:8787
 ```
 
-The local Worker sends quarantined bytes to the authenticated ClamAV container;
-only its signed clean result promotes the exact generation. Deployed environments
-issue a direct R2 SigV4 PUT and publish a versioned Queue job for the replay-safe
-scanner consumer. The same smoke also proves single-use private download grants
+The local Worker streams quarantined bytes from R2 to the authenticated ClamAV
+container through a fixed-length body; it does not copy a full 50 MiB object into
+Worker memory. Only the scanner's signed clean result promotes the exact
+generation. Deployed environments issue a direct R2 SigV4 PUT and publish a
+versioned Queue job for the replay-safe scanner consumer, which uses the same
+streaming adapter. The same smoke also proves single-use private download grants
 and captured reminder delivery.
 
 Evaluators may declare a conflict before finalization; the assignment is revoked
@@ -167,12 +169,12 @@ bootstrap without exposing or retaining its token:
 ```bash
 docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
   --organization-name "Example Events" \
-  --event-name "Example Conference" \
-  --admin-email "admin@example.com" \
-  --starts-at "2026-11-01T09:00:00+05:30" \
-  --ends-at "2026-11-01T18:00:00+05:30" \
-  --time-zone "Asia/Kolkata"
+  --admin-email "admin@example.com"
 ```
+
+This creates a valid organization with no events. The administrator creates the
+first event from `/admin/events`. Event name, start, end, and time zone can
+still be supplied together to the bootstrap command when desired.
 
 The commands below are available inside the container for focused development:
 
@@ -188,6 +190,8 @@ npm run worker:dev
 ```
 
 See [deployment configuration](docs/deployment-configuration.md) for Cloudflare variables, secrets, the one-time administrator bootstrap, and the development malware-scan bypass.
+See [the nine-area delivery audit](docs/delivery-completion-audit.md) for current
+local/live evidence and the exact remaining authenticated rehearsal.
 
 `pywrangler sync` is the dependency compatibility gate. It resolves against the
 Pyodide index selected by `compatibility_date`, writes the reviewed `pylock.toml`,

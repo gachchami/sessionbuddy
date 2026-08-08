@@ -180,14 +180,28 @@
             "type": "string"
           },
           "ends_at_ms": {
-            "title": "Ends At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At Ms"
           },
           "event_name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Event Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Name"
           },
           "organization_name": {
             "maxLength": 200,
@@ -196,23 +210,33 @@
             "type": "string"
           },
           "starts_at_ms": {
-            "title": "Starts At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At Ms"
           },
           "time_zone": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Time Zone",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Zone"
           }
         },
         "required": [
           "organization_name",
-          "event_name",
-          "admin_email",
-          "starts_at_ms",
-          "ends_at_ms",
-          "time_zone"
+          "admin_email"
         ],
         "title": "BootstrapCreate",
         "type": "object"
@@ -224,8 +248,15 @@
             "type": "string"
           },
           "event_id": {
-            "title": "Event Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
           },
           "organization_id": {
             "title": "Organization Id",

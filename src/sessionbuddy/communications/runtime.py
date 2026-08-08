@@ -61,7 +61,7 @@ class ReminderEnvelope:
 class DeliveryClaim:
     message_id: str
     organization_id: str
-    event_id: str
+    event_id: str | None
     recipient_email: str
     subject: str
     html_body: str
@@ -143,7 +143,7 @@ class D1DeliveryRepository:
         return DeliveryClaim(
             message_id=str(row["id"]),
             organization_id=str(row["organization_id"]),
-            event_id=str(row["event_id"]),
+            event_id=str(row["event_id"]) if row["event_id"] is not None else None,
             recipient_email=str(row["recipient_email"]),
             subject=str(row["subject"]),
             html_body=str(row["html_body"]),

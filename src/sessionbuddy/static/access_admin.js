@@ -43,10 +43,11 @@
   }
   byId("invite-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const values = Object.fromEntries(new FormData(event.currentTarget));
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) }) });
-      event.currentTarget.reset(); byId("status").textContent = "Invitation created and queued for delivery."; await load();
+      form.reset(); byId("status").textContent = "Invitation created and queued for delivery."; await load();
     } catch (error) { byId("status").textContent = error.message; byId("status").focus(); }
   });
   if (!eventId) { byId("status").textContent = "This event link is invalid."; return; }

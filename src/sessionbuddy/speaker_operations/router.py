@@ -33,9 +33,7 @@ from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.storage import (
     ScanResult,
     malware_scan_disabled,
-    parse_signed_scan_response,
     presign_r2_put,
-    scan_request_headers,
 )
 
 from .asset_boundary import AssetAccessScope, AssetRepository, ScanJob
@@ -58,6 +56,7 @@ from .models import (
     UploadAuthorizationView,
     UploadCompletionView,
 )
+from .scanner_adapter import SignedScannerAdapter
 
 speaker_operations_router = APIRouter()
 
@@ -1448,42 +1447,6 @@ async def local_upload_content(intent_id: str, request: Request, token: str) -> 
     await _bucket(request).put(str(row["object_key"]), body)
 
 
-async def _scan_local_asset(request: Request, job_id: str, content: bytes):
-    from workers import fetch
-
-    environment = request.scope.get("env")
-    scanner_url = str(getattr(environment, "SCANNER_URL", ""))
-    scanner_secret = secret(request, "SCANNER_HMAC_KEY")
-    if not scanner_url.startswith("http://scanner:"):
-        raise HTTPException(status_code=503)
-    headers = scan_request_headers(
-        scanner_secret,
-        job_id=job_id,
-        timestamp_ms=utc_now_ms(),
-        content=content,
-    )
-    try:
-        response = await fetch(
-            scanner_url.rstrip("/") + "/scan",
-            method="POST",
-            headers=headers,
-            body=content,
-        )
-        response_body = await response.bytes()
-        if response.status != 200:
-            raise HTTPException(status_code=503)
-        result = parse_signed_scan_response(
-            scanner_secret, response_body, response.headers.get("x-scan-signature")
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=503) from exc
-    if result.job_id != job_id or result.verdict == "error":
-        raise HTTPException(status_code=503)
-    return result
-
-
 @speaker_operations_router.post(
     "/api/v1/speaker/events/{event_id}/upload-intents/{intent_id}/complete",
     response_model=UploadCompletionView,
@@ -1563,11 +1526,29 @@ async def complete_speaker_upload(
         stored_body = await _bucket(request).get(str(row["object_key"]))
         if stored_body is None:
             raise HTTPException(status_code=409)
+        job = ScanJob(
+            schema_version=1,
+            organization_id=str(row["organization_id"]),
+            event_id=event_id,
+            asset_version_id=str(row["version_id"]),
+            generation=int(row["generation"]),
+            checksum_sha256=_blob(row["expected_checksum_sha256"]),
+            job_id=str(row["version_id"]),
+        )
         try:
-            content = bytes(await stored_body.arrayBuffer())
+            provider_result = await SignedScannerAdapter(environment).scan(
+                stored_body, job=job
+            )
         except Exception as exc:
             raise HTTPException(status_code=503) from exc
-        scan_result = await _scan_local_asset(request, str(row["version_id"]), content)
+        if provider_result.verdict == "error":
+            raise HTTPException(status_code=503)
+        scan_result = ScanResult(
+            job_id=job.job_id,
+            verdict=provider_result.verdict,
+            engine=provider_result.engine,
+            signature=provider_result.signature_code,
+        )
     batch = CommandBatch(db)
     if inline_completion and scan_result is not None:
         batch.add_statement(

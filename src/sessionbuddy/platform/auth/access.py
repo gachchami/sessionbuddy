@@ -70,16 +70,16 @@ async def events_javascript() -> Response:
 class BootstrapCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     organization_name: str = Field(min_length=1, max_length=200)
-    event_name: str = Field(min_length=1, max_length=200)
     admin_email: str = Field(min_length=3, max_length=320)
-    starts_at_ms: int
-    ends_at_ms: int
-    time_zone: str = Field(min_length=1, max_length=100)
+    event_name: str | None = Field(default=None, min_length=1, max_length=200)
+    starts_at_ms: int | None = None
+    ends_at_ms: int | None = None
+    time_zone: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class BootstrapView(BaseModel):
     organization_id: str
-    event_id: str
+    event_id: str | None
     admin_user_id: str
 
 
@@ -213,14 +213,25 @@ async def bootstrap_tenant(
     supplied = (bootstrap_token or "").encode()
     if len(expected) < 32 or not hmac.compare_digest(expected, supplied):
         raise HTTPException(status_code=404)
-    if body.ends_at_ms <= body.starts_at_ms:
-        raise HTTPException(status_code=422)
+    event_values = (body.event_name, body.starts_at_ms, body.ends_at_ms, body.time_zone)
+    has_event = any(value is not None for value in event_values)
+    if has_event:
+        if (
+            body.event_name is None
+            or body.starts_at_ms is None
+            or body.ends_at_ms is None
+            or body.time_zone is None
+        ):
+            raise HTTPException(status_code=422)
+        if body.ends_at_ms <= body.starts_at_ms:
+            raise HTTPException(status_code=422)
     db = database(request)
     existing = row_mapping(await db.prepare("SELECT id FROM organizations LIMIT 1").first())
     if existing is not None:
         raise HTTPException(status_code=409)
     now = utc_now_ms()
-    organization_id, event_id, user_id = new_id(), new_id(), new_id()
+    organization_id, user_id = new_id(), new_id()
+    event_id = new_id() if has_event else None
     batch = CommandBatch(db)
     batch.add_statement(
         db.prepare(
@@ -244,28 +255,29 @@ async def bootstrap_tenant(
            VALUES(?1,?2,?3,'organization_admin','active',?4,?4)"""
         ).bind(new_id(), organization_id, user_id, now)
     )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO events
-           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,status,created_at_ms,updated_at_ms)
-           VALUES(?1,?2,?3,?4,?5,?6,'hybrid','active',?7,?7)"""
-        ).bind(
-            event_id,
-            organization_id,
-            body.event_name,
-            body.starts_at_ms,
-            body.ends_at_ms,
-            body.time_zone,
-            now,
+    if has_event:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO events
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,'hybrid','active',?7,?7)"""
+            ).bind(
+                event_id,
+                organization_id,
+                body.event_name,
+                body.starts_at_ms,
+                body.ends_at_ms,
+                body.time_zone,
+                now,
+            )
         )
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO event_memberships
-           (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-           VALUES(?1,?2,?3,?4,'event_admin','active',?5,?5)"""
-        ).bind(new_id(), organization_id, event_id, user_id, now)
-    )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,'event_admin','active',?5,?5)"""
+            ).bind(new_id(), organization_id, event_id, user_id, now)
+        )
     batch.audit(
         AuditEvent(
             actor_type="system",
@@ -277,7 +289,7 @@ async def bootstrap_tenant(
             occurred_at_ms=now,
             organization_id=organization_id,
             event_id=event_id,
-            metadata={"initial_admin": 1},
+            metadata={"initial_admin": 1, "initial_event": int(has_event)},
         )
     )
     await batch.execute()
@@ -581,8 +593,27 @@ async def create_invitation(
         .bind(event["organization_id"], event_id, normalized, body.role)
         .first()
     )
+    if row is None:
+        raise HTTPException(status_code=409)
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="identity.invitation.create",
+            target_type="identity_invitation",
+            target_id=str(row["id"]),
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            metadata={"role": body.role},
+        )
+    )
+    await audit.execute()
     base = str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip("/")
-    if row is not None and base.startswith("https://"):
+    if base.startswith("https://"):
         message_id = new_id()
         destination = {
             "speaker": "/speaker",
@@ -661,7 +692,7 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
     tags=["administration"],
 )
 async def revoke_invitation(event_id: str, invitation_id: str, request: Request) -> Response:
-    db, organization_id, _ = await _managed_event(request, event_id, mutation=True)
+    db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
     now = utc_now_ms()
     changed = row_mapping(
         await db.prepare(
@@ -674,6 +705,22 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
     )
     if changed is None:
         raise HTTPException(status_code=404)
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="identity.invitation.revoke",
+            target_type="identity_invitation",
+            target_id=invitation_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+        )
+    )
+    await audit.execute()
     return Response(status_code=204)
 
 
@@ -732,6 +779,23 @@ async def revoke_event_member(
         .bind(now, user_id)
         .run()
     )
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="event_membership.revoke",
+            target_type="event_membership",
+            target_id=f"{user_id}:{role}",
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={"role": role},
+        )
+    )
+    await audit.execute()
     return Response(status_code=204)
 
 
@@ -759,36 +823,34 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
         await db.prepare(
             """SELECT u.id,om.organization_id,e.id AS event_id FROM users u
            JOIN organization_memberships om ON om.user_id=u.id AND om.status='active'
-           JOIN events e ON e.organization_id=om.organization_id AND e.status!='archived'
+           LEFT JOIN events e ON e.organization_id=om.organization_id AND e.status!='archived'
            WHERE u.normalized_email=?1 AND u.status='active' LIMIT 1"""
         )
         .bind(normalized)
         .first()
     )
-    invitation = None
+    invitation = row_mapping(
+        await db.prepare(
+            """SELECT id,organization_id,event_id FROM identity_invitations
+               WHERE normalized_email=?1 AND status='pending' AND expires_at_ms>?2
+               ORDER BY created_at_ms DESC LIMIT 1"""
+        )
+        .bind(normalized, utc_now_ms())
+        .first()
+    )
     submission_context = None
-    if user is None:
-        invitation = row_mapping(
+    if user is None and invitation is None and body.form_slug is not None:
+        submission_context = row_mapping(
             await db.prepare(
-                """SELECT id,organization_id,event_id FROM identity_invitations
-                   WHERE normalized_email=?1 AND status='pending' AND expires_at_ms>?2
-                   ORDER BY created_at_ms DESC LIMIT 1"""
+                """SELECT organization_id,event_id FROM call_for_speaker_forms
+                   WHERE slug=?1 AND status='published' LIMIT 1"""
             )
-            .bind(normalized, utc_now_ms())
+            .bind(body.form_slug)
             .first()
         )
-        if invitation is None and body.form_slug is not None:
-            submission_context = row_mapping(
-                await db.prepare(
-                    """SELECT organization_id,event_id FROM call_for_speaker_forms
-                       WHERE slug=?1 AND status='published' LIMIT 1"""
-                )
-                .bind(body.form_slug)
-                .first()
-            )
-        if invitation is None and submission_context is None:
-            return GenericAccepted()
-    context = user or invitation or submission_context
+    if user is None and invitation is None and submission_context is None:
+        return GenericAccepted()
+    context = invitation or user or submission_context
     now, raw_token, challenge_id = utc_now_ms(), generate_token(), new_id()
     await (
         db.prepare(
@@ -802,10 +864,10 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
             normalized,
             hash_token(raw_token),
             (
-                "existing_user"
-                if user is not None
-                else "invitation"
+                "invitation"
                 if invitation is not None
+                else "existing_user"
+                if user is not None
                 else "submission"
             ),
             body.redirect_path,
@@ -865,7 +927,7 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
     if challenge is None:
         raise HTTPException(status_code=404)
     user_id = challenge["user_id"]
-    if user_id is None and challenge["invitation_id"] is not None:
+    if challenge["invitation_id"] is not None:
         invitation = row_mapping(
             await db.prepare(
                 """SELECT id,organization_id,event_id,email,normalized_email,role
@@ -882,6 +944,10 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
             .bind(invitation["normalized_email"])
             .first()
         )
+        if user_id is not None and (
+            existing_user is None or str(existing_user["id"]) != str(user_id)
+        ):
+            raise HTTPException(status_code=404)
         user_id = str(existing_user["id"]) if existing_user is not None else new_id()
         batch = CommandBatch(db)
         if existing_user is None:
@@ -933,6 +999,21 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
                    SET status='accepted',accepted_at_ms=?1,updated_at_ms=?1
                WHERE id=?2 AND status='pending'"""
             ).bind(now, invitation["id"])
+        )
+        batch.audit(
+            AuditEvent(
+                actor_type="user",
+                actor_user_id=str(user_id),
+                action="identity.invitation.accept",
+                target_type="identity_invitation",
+                target_id=str(invitation["id"]),
+                result="succeeded",
+                correlation_id=request.state.request_id,
+                occurred_at_ms=now,
+                organization_id=str(invitation["organization_id"]),
+                event_id=str(invitation["event_id"]),
+                metadata={"role": str(invitation["role"])},
+            )
         )
         await batch.execute()
     elif user_id is None and challenge["provisioning_context"] == "submission":
