@@ -257,10 +257,9 @@
       state.context = { organization_id: session.organization_id, event_id: eventId };
       state.csrf = session.csrf_token;
       byId("program-form").querySelector("button").disabled = false;
-      byId("logout").disabled = false;
       byId("manage-access").href = `/admin/events/${encodeURIComponent(eventId)}/access`;
       byId("manage-access").hidden = false;
-      setStatus("Signed in as organization administrator.");
+      setStatus("Program builder ready.");
     } catch (error) {
       if (error.status === 401) {
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
@@ -270,7 +269,6 @@
     }
   }
 
-  byId("sign-in").addEventListener("click", restoreSession);
   byId("program-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -327,21 +325,6 @@
       setStatus("Form published successfully.");
     } catch (error) {
       setStatus(error.status === 409 ? "That public slug is already in use. Choose another." : error.message, true);
-    }
-  });
-
-  byId("logout").addEventListener("click", async () => {
-    try {
-      await api("/api/v1/session/logout", { method: "POST", headers: admin(), body: "{}" });
-      state.context = null;
-      state.csrf = null;
-      state.program = null;
-      byId("program-form").querySelector("button").disabled = true;
-      byId("publish-form").querySelector('button[type="submit"], button:not([type])').disabled = true;
-      byId("logout").disabled = true;
-      setStatus("Signed out. The server-side session is revoked.");
-    } catch (error) {
-      setStatus(error.message, true);
     }
   });
 

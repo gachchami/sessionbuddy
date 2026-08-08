@@ -222,7 +222,6 @@
       setConnection("stale", "Invalid event link");
       return;
     }
-    byId("onboarding-link").href = `/admin/events/${encodeURIComponent(eventId)}/onboarding`;
     initializeFilters();
     try {
       const session = await api("/api/v1/session");

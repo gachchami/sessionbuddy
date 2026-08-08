@@ -1121,6 +1121,7 @@ def _published_form_view(row, now_ms: int) -> PublishedFormView:
         {
             **row,
             **schema,
+            "accent_color": row.get("accent_color") or "#3159d9",
             "redirect_to_portal": bool(row["redirect_to_portal"]),
             "submissions_received": submissions_received,
             "accepting_submissions": accepting,

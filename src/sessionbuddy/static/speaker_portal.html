@@ -6,23 +6,13 @@
   <meta name="color-scheme" content="light">
   <title>Speaker portal · SessionBuddy</title>
   <link rel="stylesheet" href="/speaker/assets/speaker.css?v=7">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
+  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
   <script src="/speaker/assets/speaker-portal.js?v=7" defer></script>
 </head>
-<body>
+<body class="app-body">
   <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header">
-    <div class="shell header-layout">
-      <a class="brand" href="/speaker" aria-label="SessionBuddy speaker portal home"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
-      <nav aria-label="Speaker portal">
-        <a href="#overview" aria-current="page">Home</a>
-        <a href="#tasks">Tasks</a>
-        <a href="#submissions">Submissions</a>
-        <a href="#resources">Resources</a>
-        <a href="#profile">Profile</a>
-        <a href="#assets">Assets</a>
-      </nav>
-    </div>
-  </header>
+  <header data-auth-shell data-allow-guest></header>
 
   <main id="main" class="shell" tabindex="-1">
     <div id="status" class="status" role="status" aria-live="polite">

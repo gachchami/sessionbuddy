@@ -35,7 +35,14 @@ test.describe("MVP experience accessibility", () => {
 
   const routes: Array<{ path: string; sessionEndpoint?: string }> = [
     { path: "/cfp-integration" },
+    { path: "/admin", sessionEndpoint: "/api/v1/demo/session" },
     { path: "/admin/events", sessionEndpoint: "/api/v1/demo/session" },
+    {
+      path: "/admin/events/22222222-2222-4222-8222-222222222222",
+      sessionEndpoint: "/api/v1/demo/session",
+    },
+    { path: "/admin/speakers", sessionEndpoint: "/api/v1/demo/session" },
+    { path: "/account", sessionEndpoint: "/api/v1/demo/session" },
     { path: "/admin/programs", sessionEndpoint: "/api/v1/demo/session" },
     { path: "/reviews", sessionEndpoint: "/api/v1/demo/session" },
     { path: "/speaker", sessionEndpoint: "/api/v1/demo/speaker-session" },
@@ -63,11 +70,11 @@ test.describe("MVP experience accessibility", () => {
     { path: "/embeds/events/22222222-2222-4222-8222-222222222222/schedule" },
   ];
 
-  for (const route of routes) {
-    test(`${route.path} has no automatically detectable serious violations`, async ({ page }, testInfo) => {
+  routes.forEach((route, routeIndex) => {
+    test(`${route.path} has no automatically detectable serious violations`, async ({ page }) => {
       if (route.sessionEndpoint) {
         const session = await page.request.post(route.sessionEndpoint, {
-          headers: { "cf-connecting-ip": `192.0.2.${testInfo.workerIndex + 1}` },
+          headers: { "cf-connecting-ip": `192.0.2.${routeIndex + 1}` },
         });
         expect(session.ok()).toBeTruthy();
       }
@@ -84,5 +91,5 @@ test.describe("MVP experience accessibility", () => {
       );
       expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
     });
-  }
+  });
 });

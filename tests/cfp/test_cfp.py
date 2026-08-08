@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -6,7 +7,7 @@ from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
 from sessionbuddy.cfp.models import FormPublish, ProgramCreate, SubmissionCreate
-from sessionbuddy.cfp.router import _validate_submission_schema
+from sessionbuddy.cfp.router import _published_form_view, _validate_submission_schema
 from sessionbuddy.console.models import BrowserTelemetryPayload
 
 
@@ -79,6 +80,33 @@ def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
     )
 
     _validate_submission_schema(schema, submission)
+
+
+def test_published_form_uses_default_accent_for_pre_branding_events() -> None:
+    form = _published_form_view(
+        {
+            "id": "form-1",
+            "program_id": "program-1",
+            "event_id": "event-1",
+            "event_name": "Legacy Event",
+            "accent_color": None,
+            "logo_url": None,
+            "version": 1,
+            "slug": "legacy-event",
+            "welcome_text": "Welcome",
+            "schema_json": json.dumps({"fields": [], "conditions": [], "routing_rules": []}),
+            "opens_at_ms": None,
+            "closes_at_ms": None,
+            "submission_limit": None,
+            "success_title": "Proposal received",
+            "success_message": "Thank you.",
+            "redirect_to_portal": 1,
+            "submissions_received": 0,
+        },
+        now_ms=1,
+    )
+
+    assert form.accent_color == "#3159d9"
 
 
 async def test_demo_page_and_admin_routes_fail_closed_outside_local() -> None:
@@ -173,18 +201,34 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         access = await client.get("/admin/events/22222222-2222-4222-8222-222222222222/access")
         events = await client.get("/admin/events")
         events_js = await client.get("/admin/events/assets/events.js")
+        admin_home = await client.get("/admin")
+        event_overview = await client.get(
+            "/admin/events/22222222-2222-4222-8222-222222222222"
+        )
+        speaker_directory = await client.get("/admin/speakers")
+        account = await client.get("/account")
+        app_shell_js = await client.get("/app-shell/assets/app-shell.js")
         css = await client.get("/product/assets/product.css")
 
     assert {admin.status_code, public.status_code, submissions.status_code, css.status_code} == {
         200
     }
     assert sign_in.status_code == access.status_code == events.status_code == 200
+    assert {
+        admin_home.status_code,
+        event_overview.status_code,
+        speaker_directory.status_code,
+        account.status_code,
+        app_shell_js.status_code,
+    } == {200}
     assert "one-time sign-in link" in sign_in.text
     assert "People and invitations" in access.text
-    assert "Organization administration" in events.text
-    assert "Update organization" in events.text
+    assert "Event workspaces" in events.text
+    assert "Organization settings" in events.text
+    assert "Save changes" in events.text
+    assert "data-auth-shell" in events.text
     assert "Program management" in admin.text
-    assert 'href="/admin/events"' in admin.text
+    assert "data-auth-shell" in admin.text
     assert "Submit a proposal" in public.text
     assert "Submissions" in submissions.text
     for javascript in (admin_js.text, public_js.text, submissions_js.text):
@@ -193,7 +237,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'page_template: "/admin/programs"' in admin_js.text
     assert 'fields.id = "form-fields"' in admin_js.text
     assert "conditions" in admin_js.text
-    assert "/admin/programs?event_id=" in events_js.text
+    assert "/admin/events/${encodeURIComponent(event.id)}" in events_js.text
     assert 'button("Edit"' in events_js.text
     assert 'page_template: "/cfp/{slug}"' in public_js.text
     assert "const form = event.currentTarget" in public_js.text

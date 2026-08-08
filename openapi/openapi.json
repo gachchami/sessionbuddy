@@ -569,6 +569,17 @@
             "title": "Csrf Token",
             "type": "string"
           },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "event_access": {
+            "items": {
+              "$ref": "#/components/schemas/SessionEventAccess"
+            },
+            "title": "Event Access",
+            "type": "array"
+          },
           "event_id": {
             "anyOf": [
               {
@@ -579,6 +590,13 @@
               }
             ],
             "title": "Event Id"
+          },
+          "organization_access": {
+            "items": {
+              "$ref": "#/components/schemas/SessionOrganizationAccess"
+            },
+            "title": "Organization Access",
+            "type": "array"
           },
           "organization_id": {
             "anyOf": [
@@ -598,6 +616,7 @@
         },
         "required": [
           "user_id",
+          "email",
           "csrf_token"
         ],
         "title": "CurrentSession",
@@ -3216,6 +3235,59 @@
           "redirect_path"
         ],
         "title": "SessionCreated",
+        "type": "object"
+      },
+      "SessionEventAccess": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "enum": [
+                "event_admin",
+                "evaluator",
+                "speaker"
+              ],
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_id",
+          "roles"
+        ],
+        "title": "SessionEventAccess",
+        "type": "object"
+      },
+      "SessionOrganizationAccess": {
+        "properties": {
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "const": "organization_admin",
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "organization_id",
+          "roles"
+        ],
+        "title": "SessionOrganizationAccess",
         "type": "object"
       },
       "SessionView": {

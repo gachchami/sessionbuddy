@@ -181,8 +181,20 @@
     byId("event-form-heading").textContent = "Create an event";
     byId("save-event").textContent = "Create event";
     byId("event-status-label").hidden = true;
-    byId("cancel-event-edit").hidden = true;
+    const advanced = form.querySelector(".advanced-settings");
+    if (advanced) advanced.open = false;
     updateDateTimePreview();
+  }
+
+  function openEventDialog() {
+    const dialog = byId("event-dialog");
+    if (!dialog.open) dialog.showModal();
+  }
+
+  function closeEventDialog() {
+    const dialog = byId("event-dialog");
+    if (dialog.open) dialog.close();
+    resetEventForm();
   }
 
   function editEvent(event) {
@@ -208,45 +220,47 @@
     byId("event-form-heading").textContent = `Edit ${event.name}`;
     byId("save-event").textContent = "Update event";
     byId("event-status-label").hidden = false;
-    byId("cancel-event-edit").hidden = false;
     updateDateTimePreview();
-    form.scrollIntoView({ behavior: "smooth", block: "start" });
+    openEventDialog();
     form.elements.name.focus();
   }
 
   function eventItem(event) {
-    const item = document.createElement("li");
-    const heading = document.createElement("strong");
-    heading.textContent = event.name;
-    const details = document.createElement("span");
+    const item = document.createElement("article");
+    item.className = "entity-card";
+    const top = document.createElement("div");
+    top.className = "entity-card__top";
+    const kind = document.createElement("span");
+    kind.className = "eyebrow";
+    kind.textContent = "Event";
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = event.status;
+    top.append(kind, badge);
+    const heading = document.createElement("h3");
+    const overview = document.createElement("a");
+    overview.textContent = event.name;
+    overview.href = `/admin/events/${encodeURIComponent(event.id)}`;
+    heading.append(overview);
+    const details = document.createElement("p");
+    details.className = "result";
     const timeZone = normalizeTimeZone(event.time_zone);
-    details.textContent = ` · ${event.status} · ${formatEventDateTime(event.starts_at_ms, timeZone)} · ${timeZone}`;
-    item.append(
-      heading,
-      details,
-      " ",
-      link("Programs", `/admin/programs?event_id=${encodeURIComponent(event.id)}`),
-      " ",
-      link("People", `/admin/events/${encodeURIComponent(event.id)}/access`),
-      " ",
-      link("Onboarding", `/admin/events/${encodeURIComponent(event.id)}/onboarding`),
-      " ",
-      link("Workspace", `/admin/events/${encodeURIComponent(event.id)}/workspace`),
-      " ",
-      link("Agenda", `/admin/events/${encodeURIComponent(event.id)}/agenda`),
-      " ",
-      link("Public schedule", `/events/${encodeURIComponent(event.id)}/schedule`),
-      " ",
-      link("Speakers", `/events/${encodeURIComponent(event.id)}/speakers`),
-      " ",
+    details.textContent = `${formatEventDateTime(event.starts_at_ms, timeZone)} · ${timeZone}`;
+    const actions = document.createElement("div");
+    actions.className = "actions entity-card__action";
+    actions.append(
+      link("Open", `/admin/events/${encodeURIComponent(event.id)}`),
       button("Edit", () => editEvent(event))
     );
+    item.append(top, heading, details, actions);
     return item;
   }
 
   function showOrganization() {
     const organization = state.organizations.get(state.organizationId);
     const form = byId("organization-form");
+    byId("organization-title").textContent = organization?.name || "Organization";
+    form.elements.organization_id.value = organization?.id || "";
     form.elements.name.value = organization?.name || "";
     form.elements.version.value = organization ? String(organization.version) : "";
   }
@@ -260,9 +274,11 @@
     const list = byId("event-list");
     list.replaceChildren();
     for (const event of result.data) list.append(eventItem(event));
+    byId("event-count").textContent = String(result.data.length);
     if (!result.data.length) {
-      const empty = document.createElement("li");
-      empty.textContent = "No events yet. Use the clearly labeled form above to create the first one.";
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No events yet. Create the first workspace when you are ready.";
       list.append(empty);
     }
   }
@@ -276,12 +292,35 @@
     select.replaceChildren();
     for (const organization of result.data) select.add(new Option(organization.name, organization.id));
     if (!result.data.length) throw new Error("This account does not administer an organization.");
-    if (session.organization_id && state.organizations.has(session.organization_id)) {
-      select.value = session.organization_id;
-    }
+    const requestedOrganization = new URLSearchParams(location.search).get("organization_id");
+    if (requestedOrganization && state.organizations.has(requestedOrganization)) select.value = requestedOrganization;
+    else if (session.organization_id && state.organizations.has(session.organization_id)) select.value = session.organization_id;
+    byId("organization-picker").hidden = result.data.length === 1;
     await loadEvents(select.value);
     setStatus("Events are up to date.");
+    if (location.hash === "#event-form") {
+      resetEventForm();
+      openEventDialog();
+    }
   }
+
+  byId("new-event").addEventListener("click", () => {
+    resetEventForm();
+    openEventDialog();
+    byId("event-form").elements.name.focus();
+  });
+
+  byId("edit-organization").addEventListener("click", () => {
+    showOrganization();
+    byId("organization-dialog").showModal();
+    byId("organization-form").elements.name.focus();
+  });
+
+  const closeOrganizationDialog = () => {
+    if (byId("organization-dialog").open) byId("organization-dialog").close();
+  };
+  byId("close-organization").addEventListener("click", closeOrganizationDialog);
+  byId("cancel-organization").addEventListener("click", closeOrganizationDialog);
 
   byId("organization").addEventListener("change", (event) => {
     loadEvents(event.currentTarget.value)
@@ -304,6 +343,7 @@
       state.organizations.set(organization.id, organization);
       byId("organization").selectedOptions[0].textContent = organization.name;
       showOrganization();
+      closeOrganizationDialog();
       setStatus("Organization updated.");
     } catch (error) {
       setStatus(error.status === 409 ? "The organization changed elsewhere. Reload and try again." : error.message, true);
@@ -364,6 +404,7 @@
       );
       setStatus(eventId ? "Event updated." : "Event created.");
       await loadEvents(state.organizationId);
+      closeEventDialog();
     } catch (error) {
       if (!timeZoneIsValid(normalizeTimeZone(values.time_zone))) {
         form.elements.time_zone.setCustomValidity(error.message);
@@ -375,7 +416,12 @@
     }
   });
 
-  byId("cancel-event-edit").addEventListener("click", resetEventForm);
+  byId("cancel-event-edit").addEventListener("click", closeEventDialog);
+  byId("close-event-dialog").addEventListener("click", closeEventDialog);
+  byId("event-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeEventDialog();
+  });
 
   populateTimeZones();
   initialize().catch((error) => {

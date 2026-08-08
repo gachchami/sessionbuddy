@@ -7,6 +7,7 @@ export default defineConfig({
   testDir: "./e2e",
   outputDir: ".local/test-results",
   fullyParallel: true,
+  workers: process.env.CI ? 1 : undefined,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: [["list"], ["html", { outputFolder: ".local/playwright-report", open: "never" }]],
@@ -21,4 +22,3 @@ export default defineConfig({
     { name: "mobile-chrome", use: { ...devices["Pixel 7"] } },
   ],
 });
-

@@ -10,20 +10,20 @@ equate development activation with approval for production promotion.
 | --- | --- | --- |
 | Production identity | Guarded, enumeration-resistant passwordless challenges; hash-only single-use tokens; opaque signed sessions; live D1 memberships; CSRF/origin enforcement; new- and existing-user invitation acceptance. `tests/security/test_production_identity_flow.py` exercises the production-mode HTTP journey. | Implemented and locally verified; the live provider accepted both administrator sign-in and an existing-user speaker invitation. |
 | Initial bootstrap | `scripts/bootstrap_cloudflare.py` creates and removes its temporary secret without exposing it. Bootstrap is one-organization-only and accepts an organization/admin with no event. Live bootstrap created one organization without manufacturing an event; the administrator later created the rehearsal event and `BOOTSTRAP_TOKEN` remains absent. | Complete. |
-| Deployable frontend | Product HTML/JS/CSS is same-origin and dependency-free; the evaluator workspace is React/TypeScript compiled by Vite and embedded into the Worker. TypeScript, Vite, asset-sync, Workerd routes, Lighthouse, and 28 authenticated/public desktop/mobile browser checks pass. | Complete. |
+| Deployable frontend | Product HTML/JS/CSS is same-origin and dependency-free; the evaluator workspace is React/TypeScript compiled by Vite and embedded into the Worker. TypeScript, Vite, asset-sync, Workerd routes, Lighthouse, and 44 authenticated/public desktop/mobile browser checks pass. | Complete. |
 | Organization, event, and member administration | Organization rename, zero-event list/create state, event edit/archive, event navigation, role invitations, revocation, and member-role revocation have API and browser surfaces. The production identity flow creates the first event after an empty bootstrap, and the browser suite explicitly verifies the empty state. The live rehearsal created and edited `SessionBuddy Development Rehearsal`, round-tripped the organization name, revoked an evaluator invitation, accepted a speaker invitation, and confirmed that the sole administrator cannot revoke their own roles. Non-self member-role revocation remains covered by the local release suite. | Complete. |
 | Speaker registration, invitation, and ownership | Published-form provisioning and admin invitation provisioning both require verified email. Tenant-owned person/event-speaker/submission records drive the portal; browser-supplied email never grants ownership. Regression coverage includes a new speaker and an existing user accepting an additional speaker role. | Implemented and live verified: the accepted speaker saw only the owned rehearsal proposal and assets. |
 | Dynamic forms and drafts | Admins publish program-scoped versioned schemas with ordered fields and conditional visibility; server validation excludes hidden required fields. Verified speakers save optimistic-version drafts, resume them, submit idempotently, clear the draft, and see only owned submissions. | Implemented and live verified with a restored conditional Workshop draft, one owned submission, and zero remaining draft rows. |
 | Deployment configuration | Pinned Docker, Node, Wrangler, uv, Python, compatibility date, D1/R2/Queue/Workflow/rate-limit bindings, secrets boundary, CORS file, migration commands, bootstrap, deploy, dry-run, and preflight commands are checked in and documented. | Complete for development. |
-| Provider activation and Cloudflare rehearsal | Development D1/R2, strict R2 CORS, Queues/DLQs, consumers, Workflow, rate limits, HMAC secrets, Resend, and R2 upload credentials are active. Strict preflight reports 23 passed, 0 pending, 0 failed. Worker version `82c8daf7-9cc5-4c17-8324-0cabde887a25` has 100% traffic. Resend accepted real queued messages. The authenticated run completed empty-event administration, invitation acceptance/revocation, a conditional draft/submission, speaker ownership, and a direct R2 upload promoted clean under the explicit development scan bypass. | Complete for the isolated development environment. |
+| Provider activation and Cloudflare rehearsal | Development D1/R2, strict R2 CORS, Queues/DLQs, consumers, Workflow, rate limits, HMAC secrets, Resend, and R2 upload credentials are active. Strict preflight reports 23 passed, 0 pending, 0 failed. Worker version `1da489e6-ce3e-45a3-b546-3f01f013e2e7` has 100% traffic. Resend accepted real queued messages. The authenticated run completed empty-event administration, invitation acceptance/revocation, a conditional draft/submission, speaker ownership, and a direct R2 upload promoted clean under the explicit development scan bypass. | Complete for the isolated development environment. |
 | Production hardening decisions/defaults | Passwordless identity, D1 authority, upload limits, scan policy, evaluation aggregate, agenda conflicts, retention safety, provisional capacity, fail-closed configuration, and provider/client promotion inputs are recorded in `platform-decisions.md` and `requirements.md`. Development scan bypass is explicit and audited; staging/production reject it. The R2-to-scanner boundary uses a fixed-length stream instead of buffering uploads in Worker memory, and the isolated scanner recomputes the claimed digest. | Application defaults complete; client/provider production-promotion inputs remain intentionally external. |
 
 ## Current verification evidence
 
-- Full Python suite: 286 passed.
+- Full Python suite: 293 passed.
 - Ruff: all checks passed.
 - TypeScript check and Vite production build: passed.
-- Browser/Axe: 28 passed across desktop Chrome and Pixel 7 profiles, including
+- Browser/Axe: 44 passed across desktop Chrome and Pixel 7 profiles, including
   authenticated admin, access, evaluator, speaker, onboarding, and agenda pages.
 - Large database release smoke: 10,000 submissions, 2,000 speakers, 50,000
   tasks, and 2,000 agenda items; integrity, foreign keys, schema hash, row counts,
@@ -47,10 +47,11 @@ equate development activation with approval for production promotion.
 
 ## Development rehearsal outcome
 
-The authenticated rehearsal is complete. It exposed and resolved three live-only
+The authenticated rehearsal is complete. It exposed and resolved five live-only
 integration defects: an asynchronous invitation-form reset, conditional draft
 state not being recomputed after restore plus an invalid dynamic submission
-payload, and CSP blocking the account-scoped R2 connection. Each repair has
+payload, CSP blocking the account-scoped R2 connection, a misleading empty state
+before schedule publication, and nullable legacy branding in the public CFP. Each repair has
 automated regression coverage. The development event remains active as a reusable
 rehearsal fixture. Two authorization attempts made before the CSP repair remain
 non-current `pending_upload` versions; no failed version is clean or exposed by

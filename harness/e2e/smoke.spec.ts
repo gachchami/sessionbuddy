@@ -127,6 +127,12 @@ test.describe("administration empty states", () => {
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: null,
           csrf_token: "browser-test-csrf",
+          email: "admin@example.com",
+          organization_access: [{
+            organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            roles: ["organization_admin"],
+          }],
+          event_access: [],
         }),
       });
     });
@@ -162,15 +168,16 @@ test.describe("administration empty states", () => {
     const response = await page.goto("/admin/events");
     expect(response?.ok()).toBeTruthy();
     await expect(page.getByText(/No events yet\./)).toBeVisible();
+    await page.getByRole("button", { name: "Create event" }).click();
     await expect(page.getByRole("heading", { name: "Create an event" })).toBeVisible();
+    const eventDialog = page.getByRole("dialog", { name: "Create an event" });
     await expect(page.getByRole("textbox", { name: "Event name" })).toHaveValue("");
     await expect(page.getByRole("textbox", { name: "Event name" })).toHaveAttribute(
       "placeholder",
-      "e.g. Community Tech Summit 2026",
+      "Community Tech Summit 2026",
     );
     await expect(page.getByRole("combobox", { name: "Attendance format" })).toHaveValue("");
-    await expect(page.getByText("Choose one explicitly; SessionBuddy will not assume a format.")).toBeVisible();
-    const timeZone = page.getByLabel("Event time zone");
+    const timeZone = page.getByLabel("Time zone");
     await expect(timeZone).not.toHaveValue("");
     await expect(page.getByLabel("Start date")).toHaveValue("");
     await expect(page.getByLabel("Start time")).toHaveValue("09:00");
@@ -180,11 +187,11 @@ test.describe("administration empty states", () => {
     await page.getByLabel("Start date").dispatchEvent("change");
     await expect(page.getByLabel("End date")).toHaveValue("2026-09-12");
     await expect(page.getByRole("status").filter({ hasText: /2026|Sep/ })).toContainText(await timeZone.inputValue());
-    await expect(page.getByRole("button", { name: "Create event" })).toBeEnabled();
+    await expect(eventDialog.getByRole("button", { name: "Create event" })).toBeEnabled();
     await timeZone.fill("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
-    await page.getByRole("button", { name: "Create event" }).click();
+    await eventDialog.getByRole("button", { name: "Create event" }).click();
     await expect(page.getByRole("status").first()).toHaveText("Event created.");
     expect(createdEvent).toMatchObject({
       name: "Timezone Rehearsal",
@@ -210,6 +217,16 @@ test.describe("administration empty states", () => {
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: eventId,
           csrf_token: "browser-test-csrf",
+          email: "admin@example.com",
+          organization_access: [{
+            organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            roles: ["organization_admin"],
+          }],
+          event_access: [{
+            organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            event_id: eventId,
+            roles: ["event_admin"],
+          }],
         }),
       });
     });

@@ -4,62 +4,97 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=7">
-  <script src="/admin/events/assets/events.js?v=5" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=9">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
+  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <script src="/admin/events/assets/events.js?v=7" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to event management</a>
-  <header class="app-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a><nav class="app-nav" aria-label="Organizer navigation"><a aria-current="page" href="/admin/events">Events</a><a href="/admin/programs">Programs</a><a href="/reviews">Reviews</a></nav></div></header>
+  <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading"><div><p class="eyebrow">Organization administration</p><h1>Events</h1><p class="lede">Create an event, then move through access, program, onboarding, and publishing from one place.</p></div></div>
-    <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Checking your session…</div>
+    <div class="page-heading page-heading--compact">
+      <div>
+        <p class="eyebrow">Event workspaces</p>
+        <h1>Events</h1>
+        <p class="lede">Open an event to manage its program, people, speakers, and schedule.</p>
+      </div>
+      <button id="new-event" type="button">Create event</button>
+    </div>
 
-    <section class="card">
-      <h2>Organization</h2>
-      <form id="organization-form">
-        <label>Organization<select name="organization_id" id="organization" required></select></label>
-        <label>Organization name<input name="name" maxlength="200" required></label>
-        <input name="version" type="hidden">
-        <button>Update organization</button>
-      </form>
+    <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1">Loading events…</div>
+
+    <section class="context-bar" aria-labelledby="organization-title">
+      <div class="context-bar__identity">
+        <span class="context-bar__icon" aria-hidden="true">O</span>
+        <div><span>Organization</span><strong id="organization-title">Loading…</strong></div>
+      </div>
+      <label id="organization-picker" class="compact-field">Switch organization<select name="organization_id" id="organization" required></select></label>
+      <button id="edit-organization" type="button" class="button secondary compact-button">Organization settings</button>
     </section>
 
-    <section class="card">
-      <h2 id="event-form-heading">Create an event</h2>
-      <p id="event-form-help" class="result">Add the event your team will manage. Example text is guidance only; nothing is saved until you select <strong>Create event</strong>.</p>
+    <section class="directory-section directory-section--primary" aria-labelledby="event-list-title">
+      <div class="section-heading">
+        <div><h2 id="event-list-title">Your events</h2><p class="section-summary">Select a workspace to continue where your team left off.</p></div>
+        <span id="event-count" class="badge">—</span>
+      </div>
+      <div id="event-list" class="entity-grid event-grid"><p class="empty">Loading your events…</p></div>
+    </section>
+
+    <dialog id="organization-dialog" class="form-dialog" aria-labelledby="organization-dialog-title">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Organization</p><h2 id="organization-dialog-title">Organization settings</h2><p class="result">This name appears across every event in this workspace.</p></div>
+        <button id="close-organization" type="button" class="icon-button" aria-label="Close organization settings">×</button>
+      </div>
+      <form id="organization-form">
+        <input name="organization_id" type="hidden">
+        <label>Organization name<input name="name" maxlength="200" required></label>
+        <input name="version" type="hidden">
+        <div class="dialog-actions"><button type="button" id="cancel-organization" class="secondary">Cancel</button><button>Save changes</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="event-dialog" class="form-dialog form-dialog--wide" aria-labelledby="event-form-heading">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">Event workspace</p><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Add the essentials now. Brand settings can be completed later.</p></div>
+        <button id="close-event-dialog" type="button" class="icon-button" aria-label="Close event form">×</button>
+      </div>
       <form id="event-form">
         <input name="event_id" type="hidden">
         <input name="version" type="hidden">
-        <label>Event name<input name="name" placeholder="e.g. Community Tech Summit 2026" maxlength="200" aria-describedby="event-name-help" required><small id="event-name-help" class="result">The public name shown on CFP and schedule pages.</small></label>
-        <label>Event time zone<input name="time_zone" list="time-zone-options" placeholder="e.g. Asia/Kolkata" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help" class="result"><span id="detected-time-zone">Detecting your time zone…</span> All dates and times below use this zone.</small></label>
+        <label>Event name<input name="name" placeholder="Community Tech Summit 2026" maxlength="200" aria-describedby="event-name-help" required><small id="event-name-help">The name shown to speakers, reviewers, and attendees.</small></label>
+        <div class="form-grid">
+          <label>Time zone<input name="time_zone" list="time-zone-options" placeholder="Asia/Kolkata" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help"><span id="detected-time-zone">Detecting your time zone…</span></small></label>
+          <label>Attendance format<select name="delivery_mode" required><option value="" selected disabled>Select a format</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select></label>
+        </div>
         <datalist id="time-zone-options"></datalist>
         <fieldset aria-describedby="date-time-help date-time-preview">
-          <legend>Event dates and times</legend>
-          <div class="form-grid">
+          <legend>Dates and times</legend>
+          <div class="form-grid form-grid--four">
             <label>Start date<input name="start_date" type="date" required></label>
             <label>Start time<input name="start_time" type="time" value="09:00" step="900" required></label>
             <label>End date<input name="end_date" type="date" required></label>
             <label>End time<input name="end_time" type="time" value="17:00" step="900" required></label>
           </div>
-          <p id="date-time-help" class="result">Choose the calendar dates for the event. When you select a start date, the end date initially follows it.</p>
-          <p id="date-time-preview" class="result" role="status" aria-live="polite">Choose a start and end date to preview the event.</p>
+          <p id="date-time-help" class="sr-only">All dates and times use the selected event time zone.</p>
+          <p id="date-time-preview" class="date-preview" role="status" aria-live="polite">Choose a start and end date.</p>
         </fieldset>
-        <label>Attendance format<select name="delivery_mode" aria-describedby="delivery-mode-help" required><option value="" selected disabled>Select how people will attend</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select><small id="delivery-mode-help" class="result">Choose one explicitly; SessionBuddy will not assume a format.</small></label>
-        <label>Location <span class="result">(optional)</span><input name="location" placeholder="Venue, city, or meeting URL" maxlength="500"></label>
-        <label>Description <span class="result">(optional)</span><textarea name="description" placeholder="What should speakers and reviewers know about this event?" maxlength="5000"></textarea></label>
-        <fieldset><legend>Public brand</legend><div class="form-grid"><label>Accent color<input name="accent_color" type="color" value="#3159d9"></label><label>Event website <span class="optional">Optional</span><input name="website_url" type="url" placeholder="https://…"></label></div><label>Logo URL <span class="optional">Optional</span><input name="logo_url" type="url" placeholder="https://…"><small>Use a public HTTPS image URL for the gallery and schedule.</small></label></fieldset>
+        <label>Location <span class="optional">Optional</span><input name="location" placeholder="Venue, city, or meeting URL" maxlength="500"></label>
+        <label>Description <span class="optional">Optional</span><textarea name="description" rows="4" placeholder="What should speakers and reviewers know about this event?" maxlength="5000"></textarea></label>
+        <details class="advanced-settings">
+          <summary>Brand and public website</summary>
+          <div class="advanced-settings__content">
+            <div class="form-grid"><label>Accent color<input name="accent_color" type="color" value="#3159d9"></label><label>Event website <span class="optional">Optional</span><input name="website_url" type="url" placeholder="https://…"></label></div>
+            <label>Logo URL <span class="optional">Optional</span><input name="logo_url" type="url" placeholder="https://…"><small>Use a public HTTPS image URL.</small></label>
+          </div>
+        </details>
         <label id="event-status-label" hidden>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
-        <div class="actions">
+        <div class="dialog-actions">
+          <button id="cancel-event-edit" type="button" class="secondary">Cancel</button>
           <button id="save-event">Create event</button>
-          <button id="cancel-event-edit" type="button" class="secondary" hidden>Cancel edit</button>
         </div>
       </form>
-    </section>
-
-    <section class="card">
-      <h2>Existing events</h2>
-      <ul id="event-list" class="result"><li>Loading your events…</li></ul>
-    </section>
+    </dialog>
   </main>
 </body>
 </html>

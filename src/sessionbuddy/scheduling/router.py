@@ -801,7 +801,18 @@ async def get_public_schedule(event_id: str, request: Request) -> dict[str, obje
         raise HTTPException(status_code=404)
     revision = await _revision(db, str(event["organization_id"]), event_id, "published")
     if revision is None:
-        raise HTTPException(status_code=404)
+        return {
+            "event": {
+                "id": event["id"],
+                "name": event["name"],
+                "time_zone": event["time_zone"],
+                "accent_color": event["accent_color"],
+                "logo_url": event["logo_url"],
+                "website_url": event["website_url"],
+            },
+            "revision": None,
+            "items": [],
+        }
     items = result_rows(
         await db.prepare(
             """SELECT ai.id,s.proposal_title AS title,s.proposal_abstract AS description,

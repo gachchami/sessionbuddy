@@ -4,26 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Call for speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=7">
-  <script src="/product/assets/admin-programs.js?v=7" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=9">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
+  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <script src="/product/assets/admin-programs.js?v=8" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to program setup</a>
-  <header class="app-header">
-    <div class="shell app-header__inner">
-      <a class="brand" href="/admin/events"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
-      <nav class="app-nav" aria-label="Organizer navigation">
-        <a href="/admin/events">Events</a><a href="/admin/programs" aria-current="page">Call for speakers</a><a href="/reviews">Reviews</a><a href="/engine-room">Operations</a>
-      </nav>
-    </div>
-  </header>
+  <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
       <div><p class="eyebrow">Program management</p><h1>Open your call for speakers</h1><p class="lede">Create a program, shape the proposal experience, and control when and where submissions arrive.</p></div>
       <a id="manage-access" class="button secondary" href="/admin/programs" hidden>People & access</a>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
-    <div class="actions"><button id="sign-in">Sign in</button><button id="logout" class="secondary" disabled>Log out</button></div>
     <div class="grid">
       <section class="card" aria-labelledby="create-title">
         <p class="eyebrow">Step 1</p><h2 id="create-title">Create program</h2>

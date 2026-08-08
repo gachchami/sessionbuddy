@@ -6,20 +6,13 @@
   <meta name="color-scheme" content="light">
   <title>Speaker onboarding · SessionBuddy</title>
   <link rel="stylesheet" href="/admin/onboarding/assets/onboarding.css?v=1">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
+  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
   <script src="/admin/onboarding/assets/onboarding.js?v=1" defer></script>
 </head>
-<body>
+<body class="app-body">
   <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header">
-    <div class="shell header-layout">
-      <a class="brand" href="/admin/programs">SessionBuddy</a>
-      <nav aria-label="Administration">
-        <a href="/admin/programs">Programs</a>
-        <a id="onboarding-link" href="#" aria-current="page">Onboarding</a>
-        <a href="/reviews">Evaluations</a>
-      </nav>
-    </div>
-  </header>
+  <header data-auth-shell></header>
   <main id="main" class="shell" tabindex="-1">
     <section class="hero" aria-labelledby="page-title">
       <div><p class="eyebrow">Event operations</p><h1 id="page-title">Speaker onboarding</h1><p id="event-name">See who is blocked and what they still owe.</p></div>

@@ -40,6 +40,78 @@ async def sign_in_javascript() -> Response:
     return Response(_asset("sign_in.js"), media_type="text/javascript")
 
 
+@access_router.get("/app-shell/assets/app-shell.css", include_in_schema=False)
+async def app_shell_stylesheet() -> Response:
+    return Response(_asset("app_shell.css"), media_type="text/css")
+
+
+@access_router.get("/app-shell/assets/app-shell.js", include_in_schema=False)
+async def app_shell_javascript() -> Response:
+    return Response(_asset("app_shell.js"), media_type="text/javascript")
+
+
+@access_router.get("/admin", include_in_schema=False)
+async def admin_home_page() -> Response:
+    return Response(
+        _asset("admin_home.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get("/admin/home/assets/home.js", include_in_schema=False)
+async def admin_home_javascript() -> Response:
+    return Response(_asset("admin_home.js"), media_type="text/javascript")
+
+
+@access_router.get("/admin/events/{event_id}", include_in_schema=False)
+async def event_overview_page(event_id: str) -> Response:
+    return Response(
+        _asset("event_overview.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get("/admin/event-overview/assets/event-overview.js", include_in_schema=False)
+async def event_overview_javascript() -> Response:
+    return Response(_asset("event_overview.js"), media_type="text/javascript")
+
+
+@access_router.get("/admin/speakers", include_in_schema=False)
+@access_router.get("/admin/events/{event_id}/speakers", include_in_schema=False)
+@access_router.get(
+    "/admin/events/{event_id}/speakers/{event_speaker_id}", include_in_schema=False
+)
+async def speaker_directory_page(
+    event_id: str | None = None, event_speaker_id: str | None = None
+) -> Response:
+    return Response(
+        _asset("speaker_directory.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get("/admin/speakers/assets/speakers.js", include_in_schema=False)
+async def speaker_directory_javascript() -> Response:
+    return Response(_asset("speaker_directory.js"), media_type="text/javascript")
+
+
+@access_router.get("/account", include_in_schema=False)
+async def account_page() -> Response:
+    return Response(
+        _asset("account.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get("/account/assets/account.js", include_in_schema=False)
+async def account_javascript() -> Response:
+    return Response(_asset("account.js"), media_type="text/javascript")
+
+
 @access_router.get("/admin/events/{event_id}/access", include_in_schema=False)
 async def event_access_page(event_id: str) -> Response:
     return Response(
@@ -199,12 +271,26 @@ class SessionCreated(BaseModel):
     redirect_path: str
 
 
+class SessionOrganizationAccess(BaseModel):
+    organization_id: str
+    roles: list[Literal["organization_admin"]]
+
+
+class SessionEventAccess(BaseModel):
+    organization_id: str
+    event_id: str
+    roles: list[Literal["event_admin", "evaluator", "speaker"]]
+
+
 class CurrentSession(BaseModel):
     authenticated: bool = True
     user_id: str
+    email: str
     csrf_token: str
     organization_id: str | None = None
     event_id: str | None = None
+    organization_access: list[SessionOrganizationAccess] = Field(default_factory=list)
+    event_access: list[SessionEventAccess] = Field(default_factory=list)
 
 
 def _valid_redirect(value: str) -> bool:
@@ -322,9 +408,17 @@ async def list_organizations(request: Request) -> OrganizationList:
     authenticated = await authenticate_request(request)
     db = database(request)
     organizations: list[OrganizationView] = []
-    for organization_id, roles in authenticated.actor.organization_roles.items():
-        if Role.ORGANIZATION_ADMIN not in roles:
-            continue
+    organization_ids = {
+        organization_id
+        for organization_id, roles in authenticated.actor.organization_roles.items()
+        if Role.ORGANIZATION_ADMIN in roles
+    }
+    organization_ids.update(
+        organization_id
+        for (organization_id, _event_id), roles in authenticated.actor.event_roles.items()
+        if Role.EVENT_ADMIN in roles
+    )
+    for organization_id in organization_ids:
         row = row_mapping(
             await db.prepare("SELECT id,name,status,version FROM organizations WHERE id=?1 LIMIT 1")
             .bind(organization_id)
@@ -643,7 +737,7 @@ async def create_invitation(
         destination = {
             "speaker": "/speaker",
             "evaluator": "/reviews",
-            "event_admin": "/admin/programs",
+            "event_admin": "/admin",
         }[body.role]
         sign_in_link = f"{base}/sign-in?redirect={destination}"
         await (
@@ -1182,13 +1276,41 @@ async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> 
 @access_router.get("/api/v1/auth/session", response_model=CurrentSession, tags=["authentication"])
 async def current_session(request: Request) -> CurrentSession:
     authenticated = await authenticate_request(request)
+    user = row_mapping(
+        await database(request)
+        .prepare("SELECT email FROM users WHERE id=?1 LIMIT 1")
+        .bind(authenticated.actor.user_id)
+        .first()
+    )
+    if user is None:
+        raise HTTPException(status_code=401)
     organization_id = next(iter(authenticated.actor.organization_roles), None)
     event_scope = next(iter(authenticated.actor.event_roles), None)
     if organization_id is None and event_scope is not None:
         organization_id = event_scope[0]
+    organization_access = [
+        SessionOrganizationAccess(
+            organization_id=scope_organization_id,
+            roles=[role.value for role in sorted(roles, key=lambda item: item.value)],
+        )
+        for scope_organization_id, roles in sorted(authenticated.actor.organization_roles.items())
+    ]
+    event_access = [
+        SessionEventAccess(
+            organization_id=scope_organization_id,
+            event_id=scope_event_id,
+            roles=[role.value for role in sorted(roles, key=lambda item: item.value)],
+        )
+        for (scope_organization_id, scope_event_id), roles in sorted(
+            authenticated.actor.event_roles.items()
+        )
+    ]
     return CurrentSession(
         user_id=authenticated.actor.user_id,
+        email=str(user["email"]),
         csrf_token=issue_csrf_token(authenticated.session_id, secret(request, "CSRF_HMAC_KEY")),
         organization_id=organization_id,
         event_id=event_scope[1] if event_scope is not None else None,
+        organization_access=organization_access,
+        event_access=event_access,
     )

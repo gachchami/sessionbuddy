@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Account · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=9">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
+  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
+  <script src="/account/assets/account.js?v=1" defer></script>
+</head>
+<body class="app-body">
+  <a class="skip-link" href="#main">Skip to account</a>
+  <header data-auth-shell></header>
+  <main id="main" class="shell page account-page" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">Your profile</p><h1>Account & access</h1><p class="lede">See the email you use to sign in and every workspace role connected to it.</p></div></div>
+    <div id="status" class="status" role="status" aria-live="polite">Loading your account…</div>
+    <section class="card">
+      <p class="eyebrow">Sign-in identity</p><h2 id="account-email">—</h2>
+      <p class="result">SessionBuddy uses this verified email for passwordless sign-in. Email changes require a newly verified sign-in address.</p>
+    </section>
+    <section class="directory-section" aria-labelledby="access-title">
+      <div class="section-heading"><h2 id="access-title">Workspace access</h2><span id="access-count" class="badge">—</span></div>
+      <div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div>
+    </section>
+  </main>
+</body>
+</html>

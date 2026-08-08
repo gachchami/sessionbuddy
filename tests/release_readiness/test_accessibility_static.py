@@ -11,6 +11,10 @@ CORE_HTML = [
     "admin_onboarding.html",
     "agenda_admin.html",
     "schedule.html",
+    "admin_home.html",
+    "event_overview.html",
+    "speaker_directory.html",
+    "account.html",
 ]
 
 
@@ -83,7 +87,7 @@ def test_landing_page_has_semantic_navigation_and_role_entry_points() -> None:
     )
     assert 'class="skip-link" href="#main"' in text
     assert text.count("<h1") == 1
-    for path in ("/admin/events", "/reviews", "/speaker", "/engine-room"):
+    for path in ("/admin", "/reviews", "/speaker", "/engine-room"):
         assert f'href="{path}"' in text
     assert 'tabindex="1"' not in text and 'tabindex="2"' not in text
 
@@ -102,20 +106,52 @@ def test_expired_link_recovery_page_has_accessible_actions() -> None:
 def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     text = (STATIC / "events_admin.html").read_text()
     javascript = (STATIC / "events_admin.js").read_text()
-    assert 'placeholder="e.g. Community Tech Summit 2026"' in text
+    assert 'id="new-event"' in text
+    assert 'id="event-dialog"' in text
+    assert 'placeholder="Community Tech Summit 2026"' in text
     assert 'value="Asia/Kolkata"' not in text
-    assert '<option value="" selected disabled>Select how people will attend</option>' in text
+    assert '<option value="" selected disabled>Select a format</option>' in text
     assert 'aria-describedby="time-zone-help"' in text
-    assert '<legend>Event dates and times</legend>' in text
+    assert '<legend>Dates and times</legend>' in text
     assert 'name="start_date" type="date"' in text
     assert 'name="start_time" type="time" value="09:00"' in text
     assert 'name="end_date" type="date"' in text
     assert 'name="end_time" type="time" value="17:00"' in text
     assert 'id="date-time-preview"' in text
-    assert 'aria-describedby="delivery-mode-help"' in text
+    assert "showModal()" in javascript
     assert 'form.elements.delivery_mode.value = ""' in javascript
     assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
     assert "zonedDateTimeToMillis" in javascript
+
+
+def test_authenticated_pages_share_navigation_and_account_menu() -> None:
+    pages = (
+        "admin_home.html",
+        "events_admin.html",
+        "admin_programs.html",
+        "access_admin.html",
+        "admin_submissions.html",
+        "admin_onboarding.html",
+        "event_workspace.html",
+        "agenda_admin.html",
+        "speaker_directory.html",
+        "event_overview.html",
+        "account.html",
+    )
+    for name in pages:
+        text = (STATIC / name).read_text()
+        assert "data-auth-shell" in text
+        assert "/app-shell/assets/app-shell.css" in text
+        assert "/app-shell/assets/app-shell.js" in text
+    programs = (STATIC / "admin_programs.html").read_text()
+    assert 'id="sign-in"' not in programs
+    assert 'id="logout"' not in programs
+    shell = (STATIC / "app_shell.js").read_text()
+    assert '"Organizations"' in shell
+    assert '"Events"' in shell
+    assert '"Speakers"' in shell
+    assert '"Account & access"' in shell
+    assert '"Sign out"' in shell
 
 
 def test_evaluation_shell_and_runtime_admin_table_have_keyboard_repairs() -> None:

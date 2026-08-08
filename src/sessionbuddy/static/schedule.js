@@ -45,8 +45,12 @@
     const body = await response.json(); if (!response.ok) throw new Error(body?.error?.message || "Schedule unavailable");
     state.model = body; document.body.classList.toggle("embedded", embedded);
     byId("title").textContent = body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
-    byId("timezone").textContent = `Times shown in ${body.event.time_zone}. Published revision ${body.revision.version}.`;
-    byId("status").textContent = `${body.items.length} published session${body.items.length === 1 ? "" : "s"}.`;
+    byId("timezone").textContent = body.revision
+      ? `Times shown in ${body.event.time_zone}. Published revision ${body.revision.version}.`
+      : `Times will be shown in ${body.event.time_zone}.`;
+    byId("status").textContent = body.revision
+      ? `${body.items.length} published session${body.items.length === 1 ? "" : "s"}.`
+      : "The organizer has not published the schedule yet.";
     if (body.event.accent_color) document.documentElement.style.setProperty("--blue", body.event.accent_color);
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").hidden = false; }
     saveItinerary(); render();

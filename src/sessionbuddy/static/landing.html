@@ -6,6 +6,8 @@
   <meta name="description" content="SessionBuddy brings conference CFP, review, speaker readiness, and scheduling into one calm workspace.">
   <title>SessionBuddy · Conference programs, clearly run</title>
   <link rel="stylesheet" href="/landing/assets/landing.css?v=1">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=2">
+  <script src="/app-shell/assets/app-shell.js?v=2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -18,7 +20,7 @@
       <nav class="primary-nav" aria-label="Primary navigation">
         <a href="/speaker">Speaker portal</a>
         <a href="/engine-room">Platform status</a>
-        <a class="nav-action" href="/sign-in?redirect=%2Fadmin%2Fevents">Sign in</a>
+        <span data-landing-account><a class="nav-action" href="/sign-in?redirect=%2Fadmin">Sign in</a></span>
       </nav>
     </div>
   </header>
@@ -31,7 +33,7 @@
           <h1 id="hero-title">Turn a call for speakers into a schedule everyone can trust.</h1>
           <p class="hero-lede">SessionBuddy gives organizers, reviewers, and speakers one clear path from proposal to stage—without spreadsheet handoffs or status-chasing.</p>
           <div class="hero-actions">
-            <a class="button button-primary" href="/sign-in?redirect=%2Fadmin%2Fevents">Start organizing <span aria-hidden="true">→</span></a>
+            <a class="button button-primary" href="/sign-in?redirect=%2Fadmin">Start organizing <span aria-hidden="true">→</span></a>
             <a class="button button-secondary" href="/speaker">Continue as a speaker</a>
           </div>
           <ul class="proof-list" aria-label="Product assurances">
@@ -87,7 +89,7 @@
             <span class="role-label">For organizers</span>
             <h3>Keep the whole program moving.</h3>
             <p>Create events, publish forms, manage access, make decisions, and release the agenda from one workspace.</p>
-            <a href="/admin/events">Open organizer workspace <span aria-hidden="true">→</span></a>
+            <a href="/admin">Open organizer workspace <span aria-hidden="true">→</span></a>
           </article>
           <article class="role-card reviewer-card">
             <span class="role-label">For reviewers</span>
@@ -129,7 +131,7 @@
           <p class="eyebrow dark">Ready when your program is</p>
           <h2 id="closing-title">Give every session a clear route to the stage.</h2>
         </div>
-        <a class="button button-primary dark-button" href="/sign-in?redirect=%2Fadmin%2Fevents">Enter SessionBuddy <span aria-hidden="true">→</span></a>
+        <a class="button button-primary dark-button" href="/sign-in?redirect=%2Fadmin">Enter SessionBuddy <span aria-hidden="true">→</span></a>
       </div>
     </section>
   </main>

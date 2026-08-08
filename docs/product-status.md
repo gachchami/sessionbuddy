@@ -23,9 +23,11 @@ tenant scoping; and authenticated writes.
 
 ## Organization and event administration
 
-Implemented: organization rename, event create/edit/archive, event-scoped
-navigation, administrator/evaluator/speaker invitations, invitation revocation,
-membership listing and role revocation, and verified invitation acceptance.
+Implemented: organization rename, event create/edit/archive, an authenticated
+application shell with a profile/sign-out menu, organization and event hubs,
+clickable event overviews and speaker directories, event-scoped navigation,
+administrator/evaluator/speaker invitations, invitation revocation, membership
+listing and role revocation, and verified invitation acceptance.
 
 ## Evaluation
 

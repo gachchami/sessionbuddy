@@ -27,7 +27,7 @@ async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
     assert response.headers["content-type"].startswith("text/html")
     assert response.headers["cache-control"] == "no-store"
     assert "Turn a call for speakers into a schedule" in response.text
-    assert 'href="/admin/events"' in response.text
+    assert 'href="/admin"' in response.text
     assert 'href="/speaker"' in response.text
     assert 'href="/engine-room"' in response.text
 

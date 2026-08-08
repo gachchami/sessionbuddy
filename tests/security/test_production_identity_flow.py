@@ -207,6 +207,11 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert verified.status_code == 303
         assert verified.headers["location"] == "/admin/events"
         session = (await admin.get("/api/v1/auth/session")).json()
+        assert session["email"] == "admin@example.com"
+        assert session["organization_access"] == [
+            {"organization_id": organization_id, "roles": ["organization_admin"]}
+        ]
+        assert session["event_access"] == []
         csrf = session["csrf_token"]
         mutation_headers = {"origin": "https://test", "x-csrf-token": csrf}
 
@@ -230,6 +235,14 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert event.status_code == 201
         event_id = event.json()["id"]
+        refreshed_session = (await admin.get("/api/v1/auth/session")).json()
+        assert refreshed_session["event_access"] == [
+            {
+                "organization_id": organization_id,
+                "event_id": event_id,
+                "roles": ["event_admin"],
+            }
+        ]
         invitation = await admin.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=mutation_headers,
