@@ -4,6 +4,7 @@ CSRF_HMAC_KEY=replace-with-a-different-at-least-32-random-bytes
 RATE_LIMIT_HMAC_KEY=replace-with-a-third-at-least-32-random-bytes
 UPLOAD_HMAC_KEY=replace-with-an-upload-specific-at-least-32-random-bytes
 SCANNER_HMAC_KEY=replace-with-a-scanner-specific-at-least-32-random-bytes
+RESEND_API_KEY=replace-with-a-resend-api-key
 # Deployed direct-to-R2 uploads require a least-privilege object-write token.
 CLOUDFLARE_ACCOUNT_ID=replace-with-account-id
 R2_BUCKET_NAME=sessionbuddy-assets-development

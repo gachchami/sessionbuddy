@@ -88,7 +88,66 @@ async def run(base_url: str) -> None:
             raise RuntimeError("promoted asset is missing from the safe metadata list")
         if any(row["filename"] == "scanner-test.pdf" for row in rows):
             raise RuntimeError("rejected asset leaked into the safe metadata list")
-        print("Wave 3 asset smoke passed: clean promoted; EICAR rejected and quarantined")
+        clean_asset = next(row for row in rows if row["filename"] == "speaker.png")
+        grant = await client.post(
+            f"/api/v1/speaker/events/{event_id}/assets/{clean_asset['id']}/download-grants",
+            headers={
+                "content-type": "application/json",
+                "origin": origin,
+                "x-csrf-token": csrf,
+            },
+            json={},
+        )
+        grant.raise_for_status()
+        downloaded = await client.post(
+            "/api/v1/assets/download",
+            headers={
+                "content-type": "application/json",
+                "origin": origin,
+                "x-csrf-token": csrf,
+            },
+            json={"token": grant.json()["token"]},
+        )
+        downloaded.raise_for_status()
+        if downloaded.content != clean:
+            raise RuntimeError("authorized private download returned the wrong bytes")
+
+        admin = await client.post("/api/v1/demo/session")
+        admin.raise_for_status()
+        admin_csrf = admin.json()["csrf_token"]
+        dashboard = await client.get(f"/api/v1/admin/events/{event_id}/onboarding")
+        dashboard.raise_for_status()
+        open_tasks = dashboard.json()["data"]
+        if not open_tasks:
+            raise RuntimeError("no open onboarding task was available for reminder acceptance")
+        reminder = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks/"
+            f"{open_tasks[0]['task_id']}/reminders",
+            headers={
+                "content-type": "application/json",
+                "origin": origin,
+                "x-csrf-token": admin_csrf,
+                "idempotency-key": str(uuid.uuid4()),
+            },
+            json={},
+        )
+        reminder.raise_for_status()
+        delivered = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/dispatch-local",
+            headers={
+                "content-type": "application/json",
+                "origin": origin,
+                "x-csrf-token": admin_csrf,
+            },
+            json={},
+        )
+        delivered.raise_for_status()
+        if delivered.json()["delivered"] < 1:
+            raise RuntimeError("queued reminder was not delivered by the local adapter")
+        print(
+            "Wave 3 smoke passed: clean promoted/downloaded; EICAR rejected; "
+            "reminder queued/delivered"
+        )
 
 
 def main() -> None:

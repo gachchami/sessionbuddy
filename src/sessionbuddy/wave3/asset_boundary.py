@@ -180,7 +180,7 @@ class AssetRepository:
         if stored is None:
             return None
         return DownloadBody(
-            body=getattr(stored, "body", stored),
+            body=stored,
             filename=str(asset["original_filename"]),
             content_type=str(asset["content_type"]),
             byte_size=int(asset["byte_size"]),
@@ -318,7 +318,7 @@ async def consume_scan_job(
         stored = await bucket.get(str(row["object_key"]))
         if stored is None:
             return ScanDisposition(ack=False, reason="object_unavailable")
-        result = await scanner.scan(getattr(stored, "body", stored), job=job)
+        result = await scanner.scan(stored, job=job)
         event_id = new_id()
         statements = [
             db.prepare(

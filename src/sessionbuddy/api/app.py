@@ -13,6 +13,7 @@ from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.wave1 import wave1_router
 from sessionbuddy.wave2 import wave2_router
 from sessionbuddy.wave3 import wave3_router
+from sessionbuddy.wave4 import wave4_router
 
 app = FastAPI(
     title="Sessionbuddy API",
@@ -31,6 +32,7 @@ app.include_router(session_router)
 app.include_router(wave1_router)
 app.include_router(wave2_router)
 app.include_router(wave3_router)
+app.include_router(wave4_router)
 app.include_router(create_communications_router(communications_service))
 
 

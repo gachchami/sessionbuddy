@@ -5,15 +5,21 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth import generate_token, hash_token, issue_csrf_token
 from sessionbuddy.platform.auth.cookies import sign_session_cookie
-from sessionbuddy.platform.auth.http import authenticate_request, require_permission, secret
+from sessionbuddy.platform.auth.http import (
+    authenticate_request,
+    guard_mutation,
+    require_permission,
+    secret,
+)
 from sessionbuddy.platform.authorization import Permission, ResourceContext
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
@@ -30,7 +36,10 @@ from sessionbuddy.platform.storage import (
 )
 from sessionbuddy.wave1.router import DEMO_EVENT_ID, DEMO_ORG_ID
 
+from .asset_boundary import AssetAccessScope, AssetRepository, ScanJob
 from .models import (
+    AssetDownloadGrantView,
+    AssetDownloadToken,
     DemoSpeakerSession,
     OnboardingDashboardView,
     OnboardingRow,
@@ -129,9 +138,7 @@ async def admin_onboarding_js(request: Request) -> Response:
     operation_id="createLocalDemoSpeakerSession",
     tags=["demo"],
 )
-async def create_demo_speaker_session(
-    request: Request, response: Response
-) -> DemoSpeakerSession:
+async def create_demo_speaker_session(request: Request, response: Response) -> DemoSpeakerSession:
     if getattr(request.scope.get("env"), "APP_ENV", "local") != "local":
         raise HTTPException(status_code=404)
     db = _db(request)
@@ -401,9 +408,7 @@ async def get_admin_onboarding_dashboard(
     event_id: str,
     request: Request,
     state: Literal["open", "completed", "overdue", "due_soon"] = "open",
-    task_type: Literal[
-        "profile", "headshot", "slides", "supporting_document", "custom"
-    ]
+    task_type: Literal["profile", "headshot", "slides", "supporting_document", "custom"]
     | None = None,
     cursor: str | None = None,
     limit: int = Query(default=25, ge=1, le=50),
@@ -419,11 +424,12 @@ async def get_admin_onboarding_dashboard(
     )
     now = decoded_cursor[2] if decoded_cursor is not None else utc_now_ms()
     due_soon_at = now + 7 * 86_400_000
-    summary = row_mapping(
-        await _timed_first(
-            request,
-            db.prepare(
-                """SELECT
+    summary = (
+        row_mapping(
+            await _timed_first(
+                request,
+                db.prepare(
+                    """SELECT
                      SUM(CASE WHEN NOT EXISTS (
                        SELECT 1 FROM speaker_tasks t WHERE t.organization_id = es.organization_id
                          AND t.event_id = es.event_id AND t.event_speaker_id = es.id
@@ -444,14 +450,17 @@ async def get_admin_onboarding_dashboard(
                    FROM event_speakers es
                    WHERE es.organization_id = ?1 AND es.event_id = ?2
                      AND es.status IN ('onboarding', 'complete')"""
-            ).bind(event["organization_id"], event["id"], now, due_soon_at),
+                ).bind(event["organization_id"], event["id"], now, due_soon_at),
+            )
         )
-    ) or {}
-    secondary = row_mapping(
-        await _timed_first(
-            request,
-            db.prepare(
-                """SELECT
+        or {}
+    )
+    secondary = (
+        row_mapping(
+            await _timed_first(
+                request,
+                db.prepare(
+                    """SELECT
                      SUM(CASE WHEN d.decision IS NULL THEN 1 ELSE 0 END) AS submitted,
                      SUM(CASE WHEN d.decision = 'accepted' THEN 1 ELSE 0 END) AS accepted,
                      SUM(CASE WHEN d.decision = 'rejected' THEN 1 ELSE 0 END) AS rejected,
@@ -466,9 +475,11 @@ async def get_admin_onboarding_dashboard(
                      ON d.organization_id = s.organization_id AND d.event_id = s.event_id
                     AND d.submission_id = s.id
                    WHERE s.organization_id = ?1 AND s.event_id = ?2"""
-            ).bind(event["organization_id"], event["id"]),
+                ).bind(event["organization_id"], event["id"]),
+            )
         )
-    ) or {}
+        or {}
+    )
     state_sql = {
         "open": "t.state = 'open'",
         "completed": "t.state = 'completed'",
@@ -547,12 +558,11 @@ async def get_admin_onboarding_dashboard(
             event_id=event_id,
             state=state,
             task_type=task_type,
-            due_at_ms=(
-                int(page[-1]["due_at_ms"]) if page[-1]["due_at_ms"] is not None else None
-            ),
+            due_at_ms=(int(page[-1]["due_at_ms"]) if page[-1]["due_at_ms"] is not None else None),
             task_id=str(page[-1]["task_id"]),
             as_of=now,
         )
+
     def count(values, key: str) -> int:
         return int(values.get(key) or 0)
 
@@ -877,6 +887,25 @@ def _bucket(request: Request):
     return bucket
 
 
+async def _enqueue_asset_scan(request: Request, row) -> None:
+    queue = getattr(request.scope.get("env"), "ASSET_SCAN_QUEUE", None)
+    if queue is None:
+        raise HTTPException(status_code=503)
+    job = ScanJob(
+        schema_version=1,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        asset_version_id=str(row["version_id"]),
+        generation=int(row["generation"]),
+        checksum_sha256=_blob(row["expected_checksum_sha256"]),
+        job_id=str(row["version_id"]),
+    )
+    try:
+        await queue.send(job.to_message())
+    except Exception as exc:
+        raise HTTPException(status_code=503) from exc
+
+
 async def _speaker_for_event(request: Request, event_id: str):
     authenticated = await authenticate_request(request)
     row = row_mapping(
@@ -1015,6 +1044,152 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
     )
 
 
+async def _stream_private_object(stored):
+    body = getattr(stored, "body", stored)
+    if isinstance(body, (bytes, bytearray, memoryview)):
+        yield bytes(body)
+        return
+    reader_factory = getattr(body, "getReader", None)
+    if callable(reader_factory):
+        reader = reader_factory()
+        try:
+            while True:
+                chunk = await reader.read()
+                if bool(chunk.done):
+                    break
+                value = chunk.value
+                converter = getattr(value, "to_py", None)
+                yield bytes(converter() if callable(converter) else value)
+        finally:
+            release = getattr(reader, "releaseLock", None)
+            if callable(release):
+                release()
+        return
+    array_buffer = getattr(stored, "arrayBuffer", None)
+    if callable(array_buffer):
+        yield bytes(await array_buffer())
+        return
+    raise RuntimeError("unsupported private object body")
+
+
+def _attachment_header(filename: str) -> str:
+    safe_ascii = "".join(
+        character for character in filename if character.isalnum() or character in ".-_ "
+    )
+    safe_ascii = safe_ascii.strip()[:120] or "download"
+    encoded = quote(filename, safe="")
+    return f"attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{encoded}"
+
+
+@wave3_router.post(
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants",
+    response_model=AssetDownloadGrantView,
+    status_code=201,
+    operation_id="createOwnSpeakerAssetDownloadGrant",
+    tags=["speaker-assets"],
+)
+async def create_speaker_asset_download_grant(
+    event_id: str, asset_id: str, request: Request
+) -> AssetDownloadGrantView:
+    authenticated, speaker = await _speaker_for_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_READ_OWN,
+        ResourceContext(
+            str(speaker["organization_id"]),
+            event_id,
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    grant = await AssetRepository(_db(request)).create_download_grant(
+        AssetAccessScope(
+            organization_id=str(speaker["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            event_speaker_id=str(speaker["event_speaker_id"]),
+        ),
+        asset_id,
+        now_ms=utc_now_ms(),
+    )
+    if grant is None:
+        raise HTTPException(status_code=404)
+    return AssetDownloadGrantView(token=grant.token, expires_at_ms=grant.expires_at_ms)
+
+
+@wave3_router.post(
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants",
+    response_model=AssetDownloadGrantView,
+    status_code=201,
+    operation_id="createAdminSpeakerAssetDownloadGrant",
+    tags=["speaker-assets"],
+)
+async def create_admin_asset_download_grant(
+    event_id: str, asset_id: str, request: Request
+) -> AssetDownloadGrantView:
+    authenticated = await authenticate_request(request)
+    event = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT id, organization_id FROM events
+               WHERE id=?1 AND status!='archived' LIMIT 1"""
+        )
+        .bind(event_id)
+        .first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_READ,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
+    )
+    grant = await AssetRepository(_db(request)).create_download_grant(
+        AssetAccessScope(
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            event_admin=True,
+        ),
+        asset_id,
+        now_ms=utc_now_ms(),
+    )
+    if grant is None:
+        raise HTTPException(status_code=404)
+    return AssetDownloadGrantView(token=grant.token, expires_at_ms=grant.expires_at_ms)
+
+
+@wave3_router.post(
+    "/api/v1/assets/download",
+    response_class=StreamingResponse,
+    operation_id="consumePrivateAssetDownloadGrant",
+    tags=["speaker-assets"],
+)
+async def consume_asset_download_grant(
+    body: AssetDownloadToken, request: Request
+) -> StreamingResponse:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    download = await AssetRepository(_db(request)).consume_download_grant(
+        _bucket(request),
+        actor_user_id=authenticated.actor.user_id,
+        token=body.token,
+        now_ms=utc_now_ms(),
+    )
+    if download is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(
+        _stream_private_object(download.body),
+        media_type=download.content_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": _attachment_header(download.filename),
+            "Content-Length": str(download.byte_size),
+        },
+    )
+
+
 @wave3_router.post(
     "/api/v1/speaker/events/{event_id}/upload-authorizations",
     response_model=UploadAuthorizationView,
@@ -1044,55 +1219,87 @@ async def authorize_speaker_upload(
         raise HTTPException(status_code=400)
     db = _db(request)
     if body.submission_id is not None:
-        owned = await db.prepare(
-            """SELECT 1 AS found FROM submission_speakers
+        owned = (
+            await db.prepare(
+                """SELECT 1 AS found FROM submission_speakers
                WHERE organization_id = ?1 AND event_id = ?2 AND event_speaker_id = ?3
                  AND submission_id = ?4 LIMIT 1"""
-        ).bind(
-            speaker["organization_id"], event_id, speaker["event_speaker_id"],
-            body.submission_id,
-        ).first("found")
+            )
+            .bind(
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                body.submission_id,
+            )
+            .first("found")
+        )
         if owned is None:
             raise HTTPException(status_code=404)
     if body.task_id is not None:
-        task = row_mapping(await db.prepare(
-            """SELECT task_type FROM speaker_tasks WHERE organization_id = ?1
+        task = row_mapping(
+            await db.prepare(
+                """SELECT task_type FROM speaker_tasks WHERE organization_id = ?1
                AND event_id = ?2 AND event_speaker_id = ?3 AND id = ?4
                AND state = 'open' LIMIT 1"""
-        ).bind(
-            speaker["organization_id"], event_id, speaker["event_speaker_id"], body.task_id,
-        ).first())
+            )
+            .bind(
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                body.task_id,
+            )
+            .first()
+        )
         if task is None or str(task["task_type"]) != body.kind:
             raise HTTPException(status_code=404)
     key = _key(idempotency_key)
     route = "POST /api/v1/speaker/events/{event_id}/upload-authorizations"
     fingerprint = _fingerprint(body)
-    replay = row_mapping(await db.prepare(
-        """SELECT request_fingerprint, response_resource_id FROM idempotency_records
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint, response_resource_id FROM idempotency_records
            WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
              AND event_id = ?4 AND state = 'completed'"""
-    ).bind(
-        authenticated.actor.user_id, route, hashlib.sha256(key.encode()).digest(), event_id,
-    ).first())
+        )
+        .bind(
+            authenticated.actor.user_id,
+            route,
+            hashlib.sha256(key.encode()).digest(),
+            event_id,
+        )
+        .first()
+    )
     if replay is not None:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
         intent_id = str(replay["response_resource_id"])
         return await _authorization_view(request, intent_id, _upload_token(request, intent_id))
 
-    slot = row_mapping(await db.prepare(
-        """SELECT id FROM speaker_assets WHERE organization_id = ?1 AND event_id = ?2
+    slot = row_mapping(
+        await db.prepare(
+            """SELECT id FROM speaker_assets WHERE organization_id = ?1 AND event_id = ?2
            AND event_speaker_id = ?3 AND COALESCE(submission_id, '') = COALESCE(?4, '')
            AND COALESCE(task_id, '') = COALESCE(?5, '') AND kind = ?6 LIMIT 1"""
-    ).bind(
-        speaker["organization_id"], event_id, speaker["event_speaker_id"],
-        body.submission_id, body.task_id, body.kind,
-    ).first())
+        )
+        .bind(
+            speaker["organization_id"],
+            event_id,
+            speaker["event_speaker_id"],
+            body.submission_id,
+            body.task_id,
+            body.kind,
+        )
+        .first()
+    )
     asset_id = str(slot["id"]) if slot is not None else new_id()
-    generation = int(await db.prepare(
-        """SELECT COALESCE(MAX(generation), 0) + 1 AS generation
+    generation = int(
+        await db.prepare(
+            """SELECT COALESCE(MAX(generation), 0) + 1 AS generation
            FROM speaker_asset_versions WHERE asset_id = ?1"""
-    ).bind(asset_id).first("generation"))
+        )
+        .bind(asset_id)
+        .first("generation")
+    )
     intent_id, version_id = new_id(), new_id()
     upload_token = _upload_token(request, intent_id)
     now = utc_now_ms()
@@ -1109,44 +1316,83 @@ async def authorize_speaker_upload(
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
     if slot is None:
-        batch.add_statement(db.prepare(
-            """INSERT INTO speaker_assets
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_assets
                (id, organization_id, event_id, event_speaker_id, submission_id, task_id,
                 kind, created_at_ms, updated_at_ms)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)"""
-        ).bind(
-            asset_id, speaker["organization_id"], event_id, speaker["event_speaker_id"],
-            body.submission_id, body.task_id, body.kind, now,
-        ))
-    batch.add_statement(db.prepare(
-        """INSERT INTO speaker_asset_versions
+            ).bind(
+                asset_id,
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                body.submission_id,
+                body.task_id,
+                body.kind,
+                now,
+            )
+        )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO speaker_asset_versions
            (id, organization_id, event_id, event_speaker_id, asset_id, generation,
             object_key, original_filename, scan_state, created_at_ms)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_upload', ?9)"""
-    ).bind(
-        version_id, speaker["organization_id"], event_id, speaker["event_speaker_id"],
-        asset_id, generation, f"private/{version_id}/{new_id()}", body.filename, now,
-    ))
-    batch.add_statement(db.prepare(
-        """INSERT INTO upload_intents
+        ).bind(
+            version_id,
+            speaker["organization_id"],
+            event_id,
+            speaker["event_speaker_id"],
+            asset_id,
+            generation,
+            f"private/{version_id}/{new_id()}",
+            body.filename,
+            now,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO upload_intents
            (id, organization_id, event_id, event_speaker_id, asset_version_id, purpose,
             token_hash, expected_content_type, expected_byte_size, expected_checksum_sha256,
             expires_at_ms, created_at_ms)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"""
-    ).bind(
-        intent_id, speaker["organization_id"], event_id, speaker["event_speaker_id"],
-        version_id, "replace" if slot is not None else "create", hash_token(upload_token),
-        body.content_type, body.byte_size, bytes.fromhex(body.checksum_sha256), expires, now,
-    ))
-    batch.audit(AuditEvent(
-        organization_id=str(speaker["organization_id"]), event_id=event_id,
-        actor_user_id=authenticated.actor.user_id, actor_type="user",
-        action="speaker.asset.upload_authorize", target_type="speaker_asset_version",
-        target_id=version_id, result="succeeded", correlation_id=request.state.request_id,
-        occurred_at_ms=now, metadata={"kind": body.kind, "generation": generation},
-    ))
+        ).bind(
+            intent_id,
+            speaker["organization_id"],
+            event_id,
+            speaker["event_speaker_id"],
+            version_id,
+            "replace" if slot is not None else "create",
+            hash_token(upload_token),
+            body.content_type,
+            body.byte_size,
+            bytes.fromhex(body.checksum_sha256),
+            expires,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(speaker["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="speaker.asset.upload_authorize",
+            target_type="speaker_asset_version",
+            target_id=version_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"kind": body.kind, "generation": generation},
+        )
+    )
     batch.complete_idempotency(
-        record, status=201, resource_type="upload_intent", resource_id=intent_id,
+        record,
+        status=201,
+        resource_type="upload_intent",
+        resource_id=intent_id,
         completed_at_ms=now,
     )
     try:
@@ -1165,16 +1411,22 @@ async def local_upload_content(intent_id: str, request: Request, token: str) -> 
     if getattr(request.scope.get("env"), "APP_ENV", "local") != "local":
         raise HTTPException(status_code=404)
     db = _db(request)
-    row = row_mapping(await db.prepare(
-        """SELECT ui.token_hash, ui.expected_content_type, ui.expected_byte_size,
+    row = row_mapping(
+        await db.prepare(
+            """SELECT ui.token_hash, ui.expected_content_type, ui.expected_byte_size,
                   ui.expected_checksum_sha256, ui.expires_at_ms, ui.consumed_at_ms,
                   av.object_key, av.scan_state
            FROM upload_intents ui JOIN speaker_asset_versions av ON av.id = ui.asset_version_id
            WHERE ui.id = ?1 LIMIT 1"""
-    ).bind(intent_id).first())
+        )
+        .bind(intent_id)
+        .first()
+    )
     if (
-        row is None or int(row["expires_at_ms"]) < utc_now_ms()
-        or row["consumed_at_ms"] is not None or str(row["scan_state"]) != "pending_upload"
+        row is None
+        or int(row["expires_at_ms"]) < utc_now_ms()
+        or row["consumed_at_ms"] is not None
+        or str(row["scan_state"]) != "pending_upload"
         or not hmac.compare_digest(_blob(row["token_hash"]), hash_token(token))
     ):
         raise HTTPException(status_code=404)
@@ -1247,15 +1499,18 @@ async def complete_speaker_upload(
         request,
         Permission.SPEAKER_ASSET_UPLOAD_OWN,
         ResourceContext(
-            str(speaker["organization_id"]), event_id,
+            str(speaker["organization_id"]),
+            event_id,
             resource_owner_user_id=authenticated.actor.user_id,
         ),
         mutation=True,
     )
     _key(idempotency_key)
     db = _db(request)
-    row = row_mapping(await db.prepare(
-        """SELECT ui.id, ui.expected_content_type, ui.expected_byte_size,
+    row = row_mapping(
+        await db.prepare(
+            """SELECT ui.id, ui.organization_id, ui.event_id,
+                  ui.expected_content_type, ui.expected_byte_size,
                   ui.expected_checksum_sha256, ui.expires_at_ms, ui.consumed_at_ms,
                   av.id AS version_id, av.asset_id, av.object_key, av.generation,
                   av.scan_state, a.kind
@@ -1266,12 +1521,23 @@ async def complete_speaker_upload(
             AND a.event_id = av.event_id AND a.id = av.asset_id
            WHERE ui.id = ?1 AND ui.organization_id = ?2 AND ui.event_id = ?3
              AND ui.event_speaker_id = ?4 LIMIT 1"""
-    ).bind(
-        intent_id, speaker["organization_id"], event_id, speaker["event_speaker_id"],
-    ).first())
+        )
+        .bind(
+            intent_id,
+            speaker["organization_id"],
+            event_id,
+            speaker["event_speaker_id"],
+        )
+        .first()
+    )
     if row is None:
         raise HTTPException(status_code=404)
     if str(row["scan_state"]) in {"uploaded", "scanning", "clean", "rejected"}:
+        if (
+            str(row["scan_state"]) == "uploaded"
+            and getattr(request.scope.get("env"), "APP_ENV", "local") != "local"
+        ):
+            await _enqueue_asset_scan(request, row)
         return UploadCompletionView(intent_id=intent_id, state=str(row["scan_state"]))
     if int(row["expires_at_ms"]) < utc_now_ms():
         raise HTTPException(status_code=404)
@@ -1292,36 +1558,54 @@ async def complete_speaker_upload(
         scan_result = await _scan_local_asset(request, str(row["version_id"]), content)
     batch = CommandBatch(db)
     if local and scan_result is not None:
-        batch.add_statement(db.prepare(
-            """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
                       checksum_sha256 = ?3, scan_state = 'scanning',
                       uploaded_at_ms = ?4, scan_started_at_ms = ?4
                WHERE id = ?5 AND scan_state = 'pending_upload'"""
-        ).bind(
-            row["expected_content_type"], row["expected_byte_size"],
-            row["expected_checksum_sha256"], now, row["version_id"],
-        ))
-        batch.add_statement(db.prepare(
-            """INSERT INTO asset_scan_events
+            ).bind(
+                row["expected_content_type"],
+                row["expected_byte_size"],
+                row["expected_checksum_sha256"],
+                now,
+                row["version_id"],
+            )
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO asset_scan_events
                (id, organization_id, event_id, asset_version_id, generation,
                 checksum_sha256, provider_event_id, job_id, verdict, engine,
                 signature_code, received_at_ms)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                ON CONFLICT DO NOTHING"""
-        ).bind(
-            new_id(), speaker["organization_id"], event_id, row["version_id"],
-            row["generation"], row["expected_checksum_sha256"],
-            f"local:{row['version_id']}", row["version_id"], scan_result.verdict,
-            scan_result.engine, scan_result.signature, now,
-        ))
+            ).bind(
+                new_id(),
+                speaker["organization_id"],
+                event_id,
+                row["version_id"],
+                row["generation"],
+                row["expected_checksum_sha256"],
+                f"local:{row['version_id']}",
+                row["version_id"],
+                scan_result.verdict,
+                scan_result.engine,
+                scan_result.signature,
+                now,
+            )
+        )
     if local and scan_result is not None and scan_result.verdict == "clean":
-        batch.add_statement(db.prepare(
-            """UPDATE speaker_asset_versions SET is_current = 0, scan_state = 'superseded',
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_asset_versions SET is_current = 0, scan_state = 'superseded',
                       scanned_at_ms = ?1
                WHERE asset_id = ?2 AND is_current = 1 AND scan_state = 'clean'"""
-        ).bind(now, row["asset_id"]))
-        batch.add_statement(db.prepare(
-            """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
+            ).bind(now, row["asset_id"])
+        )
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
                       checksum_sha256 = ?3, scan_state = 'clean', is_current = 1,
                       scanned_at_ms = ?4,
                       scan_result_code = 'clamav_clean'
@@ -1341,63 +1625,103 @@ async def complete_speaker_upload(
                    WHERE newer.asset_id = speaker_asset_versions.asset_id
                      AND newer.generation > speaker_asset_versions.generation
                  )"""
-        ).bind(
-            row["expected_content_type"], row["expected_byte_size"],
-            row["expected_checksum_sha256"], now, row["version_id"], row["generation"],
-        ))
-        batch.add_statement(db.prepare(
-            """UPDATE speaker_tasks SET state = 'completed', completed_at_ms = ?1,
+            ).bind(
+                row["expected_content_type"],
+                row["expected_byte_size"],
+                row["expected_checksum_sha256"],
+                now,
+                row["version_id"],
+                row["generation"],
+            )
+        )
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_tasks SET state = 'completed', completed_at_ms = ?1,
                       version = version + 1, updated_at_ms = ?1
                WHERE organization_id = ?2 AND event_id = ?3 AND event_speaker_id = ?4
                  AND task_type = ?5 AND state = 'open'"""
-        ).bind(
-            now, speaker["organization_id"], event_id, speaker["event_speaker_id"], row["kind"],
-        ))
+            ).bind(
+                now,
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                row["kind"],
+            )
+        )
         state = "clean"
     elif local and scan_result is not None:
-        batch.add_statement(db.prepare(
-            """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
                       checksum_sha256 = ?3, scan_state = 'rejected', is_current = 0,
                       scanned_at_ms = ?4,
                       scan_result_code = ?5
                WHERE id = ?6 AND scan_state = 'scanning'"""
-        ).bind(
-            row["expected_content_type"], row["expected_byte_size"],
-            row["expected_checksum_sha256"], now,
-            scan_result.signature or "malware_detected", row["version_id"],
-        ))
+            ).bind(
+                row["expected_content_type"],
+                row["expected_byte_size"],
+                row["expected_checksum_sha256"],
+                now,
+                scan_result.signature or "malware_detected",
+                row["version_id"],
+            )
+        )
         state = "rejected"
     else:
-        batch.add_statement(db.prepare(
-            """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
                       checksum_sha256 = ?3, scan_state = 'uploaded', uploaded_at_ms = ?4
                WHERE id = ?5 AND scan_state = 'pending_upload'"""
-        ).bind(
-            row["expected_content_type"], row["expected_byte_size"],
-            row["expected_checksum_sha256"], now, row["version_id"],
-        ))
+            ).bind(
+                row["expected_content_type"],
+                row["expected_byte_size"],
+                row["expected_checksum_sha256"],
+                now,
+                row["version_id"],
+            )
+        )
         state = "uploaded"
-    batch.add_statement(db.prepare(
-        "UPDATE upload_intents SET consumed_at_ms = ?1 WHERE id = ?2 AND consumed_at_ms IS NULL"
-    ).bind(now, intent_id))
-    batch.audit(AuditEvent(
-        organization_id=str(speaker["organization_id"]), event_id=event_id,
-        actor_user_id=authenticated.actor.user_id, actor_type="user",
-        action="speaker.asset.upload_complete", target_type="speaker_asset_version",
-        target_id=str(row["version_id"]), result="succeeded",
-        correlation_id=request.state.request_id, occurred_at_ms=now,
-        metadata={"local_scan": int(local), "generation": int(row["generation"])},
-    ))
-    batch.outbox(OutboxMessage(
-        organization_id=str(speaker["organization_id"]), event_id=event_id,
-        topic="speaker.asset.scan_requested" if not local else "speaker.onboarding.changed",
-        aggregate_type="speaker_asset_version", aggregate_id=str(row["version_id"]),
-        deduplication_key=f"asset:{row['version_id']}:uploaded",
-        payload={"asset_version_id": str(row["version_id"]), "generation": int(row["generation"])},
-        available_at_ms=now, created_at_ms=now,
-    ))
+    batch.add_statement(
+        db.prepare(
+            "UPDATE upload_intents SET consumed_at_ms = ?1 WHERE id = ?2 AND consumed_at_ms IS NULL"
+        ).bind(now, intent_id)
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(speaker["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="speaker.asset.upload_complete",
+            target_type="speaker_asset_version",
+            target_id=str(row["version_id"]),
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"local_scan": int(local), "generation": int(row["generation"])},
+        )
+    )
+    batch.outbox(
+        OutboxMessage(
+            organization_id=str(speaker["organization_id"]),
+            event_id=event_id,
+            topic="speaker.asset.scan_requested" if not local else "speaker.onboarding.changed",
+            aggregate_type="speaker_asset_version",
+            aggregate_id=str(row["version_id"]),
+            deduplication_key=f"asset:{row['version_id']}:uploaded",
+            payload={
+                "asset_version_id": str(row["version_id"]),
+                "generation": int(row["generation"]),
+            },
+            available_at_ms=now,
+            created_at_ms=now,
+        )
+    )
     try:
         await batch.execute()
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
+    if state == "uploaded":
+        await _enqueue_asset_scan(request, row)
     return UploadCompletionView(intent_id=intent_id, state=state)

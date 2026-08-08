@@ -1,6 +1,105 @@
 {
   "components": {
     "schemas": {
+      "AgendaCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "end_at_ms": {
+            "minimum": 0.0,
+            "title": "End At Ms",
+            "type": "integer"
+          },
+          "event_date": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Date"
+          },
+          "item_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "room_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Room Id",
+            "type": "string"
+          },
+          "session_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "start_at_ms": {
+            "minimum": 0.0,
+            "title": "Start At Ms",
+            "type": "integer"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "version": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "start_at_ms",
+          "end_at_ms",
+          "room_id"
+        ],
+        "title": "AgendaCandidate",
+        "type": "object"
+      },
+      "AgendaPublish": {
+        "additionalProperties": false,
+        "properties": {
+          "revision_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision_id",
+          "version"
+        ],
+        "title": "AgendaPublish",
+        "type": "object"
+      },
       "ApiHealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -18,6 +117,41 @@
           }
         },
         "title": "ApiHealthResponse",
+        "type": "object"
+      },
+      "AssetDownloadGrantView": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at_ms": {
+            "title": "Expires At Ms",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_at_ms"
+        ],
+        "title": "AssetDownloadGrantView",
+        "type": "object"
+      },
+      "AssetDownloadToken": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "maxLength": 255,
+            "minLength": 32,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "AssetDownloadToken",
         "type": "object"
       },
       "AssignmentReassign": {
@@ -68,6 +202,76 @@
           "evidence"
         ],
         "title": "BuildProgressItem",
+        "type": "object"
+      },
+      "CommunicationStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "provider_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Message Id"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "sending",
+              "delivered",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "attempt_count"
+        ],
+        "title": "CommunicationStatus",
+        "type": "object"
+      },
+      "CommunicationStatusList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/CommunicationStatus"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "CommunicationStatusList",
         "type": "object"
       },
       "ConflictDeclaration": {
@@ -319,6 +523,20 @@
           "csrf_token"
         ],
         "title": "DemoSpeakerSession",
+        "type": "object"
+      },
+      "DispatchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "delivered": {
+            "title": "Delivered",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delivered"
+        ],
+        "title": "DispatchResponse",
         "type": "object"
       },
       "EvaluationAssignmentList": {
@@ -938,6 +1156,61 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "ManualSendRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "recipient_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Recipient User Ids",
+            "type": "array"
+          },
+          "template_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "recipient_user_ids",
+          "confirmed"
+        ],
+        "title": "ManualSendRequest",
+        "type": "object"
+      },
+      "ManualSendResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "message_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Message Ids",
+            "type": "array"
+          },
+          "status": {
+            "const": "queued",
+            "default": "queued",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_ids"
+        ],
+        "title": "ManualSendResponse",
+        "type": "object"
+      },
       "OnboardingDashboardView": {
         "additionalProperties": false,
         "properties": {
@@ -1248,6 +1521,103 @@
           "evaluator_user_id"
         ],
         "title": "ReassignmentView",
+        "type": "object"
+      },
+      "RecipientPreview": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "html_body": {
+            "title": "Html Body",
+            "type": "string"
+          },
+          "recipient_user_id": {
+            "title": "Recipient User Id",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipient_user_id",
+          "display_name",
+          "email",
+          "subject",
+          "html_body"
+        ],
+        "title": "RecipientPreview",
+        "type": "object"
+      },
+      "RecipientPreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "recipient_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Recipient User Ids",
+            "type": "array"
+          },
+          "template_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "recipient_user_ids"
+        ],
+        "title": "RecipientPreviewRequest",
+        "type": "object"
+      },
+      "RecipientPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/RecipientPreview"
+            },
+            "title": "Recipients",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recipients"
+        ],
+        "title": "RecipientPreviewResponse",
+        "type": "object"
+      },
+      "ReminderQueuedResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "queued",
+            "default": "queued",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id"
+        ],
+        "title": "ReminderQueuedResponse",
         "type": "object"
       },
       "SLODefinition": {
@@ -2312,6 +2682,552 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/agenda": {
+      "get": {
+        "operationId": "get_admin_agenda_api_v1_admin_events__event_id__agenda_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Admin Agenda Api V1 Admin Events  Event Id  Agenda Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Admin Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/items": {
+      "post": {
+        "operationId": "create_agenda_item_api_v1_admin_events__event_id__agenda_items_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agenda Item",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
+      "patch": {
+        "operationId": "move_agenda_item_api_v1_admin_events__event_id__agenda_items__item_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move Agenda Item",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/preview": {
+      "post": {
+        "operationId": "preview_agenda_api_v1_admin_events__event_id__agenda_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Preview Agenda Api V1 Admin Events  Event Id  Agenda Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/publish": {
+      "post": {
+        "operationId": "publish_agenda_api_v1_admin_events__event_id__agenda_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaPublish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Publish Agenda Api V1 Admin Events  Event Id  Agenda Publish Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
+      "post": {
+        "operationId": "createAdminSpeakerAssetDownloadGrant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDownloadGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Admin Asset Download Grant",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/communications": {
+      "get": {
+        "operationId": "listEventCommunications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationStatusList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Statuses",
+        "tags": [
+          "communications"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/communications/dispatch-local": {
+      "post": {
+        "operationId": "dispatchLocalEventCommunications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Local",
+        "tags": [
+          "communications",
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/communications/preview": {
+      "post": {
+        "operationId": "previewEventCommunication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipientPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview",
+        "tags": [
+          "communications"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/communications/send": {
+      "post": {
+        "operationId": "queueEventCommunication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualSendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send",
+        "tags": [
+          "communications"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/onboarding": {
       "get": {
         "operationId": "getAdminOnboardingDashboard",
@@ -2418,6 +3334,73 @@
         "summary": "Get Admin Onboarding Dashboard",
         "tags": [
           "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders": {
+      "post": {
+        "operationId": "queueSpeakerTaskReminder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderQueuedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remind",
+        "tags": [
+          "communications"
         ]
       }
     },
@@ -2750,6 +3733,83 @@
         ]
       }
     },
+    "/api/v1/assets/download": {
+      "post": {
+        "operationId": "consumePrivateAssetDownloadGrant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetDownloadToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Consume Asset Download Grant",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/demo/agenda-context": {
+      "post": {
+        "operationId": "initialize_demo_agenda_api_v1_demo_agenda_context_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Initialize Demo Agenda Api V1 Demo Agenda Context Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Initialize Demo Agenda",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/api/v1/demo/context": {
       "post": {
         "operationId": "initializeLocalDemoContext",
@@ -2967,6 +4027,49 @@
         "summary": "Save Evaluation",
         "tags": [
           "evaluations"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/schedule": {
+      "get": {
+        "operationId": "get_schedule_api_v1_events__event_id__schedule_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Schedule Api V1 Events  Event Id  Schedule Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Schedule",
+        "tags": [
+          "agenda"
         ]
       }
     },
@@ -3253,6 +4356,57 @@
           }
         },
         "summary": "List Speaker Assets",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants": {
+      "post": {
+        "operationId": "createOwnSpeakerAssetDownloadGrant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDownloadGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Speaker Asset Download Grant",
         "tags": [
           "speaker-assets"
         ]

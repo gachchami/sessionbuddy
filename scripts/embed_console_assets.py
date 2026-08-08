@@ -31,6 +31,12 @@ ASSETS = {
     "admin_onboarding.html": "ADMIN_ONBOARDING_HTML",
     "admin_onboarding.js": "ADMIN_ONBOARDING_JS",
     "admin_onboarding.css": "ADMIN_ONBOARDING_CSS",
+    "agenda_admin.html": "AGENDA_ADMIN_HTML",
+    "agenda.js": "AGENDA_JS",
+    "agenda.css": "AGENDA_CSS",
+    "schedule.html": "SCHEDULE_HTML",
+    "schedule.js": "SCHEDULE_JS",
+    "schedule.css": "SCHEDULE_CSS",
 }
 
 

@@ -36,6 +36,21 @@ class D1CommunicationsService:
         if self.db is None:
             raise HTTPException(status_code=503)
         self.actor: Actor | None = None
+        self.organization_id: str | None = None
+
+    async def _publish_delivery_requests(self, message_ids: list[str]) -> None:
+        environment = self.request.scope.get("env")
+        if getattr(environment, "APP_ENV", "local") == "local":
+            return
+        queue = getattr(environment, "COMMUNICATION_QUEUE", None)
+        if queue is None:
+            raise HTTPException(status_code=503)
+        try:
+            for message_id in message_ids:
+                await queue.send({"schema_version": 1, "message_id": message_id})
+        except Exception as exc:
+            # The committed outbox record makes this recoverable by a later dispatcher.
+            raise HTTPException(status_code=503) from exc
 
     async def context_for_event(self, actor: Actor, event_id: str) -> ResourceContext:
         self.actor = actor
@@ -46,6 +61,7 @@ class D1CommunicationsService:
             .bind(event_id)
             .first()
         )
+        self.organization_id = str(row["organization_id"]) if row else None
         return ResourceContext(
             str(row["organization_id"]) if row else "missing",
             event_id,
@@ -53,15 +69,17 @@ class D1CommunicationsService:
         )
 
     async def _template(self, event_id: str, template_id: str) -> dict[str, object]:
+        if self.organization_id is None:
+            raise HTTPException(status_code=404)
         row = row_mapping(
             await self.db.prepare(
                 """SELECT t.id,t.organization_id,t.subject_template,t.html_template,
                           e.name AS event_name
                FROM communication_templates t JOIN events e
                  ON e.organization_id=t.organization_id AND e.id=t.event_id
-               WHERE t.event_id=?1 AND t.id=?2 LIMIT 1"""
+                   WHERE t.organization_id=?1 AND t.event_id=?2 AND t.id=?3 LIMIT 1"""
             )
-            .bind(event_id, template_id)
+            .bind(self.organization_id, event_id, template_id)
             .first()
         )
         if row is None:
@@ -110,7 +128,7 @@ class D1CommunicationsService:
         now = utc_now_ms()
         fingerprint = hashlib.sha256(body.model_dump_json().encode()).digest()
         record = IdempotencyRecord(
-            principal_key="communications-admin",
+            principal_key=self.actor.user_id if self.actor else "missing-actor",
             route_key="communications.send",
             idempotency_key=idempotency_key,
             request_fingerprint=fingerprint,
@@ -149,6 +167,7 @@ class D1CommunicationsService:
                 )
                 if existing is not None:
                     ids.append(str(existing))
+            await self._publish_delivery_requests(ids)
             return ManualSendResponse(message_ids=ids)
         batch, ids = CommandBatch(self.db), []
         batch.begin_idempotency(record, now)
@@ -215,6 +234,7 @@ class D1CommunicationsService:
             await batch.execute()
         except PersistenceError as exc:
             raise HTTPException(status_code=409) from exc
+        await self._publish_delivery_requests(ids)
         return ManualSendResponse(message_ids=ids)
 
     async def queue_task_reminder(
@@ -229,15 +249,35 @@ class D1CommunicationsService:
                JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id
                JOIN users u ON u.id=p.user_id JOIN events e ON e.organization_id=st.organization_id
                 AND e.id=st.event_id
-               WHERE st.event_id=?1 AND st.id=?2 AND st.state='open' LIMIT 1"""
+                   WHERE st.organization_id=?1 AND st.event_id=?2 AND st.id=?3
+                     AND st.state='open' LIMIT 1"""
             )
-            .bind(event_id, task_id)
+            .bind(self.organization_id, event_id, task_id)
             .first()
         )
         if row is None:
             raise HTTPException(status_code=404)
         now, message_id = utc_now_ms(), new_id()
         deterministic = hashlib.sha256(f"task:{task_id}:{idempotency_key}".encode()).hexdigest()
+        fingerprint = hashlib.sha256(f"task-reminder:{event_id}:{task_id}".encode()).digest()
+        record = IdempotencyRecord(
+            principal_key=self.actor.user_id if self.actor else "missing-actor",
+            route_key="speaker-tasks.reminders",
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            organization_id=str(row["organization_id"]),
+            event_id=event_id,
+            expires_at_ms=now + 86_400_000,
+        )
+        replay = row_mapping(
+            await self.db.prepare(
+                """SELECT request_fingerprint,state FROM idempotency_records
+                   WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                     AND event_id=?4 LIMIT 1"""
+            )
+            .bind(record.principal_key, record.route_key, record.key_hash, event_id)
+            .first()
+        )
         existing = (
             await self.db.prepare(
                 """SELECT id FROM communication_messages WHERE organization_id=?1
@@ -246,7 +286,14 @@ class D1CommunicationsService:
             .bind(row["organization_id"], event_id, deterministic)
             .first("id")
         )
-        if existing is not None:
+        if replay is not None:
+            if (
+                bytes(replay["request_fingerprint"]) != fingerprint
+                or replay["state"] != "completed"
+                or existing is None
+            ):
+                raise HTTPException(status_code=409)
+            await self._publish_delivery_requests([str(existing)])
             return ReminderQueuedResponse(message_id=str(existing))
         subject = f"Reminder: {escape(str(row['title']))}"
         html_body = (
@@ -255,6 +302,7 @@ class D1CommunicationsService:
             f"{escape(str(row['event_name']))}.</p>"
         )
         batch = CommandBatch(self.db)
+        batch.begin_idempotency(record, now)
         batch.add_statement(
             self.db.prepare(
                 """INSERT INTO communication_messages
@@ -300,20 +348,30 @@ class D1CommunicationsService:
                 occurred_at_ms=now,
             )
         )
+        batch.complete_idempotency(
+            record,
+            status=202,
+            resource_type="communication_message",
+            resource_id=message_id,
+            completed_at_ms=now,
+        )
         try:
             await batch.execute()
         except PersistenceError as exc:
             raise HTTPException(status_code=409) from exc
+        await self._publish_delivery_requests([message_id])
         return ReminderQueuedResponse(message_id=message_id)
 
     async def statuses(self, event_id: str) -> CommunicationStatusList:
+        if self.organization_id is None:
+            raise HTTPException(status_code=404)
         rows = result_rows(
             await self.db.prepare(
                 """SELECT id,status,attempt_count,provider_message_id,last_error_code
-               FROM communication_messages WHERE event_id=?1
+                   FROM communication_messages WHERE organization_id=?1 AND event_id=?2
                ORDER BY updated_at_ms DESC,id DESC LIMIT 100"""
             )
-            .bind(event_id)
+            .bind(self.organization_id, event_id)
             .all()
         )
         return CommunicationStatusList(data=[CommunicationStatus(**row) for row in rows])
@@ -321,12 +379,15 @@ class D1CommunicationsService:
     async def dispatch_local(self, event_id: str) -> DispatchResponse:
         if getattr(self.request.scope.get("env"), "APP_ENV", "local") != "local":
             raise HTTPException(status_code=404)
+        if self.organization_id is None:
+            raise HTTPException(status_code=404)
         rows = result_rows(
             await self.db.prepare(
                 """SELECT id,organization_id FROM communication_messages
-               WHERE event_id=?1 AND status='queued' ORDER BY queued_at_ms,id LIMIT 100"""
+                   WHERE organization_id=?1 AND event_id=?2 AND status='queued'
+                   ORDER BY queued_at_ms,id LIMIT 100"""
             )
-            .bind(event_id)
+            .bind(self.organization_id, event_id)
             .all()
         )
         now = utc_now_ms()

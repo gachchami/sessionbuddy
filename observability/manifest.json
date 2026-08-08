@@ -62,6 +62,13 @@
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
+    "POST /api/v1/demo/agenda-context": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave4-demo-context",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "POST /api/v1/admin/programs": {
       "owner": "program-management",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
@@ -229,6 +236,104 @@
       "benchmark": "wave3-upload-complete",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/preview": {
+      "owner": "communications",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave3-communication-preview",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/send": {
+      "owner": "communications",
+      "slo": {"p95_ms": 750, "error_rate_max": 0.001},
+      "benchmark": "wave3-communication-send",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders": {
+      "owner": "communications",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave3-task-reminder",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/admin/events/{event_id}/communications": {
+      "owner": "communications",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave3-communication-status",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/dispatch-local": {
+      "owner": "communications",
+      "slo": {"p95_ms": 750, "error_rate_max": 0.001},
+      "benchmark": "wave3-local-delivery",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants": {
+      "owner": "speaker-onboarding",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave3-speaker-download-grant",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
+      "owner": "speaker-onboarding",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave3-admin-download-grant",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/assets/download": {
+      "owner": "speaker-onboarding",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave3-private-asset-download",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/admin/events/{event_id}/agenda": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave4-admin-agenda",
+      "dashboards": ["release-health", "api-explorer", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/preview": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
+      "benchmark": "wave4-conflict-preview",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/items": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave4-create-agenda-item",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
+    },
+    "PATCH /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave4-move-agenda-item",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/publish": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 1000, "error_rate_max": 0.001},
+      "benchmark": "wave4-publish-agenda",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
+    },
+    "GET /api/v1/events/{event_id}/schedule": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "wave4-read-schedule",
+      "dashboards": ["release-health", "api-explorer", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
     }
   },
   "pages": {
@@ -312,6 +417,24 @@
       "owner": "speaker-onboarding",
       "classification": "personalized/local",
       "journeys": ["admin-find-blocked-speakers"],
+      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": ["release-health", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/agenda": {
+      "owner": "agenda",
+      "classification": "personalized/local",
+      "journeys": ["admin-schedule-and-publish"],
+      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": ["release-health", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/events/{event_id}/schedule": {
+      "owner": "agenda",
+      "classification": "authenticated",
+      "journeys": ["staff-speaker-read-schedule"],
       "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
       "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
       "dashboards": ["release-health", "page-performance"],

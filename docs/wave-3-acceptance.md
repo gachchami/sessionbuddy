@@ -1,6 +1,6 @@
 # Wave 3 speaker onboarding acceptance record
 
-Status: first local vertical slice ready for review
+Status: local MVP acceptance complete; production provider activation pending
 
 This slice establishes the security and persistence boundary for accepted-speaker
 onboarding:
@@ -42,6 +42,27 @@ speaker assets:
 - Asset APIs expose allow-listed metadata only. They never serialize an R2 key,
   token hash, upload capability after authorization, or scanner payload.
 
-Queues-based scanner consumption and email delivery, Workflows reminders,
-short-lived authorized downloads, and push transport for the dashboard remain
-subsequent Wave 3 slices. They must reuse this ownership/task/outbox contract.
+The completed Wave 3 foundation also includes:
+
+- Versioned Cloudflare Queue contracts and per-message acknowledgement/retry for
+  asynchronous scanning and Resend delivery. Both consumers are replay-safe and
+  persist bounded attempts and safe error codes.
+- Strict escaped communication templates, confirmed recipient preview/manual
+  send, delivery status, deterministic message keys, and a captured local
+  delivery adapter.
+- RFC 5545 invitations with stable UIDs, increasing sequence numbers, CRLF,
+  escaping, and line folding.
+- Durable reminder schedule/version persistence and a Python Cloudflare Workflow
+  that sleeps until the scheduled instant, then emits the exact schedule version.
+- Principal-bound, single-use, one-to-300-second download grants. Only the exact
+  current clean version can be streamed, with private/no-store headers and no R2
+  object key in the API contract.
+- Five-second authoritative dashboard reconciliation with immediate same-browser
+  invalidation, plus refresh on visibility, reconnect, and history restoration.
+  Correctness does not depend on receiving a push notification.
+
+The local acceptance smoke proves clean promotion and download, EICAR rejection,
+and deterministic reminder queue/delivery through Workerd. Activating production
+delivery requires creating the configured queues/DLQs and setting the Resend and
+scanner secrets; those account operations are deployment configuration, not an
+alternate application path.

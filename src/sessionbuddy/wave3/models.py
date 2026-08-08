@@ -177,3 +177,16 @@ class SpeakerAssetList(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: list[SpeakerAssetView]
+
+
+class AssetDownloadGrantView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    expires_at_ms: int
+
+
+class AssetDownloadToken(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    token: str = Field(min_length=32, max_length=255)

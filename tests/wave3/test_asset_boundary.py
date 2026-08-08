@@ -104,7 +104,7 @@ class Scanner:
 
     async def scan(self, body, *, job: ScanJob) -> ScanResult:
         self.calls += 1
-        assert body == b"private bytes"
+        assert body.body == b"private bytes"
         assert job.checksum_sha256 == bytes(32)
         return self.result
 
@@ -160,7 +160,7 @@ async def test_download_grant_is_owner_scoped_short_lived_and_single_use(
         bucket, actor_user_id="user-a", token=grant.token, now_ms=2_001
     )
     assert download is not None
-    assert download.body == b"private bytes"
+    assert download.body.body == b"private bytes"
     assert "object_key" not in download.__dataclass_fields__
     assert (
         await repository.consume_download_grant(

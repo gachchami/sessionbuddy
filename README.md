@@ -73,6 +73,25 @@ that task atomically and emits the audit/outbox records required by later
 communications and real-time dashboard slices. The accepted contract and
 remaining Wave 3 work are recorded in `docs/wave-3-acceptance.md`.
 
+Wave 4 agenda scheduling is available after the local speaker and admin demo
+sessions have been initialized:
+
+- Admin editor: `http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/agenda`
+- Staff/speaker schedule: `http://localhost:8787/events/22222222-2222-4222-8222-222222222222/schedule`
+
+The editor includes list/day/week/track/room views, Firefox-compatible drag/drop,
+a keyboard scheduling form, transactional conflict rejection, visible stale-write
+rollback, publication, and per-speaker calendar update planning. Run its full
+Worker journey inside the container with:
+
+```bash
+docker compose run --rm --no-deps worker uv run python \
+  scripts/smoke_wave4_agenda.py --base-url http://worker:8787
+```
+
+See `docs/wave-4-acceptance.md` for the implemented boundary and remaining provider
+activation work.
+
 The admin operational view for the seeded event is available at
 `http://localhost:8787/admin/events/22222222-2222-4222-8222-222222222222/onboarding`.
 It refreshes a bounded D1 snapshot every five seconds, pauses while hidden, and
@@ -91,9 +110,11 @@ docker compose run --rm worker uv run python scripts/smoke_wave3_assets.py \
   --base-url http://worker:8787
 ```
 
-The local adapter verifies and promotes the object deterministically. Deployed
-environments instead issue a direct R2 SigV4 PUT and keep the object quarantined
-until the asynchronous scanner promotes it.
+The local Worker sends quarantined bytes to the authenticated ClamAV container;
+only its signed clean result promotes the exact generation. Deployed environments
+issue a direct R2 SigV4 PUT and publish a versioned Queue job for the replay-safe
+scanner consumer. The same smoke also proves single-use private download grants
+and captured reminder delivery.
 
 Evaluators may declare a conflict before finalization; the assignment is revoked
 and exposed for admin reassignment. A round closes only after every selected

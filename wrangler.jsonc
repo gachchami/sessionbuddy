@@ -3,7 +3,7 @@
   "name": "sessionbuddy",
   "main": "src/entry.py",
   "compatibility_date": "2026-08-01",
-  "compatibility_flags": ["python_workers"],
+  "compatibility_flags": ["python_workers", "python_workflows"],
   "placement": {
     "mode": "smart"
   },
@@ -33,6 +33,35 @@
       "bucket_name": "sessionbuddy-assets-local"
     }
   ],
+  "queues": {
+    "producers": [
+      {"binding": "ASSET_SCAN_QUEUE", "queue": "sessionbuddy-asset-scans"},
+      {"binding": "COMMUNICATION_QUEUE", "queue": "sessionbuddy-communications"}
+    ],
+    "consumers": [
+      {
+        "queue": "sessionbuddy-asset-scans",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "sessionbuddy-asset-scans-dlq"
+      },
+      {
+        "queue": "sessionbuddy-communications",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "sessionbuddy-communications-dlq"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "sessionbuddy-reminders",
+      "binding": "REMINDER_WORKFLOW",
+      "class_name": "ReminderWorkflow"
+    }
+  ],
   "ratelimits": [
     {
       "name": "AUTH_RATE_LIMITER",
@@ -49,6 +78,7 @@
     "APP_ENV": "local",
     "APP_VERSION": "development",
     "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787",
+    "RESEND_FROM_ADDRESS": "SessionBuddy Local <events@example.test>",
     "SCANNER_URL": "http://scanner:8080",
     "SCANNER_HMAC_KEY": "local-only-scanner-key-change-before-production-2026",
     "UPLOAD_HMAC_KEY": "local-only-upload-key-change-before-production-2026"
@@ -62,6 +92,41 @@
           "database_name": "sessionbuddy-development",
           "database_id": "bafabb77-7cbd-4b3b-bc30-7df9b9d078e2",
           "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "ASSETS",
+          "bucket_name": "sessionbuddy-assets-development"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {"binding": "ASSET_SCAN_QUEUE", "queue": "sessionbuddy-asset-scans"},
+          {"binding": "COMMUNICATION_QUEUE", "queue": "sessionbuddy-communications"}
+        ],
+        "consumers": [
+          {
+            "queue": "sessionbuddy-asset-scans",
+            "max_batch_size": 5,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "sessionbuddy-asset-scans-dlq"
+          },
+          {
+            "queue": "sessionbuddy-communications",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "sessionbuddy-communications-dlq"
+          }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "sessionbuddy-reminders-development",
+          "binding": "REMINDER_WORKFLOW",
+          "class_name": "ReminderWorkflow"
         }
       ],
       "ratelimits": [
@@ -79,7 +144,8 @@
       "vars": {
         "APP_ENV": "development",
         "APP_VERSION": "development",
-        "ALLOWED_ORIGINS": ""
+        "ALLOWED_ORIGINS": "",
+        "RESEND_FROM_ADDRESS": "SessionBuddy <events@example.com>"
       }
     }
   }
