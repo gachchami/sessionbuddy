@@ -198,9 +198,8 @@
     }
     const organizerWorkspace = organizer && !["speaker", "reviews"].includes(section);
     const currentEventId = eventIdFromLocation();
-    const globalOrganizerWorkspace = organizerWorkspace && !currentEventId;
     document.body.classList.add("sb-shell-authenticated");
-    document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace);
+    document.body.classList.remove("sb-shell-global");
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
@@ -228,10 +227,21 @@
         navLink("People", "/admin/speakers", "people", section === "speakers" && !currentEventId)
       );
     }
-    if (section === "reviews" || (organizerWorkspace && roles.has("evaluator"))) nav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
-    if (section === "speaker" || (organizerWorkspace && roles.has("speaker"))) nav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
     primaryGroup.append(nav);
     sidebar.append(primaryGroup);
+    if (organizerWorkspace && (roles.has("evaluator") || roles.has("speaker"))) {
+      const utilityGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__utility");
+      utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));
+      const utilityNav = make("nav", undefined, "sb-sidebar__nav");
+      utilityNav.setAttribute("aria-label", "Your portals");
+      if (roles.has("evaluator")) utilityNav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
+      if (roles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
+      utilityGroup.append(utilityNav);
+      sidebar.append(utilityGroup);
+    } else {
+      if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
+      if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
+    }
     if (organizerWorkspace && currentEventId) sidebar.append(eventNav(currentEventId));
 
     const topbar = make("div", undefined, "sb-topbar");
@@ -243,29 +253,7 @@
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
-    if (globalOrganizerWorkspace) {
-      const topbarBrand = link("", "/admin");
-      topbarBrand.className = "sb-global-brand";
-      const topbarMark = make("span", "S", "sb-app-brand__mark");
-      topbarMark.setAttribute("aria-hidden", "true");
-      topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
-      const globalNav = make("nav", undefined, "sb-global-nav");
-      globalNav.setAttribute("aria-label", "Workspace navigation");
-      globalNav.append(
-        navLink("Home", "/admin", "home", section === "home"),
-        navLink("Events", "/admin/events", "calendar", section === "events"),
-        navLink("People", "/admin/speakers", "people", section === "speakers")
-      );
-      if (roles.has("evaluator")) {
-        globalNav.append(navLink("My reviews", "/reviews", "review"));
-      }
-      if (roles.has("speaker")) {
-        globalNav.append(navLink("Speaker portal", "/speaker", "mic"));
-      }
-      topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
-    } else {
-      topbar.append(menuButton, crumb, accountMenu(session, roles));
-    }
+    topbar.append(menuButton, crumb, accountMenu(session, roles));
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");
     backdrop.type = "button";

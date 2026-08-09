@@ -13,6 +13,27 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
     assert javascript.index("sidebar.append(primaryGroup);") < javascript.index(
         "sidebar.append(eventNav(currentEventId))"
     )
+    assert 'document.body.classList.remove("sb-shell-global")' in javascript
+    assert "const globalNav" not in javascript
+
+
+def test_workspace_navigation_uses_one_consistent_sidebar_on_global_pages() -> None:
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    assert ".sb-shell-global .sb-sidebar { display: none; }" not in stylesheet
+    assert ".sb-global-nav" not in stylesheet
+    primary_rule = stylesheet.split(".sb-sidebar__primary {", 1)[1].split("}", 1)[0]
+    assert "border:" in primary_rule
+    assert "border-radius:" in primary_rule
+    assert "background:" in primary_rule
+
+
+def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
+    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
+
+    assert "context-bar__icon" not in page
+    assert ".context-bar__icon" not in stylesheet
 
 
 def test_only_event_navigation_scrolls_inside_the_sidebar_on_all_viewports() -> None:
