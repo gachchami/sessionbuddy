@@ -86,10 +86,10 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
         )
         db.execute(
             """INSERT INTO events
-               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,
-                status,created_at_ms,updated_at_ms)
-               VALUES('load-event','load-org','Synthetic Scale Event',?,?,'UTC','hybrid',
-                      'active',?,?)""",
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms)
+               VALUES('load-event','load-org','Synthetic Scale Event',?,?,'UTC','Online',
+                      'hybrid','Synthetic performance event','active',?,?)""",
             (BASE_MS, event_end, BASE_MS, BASE_MS),
         )
         db.execute(

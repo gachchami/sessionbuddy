@@ -23,12 +23,13 @@ def guard_cookie_mutation(
     csrf_token: str | None,
     session_id: str,
     csrf_secret: bytes,
+    allowed_media_types: Collection[str] = ("application/json",),
 ) -> MutationGuardDecision:
     candidate = origin or _referer_origin(referer)
     if candidate not in set(allowed_origins):
         return MutationGuardDecision(False, "origin_denied")
     media_type = (content_type or "").split(";", 1)[0].strip().lower()
-    if media_type != "application/json":
+    if media_type not in set(allowed_media_types):
         return MutationGuardDecision(False, "media_type_invalid")
     if not csrf_token or not verify_csrf_token(csrf_token, session_id, csrf_secret):
         return MutationGuardDecision(False, "csrf_invalid")

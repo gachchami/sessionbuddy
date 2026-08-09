@@ -106,6 +106,72 @@
     return error instanceof ApiError ? error.message : fallback;
   }
 
+  function installFormValidation() {
+    const markRequiredFields = (root = document) => {
+      for (const control of root.querySelectorAll?.("input:required, textarea:required, select:required") || []) {
+        const escaped = window.CSS?.escape ? CSS.escape(control.id || "") : control.id;
+        const label = control.closest("label") || (escaped ? document.querySelector(`label[for="${escaped}"]`) : null);
+        if (!label || label.querySelector(".required-marker")) continue;
+        const marker = document.createElement("span");
+        marker.className = "required-marker";
+        marker.setAttribute("aria-hidden", "true");
+        marker.textContent = "*";
+        if (label.contains(control)) label.insertBefore(marker, control);
+        else label.append(" ", marker);
+      }
+    };
+    const validateRequiredText = (form) => {
+      for (const control of form.querySelectorAll('input:required:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea:required')) {
+        const missing = !String(control.value || "").trim();
+        control.setCustomValidity(missing ? "This field is required." : "");
+        if (missing) control.setAttribute("aria-invalid", "true");
+      }
+    };
+    markRequiredFields();
+    new MutationObserver((records) => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) markRequiredFields(node);
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener("click", (event) => {
+      const submit = event.target.closest?.('button:not([type]), button[type="submit"], input[type="submit"]');
+      const form = submit?.form;
+      if (form) {
+        form.classList.add("validation-attempted");
+        validateRequiredText(form);
+      }
+    }, true);
+    document.addEventListener("submit", (event) => {
+      validateRequiredText(event.target);
+      if (!event.target.checkValidity()) {
+        event.preventDefault();
+        event.target.querySelector(":invalid")?.focus();
+      }
+    }, true);
+    document.addEventListener("invalid", (event) => {
+      const control = event.target;
+      control.form?.classList.add("validation-attempted");
+      control.setAttribute?.("aria-invalid", "true");
+    }, true);
+    const clearValidState = (event) => {
+      const control = event.target;
+      if (control.matches?.('input:required:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea:required')) {
+        control.setCustomValidity(String(control.value || "").trim() ? "" : "This field is required.");
+      }
+      if (control.validity?.valid) control.removeAttribute?.("aria-invalid");
+    };
+    document.addEventListener("input", clearValidState, true);
+    document.addEventListener("change", clearValidState, true);
+    document.addEventListener("reset", (event) => {
+      event.target.classList?.remove("validation-attempted");
+      for (const control of event.target.querySelectorAll?.('[aria-invalid="true"]') || []) {
+        control.removeAttribute("aria-invalid");
+      }
+    }, true);
+  }
+
+  installFormValidation();
+
   window.SessionBuddyApi = Object.freeze({
     ApiError,
     message,

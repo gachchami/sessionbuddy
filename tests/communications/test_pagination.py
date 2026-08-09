@@ -14,9 +14,10 @@ def seed_event(connection) -> None:
     )
     connection.execute(
         """INSERT INTO events
-           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,status,
-            created_at_ms,updated_at_ms)
-           VALUES ('event-a','org-a','Event a',1000,2000,'UTC','hybrid','active',1000,1000)"""
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+            delivery_mode,description,status,created_at_ms,updated_at_ms)
+           VALUES ('event-a','org-a','Event a',1000,2000,'UTC','Online','hybrid',
+                   'Test event','active',1000,1000)"""
     )
 
 

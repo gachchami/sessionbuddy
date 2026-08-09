@@ -2,7 +2,7 @@
   "use strict";
 
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map(), logoPreviewUrl: "", coverPreviewUrl: "" };
+  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map() };
   const logoRules = { "image/jpeg": 2 * 1024 * 1024, "image/png": 2 * 1024 * 1024, "image/webp": 2 * 1024 * 1024 };
   const timeZoneAliases = new Map([
     ["Asia/Calcutta", "Asia/Kolkata"],
@@ -16,6 +16,12 @@
   ]);
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+
+  function updateSaveAvailability() {
+    const form = byId("event-form");
+    const pending = Boolean(form.elements.logo_file.files[0] || form.elements.cover_file.files[0]);
+    byId("save-event").disabled = pending;
+  }
 
   function setStatus(message, error = false) {
     const status = byId("status");
@@ -169,6 +175,10 @@
   function resetEventForm() {
     const form = byId("event-form");
     form.reset();
+    form.classList.remove("validation-attempted");
+    for (const field of form.querySelectorAll('[aria-invalid="true"]')) field.removeAttribute("aria-invalid");
+    byId("event-form-help").className = "result";
+    byId("event-form-help").innerHTML = 'Fields marked <span class="required-marker" aria-hidden="true">*</span> are required.';
     form.elements.event_id.value = "";
     form.elements.version.value = "";
     form.elements.time_zone.value = browserTimeZone();
@@ -176,18 +186,26 @@
     form.elements.start_time.value = "09:00";
     form.elements.end_date.value = "";
     form.elements.end_time.value = "17:00";
+    const minimumDate = eventLocalDateTime(Date.now(), form.elements.time_zone.value).date;
+    form.elements.start_date.min = minimumDate;
+    form.elements.end_date.min = minimumDate;
     form.elements.delivery_mode.value = "";
     form.elements.accent_color.value = "#3159d9";
     form.elements.logo_url.value = "";
-    if (state.logoPreviewUrl) URL.revokeObjectURL(state.logoPreviewUrl);
-    state.logoPreviewUrl = "";
     byId("event-logo-preview").removeAttribute("src");
-    byId("event-logo-preview").hidden = true;
+    byId("event-logo-preview-frame").hidden = true;
+    byId("event-logo-filename").textContent = "";
+    byId("event-logo-status").textContent = "No file selected.";
+    byId("event-logo-status").className = "image-upload__status";
+    byId("upload-event-logo").disabled = true;
     form.elements.cover_image_url.value = "";
-    if (state.coverPreviewUrl) URL.revokeObjectURL(state.coverPreviewUrl);
-    state.coverPreviewUrl = "";
     byId("event-cover-preview").removeAttribute("src");
-    byId("event-cover-preview").hidden = true;
+    byId("event-cover-preview-frame").hidden = true;
+    byId("event-cover-filename").textContent = "";
+    byId("event-cover-status").textContent = "No file selected.";
+    byId("event-cover-status").className = "image-upload__status";
+    byId("upload-event-cover").disabled = true;
+    byId("save-event").disabled = false;
     byId("event-form-heading").textContent = "Create an event";
     byId("save-event").textContent = "Create event";
     byId("event-status-label").hidden = true;
@@ -219,6 +237,8 @@
     form.elements.start_time.value = startsAt.time;
     form.elements.end_date.value = endsAt.date;
     form.elements.end_time.value = endsAt.time;
+    form.elements.start_date.removeAttribute("min");
+    form.elements.end_date.removeAttribute("min");
     form.elements.time_zone.value = timeZone;
     form.elements.delivery_mode.value = event.delivery_mode;
     form.elements.location.value = event.location || "";
@@ -229,12 +249,18 @@
     form.elements.logo_url.value = event.logo_url || "";
     if (event.logo_url) {
       byId("event-logo-preview").src = event.logo_url;
-      byId("event-logo-preview").hidden = false;
+      byId("event-logo-preview-frame").hidden = false;
+      byId("event-logo-filename").textContent = "Current logo";
+      byId("event-logo-status").textContent = "Uploaded and saved.";
+      byId("event-logo-status").className = "image-upload__status success";
     }
     form.elements.cover_image_url.value = event.cover_image_url || "";
     if (event.cover_image_url) {
       byId("event-cover-preview").src = event.cover_image_url;
-      byId("event-cover-preview").hidden = false;
+      byId("event-cover-preview-frame").hidden = false;
+      byId("event-cover-filename").textContent = "Current cover";
+      byId("event-cover-status").textContent = "Uploaded and saved.";
+      byId("event-cover-status").className = "image-upload__status success";
     }
     form.elements.website_url.value = event.website_url || "";
     form.elements.status.value = event.status;
@@ -373,7 +399,22 @@
 
   byId("event-form").addEventListener("input", (event) => {
     event.target.setCustomValidity?.("");
+    if (event.target.validity?.valid) event.target.removeAttribute("aria-invalid");
     updateDateTimePreview();
+  });
+  byId("event-form").addEventListener("invalid", (event) => {
+    event.target.setAttribute("aria-invalid", "true");
+  }, true);
+  byId("save-event").addEventListener("click", () => {
+    const form = byId("event-form");
+    form.classList.add("validation-attempted");
+    if (form.checkValidity()) return;
+    const help = byId("event-form-help");
+    help.className = "status error event-form-error";
+    help.textContent = "Complete the highlighted fields before creating the event.";
+    const firstInvalid = form.querySelector(":invalid");
+    firstInvalid?.focus();
+    firstInvalid?.reportValidity();
   });
   byId("event-form").elements.start_date.addEventListener("change", (event) => {
     const form = event.currentTarget.form;
@@ -382,6 +423,11 @@
   });
   byId("event-form").elements.time_zone.addEventListener("change", (event) => {
     event.currentTarget.value = normalizeTimeZone(event.currentTarget.value);
+    if (!event.currentTarget.form.elements.event_id.value) {
+      const minimumDate = eventLocalDateTime(Date.now(), event.currentTarget.value).date;
+      event.currentTarget.form.elements.start_date.min = minimumDate;
+      event.currentTarget.form.elements.end_date.min = minimumDate;
+    }
     updateDateTimePreview();
   });
 
@@ -394,11 +440,19 @@
         ? "Choose an image no larger than 2 MB."
         : "";
     input.setCustomValidity(message);
+    byId("upload-event-logo").disabled = !file || Boolean(message);
+    event.currentTarget.form.elements.logo_url.value = "";
+    byId("event-logo-status").textContent = message || (file ? "Preview ready. Click Upload to store this logo." : "No file selected.");
+    byId("event-logo-status").className = `image-upload__status${message ? " error" : ""}`;
+    updateSaveAvailability();
     if (!file || message) return;
-    if (state.logoPreviewUrl) URL.revokeObjectURL(state.logoPreviewUrl);
-    state.logoPreviewUrl = URL.createObjectURL(file);
-    byId("event-logo-preview").src = state.logoPreviewUrl;
-    byId("event-logo-preview").hidden = false;
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      byId("event-logo-preview").src = String(reader.result || "");
+      byId("event-logo-preview-frame").hidden = false;
+      byId("event-logo-filename").textContent = file.name;
+    }, { once: true });
+    reader.readAsDataURL(file);
   });
 
   byId("event-form").elements.cover_file.addEventListener("change", (event) => {
@@ -410,28 +464,56 @@
         ? "Choose an image no larger than 2 MB."
         : "";
     input.setCustomValidity(message);
+    byId("upload-event-cover").disabled = !file || Boolean(message);
+    event.currentTarget.form.elements.cover_image_url.value = "";
+    byId("event-cover-status").textContent = message || (file ? "Preview ready. Click Upload to store this cover." : "No file selected.");
+    byId("event-cover-status").className = `image-upload__status${message ? " error" : ""}`;
+    updateSaveAvailability();
     if (!file || message) return;
-    if (state.coverPreviewUrl) URL.revokeObjectURL(state.coverPreviewUrl);
-    state.coverPreviewUrl = URL.createObjectURL(file);
-    byId("event-cover-preview").src = state.coverPreviewUrl;
-    byId("event-cover-preview").hidden = false;
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      byId("event-cover-preview").src = String(reader.result || "");
+      byId("event-cover-preview-frame").hidden = false;
+      byId("event-cover-filename").textContent = file.name;
+    }, { once: true });
+    reader.readAsDataURL(file);
   });
 
-  async function uploadEventLogo(eventId, file) {
-    return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/logo`, {
+  async function uploadEventAsset(kind, file) {
+    return api(`/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/event-assets/${kind}`, {
       method: "POST",
       headers: { "content-type": file.type, "x-csrf-token": state.csrf },
       body: file
     });
   }
 
-  async function uploadEventCover(eventId, file) {
-    return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cover`, {
-      method: "POST",
-      headers: { "content-type": file.type, "x-csrf-token": state.csrf },
-      body: file
-    });
+  async function uploadSelectedAsset(kind) {
+    const form = byId("event-form");
+    const isLogo = kind === "logo";
+    const input = form.elements[isLogo ? "logo_file" : "cover_file"];
+    const button = byId(isLogo ? "upload-event-logo" : "upload-event-cover");
+    const status = byId(isLogo ? "event-logo-status" : "event-cover-status");
+    const file = input.files[0];
+    if (!file || !input.checkValidity()) return;
+    button.disabled = true;
+    status.textContent = "Uploading…";
+    status.className = "image-upload__status";
+    try {
+      const uploaded = await uploadEventAsset(kind, file);
+      form.elements[isLogo ? "logo_url" : "cover_image_url"].value = uploaded.asset_url;
+      input.value = "";
+      updateSaveAvailability();
+      status.textContent = "Uploaded. This image will be saved with the event.";
+      status.className = "image-upload__status success";
+    } catch (error) {
+      button.disabled = false;
+      status.textContent = error.message;
+      status.className = "image-upload__status error";
+    }
   }
+
+  byId("upload-event-logo").addEventListener("click", () => uploadSelectedAsset("logo"));
+  byId("upload-event-cover").addEventListener("click", () => uploadSelectedAsset("cover"));
 
   byId("event-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -447,6 +529,12 @@
       const timeZone = normalizeTimeZone(values.time_zone);
       const startsAt = zonedDateTimeToMillis(values.start_date, values.start_time, timeZone);
       const endsAt = zonedDateTimeToMillis(values.end_date, values.end_time, timeZone);
+      if (!eventId && startsAt <= Date.now()) {
+        form.elements.start_date.setCustomValidity("A new event must start in the future.");
+        form.elements.start_date.setAttribute("aria-invalid", "true");
+        form.elements.start_date.reportValidity();
+        return;
+      }
       if (endsAt <= startsAt) {
         form.elements.end_date.setCustomValidity("The event must end after it starts.");
         form.elements.end_date.reportValidity();
@@ -459,29 +547,24 @@
         ends_at_ms: endsAt,
         time_zone: timeZone,
         delivery_mode: values.delivery_mode,
-        location: values.location || null,
-        description: values.description || null,
+        location: values.location.trim(),
+        description: values.description.trim(),
         email_sender_name: values.email_sender_name || null,
         email_reply_to: values.email_reply_to || null,
         accent_color: values.accent_color || "#3159d9",
         logo_url: values.logo_url || null,
+        cover_image_url: values.cover_image_url || null,
         website_url: values.website_url || null
       };
       if (eventId) {
         body.version = Number(values.version);
         body.status = values.status;
       }
-      const logoFile = form.elements.logo_file.files[0];
-      const coverFile = form.elements.cover_file.files[0];
-      if (logoFile && (!logoRules[logoFile.type] || logoFile.size > logoRules[logoFile.type])) {
-        form.elements.logo_file.reportValidity();
+      if (form.elements.logo_file.files[0] || form.elements.cover_file.files[0]) {
+        setStatus("Upload the selected logo or cover before creating the event.", true);
         return;
       }
-      if (coverFile && (!logoRules[coverFile.type] || coverFile.size > logoRules[coverFile.type])) {
-        form.elements.cover_file.reportValidity();
-        return;
-      }
-      const saved = await api(
+      await api(
         eventId
           ? `/api/v1/admin/events/${encodeURIComponent(eventId)}`
           : `/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events`,
@@ -491,8 +574,6 @@
           body: JSON.stringify(body)
         }
       );
-      if (logoFile) await uploadEventLogo(saved.id, logoFile);
-      if (coverFile) await uploadEventCover(saved.id, coverFile);
       setStatus(eventId ? "Event updated." : "Event created.");
       await loadEvents(state.organizationId);
       closeEventDialog();

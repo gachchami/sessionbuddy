@@ -93,7 +93,11 @@
     container.replaceChildren();
     for (const field of fields) {
       const label = make("label", field.label);
-      if (field.required) label.append(make("span", "Required", "required-marker"));
+      if (field.required) {
+        const marker = make("span", "*", "required-marker");
+        marker.setAttribute("aria-hidden", "true");
+        label.append(marker);
+      }
       label.dataset.fieldKey = field.key;
       let input;
       if (field.type === "textarea") {

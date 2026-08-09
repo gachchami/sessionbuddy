@@ -128,14 +128,19 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
         "start_time",
         "end_date",
         "end_time",
+        "location",
+        "description",
     ):
         field_line = next(
             line for line in event_form.splitlines() if f'name="{field_name}"' in line
         )
-        assert '<span class="required-marker">Required</span>' in field_line
+        assert '<span class="required-marker" aria-hidden="true">*</span>' in field_line
         assert " required" in field_line
     assert ".required-marker" in stylesheet
     assert "color: var(--danger)" in stylesheet
+    assert "form.validation-attempted" in stylesheet
+    assert 'classList.add("validation-attempted")' in javascript
+    assert 'setAttribute("aria-invalid", "true")' in javascript
     assert "--danger: #b42318" in stylesheet
     assert 'value="Asia/Kolkata"' not in text
     assert '<option value="" selected disabled>Select a format</option>' in text
@@ -148,6 +153,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'id="date-time-preview"' in text
     assert "showModal()" in javascript
     assert 'form.elements.delivery_mode.value = ""' in javascript
+    assert 'startsAt <= Date.now()' in javascript
     assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
     assert "zonedDateTimeToMillis" in javascript
 

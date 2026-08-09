@@ -64,13 +64,14 @@ async def require_permission(
     context: ResourceContext,
     *,
     mutation: bool,
+    mutation_media_types: frozenset[str] = frozenset({"application/json"}),
 ) -> AuthenticatedContext:
     authenticated = await authenticate_request(request)
     decision = authorize(authenticated.actor, permission, context)
     if not decision.allowed:
         raise HTTPException(status_code=authorization_denial_status(decision.reason))
     if mutation:
-        guard_mutation(request, authenticated.session_id)
+        guard_mutation(request, authenticated.session_id, mutation_media_types)
     return authenticated
 
 
@@ -94,7 +95,11 @@ async def authenticate_request(request: Request) -> AuthenticatedContext:
     return authenticated
 
 
-def guard_mutation(request: Request, session_id: str) -> None:
+def guard_mutation(
+    request: Request,
+    session_id: str,
+    allowed_media_types: frozenset[str] = frozenset({"application/json"}),
+) -> None:
     guard = guard_cookie_mutation(
         origin=request.headers.get("origin"),
         referer=request.headers.get("referer"),
@@ -103,6 +108,7 @@ def guard_mutation(request: Request, session_id: str) -> None:
         csrf_token=request.headers.get("x-csrf-token"),
         session_id=session_id,
         csrf_secret=secret(request, "CSRF_HMAC_KEY"),
+        allowed_media_types=allowed_media_types,
     )
     if not guard.allowed:
         raise HTTPException(status_code=403)

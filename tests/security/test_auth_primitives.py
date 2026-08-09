@@ -168,3 +168,18 @@ def test_cookie_mutation_guard_accepts_same_origin_referer_fallback() -> None:
         csrf_secret=secret,
     )
     assert decision.allowed
+
+
+def test_cookie_mutation_guard_accepts_explicit_upload_media_type() -> None:
+    secret = b"c" * 32
+    decision = guard_cookie_mutation(
+        origin="https://app.example",
+        referer=None,
+        allowed_origins={"https://app.example"},
+        content_type="image/png",
+        csrf_token=issue_csrf_token("session-a", secret),
+        session_id="session-a",
+        csrf_secret=secret,
+        allowed_media_types={"image/png", "image/jpeg", "image/webp"},
+    )
+    assert decision.allowed

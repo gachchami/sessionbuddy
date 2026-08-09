@@ -32,9 +32,9 @@ def db() -> sqlite3.Connection:
         )
         connection.execute(
             """INSERT INTO events
-               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,
-                status,created_at_ms,updated_at_ms)
-               VALUES(?,?,?,10,20,'UTC','hybrid','active',1,1)""",
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms)
+               VALUES(?,?,?,10,20,'UTC','Online','hybrid','Test event','active',1,1)""",
             (f"event-{suffix}", f"org-{suffix}", f"Event {suffix.upper()}"),
         )
         connection.execute(
@@ -157,9 +157,10 @@ def test_event_time_range_is_strict_at_database_boundary(db: sqlite3.Connection)
     with pytest.raises(sqlite3.IntegrityError, match="event end must be after start"):
         db.execute(
             """INSERT INTO events
-               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,
-                status,created_at_ms,updated_at_ms)
-               VALUES('equal-time','org-a','Invalid',10,10,'UTC','hybrid','active',1,1)"""
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms)
+               VALUES('equal-time','org-a','Invalid',10,10,'UTC','Online','hybrid',
+                      'Test event','active',1,1)"""
         )
 
 

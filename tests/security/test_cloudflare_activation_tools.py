@@ -54,6 +54,9 @@ def test_bootstrap_payload_requires_offset_dates_and_orders_them() -> None:
         starts_at="2026-11-01T09:00:00+05:30",
         ends_at="2026-11-01T18:00:00+05:30",
         time_zone="Asia/Kolkata",
+        event_location="Mumbai",
+        event_description="Example conference",
+        event_delivery_mode="hybrid",
     )
 
     payload = bootstrap_payload(arguments)
@@ -74,6 +77,9 @@ def test_bootstrap_payload_allows_an_organization_without_an_event() -> None:
         starts_at=None,
         ends_at=None,
         time_zone=None,
+        event_location=None,
+        event_description=None,
+        event_delivery_mode=None,
     )
 
     assert bootstrap_payload(arguments) == {

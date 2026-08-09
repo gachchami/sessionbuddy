@@ -780,17 +780,10 @@
             "title": "Admin Job Title"
           },
           "admin_name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Admin Name"
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Admin Name",
+            "type": "string"
           },
           "admin_time_zone": {
             "anyOf": [
@@ -815,6 +808,48 @@
               }
             ],
             "title": "Ends At Ms"
+          },
+          "event_delivery_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Delivery Mode"
+          },
+          "event_description": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Description"
+          },
+          "event_location": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Location"
           },
           "event_name": {
             "anyOf": [
@@ -863,6 +898,7 @@
         },
         "required": [
           "organization_name",
+          "admin_name",
           "admin_email"
         ],
         "title": "BootstrapCreate",
@@ -2173,6 +2209,28 @@
         "title": "EvaluatorView",
         "type": "object"
       },
+      "EventBrandingAssetView": {
+        "properties": {
+          "asset_url": {
+            "title": "Asset Url",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "logo",
+              "cover"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_url",
+          "kind"
+        ],
+        "title": "EventBrandingAssetView",
+        "type": "object"
+      },
       "EventCoverView": {
         "properties": {
           "cover_image_url": {
@@ -2220,7 +2278,6 @@
             "title": "Cover Image Url"
           },
           "delivery_mode": {
-            "default": "hybrid",
             "enum": [
               "in_person",
               "virtual",
@@ -2230,16 +2287,10 @@
             "type": "string"
           },
           "description": {
-            "anyOf": [
-              {
-                "maxLength": 5000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
           },
           "email_reply_to": {
             "anyOf": [
@@ -2271,16 +2322,10 @@
             "type": "integer"
           },
           "location": {
-            "anyOf": [
-              {
-                "maxLength": 500,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Location",
+            "type": "string"
           },
           "logo_url": {
             "anyOf": [
@@ -2328,7 +2373,10 @@
           "name",
           "starts_at_ms",
           "ends_at_ms",
-          "time_zone"
+          "time_zone",
+          "location",
+          "delivery_mode",
+          "description"
         ],
         "title": "EventCreate",
         "type": "object"
@@ -2449,7 +2497,6 @@
             "title": "Cover Image Url"
           },
           "delivery_mode": {
-            "default": "hybrid",
             "enum": [
               "in_person",
               "virtual",
@@ -2459,16 +2506,10 @@
             "type": "string"
           },
           "description": {
-            "anyOf": [
-              {
-                "maxLength": 5000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
           },
           "email_reply_to": {
             "anyOf": [
@@ -2500,16 +2541,10 @@
             "type": "integer"
           },
           "location": {
-            "anyOf": [
-              {
-                "maxLength": 500,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Location",
+            "type": "string"
           },
           "logo_url": {
             "anyOf": [
@@ -2573,6 +2608,9 @@
           "starts_at_ms",
           "ends_at_ms",
           "time_zone",
+          "location",
+          "delivery_mode",
+          "description",
           "version"
         ],
         "title": "EventUpdate",
@@ -2612,15 +2650,8 @@
             "type": "string"
           },
           "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
+            "title": "Description",
+            "type": "string"
           },
           "email_reply_to": {
             "anyOf": [
@@ -2653,15 +2684,8 @@
             "type": "string"
           },
           "location": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Location"
+            "title": "Location",
+            "type": "string"
           },
           "logo_url": {
             "anyOf": [
@@ -2722,7 +2746,9 @@
           "starts_at_ms",
           "ends_at_ms",
           "time_zone",
+          "location",
           "delivery_mode",
+          "description",
           "status",
           "version"
         ],
@@ -9824,6 +9850,61 @@
         ]
       }
     },
+    "/api/v1/admin/organizations/{organization_id}/event-assets/{kind}": {
+      "post": {
+        "operationId": "upload_organization_event_asset_api_v1_admin_organizations__organization_id__event_assets__kind__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "logo",
+                "cover"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBrandingAssetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Organization Event Asset",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/organizations/{organization_id}/events": {
       "get": {
         "operationId": "list_events_api_v1_admin_organizations__organization_id__events_get",
@@ -10841,6 +10922,41 @@
         "summary": "Api Health",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/public/event-assets/{asset_name}": {
+      "get": {
+        "operationId": "public_event_branding_asset_api_v1_public_event_assets__asset_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_name",
+            "required": true,
+            "schema": {
+              "title": "Asset Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Event Branding Asset",
+        "tags": [
+          "public-program"
         ]
       }
     },

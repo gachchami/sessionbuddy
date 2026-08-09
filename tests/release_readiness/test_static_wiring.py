@@ -108,10 +108,58 @@ def test_event_branding_uses_a_validated_logo_upload() -> None:
     assert 'name="logo_file" type="file"' in page
     assert 'accept="image/png,image/jpeg,image/webp"' in page
     assert "2 * 1024 * 1024" in script
-    assert "/logo`" in script
+    assert "/event-assets/${kind}`" in script
+    assert 'uploadSelectedAsset("logo")' in script
     assert 'name="cover_file" type="file"' in page
-    assert "Recommended: 1600 × 900 pixels" in page
-    assert "/cover`" in script
+    assert "Recommended: 1600 × 900" in page
+    assert 'uploadSelectedAsset("cover")' in script
+
+
+def test_event_images_use_an_explicit_preview_then_upload_flow() -> None:
+    page = (STATIC / "events_admin.html").read_text()
+    script = (STATIC / "events_admin.js").read_text()
+
+    for kind in ("logo", "cover"):
+        section = page.split(
+            f'<section class="image-upload" aria-labelledby="event-{kind}-label">', 1
+        )[1].split("</section>", 1)[0]
+        assert 'class="button secondary image-upload__button"' in section
+        assert f'for="event-{kind}-file">Choose file</label>' in section
+        assert f'id="event-{kind}-preview-frame"' in section
+        assert f'id="event-{kind}-status"' in section
+        assert re.search(
+            rf'<button[^>]*id="upload-event-{kind}"[^>]*type="button"[^>]*disabled',
+            section,
+        )
+        assert f'byId("upload-event-{kind}").addEventListener("click"' in script
+
+
+def test_event_creation_waits_for_selected_image_uploads() -> None:
+    script = (STATIC / "events_admin.js").read_text()
+    upload_handler = script.split("async function uploadSelectedAsset(kind) {", 1)[1]
+    submit_handler = script.split(
+        'byId("event-form").addEventListener("submit", async (event) => {', 1
+    )[1]
+
+    # Selecting an optional image makes it pending; its explicit upload action
+    # must clear that state before the event-creation request is allowed.
+    assert ".value = uploaded.asset_url" in upload_handler
+    assert upload_handler.index(".value = uploaded.asset_url") < upload_handler.index(
+        'input.value = ""'
+    )
+    guard_at = submit_handler.index(
+        "form.elements.logo_file.files[0] || form.elements.cover_file.files[0]"
+    )
+    create_at = submit_handler.index(
+        "/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events"
+    )
+    assert guard_at < create_at
+    assert "Upload the selected logo or cover before creating the event." in submit_handler
+
+    # Uploading as an implicit side effect after event creation recreates the
+    # partial-success bug this flow is intended to prevent.
+    create_request = submit_handler[create_at:]
+    assert "uploadSelectedAsset(" not in create_request
 
 
 def test_public_event_pages_render_cover_images() -> None:

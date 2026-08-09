@@ -140,7 +140,11 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
         bootstrap = await client.post(
             "/api/v1/bootstrap",
             headers={"x-bootstrap-token": _deployment_key(connection)},
-            json={"organization_name": "Expired Link Events", "admin_email": "admin@example.com"},
+            json={
+                "organization_name": "Expired Link Events",
+                "admin_name": "Admin",
+                "admin_email": "admin@example.com",
+            },
         )
         assert bootstrap.status_code == 200
         requested = await client.post(
@@ -279,7 +283,11 @@ async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
         created = await client.post(
             "/api/v1/bootstrap",
             headers={"x-bootstrap-token": deployment_key},
-            json={"organization_name": "One Time Events", "admin_email": "owner@example.com"},
+            json={
+                "organization_name": "One Time Events",
+                "admin_name": "Owner",
+                "admin_email": "owner@example.com",
+            },
         )
         assert created.status_code == 200
 
@@ -293,7 +301,11 @@ async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
         repeated = await client.post(
             "/api/v1/bootstrap",
             headers={"x-bootstrap-token": deployment_key},
-            json={"organization_name": "Second Setup", "admin_email": "other@example.com"},
+            json={
+                "organization_name": "Second Setup",
+                "admin_name": "Other",
+                "admin_email": "other@example.com",
+            },
         )
         assert repeated.status_code == 409
         assert connection.execute("SELECT COUNT(*) FROM organizations").fetchone()[0] == 0
@@ -318,12 +330,20 @@ async def test_setup_uses_the_current_migration_generated_key(production_environ
         rejected = await client.post(
             "/api/v1/bootstrap",
             headers={"x-bootstrap-token": old_key},
-            json={"organization_name": "Old Key", "admin_email": "old@example.com"},
+            json={
+                "organization_name": "Old Key",
+                "admin_name": "Old",
+                "admin_email": "old@example.com",
+            },
         )
         accepted = await client.post(
             "/api/v1/bootstrap",
             headers={"x-bootstrap-token": replacement},
-            json={"organization_name": "New Key", "admin_email": "new@example.com"},
+            json={
+                "organization_name": "New Key",
+                "admin_name": "New",
+                "admin_email": "new@example.com",
+            },
         )
 
     assert rejected.status_code == 404
@@ -344,6 +364,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             headers={"x-bootstrap-token": deployment_key},
             json={
                 "organization_name": "Integration Events",
+                "admin_name": "Admin",
                 "admin_email": "admin@example.com",
             },
         )
@@ -356,6 +377,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 headers={"x-bootstrap-token": deployment_key},
                 json={
                     "organization_name": "Second",
+                    "admin_name": "Other",
                     "admin_email": "other@example.com",
                 },
             )
@@ -397,6 +419,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "ends_at_ms": 1_900_086_400_000,
                 "time_zone": "Asia/Kolkata",
                 "delivery_mode": "hybrid",
+                "location": "Mumbai",
+                "description": "Speaker conference",
                 "email_sender_name": "Speaker Summit",
                 "email_reply_to": "program@example.com",
             },
@@ -727,6 +751,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "ends_at_ms": 1_901_086_400_000,
                 "time_zone": "Asia/Kolkata",
                 "delivery_mode": "hybrid",
+                "location": "Mumbai",
+                "description": "Next speaker conference",
             },
         )
         assert second_event.status_code == 201
@@ -819,6 +845,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             headers={"x-bootstrap-token": _deployment_key(connection)},
             json={
                 "organization_name": "Existing User Events",
+                "admin_name": "Admin",
                 "admin_email": "admin@example.com",
             },
         )
@@ -854,6 +881,8 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
                 "ends_at_ms": 1_900_086_400_000,
                 "time_zone": "UTC",
                 "delivery_mode": "in_person",
+                "location": "Mumbai",
+                "description": "Multi-role conference",
             },
         )
         event_id = event.json()["id"]
@@ -971,6 +1000,9 @@ async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
                 "starts_at_ms": 1_900_000_000_000,
                 "ends_at_ms": 1_900_086_400_000,
                 "time_zone": "UTC",
+                "event_location": "Online",
+                "event_description": "Administrator speaker conference",
+                "event_delivery_mode": "virtual",
             },
         )
         event_id = bootstrap.json()["event_id"]

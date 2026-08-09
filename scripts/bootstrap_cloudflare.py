@@ -40,11 +40,14 @@ def bootstrap_payload(arguments: argparse.Namespace) -> dict[str, str | int]:
         arguments.starts_at,
         arguments.ends_at,
         arguments.time_zone,
+        arguments.event_location,
+        arguments.event_description,
+        arguments.event_delivery_mode,
     )
     if not any(value is not None for value in event_values):
         return payload
     if not all(value is not None for value in event_values):
-        raise ValueError("event name, start, end, and time zone must be supplied together")
+        raise ValueError("all event details must be supplied together")
     starts_at_ms = timestamp_ms(arguments.starts_at)
     ends_at_ms = timestamp_ms(arguments.ends_at)
     if ends_at_ms <= starts_at_ms:
@@ -55,6 +58,9 @@ def bootstrap_payload(arguments: argparse.Namespace) -> dict[str, str | int]:
             "starts_at_ms": starts_at_ms,
             "ends_at_ms": ends_at_ms,
             "time_zone": arguments.time_zone,
+            "event_location": arguments.event_location,
+            "event_description": arguments.event_description,
+            "event_delivery_mode": arguments.event_delivery_mode,
         }
     )
     return payload
@@ -98,6 +104,11 @@ def main() -> int:
         help="ISO 8601 timestamp with UTC offset, such as 2026-11-01T18:00:00+05:30",
     )
     parser.add_argument("--time-zone", help="IANA name, such as Asia/Kolkata")
+    parser.add_argument("--event-location")
+    parser.add_argument("--event-description")
+    parser.add_argument(
+        "--event-delivery-mode", choices=("in_person", "virtual", "hybrid")
+    )
     arguments = parser.parse_args()
     try:
         _, variables = load_environment(arguments.config, arguments.env)
