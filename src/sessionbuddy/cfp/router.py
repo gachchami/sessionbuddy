@@ -1,7 +1,10 @@
 import hashlib
 import json
+import re
+from email.headerregistry import Address
 from html import escape
 from time import perf_counter
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -24,6 +27,7 @@ from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 
 from .models import (
+    CfpWorkspaceView,
     FormPublish,
     ProgramCreate,
     ProgramView,
@@ -53,6 +57,14 @@ def _db(request: Request):
     return db
 
 
+async def _timed_first(request: Request, statement, column: str | None = None):
+    started = perf_counter()
+    try:
+        return await statement.first(column)
+    finally:
+        record_timing(request, "db", (perf_counter() - started) * 1000)
+
+
 def _idempotency_key(value: str | None) -> str:
     if value is None or not 16 <= len(value) <= 255:
         raise HTTPException(status_code=400)
@@ -70,6 +82,15 @@ def _product_page(request: Request, asset: str) -> HTMLResponse:
 
 @cfp_router.get("/admin/programs", response_class=HTMLResponse, include_in_schema=False)
 async def admin_programs_page(request: Request) -> HTMLResponse:
+    return _product_page(request, "admin_programs.html")
+
+
+@cfp_router.get(
+    "/admin/events/{event_id}/cfp",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def admin_event_cfp_page(event_id: str, request: Request) -> HTMLResponse:
     return _product_page(request, "admin_programs.html")
 
 
@@ -201,6 +222,65 @@ async def create_program(
     )
     await _execute(request, batch)
     return ProgramView(id=program_id, **body.model_dump(), status="draft")
+
+
+@cfp_router.get(
+    "/api/v1/admin/events/{event_id}/cfp",
+    response_model=CfpWorkspaceView,
+    operation_id="getCallForSpeakersWorkspace",
+    tags=["programs", "forms"],
+)
+async def get_cfp_workspace(event_id: str, request: Request) -> CfpWorkspaceView:
+    await authenticate_request(request)
+    db = _db(request)
+    event = row_mapping(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT organization_id FROM events
+                   WHERE id = ?1 AND status != 'archived' LIMIT 1"""
+            ).bind(event_id),
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    organization_id = str(event["organization_id"])
+    await require_permission(
+        request,
+        Permission.FORM_MANAGE,
+        ResourceContext(organization_id, event_id),
+        mutation=False,
+    )
+    program_row = row_mapping(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT id,organization_id,event_id,name,status FROM programs
+                   WHERE organization_id = ?1 AND event_id = ?2 AND status != 'archived'
+                   ORDER BY updated_at_ms DESC,id DESC LIMIT 1"""
+            ).bind(organization_id, event_id),
+        )
+    )
+    if program_row is None:
+        return CfpWorkspaceView(organization_id=organization_id, event_id=event_id)
+    program = ProgramView.model_validate(program_row)
+    form_id = await _timed_first(
+        request,
+        db.prepare(
+            """SELECT id FROM call_for_speaker_forms
+               WHERE organization_id = ?1 AND event_id = ?2 AND program_id = ?3
+                 AND status = 'published'
+               ORDER BY version DESC,published_at_ms DESC,id DESC LIMIT 1"""
+        ).bind(organization_id, event_id, program.id),
+        "id",
+    )
+    published_form = await _form_by_id(db, str(form_id)) if form_id is not None else None
+    return CfpWorkspaceView(
+        organization_id=organization_id,
+        event_id=event_id,
+        program=program,
+        published_form=published_form,
+    )
 
 
 @cfp_router.post(
@@ -430,6 +510,7 @@ async def save_submission_draft(
     known = {str(field.get("key")) for field in schema.get("fields", []) if isinstance(field, dict)}
     if not set(body.answers) <= known:
         raise HTTPException(status_code=422)
+    _validate_draft_schema(schema, body.answers)
     now, draft_id = utc_now_ms(), new_id()
     answers_json = json.dumps(body.answers, separators=(",", ":"), sort_keys=True)
     await (
@@ -785,7 +866,12 @@ async def list_submissions(
     for row in result_rows(result):
         answers = json.loads(str(row.pop("answers_json")))
         data.append(SubmissionView.model_validate({**row, "answers": answers}))
-    return SubmissionList(data=data)
+    return SubmissionList(
+        organization_id=str(program["organization_id"]),
+        event_id=str(program["event_id"]),
+        program_id=program_id,
+        data=data,
+    )
 
 
 async def _execute(request: Request, batch: CommandBatch) -> None:
@@ -972,16 +1058,18 @@ def _validate_submission_schema(schema: dict[str, object], body: SubmissionCreat
     raw_fields = schema.get("fields", [])
     if not isinstance(raw_fields, list):
         raise HTTPException(status_code=409)
-    values: dict[str, object] = {
+    canonical: dict[str, object] = {
         "speaker_name": body.speaker_name,
         "speaker_email": body.speaker_email,
         "proposal_title": body.proposal_title,
         "proposal_abstract": body.proposal_abstract,
-        **body.answers,
     }
     known = {str(field.get("key")) for field in raw_fields if isinstance(field, dict)}
     if not set(body.answers) <= known:
         raise HTTPException(status_code=422)
+    if any(key in body.answers and body.answers[key] != value for key, value in canonical.items()):
+        raise HTTPException(status_code=422)
+    values = {**body.answers, **canonical}
     inactive_targets: set[str] = set()
     raw_conditions = schema.get("conditions", [])
     if not isinstance(raw_conditions, list):
@@ -1001,28 +1089,88 @@ def _validate_submission_schema(schema: dict[str, object], body: SubmissionCreat
         if field_key in inactive_targets:
             continue
         value = values.get(field_key)
-        if field.get("required") and (value is None or value == "" or value == []):
+        _validate_form_field_value(field, value, enforce_required=True)
+
+
+def _validate_draft_schema(schema: dict[str, object], answers: dict[str, object]) -> None:
+    raw_fields = schema.get("fields", [])
+    if not isinstance(raw_fields, list):
+        raise HTTPException(status_code=409)
+    known = {str(field.get("key")) for field in raw_fields if isinstance(field, dict)}
+    if not set(answers) <= known:
+        raise HTTPException(status_code=422)
+    for field in raw_fields:
+        if not isinstance(field, dict):
+            raise HTTPException(status_code=409)
+        _validate_form_field_value(
+            field,
+            answers.get(str(field.get("key", ""))),
+            enforce_required=False,
+        )
+
+
+def _validate_form_field_value(
+    field: dict[str, object], value: object, *, enforce_required: bool
+) -> None:
+    field_type = field.get("type")
+    required = bool(field.get("required")) and enforce_required
+    blank = value is None or value == "" or value == [] or (
+        isinstance(value, str) and not value.strip()
+    )
+    if required and (blank or (field_type == "checkbox" and value is not True)):
+        raise HTTPException(status_code=422)
+    if blank:
+        return
+    choices = field.get("choices", [])
+    if field_type in {"text", "email", "url", "phone", "textarea", "file", "image"}:
+        if not isinstance(value, str):
             raise HTTPException(status_code=422)
-        if isinstance(value, str) and len(value) > 20_000:
+        maximum = 5_000 if field_type == "textarea" else 500
+        if len(value) > maximum:
             raise HTTPException(status_code=422)
-        if isinstance(value, list) and (
-            len(value) > 100
-            or any(not isinstance(item, str) or len(item) > 500 for item in value)
+    if field_type == "email":
+        try:
+            address = Address(addr_spec=str(value))
+        except (IndexError, ValueError) as exc:
+            raise HTTPException(status_code=422) from exc
+        if (
+            not address.username
+            or not address.domain
+            or "." not in address.domain
+            or "\r" in str(value)
+            or "\n" in str(value)
         ):
             raise HTTPException(status_code=422)
-        field_type = field.get("type")
-        choices = field.get("choices", [])
-        if field_type == "select" and value not in (None, "") and value not in choices:
+    elif field_type == "url":
+        parsed = urlparse(str(value))
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+        ):
             raise HTTPException(status_code=422)
-        if field_type == "multiselect" and value not in (None, ""):
-            if (
-                not isinstance(value, list)
-                or not value
-                or any(choice not in choices for choice in value)
-            ):
-                raise HTTPException(status_code=422)
-        if field_type == "checkbox" and value not in (None, True, False):
+    elif field_type == "phone":
+        phone = str(value)
+        if (
+            len(phone) > 50
+            or len(re.findall(r"\d", phone)) < 3
+            or re.fullmatch(r"[0-9+().\- xX]+", phone) is None
+        ):
             raise HTTPException(status_code=422)
-        if field_type in {"file", "image"} and value not in (None, ""):
-            if not isinstance(value, str) or not value.startswith("upload:"):
-                raise HTTPException(status_code=422)
+    elif field_type == "select" and value not in choices:
+        raise HTTPException(status_code=422)
+    elif field_type == "multiselect":
+        if (
+            not isinstance(value, list)
+            or len(value) > 100
+            or any(
+                not isinstance(item, str) or len(item) > 500 or item not in choices
+                for item in value
+            )
+        ):
+            raise HTTPException(status_code=422)
+    elif field_type == "checkbox" and value not in (True, False):
+        raise HTTPException(status_code=422)
+    elif field_type in {"file", "image"} and not str(value).startswith("upload:"):
+        raise HTTPException(status_code=422)

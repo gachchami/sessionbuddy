@@ -1,12 +1,20 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RecipientPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     template_id: str = Field(min_length=1, max_length=100)
     recipient_user_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_unique_recipients(self) -> "RecipientPreviewRequest":
+        if any(len(value) != 36 for value in self.recipient_user_ids):
+            raise ValueError("recipient_user_ids must contain UUIDs")
+        if len(self.recipient_user_ids) != len(set(self.recipient_user_ids)):
+            raise ValueError("recipient_user_ids must be unique")
+        return self
 
 
 class RecipientPreview(BaseModel):

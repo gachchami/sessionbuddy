@@ -6,7 +6,7 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, program: null, fields: structuredClone(coreFields), routingRules: [] };
+  const state = { context: null, csrf: null, program: null, publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
   const json = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...json(), "x-csrf-token": state.csrf });
@@ -17,7 +17,7 @@
     const width = innerWidth;
     window.__sessionbuddyTelemetryDraft = {
       schema_version: 1,
-      page_template: "/admin/programs",
+      page_template: "/admin/events/{event_id}/cfp",
       navigation_type: navigation?.type || "unknown",
       device_class: width < 640 ? "mobile" : width < 1024 ? "tablet" : "desktop",
       sampled: false,
@@ -75,6 +75,51 @@
     if (!value) return null;
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+  }
+
+  function eventIdFromPage(session) {
+    const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/cfp$/);
+    if (match) {
+      try { return decodeURIComponent(match[1]); } catch (_) { return ""; }
+    }
+    return new URLSearchParams(location.search).get("event_id") || session.event_id || "";
+  }
+
+  function renderWorkspace() {
+    const program = state.program;
+    const published = state.publishedForm;
+    const programForm = byId("program-form");
+    const publishForm = byId("publish-form");
+    const publishButton = publishForm.querySelector('button[type="submit"], button:not([type])');
+    programForm.hidden = Boolean(program);
+    programForm.querySelector("button").disabled = Boolean(program) || !state.context;
+    byId("program-result").textContent = program
+      ? `${program.name} · ${program.status}`
+      : "No program created yet.";
+    publishButton.disabled = !program || Boolean(published);
+    publishForm.hidden = Boolean(published);
+    byId("published-note").hidden = !published;
+    byId("publish-result").textContent = published
+      ? "Published. Use the CFP link above, then review proposals as they arrive."
+      : program ? "Complete the form settings below, then publish." : "Create a program first.";
+
+    const live = byId("cfp-link-live");
+    const empty = byId("cfp-link-empty");
+    const badge = byId("cfp-state");
+    live.hidden = !published;
+    empty.hidden = Boolean(published);
+    badge.className = `badge${published ? " success" : ""}`;
+    badge.textContent = published ? "Live" : "Not published";
+    if (!published) {
+      empty.textContent = program
+        ? "Configure and publish the proposal form below to get a shareable link."
+        : "Create a program and publish its proposal form to get a shareable link.";
+      return;
+    }
+    const publicUrl = `${location.origin}/cfp/${published.slug}`;
+    byId("cfp-url").value = publicUrl;
+    byId("open-cfp-url").href = publicUrl;
+    byId("review-submissions").href = `/admin/programs/${encodeURIComponent(program.id)}/submissions`;
   }
 
   function renderFields() {
@@ -219,8 +264,49 @@
     return state.routingRules;
   }
 
+  function validatePublishForm(form) {
+    const opens = form.elements.opens_at;
+    const closes = form.elements.closes_at;
+    opens.setCustomValidity(""); closes.setCustomValidity("");
+    if (opens.value && closes.value && new Date(closes.value).getTime() <= new Date(opens.value).getTime()) {
+      closes.setCustomValidity("Closing time must be after opening time.");
+    }
+
+    const schema = readFields();
+    const keys = new Set(schema.fields.map((field) => field.key));
+    byId("form-fields").querySelectorAll("fieldset").forEach((card, index) => {
+      const field = schema.fields[index];
+      const choices = card.elements.field_choices;
+      choices.setCustomValidity("");
+      if (["select", "multiselect"].includes(field.type)) {
+        if (field.choices.length < 2) choices.setCustomValidity("Choice fields need at least two choices.");
+        else if (new Set(field.choices).size !== field.choices.length) choices.setCustomValidity("Choices must be unique.");
+      }
+      const source = card.elements.condition_source;
+      const value = card.elements.condition_value;
+      if (source && value) {
+        source.setCustomValidity(""); value.setCustomValidity("");
+        if (Boolean(source.value.trim()) !== Boolean(value.value.trim())) {
+          (source.value.trim() ? value : source).setCustomValidity("Complete both parts of the display condition.");
+        } else if (source.value.trim() && !keys.has(source.value.trim())) {
+          source.setCustomValidity("Use the key of an existing question.");
+        }
+      }
+    });
+
+    const rules = readRoutingRules();
+    [...byId("routing-rules").querySelectorAll("fieldset")].forEach((card, index) => {
+      const rule = rules[index];
+      card.elements.routing_source.setCustomValidity(keys.has(rule.source_key) ? "" : "Use the key of an existing question.");
+      const hasDestination = Boolean(rule.category || rule.track || rule.review_queue);
+      card.elements.routing_category.setCustomValidity(hasDestination ? "" : "Enter a category, track, or review queue.");
+    });
+    return form.reportValidity();
+  }
+
   function installBuilder() {
     const publish = byId("publish-form");
+    publish.addEventListener("input", (event) => event.target.setCustomValidity?.(""));
     const submit = publish.querySelector('button[type="submit"], button:not([type])');
     const heading = make("h3", "Form questions");
     const help = make("p", "The four identity/proposal fields are required. Add event-specific questions and optional conditions below.");
@@ -251,15 +337,17 @@
   async function restoreSession() {
     try {
       const session = await api("/api/v1/auth/session");
-      const requestedEvent = new URLSearchParams(location.search).get("event_id");
-      const eventId = requestedEvent || session.event_id;
-      if (!session.organization_id || !eventId) throw new Error("This account has no active event.");
-      state.context = { organization_id: session.organization_id, event_id: eventId };
+      const eventId = eventIdFromPage(session);
+      if (!eventId) throw new Error("Choose an event before opening its call for speakers.");
       state.csrf = session.csrf_token;
-      byId("program-form").querySelector("button").disabled = false;
+      const workspace = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`);
+      state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
+      state.program = workspace.program;
+      state.publishedForm = workspace.published_form;
       byId("manage-access").href = `/admin/events/${encodeURIComponent(eventId)}/access`;
       byId("manage-access").hidden = false;
-      setStatus("Program builder ready.");
+      renderWorkspace();
+      setStatus(state.publishedForm ? "Your CFP is published and ready to share." : state.program ? "Program ready. Configure and publish the proposal form." : "Create the program to begin.");
     } catch (error) {
       if (error.status === 401) {
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
@@ -285,8 +373,7 @@
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "") || `program-${state.program.id.slice(0, 8)}`;
       }
-      byId("program-result").textContent = `${state.program.name} · ${state.program.status}`;
-      byId("publish-form").querySelector('button[type="submit"], button:not([type])').disabled = false;
+      renderWorkspace();
       setStatus("Program created. Review and publish its public form.");
     } catch (error) {
       setStatus(error.message, true);
@@ -296,6 +383,7 @@
   byId("publish-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
+      if (!validatePublishForm(event.currentTarget)) return;
       const values = Object.fromEntries(new FormData(event.currentTarget));
       const schema = readFields();
       const routingRules = readRoutingRules();
@@ -317,22 +405,31 @@
           confirmation_body: values.confirmation_body
         })
       });
-      const publicUrl = `${location.origin}/cfp/${form.slug}`;
-      const wrap = byId("publish-result");
-      wrap.replaceChildren();
-      const link = make("a", publicUrl);
-      link.href = publicUrl;
-      const submissions = make("a", "Review submissions");
-      submissions.href = `/admin/programs/${state.program.id}/submissions`;
-      submissions.className = "button secondary";
-      wrap.className = "public-link";
-      wrap.append("Public form is live:", link, submissions);
+      state.publishedForm = form;
+      renderWorkspace();
       setStatus("Form published successfully.");
     } catch (error) {
       setStatus(error.status === 409 ? "That public slug is already in use. Choose another." : error.message, true);
     }
   });
 
+  byId("copy-cfp-url").addEventListener("click", async () => {
+    const input = byId("cfp-url");
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(input.value);
+      else {
+        input.select();
+        if (!document.execCommand("copy")) throw new Error("Copy unavailable");
+      }
+      byId("copy-result").textContent = "Copied.";
+    } catch (_) {
+      input.focus();
+      input.select();
+      byId("copy-result").textContent = "Select the URL and copy it manually.";
+    }
+  });
+
   installBuilder();
+  renderWorkspace();
   restoreSession();
 })();

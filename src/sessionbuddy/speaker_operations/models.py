@@ -30,9 +30,17 @@ class SpeakerProfileUpdate(BaseModel):
     @field_validator("links")
     @classmethod
     def validate_links(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("links must be unique")
         for value in values:
             parsed = urlparse(value)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            if (
+                len(value) > 2000
+                or parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+            ):
                 raise ValueError("links must use an absolute HTTP or HTTPS URL")
         return values
 

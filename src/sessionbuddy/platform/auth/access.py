@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.authorization import Permission, ResourceContext, Role
@@ -186,9 +186,28 @@ class BootstrapCreate(BaseModel):
     admin_company: str | None = Field(default=None, max_length=200)
     admin_time_zone: str | None = Field(default=None, max_length=100)
     event_name: str | None = Field(default=None, min_length=1, max_length=200)
-    starts_at_ms: int | None = None
-    ends_at_ms: int | None = None
+    starts_at_ms: int | None = Field(default=None, ge=0)
+    ends_at_ms: int | None = Field(default=None, ge=0)
     time_zone: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @field_validator("admin_email")
+    @classmethod
+    def validate_admin_email(cls, value: str) -> str:
+        return _validated_email(value)
+
+    @model_validator(mode="after")
+    def validate_optional_event(self) -> "BootstrapCreate":
+        values = (self.event_name, self.starts_at_ms, self.ends_at_ms, self.time_zone)
+        if any(value is not None for value in values):
+            if any(value is None for value in values):
+                raise ValueError("initial event details must be provided together")
+            if (
+                self.starts_at_ms is not None
+                and self.ends_at_ms is not None
+                and self.ends_at_ms <= self.starts_at_ms
+            ):
+                raise ValueError("event end must be after its start")
+        return self
 
 
 class BootstrapView(BaseModel):
@@ -207,6 +226,11 @@ class MagicLinkRequest(BaseModel):
     redirect_path: str = Field(default="/", max_length=500)
     form_slug: str | None = Field(default=None, min_length=3, max_length=80)
 
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _validated_email(value)
+
 
 class GenericAccepted(BaseModel):
     accepted: bool = True
@@ -217,6 +241,11 @@ class InvitationCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     role: Literal["event_admin", "evaluator", "speaker"]
     expires_in_days: int = Field(default=14, ge=1, le=30)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _validated_email(value)
 
 
 class InvitationView(BaseModel):
@@ -285,8 +314,8 @@ class EventList(BaseModel):
 class EventCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=200)
-    starts_at_ms: int
-    ends_at_ms: int
+    starts_at_ms: int = Field(ge=0)
+    ends_at_ms: int = Field(ge=0)
     time_zone: str = Field(min_length=1, max_length=100)
     location: str | None = Field(default=None, max_length=500)
     delivery_mode: Literal["in_person", "virtual", "hybrid"] = "hybrid"
@@ -317,15 +346,13 @@ class EventCreate(BaseModel):
     def validate_reply_to_email(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if "\r" in value or "\n" in value:
-            raise ValueError("reply-to must be one email address")
-        try:
-            address = Address(addr_spec=value)
-        except (IndexError, ValueError) as exc:
-            raise ValueError("reply-to must be one valid email address") from exc
-        if not address.username or not address.domain:
-            raise ValueError("reply-to must be one valid email address")
-        return value
+        return _validated_email(value)
+
+    @model_validator(mode="after")
+    def validate_event_times(self) -> "EventCreate":
+        if self.ends_at_ms <= self.starts_at_ms:
+            raise ValueError("event end must be after its start")
+        return self
 
 
 class EventUpdate(EventCreate):
@@ -385,8 +412,20 @@ def _valid_redirect(value: str) -> bool:
     return value.startswith("/") and not value.startswith("//") and "\\" not in value
 
 
+def _validated_email(value: str) -> str:
+    if "\r" in value or "\n" in value:
+        raise ValueError("email must be one valid address")
+    try:
+        address = Address(addr_spec=value)
+    except (IndexError, ValueError) as exc:
+        raise ValueError("email must be one valid address") from exc
+    if not address.username or not address.domain or "." not in address.domain:
+        raise ValueError("email must be one valid address")
+    return value
+
+
 def _email(value: str) -> tuple[str, str]:
-    display = value.strip()
+    display = _validated_email(value.strip())
     normalized = normalize_email(display)
     local, separator, domain = normalized.partition("@")
     if not separator or not local or "." not in domain or domain.startswith("."):

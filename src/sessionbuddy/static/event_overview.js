@@ -54,7 +54,14 @@
       if (selected) { organization = item; break; }
     }
     if (!selected || !organization) throw new Error("This event is not available to your account.");
-    const speakers = (await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)).data;
+    const [speakersResult, cfp] = await Promise.all([
+      api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`),
+      api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)
+    ]);
+    const speakers = speakersResult.data;
+    const reviewPath = cfp.program
+      ? `/admin/programs/${encodeURIComponent(cfp.program.id)}/submissions`
+      : `/admin/events/${encodeURIComponent(eventId)}/cfp`;
     document.title = `${selected.name} · SessionBuddy`;
     byId("organization-name").textContent = organization.name;
     byId("event-name").textContent = selected.name;
@@ -65,12 +72,12 @@
     byId("public-schedule").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
     byId("event-tools").replaceChildren(
-      tool("Call for speakers", "Build and publish the proposal form.", `/admin/programs?event_id=${encodeURIComponent(eventId)}`),
+      tool("Call for speakers", "Publish the proposal form and share its public link.", `${prefix}/cfp`),
       tool("People & access", "Invite event administrators, reviewers, and speakers.", `${prefix}/access`),
       tool("Speakers", "Browse everyone connected to this event.", `${prefix}/speakers`),
       tool("Speaker onboarding", "Track missing profiles, files, and deadlines.", `${prefix}/onboarding`),
       tool("Resources & integrations", "Share portal resources and connect Accelevents.", `${prefix}/workspace`),
-      tool("Reviews", "Evaluate proposals and record decisions.", "/reviews"),
+      tool("Submissions & reviews", "Review proposals, assign evaluators, and record decisions.", reviewPath),
       tool("Agenda", "Schedule accepted sessions and publish the program.", `${prefix}/agenda`),
       tool("Public pages", "Open the schedule and published speaker gallery.", `/events/${encodeURIComponent(eventId)}/schedule`)
     );

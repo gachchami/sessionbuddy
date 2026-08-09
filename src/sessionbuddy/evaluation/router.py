@@ -806,7 +806,7 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         await _timed_first(
             request,
             db.prepare(
-                """SELECT id, organization_id, event_id, name, status
+            """SELECT id, organization_id, event_id, program_id, name, status
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
             ).bind(round_id),
         )
@@ -912,6 +912,8 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
     ]
     return EvaluationRoundResults(
         round_id=round_id,
+        event_id=str(round_row["event_id"]),
+        program_id=str(round_row["program_id"]),
         round_name=str(round_row["name"]),
         status=str(round_row["status"]),
         assigned_count=assigned_count,

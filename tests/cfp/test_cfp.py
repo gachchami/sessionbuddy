@@ -2,12 +2,17 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
 from sessionbuddy.cfp.models import FormPublish, ProgramCreate, SubmissionCreate
-from sessionbuddy.cfp.router import _published_form_view, _validate_submission_schema
+from sessionbuddy.cfp.router import (
+    _published_form_view,
+    _validate_draft_schema,
+    _validate_submission_schema,
+)
 from sessionbuddy.console.models import BrowserTelemetryPayload
 
 
@@ -21,6 +26,22 @@ def test_cfp_write_models_are_strict_and_bounded() -> None:
 
     with pytest.raises(ValidationError):
         FormPublish(slug="Not A Slug", welcome_text="Welcome")
+    with pytest.raises(ValidationError):
+        FormPublish(
+            slug="unsafe-core",
+            welcome_text="Welcome",
+            fields=[
+                {"key": "speaker_name", "type": "text", "label": "Name"},
+                {"key": "speaker_email", "type": "email", "label": "Email", "required": True},
+                {"key": "proposal_title", "type": "text", "label": "Title", "required": True},
+                {
+                    "key": "proposal_abstract",
+                    "type": "textarea",
+                    "label": "Abstract",
+                    "required": True,
+                },
+            ],
+        )
     with pytest.raises(ValidationError):
         SubmissionCreate(
             speaker_name="Speaker",
@@ -82,6 +103,52 @@ def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
     _validate_submission_schema(schema, submission)
 
 
+def test_required_dynamic_answers_are_enforced_by_the_backend() -> None:
+    schema = FormPublish(
+        slug="server-validation",
+        welcome_text="Welcome",
+        fields=[
+            {"key": "speaker_name", "type": "text", "label": "Name", "required": True},
+            {"key": "speaker_email", "type": "email", "label": "Email", "required": True},
+            {"key": "proposal_title", "type": "text", "label": "Title", "required": True},
+            {
+                "key": "proposal_abstract",
+                "type": "textarea",
+                "label": "Abstract",
+                "required": True,
+            },
+            {"key": "terms", "type": "checkbox", "label": "Agree", "required": True},
+            {"key": "notes", "type": "text", "label": "Notes", "required": True},
+        ],
+    ).model_dump(mode="json")
+    base = {
+        "speaker_name": "Speaker",
+        "speaker_email": "speaker@example.com",
+        "proposal_title": "Title",
+        "proposal_abstract": "Abstract",
+    }
+    with pytest.raises(HTTPException) as unchecked:
+        _validate_submission_schema(
+            schema,
+            SubmissionCreate(**base, answers={**base, "terms": False, "notes": "Ready"}),
+        )
+    assert unchecked.value.status_code == 422
+    with pytest.raises(HTTPException) as whitespace:
+        _validate_submission_schema(
+            schema,
+            SubmissionCreate(**base, answers={**base, "terms": True, "notes": "   "}),
+        )
+    assert whitespace.value.status_code == 422
+
+
+def test_drafts_allow_incomplete_answers_but_reject_invalid_types_and_sizes() -> None:
+    schema = FormPublish(slug="draft-validation", welcome_text="Welcome").model_dump(mode="json")
+    _validate_draft_schema(schema, {"proposal_title": ""})
+    with pytest.raises(HTTPException) as invalid:
+        _validate_draft_schema(schema, {"speaker_email": "not-an-email"})
+    assert invalid.value.status_code == 422
+
+
 def test_published_form_uses_default_accent_for_pre_branding_events() -> None:
     form = _published_form_view(
         {
@@ -133,8 +200,12 @@ async def test_admin_routes_require_authentication_outside_local() -> None:
                 "name": "Example Program",
             },
         )
+        workspace = await client.get(
+            "/api/v1/admin/events/22222222-2222-4222-8222-222222222222/cfp"
+        )
 
     assert admin.status_code == 401
+    assert workspace.status_code == 401
 
 
 async def test_local_admin_route_requires_authenticated_session() -> None:
@@ -211,13 +282,14 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "Save changes" in events.text
     assert "data-auth-shell" in events.text
     assert "Call for speakers" in admin.text
+    assert "CFP link" in admin.text
     assert "data-auth-shell" in admin.text
     assert "Submit a proposal" in public.text
     assert "Submissions" in submissions.text
     for javascript in (admin_js.text, public_js.text, submissions_js.text):
         assert "innerHTML" not in javascript
         assert "__sessionbuddyTelemetryDraft" in javascript
-    assert 'page_template: "/admin/programs"' in admin_js.text
+    assert 'page_template: "/admin/events/{event_id}/cfp"' in admin_js.text
     assert 'fields.id = "form-fields"' in admin_js.text
     assert "conditions" in admin_js.text
     assert "/admin/events/${encodeURIComponent(event.id)}" in events_js.text

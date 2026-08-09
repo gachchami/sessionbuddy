@@ -5,6 +5,7 @@ import pytest
 from tests.speaker_operations.test_speaker_onboarding_schema import (
     MIGRATIONS,
     add_speaker,
+    link_submission_speaker,
     seed_platform,
 )
 
@@ -18,6 +19,7 @@ def db() -> sqlite3.Connection:
     seed_platform(connection)
     add_speaker(connection, "a")
     add_speaker(connection, "b")
+    link_submission_speaker(connection, "a")
     connection.execute(
         """INSERT INTO speaker_tasks
            (id, organization_id, event_id, event_speaker_id, submission_id,

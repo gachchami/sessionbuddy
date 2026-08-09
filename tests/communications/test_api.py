@@ -10,7 +10,7 @@ async def test_communications_routes_fail_closed_without_runtime_dependencies() 
         statuses = await client.get("/api/v1/admin/events/event/communications")
         preview = await client.post(
             "/api/v1/admin/events/event/communications/preview",
-            json={"template_id": "template", "recipient_user_ids": ["user"]},
+            json={"template_id": "template", "recipient_user_ids": ["a" * 36]},
         )
         reminder = await client.post(
             "/api/v1/admin/events/event/speaker-tasks/task/reminders",

@@ -1,6 +1,7 @@
+from email.headerregistry import Address
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class FormFieldDefinition(BaseModel):
@@ -30,6 +31,8 @@ class FormFieldDefinition(BaseModel):
             raise ValueError("choice fields require at least two choices")
         if self.type not in {"select", "multiselect"} and self.choices:
             raise ValueError("only select and multiselect fields accept choices")
+        if any(not choice or len(choice) > 200 for choice in self.choices):
+            raise ValueError("field choices must contain 1 to 200 characters")
         if len(set(self.choices)) != len(self.choices):
             raise ValueError("field choices must be unique")
         return self
@@ -116,14 +119,29 @@ class FormPublish(BaseModel):
         keys = [field.key for field in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError("field keys must be unique")
-        required_core = {"speaker_name", "speaker_email", "proposal_title", "proposal_abstract"}
-        if not required_core <= set(keys):
+        required_core = {
+            "speaker_name": "text",
+            "speaker_email": "email",
+            "proposal_title": "text",
+            "proposal_abstract": "textarea",
+        }
+        configured = {field.key: field for field in self.fields}
+        if not required_core.keys() <= configured.keys():
             raise ValueError("published forms require speaker identity and proposal fields")
+        if any(
+            not configured[key].required or configured[key].type != field_type
+            for key, field_type in required_core.items()
+        ):
+            raise ValueError(
+                "speaker identity and proposal fields must retain their required types"
+            )
         for condition in self.conditions:
             if condition.source_key not in keys or condition.target_key not in keys:
                 raise ValueError("conditions must reference existing fields")
             if condition.source_key == condition.target_key:
                 raise ValueError("conditions cannot target their source")
+            if condition.target_key in required_core:
+                raise ValueError("speaker identity and proposal fields cannot be conditional")
         graph: dict[str, set[str]] = {key: set() for key in keys}
         for condition in self.conditions:
             graph[condition.source_key].add(condition.target_key)
@@ -183,15 +201,36 @@ class PublishedFormView(BaseModel):
     redirect_to_portal: bool = True
 
 
+class CfpWorkspaceView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    organization_id: str
+    event_id: str
+    program: ProgramView | None = None
+    published_form: PublishedFormView | None = None
+
+
 class SubmissionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     speaker_name: str = Field(min_length=1, max_length=200)
-    speaker_email: str = Field(default="", max_length=320)
+    speaker_email: str = Field(min_length=3, max_length=320)
     proposal_title: str = Field(min_length=1, max_length=200)
     proposal_abstract: str = Field(min_length=1, max_length=5000)
     answers: dict[str, str | list[str] | bool | int | float | None] = Field(
         default_factory=dict, max_length=100
     )
+
+    @field_validator("speaker_email")
+    @classmethod
+    def validate_speaker_email(cls, value: str) -> str:
+        if "\r" in value or "\n" in value:
+            raise ValueError("speaker email must be one valid address")
+        try:
+            address = Address(addr_spec=value)
+        except (IndexError, ValueError) as exc:
+            raise ValueError("speaker email must be one valid address") from exc
+        if not address.username or not address.domain or "." not in address.domain:
+            raise ValueError("speaker email must be one valid address")
+        return value
 
 
 class SubmissionView(SubmissionCreate):
@@ -206,6 +245,9 @@ class SubmissionView(SubmissionCreate):
 
 class SubmissionList(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    organization_id: str
+    event_id: str
+    program_id: str
     data: list[SubmissionView]
 
 

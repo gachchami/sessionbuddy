@@ -290,9 +290,9 @@
     event.preventDefault();
     const button = byId("save-profile");
     const values = Object.fromEntries(new FormData(event.currentTarget));
+    const errors = clientErrors(values);
     values.links = values.website ? [values.website] : [];
     delete values.website;
-    const errors = clientErrors(values);
     if (errors.length) { showErrors(errors); return; }
     clearErrors();
     button.disabled = true;

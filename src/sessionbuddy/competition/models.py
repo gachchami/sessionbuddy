@@ -64,6 +64,10 @@ class TaskFormField(BaseModel):
             raise ValueError("select tasks require at least two choices")
         if self.type != "select" and self.choices:
             raise ValueError("only select tasks accept choices")
+        if any(not choice or len(choice) > 200 for choice in self.choices):
+            raise ValueError("task choices must contain 1 to 200 characters")
+        if len(self.choices) != len(set(self.choices)):
+            raise ValueError("task choices must be unique")
         return self
 
 

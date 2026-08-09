@@ -265,6 +265,33 @@
         "title": "AgendaPublish",
         "type": "object"
       },
+      "AgendaSetup": {
+        "additionalProperties": false,
+        "properties": {
+          "room_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Room Names",
+            "type": "array"
+          },
+          "track_names": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Track Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "room_names"
+        ],
+        "title": "AgendaSetup",
+        "type": "object"
+      },
       "ApiHealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -396,6 +423,7 @@
           "ends_at_ms": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -426,6 +454,7 @@
           "starts_at_ms": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -517,6 +546,45 @@
           "evidence"
         ],
         "title": "CapabilityProgressItem",
+        "type": "object"
+      },
+      "CfpWorkspaceView": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "program": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProgramView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_form": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishedFormView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_id"
+        ],
+        "title": "CfpWorkspaceView",
         "type": "object"
       },
       "CommunicationStatus": {
@@ -1182,6 +1250,14 @@
             "title": "Evaluators",
             "type": "array"
           },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "program_id": {
+            "title": "Program Id",
+            "type": "string"
+          },
           "round_id": {
             "title": "Round Id",
             "type": "string"
@@ -1209,6 +1285,8 @@
         },
         "required": [
           "round_id",
+          "event_id",
+          "program_id",
           "round_name",
           "status",
           "assigned_count",
@@ -1485,6 +1563,7 @@
             "title": "Email Sender Name"
           },
           "ends_at_ms": {
+            "minimum": 0.0,
             "title": "Ends At Ms",
             "type": "integer"
           },
@@ -1519,6 +1598,7 @@
             "type": "string"
           },
           "starts_at_ms": {
+            "minimum": 0.0,
             "title": "Starts At Ms",
             "type": "integer"
           },
@@ -1682,6 +1762,7 @@
             "title": "Email Sender Name"
           },
           "ends_at_ms": {
+            "minimum": 0.0,
             "title": "Ends At Ms",
             "type": "integer"
           },
@@ -1716,6 +1797,7 @@
             "type": "string"
           },
           "starts_at_ms": {
+            "minimum": 0.0,
             "title": "Starts At Ms",
             "type": "integer"
           },
@@ -4089,8 +4171,8 @@
             "type": "string"
           },
           "speaker_email": {
-            "default": "",
             "maxLength": 320,
+            "minLength": 3,
             "title": "Speaker Email",
             "type": "string"
           },
@@ -4103,6 +4185,7 @@
         },
         "required": [
           "speaker_name",
+          "speaker_email",
           "proposal_title",
           "proposal_abstract"
         ],
@@ -4379,9 +4462,24 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "program_id": {
+            "title": "Program Id",
+            "type": "string"
           }
         },
         "required": [
+          "organization_id",
+          "event_id",
+          "program_id",
           "data"
         ],
         "title": "SubmissionList",
@@ -4474,8 +4572,8 @@
             "title": "Routed Track"
           },
           "speaker_email": {
-            "default": "",
             "maxLength": 320,
+            "minLength": 3,
             "title": "Speaker Email",
             "type": "string"
           },
@@ -4500,6 +4598,7 @@
         },
         "required": [
           "speaker_name",
+          "speaker_email",
           "proposal_title",
           "proposal_abstract",
           "id",
@@ -5388,6 +5487,75 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/agenda/setup": {
+      "post": {
+        "operationId": "setup_admin_agenda_api_v1_admin_events__event_id__agenda_setup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaSetup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Setup Admin Agenda Api V1 Admin Events  Event Id  Agenda Setup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Setup Admin Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
       "post": {
         "operationId": "createAdminSpeakerAssetDownloadGrant",
@@ -5436,6 +5604,49 @@
         "summary": "Create Admin Asset Download Grant",
         "tags": [
           "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/cfp": {
+      "get": {
+        "operationId": "getCallForSpeakersWorkspace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CfpWorkspaceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Cfp Workspace",
+        "tags": [
+          "programs",
+          "forms"
         ]
       }
     },

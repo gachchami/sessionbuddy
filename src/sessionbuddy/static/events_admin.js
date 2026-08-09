@@ -67,6 +67,14 @@
     }
   }
 
+  function securePublicUrl(value) {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
+    } catch (_) { return false; }
+  }
+
   function populateTimeZones() {
     const detected = browserTimeZone();
     const values = new Set([detected, "UTC", ...timeZoneAliases.values()]);
@@ -352,7 +360,10 @@
     }
   });
 
-  byId("event-form").addEventListener("input", updateDateTimePreview);
+  byId("event-form").addEventListener("input", (event) => {
+    event.target.setCustomValidity?.("");
+    updateDateTimePreview();
+  });
   byId("event-form").elements.start_date.addEventListener("change", (event) => {
     const form = event.currentTarget.form;
     if (!form.elements.end_date.value) form.elements.end_date.value = event.currentTarget.value;
@@ -369,6 +380,11 @@
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const eventId = values.event_id;
     try {
+      for (const name of ["website_url", "logo_url"]) {
+        const input = form.elements[name];
+        input.setCustomValidity(securePublicUrl(values[name]) ? "" : "Use a complete HTTPS URL without embedded credentials.");
+        if (!input.reportValidity()) return;
+      }
       const timeZone = normalizeTimeZone(values.time_zone);
       const startsAt = zonedDateTimeToMillis(values.start_date, values.start_time, timeZone);
       const endsAt = zonedDateTimeToMillis(values.end_date, values.end_time, timeZone);

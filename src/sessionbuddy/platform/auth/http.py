@@ -75,6 +75,9 @@ async def require_permission(
 
 
 async def authenticate_request(request: Request) -> AuthenticatedContext:
+    cached = getattr(request.state, "authenticated_context", None)
+    if isinstance(cached, AuthenticatedContext):
+        return cached
     cookie = request.cookies.get("__Host-session") or request.cookies.get("sessionbuddy-local")
     db = database(request)
     result = await authenticate_session(
@@ -86,7 +89,9 @@ async def authenticate_request(request: Request) -> AuthenticatedContext:
     )
     if not result.authenticated or result.actor is None or result.session_id is None:
         raise HTTPException(status_code=401)
-    return AuthenticatedContext(result.actor, result.session_id)
+    authenticated = AuthenticatedContext(result.actor, result.session_id)
+    request.state.authenticated_context = authenticated
+    return authenticated
 
 
 def guard_mutation(request: Request, session_id: str) -> None:

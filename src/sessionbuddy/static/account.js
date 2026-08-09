@@ -11,6 +11,12 @@
   let session;
   let version;
 
+  function validTimeZone(value) {
+    if (!value) return true;
+    try { new Intl.DateTimeFormat(undefined, { timeZone: value }).format(); return true; }
+    catch (_) { return false; }
+  }
+
   async function api(path, options = {}) {
     const response = await fetch(path, { credentials: "same-origin", ...options });
     const body = await response.json();
@@ -71,8 +77,12 @@
     byId("status").textContent = "Your account is up to date.";
   }
 
+  byId("profile-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const timeZone = event.currentTarget.elements.time_zone;
+    timeZone.setCustomValidity(validTimeZone(timeZone.value.trim()) ? "" : "Enter a valid IANA time zone, such as Asia/Kolkata.");
+    if (!event.currentTarget.reportValidity()) return;
     const button = byId("save-profile");
     button.disabled = true;
     byId("status").className = "status";

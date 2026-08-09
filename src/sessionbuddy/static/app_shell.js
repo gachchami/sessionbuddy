@@ -142,6 +142,7 @@
       if (location.pathname.includes("/onboarding")) return "Speaker onboarding";
       if (location.pathname.includes("/workspace")) return "Resources";
       if (location.pathname.includes("/agenda")) return "Agenda";
+      if (location.pathname.endsWith("/cfp")) return "Call for speakers";
       if (location.pathname === "/admin/programs") return "Call for speakers";
       return "Event overview";
     }
@@ -157,7 +158,7 @@
     const prefix = `/admin/events/${encoded}`;
     const items = [
       ["Overview", prefix, "overview"],
-      ["Call for speakers", `/admin/programs?event_id=${encoded}`, "form"],
+      ["Call for speakers", `${prefix}/cfp`, "form"],
       ["People & access", `${prefix}/access`, "access"],
       ["Speakers", `${prefix}/speakers`, "mic"],
       ["Onboarding", `${prefix}/onboarding`, "tasks"],

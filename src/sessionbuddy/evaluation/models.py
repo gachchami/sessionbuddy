@@ -19,8 +19,14 @@ class EvaluationRoundCreate(BaseModel):
     def valid_rubric(self):
         if self.rating_max <= self.rating_min:
             raise ValueError("rating_max must be greater than rating_min")
+        if any(not value or len(value) > 80 for value in self.recommendations):
+            raise ValueError("recommendations must contain 1 to 80 characters")
         if len(set(self.recommendations)) != len(self.recommendations):
             raise ValueError("recommendations must be unique")
+        if any(len(value) != 36 for value in self.submission_ids):
+            raise ValueError("submission_ids must contain UUIDs")
+        if any(len(value) != 36 for value in self.evaluator_user_ids):
+            raise ValueError("evaluator_user_ids must contain UUIDs")
         if len(set(self.submission_ids)) != len(self.submission_ids):
             raise ValueError("submission_ids must be unique")
         if len(set(self.evaluator_user_ids)) != len(self.evaluator_user_ids):
@@ -174,6 +180,8 @@ class EvaluationRoundResults(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     round_id: str
+    event_id: str
+    program_id: str
     round_name: str
     status: Literal["draft", "open", "closed"]
     assigned_count: int

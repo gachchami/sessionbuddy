@@ -19,7 +19,8 @@ URL, image, and document questions; conditional display and answer-based
 routing; open/close times and submission limits; branded public CFP rendering;
 review-before-submit; confirmation email copy; authenticated speaker
 registration; versioned drafts; owned submissions; admin submission listing;
-tenant scoping; and authenticated writes.
+tenant scoping; authenticated writes; and a persistent event-scoped CFP link
+with copy, open, and submission-review actions.
 
 ## Organization and event administration
 
@@ -47,7 +48,8 @@ download grants, communications, reminders, and admin progress views.
 
 ## Scheduling
 
-Implemented: conflict preview, atomic agenda edits, concurrency protection,
+Implemented: first-agenda setup with event rooms and optional tracks, conflict
+preview, event-time-zone-safe atomic agenda edits, concurrency protection,
 publication, branded list/day/week/track/room schedule views, a browser-local
 attendee itinerary, embeddable public schedule and speaker views, versioned
 calendar invitations, and a read-only Sessionboard-compatible feed for pulling
@@ -56,8 +58,9 @@ accepted speakers and sessions into Accelevents.
 ## Release readiness
 
 Implemented and verified: fail-closed production configuration, accessibility
-coverage, large-dataset seeding, database backup/restore checks, browser smoke
-tests, API benchmarks, Lighthouse audits, Cloudflare packaging, remote D1
+coverage, large-dataset seeding, database backup/restore checks, desktop and
+mobile browser form/flow tests (including rejected invalid writes), API benchmarks,
+Lighthouse audits, Cloudflare packaging, remote D1
 migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
 health checks, browser-route checks, and the anonymous identity boundary.
 

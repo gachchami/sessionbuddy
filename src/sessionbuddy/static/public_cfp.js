@@ -82,6 +82,7 @@
     container.replaceChildren();
     for (const field of fields) {
       const label = make("label", field.label);
+      if (field.required) label.append(make("span", "Required", "required-marker"));
       label.dataset.fieldKey = field.key;
       let input;
       if (field.type === "textarea") {
@@ -274,11 +275,38 @@
 
   byId("sign-in-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const email = new FormData(event.currentTarget).get("email");
+    const form = event.currentTarget;
+    const email = new FormData(form).get("email");
+    const button = form.querySelector("button");
+    form.elements.email.disabled = true;
+    button.disabled = true;
+    button.textContent = "Sending…";
     try {
       await api("/api/v1/auth/magic-links", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, form_slug: slug, redirect_path: location.pathname }) });
+      byId("cfp-sent-message").textContent = `We sent a sign-in link to ${email}.`;
+      byId("cfp-sign-in-entry").hidden = true;
+      byId("cfp-sign-in-sent").hidden = false;
+      byId("cfp-sign-in-sent").focus();
       setStatus("Check your email for the one-time sign-in link. It expires in 15 minutes.", "success");
-    } catch (error) { setStatus(error.message, "error"); }
+    } catch (error) {
+      form.elements.email.disabled = false;
+      button.disabled = false;
+      button.textContent = "Sign in";
+      setStatus(error.message, "error");
+    }
+  });
+
+  byId("change-cfp-email").addEventListener("click", () => {
+    const form = byId("sign-in-form");
+    const button = form.querySelector("button");
+    byId("cfp-sign-in-sent").hidden = true;
+    byId("cfp-sign-in-entry").hidden = false;
+    form.elements.email.disabled = false;
+    button.disabled = false;
+    button.textContent = "Sign in";
+    form.elements.email.focus();
+    form.elements.email.select();
+    setStatus("Sign in with your email address to begin.");
   });
 
   byId("save-draft").addEventListener("click", async () => {
@@ -292,7 +320,7 @@
   byId("review-proposal").addEventListener("click", () => {
     if (!byId("proposal-form").reportValidity()) return;
     showReview(true);
-    setStatus("Review your proposal, then confirm submission.");
+    setStatus("Not submitted yet. Review your proposal, then select Confirm submission.");
     byId("review-title").focus?.();
   });
   byId("back-to-form").addEventListener("click", () => { showReview(false); setStatus("You can continue editing your proposal."); });
@@ -323,7 +351,7 @@
       }
       setStatus("Proposal submitted successfully.", "success");
     } catch (error) {
-      setStatus(error.message, "error");
+      setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : error.message, "error");
       byId("status").focus();
       button.disabled = false;
       button.textContent = "Confirm submission";

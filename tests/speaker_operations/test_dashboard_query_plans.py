@@ -1,6 +1,10 @@
 import sqlite3
 
-from tests.speaker_operations.test_speaker_onboarding_schema import add_speaker, seed_platform
+from tests.speaker_operations.test_speaker_onboarding_schema import (
+    add_speaker,
+    link_submission_speaker,
+    seed_platform,
+)
 
 TASK_COUNT = 50_000
 
@@ -14,6 +18,7 @@ def migrated_database() -> sqlite3.Connection:
         db.executescript(migration.read_text(encoding="utf-8"))
     seed_platform(db)
     add_speaker(db)
+    link_submission_speaker(db)
     return db
 
 

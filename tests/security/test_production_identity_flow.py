@@ -144,7 +144,9 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
         )
         assert requested.status_code == 202
         token = _token(connection, "admin@example.com")
-        connection.execute("UPDATE authentication_challenges SET expires_at_ms=0")
+        connection.execute(
+            "UPDATE authentication_challenges SET created_at_ms=0,expires_at_ms=1"
+        )
         connection.commit()
 
         browser = await client.get(f"/auth/verify?token={token}")
@@ -406,6 +408,32 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "roles": ["event_admin"],
             }
         ]
+        assert (await admin.get(f"/api/v1/admin/events/{event_id}/agenda")).status_code == 404
+        agenda_headers = {**mutation_headers, "idempotency-key": "agenda-setup-2026"}
+        agenda = await admin.post(
+            f"/api/v1/admin/events/{event_id}/agenda/setup",
+            headers=agenda_headers,
+            json={"room_names": ["Main stage", "Workshop room"], "track_names": ["General"]},
+        )
+        assert agenda.status_code == 201
+        assert [room["name"] for room in agenda.json()["rooms"]] == [
+            "Main stage",
+            "Workshop room",
+        ]
+        assert [track["name"] for track in agenda.json()["tracks"]] == ["General"]
+        replayed_agenda = await admin.post(
+            f"/api/v1/admin/events/{event_id}/agenda/setup",
+            headers=agenda_headers,
+            json={"room_names": ["Main stage", "Workshop room"], "track_names": ["General"]},
+        )
+        assert replayed_agenda.status_code == 201
+        assert (
+            await admin.post(
+                f"/api/v1/admin/events/{event_id}/agenda/setup",
+                headers={**mutation_headers, "idempotency-key": "agenda-setup-again-2026"},
+                json={"room_names": ["Another room"], "track_names": []},
+            )
+        ).status_code == 409
         invitation = await admin.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=mutation_headers,
@@ -423,12 +451,21 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             },
         )
         assert program.status_code == 201
+        draft_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
+        assert draft_workspace.status_code == 200
+        assert draft_workspace.json()["program"]["id"] == program.json()["id"]
+        assert draft_workspace.json()["published_form"] is None
         published = await admin.post(
             f"/api/v1/admin/programs/{program.json()['id']}/forms/publish",
             headers={**mutation_headers, "idempotency-key": "publish-integration-2026"},
             json={"slug": "speaker-summit", "welcome_text": "Share your session."},
         )
         assert published.status_code == 201
+        live_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
+        assert live_workspace.status_code == 200
+        assert live_workspace.json()["organization_id"] == organization_id
+        assert live_workspace.json()["event_id"] == event_id
+        assert live_workspace.json()["published_form"]["slug"] == "speaker-summit"
 
     async with _client(environment) as speaker:
         requested = await speaker.post(

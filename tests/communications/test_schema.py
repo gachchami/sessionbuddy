@@ -20,6 +20,11 @@ def db():
            VALUES ('user','a@b.test','a@b.test','active',1,1,1,1,1)"""
     )
     connection.execute(
+        """INSERT INTO organization_memberships
+           (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES ('member','org','user','member','active',1,1)"""
+    )
+    connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
             delivery_mode,description,accent_color,status,version,created_at_ms,
@@ -79,6 +84,28 @@ def test_organization_level_auth_message_does_not_require_an_event(db) -> None:
 
 
 def test_reminder_recompute_slot_is_unique_and_due_query_indexed(db) -> None:
+    db.execute(
+        """INSERT INTO event_memberships
+           (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES ('event-member','org','event','user','speaker','active',1,1)"""
+    )
+    db.execute(
+        """INSERT INTO people
+           (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+           VALUES ('person','org','user','Speaker',1,1)"""
+    )
+    db.execute(
+        """INSERT INTO event_speakers
+           (id,organization_id,event_id,person_id,status,accepted_at_ms,last_activity_at_ms,
+            created_at_ms,updated_at_ms)
+           VALUES ('speaker','org','event','person','onboarding',1,1,1,1)"""
+    )
+    db.execute(
+        """INSERT INTO speaker_tasks
+           (id,organization_id,event_id,event_speaker_id,task_type,title,destination_type,
+            state,created_at_ms,updated_at_ms)
+           VALUES ('task','org','event','speaker','profile','Profile','profile','open',1,1)"""
+    )
     db.execute(
         """INSERT INTO communication_templates VALUES
            ('tpl','org','event','Reminder','task_reminder','Hi','Body',1,1,1)"""

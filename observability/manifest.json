@@ -227,6 +227,13 @@
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
+    "GET /api/v1/admin/events/{event_id}/cfp": {
+      "owner": "program-management",
+      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
+      "benchmark": "cfp-load-workspace",
+      "dashboards": ["release-health", "api-explorer", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "GET /api/v1/session": {
       "owner": "identity",
       "slo": {"p95_ms": 250, "error_rate_max": 0.001},
@@ -464,6 +471,13 @@
       "benchmark": "scheduling-admin-agenda",
       "dashboards": ["release-health", "api-explorer", "page-performance"],
       "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/setup": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "scheduling-setup-agenda",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
     },
     "POST /api/v1/admin/events/{event_id}/agenda/preview": {
       "owner": "agenda",

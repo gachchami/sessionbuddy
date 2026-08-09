@@ -1,10 +1,17 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+const landingHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/landing.html"), "utf8");
+const landingCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/landing.css"), "utf8");
 
 test.describe("MVP experience accessibility", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
   test("home page has no automatically detectable serious violations", async ({ page }) => {
+    await page.route(/^https?:\/\/[^/]+\/(?:\?.*)?$/, (route) => route.fulfill({ contentType: "text/html", body: landingHtml }));
+    await page.route("**/landing/assets/landing.css*", (route) => route.fulfill({ contentType: "text/css", body: landingCss }));
     await page.route("**/api/v1/setup/status", async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: true }) });
     });

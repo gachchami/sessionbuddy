@@ -15,7 +15,7 @@ type SubmissionResult = {
 type EvaluatorProgress = { evaluator_user_id: string; display_name: string; assigned_count: number; completed_count: number; conflict_count: number };
 type ConflictProgress = { assignment_id: string; evaluator_user_id: string; evaluator_name: string; proposal_title: string; conflict_type: string; replacement_required: boolean };
 type RoundResults = {
-  round_id: string; round_name: string; status: "draft" | "open" | "closed";
+  round_id: string; event_id: string; program_id: string; round_name: string; status: "draft" | "open" | "closed";
   assigned_count: number; completed_count: number; average_rating: number | null;
   submissions: SubmissionResult[]; evaluators: EvaluatorProgress[]; conflicts: ConflictProgress[];
 };
@@ -61,6 +61,10 @@ function ReviewWorkspace() {
   useEffect(() => { telemetry("/reviews"); signIn().catch(() => undefined); }, []);
 
   async function save(form: HTMLFormElement, assignment: Assignment, state: "draft" | "final") {
+    if (!form.reportValidity()) {
+      setStatus("Choose a valid rating and recommendation before saving.");
+      return;
+    }
     const values = Object.fromEntries(new FormData(form));
     await responseBody(await fetch(`/api/v1/evaluator/assignments/${assignment.id}/evaluation`, {
       method: "PUT", headers: mutationHeaders(csrf), body: JSON.stringify({
@@ -72,7 +76,10 @@ function ReviewWorkspace() {
   }
   async function declareConflict(assignment: Assignment) {
     const conflictType = (document.getElementById(`conflict-type-${assignment.id}`) as HTMLSelectElement).value;
-    const explanation = (document.getElementById(`conflict-note-${assignment.id}`) as HTMLTextAreaElement).value;
+    const explanationInput = document.getElementById(`conflict-note-${assignment.id}`) as HTMLTextAreaElement;
+    const explanation = explanationInput.value.trim();
+    explanationInput.setCustomValidity(explanation ? "" : "Explain the conflict before removing the assignment.");
+    if (!explanationInput.reportValidity()) return;
     await responseBody(await fetch(`/api/v1/evaluator/assignments/${assignment.id}/conflict`, {
       method: "POST", headers: mutationHeaders(csrf),
       body: JSON.stringify({ conflict_type: conflictType, explanation })
@@ -114,7 +121,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     setStatus(`Decision recorded as ${decision}.${body.communication_queued ? " Speaker email queued." : " No email sent."}`);
   }
   async function reassign(conflict: ConflictProgress) {
-    const evaluatorId = (document.getElementById(`replacement-${conflict.assignment_id}`) as HTMLSelectElement).value;
+    const evaluator = document.getElementById(`replacement-${conflict.assignment_id}`) as HTMLSelectElement;
+    const evaluatorId = evaluator.value;
+    evaluator.setCustomValidity(evaluatorId ? "" : "Choose a replacement reviewer.");
+    if (!evaluator.reportValidity()) return;
     await responseBody(await fetch(`/api/v1/admin/evaluation-assignments/${conflict.assignment_id}/reassign`, {
       method: "POST", headers: mutationHeaders(csrf), body: JSON.stringify({ evaluator_user_id: evaluatorId })
     }), "Could not reassign evaluation");
@@ -131,7 +141,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     && results.completed_count === results.assigned_count
     && !results.conflicts.some((conflict) => conflict.replacement_required);
 
-  return <main><section className="hero"><h1>{results?.round_name || "Round progress"}</h1><p>Monitor completion, resolve conflicts, and decide which sessions move forward.</p></section><div className="toolbar"><p role="status">{status}</p><div className="actions"><button className="secondary" onClick={() => signIn().catch((error) => setStatus(error.message))}>Refresh</button><button disabled={!closeReady} onClick={() => closeRound().catch((error) => setStatus(error.message))}>Close round</button></div></div>{results && <><section className="metrics"><article><span>Completed</span><strong>{results.completed_count}/{results.assigned_count}</strong></article><article><span>Overall mean</span><strong>{results.average_rating ?? "—"}</strong></article><article><span>Round status</span><strong>{results.status}</strong></article></section><h2>Evaluator progress</h2><section className="metrics" aria-label="Evaluator progress">{results.evaluators.map((evaluator) => <article key={evaluator.evaluator_user_id}><strong>{evaluator.display_name}</strong><span>{evaluator.completed_count}/{evaluator.assigned_count} finalized</span><span>{evaluator.conflict_count} conflicts</span></article>)}</section>{results.conflicts.length > 0 && <><h2>Conflicts</h2><section className="grid" aria-label="Declared conflicts">{results.conflicts.map((conflict) => <article key={conflict.assignment_id}><div className="meta"><span>{conflict.conflict_type.replace("_", " ")}</span><span>{conflict.replacement_required ? "replacement required" : "covered"}</span></div><h3>{conflict.proposal_title}</h3><p>{conflict.evaluator_name}</p>{conflict.replacement_required && <><label>Replacement evaluator<select id={`replacement-${conflict.assignment_id}`}><option value="">Choose…</option>{results.evaluators.filter((evaluator) => evaluator.evaluator_user_id !== conflict.evaluator_user_id).map((evaluator) => <option key={evaluator.evaluator_user_id} value={evaluator.evaluator_user_id}>{evaluator.display_name}</option>)}</select></label><button onClick={() => reassign(conflict).catch((error) => setStatus(error.message))}>Reassign</button></>}</article>)}</section></>}<h2>Submission results</h2><section className="grid" aria-label="Submission results">{results.submissions.map((submission) => {
+  return <main><section className="hero"><h1>{results?.round_name || "Round progress"}</h1><p>Monitor completion, resolve conflicts, and decide which sessions move forward.</p></section><div className="toolbar"><p role="status">{status}</p><div className="actions"><button className="secondary" onClick={() => signIn().catch((error) => setStatus(error.message))}>Refresh</button><button disabled={!closeReady} onClick={() => closeRound().catch((error) => setStatus(error.message))}>Close round</button></div></div>{results && <><nav className="workflow" aria-label="Program workflow"><a href={`/admin/programs/${encodeURIComponent(results.program_id)}/submissions`}>Submissions</a><a href={`/admin/events/${encodeURIComponent(results.event_id)}/onboarding`}>Speaker onboarding</a><a href={`/admin/events/${encodeURIComponent(results.event_id)}/agenda`}>Build agenda</a></nav><section className="metrics"><article><span>Completed</span><strong>{results.completed_count}/{results.assigned_count}</strong></article><article><span>Overall mean</span><strong>{results.average_rating ?? "—"}</strong></article><article><span>Round status</span><strong>{results.status}</strong></article></section><h2>Evaluator progress</h2><section className="metrics" aria-label="Evaluator progress">{results.evaluators.map((evaluator) => <article key={evaluator.evaluator_user_id}><strong>{evaluator.display_name}</strong><span>{evaluator.completed_count}/{evaluator.assigned_count} finalized</span><span>{evaluator.conflict_count} conflicts</span></article>)}</section>{results.conflicts.length > 0 && <><h2>Conflicts</h2><section className="grid" aria-label="Declared conflicts">{results.conflicts.map((conflict) => <article key={conflict.assignment_id}><div className="meta"><span>{conflict.conflict_type.replace("_", " ")}</span><span>{conflict.replacement_required ? "replacement required" : "covered"}</span></div><h3>{conflict.proposal_title}</h3><p>{conflict.evaluator_name}</p>{conflict.replacement_required && <><label>Replacement evaluator<select id={`replacement-${conflict.assignment_id}`}><option value="">Choose…</option>{results.evaluators.filter((evaluator) => evaluator.evaluator_user_id !== conflict.evaluator_user_id).map((evaluator) => <option key={evaluator.evaluator_user_id} value={evaluator.evaluator_user_id}>{evaluator.display_name}</option>)}</select></label><button onClick={() => reassign(conflict).catch((error) => setStatus(error.message))}>Reassign</button></>}</article>)}</section></>}<h2>Submission results</h2><section className="grid" aria-label="Submission results">{results.submissions.map((submission) => {
     const complete = submission.assigned_count > 0 && submission.completed_count === submission.assigned_count;
     const decided = submission.decision !== null;
     const pending = pendingDecision?.submission.submission_id === submission.submission_id;

@@ -5,7 +5,7 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
@@ -595,17 +595,31 @@ def _validate_task_response(schema: object, answers: dict[str, object]) -> None:
     known = {str(field.get("key")) for field in fields if isinstance(field, dict)}
     if not set(answers) <= known:
         raise HTTPException(status_code=422)
-    if any(isinstance(value, str) and len(value) > 4000 for value in answers.values()):
-        raise HTTPException(status_code=422)
     for field in fields:
         if not isinstance(field, dict):
             raise HTTPException(status_code=409)
         value = answers.get(str(field.get("key", "")))
-        if field.get("required") and value in (None, "", []):
+        field_type = field.get("type")
+        blank = value is None or value == "" or value == [] or (
+            isinstance(value, str) and not value.strip()
+        )
+        if field.get("required") and (
+            blank or (field_type == "checkbox" and value is not True)
+        ):
             raise HTTPException(status_code=422)
-        if field.get("type") == "checkbox" and value not in (None, True, False):
+        if blank:
+            continue
+        if field_type in {"text", "textarea", "url"} and (
+            not isinstance(value, str) or len(value) > 4000
+        ):
             raise HTTPException(status_code=422)
-        if field.get("type") == "select" and value not in (None, ""):
+        if field_type == "url":
+            parsed = urlparse(str(value))
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise HTTPException(status_code=422)
+        if field_type == "checkbox" and value not in (True, False):
+            raise HTTPException(status_code=422)
+        if field_type == "select":
             if value not in field.get("choices", []):
                 raise HTTPException(status_code=422)
 

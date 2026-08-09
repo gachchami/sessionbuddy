@@ -42,6 +42,7 @@
       state.userId = session.user_id;
       const result = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/submissions`);
       state.submissions = result.data;
+      byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(result.event_id)}/cfp`;
       const evaluatorResult = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluators`);
       state.evaluators = evaluatorResult.data;
       const evaluatorChoices = byId("evaluators");
@@ -93,11 +94,39 @@
       byId("status").classList.add("error");
     }
   }
+  function validateRound(form) {
+    const minimum = Number(form.elements.rating_min.value);
+    const maximum = Number(form.elements.rating_max.value);
+    const recommendationInput = form.elements.recommendations;
+    const recommendations = String(recommendationInput.value || "").split(",").map((choice) => choice.trim()).filter(Boolean);
+    form.elements.rating_max.setCustomValidity(maximum > minimum ? "" : "Maximum rating must be greater than minimum rating.");
+    const recommendationError = recommendations.length < 2 || recommendations.length > 8
+      ? "Enter 2–8 recommendations."
+      : recommendations.some((choice) => choice.length > 80)
+        ? "Each recommendation must be at most 80 characters."
+        : new Set(recommendations).size !== recommendations.length
+          ? "Recommendations must be unique."
+          : "";
+    recommendationInput.setCustomValidity(recommendationError);
+    const submissions = [...document.querySelectorAll('input[name="submission_ids"]:checked')];
+    const evaluators = form.querySelectorAll('input[name="evaluator_user_ids"]:checked');
+    if (!submissions.length || !evaluators.length) {
+      byId("status").textContent = !submissions.length
+        ? "Select at least one submission."
+        : "Select at least one reviewer.";
+      byId("status").classList.add("error");
+      (submissions.length ? byId("evaluators") : byId("submissions")).focus?.();
+      return false;
+    }
+    return form.reportValidity();
+  }
+  byId("round-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("round-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = byId("open-round");
     button.disabled = true;
     try {
+      if (!validateRound(event.currentTarget)) { button.disabled = false; return; }
       const values = new FormData(event.currentTarget);
       const recommendations = String(values.get("recommendations") || "").split(",").map((choice) => choice.trim()).filter(Boolean);
       const round = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`, {

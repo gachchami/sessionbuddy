@@ -53,6 +53,19 @@ def seed_platform(db: sqlite3.Connection) -> None:
             (f"event-{suffix}", f"org-{suffix}", f"Event {suffix}", now, now),
         )
         db.execute(
+            "INSERT INTO event_memberships "
+            "(id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms) "
+            "VALUES (?,?,?,?, 'speaker','active',?,?)",
+            (
+                f"event-member-{suffix}",
+                f"org-{suffix}",
+                f"event-{suffix}",
+                f"user-{suffix}",
+                now,
+                now,
+            ),
+        )
+        db.execute(
             "INSERT INTO programs "
             "(id,organization_id,event_id,name,status,created_at_ms,updated_at_ms) "
             "VALUES (?,?,?,'Main','open',?,?)",
@@ -109,6 +122,21 @@ def add_speaker(db: sqlite3.Connection, suffix: str = "a") -> None:
     )
 
 
+def link_submission_speaker(db: sqlite3.Connection, suffix: str = "a") -> None:
+    db.execute(
+        INSERT_SUBMISSION_SPEAKER,
+        (
+            f"link-{suffix}",
+            f"org-{suffix}",
+            f"event-{suffix}",
+            f"submission-{suffix}",
+            f"speaker-{suffix}",
+            "primary",
+            "Same Speaker",
+        ),
+    )
+
+
 def test_all_migrations_apply_and_foreign_keys_are_clean(db: sqlite3.Connection) -> None:
     assert db.execute("PRAGMA foreign_key_check").fetchall() == []
     tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -155,6 +183,7 @@ def test_submission_speaker_rejects_cross_tenant_links_and_second_primary(
 
 def test_task_state_constraints_and_tenant_safe_parentage(db: sqlite3.Connection) -> None:
     add_speaker(db, "a")
+    link_submission_speaker(db, "a")
     db.execute(
         "INSERT INTO speaker_tasks "
         "(id,organization_id,event_id,event_speaker_id,submission_id,task_type,title,"

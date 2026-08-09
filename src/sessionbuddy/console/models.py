@@ -71,6 +71,7 @@ class BrowserTelemetryPayload(BaseModel):
     page_template: Literal[
         "/engine-room",
         "/admin/programs",
+        "/admin/events/{event_id}/cfp",
         "/cfp/{slug}",
         "/admin/programs/{program_id}/submissions",
         "/reviews",

@@ -1,5 +1,10 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
+from sessionbuddy.scheduling.models import AgendaSetup
+
 ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 
@@ -16,6 +21,33 @@ def test_admin_supports_all_views_drag_and_keyboard_editor() -> None:
     assert 'dataTransfer.setData("text/plain"' in javascript
     assert 'id="editor"' in html and 'type="datetime-local"' in html
     assert "previewDrop" in javascript and "schedulePreview" in javascript
+
+
+def test_fresh_event_can_create_its_first_agenda_and_rooms() -> None:
+    html, javascript = read("agenda_admin.html"), read("agenda.js")
+    assert 'id="agenda-setup-form"' in html
+    assert 'name="room_names"' in html
+    assert 'name="track_names"' in html
+    assert "/agenda/setup" in javascript
+    assert 'if (error.status === 404) showSetup()' in javascript
+
+
+def test_agenda_editor_interprets_dates_in_the_event_time_zone() -> None:
+    javascript = read("agenda.js")
+    assert "partsInTimeZone" in javascript
+    assert "state.model.event.time_zone" in javascript
+    assert "That local time does not exist" in javascript
+    assert "getTimezoneOffset" not in javascript
+
+
+def test_agenda_setup_requires_unique_nonblank_rooms() -> None:
+    assert AgendaSetup(room_names=[" Main stage "], track_names=["General"]).room_names == [
+        "Main stage"
+    ]
+    with pytest.raises(ValidationError):
+        AgendaSetup(room_names=[])
+    with pytest.raises(ValidationError):
+        AgendaSetup(room_names=["Main stage", "main STAGE"])
 
 
 def test_save_is_optimistic_with_visible_rollback_and_server_preview() -> None:

@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/product/assets/product.css?v=11">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
   <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
-  <script src="/admin/workspace/assets/workspace.js?v=1" defer></script>
+  <script src="/admin/workspace/assets/workspace.js?v=2" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to speaker resources</a>
@@ -24,7 +24,7 @@
         <p class="help">Publish guides, venue notes, or an approved video/document embed to the speaker portal.</p>
         <form id="resource-form">
           <label>Title<input name="title" maxlength="200" required></label>
-          <label>URL slug<input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="speaker-guide" required></label>
+          <label>URL slug<input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" placeholder="speaker-guide" required></label>
           <label>Summary<input name="summary" maxlength="500"></label>
           <label>Page content<textarea name="body_text" maxlength="20000" placeholder="Write the instructions speakers need…"></textarea></label>
           <label>Approved embed URL <span class="optional">Optional</span><input name="embed_url" type="url" placeholder="https://docs.google.com/…"><small>Google Docs, Drive, Calendar, YouTube, or Vimeo.</small></label>

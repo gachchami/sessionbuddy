@@ -24,7 +24,7 @@ from sessionbuddy.platform.db.commands import (
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
-from .models import AgendaCandidate, AgendaPublish
+from .models import AgendaCandidate, AgendaPublish, AgendaSetup
 
 scheduling_router = APIRouter()
 
@@ -108,7 +108,7 @@ def _blob(value: object) -> bytes:
     return converted if isinstance(converted, bytes) else bytes(converted)
 
 
-def _fingerprint(body: AgendaCandidate) -> bytes:
+def _fingerprint(body: AgendaCandidate | AgendaSetup) -> bytes:
     return hashlib.sha256(
         json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
     ).digest()
@@ -209,6 +209,111 @@ async def get_admin_agenda(event_id: str, request: Request) -> dict[str, object]
     if revision is None:
         raise HTTPException(status_code=404)
     return await _agenda_model(_db(request), event, revision)
+
+
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/agenda/setup",
+    status_code=201,
+    tags=["agenda"],
+)
+async def setup_admin_agenda(
+    event_id: str,
+    request: Request,
+    body: AgendaSetup,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    key, fingerprint = _key(idempotency_key), _fingerprint(body)
+    route = "POST /api/v1/admin/events/{event_id}/agenda/setup"
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND event_id=?4 AND state='completed'"""
+        )
+        .bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest(), event_id)
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        revision = await _revision(db, organization_id, event_id)
+        if revision is None:
+            raise HTTPException(status_code=409)
+        return await _agenda_model(db, event, revision)
+    if await _revision(db, organization_id, event_id) is not None:
+        raise HTTPException(status_code=409)
+
+    now, revision_id = utc_now_ms(), new_id()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO schedule_revisions
+               (id,organization_id,event_id,revision_number,name,status,version,
+                created_by_user_id,created_at_ms,updated_at_ms)
+               VALUES (?1,?2,?3,1,'Draft 1','draft',1,?4,?5,?5)"""
+        ).bind(revision_id, organization_id, event_id, auth.actor.user_id, now)
+    )
+    for name in body.room_names:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_rooms
+                   (id,organization_id,event_id,name,status,version,created_at_ms,updated_at_ms)
+                   VALUES (?1,?2,?3,?4,'active',1,?5,?5)"""
+            ).bind(new_id(), organization_id, event_id, name, now)
+        )
+    for name in body.track_names:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_tracks
+                   (id,organization_id,event_id,name,is_exclusive,status,version,
+                    created_at_ms,updated_at_ms)
+                   VALUES (?1,?2,?3,?4,0,'active',1,?5,?5)"""
+            ).bind(new_id(), organization_id, event_id, name, now)
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.setup",
+            target_type="schedule_revision",
+            target_id=revision_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={"room_count": len(body.room_names), "track_count": len(body.track_names)},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="schedule_revision",
+        resource_id=revision_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    revision = await _revision(db, organization_id, event_id)
+    if revision is None:
+        raise HTTPException(status_code=409)
+    return await _agenda_model(db, event, revision)
 
 
 async def _slot(request: Request, event, revision, body: AgendaCandidate) -> AgendaSlot:
