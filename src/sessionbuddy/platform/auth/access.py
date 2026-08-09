@@ -1,5 +1,6 @@
 """Production passwordless access and one-time tenant bootstrap."""
 
+import hashlib
 import hmac
 from email.headerregistry import Address
 from html import escape
@@ -7,7 +8,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from sessionbuddy.console import embedded_assets
@@ -16,6 +17,9 @@ from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch
 from sessionbuddy.platform.db.d1 import D1Database, PersistenceError, result_rows, row_mapping
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
+from sessionbuddy.platform.storage import malware_scan_disabled
+from sessionbuddy.speaker_operations.asset_boundary import ScanJob
+from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
@@ -23,6 +27,16 @@ from .http import authenticate_request, database, guard_mutation, require_permis
 from .tokens import generate_token, hash_token, normalize_email
 
 access_router = APIRouter()
+
+_EVENT_LOGO_RULES = {
+    "image/jpeg": ("jpg", lambda body: body.startswith(b"\xff\xd8\xff")),
+    "image/png": ("png", lambda body: body.startswith(b"\x89PNG\r\n\x1a\n")),
+    "image/webp": (
+        "webp",
+        lambda body: len(body) >= 12 and body[:4] == b"RIFF" and body[8:12] == b"WEBP",
+    ),
+}
+_EVENT_LOGO_MAX_BYTES = 2 * 1024 * 1024
 
 _SETUP_COMPLETED_SQL = """SELECT singleton_key
 FROM instance_setup
@@ -148,9 +162,23 @@ async def speaker_directory_page(
     )
 
 
+@access_router.get("/admin/events/{event_id}/messages", include_in_schema=False)
+async def speaker_messages_page(event_id: str) -> Response:
+    return Response(
+        _asset("speaker_messages.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @access_router.get("/admin/speakers/assets/speakers.js", include_in_schema=False)
 async def speaker_directory_javascript() -> Response:
     return Response(_asset("speaker_directory.js"), media_type="text/javascript")
+
+
+@access_router.get("/admin/speakers/assets/messages.js", include_in_schema=False)
+async def speaker_messages_javascript() -> Response:
+    return Response(_asset("speaker_messages.js"), media_type="text/javascript")
 
 
 @access_router.get("/account", include_in_schema=False)
@@ -325,6 +353,7 @@ class EventView(BaseModel):
     description: str | None = None
     accent_color: str | None = None
     logo_url: str | None = None
+    cover_image_url: str | None = None
     website_url: str | None = None
     email_sender_name: str | None = None
     email_reply_to: str | None = None
@@ -334,6 +363,16 @@ class EventView(BaseModel):
 
 class EventList(BaseModel):
     data: list[EventView]
+
+
+class EventLogoView(BaseModel):
+    logo_url: str
+    version: int
+
+
+class EventCoverView(BaseModel):
+    cover_image_url: str
+    version: int
 
 
 class EventCreate(BaseModel):
@@ -347,11 +386,12 @@ class EventCreate(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     accent_color: str | None = Field(default="#3159d9", pattern=r"^#[0-9A-Fa-f]{6}$")
     logo_url: str | None = Field(default=None, max_length=2000)
+    cover_image_url: str | None = Field(default=None, max_length=2000)
     website_url: str | None = Field(default=None, max_length=2000)
     email_sender_name: str | None = Field(default=None, max_length=200)
     email_reply_to: str | None = Field(default=None, max_length=320)
 
-    @field_validator("logo_url", "website_url")
+    @field_validator("website_url")
     @classmethod
     def validate_public_url(cls, value: str | None) -> str | None:
         if value in (None, ""):
@@ -359,6 +399,21 @@ class EventCreate(BaseModel):
         parsed = urlparse(value)
         if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
             raise ValueError("branding URLs must be absolute HTTPS URLs")
+        return value
+
+    @field_validator("logo_url", "cover_image_url")
+    @classmethod
+    def validate_logo_reference(cls, value: str | None) -> str | None:
+        if value in (None, ""):
+            return None
+        if value.startswith("/api/v1/public/events/") and any(
+            marker in value for marker in ("/logo/", "/cover/")
+        ):
+            return value
+        # Keep existing externally hosted logos editable while new logos move to R2.
+        parsed = urlparse(value)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("logo must be an internal upload reference")
         return value
 
     @field_validator("email_sender_name", "email_reply_to", mode="before")
@@ -762,7 +817,7 @@ async def list_events(organization_id: str, request: Request) -> EventList:
         database(request)
         .prepare(
             """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                      delivery_mode,description,accent_color,logo_url,website_url,
+                      delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                       email_sender_name,email_reply_to,status,version
                FROM events WHERE organization_id=?1 ORDER BY starts_at_ms DESC,id DESC"""
         )
@@ -780,6 +835,255 @@ def _validate_event_times(starts_at_ms: int, ends_at_ms: int) -> None:
         raise HTTPException(status_code=422)
 
 
+def _event_logo_bucket(request: Request):
+    bucket = getattr(request.scope.get("env"), "ASSETS", None)
+    if bucket is None:
+        raise HTTPException(status_code=503)
+    return bucket
+
+
+async def _read_event_logo(request: Request) -> tuple[bytes, str, str]:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    rule = _EVENT_LOGO_RULES.get(content_type)
+    if rule is None:
+        raise HTTPException(status_code=415)
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > _EVENT_LOGO_MAX_BYTES:
+                raise HTTPException(status_code=413)
+        except ValueError as exc:
+            raise HTTPException(status_code=400) from exc
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > _EVENT_LOGO_MAX_BYTES:
+            raise HTTPException(status_code=413)
+        chunks.append(chunk)
+    body = b"".join(chunks)
+    extension, signature_matches = rule
+    if not body or not signature_matches(body):
+        raise HTTPException(status_code=415)
+    return body, content_type, extension
+
+
+async def _stream_event_logo(stored):
+    body = getattr(stored, "body", stored)
+    if isinstance(body, (bytes, bytearray, memoryview)):
+        yield bytes(body)
+        return
+    reader_factory = getattr(body, "getReader", None)
+    if callable(reader_factory):
+        reader = reader_factory()
+        try:
+            while True:
+                chunk = await reader.read()
+                if bool(chunk.done):
+                    break
+                value = chunk.value
+                converter = getattr(value, "to_py", None)
+                yield bytes(converter() if callable(converter) else value)
+        finally:
+            release = getattr(reader, "releaseLock", None)
+            if callable(release):
+                release()
+
+
+@access_router.post(
+    "/api/v1/admin/events/{event_id}/logo",
+    response_model=EventLogoView,
+    tags=["administration"],
+)
+async def upload_event_logo(event_id: str, request: Request) -> EventLogoView:
+    db = database(request)
+    event = row_mapping(
+        await db.prepare(
+            "SELECT organization_id,version FROM events WHERE id=?1 LIMIT 1"
+        ).bind(event_id).first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    authenticated = await require_permission(
+        request,
+        Permission.EVENT_MANAGE,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
+    )
+    body, content_type, extension = await _read_event_logo(request)
+    environment = request.scope.get("env")
+    logo_id = new_id()
+    checksum = hashlib.sha256(body).digest()
+    if not malware_scan_disabled(environment):
+        try:
+            scan = await SignedScannerAdapter(environment).scan(
+                body,
+                job=ScanJob(
+                    schema_version=1,
+                    organization_id=str(event["organization_id"]),
+                    event_id=event_id,
+                    asset_version_id=logo_id,
+                    generation=1,
+                    checksum_sha256=checksum,
+                    job_id=logo_id,
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503) from exc
+        if scan.verdict != "clean":
+            raise HTTPException(status_code=400)
+    object_key = f"public/event-logos/{event['organization_id']}/{event_id}/{logo_id}.{extension}"
+    await _event_logo_bucket(request).put(object_key, body)
+    logo_url = f"/api/v1/public/events/{event_id}/logo/{logo_id}.{extension}"
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE events SET logo_url=?1,version=version+1,updated_at_ms=?2
+               WHERE id=?3 AND version=?4"""
+        ).bind(logo_url, now, event_id, event["version"])
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="event.logo.upload",
+            target_type="event",
+            target_id=event_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            metadata={"content_type": content_type, "byte_size": len(body)},
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    return EventLogoView(logo_url=logo_url, version=int(event["version"]) + 1)
+
+
+@access_router.post(
+    "/api/v1/admin/events/{event_id}/cover",
+    response_model=EventCoverView,
+    tags=["administration"],
+)
+async def upload_event_cover(event_id: str, request: Request) -> EventCoverView:
+    db = database(request)
+    event = row_mapping(
+        await db.prepare(
+            "SELECT organization_id,version FROM events WHERE id=?1 LIMIT 1"
+        ).bind(event_id).first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    authenticated = await require_permission(
+        request, Permission.EVENT_MANAGE,
+        ResourceContext(str(event["organization_id"]), event_id), mutation=True,
+    )
+    body, content_type, extension = await _read_event_logo(request)
+    environment = request.scope.get("env")
+    image_id = new_id()
+    checksum = hashlib.sha256(body).digest()
+    if not malware_scan_disabled(environment):
+        try:
+            scan = await SignedScannerAdapter(environment).scan(
+                body,
+                job=ScanJob(
+                    schema_version=1, organization_id=str(event["organization_id"]),
+                    event_id=event_id, asset_version_id=image_id, generation=1,
+                    checksum_sha256=checksum, job_id=image_id,
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503) from exc
+        if scan.verdict != "clean":
+            raise HTTPException(status_code=400)
+    object_key = f"public/event-covers/{event['organization_id']}/{event_id}/{image_id}.{extension}"
+    await _event_logo_bucket(request).put(object_key, body)
+    image_url = f"/api/v1/public/events/{event_id}/cover/{image_id}.{extension}"
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE events SET cover_image_url=?1,version=version+1,updated_at_ms=?2
+               WHERE id=?3 AND version=?4"""
+        ).bind(image_url, now, event_id, event["version"])
+    )
+    batch.audit(AuditEvent(
+        actor_type="user", actor_user_id=authenticated.actor.user_id,
+        action="event.cover.upload", target_type="event", target_id=event_id,
+        result="succeeded", correlation_id=request.state.request_id, occurred_at_ms=now,
+        organization_id=str(event["organization_id"]), event_id=event_id,
+        metadata={"content_type": content_type, "byte_size": len(body)},
+    ))
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    return EventCoverView(cover_image_url=image_url, version=int(event["version"]) + 1)
+
+
+@access_router.get(
+    "/api/v1/public/events/{event_id}/logo/{logo_name}",
+    response_class=StreamingResponse,
+    tags=["public-program"],
+)
+async def public_event_logo(event_id: str, logo_name: str, request: Request) -> StreamingResponse:
+    logo_url = f"/api/v1/public/events/{event_id}/logo/{logo_name}"
+    row = row_mapping(
+        await database(request).prepare(
+            "SELECT organization_id,logo_url FROM events WHERE id=?1 AND logo_url=?2 LIMIT 1"
+        ).bind(event_id, logo_url).first()
+    )
+    if row is None or not logo_name.endswith((".jpg", ".png", ".webp")):
+        raise HTTPException(status_code=404)
+    content_type = {
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }[logo_name[logo_name.rfind("."):]]
+    object_key = f"public/event-logos/{row['organization_id']}/{event_id}/{logo_name}"
+    stored = await _event_logo_bucket(request).get(object_key)
+    if stored is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(
+        _stream_event_logo(stored),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@access_router.get(
+    "/api/v1/public/events/{event_id}/cover/{image_name}",
+    response_class=StreamingResponse,
+    tags=["public-program"],
+)
+async def public_event_cover(event_id: str, image_name: str, request: Request) -> StreamingResponse:
+    image_url = f"/api/v1/public/events/{event_id}/cover/{image_name}"
+    row = row_mapping(
+        await database(request).prepare(
+            """SELECT organization_id,cover_image_url FROM events
+               WHERE id=?1 AND cover_image_url=?2 LIMIT 1"""
+        ).bind(event_id, image_url).first()
+    )
+    if row is None or not image_name.endswith((".jpg", ".png", ".webp")):
+        raise HTTPException(status_code=404)
+    suffix = image_name[image_name.rfind("."):]
+    content_type = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[suffix]
+    stored = await _event_logo_bucket(request).get(
+        f"public/event-covers/{row['organization_id']}/{event_id}/{image_name}"
+    )
+    if stored is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(
+        _stream_event_logo(stored), media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 @access_router.post(
     "/api/v1/admin/organizations/{organization_id}/events",
     response_model=EventView,
@@ -788,6 +1092,10 @@ def _validate_event_times(starts_at_ms: int, ends_at_ms: int) -> None:
 )
 async def create_event(organization_id: str, body: EventCreate, request: Request) -> EventView:
     _validate_event_times(body.starts_at_ms, body.ends_at_ms)
+    if body.logo_url is not None:
+        raise HTTPException(status_code=422)
+    if body.cover_image_url is not None:
+        raise HTTPException(status_code=422)
     authenticated = await require_permission(
         request,
         Permission.ORGANIZATION_MANAGE,
@@ -800,9 +1108,9 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
         db.prepare(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,accent_color,logo_url,website_url,
+                delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                 email_sender_name,email_reply_to,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,'active',?15,?15)"""
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'active',?16,?16)"""
         ).bind(
             event_id,
             organization_id,
@@ -815,6 +1123,7 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
             body.description,
             body.accent_color,
             body.logo_url,
+            body.cover_image_url,
             body.website_url,
             body.email_sender_name,
             body.email_reply_to,
@@ -861,12 +1170,26 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
     _validate_event_times(body.starts_at_ms, body.ends_at_ms)
     db = database(request)
     event = row_mapping(
-        await db.prepare("SELECT organization_id FROM events WHERE id=?1 LIMIT 1")
+        await db.prepare(
+            """SELECT organization_id,logo_url,cover_image_url
+               FROM events WHERE id=?1 LIMIT 1"""
+        )
         .bind(event_id)
         .first()
     )
     if event is None:
         raise HTTPException(status_code=404)
+    if "logo_url" in body.model_fields_set and body.logo_url != event["logo_url"]:
+        raise HTTPException(status_code=422)
+    logo_url = str(event["logo_url"]) if event["logo_url"] is not None else None
+    if (
+        "cover_image_url" in body.model_fields_set
+        and body.cover_image_url != event["cover_image_url"]
+    ):
+        raise HTTPException(status_code=422)
+    cover_image_url = (
+        str(event["cover_image_url"]) if event["cover_image_url"] is not None else None
+    )
     authenticated = await require_permission(
         request,
         Permission.EVENT_MANAGE,
@@ -879,11 +1202,11 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         await db.prepare(
             """UPDATE events SET name=?1,starts_at_ms=?2,ends_at_ms=?3,time_zone=?4,
                location=?5,delivery_mode=?6,description=?7,accent_color=?8,logo_url=?9,
-               website_url=?10,email_sender_name=?11,email_reply_to=?12,status=?13,
-               archived_at_ms=?14,version=version+1,updated_at_ms=?15
-               WHERE id=?16 AND version=?17
+               cover_image_url=?10,website_url=?11,email_sender_name=?12,email_reply_to=?13,status=?14,
+               archived_at_ms=?15,version=version+1,updated_at_ms=?16
+               WHERE id=?17 AND version=?18
                RETURNING id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                         delivery_mode,description,accent_color,logo_url,website_url,
+                         delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                          email_sender_name,email_reply_to,status,version"""
         )
         .bind(
@@ -895,7 +1218,8 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             body.delivery_mode,
             body.description,
             body.accent_color,
-            body.logo_url,
+            logo_url,
+            cover_image_url,
             body.website_url,
             body.email_sender_name,
             body.email_reply_to,

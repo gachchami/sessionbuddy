@@ -61,7 +61,7 @@ class EvaluationRoundView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    program_id: str
+    event_id: str
     name: str
     status: Literal["draft", "open", "closed"]
     assignment_count: int
@@ -290,7 +290,6 @@ class EvaluationRoundResults(BaseModel):
 
     round_id: str
     event_id: str
-    program_id: str
     round_name: str
     status: Literal["draft", "open", "closed"]
     assigned_count: int

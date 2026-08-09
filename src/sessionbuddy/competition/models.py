@@ -82,7 +82,7 @@ class SpeakerTarget(BaseModel):
     location: str
     links: list[str]
     version: int
-    selection_status: Literal["submitted", "accepted", "rejected"]
+    selection_status: Literal["invited", "submitted", "accepted", "rejected"]
     proposal_title: str
 
 
@@ -197,7 +197,7 @@ class PublicSpeaker(BaseModel):
     location: str
     links: list[str]
     headshot_url: str | None
-    sessions: list[dict[str, str]]
+    sessions: list[dict[str, str | int]]
 
 
 class PublicSpeakerGallery(BaseModel):

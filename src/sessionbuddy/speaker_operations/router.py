@@ -80,13 +80,47 @@ def _product_asset(request: Request, name: str, media_type: str) -> Response:
 
 def _speaker_asset_version_view(row: dict[str, object]) -> SpeakerAssetVersionView:
     return SpeakerAssetVersionView(
+        id=str(row["id"]),
         generation=int(row["generation"]),
         filename=str(row["original_filename"]),
         content_type=str(row["content_type"]),
         byte_size=int(row["byte_size"]),
         state="current" if int(row["is_current"]) == 1 else "superseded",
         uploaded_at_ms=int(row["uploaded_at_ms"]),
+        version_comment=str(row["version_comment"]),
     )
+
+
+async def _asset_versions_by_asset(
+    request: Request,
+    organization_id: str,
+    event_id: str,
+    event_speaker_id: str | None = None,
+) -> dict[str, list[SpeakerAssetVersionView]]:
+    rows = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT version.asset_id,version.id,version.generation,
+                      version.original_filename,version.content_type,version.byte_size,
+                      version.is_current,version.uploaded_at_ms,version.version_comment
+               FROM speaker_asset_versions version
+               JOIN speaker_assets asset
+                 ON asset.organization_id=version.organization_id
+                AND asset.event_id=version.event_id AND asset.id=version.asset_id
+               WHERE version.organization_id=?1 AND version.event_id=?2
+                 AND (?3 IS NULL OR asset.event_speaker_id=?3)
+                 AND version.scan_state IN ('clean','superseded')
+               ORDER BY version.asset_id,version.generation DESC,version.id"""
+        )
+        .bind(organization_id, event_id, event_speaker_id)
+        .all()
+    )
+    versions: dict[str, list[SpeakerAssetVersionView]] = {}
+    for row in rows:
+        versions.setdefault(str(row["asset_id"]), []).append(
+            _speaker_asset_version_view(row)
+        )
+    return versions
 
 
 @speaker_operations_router.get("/speaker", response_class=HTMLResponse, include_in_schema=False)
@@ -1062,7 +1096,7 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
             _db(request)
             .prepare(
                 """SELECT a.id,a.kind,av.original_filename,av.content_type,av.byte_size,
-                          av.generation,av.uploaded_at_ms,
+                          av.generation,av.uploaded_at_ms,av.version_comment,
                           (SELECT COUNT(*) FROM speaker_asset_versions history
                            WHERE history.asset_id=a.id AND history.scan_state IN
                              ('clean','superseded')) AS version_count
@@ -1077,20 +1111,14 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
             .bind(speaker["organization_id"], event_id, speaker["event_speaker_id"]),
         )
     )
+    versions_by_asset = await _asset_versions_by_asset(
+        request,
+        str(speaker["organization_id"]),
+        event_id,
+        str(speaker["event_speaker_id"]),
+    )
     data = []
     for row in rows:
-        versions = result_rows(
-            await _db(request)
-            .prepare(
-                """SELECT generation,original_filename,content_type,byte_size,is_current,
-                          uploaded_at_ms
-                   FROM speaker_asset_versions WHERE asset_id=?1
-                     AND scan_state IN ('clean','superseded')
-                   ORDER BY generation DESC LIMIT 25"""
-            )
-            .bind(row["id"])
-            .all()
-        )
         data.append(
             SpeakerAssetView(
                 id=str(row["id"]),
@@ -1102,7 +1130,8 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
                 generation=int(row["generation"]),
                 uploaded_at_ms=int(row["uploaded_at_ms"]),
                 version_count=int(row["version_count"]),
-                versions=[_speaker_asset_version_view(version) for version in versions],
+                version_comment=str(row["version_comment"]),
+                versions=versions_by_asset.get(str(row["id"]), []),
             )
         )
     return SpeakerAssetList(data=data)
@@ -1129,7 +1158,7 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
             .prepare(
                 """SELECT a.id,a.event_speaker_id,p.display_name AS speaker_name,a.kind,
                           current.original_filename,current.content_type,current.byte_size,
-                          current.generation,current.uploaded_at_ms,
+                          current.generation,current.uploaded_at_ms,current.version_comment,
                           (SELECT count(*) FROM speaker_asset_versions history
                            WHERE history.asset_id=a.id AND history.scan_state IN
                              ('clean','superseded')) AS version_count
@@ -1145,8 +1174,12 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
             .bind(event["organization_id"], event_id),
         )
     )
-    return AdminSpeakerAssetList(
-        data=[
+    versions_by_asset = await _asset_versions_by_asset(
+        request, str(event["organization_id"]), event_id
+    )
+    data = []
+    for row in rows:
+        data.append(
             AdminSpeakerAssetView(
                 id=str(row["id"]),
                 event_speaker_id=str(row["event_speaker_id"]),
@@ -1158,10 +1191,11 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                 generation=int(row["generation"]),
                 version_count=int(row["version_count"]),
                 uploaded_at_ms=int(row["uploaded_at_ms"]),
+                version_comment=str(row["version_comment"]),
+                versions=versions_by_asset.get(str(row["id"]), []),
             )
-            for row in rows
-        ]
-    )
+        )
+    return AdminSpeakerAssetList(data=data)
 
 
 async def _stream_private_object(stored):
@@ -1238,6 +1272,41 @@ async def create_speaker_asset_download_grant(
 
 
 @speaker_operations_router.post(
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants",
+    response_model=AssetDownloadGrantView,
+    status_code=201,
+    operation_id="createOwnSpeakerAssetVersionDownloadGrant",
+    tags=["speaker-assets"],
+)
+async def create_speaker_asset_version_download_grant(
+    event_id: str, asset_id: str, version_id: str, request: Request
+) -> AssetDownloadGrantView:
+    authenticated, speaker = await _speaker_for_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_READ_OWN,
+        ResourceContext(
+            str(speaker["organization_id"]), event_id,
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    grant = await AssetRepository(_db(request)).create_download_grant(
+        AssetAccessScope(
+            organization_id=str(speaker["organization_id"]), event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            event_speaker_id=str(speaker["event_speaker_id"]),
+        ),
+        asset_id,
+        version_id=version_id,
+        now_ms=utc_now_ms(),
+    )
+    if grant is None:
+        raise HTTPException(status_code=404)
+    return AssetDownloadGrantView(token=grant.token, expires_at_ms=grant.expires_at_ms)
+
+
+@speaker_operations_router.post(
     "/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants",
     response_model=AssetDownloadGrantView,
     status_code=201,
@@ -1273,6 +1342,42 @@ async def create_admin_asset_download_grant(
             event_admin=True,
         ),
         asset_id,
+        now_ms=utc_now_ms(),
+    )
+    if grant is None:
+        raise HTTPException(status_code=404)
+    return AssetDownloadGrantView(token=grant.token, expires_at_ms=grant.expires_at_ms)
+
+
+@speaker_operations_router.post(
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants",
+    response_model=AssetDownloadGrantView,
+    status_code=201,
+    operation_id="createAdminSpeakerAssetVersionDownloadGrant",
+    tags=["speaker-assets"],
+)
+async def create_admin_asset_version_download_grant(
+    event_id: str, asset_id: str, version_id: str, request: Request
+) -> AssetDownloadGrantView:
+    authenticated = await authenticate_request(request)
+    event = row_mapping(
+        await _db(request).prepare(
+            "SELECT id,organization_id FROM events WHERE id=?1 AND status!='archived' LIMIT 1"
+        ).bind(event_id).first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request, Permission.SPEAKER_ASSET_READ,
+        ResourceContext(str(event["organization_id"]), event_id), mutation=True,
+    )
+    grant = await AssetRepository(_db(request)).create_download_grant(
+        AssetAccessScope(
+            organization_id=str(event["organization_id"]), event_id=event_id,
+            actor_user_id=authenticated.actor.user_id, event_admin=True,
+        ),
+        asset_id,
+        version_id=version_id,
         now_ms=utc_now_ms(),
     )
     if grant is None:
@@ -1456,8 +1561,8 @@ async def authorize_speaker_upload(
         db.prepare(
             """INSERT INTO speaker_asset_versions
            (id, organization_id, event_id, event_speaker_id, asset_id, generation,
-            object_key, original_filename, scan_state, created_at_ms)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_upload', ?9)"""
+            object_key, original_filename, scan_state, created_at_ms,version_comment)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_upload', ?9,?10)"""
         ).bind(
             version_id,
             speaker["organization_id"],
@@ -1468,6 +1573,7 @@ async def authorize_speaker_upload(
             f"private/{version_id}/{new_id()}",
             body.filename,
             now,
+            body.version_comment,
         )
     )
     batch.add_statement(

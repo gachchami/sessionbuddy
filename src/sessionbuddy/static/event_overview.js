@@ -7,9 +7,14 @@
 
   const api = (path) => window.SessionBuddyApi.request(path);
 
-  function tool(title, description, href) {
+  function tool(number, title, description, href, state = "Open") {
     const card = document.createElement("article");
-    card.className = "entity-card tool-card";
+    card.className = "workflow-card";
+    const meta = document.createElement("div");
+    meta.className = "workflow-card__meta";
+    const step = document.createElement("span"); step.textContent = String(number).padStart(2, "0");
+    const badge = document.createElement("span"); badge.className = "badge"; badge.textContent = state;
+    meta.append(step, badge);
     const heading = document.createElement("h3");
     const anchor = document.createElement("a");
     anchor.href = href;
@@ -21,8 +26,8 @@
     const open = document.createElement("a");
     open.href = href;
     open.className = "entity-card__action";
-    open.textContent = "Open →";
-    card.append(heading, summary, open);
+    open.textContent = "Continue →";
+    card.append(meta, heading, summary, open);
     return card;
   }
 
@@ -50,27 +55,33 @@
       api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)
     ]);
     const speakers = speakersResult.data;
-    const reviewPath = cfp.program
-      ? `/admin/programs/${encodeURIComponent(cfp.program.id)}/submissions`
-      : `/admin/events/${encodeURIComponent(eventId)}/cfp`;
+    const reviewPath = `/admin/events/${encodeURIComponent(eventId)}/submissions`;
+    const cfpLive = Boolean(cfp.published_form);
     document.title = `${selected.name} · SessionBuddy`;
     byId("organization-name").textContent = organization.name;
     byId("event-name").textContent = selected.name;
     byId("event-summary").textContent = `${formatRange(selected)} · ${selected.delivery_mode.replace("_", " ")}${selected.location ? ` · ${selected.location}` : ""}`;
-    byId("event-status").textContent = selected.status;
+    byId("event-status").textContent = selected.status === "active" ? "In progress" : selected.status;
     byId("speaker-count").textContent = String(speakers.length);
     byId("event-time-zone").textContent = selected.time_zone;
     byId("public-schedule").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
+    const nextHref = cfpLive ? reviewPath : `${prefix}/cfp`;
+    byId("primary-action").href = nextHref;
+    byId("primary-action").textContent = cfpLive ? "Review submissions" : "Set up Call for Proposals";
+    byId("event-actions").hidden = false;
+    byId("next-step-title").textContent = cfpLive ? "Review incoming proposals" : "Publish your Call for Proposals";
+    byId("next-step-summary").textContent = cfpLive
+      ? "Your form is live. Review proposals and prepare the evaluation round."
+      : "Create the public form that speakers will use to send proposals.";
+    byId("next-step-action").href = nextHref;
+    byId("next-step-action").textContent = cfpLive ? "Open submissions" : "Set up the form";
     byId("event-tools").replaceChildren(
-      tool("Call for speakers", "Publish the proposal form and share its public link.", `${prefix}/cfp`),
-      tool("People & access", "Invite event administrators, reviewers, and speakers.", `${prefix}/access`),
-      tool("Speakers", "Browse everyone connected to this event.", `${prefix}/speakers`),
-      tool("Speaker onboarding", "Track missing profiles, files, and deadlines.", `${prefix}/onboarding`),
-      tool("Resources & integrations", "Share portal resources and connect Accelevents.", `${prefix}/workspace`),
-      tool("Submissions & reviews", "Review proposals, assign evaluators, and record decisions.", reviewPath),
-      tool("Agenda", "Schedule accepted sessions and publish the program.", `${prefix}/agenda`),
-      tool("Public pages", "Open the schedule and published speaker gallery.", `/events/${encodeURIComponent(eventId)}/schedule`)
+      tool(1, "Collect proposals", "Publish the form and share one CFP link.", `${prefix}/cfp`, cfpLive ? "Live" : "Set up"),
+      tool(2, "Review & decide", "Evaluate submissions and choose the program.", reviewPath, cfpLive ? "Ready" : "Waiting"),
+      tool(3, "Prepare speakers", "Invite people and track onboarding work.", `${prefix}/onboarding`, `${speakers.length} speakers`),
+      tool(4, "Build the agenda", "Place accepted sessions and resolve conflicts.", `${prefix}/agenda`),
+      tool(5, "Publish", "Share the schedule, speaker pages, and embeds.", `${prefix}/workspace`)
     );
     byId("status").textContent = `${selected.name} is ready.`;
   }

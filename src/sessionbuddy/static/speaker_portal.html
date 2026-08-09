@@ -6,9 +6,9 @@
   <meta name="color-scheme" content="light">
   <title>Speaker portal · SessionBuddy</title>
   <link rel="stylesheet" href="/speaker/assets/speaker.css?v=8">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
   <script src="/speaker/assets/speaker-portal.js?v=8" defer></script>
 </head>
 <body class="app-body">
@@ -100,7 +100,7 @@
 
         <section id="assets" class="panel profile-panel" aria-labelledby="assets-title">
           <h2 id="assets-title">Files</h2>
-          <p class="help">Files stay private while they are checked. Only the latest clean version becomes current.</p>
+          <p class="help">Files are stored privately and checked before use. Add a short note to every upload so you and the event team can identify each version later.</p>
           <div id="asset-status" class="inline-status" role="status" aria-live="polite">Loading current assets…</div>
           <ul id="asset-list" class="asset-list"><li>Loading…</li></ul>
           <div class="upload-grid">
@@ -108,6 +108,8 @@
               <h3>Headshot</h3><p>JPEG, PNG, or WebP · up to 5 MB</p>
               <label for="headshot-file">Choose headshot</label>
               <input id="headshot-file" name="file" type="file" accept="image/jpeg,image/png,image/webp" required>
+              <label for="headshot-comment">What changed?</label>
+              <textarea id="headshot-comment" name="version_comment" rows="2" minlength="1" maxlength="1000" placeholder="For example: Updated high-resolution photo" required></textarea>
               <button type="submit">Upload headshot</button>
               <progress max="100" value="0" hidden aria-label="Headshot upload progress"></progress>
               <p class="upload-status" role="status"></p>
@@ -117,6 +119,8 @@
               <label for="slides-submission">Session</label><select id="slides-submission" name="submission_id" required><option value="">Choose a session</option></select>
               <label for="slides-file">Choose slides</label>
               <input id="slides-file" name="file" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation" required>
+              <label for="slides-comment">What changed?</label>
+              <textarea id="slides-comment" name="version_comment" rows="2" minlength="1" maxlength="1000" placeholder="For example: Added final diagrams and corrected slide 12" required></textarea>
               <button type="submit">Upload slides</button>
               <progress max="100" value="0" hidden aria-label="Slides upload progress"></progress>
               <p class="upload-status" role="status"></p>
@@ -126,6 +130,8 @@
               <label for="document-submission">Session</label><select id="document-submission" name="submission_id" required><option value="">Choose a session</option></select>
               <label for="document-file">Choose document</label>
               <input id="document-file" name="file" type="file" accept="application/pdf" required>
+              <label for="document-comment">What changed?</label>
+              <textarea id="document-comment" name="version_comment" rows="2" minlength="1" maxlength="1000" placeholder="For example: Replaced the worksheet with the final copy" required></textarea>
               <button type="submit">Upload document</button>
               <progress max="100" value="0" hidden aria-label="Document upload progress"></progress>
               <p class="upload-status" role="status"></p>

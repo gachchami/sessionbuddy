@@ -41,6 +41,7 @@
       invitationList.append(node);
     }
     if (!invitations.data.length) invitationList.append(item("No invitations yet."));
+    byId("invitation-count").textContent = String(invitations.data.filter((entry) => entry.status === "pending").length);
     const memberList = byId("member-list"); memberList.replaceChildren();
     for (const member of members.data) {
       const node = item(`${member.email} · ${member.role.replaceAll("_", " ")} · ${member.status}`);
@@ -51,6 +52,7 @@
       }
       memberList.append(node);
     }
+    byId("member-count").textContent = String(members.data.length);
     byId("status").textContent = "Event access is up to date.";
   }
   byId("invite-form").addEventListener("submit", async (event) => {
@@ -86,6 +88,10 @@
     try { await navigator.clipboard.writeText(input.value); byId("status").textContent = "Invitation link copied."; }
     catch (_) { input.focus(); input.select(); byId("status").textContent = "Copy the selected invitation link."; }
   });
+  const inviteDialog = byId("invite-dialog");
+  byId("open-invite").addEventListener("click", () => inviteDialog.showModal());
+  byId("close-invite").addEventListener("click", () => inviteDialog.close());
+  byId("cancel-invite").addEventListener("click", () => inviteDialog.close());
   if (!eventId) { byId("status").textContent = "This event link is invalid."; return; }
   load().catch((error) => { if (!window.SessionBuddyApi.redirectIfSignedOut(error)) byId("status").textContent = window.SessionBuddyApi.message(error); });
 })();

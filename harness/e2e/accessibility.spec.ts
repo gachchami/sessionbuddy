@@ -5,6 +5,10 @@ import { resolve } from "node:path";
 
 const landingHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/landing.html"), "utf8");
 const landingCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/landing.css"), "utf8");
+const setupHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.html"), "utf8");
+const setupCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.css"), "utf8");
+const setupJs = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.js"), "utf8");
+const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 test.describe("MVP experience accessibility", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
@@ -44,6 +48,9 @@ test.describe("MVP experience accessibility", () => {
   });
 
   test("first-time setup has no automatically detectable serious violations", async ({ page }) => {
+    await page.route(/^https?:\/\/[^/]+\/setup(?:\?.*)?$/, (route) => route.fulfill({ contentType: "text/html", body: setupHtml }));
+    await page.route("**/setup/assets/setup.css*", (route) => route.fulfill({ contentType: "text/css", body: setupCss }));
+    await page.route("**/setup/assets/setup.js*", (route) => route.fulfill({ contentType: "text/javascript", body: setupJs }));
     await page.route("**/api/v1/setup/status", async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: false }) });
     });
@@ -67,7 +74,7 @@ test.describe("MVP experience accessibility", () => {
     },
     { path: "/admin/speakers", sessionRole: "organizer" },
     { path: "/account", sessionRole: "organizer" },
-    { path: "/admin/programs", sessionRole: "organizer" },
+    { path: `/admin/events/${eventId}/cfp`, sessionRole: "organizer" },
     { path: "/reviews", sessionRole: "organizer" },
     { path: "/speaker", sessionRole: "speaker" },
     {
@@ -76,6 +83,10 @@ test.describe("MVP experience accessibility", () => {
     },
     {
       path: "/admin/events/22222222-2222-4222-8222-222222222222/onboarding",
+      sessionRole: "organizer",
+    },
+    {
+      path: "/admin/events/22222222-2222-4222-8222-222222222222/messages",
       sessionRole: "organizer",
     },
     {

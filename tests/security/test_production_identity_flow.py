@@ -480,28 +480,38 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         invitation = await admin.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=mutation_headers,
-            json={"email": "speaker@example.com", "role": "speaker"},
-        )
-        assert invitation.status_code == 201
-
-        program = await admin.post(
-            "/api/v1/admin/programs",
-            headers={**mutation_headers, "idempotency-key": "program-integration-2026"},
             json={
-                "organization_id": organization_id,
-                "event_id": event_id,
-                "name": "Speaker Summit CFP",
+                "email": "speaker@example.com",
+                "role": "speaker",
+                "display_name": "Invited Speaker",
+                "job_title": "Engineer",
+                "company": "Example Co",
             },
         )
-        assert program.status_code == 201
+        assert invitation.status_code == 201
+        invited_roster = await admin.get(
+            f"/api/v1/admin/events/{event_id}/speaker-targets"
+        )
+        assert invited_roster.status_code == 200
+        assert any(
+            target["email"] == "speaker@example.com"
+            and target["display_name"] == "Invited Speaker"
+            and target["selection_status"] == "invited"
+            for target in invited_roster.json()["data"]
+        )
+
         draft_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
         assert draft_workspace.status_code == 200
-        assert draft_workspace.json()["program"]["id"] == program.json()["id"]
+        assert draft_workspace.json()["event_name"] == "Speaker Summit"
         assert draft_workspace.json()["published_form"] is None
         published = await admin.post(
-            f"/api/v1/admin/programs/{program.json()['id']}/forms/publish",
+            f"/api/v1/admin/events/{event_id}/cfp/publish",
             headers={**mutation_headers, "idempotency-key": "publish-integration-2026"},
-            json={"slug": "speaker-summit", "welcome_text": "Share your session."},
+            json={
+                "slug": "speaker-summit",
+                "welcome_text": "Share your session.",
+                "closes_at_ms": 1_899_913_600_000,
+            },
         )
         assert published.status_code == 201
         live_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
@@ -525,7 +535,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "redirect_to_portal": published_form["redirect_to_portal"],
         }
         updated_form = await admin.patch(
-            f"/api/v1/admin/programs/{program.json()['id']}/forms/{published_form['id']}",
+            f"/api/v1/admin/events/{event_id}/cfp",
             headers=mutation_headers,
             json=update_payload,
         )
@@ -533,7 +543,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert updated_form.json()["version"] == published_form["version"] + 1
         assert updated_form.json()["welcome_text"] == "Share your revised session proposal."
         stale_form = await admin.patch(
-            f"/api/v1/admin/programs/{program.json()['id']}/forms/{published_form['id']}",
+            f"/api/v1/admin/events/{event_id}/cfp",
             headers=mutation_headers,
             json=update_payload,
         )
@@ -610,10 +620,10 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         }
         connection.execute(
             """INSERT INTO evaluation_rounds
-               (id,organization_id,event_id,program_id,name,rubric_json,status,
+               (id,organization_id,event_id,name,rubric_json,status,
                 created_at_ms,updated_at_ms,closed_at_ms)
-               VALUES ('round-content',?,?,?,'Final','{}','closed',1000,1000,1000)""",
-            (organization_id, event_id, program.json()["id"]),
+               VALUES ('round-content',?,?,'Final','{}','closed',1000,1000,1000)""",
+            (organization_id, event_id),
         )
         connection.execute(
             """INSERT INTO submission_decisions
@@ -631,7 +641,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         connection.commit()
 
         submissions_after_decision = await admin_again.get(
-            f"/api/v1/admin/programs/{program.json()['id']}/submissions"
+            f"/api/v1/admin/events/{event_id}/submissions"
         )
         assert submissions_after_decision.status_code == 200
         decided_submission = next(
@@ -721,21 +731,15 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert second_event.status_code == 201
         second_event_id = second_event.json()["id"]
-        second_program = await admin_again.post(
-            "/api/v1/admin/programs",
-            headers={**headers, "idempotency-key": "second-program-integration-2026"},
-            json={
-                "organization_id": organization_id,
-                "event_id": second_event_id,
-                "name": "Next Speaker Summit CFP",
-            },
-        )
-        assert second_program.status_code == 201
         assert (
             await admin_again.post(
-                f"/api/v1/admin/programs/{second_program.json()['id']}/forms/publish",
+                f"/api/v1/admin/events/{second_event_id}/cfp/publish",
                 headers={**headers, "idempotency-key": "second-form-integration-2026"},
-                json={"slug": "next-speaker-summit", "welcome_text": "Join the next event."},
+                json={
+                    "slug": "next-speaker-summit",
+                    "welcome_text": "Join the next event.",
+                    "closes_at_ms": 1_900_913_600_000,
+                },
             )
         ).status_code == 201
 
@@ -969,7 +973,6 @@ async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
                 "time_zone": "UTC",
             },
         )
-        organization_id = bootstrap.json()["organization_id"]
         event_id = bootstrap.json()["event_id"]
         await client.post(
             "/api/v1/auth/magic-links",
@@ -981,19 +984,14 @@ async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
         )
         session = (await client.get("/api/v1/auth/session")).json()
         headers = {"origin": "https://test", "x-csrf-token": session["csrf_token"]}
-        program = await client.post(
-            "/api/v1/admin/programs",
-            headers={**headers, "idempotency-key": "admin-speaker-program"},
-            json={
-                "organization_id": organization_id,
-                "event_id": event_id,
-                "name": "Admin Speaker CFP",
-            },
-        )
         published = await client.post(
-            f"/api/v1/admin/programs/{program.json()['id']}/forms/publish",
+            f"/api/v1/admin/events/{event_id}/cfp/publish",
             headers={**headers, "idempotency-key": "admin-speaker-form"},
-            json={"slug": "admin-speaker", "welcome_text": "Share your proposal."},
+            json={
+                "slug": "admin-speaker",
+                "welcome_text": "Share your proposal.",
+                "closes_at_ms": 1_899_913_600_000,
+            },
         )
         assert published.status_code == 201
         assert (await client.get("/api/v1/speaker/portal")).status_code == 404

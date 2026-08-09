@@ -51,6 +51,9 @@
     const groups = new Map();
     visible.forEach((item) => { const key = group(item); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); });
     const root = byId("schedule"); root.replaceChildren(); root.classList.toggle("week-view", state.view === "week");
+    byId("results-summary").textContent = state.query || state.view === "mine"
+      ? `${visible.length} of ${source.length} session${source.length === 1 ? "" : "s"} shown.`
+      : `${visible.length} published session${visible.length === 1 ? "" : "s"}.`;
     byId("empty").hidden = visible.length !== 0;
     byId("download-calendar").disabled = state.itinerary.size === 0;
     byId("empty").querySelector("strong").textContent = state.view === "mine" ? "Choose + on a session to build your itinerary." : "No sessions are published yet.";
@@ -85,13 +88,14 @@
     if (sessionsOnly) document.querySelector(".schedule-filters").hidden = true;
     byId("title").textContent = sessionsOnly ? `${body.event.name} sessions` : body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
     byId("timezone").textContent = body.revision
-      ? `Times shown in ${body.event.time_zone}. Published revision ${body.revision.version}.`
+      ? `Times shown in ${body.event.time_zone}. Published revision ${body.revision.revision_number}.`
       : `Times will be shown in ${body.event.time_zone}.`;
     byId("status").textContent = body.revision
       ? `${body.items.length} published session${body.items.length === 1 ? "" : "s"}.`
       : "The organizer has not published the schedule yet.";
     if (body.event.accent_color) document.documentElement.style.setProperty("--blue", body.event.accent_color);
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").hidden = false; }
+    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
     saveItinerary(); render();
   }
   load().catch((error) => { byId("status").textContent = window.SessionBuddyApi.message(error, "The schedule is unavailable. Try again."); byId("status").classList.add("error"); });

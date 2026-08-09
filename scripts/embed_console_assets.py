@@ -29,6 +29,8 @@ ASSETS = {
     "event_overview.js": "EVENT_OVERVIEW_JS",
     "speaker_directory.html": "SPEAKER_DIRECTORY_HTML",
     "speaker_directory.js": "SPEAKER_DIRECTORY_JS",
+    "speaker_messages.html": "SPEAKER_MESSAGES_HTML",
+    "speaker_messages.js": "SPEAKER_MESSAGES_JS",
     "account.html": "ACCOUNT_HTML",
     "account.js": "ACCOUNT_JS",
     "admin_programs.html": "ADMIN_PROGRAMS_HTML",

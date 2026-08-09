@@ -4,6 +4,7 @@ set -eu
 # Container-first release rehearsal. Artifacts are written only beneath ignored
 # .local directories; this command does not deploy or touch remote resources.
 docker compose up --build --detach worker
+docker compose run --rm --no-deps worker npm run worker:migrations:baseline:check
 docker compose run --rm --no-deps worker npm run worker:migrate
 docker compose run --rm --no-deps worker npm run frontend:check
 docker compose run --rm --no-deps worker npm run frontend:build

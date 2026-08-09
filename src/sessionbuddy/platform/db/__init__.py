@@ -2,8 +2,8 @@
 
 from .commands import AuditEvent, CommandBatch, IdempotencyRecord, OutboxMessage
 from .d1 import D1Database, D1PreparedStatement, execute_batch
-from .repositories import EventRepository, OrganizationRepository, ProgramRepository
-from .scopes import EventScope, OrganizationScope, ProgramScope
+from .repositories import EventRepository, OrganizationRepository
+from .scopes import EventScope, OrganizationScope
 
 __all__ = [
     "AuditEvent",
@@ -16,7 +16,5 @@ __all__ = [
     "OrganizationRepository",
     "OrganizationScope",
     "OutboxMessage",
-    "ProgramRepository",
-    "ProgramScope",
     "execute_batch",
 ]

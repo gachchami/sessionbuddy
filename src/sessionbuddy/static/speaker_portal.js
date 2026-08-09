@@ -34,10 +34,14 @@
     };
   }
 
-  async function api(path, options = {}) {
+  async function api(path, options = {}, behavior = {}) {
     const started = performance.now();
     return window.SessionBuddyApi.request(path, options, {
-      onResponse: (response) => recordTelemetry(started, response)
+      ...behavior,
+      onResponse: (response) => {
+        recordTelemetry(started, response);
+        behavior.onResponse?.(response);
+      }
     });
   }
 
@@ -115,10 +119,7 @@
     list.replaceChildren();
     const outstanding = tasks.filter((task) => !["completed", "waived"].includes(task.state));
     byId("task-count").textContent = String(outstanding.length);
-    if (!outstanding.length) {
-      list.append(make("li", "You’re all caught up. There are no outstanding tasks.", "empty"));
-      return;
-    }
+    if (!outstanding.length) list.append(make("li", "You’re all caught up. There are no outstanding tasks.", "empty"));
     outstanding.forEach((task) => {
       const item = make("li", undefined, "item-card");
       const heading = make("h3", task.title);
@@ -144,6 +145,18 @@
       }
       list.append(item);
     });
+    const completed = tasks.filter((task) => ["completed", "waived"].includes(task.state));
+    if (completed.length) {
+      list.append(make("li", `Completed (${completed.length})`, "task-history-heading"));
+      completed.forEach((task) => {
+        const item = make("li", undefined, "item-card task-complete");
+        item.append(
+          make("h3", task.title),
+          make("p", task.state === "waived" ? "Waived" : "Completed", "state-badge success"),
+        );
+        list.append(item);
+      });
+    }
   }
 
   function renderSubmissions(submissions) {
@@ -186,8 +199,14 @@
     const links = profile.links || [];
     form.elements.linkedin.value = links.find((value) => { try { return new URL(value).hostname.toLowerCase().endsWith("linkedin.com"); } catch (_) { return false; } }) || "";
     const remaining = links.filter((value) => value !== form.elements.linkedin.value);
-    form.elements.website.value = remaining[0] || "";
-    form.elements.social_link.value = remaining[1] || "";
+    const socialHosts = ["twitter.com", "x.com", "bsky.app", "mastodon.social", "threads.net", "instagram.com", "facebook.com"];
+    form.elements.social_link.value = remaining.find((value) => {
+      try {
+        const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+        return socialHosts.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
+      } catch (_) { return false; }
+    }) || "";
+    form.elements.website.value = remaining.find((value) => value !== form.elements.social_link.value) || "";
     state.version = profile.version;
     updateBiographyCount();
     clearErrors();
@@ -452,6 +471,30 @@
       const assets = result.data || [];
       const list = byId("asset-list"); list.replaceChildren();
       if (!assets.length) list.append(make("li", "No clean assets uploaded yet.", "empty"));
+      async function downloadVersion(asset, version, button) {
+        button.disabled = true;
+        try {
+          const grant = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(version.id)}/download-grants`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+            body: "{}"
+          });
+          let response;
+          await api("/api/v1/assets/download", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+            body: JSON.stringify({ token: grant.token })
+          }, { expectJson: false, onResponse: (received) => { response = received; } });
+          const url = URL.createObjectURL(await response.blob());
+          const link = document.createElement("a");
+          link.href = url; link.download = version.filename; link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          status.textContent = `${version.filename} downloaded.`;
+        } catch (error) {
+          status.textContent = window.SessionBuddyApi.message(error, "The file could not be downloaded.");
+          status.classList.add("error");
+        } finally { button.disabled = false; }
+      }
       assets.forEach((asset) => {
         const item = document.createElement("li");
         if (asset.kind === "headshot") {
@@ -461,12 +504,28 @@
           preview.addEventListener("error", () => preview.remove());
           item.append(preview);
         }
-        item.append(make("strong", asset.filename), make("span", `${asset.state.replaceAll("_", " ")} · version ${asset.generation} of ${asset.version_count}`));
-        if (asset.versions?.length > 1) {
+        item.append(
+          make("strong", asset.filename),
+          make("span", `${asset.state.replaceAll("_", " ")} · version ${asset.generation} of ${asset.version_count}`),
+          make("p", asset.version_comment, "help"),
+        );
+        if (asset.versions?.length) {
           const details = document.createElement("details");
           details.append(make("summary", `${asset.versions.length} saved versions`));
           const history = document.createElement("ol");
-          asset.versions.forEach((version) => history.append(make("li", `Version ${version.generation} · ${version.filename} · ${version.state} · ${new Date(version.uploaded_at_ms).toLocaleString()}`)));
+          asset.versions.forEach((version) => {
+            const versionItem = document.createElement("li");
+            versionItem.append(
+              make("strong", `Version ${version.generation} · ${version.filename}`),
+              make("span", `${version.state} · ${new Date(version.uploaded_at_ms).toLocaleString()}`),
+              make("p", version.version_comment, "help"),
+            );
+            const button = make("button", "Download", "secondary");
+            button.type = "button";
+            button.addEventListener("click", () => downloadVersion(asset, version, button));
+            versionItem.append(button);
+            history.append(versionItem);
+          });
           details.append(history); item.append(details);
         }
         list.append(item);
@@ -486,8 +545,15 @@
     const status = form.querySelector(".upload-status");
     const progress = form.querySelector("progress");
     const button = form.querySelector("button[type=submit]");
+    const versionComment = form.elements.version_comment.value.trim();
     const validation = validateFile(kind, file);
     if (validation) { status.textContent = validation; status.classList.add("error"); return; }
+    if (!versionComment) {
+      form.elements.version_comment.setCustomValidity("Describe what changed in this version.");
+      form.elements.version_comment.reportValidity();
+      return;
+    }
+    form.elements.version_comment.setCustomValidity("");
     button.disabled = true; progress.hidden = false; progress.value = 0;
     status.classList.remove("error"); status.textContent = "Checking file integrity…";
     try {
@@ -499,7 +565,8 @@
         body: JSON.stringify({
           kind, submission_id: form.elements.submission_id?.value || null,
           task_id: taskForKind(kind), filename: file.name, content_type: file.type,
-          byte_size: file.size, checksum_sha256: await checksum(file)
+          byte_size: file.size, checksum_sha256: await checksum(file),
+          version_comment: versionComment
         })
       });
       const uploadUrl = safeUploadUrl(authorization.upload_url);
@@ -520,6 +587,7 @@
         status.textContent = "Upload complete. The file is being checked before it becomes current.";
       }
       form.elements.file.value = "";
+      form.elements.version_comment.value = "";
       await loadAssets();
       const portal = await api("/api/v1/speaker/portal"); renderPortal(portal);
       announceOnboardingChange();

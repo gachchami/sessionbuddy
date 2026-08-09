@@ -80,6 +80,24 @@ def test_round_workspaces_support_late_submissions_and_audited_force_close() -> 
     assert "Organizer closed the round before every review was final." in reviews
 
 
+def test_evaluation_rounds_are_owned_by_events() -> None:
+    root = Path(__file__).parents[2]
+    router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
+    models = (root / "src/sessionbuddy/evaluation/models.py").read_text()
+    reviews = (root / "frontend/src/main.tsx").read_text()
+
+    for route in (
+        '"/api/v1/admin/events/{event_id}/evaluation-rounds"',
+        '"/api/v1/admin/events/{event_id}/evaluation-rounds/current"',
+        '"/api/v1/admin/events/{event_id}/evaluators"',
+    ):
+        assert route in router
+    assert "program_id" not in router
+    assert "program_id" not in models
+    assert "results.program_id" not in reviews
+    assert "/admin/events/${encodeURIComponent(results.event_id)}/submissions" in reviews
+
+
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:
     assert _weighted_mean([(4.0, 1), (2.0, 3)]) == 2.5
     assert _weighted_mean([]) is None

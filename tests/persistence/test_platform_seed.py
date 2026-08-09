@@ -14,6 +14,7 @@ def test_seed_is_deterministic_and_cross_tenant():
     assert first != seed_platform.build_seed("other")
     assert len(first["organizations"]) == 2
     assert len(first["events"]) == 4
+    assert "programs" not in first
     assert {row["role"] for row in first["event_memberships"]} == {
         "event_admin",
         "evaluator",

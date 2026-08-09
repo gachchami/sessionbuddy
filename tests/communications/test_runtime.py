@@ -20,8 +20,35 @@ from tests.speaker_operations.test_asset_boundary import AsyncSqlite
 from tests.speaker_operations.test_speaker_onboarding_schema import (
     MIGRATIONS,
     add_speaker,
-    seed_platform,
 )
+
+
+def seed_event_platform(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """INSERT INTO organizations (id,name,status,created_at_ms,updated_at_ms)
+           VALUES ('org-a','Org a','active',1000,1000)"""
+    )
+    connection.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,created_at_ms,updated_at_ms)
+           VALUES ('user-a','speaker-a@example.test','speaker-a@example.test','active',1000,1000)"""
+    )
+    connection.execute(
+        """INSERT INTO organization_memberships
+           (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES ('org-member-a','org-a','user-a','member','active',1000,1000)"""
+    )
+    connection.execute(
+        """INSERT INTO events
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,delivery_mode,status,
+            created_at_ms,updated_at_ms)
+           VALUES ('event-a','org-a','Event a',1000,2000,'UTC','hybrid','active',1000,1000)"""
+    )
+    connection.execute(
+        """INSERT INTO event_memberships
+           (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES ('event-member-a','org-a','event-a','user-a','speaker','active',1000,1000)"""
+    )
 
 
 def claim() -> DeliveryClaim:
@@ -166,7 +193,7 @@ async def test_delivery_claim_loads_event_email_identity() -> None:
     connection.execute("PRAGMA foreign_keys=ON")
     for migration in MIGRATIONS:
         connection.executescript(migration.read_text())
-    seed_platform(connection)
+    seed_event_platform(connection)
     connection.execute(
         """UPDATE events SET email_sender_name='Conference Team',
                   email_reply_to='program@example.test' WHERE id='event-a'"""
@@ -257,7 +284,7 @@ async def test_reminder_consumer_materializes_due_version_once_and_marks_dispatc
     connection.execute("PRAGMA foreign_keys=ON")
     for migration in MIGRATIONS:
         connection.executescript(migration.read_text())
-    seed_platform(connection)
+    seed_event_platform(connection)
     add_speaker(connection, "a")
     connection.execute(
         """INSERT INTO speaker_tasks

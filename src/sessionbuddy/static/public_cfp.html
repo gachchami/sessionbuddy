@@ -4,20 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Submit a proposal · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=12">
+  <link rel="stylesheet" href="/product/assets/product.css?v=15">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/product/assets/public-cfp.js?v=11" defer></script>
+  <script src="/product/assets/public-cfp.js?v=12" defer></script>
 </head>
 <body class="public-body">
   <a class="skip-link" href="#main">Skip to proposal form</a>
   <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span id="brand-name">SessionBuddy</span></a><img id="event-logo" class="event-logo" alt="" hidden></div></header>
   <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading"><div><p class="eyebrow">Call for speakers</p><h1 id="title">Submit a proposal</h1><p id="welcome" class="lede">Loading the published form…</p></div></div>
+    <img id="event-cover" class="event-cover-image" alt="" hidden>
+    <div class="page-heading"><div><p class="eyebrow">Call for Proposals</p><h1 id="title">Submit a proposal</h1><p id="welcome" class="lede">Loading the published form…</p></div></div>
     <ol class="step-indicator" aria-label="Submission progress"><li id="step-details" aria-current="step">1 · Proposal</li><li id="step-review">2 · Review</li><li id="step-done">3 · Complete</li></ol>
     <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div>
-    <section id="call-details" class="card" hidden aria-labelledby="call-details-title"><h2 id="call-details-title">Before you start</h2><p id="call-deadline"></p><p>The form asks for:</p><ul id="call-fields"></ul></section>
+    <section id="call-details" class="card" hidden aria-labelledby="call-details-title"><h2 id="call-details-title">Before you start</h2><p id="call-deadline"></p><p>The form asks for:</p><ul id="call-fields"></ul><p id="call-conditional-note" class="help" hidden>Additional questions may appear based on your answers.</p></section>
     <section id="closed-card" class="card" hidden><h2>Submissions are not open</h2><p id="availability"></p></section>
-    <section id="sign-in-card" class="card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><h2 id="sign-in-title">Sign in to submit</h2><p>Enter your email to receive a secure link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Sign in</button></form></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Link expires in 15 minutes.</p><button id="change-cfp-email" class="secondary" type="button">Change email</button></div></section>
+    <section id="sign-in-card" class="card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><h2 id="sign-in-title">Verify your email to submit</h2><p>Your proposal is safely stored in this browser. Enter the proposal email to request a secure one-time link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Send verification link</button></form></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Open the link in this browser. Your completed proposal will be restored for final submission. The link expires in 15 minutes.</p><button id="change-cfp-email" class="secondary" type="button">Use a different email</button></div></section>
     <section id="proposal-card" class="card" hidden aria-labelledby="title">
       <form id="proposal-form">
         <div id="dynamic-fields"></div>

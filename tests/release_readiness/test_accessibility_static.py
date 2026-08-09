@@ -14,6 +14,7 @@ CORE_HTML = [
     "admin_home.html",
     "event_overview.html",
     "speaker_directory.html",
+    "speaker_messages.html",
     "account.html",
     "setup.html",
 ]
@@ -105,11 +106,37 @@ def test_expired_link_recovery_page_has_accessible_actions() -> None:
 
 
 def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
-    text = (STATIC / "events_admin.html").read_text()
+    text, _ = parse("events_admin.html")
     javascript = (STATIC / "events_admin.js").read_text()
+    stylesheet = (STATIC / "product.css").read_text()
     assert 'id="new-event"' in text
     assert 'id="event-dialog"' in text
-    assert 'placeholder="Community Tech Summit 2026"' in text
+    event_form = text.split('<form id="event-form">', 1)[1].split("</form>", 1)[0]
+    event_form_parser = AuditParser()
+    event_form_parser.feed(event_form)
+    event_name = next(
+        attrs
+        for tag, attrs in event_form_parser.tags
+        if tag == "input" and attrs.get("name") == "name"
+    )
+    assert "placeholder" not in event_name
+    for field_name in (
+        "name",
+        "time_zone",
+        "delivery_mode",
+        "start_date",
+        "start_time",
+        "end_date",
+        "end_time",
+    ):
+        field_line = next(
+            line for line in event_form.splitlines() if f'name="{field_name}"' in line
+        )
+        assert '<span class="required-marker">Required</span>' in field_line
+        assert " required" in field_line
+    assert ".required-marker" in stylesheet
+    assert "color: var(--danger)" in stylesheet
+    assert "--danger: #b42318" in stylesheet
     assert 'value="Asia/Kolkata"' not in text
     assert '<option value="" selected disabled>Select a format</option>' in text
     assert 'aria-describedby="time-zone-help"' in text
@@ -148,9 +175,11 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
     assert 'id="sign-in"' not in programs
     assert 'id="logout"' not in programs
     shell = (STATIC / "app_shell.js").read_text()
-    assert '"Organizations"' in shell
+    assert '"Home"' in shell
     assert '"Events"' in shell
-    assert '"Speakers"' in shell
+    assert '"People"' in shell
+    for section in ('"Plan"', '"People"', '"Publish"'):
+        assert section in shell
     assert '"Account & access"' in shell
     assert '"Sign out"' in shell
 

@@ -52,18 +52,9 @@
       items.map((event) => ({ ...event, organization_name: organization.name }))
     );
 
-    const organizationList = byId("organization-list");
-    organizationList.replaceChildren(...eventGroups.map(({ organization, events: items }) =>
-      cardLink(
-        organization.name,
-        `/admin/events?organization_id=${encodeURIComponent(organization.id)}`,
-        "Organization",
-        `${items.length} event${items.length === 1 ? "" : "s"}`,
-        organization.status
-      )
-    ));
-    byId("organization-count").textContent = String(organizations.length);
-    byId("metric-organizations").textContent = String(organizations.length);
+    byId("metric-workspace").textContent = organizations.length === 1
+      ? organizations[0].name
+      : `${organizations.length} organizations`;
 
     const eventList = byId("event-list");
     if (events.length) {

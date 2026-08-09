@@ -17,6 +17,7 @@ STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
         ("events_admin.html", "events_admin.js"),
         ("event_overview.html", "event_overview.js"),
         ("speaker_directory.html", "speaker_directory.js"),
+        ("speaker_messages.html", "speaker_messages.js"),
         ("account.html", "account.js"),
         ("admin_programs.html", "admin_programs.js"),
         ("public_cfp.html", "public_cfp.js"),
@@ -86,11 +87,51 @@ def test_custom_speaker_task_retries_reuse_idempotency_keys() -> None:
     assert "the same request will not be duplicated" in script
 
 
+def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> None:
+    script = (STATIC / "event_workspace.js").read_text()
+    assert "version.version_comment" in script
+    assert "/versions/${encodeURIComponent(version.id)}/download-grants" in script
+    assert "link.download = version.filename" in script
+
+
 def test_speaker_message_retries_reuse_idempotency_key() -> None:
-    script = (STATIC / "speaker_directory.js").read_text()
+    script = (STATIC / "speaker_messages.js").read_text()
     assert "messageMutation" in script
     assert "already queued recipients will not be duplicated" in script
     assert "Delivery was confirmed from message history" in script
+
+
+def test_event_branding_uses_a_validated_logo_upload() -> None:
+    page = (STATIC / "events_admin.html").read_text()
+    script = (STATIC / "events_admin.js").read_text()
+    assert "Logo URL" not in page
+    assert 'name="logo_file" type="file"' in page
+    assert 'accept="image/png,image/jpeg,image/webp"' in page
+    assert "2 * 1024 * 1024" in script
+    assert "/logo`" in script
+    assert 'name="cover_file" type="file"' in page
+    assert "Recommended: 1600 × 900 pixels" in page
+    assert "/cover`" in script
+
+
+def test_public_event_pages_render_cover_images() -> None:
+    for page_name, script_name in (
+        ("public_cfp.html", "public_cfp.js"),
+        ("schedule.html", "schedule.js"),
+        ("speaker_gallery.html", "speaker_gallery.js"),
+    ):
+        assert 'id="event-cover"' in (STATIC / page_name).read_text()
+        assert "cover_image_url" in (STATIC / script_name).read_text()
+
+
+def test_speaker_message_personalization_hides_template_syntax() -> None:
+    page = (STATIC / "speaker_messages.html").read_text()
+    assert "Merge fields:" not in page
+    assert "speaker.first_name" not in page
+    assert 'data-merge-field="{{speaker.name}}"' in page
+    assert ">Speaker name</button>" in page
+    assert ">Portal link</button>" in page
+    assert "Each selected speaker will see their own details" in page
 
 
 def test_public_schedule_export_reports_success() -> None:
@@ -99,6 +140,7 @@ def test_public_schedule_export_reports_success() -> None:
     assert "weekday" in script
     assert "schedule-search" in script
     assert "sessionsOnly" in script
+    assert "`${visible.length} of ${source.length} session" in script
 
 
 def test_cfp_signed_in_email_help_is_not_duplicated() -> None:

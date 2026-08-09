@@ -45,10 +45,10 @@
     if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
     return `${(value / 1024 / 1024).toFixed(1)} MB`;
   }
-  async function downloadAsset(asset, button) {
+  async function downloadAsset(asset, version, button) {
     button.disabled = true;
     try {
-      const grant = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}/download-grants`, {
+      const grant = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(version.id)}/download-grants`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
         body: "{}"
@@ -64,9 +64,9 @@
       });
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
-      link.href = url; link.download = asset.filename; link.click();
+      link.href = url; link.download = version.filename; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus(`${asset.filename} downloaded.`);
+      setStatus(`${version.filename} downloaded.`);
     } catch (error) {
       setStatus(window.SessionBuddyApi.message(error, "The file could not be downloaded."), true);
     } finally { button.disabled = false; }
@@ -79,9 +79,21 @@
       const title = document.createElement("strong"); title.textContent = asset.filename;
       const meta = document.createElement("span"); meta.className = "muted";
       meta.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")} · ${fileSize(asset.byte_size)} · ${asset.version_count} version${asset.version_count === 1 ? "" : "s"}`;
-      const button = document.createElement("button"); button.type = "button"; button.className = "secondary"; button.textContent = "Download";
-      button.addEventListener("click", () => downloadAsset(asset, button));
-      item.append(title, meta, button); return item;
+      const currentComment = document.createElement("p"); currentComment.className = "help"; currentComment.textContent = asset.version_comment;
+      const history = document.createElement("details");
+      const summary = document.createElement("summary"); summary.textContent = `${asset.versions.length} saved versions`;
+      const versions = document.createElement("ol");
+      asset.versions.forEach((version) => {
+        const versionItem = document.createElement("li");
+        const versionTitle = document.createElement("strong"); versionTitle.textContent = `Version ${version.generation} · ${version.filename}`;
+        const versionMeta = document.createElement("span"); versionMeta.className = "muted"; versionMeta.textContent = `${version.state} · ${fileSize(version.byte_size)} · ${new Date(version.uploaded_at_ms).toLocaleString()}`;
+        const comment = document.createElement("p"); comment.className = "help"; comment.textContent = version.version_comment;
+        const button = document.createElement("button"); button.type = "button"; button.className = "secondary"; button.textContent = "Download";
+        button.addEventListener("click", () => downloadAsset(asset, version, button));
+        versionItem.append(versionTitle, versionMeta, comment, button); versions.append(versionItem);
+      });
+      history.append(summary, versions);
+      item.append(title, meta, currentComment, history); return item;
     });
     if (!nodes.length) {
       const empty = document.createElement("li"); empty.className = "empty";
@@ -162,7 +174,7 @@
   function renderEmbed() {
     const type = byId("embed-type").value;
     const enabled = byId("embed-enabled").checked;
-    const title = byId("embed-title").value.trim() || "Event program";
+    const title = byId("embed-title").value.trim() || "Event schedule";
     const height = Math.max(320, Math.min(1600, Number(byId("embed-height").value) || 640));
     const encoded = encodeURIComponent(eventId);
     const publicUrl = `${location.origin}/events/${encoded}/${type}`;
@@ -186,7 +198,7 @@
     const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
     try {
       const saved = JSON.parse(localStorage.getItem(`sessionbuddy:embed:${eventId}`) || "null");
-      if (saved) { byId("embed-type").value = saved.type || "schedule"; byId("embed-enabled").checked = saved.enabled !== false; byId("embed-title").value = saved.title || "Event program"; byId("embed-height").value = saved.height || 640; }
+      if (saved) { byId("embed-type").value = saved.type || "schedule"; byId("embed-enabled").checked = saved.enabled !== false; byId("embed-title").value = saved.title || "Event schedule"; byId("embed-height").value = saved.height || 640; }
     } catch (_) { /* use defaults */ }
     renderEmbed();
     byId("event-id").textContent = eventId; byId("api-base").textContent = `${location.origin}/v1`;

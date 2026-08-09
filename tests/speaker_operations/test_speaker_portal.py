@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
 from sessionbuddy.platform.db.types import utc_now_ms
-from sessionbuddy.speaker_operations.models import SpeakerProfileUpdate
+from sessionbuddy.speaker_operations.models import SpeakerProfileUpdate, UploadAuthorizationCreate
 from sessionbuddy.speaker_operations.router import (
     _cursor,
     _next_cursor,
@@ -44,17 +44,36 @@ async def test_speaker_portal_api_fails_closed_without_database(client) -> None:
 def test_asset_history_maps_database_columns_to_public_contract() -> None:
     view = _speaker_asset_version_view(
         {
+            "id": "version-2",
             "generation": 2,
             "original_filename": "slides-v2.pdf",
             "content_type": "application/pdf",
             "byte_size": 4096,
             "is_current": 1,
             "uploaded_at_ms": 1_700_000_000_000,
+            "version_comment": "Corrected the final diagram",
         }
     )
 
     assert view.filename == "slides-v2.pdf"
     assert view.state == "current"
+    assert view.version_comment == "Corrected the final diagram"
+
+
+def test_upload_authorization_requires_nonblank_version_comment() -> None:
+    values = {
+        "kind": "slides",
+        "filename": "slides.pdf",
+        "content_type": "application/pdf",
+        "byte_size": 1024,
+        "checksum_sha256": "0" * 64,
+    }
+    with pytest.raises(ValidationError):
+        UploadAuthorizationCreate(**values)
+    with pytest.raises(ValidationError):
+        UploadAuthorizationCreate(**values, version_comment="   ")
+    request = UploadAuthorizationCreate(**values, version_comment="  Final diagrams  ")
+    assert request.version_comment == "Final diagrams"
 
 
 def test_profile_update_allows_only_absolute_web_links() -> None:

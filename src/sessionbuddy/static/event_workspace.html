@@ -4,27 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speaker resources · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=11">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <link rel="stylesheet" href="/product/assets/product.css?v=15">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
-  <script src="/admin/workspace/assets/workspace.js?v=3" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
+  <script src="/admin/workspace/assets/workspace.js?v=4" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to speaker resources</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
-      <div><h1>Resources & publishing</h1><p class="lede">Publish the program, share speaker resources, and connect event tools.</p></div>
+      <div><h1>Resources & publishing</h1><p class="lede">Publish the schedule, share speaker resources, and connect event tools.</p></div>
       <a id="onboarding-link" class="button secondary" href="#">View readiness</a>
     </div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section class="grid workspace-grid">
-      <article class="card wide" aria-labelledby="sharing-title"><div class="section-heading"><div><p class="eyebrow">Publish & embed</p><h2 id="sharing-title">Public program</h2></div></div><p class="help">Choose a public view, preview its address, and copy a responsive iframe.</p><form id="embed-builder"><div class="form-grid"><label>Widget type<select id="embed-type"><option value="schedule">Schedule</option><option value="sessions">Session list</option><option value="speakers">Speaker directory</option><option value="gallery">Speaker gallery</option></select></label><label>Embed title<input id="embed-title" value="Event program" maxlength="120"></label></div><div class="form-grid"><label>Minimum height<input id="embed-height" type="number" min="320" max="1600" value="640"></label><label class="check-label"><input id="embed-enabled" type="checkbox" checked> Embed enabled</label></div><label>Public page<input id="embed-url" readonly></label><label>Iframe code<textarea id="embed-code" rows="3" readonly></textarea></label><div class="actions"><a id="open-embed" class="button secondary" href="#">Open public view</a><button id="copy-embed" class="secondary" type="button">Copy embed</button></div></form></article>
+      <article class="card wide" aria-labelledby="sharing-title"><div class="section-heading"><div><p class="eyebrow">Public event</p><h2 id="sharing-title">Share & embed</h2></div><a id="open-embed" class="button secondary" href="#">Open public view</a></div><p class="help">Your public event pages are ready to share. Open embed settings only when you need code for another website.</p><details class="action-disclosure"><summary>Embed settings</summary><form id="embed-builder"><div class="form-grid"><label>Widget type<select id="embed-type"><option value="schedule">Schedule</option><option value="sessions">Session list</option><option value="speakers">Speaker directory</option><option value="gallery">Speaker gallery</option></select></label><label>Embed title<input id="embed-title" value="Event schedule" maxlength="120"></label></div><div class="form-grid"><label>Minimum height<input id="embed-height" type="number" min="320" max="1600" value="640"></label><label class="check-label"><input id="embed-enabled" type="checkbox" checked> Embed enabled</label></div><label>Public page<input id="embed-url" readonly></label><label>Iframe code<textarea id="embed-code" rows="3" readonly></textarea></label><div class="actions"><button id="copy-embed" class="secondary" type="button">Copy embed</button></div></form></details></article>
       <article class="card" aria-labelledby="resource-title">
         <div class="section-heading"><div><p class="eyebrow">Portal content</p><h2 id="resource-title">Resources & wiki</h2></div><span id="resource-count" class="badge">0</span></div>
         <p class="help">Publish guides, venue notes, or an approved video/document embed to the speaker portal.</p>
-        <form id="resource-form">
+        <details class="action-disclosure"><summary>Add a resource</summary><form id="resource-form">
           <label>Title<input name="title" maxlength="200" required></label>
           <label>URL slug<input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" placeholder="speaker-guide" required></label>
           <label>Summary<input name="summary" maxlength="500"></label>
@@ -32,20 +32,20 @@
           <label>Approved embed URL <span class="optional">Optional</span><input name="embed_url" type="url" placeholder="https://docs.google.com/…"><small>Google Docs, Drive, Calendar, YouTube, or Vimeo.</small></label>
           <div class="form-grid"><label>Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label>Order<input name="sort_order" type="number" value="0" min="-1000" max="1000"></label></div>
           <button>Publish resource</button>
-        </form>
+        </form></details>
         <ul id="resource-list" class="item-list" aria-label="Event resources"></ul>
       </article>
       <article class="card" aria-labelledby="task-title">
         <div class="section-heading"><div><p class="eyebrow">Follow-up</p><h2 id="task-title">Custom speaker task</h2></div></div>
         <p class="help">Assign a request or a short form to one accepted speaker.</p>
-        <form id="task-form">
+        <details class="action-disclosure"><summary>Assign a task</summary><form id="task-form">
           <label>Speakers<select name="event_speaker_id" id="speaker-target" multiple size="6" required></select><small>Select one or more accepted speakers.</small></label>
           <label>Task title<input name="title" maxlength="200" required></label>
           <label>Instructions<textarea name="help_text" maxlength="2000"></textarea></label>
           <label>Due date <span class="optional">Optional</span><input name="due_at" type="datetime-local"></label>
           <fieldset><legend>Optional response field</legend><label>Question label<input name="field_label" maxlength="200" placeholder="e.g. Dietary requirements"></label><div class="form-grid"><label>Answer type<select name="field_type"><option value="text">Short text</option><option value="textarea">Long text</option><option value="url">URL</option><option value="checkbox">Confirmation</option></select></label><label class="check-label"><input name="field_required" type="checkbox"> Required</label></div></fieldset>
           <button>Assign task</button>
-        </form>
+        </form></details>
       </article>
       <article class="card wide" aria-labelledby="files-title">
         <div class="section-heading"><div><p class="eyebrow">Deliverables</p><h2 id="files-title">Speaker files</h2></div><span id="file-count" class="badge">0</span></div>
@@ -56,7 +56,7 @@
         <div class="section-heading"><div><p class="eyebrow">One-way integration</p><h2 id="integration-title">Accelevents</h2></div><span class="badge success">Pull feed</span></div>
         <p class="help">Generate a read-only API token. Accelevents can pull accepted speakers and sessions using this event ID; unpublished and rejected content is excluded.</p>
         <div class="integration-grid"><div><strong>Event ID</strong><code id="event-id">—</code></div><div><strong>API base URL</strong><code id="api-base">—</code></div></div>
-        <form id="token-form" class="inline-form"><label>Token label<input name="label" placeholder="Accelevents production feed" maxlength="120" required></label><button>Generate token</button></form>
+        <details class="action-disclosure"><summary>Connect Accelevents</summary><form id="token-form" class="inline-form"><label>Token label<input name="label" placeholder="Accelevents production feed" maxlength="120" required></label><button>Generate token</button></form></details>
         <div id="token-result" class="secret-result" hidden><strong>Copy this token now</strong><code id="token-value"></code><p>It is shown once and stored only as a secure hash.</p></div>
       </article>
     </section>

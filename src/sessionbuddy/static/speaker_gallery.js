@@ -6,7 +6,7 @@
   document.body.dataset.layout = galleryLayout ? "gallery" : "directory";
   let eventId = ""; try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   const byId = (id) => document.getElementById(id);
-  const state = { speakers: [] };
+  const state = { speakers: [], event: null };
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
   function openProfile(speaker, role) {
     const dialog = byId("speaker-profile");
@@ -26,7 +26,17 @@
     }
     if (speaker.sessions.length) {
       const list = document.createElement("ul");
-      speaker.sessions.forEach((session) => list.append(make("li", session.title)));
+      speaker.sessions.forEach((session) => {
+        const item = document.createElement("li");
+        item.append(make("strong", session.title));
+        if (session.starts_at_ms) {
+          const when = new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium", timeStyle: "short", timeZone: state.event?.time_zone,
+          }).format(new Date(session.starts_at_ms));
+          item.append(make("span", `${when} · ${session.room_name}${session.track_name ? ` · ${session.track_name}` : ""}`, "muted"));
+        }
+        list.append(item);
+      });
       content.append(list);
     }
     dialog.showModal();
@@ -56,9 +66,13 @@
   async function load() {
     if (!eventId) throw new Error("Invalid speaker gallery link.");
     const body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/speakers`);
+    state.event = body.event;
     document.documentElement.style.setProperty("--blue", body.event.accent_color || "#3159d9"); byId("event-name").textContent = body.event.name;
     byId("schedule-link").href = `/events/${encodeURIComponent(eventId)}/schedule`;
+    byId("directory-link").href = `/events/${encodeURIComponent(eventId)}/${galleryLayout ? "speakers" : "gallery"}`;
+    byId("directory-link").textContent = galleryLayout ? "Speaker directory" : "Speaker gallery";
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; }
+    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
     state.speakers = body.data; render();
   }
   byId("speaker-search").addEventListener("input", render);

@@ -5,6 +5,7 @@ mkdir -p .local/benchmarks .local/logs
 
 npm ci
 uv sync --frozen
+uv run python scripts/build_baseline_migration.py --check
 uv run python scripts/embed_console_assets.py --check
 uv run ruff check .
 uv run pytest

@@ -6,7 +6,7 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, program: null, publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
+  const state = { context: null, csrf: null, eventName: "", eventStartsAtMs: null, publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -86,23 +86,18 @@
   }
 
   function renderWorkspace() {
-    const program = state.program;
     const published = state.publishedForm;
-    const programForm = byId("program-form");
+    if (state.context) document.body.dataset.eventId = state.context.event_id;
+    window.dispatchEvent(new Event("sessionbuddy:event-context"));
     const publishForm = byId("publish-form");
     const publishButton = publishForm.querySelector('button[type="submit"], button:not([type])');
-    programForm.hidden = Boolean(program);
-    programForm.querySelector("button").disabled = Boolean(program) || !state.context;
-    byId("program-result").textContent = program
-      ? `${program.name} · ${program.status}`
-      : "No program created yet.";
-    publishButton.disabled = !program;
+    publishButton.disabled = !state.context;
     publishButton.textContent = published ? "Save changes" : "Publish form";
-    publishForm.hidden = !program;
+    byId("publish-settings").open = !published;
     byId("published-note").hidden = !published;
     byId("publish-result").textContent = published
       ? "Published. Use the CFP link above, then review proposals as they arrive."
-      : program ? "Complete the form settings below, then publish." : "Create a program first.";
+      : "Complete the form settings below, then publish.";
 
     const live = byId("cfp-link-live");
     const empty = byId("cfp-link-empty");
@@ -112,15 +107,13 @@
     badge.className = `badge${published ? " success" : ""}`;
     badge.textContent = published ? "Live" : "Not published";
     if (!published) {
-      empty.textContent = program
-        ? "Configure and publish the proposal form below to get a shareable link."
-        : "Create a program and publish its proposal form to get a shareable link.";
+      empty.textContent = "Configure and publish the proposal form below to get a shareable link.";
       return;
     }
     const publicUrl = `${location.origin}/cfp/${published.slug}`;
     byId("cfp-url").value = publicUrl;
     byId("open-cfp-url").href = publicUrl;
-    byId("review-submissions").href = `/admin/programs/${encodeURIComponent(program.id)}/submissions`;
+    byId("review-submissions").href = `/admin/events/${encodeURIComponent(state.context.event_id)}/submissions`;
   }
 
   function loadPublishedSettings(form) {
@@ -151,8 +144,33 @@
     state.fields.forEach((field, index) => {
       const core = index < coreFields.length;
       const card = make("fieldset");
+      card.className = "question-card";
       card.dataset.index = String(index);
       const legend = make("legend", core ? `Required field: ${field.key}` : `Custom field ${index - 3}`);
+      legend.className = "sr-only";
+      const editor = make("details");
+      editor.className = "question-editor";
+      editor.open = !core;
+      const editorSummary = make("summary");
+      const summaryIdentity = make("span");
+      summaryIdentity.append(make("strong", field.label));
+      if (!core) summaryIdentity.append(make("small", field.key));
+      const summaryMeta = make("span");
+      summaryMeta.className = "question-editor__meta";
+      if (!core) {
+        const typeNames = { text: "Short answer", textarea: "Long answer", email: "Email", url: "URL", phone: "Phone", select: "Single choice", multiselect: "Multiple choice", checkbox: "Checkbox", file: "File", image: "Image" };
+        const typeBadge = make("span", typeNames[field.type] || "Question");
+        typeBadge.className = "badge";
+        summaryMeta.append(typeBadge);
+      }
+      if (field.required) {
+        const requiredBadge = make("span", "Required");
+        requiredBadge.className = "required-marker";
+        summaryMeta.append(requiredBadge);
+      }
+      editorSummary.append(summaryIdentity, summaryMeta);
+      const editorBody = make("div");
+      editorBody.className = "question-editor__body";
       const keyInput = textInput("field_key", field.key, true);
       keyInput.pattern = "[a-z][a-z0-9_]*";
       keyInput.readOnly = core;
@@ -182,18 +200,29 @@
       operator.add(new Option("equals", "equals"));
       operator.add(new Option("does not equal", "not_equals"));
       operator.value = field.condition?.operator || "equals";
-      card.append(
-        legend,
-        inputLabel("Field key", keyInput),
-        inputLabel("Label", textInput("field_label", field.label, true)),
-        inputLabel("Type", type),
-        inputLabel("Required", required),
-        inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
-        inputLabel("Help text", textInput("field_help", field.help_text || "")),
-        inputLabel("Choices (comma separated)", choices)
-      );
+      if (core) {
+        keyInput.type = "hidden";
+        choices.type = "hidden";
+        editorBody.append(
+          keyInput,
+          choices,
+          inputLabel("Question label", textInput("field_label", field.label, true)),
+          inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
+          inputLabel("Help text", textInput("field_help", field.help_text || ""))
+        );
+      } else {
+        editorBody.append(
+          inputLabel("Field key", keyInput),
+          inputLabel("Label", textInput("field_label", field.label, true)),
+          inputLabel("Type", type),
+          inputLabel("Required", required),
+          inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
+          inputLabel("Help text", textInput("field_help", field.help_text || "")),
+          inputLabel("Choices (comma separated)", choices)
+        );
+      }
       if (!core) {
-        card.append(
+        editorBody.append(
           make("p", "Optional display condition"),
           inputLabel("Show when field key", conditionSource),
           inputLabel("Comparison", operator),
@@ -207,8 +236,10 @@
           state.fields.splice(index, 1);
           renderFields();
         });
-        card.append(remove);
+        editorBody.append(remove);
       }
+      editor.append(editorSummary, editorBody);
+      card.append(legend, editor);
       list.append(card);
     });
   }
@@ -246,8 +277,12 @@
     list.replaceChildren();
     state.routingRules.forEach((rule, index) => {
       const card = make("fieldset");
-      const source = textInput("routing_source", rule.source_key || "", true);
-      source.placeholder = "session_format";
+      const source = document.createElement("select");
+      source.name = "routing_source";
+      source.required = true;
+      source.add(new Option("Choose a question", ""));
+      state.fields.forEach((field) => source.add(new Option(field.label, field.key)));
+      source.value = rule.source_key || "";
       const operator = document.createElement("select");
       operator.name = "routing_operator";
       [["Equals", "equals"], ["Does not equal", "not_equals"], ["Contains", "contains"]]
@@ -255,7 +290,7 @@
       operator.value = rule.operator || "equals";
       card.append(
         make("legend", `Routing rule ${index + 1}`),
-        inputLabel("Answer field key", source),
+        inputLabel("When the answer to", source),
         inputLabel("Match", operator),
         inputLabel("Value", textInput("routing_value", rule.value || "", true)),
         inputLabel("Category", textInput("routing_category", rule.category || "")),
@@ -291,8 +326,11 @@
     const opens = form.elements.opens_at;
     const closes = form.elements.closes_at;
     opens.setCustomValidity(""); closes.setCustomValidity("");
-    if (opens.value && closes.value && new Date(closes.value).getTime() <= new Date(opens.value).getTime()) {
+    const closesAt = toEpoch(closes.value);
+    if (opens.value && closes.value && closesAt <= toEpoch(opens.value)) {
       closes.setCustomValidity("Closing time must be after opening time.");
+    } else if (closesAt !== null && closesAt >= state.eventStartsAtMs) {
+      closes.setCustomValidity("The Call for Proposals must close before the event starts.");
     }
 
     const schema = readFields();
@@ -361,17 +399,26 @@
     try {
       const session = await api("/api/v1/auth/session");
       const eventId = eventIdFromPage(session);
-      if (!eventId) throw new Error("Choose an event before opening its call for speakers.");
+      if (!eventId) throw new Error("Choose an event before opening its Call for Proposals.");
       state.csrf = session.csrf_token;
       const workspace = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`);
       state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
-      state.program = workspace.program;
+      state.eventName = workspace.event_name;
+      state.eventStartsAtMs = workspace.event_starts_at_ms;
       state.publishedForm = workspace.published_form;
       if (state.publishedForm) loadPublishedSettings(state.publishedForm);
+      else {
+        const slug = byId("publish-form").elements.slug;
+        slug.value = state.eventName.toLowerCase()
+          .normalize("NFKD")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || `event-${eventId.slice(0, 8)}`;
+      }
+      byId("publish-form").elements.closes_at.max = toLocalInput(state.eventStartsAtMs);
       byId("manage-access").href = `/admin/events/${encodeURIComponent(eventId)}/access`;
       byId("manage-access").hidden = false;
       renderWorkspace();
-      setStatus(state.publishedForm ? "Your CFP is published and ready to share." : state.program ? "Program ready. Configure and publish the proposal form." : "Create the program to begin.");
+      setStatus(state.publishedForm ? "Your CFP is published and ready to share." : "Configure and publish the proposal form.");
     } catch (error) {
       if (error.status === 401) {
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
@@ -380,29 +427,6 @@
       setStatus(window.SessionBuddyApi.message(error), true);
     }
   }
-
-  byId("program-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    try {
-      const values = Object.fromEntries(new FormData(event.currentTarget));
-      state.program = await api("/api/v1/admin/programs", {
-        method: "POST",
-        headers: { ...admin(), "idempotency-key": key() },
-        body: JSON.stringify({ ...state.context, ...values })
-      });
-      const slug = byId("publish-form").elements.slug;
-      if (!slug.value.trim()) {
-        slug.value = state.program.name.toLowerCase()
-          .normalize("NFKD")
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "") || `program-${state.program.id.slice(0, 8)}`;
-      }
-      renderWorkspace();
-      setStatus("Program created. Review and publish its public form.");
-    } catch (error) {
-      setStatus(window.SessionBuddyApi.message(error), true);
-    }
-  });
 
   byId("publish-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -431,8 +455,8 @@
       }
       const form = await api(
         updating
-          ? `/api/v1/admin/programs/${state.program.id}/forms/${state.publishedForm.id}`
-          : `/api/v1/admin/programs/${state.program.id}/forms/publish`,
+          ? `/api/v1/admin/events/${encodeURIComponent(state.context.event_id)}/cfp`
+          : `/api/v1/admin/events/${encodeURIComponent(state.context.event_id)}/cfp/publish`,
         {
           method: updating ? "PATCH" : "POST",
           headers: updating ? admin() : { ...admin(), "idempotency-key": key() },

@@ -17,9 +17,9 @@ def database() -> tuple[AsyncSqlite, sqlite3.Connection]:
     seed_platform(connection)
     connection.execute(
         """INSERT INTO evaluation_rounds
-           (id,organization_id,event_id,program_id,name,rubric_json,status,
+           (id,organization_id,event_id,name,rubric_json,status,
             created_at_ms,updated_at_ms)
-           VALUES ('round-a','org-a','event-a','program-a','Round','{}','open',1,1)"""
+           VALUES ('round-a','org-a','event-a','Round','{}','open',1,1)"""
     )
     connection.execute(
         """INSERT INTO submission_decisions

@@ -1359,7 +1359,11 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
     )
     return {
         "event": {"id": event["id"], "name": event["name"], "time_zone": event["time_zone"]},
-        "revision": {"id": revision["id"], "version": revision["version"]},
+        "revision": {
+            "id": revision["id"],
+            "version": revision["version"],
+            "revision_number": revision["revision_number"],
+        },
         "items": items,
     }
 
@@ -1372,7 +1376,8 @@ async def get_public_schedule(
     db = _db(request)
     event = row_mapping(
         await db.prepare(
-            """SELECT id,organization_id,name,time_zone,accent_color,logo_url,website_url
+            """SELECT id,organization_id,name,time_zone,accent_color,logo_url,
+                      cover_image_url,website_url
                FROM events WHERE id=?1 AND status='active' LIMIT 1"""
         )
         .bind(event_id)
@@ -1389,6 +1394,7 @@ async def get_public_schedule(
                 "time_zone": event["time_zone"],
                 "accent_color": event["accent_color"],
                 "logo_url": event["logo_url"],
+                "cover_image_url": event["cover_image_url"],
                 "website_url": event["website_url"],
             },
             "revision": None,
@@ -1418,8 +1424,13 @@ async def get_public_schedule(
             "time_zone": event["time_zone"],
             "accent_color": event["accent_color"],
             "logo_url": event["logo_url"],
+            "cover_image_url": event["cover_image_url"],
             "website_url": event["website_url"],
         },
-        "revision": {"id": revision["id"], "version": revision["version"]},
+        "revision": {
+            "id": revision["id"],
+            "version": revision["version"],
+            "revision_number": revision["revision_number"],
+        },
         "items": items,
     }

@@ -155,6 +155,7 @@ class UploadAuthorizationCreate(BaseModel):
     content_type: str = Field(min_length=1, max_length=100)
     byte_size: int = Field(gt=0, le=50 * 1024 * 1024)
     checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    version_comment: str = Field(min_length=1, max_length=1000)
 
     @field_validator("filename")
     @classmethod
@@ -193,18 +194,21 @@ class SpeakerAssetView(BaseModel):
     generation: int
     uploaded_at_ms: int
     version_count: int = 1
+    version_comment: str
     versions: list["SpeakerAssetVersionView"] = Field(default_factory=list)
 
 
 class SpeakerAssetVersionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    id: str
     generation: int
     filename: str
     content_type: str
     byte_size: int
     state: Literal["current", "superseded"]
     uploaded_at_ms: int
+    version_comment: str
 
 
 class SpeakerAssetList(BaseModel):
@@ -226,6 +230,8 @@ class AdminSpeakerAssetView(BaseModel):
     generation: int
     version_count: int
     uploaded_at_ms: int
+    version_comment: str
+    versions: list[SpeakerAssetVersionView] = Field(default_factory=list)
 
 
 class AdminSpeakerAssetList(BaseModel):

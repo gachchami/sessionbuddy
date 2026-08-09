@@ -96,6 +96,14 @@ def test_admin_cannot_save_evaluation_without_separate_assignment() -> None:
     assert not authorize(subject, Permission.EVALUATION_SAVE, ResourceContext(ORG, EVENT)).allowed
 
 
+def test_only_organizers_can_send_event_communications() -> None:
+    context = ResourceContext(ORG, EVENT)
+    assert authorize(actor(Role.ORGANIZATION_ADMIN), Permission.COMMUNICATION_SEND, context).allowed
+    assert authorize(actor(Role.EVENT_ADMIN), Permission.COMMUNICATION_SEND, context).allowed
+    assert not authorize(actor(Role.EVALUATOR), Permission.COMMUNICATION_SEND, context).allowed
+    assert not authorize(actor(Role.SPEAKER), Permission.COMMUNICATION_SEND, context).allowed
+
+
 def test_inactive_actor_and_absent_resource_are_safe_denials() -> None:
     inactive = Actor(
         "user-a", active=False, organization_roles={ORG: frozenset({Role.ORGANIZATION_ADMIN})}

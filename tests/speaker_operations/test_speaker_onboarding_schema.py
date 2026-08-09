@@ -66,21 +66,14 @@ def seed_platform(db: sqlite3.Connection) -> None:
             ),
         )
         db.execute(
-            "INSERT INTO programs "
-            "(id,organization_id,event_id,name,status,created_at_ms,updated_at_ms) "
-            "VALUES (?,?,?,'Main','open',?,?)",
-            (f"program-{suffix}", f"org-{suffix}", f"event-{suffix}", now, now),
-        )
-        db.execute(
             "INSERT INTO call_for_speaker_forms "
-            "(id,organization_id,event_id,program_id,version,slug,welcome_text,schema_json,"
+            "(id,organization_id,event_id,version,slug,welcome_text,schema_json,"
             "status,published_at_ms,created_at_ms,updated_at_ms) "
-            "VALUES (?,?,?,?,1,?,'Welcome','{}','published',?,?,?)",
+            "VALUES (?,?,?,1,?,'Welcome','{}','published',?,?,?)",
             (
                 f"form-{suffix}",
                 f"org-{suffix}",
                 f"event-{suffix}",
-                f"program-{suffix}",
                 f"form-{suffix}",
                 now,
                 now,
@@ -89,18 +82,46 @@ def seed_platform(db: sqlite3.Connection) -> None:
         )
         db.execute(
             "INSERT INTO submissions "
-            "(id,organization_id,event_id,program_id,form_id,public_session_id,proposal_title,"
+            "(id,organization_id,event_id,form_id,public_session_id,proposal_title,"
             "proposal_abstract,speaker_name,status,submitted_at_ms,created_at_ms,updated_at_ms) "
-            "VALUES (?,?,?,?,?,?,?,'Abstract','Same Speaker','submitted',?,?,?)",
+            "VALUES (?,?,?,?,?,?,'Abstract','Same Speaker','submitted',?,?,?)",
             (
                 f"submission-{suffix}",
                 f"org-{suffix}",
                 f"event-{suffix}",
-                f"program-{suffix}",
                 f"form-{suffix}",
                 f"public-{suffix}",
                 f"Talk {suffix}",
                 now,
+                now,
+                now,
+            ),
+        )
+        db.execute(
+            """INSERT INTO submission_drafts
+               (id,organization_id,event_id,form_id,user_id,answers_json,
+                created_at_ms,updated_at_ms)
+               VALUES(?,?,?,?,?,'{}',?,?)""",
+            (
+                f"draft-{suffix}",
+                f"org-{suffix}",
+                f"event-{suffix}",
+                f"form-{suffix}",
+                f"user-{suffix}",
+                now,
+                now,
+            ),
+        )
+        db.execute(
+            """INSERT INTO evaluation_rounds
+               (id,organization_id,event_id,name,rubric_json,status,
+                created_at_ms,updated_at_ms)
+               VALUES(?,?,?,?,'{}','draft',?,?)""",
+            (
+                f"seed-round-{suffix}",
+                f"org-{suffix}",
+                f"event-{suffix}",
+                f"Seed round {suffix}",
                 now,
                 now,
             ),

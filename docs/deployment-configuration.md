@@ -41,7 +41,21 @@ replace `RESEND_FROM_ADDRESS` with another address on a verified domain.
 
 ## Initial administrator bootstrap
 
-Applying the D1 migrations creates a random 256-bit, instance-specific
+Fresh demo deployments use `migrations_baseline/0001_baseline.sql`, a generated
+single-file schema built from the immutable historical ledger in `migrations/`.
+The baseline contains no organizations, users, events, submissions, evaluation
+data, or `d1_migrations` bookkeeping. Regenerate and verify it inside Docker after
+adding a historical-ledger migration:
+
+```sh
+docker compose run --rm --no-deps worker npm run worker:migrations:baseline
+docker compose run --rm --no-deps worker npm run worker:migrations:baseline:check
+```
+
+Never edit or squash the files in `migrations/`; they remain the upgrade and audit
+history. `wrangler.jsonc` points clean demo databases at the generated baseline.
+
+Applying the D1 baseline creates a random 256-bit, instance-specific
 setup key. Retrieve it in a private terminal without putting it in source or chat:
 
 ```sh

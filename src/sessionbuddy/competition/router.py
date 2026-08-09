@@ -86,7 +86,8 @@ async def _managed_event(request: Request, event_id: str, *, mutation: bool):
     row = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT id,organization_id,name,time_zone,accent_color,logo_url,website_url
+            """SELECT id,organization_id,name,time_zone,accent_color,logo_url,
+                      cover_image_url,website_url
                FROM events WHERE id=?1 AND status!='archived' LIMIT 1"""
         )
         .bind(event_id)
@@ -349,22 +350,33 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
     rows = result_rows(
         await _db(request)
         .prepare(
-            """SELECT es.id AS event_speaker_id,p.user_id,COALESCE(u.email,'') AS email,
-                      p.display_name,COALESCE(p.job_title,'') AS job_title,
-                      COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
-                      COALESCE(p.location,'') AS location,p.links_json,p.version,
-                      es.selection_status,
-                      COALESCE((SELECT s.proposal_title FROM submission_speakers ss
-                        JOIN submissions s ON s.id=ss.submission_id
-                        WHERE ss.event_speaker_id=es.id ORDER BY s.submitted_at_ms DESC LIMIT 1),
-                        'No proposal') AS proposal_title
-               FROM event_speakers es JOIN people p ON p.organization_id=es.organization_id
-                 AND p.id=es.person_id
-               LEFT JOIN users u ON u.id=p.user_id
-               WHERE es.organization_id=?1 AND es.event_id=?2
-               ORDER BY p.display_name,es.id LIMIT 500"""
+            """WITH targets AS (
+                 SELECT es.id AS event_speaker_id,p.user_id,COALESCE(u.email,'') AS email,
+                        p.display_name,COALESCE(p.job_title,'') AS job_title,
+                        COALESCE(p.company,'') AS company,
+                        COALESCE(p.biography,'') AS biography,
+                        COALESCE(p.location,'') AS location,p.links_json,p.version,
+                        es.selection_status,
+                        COALESCE((SELECT s.proposal_title FROM submission_speakers ss
+                          JOIN submissions s ON s.id=ss.submission_id
+                          WHERE ss.event_speaker_id=es.id
+                          ORDER BY s.submitted_at_ms DESC LIMIT 1),
+                          'No proposal') AS proposal_title
+                 FROM event_speakers es JOIN people p
+                   ON p.organization_id=es.organization_id AND p.id=es.person_id
+                 LEFT JOIN users u ON u.id=p.user_id
+                 WHERE es.organization_id=?1 AND es.event_id=?2
+                 UNION ALL
+                 SELECT i.id,NULL,i.email,
+                        COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
+                        '','','[]',1,'invited','Invitation pending'
+                 FROM identity_invitations i
+                 WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
+                   AND i.status='pending' AND i.expires_at_ms>?3
+               )
+               SELECT * FROM targets ORDER BY display_name,event_speaker_id LIMIT 500"""
         )
-        .bind(event["organization_id"], event_id)
+        .bind(event["organization_id"], event_id, utc_now_ms())
         .all()
     )
     return SpeakerTargetList(data=[_speaker_target(row) for row in rows])
@@ -1036,7 +1048,8 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
     event = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT id,organization_id,name,accent_color,logo_url,website_url
+            """SELECT id,organization_id,name,time_zone,accent_color,logo_url,
+                      cover_image_url,website_url
                FROM events WHERE id=?1 AND status='active' LIMIT 1"""
         )
         .bind(event_id)
@@ -1064,14 +1077,18 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         sessions = result_rows(
             await _db(request)
             .prepare(
-                """SELECT ac.id,s.proposal_title FROM submission_speakers ss
+                """SELECT ac.id,s.proposal_title,ai.starts_at_ms,ai.ends_at_ms,
+                          r.name AS room_name,COALESCE(t.name,'') AS track_name
+                   FROM submission_speakers ss
                    JOIN accepted_sessions ac ON ac.submission_id=ss.submission_id
                    JOIN submissions s ON s.id=ss.submission_id
                    JOIN agenda_items ai ON ai.accepted_session_id=ac.id
                    JOIN schedule_revisions sr ON sr.id=ai.revision_id
+                   JOIN event_rooms r ON r.id=ai.room_id
+                   LEFT JOIN event_tracks t ON t.id=ai.track_id
                    WHERE ss.event_speaker_id=?1 AND ac.content_status='approved'
                      AND sr.status='published'
-                   ORDER BY s.proposal_title"""
+                   ORDER BY ai.starts_at_ms,s.proposal_title"""
             )
             .bind(row["id"])
             .all()
@@ -1091,7 +1108,14 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                     else None
                 ),
                 sessions=[
-                    {"id": str(item["id"]), "title": str(item["proposal_title"])}
+                    {
+                        "id": str(item["id"]),
+                        "title": str(item["proposal_title"]),
+                        "starts_at_ms": int(item["starts_at_ms"]),
+                        "ends_at_ms": int(item["ends_at_ms"]),
+                        "room_name": str(item["room_name"]),
+                        "track_name": str(item["track_name"]),
+                    }
                     for item in sessions
                 ],
             )
@@ -1100,8 +1124,10 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         event={
             "id": event_id,
             "name": str(event["name"]),
+            "time_zone": str(event["time_zone"]),
             "accent_color": str(event["accent_color"] or "#3159d9"),
             "logo_url": str(event["logo_url"]) if event["logo_url"] else None,
+            "cover_image_url": str(event["cover_image_url"]) if event["cover_image_url"] else None,
             "website_url": str(event["website_url"]) if event["website_url"] else None,
         },
         data=data,

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 
 from sessionbuddy.platform.auth import (
     authenticate_request,
@@ -132,14 +132,19 @@ def create_communications_router(service_provider: ServiceProvider) -> APIRouter
         operation_id="listEventCommunications",
         tags=["communications"],
     )
-    async def statuses(event_id: str, request: Request):
+    async def statuses(
+        event_id: str,
+        request: Request,
+        cursor: str | None = Query(default=None, min_length=3, max_length=200),
+        limit: int = Query(default=25, ge=1, le=50),
+    ):
         authenticated = await authenticate_request(request)
         service = service_provider(request)
         context = await service.context_for_event(authenticated.actor, event_id)
         decision = authorize(authenticated.actor, Permission.COMMUNICATION_SEND, context)
         if not decision.allowed:
             raise HTTPException(status_code=authorization_denial_status(decision.reason))
-        return await service.statuses(event_id)
+        return await service.statuses(event_id, cursor=cursor, limit=limit)
 
     @router.post(
         "/api/v1/admin/events/{event_id}/communications/dispatch-local",

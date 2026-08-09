@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .types import EventId, OrganizationId, ProgramId, UserId
+from .types import EventId, OrganizationId, UserId
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -16,8 +16,3 @@ class OrganizationScope:
 class EventScope(OrganizationScope):
     event_id: EventId
     membership_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProgramScope(EventScope):
-    program_id: ProgramId

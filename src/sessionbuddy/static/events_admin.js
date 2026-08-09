@@ -2,7 +2,8 @@
   "use strict";
 
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map() };
+  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map(), logoPreviewUrl: "", coverPreviewUrl: "" };
+  const logoRules = { "image/jpeg": 2 * 1024 * 1024, "image/png": 2 * 1024 * 1024, "image/webp": 2 * 1024 * 1024 };
   const timeZoneAliases = new Map([
     ["Asia/Calcutta", "Asia/Kolkata"],
     ["Europe/Kiev", "Europe/Kyiv"],
@@ -177,6 +178,16 @@
     form.elements.end_time.value = "17:00";
     form.elements.delivery_mode.value = "";
     form.elements.accent_color.value = "#3159d9";
+    form.elements.logo_url.value = "";
+    if (state.logoPreviewUrl) URL.revokeObjectURL(state.logoPreviewUrl);
+    state.logoPreviewUrl = "";
+    byId("event-logo-preview").removeAttribute("src");
+    byId("event-logo-preview").hidden = true;
+    form.elements.cover_image_url.value = "";
+    if (state.coverPreviewUrl) URL.revokeObjectURL(state.coverPreviewUrl);
+    state.coverPreviewUrl = "";
+    byId("event-cover-preview").removeAttribute("src");
+    byId("event-cover-preview").hidden = true;
     byId("event-form-heading").textContent = "Create an event";
     byId("save-event").textContent = "Create event";
     byId("event-status-label").hidden = true;
@@ -216,6 +227,15 @@
     form.elements.email_reply_to.value = event.email_reply_to || "";
     form.elements.accent_color.value = event.accent_color || "#3159d9";
     form.elements.logo_url.value = event.logo_url || "";
+    if (event.logo_url) {
+      byId("event-logo-preview").src = event.logo_url;
+      byId("event-logo-preview").hidden = false;
+    }
+    form.elements.cover_image_url.value = event.cover_image_url || "";
+    if (event.cover_image_url) {
+      byId("event-cover-preview").src = event.cover_image_url;
+      byId("event-cover-preview").hidden = false;
+    }
     form.elements.website_url.value = event.website_url || "";
     form.elements.status.value = event.status;
     byId("event-form-heading").textContent = `Edit ${event.name}`;
@@ -365,13 +385,61 @@
     updateDateTimePreview();
   });
 
+  byId("event-form").elements.logo_file.addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const file = input.files[0];
+    const message = file && !logoRules[file.type]
+      ? "Choose a PNG, JPEG, or WebP image."
+      : file && file.size > logoRules[file.type]
+        ? "Choose an image no larger than 2 MB."
+        : "";
+    input.setCustomValidity(message);
+    if (!file || message) return;
+    if (state.logoPreviewUrl) URL.revokeObjectURL(state.logoPreviewUrl);
+    state.logoPreviewUrl = URL.createObjectURL(file);
+    byId("event-logo-preview").src = state.logoPreviewUrl;
+    byId("event-logo-preview").hidden = false;
+  });
+
+  byId("event-form").elements.cover_file.addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const file = input.files[0];
+    const message = file && !logoRules[file.type]
+      ? "Choose a PNG, JPEG, or WebP image."
+      : file && file.size > logoRules[file.type]
+        ? "Choose an image no larger than 2 MB."
+        : "";
+    input.setCustomValidity(message);
+    if (!file || message) return;
+    if (state.coverPreviewUrl) URL.revokeObjectURL(state.coverPreviewUrl);
+    state.coverPreviewUrl = URL.createObjectURL(file);
+    byId("event-cover-preview").src = state.coverPreviewUrl;
+    byId("event-cover-preview").hidden = false;
+  });
+
+  async function uploadEventLogo(eventId, file) {
+    return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/logo`, {
+      method: "POST",
+      headers: { "content-type": file.type, "x-csrf-token": state.csrf },
+      body: file
+    });
+  }
+
+  async function uploadEventCover(eventId, file) {
+    return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cover`, {
+      method: "POST",
+      headers: { "content-type": file.type, "x-csrf-token": state.csrf },
+      body: file
+    });
+  }
+
   byId("event-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const eventId = values.event_id;
     try {
-      for (const name of ["website_url", "logo_url"]) {
+      for (const name of ["website_url"]) {
         const input = form.elements[name];
         input.setCustomValidity(securePublicUrl(values[name]) ? "" : "Use a complete HTTPS URL without embedded credentials.");
         if (!input.reportValidity()) return;
@@ -403,7 +471,17 @@
         body.version = Number(values.version);
         body.status = values.status;
       }
-      await api(
+      const logoFile = form.elements.logo_file.files[0];
+      const coverFile = form.elements.cover_file.files[0];
+      if (logoFile && (!logoRules[logoFile.type] || logoFile.size > logoRules[logoFile.type])) {
+        form.elements.logo_file.reportValidity();
+        return;
+      }
+      if (coverFile && (!logoRules[coverFile.type] || coverFile.size > logoRules[coverFile.type])) {
+        form.elements.cover_file.reportValidity();
+        return;
+      }
+      const saved = await api(
         eventId
           ? `/api/v1/admin/events/${encodeURIComponent(eventId)}`
           : `/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events`,
@@ -413,6 +491,8 @@
           body: JSON.stringify(body)
         }
       );
+      if (logoFile) await uploadEventLogo(saved.id, logoFile);
+      if (coverFile) await uploadEventCover(saved.id, coverFile);
       setStatus(eventId ? "Event updated." : "Event created.");
       await loadEvents(state.organizationId);
       closeEventDialog();

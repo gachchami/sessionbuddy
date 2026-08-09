@@ -47,10 +47,10 @@ def test_large_seed_matches_release_envelope_and_has_clean_foreign_keys(
     (
         (
             """SELECT id FROM submissions
-               WHERE organization_id=? AND event_id=? AND program_id=?
+               WHERE organization_id=? AND event_id=?
                ORDER BY submitted_at_ms DESC,id DESC LIMIT ?""",
-            ("load-org", "load-event", "load-program", 100),
-            "idx_submissions_program_recent",
+            ("load-org", "load-event", 100),
+            "idx_submissions_event_recent",
         ),
         (
             """SELECT id FROM event_speakers

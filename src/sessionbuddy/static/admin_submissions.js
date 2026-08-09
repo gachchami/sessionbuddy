@@ -11,8 +11,9 @@
   document.body.prepend(skip);
   document.querySelectorAll("th").forEach((heading) => heading.setAttribute("scope", "col"));
   byId("status").tabIndex = -1;
-  const parts = location.pathname.split("/").filter(Boolean);
-  const programId = parts[2] || "";
+  const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
+  let eventId = "";
+  try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   const state = { csrf: "", userId: "", submissions: [], evaluators: [] };
   const prerequisites = document.createElement("p");
   prerequisites.id = "round-prerequisites";
@@ -107,7 +108,7 @@
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
     const width = innerWidth;
-    window.__sessionbuddyTelemetryDraft = { schema_version: 1, page_template: "/admin/programs/{program_id}/submissions", navigation_type: navigation?.type || "unknown", device_class: width < 640 ? "mobile" : width < 1024 ? "tablet" : "desktop", sampled: false, lcp_ms: null, inp_ms: null, cls: null, ttfb_ms: navigation?.responseStart ?? null, fcp_ms: null, route_transition_ms: null, critical_api_ms: Math.max(0, performance.now() - started), api_request_id: response.headers.get("x-request-id") };
+    window.__sessionbuddyTelemetryDraft = { schema_version: 1, page_template: "/admin/events/{event_id}/submissions", navigation_type: navigation?.type || "unknown", device_class: width < 640 ? "mobile" : width < 1024 ? "tablet" : "desktop", sampled: false, lcp_ms: null, inp_ms: null, cls: null, ttfb_ms: navigation?.responseStart ?? null, fcp_ms: null, route_transition_ms: null, critical_api_ms: Math.max(0, performance.now() - started), api_request_id: response.headers.get("x-request-id") };
   }
   async function api(path, options = {}) {
     const started = performance.now();
@@ -148,6 +149,40 @@
       details.append(detailRow("Co-speakers", item.co_speakers.map((person) => `${person.display_name} (${person.email}) · ${person.role === "co_speaker" ? "Co-speaker" : person.role}`).join(", ")));
     }
     const aiActions = document.createElement("div"); aiActions.className = "actions";
+    const edit = document.createElement("button"); edit.type = "button"; edit.className = "secondary"; edit.textContent = "Edit proposal";
+    edit.disabled = item.status !== "submitted";
+    if (edit.disabled) edit.title = "Decided proposals cannot be edited.";
+    edit.addEventListener("click", () => {
+      const form = document.createElement("form"); form.className = "card";
+      const fields = [
+        ["speaker_name", "Speaker name", "input"], ["speaker_email", "Speaker email", "input"],
+        ["proposal_title", "Proposal title", "input"], ["proposal_abstract", "Proposal abstract", "textarea"]
+      ];
+      fields.forEach(([name, labelText, tag]) => {
+        const label = document.createElement("label"); label.textContent = labelText;
+        const input = document.createElement(tag); input.name = name; input.required = true;
+        input.maxLength = name === "proposal_abstract" ? 5000 : name === "speaker_email" ? 320 : 200;
+        if (name === "speaker_email") input.type = "email";
+        input.value = item[name] || ""; label.append(input); form.append(label);
+      });
+      const save = document.createElement("button"); save.type = "submit"; save.textContent = "Save proposal";
+      const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary"; cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => form.remove()); form.append(save, cancel);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault(); save.disabled = true;
+        const values = Object.fromEntries(new FormData(form));
+        const answers = { ...(item.answers || {}), ...values };
+        try {
+          const updated = await api(`/api/v1/admin/submissions/${encodeURIComponent(item.id)}`, {
+            method: "PATCH", headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+            body: JSON.stringify({ ...values, answers, co_speakers: item.co_speakers || [], version: item.version })
+          });
+          Object.assign(item, updated); byId("status").textContent = "Proposal updated.";
+          form.remove(); dialog.close(); await load();
+        } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").classList.add("error"); save.disabled = false; }
+      });
+      aiActions.after(form);
+    });
     const triage = document.createElement("button"); triage.type = "button"; triage.className = "secondary"; triage.textContent = "Run AI first pass";
     triage.addEventListener("click", async () => {
       triage.disabled = true; triage.textContent = "Analyzing…";
@@ -158,20 +193,23 @@
       } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error, "AI triage is temporarily unavailable."); byId("status").classList.add("error"); }
       finally { triage.disabled = false; triage.textContent = "Run AI first pass"; }
     });
-    aiActions.append(triage); details.after(aiActions);
+    aiActions.append(edit, triage); details.after(aiActions);
     const dialog = byId("submission-detail");
     dialog.addEventListener("close", () => trigger.focus(), { once: true });
     dialog.showModal();
   }
   async function load() {
     try {
+      if (!eventId) throw new Error("This event link is invalid.");
       const session = await api("/api/v1/auth/session");
       state.csrf = session.csrf_token;
       state.userId = session.user_id;
-      const result = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/submissions`);
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`);
       state.submissions = result.data;
-      byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(result.event_id)}/cfp`;
-      const evaluatorResult = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluators`);
+      document.body.dataset.eventId = eventId;
+      window.dispatchEvent(new Event("sessionbuddy:event-context"));
+      byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
+      const evaluatorResult = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators`);
       state.evaluators = evaluatorResult.data;
       const evaluatorChoices = byId("evaluators");
       evaluatorChoices.replaceChildren();
@@ -224,12 +262,12 @@
       });
       byId("status").textContent = `${result.data.length} submission${result.data.length === 1 ? "" : "s"}.`;
       updatePrerequisites();
-      const history = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`);
+      const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
       renderRoundHistory(history.data);
       const currentRound = history.data.find((round) => round.status === "open") || null;
       if (currentRound) showRound(currentRound);
     } catch (error) {
-      byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to Programs and try again.");
+      byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to the event and try again.");
       byId("status").classList.add("error");
     }
   }
@@ -286,7 +324,7 @@
       });
       const reviewOpens = values.get("review_opens_at") ? new Date(String(values.get("review_opens_at"))).getTime() : null;
       const reviewCloses = values.get("review_closes_at") ? new Date(String(values.get("review_closes_at"))).getTime() : null;
-      const round = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`, {
+      const round = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
         body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), submission_ids: [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value), evaluator_user_ids: values.getAll("evaluator_user_ids") })

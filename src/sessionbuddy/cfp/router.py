@@ -31,8 +31,7 @@ from .models import (
     FormPublish,
     FormUpdate,
     OwnedSubmissionList,
-    ProgramCreate,
-    ProgramView,
+    PrivateSubmissionView,
     PublishedFormView,
     SubmissionCreate,
     SubmissionDraftUpsert,
@@ -85,11 +84,6 @@ def _product_page(request: Request, asset: str) -> HTMLResponse:
     return HTMLResponse(_asset(asset), headers={"Cache-Control": "no-store"})
 
 
-@cfp_router.get("/admin/programs", response_class=HTMLResponse, include_in_schema=False)
-async def admin_programs_page(request: Request) -> HTMLResponse:
-    return _product_page(request, "admin_programs.html")
-
-
 @cfp_router.get(
     "/admin/events/{event_id}/cfp",
     response_class=HTMLResponse,
@@ -100,11 +94,11 @@ async def admin_event_cfp_page(event_id: str, request: Request) -> HTMLResponse:
 
 
 @cfp_router.get(
-    "/admin/programs/{program_id}/submissions",
+    "/admin/events/{event_id}/submissions",
     response_class=HTMLResponse,
     include_in_schema=False,
 )
-async def admin_submissions_page(program_id: str, request: Request) -> HTMLResponse:
+async def admin_submissions_page(event_id: str, request: Request) -> HTMLResponse:
     return _product_page(request, "admin_submissions.html")
 
 
@@ -139,101 +133,11 @@ async def admin_submissions_js() -> Response:
     return Response(_asset("admin_submissions.js"), media_type="text/javascript")
 
 
-@cfp_router.post(
-    "/api/v1/admin/programs",
-    response_model=ProgramView,
-    status_code=201,
-    operation_id="createProgram",
-    tags=["programs"],
-)
-async def create_program(
-    request: Request,
-    body: ProgramCreate,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> ProgramView:
-    auth = await require_permission(
-        request,
-        Permission.PROGRAM_MANAGE,
-        ResourceContext(body.organization_id, body.event_id),
-        mutation=True,
-    )
-    db = _db(request)
-    event_exists = (
-        await db.prepare(
-            """SELECT 1 AS exists_value FROM events
-               WHERE organization_id = ?1 AND id = ?2 LIMIT 1"""
-        )
-        .bind(body.organization_id, body.event_id)
-        .first("exists_value")
-    )
-    if event_exists is None:
-        raise HTTPException(status_code=404)
-    key = _idempotency_key(idempotency_key)
-    fingerprint = _fingerprint(body)
-    replay = await _find_replay(db, auth.actor.user_id, "POST /api/v1/admin/programs", key)
-    if replay:
-        if _blob(replay["request_fingerprint"]) != fingerprint:
-            raise HTTPException(status_code=409)
-        row = (
-            await db.prepare(
-                "SELECT id, organization_id, event_id, name, status FROM programs WHERE id = ?1"
-            )
-            .bind(replay["response_resource_id"])
-            .first()
-        )
-        return ProgramView.model_validate(row_mapping(row))
-
-    now = utc_now_ms()
-    program_id = new_id()
-    record = IdempotencyRecord(
-        principal_key=auth.actor.user_id,
-        organization_id=body.organization_id,
-        event_id=body.event_id,
-        route_key="POST /api/v1/admin/programs",
-        idempotency_key=key,
-        request_fingerprint=fingerprint,
-        expires_at_ms=now + 86_400_000,
-    )
-    batch = CommandBatch(db)
-    batch.begin_idempotency(record, now)
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO programs
-               (id, organization_id, event_id, name, status, created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, 'draft', ?5, ?5)"""
-        ).bind(program_id, body.organization_id, body.event_id, body.name, now)
-    )
-    batch.audit(
-        AuditEvent(
-            actor_type="user",
-            actor_user_id=auth.actor.user_id,
-            action="program.create",
-            target_type="program",
-            target_id=program_id,
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            organization_id=body.organization_id,
-            event_id=body.event_id,
-            metadata={"changed_fields": ["name", "status"]},
-        )
-    )
-    batch.complete_idempotency(
-        record,
-        status=201,
-        resource_type="program",
-        resource_id=program_id,
-        completed_at_ms=now,
-    )
-    await _execute(request, batch)
-    return ProgramView(id=program_id, **body.model_dump(), status="draft")
-
-
 @cfp_router.get(
     "/api/v1/admin/events/{event_id}/cfp",
     response_model=CfpWorkspaceView,
     operation_id="getCallForSpeakersWorkspace",
-    tags=["programs", "forms"],
+    tags=["forms"],
 )
 async def get_cfp_workspace(event_id: str, request: Request) -> CfpWorkspaceView:
     await authenticate_request(request)
@@ -242,7 +146,7 @@ async def get_cfp_workspace(event_id: str, request: Request) -> CfpWorkspaceView
         await _timed_first(
             request,
             db.prepare(
-                """SELECT organization_id FROM events
+                """SELECT organization_id,name,starts_at_ms FROM events
                    WHERE id = ?1 AND status != 'archived' LIMIT 1"""
             ).bind(event_id),
         )
@@ -256,67 +160,67 @@ async def get_cfp_workspace(event_id: str, request: Request) -> CfpWorkspaceView
         ResourceContext(organization_id, event_id),
         mutation=False,
     )
-    program_row = row_mapping(
-        await _timed_first(
-            request,
-            db.prepare(
-                """SELECT id,organization_id,event_id,name,status FROM programs
-                   WHERE organization_id = ?1 AND event_id = ?2 AND status != 'archived'
-                   ORDER BY updated_at_ms DESC,id DESC LIMIT 1"""
-            ).bind(organization_id, event_id),
-        )
-    )
-    if program_row is None:
-        return CfpWorkspaceView(organization_id=organization_id, event_id=event_id)
-    program = ProgramView.model_validate(program_row)
     form_id = await _timed_first(
         request,
         db.prepare(
             """SELECT id FROM call_for_speaker_forms
-               WHERE organization_id = ?1 AND event_id = ?2 AND program_id = ?3
-                 AND status = 'published'
+               WHERE organization_id = ?1 AND event_id = ?2 AND status = 'published'
                ORDER BY version DESC,published_at_ms DESC,id DESC LIMIT 1"""
-        ).bind(organization_id, event_id, program.id),
+        ).bind(organization_id, event_id),
         "id",
     )
     published_form = await _form_by_id(db, str(form_id)) if form_id is not None else None
     return CfpWorkspaceView(
         organization_id=organization_id,
         event_id=event_id,
-        program=program,
+        event_name=str(event["name"]),
+        event_starts_at_ms=int(event["starts_at_ms"]),
         published_form=published_form,
     )
 
 
+def _validate_cfp_deadline(closes_at_ms: int | None, event_starts_at_ms: int) -> None:
+    if closes_at_ms is not None and closes_at_ms >= event_starts_at_ms:
+        raise HTTPException(
+            status_code=422,
+            detail="The Call for Proposals must close before the event starts.",
+        )
+
+
 @cfp_router.post(
-    "/api/v1/admin/programs/{program_id}/forms/publish",
+    "/api/v1/admin/events/{event_id}/cfp/publish",
     response_model=PublishedFormView,
     status_code=201,
     operation_id="publishCallForSpeakersForm",
     tags=["forms"],
 )
 async def publish_form(
-    program_id: str,
+    event_id: str,
     request: Request,
     body: FormPublish,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> PublishedFormView:
+    await authenticate_request(request)
     key = _idempotency_key(idempotency_key)
     db = _db(request)
-    program = row_mapping(
-        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
-        .bind(program_id)
+    event = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,starts_at_ms FROM events
+               WHERE id=?1 AND status != 'archived' LIMIT 1"""
+        )
+        .bind(event_id)
         .first()
     )
-    if program is None:
+    if event is None:
         raise HTTPException(status_code=404)
     auth = await require_permission(
         request,
         Permission.FORM_MANAGE,
-        ResourceContext(str(program["organization_id"]), str(program["event_id"])),
+        ResourceContext(str(event["organization_id"]), event_id),
         mutation=True,
     )
-    route_key = "POST /api/v1/admin/programs/{program_id}/forms/publish"
+    _validate_cfp_deadline(body.closes_at_ms, int(event["starts_at_ms"]))
+    route_key = "POST /api/v1/admin/events/{event_id}/cfp/publish"
     fingerprint = _fingerprint(body)
     replay = await _find_replay(db, auth.actor.user_id, route_key, key)
     if replay:
@@ -325,18 +229,24 @@ async def publish_form(
         return await _form_by_id(db, str(replay["response_resource_id"]))
     now = utc_now_ms()
     form_id = new_id()
+    existing_form = await db.prepare(
+        """SELECT 1 AS found FROM call_for_speaker_forms
+           WHERE organization_id=?1 AND event_id=?2 AND status='published' LIMIT 1"""
+    ).bind(event["organization_id"], event_id).first("found")
+    if existing_form is not None:
+        raise HTTPException(status_code=409, detail="This event already has a published form.")
     version = (
         await db.prepare(
             """SELECT COALESCE(MAX(version), 0) + 1 AS version
-           FROM call_for_speaker_forms WHERE program_id = ?1"""
+           FROM call_for_speaker_forms WHERE organization_id=?1 AND event_id=?2"""
         )
-        .bind(program_id)
+        .bind(event["organization_id"], event_id)
         .first("version")
     )
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
-        organization_id=str(program["organization_id"]),
-        event_id=str(program["event_id"]),
+        organization_id=str(event["organization_id"]),
+        event_id=event_id,
         route_key=route_key,
         idempotency_key=key,
         request_fingerprint=fingerprint,
@@ -347,17 +257,16 @@ async def publish_form(
     batch.add_statement(
         db.prepare(
             """INSERT INTO call_for_speaker_forms
-               (id, organization_id, event_id, program_id, version, slug, welcome_text,
+               (id, organization_id, event_id, version, slug, welcome_text,
                 schema_json, opens_at_ms, closes_at_ms, submission_limit, success_title,
                 success_message, redirect_to_portal, confirmation_subject, confirmation_body,
                 status, published_at_ms, created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                       ?14, ?15, ?16, 'published', ?17, ?17, ?17)"""
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                       ?13, ?14, ?15, 'published', ?16, ?16, ?16)"""
         ).bind(
             form_id,
-            program["organization_id"],
-            program["event_id"],
-            program_id,
+            event["organization_id"],
+            event_id,
             version,
             body.slug,
             body.welcome_text,
@@ -380,12 +289,6 @@ async def publish_form(
             now,
         )
     )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE programs SET status = 'open', updated_at_ms = ?1
-               WHERE id = ?2 AND organization_id = ?3 AND event_id = ?4"""
-        ).bind(now, program_id, program["organization_id"], program["event_id"])
-    )
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -396,8 +299,8 @@ async def publish_form(
             result="succeeded",
             correlation_id=request.state.request_id,
             occurred_at_ms=now,
-            organization_id=str(program["organization_id"]),
-            event_id=str(program["event_id"]),
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
             metadata={"version": int(version)},
         )
     )
@@ -413,24 +316,26 @@ async def publish_form(
 
 
 @cfp_router.patch(
-    "/api/v1/admin/programs/{program_id}/forms/{form_id}",
+    "/api/v1/admin/events/{event_id}/cfp",
     response_model=PublishedFormView,
     operation_id="updatePublishedCallForSpeakersForm",
     tags=["forms"],
 )
 async def update_published_form(
-    program_id: str,
-    form_id: str,
+    event_id: str,
     request: Request,
     body: FormUpdate,
 ) -> PublishedFormView:
     db = _db(request)
     current = row_mapping(
         await db.prepare(
-            """SELECT organization_id,event_id,version FROM call_for_speaker_forms
-               WHERE id=?1 AND program_id=?2 AND status='published' LIMIT 1"""
+            """SELECT f.id,f.organization_id,f.event_id,f.version,e.starts_at_ms
+               FROM call_for_speaker_forms f
+               JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
+               WHERE f.event_id=?1 AND f.status='published'
+               ORDER BY f.version DESC,f.updated_at_ms DESC,f.id DESC LIMIT 1"""
         )
-        .bind(form_id, program_id)
+        .bind(event_id)
         .first()
     )
     if current is None:
@@ -443,6 +348,8 @@ async def update_published_form(
     )
     if int(current["version"]) != body.version:
         raise HTTPException(status_code=409)
+    _validate_cfp_deadline(body.closes_at_ms, int(current["starts_at_ms"]))
+    form_id = str(current["id"])
     now = utc_now_ms()
     schema_json = json.dumps(
         {
@@ -460,7 +367,7 @@ async def update_published_form(
                    opens_at_ms=?4,closes_at_ms=?5,submission_limit=?6,
                    success_title=?7,success_message=?8,redirect_to_portal=?9,
                    updated_at_ms=?10
-               WHERE id=?11 AND program_id=?12 AND status='published' AND version=?13"""
+               WHERE id=?11 AND event_id=?12 AND status='published' AND version=?13"""
         ).bind(
             body.slug,
             body.welcome_text,
@@ -473,7 +380,7 @@ async def update_published_form(
             int(body.redirect_to_portal),
             now,
             form_id,
-            program_id,
+            event_id,
             body.version,
         )
     )
@@ -513,10 +420,10 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
     row = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT f.id, f.event_id, f.program_id, f.version, f.slug, f.welcome_text,
+            """SELECT f.id, f.event_id, f.version, f.slug, f.welcome_text,
                       f.schema_json, f.opens_at_ms, f.closes_at_ms, f.submission_limit,
                       f.success_title, f.success_message, f.redirect_to_portal,
-                      e.name AS event_name,e.accent_color,e.logo_url,
+                      e.name AS event_name,e.accent_color,e.logo_url,e.cover_image_url,
                       COUNT(s.id) AS submissions_received
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
@@ -534,7 +441,7 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
 async def _form_context(db, slug: str):
     return row_mapping(
         await db.prepare(
-            """SELECT id,organization_id,event_id,program_id,schema_json,version,
+            """SELECT id,organization_id,event_id,schema_json,version,
                      opens_at_ms,closes_at_ms,submission_limit,confirmation_subject,
                      confirmation_body
            FROM call_for_speaker_forms WHERE slug=?1 AND status='published' LIMIT 1"""
@@ -612,18 +519,17 @@ async def save_submission_draft(
     await (
         db.prepare(
             """INSERT INTO submission_drafts
-           (id,organization_id,event_id,program_id,form_id,user_id,answers_json,version,
+           (id,organization_id,event_id,form_id,user_id,answers_json,version,
             created_at_ms,updated_at_ms)
-           VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8)
+           VALUES(?1,?2,?3,?4,?5,?6,1,?7,?7)
            ON CONFLICT(form_id,user_id) DO UPDATE SET answers_json=excluded.answers_json,
              version=submission_drafts.version+1,updated_at_ms=excluded.updated_at_ms
-           WHERE submission_drafts.version=?9"""
+           WHERE submission_drafts.version=?8"""
         )
         .bind(
             draft_id,
             form["organization_id"],
             form["event_id"],
-            form["program_id"],
             form["id"],
             authenticated.actor.user_id,
             answers_json,
@@ -668,16 +574,29 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
         ),
         mutation=False,
     )
+    normalized_email = await db.prepare(
+        "SELECT normalized_email FROM users WHERE id=?1 AND status='active' LIMIT 1"
+    ).bind(authenticated.actor.user_id).first("normalized_email")
+    if normalized_email is None:
+        return OwnedSubmissionList(data=[])
     rows = result_rows(
         await db.prepare(
-            """SELECT s.id,s.program_id,s.speaker_name,s.speaker_email,s.proposal_title,
+            """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                       s.proposal_abstract,s.answers_json,
                       COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
-                      s.routed_category,s.routed_track,s.routed_review_queue
+                      s.routed_category,s.routed_track,s.routed_review_queue,
+                      CASE WHEN s.submitter_user_id=?2 THEN 1 ELSE 0 END AS editable
                FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
-               WHERE s.form_id=?1 AND s.submitter_user_id=?2
+               WHERE s.form_id=?1 AND (
+                 s.submitter_user_id=?2 OR EXISTS (
+                   SELECT 1 FROM submission_contributors c
+                   WHERE c.submission_id=s.id AND c.normalized_email=?3
+                 )
+               )
                ORDER BY s.updated_at_ms DESC,s.id DESC LIMIT 25"""
-        ).bind(form["id"], authenticated.actor.user_id).all()
+        )
+        .bind(form["id"], authenticated.actor.user_id, normalized_email)
+        .all()
     )
     data = []
     for row in rows:
@@ -687,11 +606,18 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
             await db.prepare(
                 """SELECT display_name,email,role FROM submission_contributors
                    WHERE submission_id=?1 ORDER BY display_name,id"""
-            ).bind(values["id"]).all()
+            )
+            .bind(values["id"])
+            .all()
         )
         data.append(
-            SubmissionView.model_validate(
-                {**values, "answers": answers, "co_speakers": contributors}
+            PrivateSubmissionView.model_validate(
+                {
+                    **values,
+                    "editable": bool(values["editable"]),
+                    "answers": answers,
+                    "co_speakers": contributors,
+                }
             )
         )
     return OwnedSubmissionList(data=data)
@@ -699,7 +625,7 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
 
 @cfp_router.patch(
     "/api/v1/forms/{slug}/submissions/{submission_id}",
-    response_model=SubmissionView,
+    response_model=PrivateSubmissionView,
     operation_id="updateMyCallForSpeakersSubmission",
     tags=["submissions"],
 )
@@ -708,16 +634,18 @@ async def update_submission(
     submission_id: str,
     body: SubmissionUpdate,
     request: Request,
-) -> SubmissionView:
+) -> PrivateSubmissionView:
     authenticated = await authenticate_request(request)
     db = _db(request)
     row = row_mapping(
         await db.prepare(
-            """SELECT s.organization_id,s.event_id,s.program_id,s.form_id,s.status,
+            """SELECT s.organization_id,s.event_id,s.form_id,s.status,
                       s.submitter_user_id,f.schema_json,f.opens_at_ms,f.closes_at_ms
                FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
                WHERE s.id=?1 AND f.slug=?2 LIMIT 1"""
-        ).bind(submission_id, slug).first()
+        )
+        .bind(submission_id, slug)
+        .first()
     )
     if row is None or str(row["submitter_user_id"] or "") != authenticated.actor.user_id:
         raise HTTPException(status_code=404)
@@ -725,7 +653,8 @@ async def update_submission(
         request,
         Permission.SUBMISSION_READ_OWN,
         ResourceContext(
-            str(row["organization_id"]), str(row["event_id"]),
+            str(row["organization_id"]),
+            str(row["event_id"]),
             resource_owner_user_id=authenticated.actor.user_id,
         ),
         mutation=True,
@@ -737,47 +666,76 @@ async def update_submission(
         raise HTTPException(status_code=409, detail="Applications have not opened yet.")
     if row["closes_at_ms"] is not None and now >= int(row["closes_at_ms"]):
         raise HTTPException(status_code=409, detail="Applications are closed.")
-    decided = await db.prepare(
-        "SELECT 1 AS found FROM submission_decisions WHERE submission_id=?1 LIMIT 1"
-    ).bind(submission_id).first("found")
+    decided = (
+        await db.prepare(
+            "SELECT 1 AS found FROM submission_decisions WHERE submission_id=?1 LIMIT 1"
+        )
+        .bind(submission_id)
+        .first("found")
+    )
     if decided is not None:
         raise HTTPException(status_code=409)
-    normalized_email = await db.prepare(
-        "SELECT normalized_email FROM users WHERE id=?1"
-    ).bind(authenticated.actor.user_id).first("normalized_email")
+    normalized_email = (
+        await db.prepare("SELECT normalized_email FROM users WHERE id=?1")
+        .bind(authenticated.actor.user_id)
+        .first("normalized_email")
+    )
     if normalized_email is None or normalize_email(body.speaker_email) != str(normalized_email):
         raise HTTPException(status_code=422)
     schema = json.loads(str(row["schema_json"]))
     _validate_submission_schema(schema, body)
     await _validate_upload_answers(
-        db, schema, body.answers, event_id=str(row["event_id"]),
+        db,
+        schema,
+        body.answers,
+        event_id=str(row["event_id"]),
         user_id=authenticated.actor.user_id,
     )
     routing = _route_submission(schema, body.answers)
-    await db.prepare(
-        """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
+    await (
+        db.prepare(
+            """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
                   speaker_name=?3,speaker_email=?4,answers_json=?5,
                   routed_category=?6,routed_track=?7,routed_review_queue=?8,
                   version=version+1,updated_at_ms=?9
            WHERE id=?10 AND submitter_user_id=?11 AND status='submitted' AND version=?12"""
-    ).bind(
-        body.proposal_title, body.proposal_abstract, body.speaker_name, body.speaker_email,
-        json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
-        routing["category"], routing["track"], routing["review_queue"], now,
-        submission_id, authenticated.actor.user_id, body.version,
-    ).run()
-    updated_version = await db.prepare(
-        "SELECT version FROM submissions WHERE id=?1 AND submitter_user_id=?2"
-    ).bind(submission_id, authenticated.actor.user_id).first("version")
+        )
+        .bind(
+            body.proposal_title,
+            body.proposal_abstract,
+            body.speaker_name,
+            body.speaker_email,
+            json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
+            routing["category"],
+            routing["track"],
+            routing["review_queue"],
+            now,
+            submission_id,
+            authenticated.actor.user_id,
+            body.version,
+        )
+        .run()
+    )
+    updated_version = (
+        await db.prepare("SELECT version FROM submissions WHERE id=?1 AND submitter_user_id=?2")
+        .bind(submission_id, authenticated.actor.user_id)
+        .first("version")
+    )
     if updated_version is None or int(updated_version) != body.version + 1:
         raise HTTPException(status_code=409)
-    await db.prepare(
-        """UPDATE submission_speakers SET snapshot_name=?1
+    await (
+        db.prepare(
+            """UPDATE submission_speakers SET snapshot_name=?1
            WHERE submission_id=?2 AND role='primary'"""
-    ).bind(body.speaker_name, submission_id).run()
-    await db.prepare("DELETE FROM submission_contributors WHERE submission_id=?1").bind(
-        submission_id
-    ).run()
+        )
+        .bind(body.speaker_name, submission_id)
+        .run()
+    )
+    await (
+        db.prepare("DELETE FROM submission_contributors WHERE submission_id=?1")
+        .bind(submission_id)
+        .run()
+    )
     if body.co_speakers:
         await db.batch(
             [
@@ -787,19 +745,147 @@ async def update_submission(
                         normalized_email,role,created_at_ms,updated_at_ms)
                        VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
                 ).bind(
-                    new_id(), row["organization_id"], row["event_id"], submission_id,
-                    contributor.display_name, contributor.email,
-                    normalize_email(contributor.email), now,
+                    new_id(),
+                    row["organization_id"],
+                    row["event_id"],
+                    submission_id,
+                    contributor.display_name,
+                    contributor.email,
+                    normalize_email(contributor.email),
+                    now,
                 )
                 for contributor in body.co_speakers
             ]
         )
+    return await _editable_submission_by_id(db, submission_id)
+
+
+@cfp_router.patch(
+    "/api/v1/admin/submissions/{submission_id}",
+    response_model=SubmissionView,
+    operation_id="updateEventSubmissionAsOrganizer",
+    tags=["submissions"],
+)
+async def update_submission_as_organizer(
+    submission_id: str, body: SubmissionUpdate, request: Request
+) -> SubmissionView:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT s.organization_id,s.event_id,s.form_id,s.status,
+                      s.version,f.schema_json
+               FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
+               WHERE s.id=?1 LIMIT 1"""
+        )
+        .bind(submission_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_MANAGE,
+        ResourceContext(str(row["organization_id"]), str(row["event_id"])),
+        mutation=True,
+    )
+    if row["status"] != "submitted":
+        raise HTTPException(status_code=409, detail="Only submitted proposals can be edited.")
+    if (
+        await db.prepare(
+            "SELECT 1 AS found FROM submission_decisions WHERE submission_id=?1 LIMIT 1"
+        )
+        .bind(submission_id)
+        .first("found")
+        is not None
+    ):
+        raise HTTPException(status_code=409, detail="A decided proposal cannot be edited.")
+    schema = json.loads(str(row["schema_json"]))
+    _validate_submission_schema(schema, body)
+    routing = _route_submission(schema, body.answers)
+    now = utc_now_ms()
+    updated = (
+        await db.prepare(
+            """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
+                  speaker_name=?3,speaker_email=?4,answers_json=?5,
+                  routed_category=?6,routed_track=?7,routed_review_queue=?8,
+                  version=version+1,updated_at_ms=?9
+           WHERE id=?10 AND status='submitted' AND version=?11"""
+        )
+        .bind(
+            body.proposal_title,
+            body.proposal_abstract,
+            body.speaker_name,
+            body.speaker_email,
+            json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
+            routing["category"],
+            routing["track"],
+            routing["review_queue"],
+            now,
+            submission_id,
+            body.version,
+        )
+        .run()
+    )
+    if not int(to_python(getattr(updated, "meta", {}).get("changes", 0)) or 0):
+        raise HTTPException(status_code=409)
+    await (
+        db.prepare(
+            """UPDATE submission_speakers SET snapshot_name=?1
+               WHERE submission_id=?2 AND role='primary'"""
+        )
+        .bind(body.speaker_name, submission_id)
+        .run()
+    )
+    await (
+        db.prepare("DELETE FROM submission_contributors WHERE submission_id=?1")
+        .bind(submission_id)
+        .run()
+    )
+    if body.co_speakers:
+        await db.batch(
+            [
+                db.prepare(
+                    """INSERT INTO submission_contributors
+                       (id,organization_id,event_id,submission_id,display_name,email,
+                        normalized_email,role,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
+                ).bind(
+                    new_id(),
+                    row["organization_id"],
+                    row["event_id"],
+                    submission_id,
+                    contributor.display_name,
+                    contributor.email,
+                    normalize_email(contributor.email),
+                    now,
+                )
+                for contributor in body.co_speakers
+            ]
+        )
+    batch = CommandBatch(db)
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="submission.organizer_update",
+            target_type="submission",
+            target_id=submission_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+            metadata={"version": body.version + 1},
+        )
+    )
+    await _execute(request, batch)
     return await _submission_by_id(db, submission_id)
 
 
 @cfp_router.post(
     "/api/v1/forms/{slug}/submissions",
-    response_model=SubmissionView,
+    response_model=PrivateSubmissionView,
     status_code=201,
     operation_id="createCallForSpeakersSubmission",
     tags=["submissions"],
@@ -810,7 +896,7 @@ async def create_submission(
     body: SubmissionCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     public_session: str | None = Header(default=None, alias="X-Public-Session-ID"),
-) -> SubmissionView:
+) -> PrivateSubmissionView:
     key = _idempotency_key(idempotency_key)
     if public_session is None or not 16 <= len(public_session) <= 128:
         raise HTTPException(status_code=400)
@@ -820,10 +906,11 @@ async def create_submission(
         policy=RateLimitPolicy("public.submit", limit=50, window_seconds=60),
         subject=f"{public_session}:{_request_source(request)}",
     )
+    authenticated = await authenticate_request(request)
     db = _db(request)
     form = row_mapping(
         await db.prepare(
-            """SELECT id, organization_id, event_id, program_id, version, schema_json,
+            """SELECT id, organization_id, event_id, slug, version, schema_json,
                       opens_at_ms, closes_at_ms, submission_limit, confirmation_subject,
                       confirmation_body
                FROM call_for_speaker_forms
@@ -834,6 +921,16 @@ async def create_submission(
     )
     if form is None:
         raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(form["organization_id"]),
+            str(form["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
     now = utc_now_ms()
     submissions_received = int(
         await db.prepare(
@@ -849,38 +946,29 @@ async def create_submission(
         raise HTTPException(status_code=409)
     schema = json.loads(str(form["schema_json"]))
     _validate_submission_schema(schema, body)
-    deployed = getattr(_env(request), "APP_ENV", "production") != "local"
-    authenticated = None
-    if (
-        deployed
-        or request.cookies.get("__Host-session")
-        or request.cookies.get("sessionbuddy-local")
-    ):
-        authenticated = await authenticate_request(request)
-    submitter_user_id = authenticated.actor.user_id if authenticated is not None else None
-    if authenticated is not None:
-        user_email = (
-            await db.prepare("SELECT normalized_email FROM users WHERE id=?1")
-            .bind(submitter_user_id)
-            .first("normalized_email")
-        )
-        if user_email is None or normalize_email(body.speaker_email) != str(user_email):
-            raise HTTPException(status_code=403)
-        await _validate_upload_answers(
-            db,
-            schema,
-            body.answers,
-            event_id=str(form["event_id"]),
-            user_id=authenticated.actor.user_id,
-        )
-    principal_key = submitter_user_id or public_session
+    submitter_user_id = authenticated.actor.user_id
+    user_email = (
+        await db.prepare("SELECT normalized_email FROM users WHERE id=?1")
+        .bind(submitter_user_id)
+        .first("normalized_email")
+    )
+    if user_email is None or normalize_email(body.speaker_email) != str(user_email):
+        raise HTTPException(status_code=403)
+    await _validate_upload_answers(
+        db,
+        schema,
+        body.answers,
+        event_id=str(form["event_id"]),
+        user_id=authenticated.actor.user_id,
+    )
+    principal_key = submitter_user_id
     fingerprint = _fingerprint(body)
     route_key = "POST /api/v1/forms/{slug}/submissions"
     replay = await _find_replay(db, principal_key, route_key, key)
     if replay:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
-        return await _submission_by_id(db, str(replay["response_resource_id"]))
+        return await _editable_submission_by_id(db, str(replay["response_resource_id"]))
     submission_id = new_id()
     routing = _route_submission(schema, body.answers)
     message_id = new_id()
@@ -898,21 +986,20 @@ async def create_submission(
     batch.add_statement(
         db.prepare(
             """INSERT INTO submissions
-               (id, organization_id, event_id, program_id, form_id, public_session_id,
+               (id, organization_id, event_id, form_id, public_session_id,
                 proposal_title, proposal_abstract, speaker_name, speaker_email, answers_json,
                 submitter_user_id, status, submitted_at_ms, created_at_ms, updated_at_ms,
                 routed_category, routed_track, routed_review_queue)
-               SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                      ?12, 'submitted', ?13, ?13, ?13, ?14, ?15, ?16
+               SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                      ?11, 'submitted', ?12, ?12, ?12, ?13, ?14, ?15
                WHERE (SELECT COUNT(*) FROM submissions
-                      WHERE form_id=?5 AND status='submitted')
+                      WHERE form_id=?4 AND status='submitted')
                      < COALESCE((SELECT submission_limit FROM call_for_speaker_forms
-                                 WHERE id=?5), 1000001)"""
+                                 WHERE id=?4), 1000001)"""
         ).bind(
             submission_id,
             form["organization_id"],
             form["event_id"],
-            form["program_id"],
             form["id"],
             public_session,
             body.proposal_title,
@@ -942,88 +1029,88 @@ async def create_submission(
                     normalized_email,role,created_at_ms,updated_at_ms)
                    VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
             ).bind(
-                new_id(), form["organization_id"], form["event_id"], submission_id,
-                contributor.display_name, contributor.email,
-                normalize_email(contributor.email), now,
-            )
-        )
-    if submitter_user_id is not None:
-        batch.add_statement(
-            db.prepare("DELETE FROM submission_drafts WHERE form_id=?1 AND user_id=?2").bind(
-                form["id"], submitter_user_id
-            )
-        )
-        person = row_mapping(
-            await db.prepare(
-                "SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1"
-            )
-            .bind(form["organization_id"], submitter_user_id)
-            .first()
-        )
-        person_id = str(person["id"]) if person is not None else new_id()
-        if person is None:
-            batch.add_statement(
-                db.prepare(
-                    """INSERT INTO people
-                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?5)"""
-                ).bind(
-                    person_id, form["organization_id"], submitter_user_id, body.speaker_name, now
-                )
-            )
-        speaker = row_mapping(
-            await db.prepare(
-                """SELECT id FROM event_speakers
-               WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
-            )
-            .bind(form["organization_id"], form["event_id"], person_id)
-            .first()
-        )
-        event_speaker_id = str(speaker["id"]) if speaker is not None else new_id()
-        if speaker is None:
-            batch.add_statement(
-                db.prepare(
-                    """INSERT INTO event_speakers
-                   (id,organization_id,event_id,person_id,status,accepted_at_ms,last_activity_at_ms,
-                    created_at_ms,updated_at_ms,selection_status)
-                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
-                ).bind(event_speaker_id, form["organization_id"], form["event_id"], person_id, now)
-            )
-        batch.add_statement(
-            db.prepare(
-                """UPDATE event_speakers SET selection_status=
-                         CASE WHEN selection_status='accepted' THEN 'accepted' ELSE 'submitted' END,
-                         last_activity_at_ms=?1,updated_at_ms=?1
-                   WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
-            ).bind(now, form["organization_id"], form["event_id"], event_speaker_id)
-        )
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO submission_speakers
-               (id,organization_id,event_id,submission_id,event_speaker_id,role,snapshot_name,
-                created_at_ms) VALUES(?1,?2,?3,?4,?5,'primary',?6,?7)"""
-            ).bind(
                 new_id(),
                 form["organization_id"],
                 form["event_id"],
                 submission_id,
-                event_speaker_id,
-                body.speaker_name,
+                contributor.display_name,
+                contributor.email,
+                normalize_email(contributor.email),
                 now,
             )
         )
-        for answer in _upload_references(schema, body.answers):
-            batch.add_statement(
-                db.prepare(
-                    """UPDATE speaker_assets SET submission_id=?1,updated_at_ms=?2
+    batch.add_statement(
+        db.prepare("DELETE FROM submission_drafts WHERE form_id=?1 AND user_id=?2").bind(
+            form["id"], submitter_user_id
+        )
+    )
+    person = row_mapping(
+        await db.prepare("SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1")
+        .bind(form["organization_id"], submitter_user_id)
+        .first()
+    )
+    person_id = str(person["id"]) if person is not None else new_id()
+    if person is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO people
+                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?5)"""
+            ).bind(person_id, form["organization_id"], submitter_user_id, body.speaker_name, now)
+        )
+    speaker = row_mapping(
+        await db.prepare(
+            """SELECT id FROM event_speakers
+               WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
+        )
+        .bind(form["organization_id"], form["event_id"], person_id)
+        .first()
+    )
+    event_speaker_id = str(speaker["id"]) if speaker is not None else new_id()
+    if speaker is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_speakers
+                   (id,organization_id,event_id,person_id,status,accepted_at_ms,last_activity_at_ms,
+                    created_at_ms,updated_at_ms,selection_status)
+                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
+            ).bind(event_speaker_id, form["organization_id"], form["event_id"], person_id, now)
+        )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE event_speakers SET selection_status=
+                         CASE WHEN selection_status='accepted' THEN 'accepted' ELSE 'submitted' END,
+                         last_activity_at_ms=?1,updated_at_ms=?1
+                   WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
+        ).bind(now, form["organization_id"], form["event_id"], event_speaker_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,snapshot_name,
+                created_at_ms) VALUES(?1,?2,?3,?4,?5,'primary',?6,?7)"""
+        ).bind(
+            new_id(),
+            form["organization_id"],
+            form["event_id"],
+            submission_id,
+            event_speaker_id,
+            body.speaker_name,
+            now,
+        )
+    )
+    for answer in _upload_references(schema, body.answers):
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_assets SET submission_id=?1,updated_at_ms=?2
                        WHERE id=(SELECT av.asset_id FROM upload_intents ui
                          JOIN speaker_asset_versions av ON av.id=ui.asset_version_id
                          WHERE ui.id=?3 LIMIT 1)"""
-                ).bind(submission_id, now, answer)
-            )
+            ).bind(submission_id, now, answer)
+        )
     batch.audit(
         AuditEvent(
-            actor_type="user" if submitter_user_id is not None else "anonymous",
+            actor_type="user",
             actor_user_id=submitter_user_id,
             action="submission.create",
             target_type="submission",
@@ -1036,9 +1123,14 @@ async def create_submission(
             metadata={"form_version": int(form["version"]), "routing": routing},
         )
     )
+    proposal_url = (
+        f"{str(request.base_url).rstrip('/')}/cfp/{escape(str(form['slug']))}"
+        f"?submission_id={escape(submission_id)}"
+    )
     confirmation_html = (
         f"<p>{escape(str(form['confirmation_body']))}</p>"
         f"<p><strong>{escape(body.proposal_title)}</strong></p>"
+        f'<p><a href="{proposal_url}">View your proposal</a></p>'
         f"<p>Receipt: {escape(submission_id)}</p>"
     )
     batch.add_statement(
@@ -1074,9 +1166,9 @@ async def create_submission(
         except Exception:
             # The durable queued row remains visible to operators for replay.
             record_timing(request, "domain", 0)
-    return SubmissionView(
+    return PrivateSubmissionView(
         id=submission_id,
-        program_id=str(form["program_id"]),
+        editable=True,
         status="submitted",
         submitted_at_ms=now,
         version=1,
@@ -1088,61 +1180,64 @@ async def create_submission(
 
 
 @cfp_router.get(
-    "/api/v1/admin/programs/{program_id}/submissions",
+    "/api/v1/admin/events/{event_id}/submissions",
     response_model=SubmissionList,
-    operation_id="listProgramSubmissions",
+    operation_id="listEventSubmissions",
     tags=["submissions"],
 )
 async def list_submissions(
-    program_id: str,
+    event_id: str,
     request: Request,
 ) -> SubmissionList:
-    program = row_mapping(
+    event = row_mapping(
         await _db(request)
-        .prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
-        .bind(program_id)
+        .prepare(
+            """SELECT organization_id FROM events
+               WHERE id=?1 AND status != 'archived' LIMIT 1"""
+        )
+        .bind(event_id)
         .first()
     )
-    if program is None:
+    if event is None:
         raise HTTPException(status_code=404)
     await require_permission(
         request,
         Permission.SUBMISSION_MANAGE,
-        ResourceContext(str(program["organization_id"]), str(program["event_id"])),
+        ResourceContext(str(event["organization_id"]), event_id),
         mutation=False,
     )
     result = (
         await _db(request)
         .prepare(
-            """SELECT s.id,s.program_id,s.speaker_name,s.speaker_email,s.proposal_title,
+            """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                   s.proposal_abstract,s.answers_json,
                   COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                   s.routed_category,s.routed_track,s.routed_review_queue
                FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
-               WHERE s.organization_id=?1 AND s.event_id=?2 AND s.program_id=?3
+               WHERE s.organization_id=?1 AND s.event_id=?2
                ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 100"""
         )
-        .bind(program["organization_id"], program["event_id"], program_id)
+        .bind(event["organization_id"], event_id)
         .all()
     )
     data = []
     for row in result_rows(result):
         answers = json.loads(str(row.pop("answers_json")))
         contributors = result_rows(
-            await _db(request).prepare(
+            await _db(request)
+            .prepare(
                 """SELECT display_name,email,role FROM submission_contributors
                    WHERE submission_id=?1 ORDER BY display_name,id"""
-            ).bind(row["id"]).all()
+            )
+            .bind(row["id"])
+            .all()
         )
         data.append(
-            SubmissionView.model_validate(
-                {**row, "answers": answers, "co_speakers": contributors}
-            )
+            SubmissionView.model_validate({**row, "answers": answers, "co_speakers": contributors})
         )
     return SubmissionList(
-        organization_id=str(program["organization_id"]),
-        event_id=str(program["event_id"]),
-        program_id=program_id,
+        organization_id=str(event["organization_id"]),
+        event_id=event_id,
         data=data,
     )
 
@@ -1177,10 +1272,10 @@ def _blob(value: object) -> bytes:
 async def _form_by_id(db, form_id: str) -> PublishedFormView:
     row = row_mapping(
         await db.prepare(
-            """SELECT f.id,f.event_id,f.program_id,f.version,f.slug,f.welcome_text,
+            """SELECT f.id,f.event_id,f.version,f.slug,f.welcome_text,
                       f.schema_json,f.opens_at_ms,f.closes_at_ms,f.submission_limit,
                       f.success_title,f.success_message,f.redirect_to_portal,
-                      e.name AS event_name,e.accent_color,e.logo_url,
+                      e.name AS event_name,e.accent_color,e.logo_url,e.cover_image_url,
                       COUNT(s.id) AS submissions_received
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
@@ -1198,7 +1293,7 @@ async def _form_by_id(db, form_id: str) -> PublishedFormView:
 async def _submission_by_id(db, submission_id: str) -> SubmissionView:
     row = row_mapping(
         await db.prepare(
-            """SELECT id, program_id, speaker_name, speaker_email, proposal_title,
+            """SELECT id, speaker_name, speaker_email, proposal_title,
                       proposal_abstract, answers_json, status, submitted_at_ms,version,
                       routed_category,routed_track,routed_review_queue
                FROM submissions WHERE id = ?1"""
@@ -1213,11 +1308,16 @@ async def _submission_by_id(db, submission_id: str) -> SubmissionView:
         await db.prepare(
             """SELECT display_name,email,role FROM submission_contributors
                WHERE submission_id=?1 ORDER BY display_name,id"""
-        ).bind(submission_id).all()
+        )
+        .bind(submission_id)
+        .all()
     )
-    return SubmissionView.model_validate(
-        {**row, "answers": answers, "co_speakers": contributors}
-    )
+    return SubmissionView.model_validate({**row, "answers": answers, "co_speakers": contributors})
+
+
+async def _editable_submission_by_id(db, submission_id: str) -> PrivateSubmissionView:
+    submission = await _submission_by_id(db, submission_id)
+    return PrivateSubmissionView.model_validate({**submission.model_dump(), "editable": True})
 
 
 def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[bool, str]:
@@ -1229,7 +1329,7 @@ def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[boo
     if closes_at is not None and now_ms >= closes_at:
         return False, "Applications are closed."
     if limit is not None and submissions_received >= limit:
-        return False, "This call for speakers has reached its submission limit."
+        return False, "This Call for Proposals has reached its submission limit."
     return True, "Applications are open."
 
 
@@ -1324,15 +1424,19 @@ async def _validate_upload_answers(
             raise HTTPException(status_code=422)
         intent_id = value.removeprefix("upload:")
         expected_kind = "headshot" if field.get("type") == "image" else "supporting_document"
-        found = await db.prepare(
-            """SELECT 1 AS found FROM upload_intents ui
+        found = (
+            await db.prepare(
+                """SELECT 1 AS found FROM upload_intents ui
                JOIN speaker_asset_versions av ON av.id=ui.asset_version_id
                JOIN speaker_assets a ON a.id=av.asset_id
                JOIN event_speakers es ON es.id=a.event_speaker_id
                JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id
                WHERE ui.id=?1 AND ui.event_id=?2 AND p.user_id=?3 AND a.kind=?4
                  AND av.scan_state='clean' AND av.is_current=1 LIMIT 1"""
-        ).bind(intent_id, event_id, user_id, expected_kind).first("found")
+            )
+            .bind(intent_id, event_id, user_id, expected_kind)
+            .first("found")
+        )
         if found is None:
             raise HTTPException(status_code=422)
 
@@ -1404,8 +1508,11 @@ def _validate_form_field_value(
 ) -> None:
     field_type = field.get("type")
     required = bool(field.get("required")) and enforce_required
-    blank = value is None or value == "" or value == [] or (
-        isinstance(value, str) and not value.strip()
+    blank = (
+        value is None
+        or value == ""
+        or value == []
+        or (isinstance(value, str) and not value.strip())
     )
     if required and (blank or (field_type == "checkbox" and value is not True)):
         raise HTTPException(status_code=422)

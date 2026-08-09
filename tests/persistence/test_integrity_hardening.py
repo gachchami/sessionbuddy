@@ -44,36 +44,28 @@ def db() -> sqlite3.Connection:
             (f"event-member-{suffix}", f"org-{suffix}", f"event-{suffix}", f"user-{suffix}"),
         )
         connection.execute(
-            """INSERT INTO programs
-               (id,organization_id,event_id,name,status,created_at_ms,updated_at_ms)
-               VALUES(?,?,?,?,'open',1,1)""",
-            (f"program-{suffix}", f"org-{suffix}", f"event-{suffix}", f"Program {suffix}"),
-        )
-        connection.execute(
             """INSERT INTO call_for_speaker_forms
-               (id,organization_id,event_id,program_id,version,slug,welcome_text,schema_json,
+               (id,organization_id,event_id,version,slug,welcome_text,schema_json,
                 status,published_at_ms,created_at_ms,updated_at_ms)
-               VALUES(?,?,?,?,1,?,?,'{}','published',1,1,1)""",
+               VALUES(?,?,?,1,?,?,'{}','published',1,1,1)""",
             (
                 f"form-{suffix}",
                 f"org-{suffix}",
                 f"event-{suffix}",
-                f"program-{suffix}",
                 f"form-{suffix}",
                 "Welcome",
             ),
         )
         connection.execute(
             """INSERT INTO submissions
-               (id,organization_id,event_id,program_id,form_id,public_session_id,
+               (id,organization_id,event_id,form_id,public_session_id,
                 proposal_title,proposal_abstract,speaker_name,speaker_email,status,
                 submitted_at_ms,created_at_ms,updated_at_ms)
-               VALUES(?,?,?,?,?,?,?,'Abstract','Speaker',?,'submitted',1,1,1)""",
+               VALUES(?,?,?,?,?,?,'Abstract','Speaker',?,'submitted',1,1,1)""",
             (
                 f"submission-{suffix}",
                 f"org-{suffix}",
                 f"event-{suffix}",
-                f"program-{suffix}",
                 f"form-{suffix}",
                 f"public-{suffix}",
                 f"Proposal {suffix}",
@@ -82,14 +74,13 @@ def db() -> sqlite3.Connection:
         )
         connection.execute(
             """INSERT INTO evaluation_rounds
-               (id,organization_id,event_id,program_id,name,rubric_json,status,
+               (id,organization_id,event_id,name,rubric_json,status,
                 created_at_ms,updated_at_ms)
-               VALUES(?,?,?,?,?,'{}','open',1,1)""",
+               VALUES(?,?,?,?,'{}','open',1,1)""",
             (
                 f"round-{suffix}",
                 f"org-{suffix}",
                 f"event-{suffix}",
-                f"program-{suffix}",
                 f"Round {suffix}",
             ),
         )
@@ -103,22 +94,22 @@ def test_cross_tenant_form_cannot_be_attached_to_submission_or_draft(
     with pytest.raises(sqlite3.IntegrityError, match="submission form scope mismatch"):
         db.execute(
             """INSERT INTO submissions
-               (id,organization_id,event_id,program_id,form_id,public_session_id,
+               (id,organization_id,event_id,form_id,public_session_id,
                 proposal_title,proposal_abstract,speaker_name,speaker_email,status,
                 submitted_at_ms,created_at_ms,updated_at_ms)
-               VALUES('bad-submission','org-a','event-a','program-a','form-b','public-bad',
+               VALUES('bad-submission','org-a','event-a','form-b','public-bad',
                       'Bad','Bad','Bad','bad@example.test','submitted',1,1,1)"""
         )
     with pytest.raises(sqlite3.IntegrityError, match="submission draft scope mismatch"):
         db.execute(
             """INSERT INTO submission_drafts
-               (id,organization_id,event_id,program_id,form_id,user_id,answers_json,
+               (id,organization_id,event_id,form_id,user_id,answers_json,
                 created_at_ms,updated_at_ms)
-               VALUES('bad-draft','org-a','event-a','program-a','form-b','user-a','{}',1,1)"""
+               VALUES('bad-draft','org-a','event-a','form-b','user-a','{}',1,1)"""
         )
 
 
-def test_evaluation_graph_cannot_cross_tenant_or_program_boundaries(
+def test_evaluation_graph_cannot_cross_tenant_or_event_boundaries(
     db: sqlite3.Connection,
 ) -> None:
     with pytest.raises(sqlite3.IntegrityError, match="evaluation assignment scope mismatch"):
@@ -230,9 +221,9 @@ def test_submission_decision_is_final_across_rounds(db: sqlite3.Connection) -> N
     )
     db.execute(
         """INSERT INTO evaluation_rounds
-           (id,organization_id,event_id,program_id,name,rubric_json,status,
+           (id,organization_id,event_id,name,rubric_json,status,
             created_at_ms,updated_at_ms,closed_at_ms)
-           VALUES('round-a-2','org-a','event-a','program-a','Second','{}','closed',2,2,2)"""
+           VALUES('round-a-2','org-a','event-a','Second','{}','closed',2,2,2)"""
     )
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
@@ -245,29 +236,15 @@ def test_submission_decision_is_final_across_rounds(db: sqlite3.Connection) -> N
 
 
 def test_cfp_workspace_queries_use_covering_scope_indexes(db: sqlite3.Connection) -> None:
-    program_plan = " ".join(
-        str(value)
-        for row in db.execute(
-            """EXPLAIN QUERY PLAN SELECT id FROM programs
-               WHERE organization_id=? AND event_id=? AND status!='archived'
-               ORDER BY updated_at_ms DESC,id DESC LIMIT 1""",
-            ("org-a", "event-a"),
-        )
-        for value in row
-    )
     form_plan = " ".join(
         str(value)
         for row in db.execute(
             """EXPLAIN QUERY PLAN SELECT id FROM call_for_speaker_forms
-               WHERE organization_id=? AND event_id=? AND program_id=? AND status='published'
+               WHERE organization_id=? AND event_id=? AND status='published'
                ORDER BY version DESC,published_at_ms DESC,id DESC LIMIT 1""",
-            ("org-a", "event-a", "program-a"),
+            ("org-a", "event-a"),
         )
         for value in row
     )
-    assert (
-        "idx_programs_event_current" in program_plan
-        or "uq_programs_event_current" in program_plan
-    )
-    assert "idx_cfp_forms_program_published" in form_plan
-    assert "USE TEMP B-TREE" not in program_plan + form_plan
+    assert "idx_cfp_forms_event_published" in form_plan
+    assert "USE TEMP B-TREE" not in form_plan

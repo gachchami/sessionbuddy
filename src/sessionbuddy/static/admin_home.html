@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Home · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=11">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <link rel="stylesheet" href="/product/assets/product.css?v=15">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
   <script src="/admin/home/assets/home.js?v=2" defer></script>
 </head>
 <body class="app-body">
@@ -21,9 +21,9 @@
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
 
     <section class="metric-strip dashboard-metrics" aria-label="Workspace summary">
-      <article><span>Organizations</span><strong id="metric-organizations">—</strong></article>
       <article><span>Events</span><strong id="metric-events">—</strong></article>
       <article><span>Speakers</span><strong id="metric-speakers">—</strong></article>
+      <article><span>Workspace</span><strong id="metric-workspace">—</strong></article>
     </section>
 
     <section id="events" class="directory-section directory-section--primary" aria-labelledby="events-title">
@@ -36,10 +36,6 @@
       <div id="speaker-list" class="entity-grid"><p class="empty">Loading speakers…</p></div>
     </section>
 
-    <section id="organizations" class="directory-section" aria-labelledby="organizations-title">
-      <div class="section-heading"><div><h2 id="organizations-title">Organizations</h2></div><span id="organization-count" class="badge">—</span></div>
-      <div id="organization-list" class="entity-grid"><p class="empty">Loading organizations…</p></div>
-    </section>
   </main>
 </body>
 </html>

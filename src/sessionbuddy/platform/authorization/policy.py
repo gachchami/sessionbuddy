@@ -4,7 +4,6 @@ ORG_ADMIN_GRANTS = frozenset(
     {
         Permission.ORGANIZATION_MANAGE,
         Permission.EVENT_MANAGE,
-        Permission.PROGRAM_MANAGE,
         Permission.FORM_MANAGE,
         Permission.SUBMISSION_MANAGE,
         Permission.SUBMISSION_READ_FOR_EVALUATION,

@@ -12,7 +12,6 @@ class Role(StrEnum):
 class Permission(StrEnum):
     ORGANIZATION_MANAGE = "organization.manage"
     EVENT_MANAGE = "event.manage"
-    PROGRAM_MANAGE = "program.manage"
     FORM_MANAGE = "form.manage"
     SUBMISSION_MANAGE = "submission.manage"
     SUBMISSION_READ_FOR_EVALUATION = "submission.read_for_evaluation"

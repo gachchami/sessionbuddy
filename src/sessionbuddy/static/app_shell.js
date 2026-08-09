@@ -60,7 +60,7 @@
     if (match) {
       try { return decodeURIComponent(match[1]); } catch (_) { return ""; }
     }
-    return new URLSearchParams(location.search).get("event_id") || "";
+    return new URLSearchParams(location.search).get("event_id") || document.body.dataset.eventId || "";
   }
 
   function roleSet(session) {
@@ -137,15 +137,20 @@
   function pageLabel(section, eventId) {
     if (eventId) {
       if (location.pathname.includes("/speakers")) return "Event speakers";
-      if (location.pathname.includes("/access")) return "People & access";
+      if (location.pathname.includes("/messages")) return "Speaker messages";
+      if (location.pathname.includes("/access")) return "Team & access";
       if (location.pathname.includes("/onboarding")) return "Speaker onboarding";
       if (location.pathname.includes("/workspace")) return "Resources & publishing";
       if (location.pathname.includes("/agenda")) return "Agenda";
-      if (location.pathname.endsWith("/cfp")) return "Call for speakers";
-      if (location.pathname === "/admin/programs") return "Call for speakers";
+      if (location.pathname.endsWith("/cfp")) return "Call for Proposals";
+      if (location.pathname.includes("/submissions")) return "Submissions & reviews";
       return "Event overview";
     }
     return { home: "Home", events: "Events", speakers: "Speakers", reviews: "Reviews", speaker: "Speaker portal", account: "Account" }[section] || "Home";
+  }
+
+  function eventSection(label) {
+    return make("p", label, "sb-sidebar__section");
   }
 
   function eventNav(eventId) {
@@ -156,16 +161,23 @@
     const encoded = encodeURIComponent(eventId);
     const prefix = `/admin/events/${encoded}`;
     const items = [
-      ["Overview", prefix, "overview"],
-      ["Call for speakers", `${prefix}/cfp`, "form"],
-      ["People & access", `${prefix}/access`, "access"],
-      ["Speakers", `${prefix}/speakers`, "mic"],
-      ["Onboarding", `${prefix}/onboarding`, "tasks"],
-      ["Resources & embeds", `${prefix}/workspace`, "resource"],
-      ["Agenda", `${prefix}/agenda`, "agenda"],
-      ["Public schedule", `/events/${encoded}/schedule`, "external"]
+      ["", "Overview", prefix, "overview"],
+      ["Plan", "Call for Proposals", `${prefix}/cfp`, "form"],
+      ["Plan", "Submissions & reviews", `${prefix}/submissions`, "review"],
+      ["Plan", "Agenda", `${prefix}/agenda`, "agenda"],
+      ["People", "Team & invitations", `${prefix}/access`, "access"],
+      ["People", "Speakers", `${prefix}/speakers`, "mic"],
+      ["People", "Messages", `${prefix}/messages`, "resource"],
+      ["People", "Onboarding", `${prefix}/onboarding`, "tasks"],
+      ["Publish", "Resources & embeds", `${prefix}/workspace`, "resource"],
+      ["Publish", "Public schedule", `/events/${encoded}/schedule`, "external"]
     ];
-    for (const [label, href, iconName] of items) {
+    let section = null;
+    for (const [groupLabel, label, href, iconName] of items) {
+      if (groupLabel && groupLabel !== section) {
+        nav.append(eventSection(groupLabel));
+        section = groupLabel;
+      }
       const target = new URL(href, location.origin);
       const current = target.pathname === location.pathname && target.search === location.search;
       nav.append(navLink(label, href, iconName, current));
@@ -186,7 +198,9 @@
     }
     const organizerWorkspace = organizer && !["speaker", "reviews"].includes(section);
     const currentEventId = eventIdFromLocation();
+    const globalOrganizerWorkspace = organizerWorkspace && !currentEventId;
     document.body.classList.add("sb-shell-authenticated");
+    document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace);
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
@@ -206,12 +220,11 @@
     if (organizerWorkspace) {
       nav.append(
         navLink("Home", "/admin", "home", section === "home"),
-        navLink("Organizations", "/admin#organizations", "building"),
         navLink("Events", "/admin/events", "calendar", section === "events" && !currentEventId),
-        navLink("Speakers", "/admin/speakers", "people", section === "speakers" && !currentEventId)
+        navLink("People", "/admin/speakers", "people", section === "speakers" && !currentEventId)
       );
     }
-    if (section === "reviews" || (organizerWorkspace && (roles.has("evaluator") || organizer))) nav.append(navLink("Reviews", "/reviews", "review", section === "reviews"));
+    if (section === "reviews" || (organizerWorkspace && roles.has("evaluator"))) nav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
     if (section === "speaker" || (organizerWorkspace && roles.has("speaker"))) nav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
     primaryGroup.append(nav);
     sidebar.append(primaryGroup);
@@ -226,7 +239,29 @@
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
-    topbar.append(menuButton, crumb, accountMenu(session, roles));
+    if (globalOrganizerWorkspace) {
+      const topbarBrand = link("", "/admin");
+      topbarBrand.className = "sb-global-brand";
+      const topbarMark = make("span", "S", "sb-app-brand__mark");
+      topbarMark.setAttribute("aria-hidden", "true");
+      topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
+      const globalNav = make("nav", undefined, "sb-global-nav");
+      globalNav.setAttribute("aria-label", "Workspace navigation");
+      globalNav.append(
+        navLink("Home", "/admin", "home", section === "home"),
+        navLink("Events", "/admin/events", "calendar", section === "events"),
+        navLink("People", "/admin/speakers", "people", section === "speakers")
+      );
+      if (roles.has("evaluator")) {
+        globalNav.append(navLink("My reviews", "/reviews", "review"));
+      }
+      if (roles.has("speaker")) {
+        globalNav.append(navLink("Speaker portal", "/speaker", "mic"));
+      }
+      topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
+    } else {
+      topbar.append(menuButton, crumb, accountMenu(session, roles));
+    }
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");
     backdrop.type = "button";
@@ -253,6 +288,10 @@
     shell.className = "sb-app-shell";
     shell.replaceChildren(sidebar, topbar, backdrop);
   }
+
+  window.addEventListener("sessionbuddy:event-context", () => {
+    if (shell && window.SessionBuddyShellSession) renderShell(window.SessionBuddyShellSession);
+  });
 
   function renderLandingAccount(session) {
     const roles = roleSet(session);
@@ -286,7 +325,7 @@
         const details = [event.location, event.delivery_mode.replaceAll("_", " ")].filter(Boolean).join(" · ");
         card.append(make("p", details || "Event details coming soon."));
         const actions = make("div", undefined, "public-event-actions");
-        if (event.cfp_slug) actions.append(link("Call for speakers →", `/cfp/${encodeURIComponent(event.cfp_slug)}`));
+        if (event.cfp_slug) actions.append(link("Call for Proposals →", `/cfp/${encodeURIComponent(event.cfp_slug)}`));
         if (event.schedule_published) actions.append(link("Schedule →", `/events/${encodeURIComponent(event.id)}/schedule`));
         if (event.speaker_count) actions.append(link("Speakers →", `/events/${encodeURIComponent(event.id)}/speakers`));
         if (!actions.children.length) actions.append(make("span", "Program details coming soon.", "role-label"));
@@ -351,6 +390,7 @@
       else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
       return;
     }
+    window.SessionBuddyShellSession = session;
     if (shell) renderShell(session);
     if (landingAccount) renderLandingAccount(session);
     window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));

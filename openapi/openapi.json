@@ -286,9 +286,20 @@
             "title": "Uploaded At Ms",
             "type": "integer"
           },
+          "version_comment": {
+            "title": "Version Comment",
+            "type": "string"
+          },
           "version_count": {
             "title": "Version Count",
             "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerAssetVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
           }
         },
         "required": [
@@ -301,7 +312,8 @@
           "byte_size",
           "generation",
           "version_count",
-          "uploaded_at_ms"
+          "uploaded_at_ms",
+          "version_comment"
         ],
         "title": "AdminSpeakerAssetView",
         "type": "object"
@@ -927,19 +939,17 @@
             "title": "Event Id",
             "type": "string"
           },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "event_starts_at_ms": {
+            "title": "Event Starts At Ms",
+            "type": "integer"
+          },
           "organization_id": {
             "title": "Organization Id",
             "type": "string"
-          },
-          "program": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ProgramView"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "published_form": {
             "anyOf": [
@@ -954,7 +964,9 @@
         },
         "required": [
           "organization_id",
-          "event_id"
+          "event_id",
+          "event_name",
+          "event_starts_at_ms"
         ],
         "title": "CfpWorkspaceView",
         "type": "object"
@@ -1065,6 +1077,17 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "required": [
@@ -1869,10 +1892,6 @@
             "title": "Event Id",
             "type": "string"
           },
-          "program_id": {
-            "title": "Program Id",
-            "type": "string"
-          },
           "round_id": {
             "title": "Round Id",
             "type": "string"
@@ -1901,7 +1920,6 @@
         "required": [
           "round_id",
           "event_id",
-          "program_id",
           "round_name",
           "status",
           "assigned_count",
@@ -1925,16 +1943,16 @@
             "title": "Evaluator Count",
             "type": "integer"
           },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
           },
           "name": {
             "title": "Name",
-            "type": "string"
-          },
-          "program_id": {
-            "title": "Program Id",
             "type": "string"
           },
           "status": {
@@ -1949,7 +1967,7 @@
         },
         "required": [
           "id",
-          "program_id",
+          "event_id",
           "name",
           "status",
           "assignment_count",
@@ -2155,6 +2173,24 @@
         "title": "EvaluatorView",
         "type": "object"
       },
+      "EventCoverView": {
+        "properties": {
+          "cover_image_url": {
+            "title": "Cover Image Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cover_image_url",
+          "version"
+        ],
+        "title": "EventCoverView",
+        "type": "object"
+      },
       "EventCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2170,6 +2206,18 @@
             ],
             "default": "#3159d9",
             "title": "Accent Color"
+          },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
           },
           "delivery_mode": {
             "default": "hybrid",
@@ -2301,6 +2349,24 @@
         "title": "EventList",
         "type": "object"
       },
+      "EventLogoView": {
+        "properties": {
+          "logo_url": {
+            "title": "Logo Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "logo_url",
+          "version"
+        ],
+        "title": "EventLogoView",
+        "type": "object"
+      },
       "EventMemberList": {
         "properties": {
           "data": {
@@ -2369,6 +2435,18 @@
             ],
             "default": "#3159d9",
             "title": "Accent Color"
+          },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
           },
           "delivery_mode": {
             "default": "hybrid",
@@ -2512,6 +2590,17 @@
               }
             ],
             "title": "Accent Color"
+          },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
           },
           "delivery_mode": {
             "enum": [
@@ -3711,7 +3800,7 @@
         "properties": {
           "data": {
             "items": {
-              "$ref": "#/components/schemas/SubmissionView"
+              "$ref": "#/components/schemas/PrivateSubmissionView"
             },
             "title": "Data",
             "type": "array"
@@ -3723,74 +3812,143 @@
         "title": "OwnedSubmissionList",
         "type": "object"
       },
-      "ProgramCreate": {
+      "PrivateSubmissionView": {
         "additionalProperties": false,
         "properties": {
-          "event_id": {
-            "maxLength": 36,
-            "minLength": 36,
-            "title": "Event Id",
-            "type": "string"
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 100,
+            "title": "Answers",
+            "type": "object"
           },
-          "name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
+          "co_speakers": {
+            "items": {
+              "$ref": "#/components/schemas/CoSpeakerInput"
+            },
+            "maxItems": 10,
+            "title": "Co Speakers",
+            "type": "array"
           },
-          "organization_id": {
-            "maxLength": 36,
-            "minLength": 36,
-            "title": "Organization Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "organization_id",
-          "event_id",
-          "name"
-        ],
-        "title": "ProgramCreate",
-        "type": "object"
-      },
-      "ProgramView": {
-        "additionalProperties": false,
-        "properties": {
-          "event_id": {
-            "title": "Event Id",
-            "type": "string"
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
           },
           "id": {
             "title": "Id",
             "type": "string"
           },
-          "name": {
-            "title": "Name",
+          "proposal_abstract": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Proposal Abstract",
             "type": "string"
           },
-          "organization_id": {
-            "title": "Organization Id",
+          "proposal_title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "routed_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routed Category"
+          },
+          "routed_review_queue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routed Review Queue"
+          },
+          "routed_track": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routed Track"
+          },
+          "speaker_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Speaker Email",
+            "type": "string"
+          },
+          "speaker_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Speaker Name",
             "type": "string"
           },
           "status": {
             "enum": [
-              "draft",
-              "open",
-              "closed",
-              "archived"
+              "submitted",
+              "withdrawn",
+              "accepted",
+              "rejected"
             ],
             "title": "Status",
             "type": "string"
+          },
+          "submitted_at_ms": {
+            "title": "Submitted At Ms",
+            "type": "integer"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
+          "speaker_name",
+          "speaker_email",
+          "proposal_title",
+          "proposal_abstract",
           "id",
-          "organization_id",
-          "event_id",
-          "name",
-          "status"
+          "status",
+          "submitted_at_ms",
+          "editable"
         ],
-        "title": "ProgramView",
+        "title": "PrivateSubmissionView",
         "type": "object"
       },
       "PublicEventList": {
@@ -3926,7 +4084,14 @@
           "sessions": {
             "items": {
               "additionalProperties": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
               },
               "type": "object"
             },
@@ -4016,6 +4181,17 @@
             "title": "Conditions",
             "type": "array"
           },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
@@ -4057,10 +4233,6 @@
               }
             ],
             "title": "Opens At Ms"
-          },
-          "program_id": {
-            "title": "Program Id",
-            "type": "string"
           },
           "redirect_to_portal": {
             "default": true,
@@ -4116,7 +4288,6 @@
         },
         "required": [
           "id",
-          "program_id",
           "event_id",
           "version",
           "slug",
@@ -4737,6 +4908,10 @@
             "title": "Generation",
             "type": "integer"
           },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
           "state": {
             "enum": [
               "current",
@@ -4748,15 +4923,21 @@
           "uploaded_at_ms": {
             "title": "Uploaded At Ms",
             "type": "integer"
+          },
+          "version_comment": {
+            "title": "Version Comment",
+            "type": "string"
           }
         },
         "required": [
+          "id",
           "generation",
           "filename",
           "content_type",
           "byte_size",
           "state",
-          "uploaded_at_ms"
+          "uploaded_at_ms",
+          "version_comment"
         ],
         "title": "SpeakerAssetVersionView",
         "type": "object"
@@ -4802,6 +4983,10 @@
             "title": "Uploaded At Ms",
             "type": "integer"
           },
+          "version_comment": {
+            "title": "Version Comment",
+            "type": "string"
+          },
           "version_count": {
             "default": 1,
             "title": "Version Count",
@@ -4823,7 +5008,8 @@
           "byte_size",
           "state",
           "generation",
-          "uploaded_at_ms"
+          "uploaded_at_ms",
+          "version_comment"
         ],
         "title": "SpeakerAssetView",
         "type": "object"
@@ -5161,6 +5347,7 @@
           },
           "selection_status": {
             "enum": [
+              "invited",
               "submitted",
               "accepted",
               "rejected"
@@ -5807,16 +5994,11 @@
           "organization_id": {
             "title": "Organization Id",
             "type": "string"
-          },
-          "program_id": {
-            "title": "Program Id",
-            "type": "string"
           }
         },
         "required": [
           "organization_id",
           "event_id",
-          "program_id",
           "data"
         ],
         "title": "SubmissionList",
@@ -5948,10 +6130,6 @@
             "title": "Id",
             "type": "string"
           },
-          "program_id": {
-            "title": "Program Id",
-            "type": "string"
-          },
           "proposal_abstract": {
             "maxLength": 5000,
             "minLength": 1,
@@ -6035,7 +6213,6 @@
           "proposal_title",
           "proposal_abstract",
           "id",
-          "program_id",
           "status",
           "submitted_at_ms"
         ],
@@ -6150,6 +6327,12 @@
               }
             ],
             "title": "Task Id"
+          },
+          "version_comment": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Version Comment",
+            "type": "string"
           }
         },
         "required": [
@@ -6157,7 +6340,8 @@
           "filename",
           "content_type",
           "byte_size",
-          "checksum_sha256"
+          "checksum_sha256",
+          "version_comment"
         ],
         "title": "UploadAuthorizationCreate",
         "type": "object"
@@ -7701,6 +7885,66 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
+      "post": {
+        "operationId": "createAdminSpeakerAssetVersionDownloadGrant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDownloadGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Admin Asset Version Download Grant",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/cfp": {
       "get": {
         "operationId": "getCallForSpeakersWorkspace",
@@ -7739,7 +7983,124 @@
         },
         "summary": "Get Cfp Workspace",
         "tags": [
-          "programs",
+          "forms"
+        ]
+      },
+      "patch": {
+        "operationId": "updatePublishedCallForSpeakersForm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedFormView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Published Form",
+        "tags": [
+          "forms"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/cfp/publish": {
+      "post": {
+        "operationId": "publishCallForSpeakersForm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormPublish"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedFormView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Form",
+        "tags": [
           "forms"
         ]
       }
@@ -7755,6 +8116,36 @@
             "schema": {
               "title": "Event Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -8068,6 +8459,248 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/cover": {
+      "post": {
+        "operationId": "upload_event_cover_api_v1_admin_events__event_id__cover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventCoverView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Event Cover",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/evaluation-rounds": {
+      "get": {
+        "operationId": "listEvaluationRounds",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Evaluation Rounds",
+        "tags": [
+          "evaluations"
+        ]
+      },
+      "post": {
+        "operationId": "createEvaluationRound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRoundCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/evaluation-rounds/current": {
+      "get": {
+        "operationId": "getCurrentEvaluationRound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/EvaluationRoundView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Getcurrentevaluationround"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Current Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/evaluators": {
+      "get": {
+        "operationId": "listEventEvaluators",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluatorList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Evaluators",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {
       "post": {
         "operationId": "create_accelevents_token_api_v1_admin_events__event_id__integrations_accelevents_tokens_post",
@@ -8307,6 +8940,48 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/logo": {
+      "post": {
+        "operationId": "upload_event_logo_api_v1_admin_events__event_id__logo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLogoView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Event Logo",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/members": {
       "get": {
         "operationId": "list_event_members_api_v1_admin_events__event_id__members_get",
@@ -8425,8 +9100,9 @@
             "name": "state",
             "required": false,
             "schema": {
-              "default": "open",
+              "default": "all",
               "enum": [
+                "all",
                 "open",
                 "completed",
                 "overdue",
@@ -9033,6 +9709,48 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/submissions": {
+      "get": {
+        "operationId": "listEventSubmissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Submissions",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
     "/api/v1/admin/organizations": {
       "get": {
         "operationId": "list_organizations_api_v1_admin_organizations_get",
@@ -9198,352 +9916,16 @@
         ]
       }
     },
-    "/api/v1/admin/programs": {
-      "post": {
-        "operationId": "createProgram",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProgramCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProgramView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Program",
-        "tags": [
-          "programs"
-        ]
-      }
-    },
-    "/api/v1/admin/programs/{program_id}/evaluation-rounds": {
-      "get": {
-        "operationId": "listEvaluationRounds",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "program_id",
-            "required": true,
-            "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluationRoundList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Evaluation Rounds",
-        "tags": [
-          "evaluations"
-        ]
-      },
-      "post": {
-        "operationId": "createEvaluationRound",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "program_id",
-            "required": true,
-            "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EvaluationRoundCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluationRoundView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Evaluation Round",
-        "tags": [
-          "evaluations"
-        ]
-      }
-    },
-    "/api/v1/admin/programs/{program_id}/evaluation-rounds/current": {
-      "get": {
-        "operationId": "getCurrentEvaluationRound",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "program_id",
-            "required": true,
-            "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/EvaluationRoundView"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ],
-                  "title": "Response Getcurrentevaluationround"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Current Evaluation Round",
-        "tags": [
-          "evaluations"
-        ]
-      }
-    },
-    "/api/v1/admin/programs/{program_id}/evaluators": {
-      "get": {
-        "operationId": "listProgramEvaluators",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "program_id",
-            "required": true,
-            "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EvaluatorList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Program Evaluators",
-        "tags": [
-          "evaluations"
-        ]
-      }
-    },
-    "/api/v1/admin/programs/{program_id}/forms/publish": {
-      "post": {
-        "operationId": "publishCallForSpeakersForm",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "program_id",
-            "required": true,
-            "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FormPublish"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishedFormView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Publish Form",
-        "tags": [
-          "forms"
-        ]
-      }
-    },
-    "/api/v1/admin/programs/{program_id}/forms/{form_id}": {
+    "/api/v1/admin/submissions/{submission_id}": {
       "patch": {
-        "operationId": "updatePublishedCallForSpeakersForm",
+        "operationId": "updateEventSubmissionAsOrganizer",
         "parameters": [
           {
             "in": "path",
-            "name": "program_id",
+            "name": "submission_id",
             "required": true,
             "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "form_id",
-            "required": true,
-            "schema": {
-              "title": "Form Id",
+              "title": "Submission Id",
               "type": "string"
             }
           }
@@ -9552,7 +9934,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FormUpdate"
+                "$ref": "#/components/schemas/SubmissionUpdate"
               }
             }
           },
@@ -9563,7 +9945,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublishedFormView"
+                  "$ref": "#/components/schemas/SubmissionView"
                 }
               }
             },
@@ -9580,49 +9962,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Published Form",
-        "tags": [
-          "forms"
-        ]
-      }
-    },
-    "/api/v1/admin/programs/{program_id}/submissions": {
-      "get": {
-        "operationId": "listProgramSubmissions",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "program_id",
-            "required": true,
-            "schema": {
-              "title": "Program Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubmissionList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Submissions",
+        "summary": "Update Submission As Organizer",
         "tags": [
           "submissions"
         ]
@@ -10357,7 +10697,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SubmissionView"
+                  "$ref": "#/components/schemas/PrivateSubmissionView"
                 }
               }
             },
@@ -10460,7 +10800,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SubmissionView"
+                  "$ref": "#/components/schemas/PrivateSubmissionView"
                 }
               }
             },
@@ -10520,6 +10860,94 @@
           }
         },
         "summary": "List Public Events",
+        "tags": [
+          "public-program"
+        ]
+      }
+    },
+    "/api/v1/public/events/{event_id}/cover/{image_name}": {
+      "get": {
+        "operationId": "public_event_cover_api_v1_public_events__event_id__cover__image_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "image_name",
+            "required": true,
+            "schema": {
+              "title": "Image Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Event Cover",
+        "tags": [
+          "public-program"
+        ]
+      }
+    },
+    "/api/v1/public/events/{event_id}/logo/{logo_name}": {
+      "get": {
+        "operationId": "public_event_logo_api_v1_public_events__event_id__logo__logo_name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "logo_name",
+            "required": true,
+            "schema": {
+              "title": "Logo Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Event Logo",
         "tags": [
           "public-program"
         ]
@@ -10819,6 +11247,66 @@
           }
         },
         "summary": "Create Speaker Asset Download Grant",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
+      "post": {
+        "operationId": "createOwnSpeakerAssetVersionDownloadGrant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDownloadGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Speaker Asset Version Download Grant",
         "tags": [
           "speaker-assets"
         ]

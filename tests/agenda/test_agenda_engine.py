@@ -30,9 +30,9 @@ def connection() -> sqlite3.Connection:
     )
     db.execute(
         """INSERT INTO evaluation_rounds
-           (id,organization_id,event_id,program_id,name,rubric_json,status,
+           (id,organization_id,event_id,name,rubric_json,status,
             created_at_ms,updated_at_ms,closed_at_ms) VALUES
-           ('round-a','org-a','event-a','program-a','Final','{}','closed',1000,1000,1000)"""
+           ('round-a','org-a','event-a','Final','{}','closed',1000,1000,1000)"""
     )
     db.execute(
         """INSERT INTO submission_decisions
@@ -43,10 +43,10 @@ def connection() -> sqlite3.Connection:
     )
     db.execute(
         """INSERT INTO submissions
-           (id,organization_id,event_id,program_id,form_id,public_session_id,
+           (id,organization_id,event_id,form_id,public_session_id,
             proposal_title,proposal_abstract,speaker_name,status,submitted_at_ms,
             created_at_ms,updated_at_ms) VALUES
-           ('submission-a2','org-a','event-a','program-a','form-a','public-a2',
+           ('submission-a2','org-a','event-a','form-a','public-a2',
             'Talk 2','Abstract','Same Speaker','submitted',1000,1000,1000)"""
     )
     db.execute(

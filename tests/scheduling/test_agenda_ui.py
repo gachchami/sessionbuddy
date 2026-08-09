@@ -48,6 +48,7 @@ def test_scheduled_session_can_be_returned_to_unscheduled_list() -> None:
     html, javascript = read("agenda_admin.html"), read("agenda.js")
     assert 'id="unschedule-item"' in html
     assert 'method: "DELETE"' in javascript
+    assert '"content-type": "application/json"' in javascript
     assert "Session moved back to unscheduled sessions." in javascript
 
 

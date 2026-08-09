@@ -47,7 +47,10 @@ Implemented: speaker portal, decision-aware status, default and custom form
 tasks, profile management, organizer-published resources/wiki content with
 allowlisted embeds, public branded speaker galleries, quarantined asset uploads,
 fixed-length R2-to-scanner streaming, asynchronous malware scanning, private
-download grants, communications, reminders, and admin progress views.
+download grants, cursor-paginated communications, reminders, and admin progress
+views. Pending speaker invitations appear in the event roster without granting
+speaker permissions before acceptance, and public profiles include each
+published session's time, room, and track.
 
 ## Scheduling
 
@@ -57,6 +60,10 @@ publication, branded list/day/week/track/room schedule views, a browser-local
 attendee itinerary, embeddable public schedule and speaker views, versioned
 calendar invitations, and a read-only Sessionboard-compatible feed for pulling
 accepted speakers and sessions into Accelevents.
+
+The agenda editor's authenticated unschedule action includes the required JSON
+media type, and the public schedule identifies the published revision number
+rather than exposing an internal optimistic-lock version.
 
 ## Release readiness
 

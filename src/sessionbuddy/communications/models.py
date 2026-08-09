@@ -75,6 +75,7 @@ class CommunicationStatus(BaseModel):
 class CommunicationStatusList(BaseModel):
     model_config = ConfigDict(extra="forbid")
     data: list[CommunicationStatus]
+    next_cursor: str | None = None
 
 
 class DispatchResponse(BaseModel):

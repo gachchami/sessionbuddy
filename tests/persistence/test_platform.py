@@ -66,7 +66,7 @@ def scope(org="org-a", event="event-a"):
         actor_user_id=UserId("actor"),
         organization_id=OrganizationId(org),
         event_id=EventId(event),
-        permissions=frozenset({"program:read"}),
+        permissions=frozenset({"event:read"}),
     )
 
 
@@ -79,29 +79,12 @@ def test_scopes_are_frozen():
 @pytest.mark.asyncio
 async def test_event_lookup_binds_every_tenant_boundary():
     db = Database()
-    db.first_value = Proxy({"id": "program-1", "private": "not-selected"})
-    row = await EventRepository(db, scope()).get_program("program-1")
+    db.first_value = Proxy({"id": "event-a", "name": "Summit"})
+    row = await EventRepository(db, scope()).get_event()
     statement = db.bound[-1]
-    assert "organization_id = ?1 AND event_id = ?2 AND id = ?3" in statement.sql
-    assert statement.values == ("org-a", "event-a", "program-1")
-    assert row == {"id": "program-1", "private": "not-selected"}
-
-
-@pytest.mark.asyncio
-async def test_cursor_query_is_tenant_scoped_keyset_and_bounded():
-    db = Database()
-    await EventRepository(db, scope()).list_programs(
-        limit=50, before_updated_at_ms=1000, before_id="program-z"
-    )
-    statement = db.bound[-1]
-    assert "organization_id = ?1 AND event_id = ?2" in statement.sql
-    assert "updated_at_ms < ?3" in statement.sql
-    assert "OFFSET" not in statement.sql
-    assert statement.values == ("org-a", "event-a", 1000, "program-z", 50)
-    with pytest.raises(ValueError):
-        await EventRepository(db, scope()).list_programs(limit=101)
-    with pytest.raises(ValueError):
-        await EventRepository(db, scope()).list_programs(before_id="program-z")
+    assert "organization_id = ?1 AND id = ?2" in statement.sql
+    assert statement.values == ("org-a", "event-a")
+    assert row == {"id": "event-a", "name": "Summit"}
 
 
 def test_result_conversion_rejects_unsafe_shapes():

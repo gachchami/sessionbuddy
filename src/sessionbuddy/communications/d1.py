@@ -559,20 +559,46 @@ class D1CommunicationsService:
         await self._publish_delivery_requests([message_id])
         return ReminderQueuedResponse(message_id=message_id)
 
-    async def statuses(self, event_id: str) -> CommunicationStatusList:
+    async def statuses(
+        self, event_id: str, *, cursor: str | None = None, limit: int = 25
+    ) -> CommunicationStatusList:
         if self.organization_id is None:
             raise HTTPException(status_code=404)
-        rows = result_rows(
-            await self.db.prepare(
+        before_ms: int | None = None
+        before_id: str | None = None
+        if cursor is not None:
+            timestamp, separator, row_id = cursor.partition(":")
+            try:
+                before_ms = int(timestamp)
+            except ValueError as exc:
+                raise HTTPException(status_code=422) from exc
+            if not separator or before_ms < 0 or not 1 <= len(row_id) <= 100:
+                raise HTTPException(status_code=422)
+            before_id = row_id
+        if before_ms is None:
+            statement = self.db.prepare(
                 """SELECT id,recipient_email,subject,status,attempt_count,
                           provider_message_id,last_error_code,updated_at_ms
                    FROM communication_messages WHERE organization_id=?1 AND event_id=?2
-               ORDER BY updated_at_ms DESC,id DESC LIMIT 100"""
-            )
-            .bind(self.organization_id, event_id)
-            .all()
+                   ORDER BY updated_at_ms DESC,id DESC LIMIT ?3"""
+            ).bind(self.organization_id, event_id, limit + 1)
+        else:
+            statement = self.db.prepare(
+                """SELECT id,recipient_email,subject,status,attempt_count,
+                          provider_message_id,last_error_code,updated_at_ms
+                   FROM communication_messages WHERE organization_id=?1 AND event_id=?2
+                     AND (updated_at_ms<?3 OR (updated_at_ms=?3 AND id<?4))
+                   ORDER BY updated_at_ms DESC,id DESC LIMIT ?5"""
+            ).bind(self.organization_id, event_id, before_ms, before_id, limit + 1)
+        rows = result_rows(await statement.all())
+        page = rows[:limit]
+        next_cursor = None
+        if len(rows) > limit and page:
+            last = page[-1]
+            next_cursor = f"{int(last['updated_at_ms'])}:{last['id']}"
+        return CommunicationStatusList(
+            data=[CommunicationStatus(**row) for row in page], next_cursor=next_cursor
         )
-        return CommunicationStatusList(data=[CommunicationStatus(**row) for row in rows])
 
     async def dispatch_local(self, event_id: str) -> DispatchResponse:
         if getattr(self.request.scope.get("env"), "APP_ENV", "production") != "local":

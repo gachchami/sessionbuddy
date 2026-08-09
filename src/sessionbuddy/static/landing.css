@@ -48,14 +48,14 @@ h1 { max-width: 14ch; margin: 0; font-size: clamp(2.5rem,5.2vw,4.2rem); }
 .ready-badge { display: inline-flex; align-items: center; gap: .4rem; padding: .4rem .6rem; border-radius: 99rem; background: #ecfdf3; color: #027a48; font-size: .7rem; font-weight: 650; }
 .ready-badge span { width: .4rem; height: .4rem; border-radius: 50%; background: #12b76a; }
 .workflow-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.workflow-list li { min-height: 4.4rem; display: grid; grid-template-columns: 2rem minmax(0,1fr) auto; gap: .75rem; align-items: center; padding: .75rem .25rem; border-top: 1px solid #eaecf0; }
+.workflow-list li { min-height: 4.4rem; display: grid; grid-template-columns: 2rem minmax(0,1fr); gap: .75rem; align-items: center; padding: .75rem .25rem; border-top: 1px solid #eaecf0; }
 .step-number { color: #667085; font: 650 .7rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .workflow-list div { display: grid; gap: .18rem; }
 .workflow-list strong { color: #182230; font-size: .9rem; }
 .workflow-list div span { color: #667085; font-size: .78rem; }
 .step-state { color: #475467; font-size: .7rem; font-weight: 650; }
 
-.role-section, .public-events-section, .platform-section, .closing-section { padding: clamp(4rem,7vw,6rem) 0; }
+.role-section, .public-events-section, .closing-section { padding: clamp(4rem,7vw,6rem) 0; }
 .public-events-section { border-top: 1px solid #e4e7ec; background: #f8fafc; }
 .public-event-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: auto; }
 .public-event-actions a { margin-top: 0; }

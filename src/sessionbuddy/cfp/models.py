@@ -84,22 +84,6 @@ def _validate_email_address(value: str) -> str:
     return value
 
 
-class ProgramCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    organization_id: str = Field(min_length=36, max_length=36)
-    event_id: str = Field(min_length=36, max_length=36)
-    name: str = Field(min_length=1, max_length=200)
-
-
-class ProgramView(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str
-    organization_id: str
-    event_id: str
-    name: str
-    status: Literal["draft", "open", "closed", "archived"]
-
-
 class FormSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     slug: str = Field(min_length=3, max_length=80, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -197,11 +181,11 @@ class FormUpdate(FormSettings):
 class PublishedFormView(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    program_id: str
     event_id: str
     event_name: str = "Event"
     accent_color: str = "#3159d9"
     logo_url: str | None = None
+    cover_image_url: str | None = None
     version: int
     slug: str
     welcome_text: str
@@ -223,7 +207,8 @@ class CfpWorkspaceView(BaseModel):
     model_config = ConfigDict(extra="forbid")
     organization_id: str
     event_id: str
-    program: ProgramView | None = None
+    event_name: str
+    event_starts_at_ms: int
     published_form: PublishedFormView | None = None
 
 
@@ -270,7 +255,6 @@ class SubmissionUpdate(SubmissionCreate):
 
 class SubmissionView(SubmissionCreate):
     id: str
-    program_id: str
     status: Literal["submitted", "withdrawn", "accepted", "rejected"]
     submitted_at_ms: int
     version: int = 1
@@ -279,18 +263,21 @@ class SubmissionView(SubmissionCreate):
     routed_review_queue: str | None = None
 
 
+class PrivateSubmissionView(SubmissionView):
+    editable: bool
+
+
 class SubmissionList(BaseModel):
     model_config = ConfigDict(extra="forbid")
     organization_id: str
     event_id: str
-    program_id: str
     data: list[SubmissionView]
 
 
 class OwnedSubmissionList(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data: list[SubmissionView]
+    data: list[PrivateSubmissionView]
 
 
 class SubmissionDraftUpsert(BaseModel):

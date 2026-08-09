@@ -3,28 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Call for speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=12">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <title>Call for Proposals · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=15">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
-  <script src="/product/assets/admin-programs.js?v=11" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
+  <script src="/product/assets/admin-programs.js?v=13" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
-      <div><h1>Call for speakers</h1><p class="lede">Publish the proposal form, then share one public link with speakers.</p></div>
-      <a id="manage-access" class="button secondary" href="/admin/programs" hidden>People & access</a>
+      <div><h1>Call for Proposals</h1><p class="lede">Publish the proposal form, then share one public link with speakers.</p></div>
+      <a id="manage-access" class="button secondary" href="/admin/events" hidden>People & access</a>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
     <section class="card cfp-link-card" aria-labelledby="cfp-link-title">
       <div class="section-heading">
-        <div><p class="eyebrow">Public page</p><h2 id="cfp-link-title">CFP link</h2></div>
+        <div><p class="eyebrow">Public page</p><h2 id="cfp-link-title">Share your CFP</h2></div>
         <span id="cfp-state" class="badge">Not published</span>
       </div>
-      <p id="cfp-link-empty" class="result">Create a program and publish its proposal form to get a shareable link.</p>
+      <p id="cfp-link-empty" class="result">Publish the proposal form to get a shareable link.</p>
       <div id="cfp-link-live" class="public-link" hidden>
         <label for="cfp-url">Public CFP URL</label>
         <div class="copy-row">
@@ -39,18 +39,12 @@
       </div>
     </section>
     <div class="cfp-builder">
-      <section class="card" aria-labelledby="create-title">
-        <p class="eyebrow">Step 1</p><h2 id="create-title">Create a program</h2>
-        <p class="help">A program contains the CFP form, submissions, evaluation rounds, and accepted sessions.</p>
-        <form id="program-form"><label>Program name<input name="name" placeholder="Call for speakers" maxlength="200" required></label><button disabled>Create program</button></form>
-        <p id="program-result" class="result">No program created yet.</p>
-      </section>
-      <section class="card" aria-labelledby="publish-title">
-        <p class="eyebrow">Step 2</p><h2 id="publish-title">Configure the proposal form</h2>
+      <details id="publish-settings" class="card action-disclosure action-disclosure--card" open>
+        <summary><span><span class="eyebrow">Event CFP</span><strong id="publish-title">Proposal form settings</strong></span><span class="disclosure-action">Configure</span></summary>
         <p id="published-note" class="result" hidden>Changes here update the live form immediately. Existing submissions are preserved.</p>
         <form id="publish-form">
           <label>Public URL slug<input name="slug" placeholder="conference-2026" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" required><small>3–80 lowercase letters, numbers, and hyphens.</small></label>
-          <label>Welcome message<textarea name="welcome_text" maxlength="1000" required>Share the session you want to bring to our community.</textarea></label>
+          <label>Welcome message<textarea name="welcome_text" maxlength="1000" placeholder="For example: Tell speakers what kinds of proposals you are looking for." required></textarea></label>
           <fieldset><legend>Availability</legend><div class="form-grid">
             <label>Opens <span class="optional">Optional</span><input name="opens_at" type="datetime-local"></label>
             <label>Closes <span class="optional">Optional</span><input name="closes_at" type="datetime-local"></label>
@@ -62,11 +56,14 @@
             <label>Confirmation email subject<input name="confirmation_subject" value="We received your proposal" maxlength="200" required></label>
             <label>Confirmation email message<textarea name="confirmation_body" maxlength="4000" required>Thank you for submitting. Your proposal is now ready for review.</textarea></label>
           </fieldset>
-          <section aria-labelledby="routing-title"><h3 id="routing-title">Automatic routing</h3><p class="help">Send matching answers to a category, track, or review queue.</p><div id="routing-rules"></div><button id="add-routing" class="secondary" type="button">Add routing rule</button></section>
+          <details class="advanced-settings">
+            <summary>Advanced routing <span class="optional">Optional</span></summary>
+            <div class="advanced-settings__content"><p class="help">Organize incoming proposals automatically based on an answer.</p><div id="routing-rules"></div><button id="add-routing" class="secondary" type="button">Add routing rule</button></div>
+          </details>
           <button disabled>Publish form</button>
         </form>
-        <div id="publish-result" class="result">Create a program first.</div>
-      </section>
+        <div id="publish-result" class="result">Complete the form settings, then publish.</div>
+      </details>
     </div>
   </main>
 </body>

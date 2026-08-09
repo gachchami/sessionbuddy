@@ -59,6 +59,13 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'id="linkedin"' in html
     assert 'id="social-link"' in html
     assert '[values.website, values.linkedin, values.social_link]' in javascript
+    assert 'const socialHosts = ["twitter.com", "x.com", "bsky.app"' in javascript
+    assert 'Completed (${completed.length})' in javascript
+    assert html.count('name="version_comment"') == 3
+    assert html.count('maxlength="1000"') >= 3
+    assert "version_comment: versionComment" in javascript
+    assert "/versions/${encodeURIComponent(version.id)}/download-grants" in javascript
+    assert "version.version_comment" in javascript
 
 
 def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:

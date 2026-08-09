@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=11">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
+  <link rel="stylesheet" href="/product/assets/product.css?v=16">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
   <script src="/admin/events/assets/events.js?v=9" defer></script>
 </head>
 <body class="app-body">
@@ -30,7 +30,7 @@
         <div><span>Organization</span><strong id="organization-title">Loading…</strong></div>
       </div>
       <label id="organization-picker" class="compact-field">Switch organization<select name="organization_id" id="organization" required></select></label>
-      <button id="edit-organization" type="button" class="button secondary compact-button">Organization settings</button>
+      <button id="edit-organization" type="button" class="button secondary compact-button">Edit</button>
     </section>
 
     <section class="directory-section directory-section--primary" aria-labelledby="event-list-title">
@@ -43,7 +43,7 @@
 
     <dialog id="organization-dialog" class="form-dialog" aria-labelledby="organization-dialog-title">
       <div class="dialog-heading">
-        <div><h2 id="organization-dialog-title">Organization</h2><p class="result">Update the name shown across its events.</p></div>
+        <div><h2 id="organization-dialog-title">Edit organization name</h2><p class="result">This name appears across all events.</p></div>
         <button id="close-organization" type="button" class="icon-button" aria-label="Close organization settings">×</button>
       </div>
       <form id="organization-form">
@@ -56,25 +56,25 @@
 
     <dialog id="event-dialog" class="form-dialog form-dialog--wide" aria-labelledby="event-form-heading">
       <div class="dialog-heading">
-        <div><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Add the essential details.</p></div>
+        <div><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Fields marked <span class="required-marker">Required</span> must be completed.</p></div>
         <button id="close-event-dialog" type="button" class="icon-button" aria-label="Close event form">×</button>
       </div>
       <form id="event-form">
         <input name="event_id" type="hidden">
         <input name="version" type="hidden">
-        <label>Event name<input name="name" placeholder="Community Tech Summit 2026" maxlength="200" aria-describedby="event-name-help" required><small id="event-name-help">The name shown to speakers, reviewers, and attendees.</small></label>
+        <label><span class="field-label">Event name <span class="required-marker">Required</span></span><input name="name" maxlength="200" aria-describedby="event-name-help" required><small id="event-name-help">The name shown to speakers, reviewers, and attendees.</small></label>
         <div class="form-grid">
-          <label>Time zone<input name="time_zone" list="time-zone-options" placeholder="Asia/Kolkata" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help"><span id="detected-time-zone">Detecting your time zone…</span></small></label>
-          <label>Attendance format<select name="delivery_mode" required><option value="" selected disabled>Select a format</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select></label>
+          <label><span class="field-label">Time zone <span class="required-marker">Required</span></span><input name="time_zone" list="time-zone-options" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help"><span id="detected-time-zone">Detecting your time zone…</span></small></label>
+          <label><span class="field-label">Attendance format <span class="required-marker">Required</span></span><select name="delivery_mode" required><option value="" selected disabled>Select a format</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select></label>
         </div>
         <datalist id="time-zone-options"></datalist>
         <fieldset aria-describedby="date-time-help date-time-preview">
           <legend>Dates and times</legend>
           <div class="form-grid form-grid--four">
-            <label>Start date<input name="start_date" type="date" required></label>
-            <label>Start time<input name="start_time" type="time" value="09:00" step="900" required></label>
-            <label>End date<input name="end_date" type="date" required></label>
-            <label>End time<input name="end_time" type="time" value="17:00" step="900" required></label>
+            <label><span class="field-label">Start date <span class="required-marker">Required</span></span><input name="start_date" type="date" required></label>
+            <label><span class="field-label">Start time <span class="required-marker">Required</span></span><input name="start_time" type="time" value="09:00" step="900" required></label>
+            <label><span class="field-label">End date <span class="required-marker">Required</span></span><input name="end_date" type="date" required></label>
+            <label><span class="field-label">End time <span class="required-marker">Required</span></span><input name="end_time" type="time" value="17:00" step="900" required></label>
           </div>
           <p id="date-time-help" class="sr-only">All dates and times use the selected event time zone.</p>
           <p id="date-time-preview" class="date-preview" role="status" aria-live="polite">Choose a start and end date.</p>
@@ -93,7 +93,12 @@
           <summary>Brand and public website</summary>
           <div class="advanced-settings__content">
             <div class="form-grid"><label>Accent color<input name="accent_color" type="color" value="#3159d9"></label><label>Event website <span class="optional">Optional</span><input name="website_url" type="url" placeholder="https://…"></label></div>
-            <label>Logo URL <span class="optional">Optional</span><input name="logo_url" type="url" placeholder="https://…"><small>Use a public HTTPS image URL.</small></label>
+            <input name="logo_url" type="hidden">
+            <label>Event logo <span class="optional">Optional</span><input name="logo_file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="event-logo-help"><small id="event-logo-help">Upload a PNG, JPEG, or WebP image up to 2 MB.</small></label>
+            <img id="event-logo-preview" class="event-logo" alt="Current event logo" hidden>
+            <input name="cover_image_url" type="hidden">
+            <label>Cover image <span class="optional">Optional</span><input name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="event-cover-help"><small id="event-cover-help">Upload a landscape PNG, JPEG, or WebP image up to 2 MB. Recommended: 1600 × 900 pixels.</small></label>
+            <img id="event-cover-preview" class="event-cover-image" alt="Current event cover" hidden>
           </div>
         </details>
         <label id="event-status-label" hidden>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>

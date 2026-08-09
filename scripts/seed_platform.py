@@ -16,7 +16,6 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
     users = []
     organization_memberships = []
     events = []
-    programs = []
     event_memberships = []
     authentication_challenges = []
     sessions = []
@@ -67,17 +66,6 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
                     "time_zone": "UTC",
                     "delivery_mode": "hybrid",
                     "status": "active",
-                    "created_at_ms": BASE_MS,
-                    "updated_at_ms": BASE_MS,
-                }
-            )
-            programs.append(
-                {
-                    "id": stable_id(seed, f"program:{org_number}:{event_number}"),
-                    "organization_id": org_id,
-                    "event_id": event_id,
-                    "name": "Main Program",
-                    "status": "open",
                     "created_at_ms": BASE_MS,
                     "updated_at_ms": BASE_MS,
                 }
@@ -177,7 +165,6 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
         "users": users,
         "organization_memberships": organization_memberships,
         "events": events,
-        "programs": programs,
         "event_memberships": event_memberships,
         "authentication_challenges": authentication_challenges,
         "sessions": sessions,

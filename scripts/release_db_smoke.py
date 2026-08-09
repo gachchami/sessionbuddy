@@ -87,7 +87,7 @@ def backup_restore_smoke(migrations: Path, scale: SeedScale) -> dict[str, object
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--migrations", type=Path, default=Path("migrations"))
+    parser.add_argument("--migrations", type=Path, default=Path("migrations_baseline"))
     parser.add_argument("--large", action="store_true", help="use the complete release envelope")
     args = parser.parse_args()
     scale = SeedScale() if args.large else SeedScale(100, 20, 200, 20)

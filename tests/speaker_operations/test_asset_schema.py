@@ -109,6 +109,15 @@ def test_generation_and_current_clean_constraints(db: sqlite3.Connection) -> Non
         db.execute(
             "UPDATE speaker_asset_versions SET generation=4 WHERE id='version-1'"
         )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "UPDATE speaker_asset_versions SET version_comment='' WHERE id='version-1'"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+        db.execute(
+            "UPDATE speaker_asset_versions SET version_comment='Changed' "
+            "WHERE id='version-1'"
+        )
 
 
 def test_scan_states_require_expected_metadata_and_timestamps(db: sqlite3.Connection) -> None:

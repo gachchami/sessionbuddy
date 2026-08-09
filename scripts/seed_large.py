@@ -93,24 +93,18 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
             (BASE_MS, event_end, BASE_MS, BASE_MS),
         )
         db.execute(
-            """INSERT INTO programs
-               (id,organization_id,event_id,name,status,created_at_ms,updated_at_ms)
-               VALUES('load-program','load-org','load-event','Main Program','open',?,?)""",
-            (BASE_MS, BASE_MS),
-        )
-        db.execute(
             """INSERT INTO call_for_speaker_forms
-               (id,organization_id,event_id,program_id,version,slug,welcome_text,schema_json,
+               (id,organization_id,event_id,version,slug,welcome_text,schema_json,
                 status,published_at_ms,created_at_ms,updated_at_ms)
-               VALUES('load-form','load-org','load-event','load-program',1,'synthetic-load-cfp',
+               VALUES('load-form','load-org','load-event',1,'synthetic-load-cfp',
                       'Synthetic load fixture','{}','published',?,?,?)""",
             (BASE_MS, BASE_MS, BASE_MS),
         )
         db.execute(
             """INSERT INTO evaluation_rounds
-               (id,organization_id,event_id,program_id,name,rubric_json,status,
+               (id,organization_id,event_id,name,rubric_json,status,
                 created_at_ms,updated_at_ms)
-               VALUES('load-round','load-org','load-event','load-program','Load Round','{}',
+               VALUES('load-round','load-org','load-event','Load Round','{}',
                       'open',?,?)""",
             (BASE_MS, BASE_MS),
         )
@@ -126,13 +120,13 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
         insert_many(
             db,
             """INSERT INTO submissions
-               (id,organization_id,event_id,program_id,form_id,public_session_id,
+               (id,organization_id,event_id,form_id,public_session_id,
                 proposal_title,proposal_abstract,speaker_name,status,submitted_at_ms,
-                created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 (
-                    f"load-submission-{number:05d}", "load-org", "load-event", "load-program",
-                    "load-form", f"load-public-{number:05d}", f"Synthetic proposal {number}",
+                    f"load-submission-{number:05d}", "load-org", "load-event", "load-form",
+                    f"load-public-{number:05d}", f"Synthetic proposal {number}",
                     "Synthetic performance fixture; contains no production data.",
                     f"Synthetic Speaker {number % max(scale.speakers, 1):04d}", "submitted",
                     BASE_MS + number, BASE_MS + number, BASE_MS + number,
@@ -245,7 +239,7 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database", type=Path, required=True)
-    parser.add_argument("--migrations", type=Path, default=Path("migrations"))
+    parser.add_argument("--migrations", type=Path, default=Path("migrations_baseline"))
     parser.add_argument("--submissions", type=int, default=10_000)
     parser.add_argument("--speakers", type=int, default=2_000)
     parser.add_argument("--tasks", type=int, default=50_000)

@@ -58,7 +58,6 @@ type ConflictProgress = {
 type RoundResults = {
   round_id: string;
   event_id: string;
-  program_id: string;
   round_name: string;
   status: "draft" | "open" | "closed";
   assigned_count: number;
@@ -617,9 +616,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       )}
       {results && (
         <>
-          <nav className="workflow" aria-label="Program workflow">
+          <nav className="workflow" aria-label="Event workflow">
             <a
-              href={`/admin/programs/${encodeURIComponent(results.program_id)}/submissions`}
+              href={`/admin/events/${encodeURIComponent(results.event_id)}/submissions`}
             >
               Submissions
             </a>

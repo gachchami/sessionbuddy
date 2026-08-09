@@ -125,29 +125,35 @@ def _weighted_mean(values: list[tuple[float, int]]) -> float | None:
     return round(sum(value * weight for value, weight in values) / count, 2)
 
 
+async def _event_organization_id(db, event_id: str) -> str:
+    event = row_mapping(
+        await db.prepare(
+            """SELECT organization_id FROM events
+               WHERE id = ?1 AND status != 'archived' LIMIT 1"""
+        )
+        .bind(event_id)
+        .first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    return str(event["organization_id"])
+
+
 @evaluation_router.post(
-    "/api/v1/admin/programs/{program_id}/evaluation-rounds",
+    "/api/v1/admin/events/{event_id}/evaluation-rounds",
     response_model=EvaluationRoundView,
     status_code=201,
     operation_id="createEvaluationRound",
     tags=["evaluations"],
 )
 async def create_evaluation_round(
-    program_id: str,
+    event_id: str,
     request: Request,
     body: EvaluationRoundCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EvaluationRoundView:
     db = _db(request)
-    program = row_mapping(
-        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
-        .bind(program_id)
-        .first()
-    )
-    if program is None:
-        raise HTTPException(status_code=404)
-    organization_id = str(program["organization_id"])
-    event_id = str(program["event_id"])
+    organization_id = await _event_organization_id(db, event_id)
     auth = await require_permission(
         request,
         Permission.SUBMISSION_MANAGE,
@@ -155,7 +161,7 @@ async def create_evaluation_round(
         mutation=True,
     )
     key = _key(idempotency_key)
-    route = "POST /api/v1/admin/programs/{program_id}/evaluation-rounds"
+    route = "POST /api/v1/admin/events/{event_id}/evaluation-rounds"
     fingerprint = _fingerprint(body)
     replay = row_mapping(
         await db.prepare(
@@ -174,10 +180,10 @@ async def create_evaluation_round(
     active_round = (
         await db.prepare(
             """SELECT 1 AS found FROM evaluation_rounds
-           WHERE organization_id = ?1 AND event_id = ?2 AND program_id = ?3
+           WHERE organization_id = ?1 AND event_id = ?2
              AND status = 'open' LIMIT 1"""
         )
-        .bind(organization_id, event_id, program_id)
+        .bind(organization_id, event_id)
         .first("found")
     )
     if active_round is not None:
@@ -198,13 +204,13 @@ async def create_evaluation_round(
     )
     if {str(row["user_id"]) for row in evaluators} != set(body.evaluator_user_ids):
         raise HTTPException(status_code=400)
-    placeholders = ",".join(f"?{index + 4}" for index in range(len(body.submission_ids)))
+    placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
     submissions = result_rows(
         await db.prepare(
             f"""SELECT id FROM submissions WHERE organization_id = ?1 AND event_id = ?2
-                  AND program_id = ?3 AND id IN ({placeholders})"""  # noqa: S608
+                  AND id IN ({placeholders})"""  # noqa: S608
         )
-        .bind(organization_id, event_id, program_id, *body.submission_ids)
+        .bind(organization_id, event_id, *body.submission_ids)
         .all()
     )
     if {str(row["id"]) for row in submissions} != set(body.submission_ids):
@@ -235,14 +241,13 @@ async def create_evaluation_round(
     batch.add_statement(
         db.prepare(
             """INSERT INTO evaluation_rounds
-               (id, organization_id, event_id, program_id, name, rubric_json, status,
+               (id, organization_id, event_id, name, rubric_json, status,
                 review_opens_at_ms,review_closes_at_ms,created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?9)"""
+               VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?8)"""
         ).bind(
             round_id,
             organization_id,
             event_id,
-            program_id,
             body.name,
             json.dumps(rubric, separators=(",", ":"), sort_keys=True),
             body.review_opens_at_ms,
@@ -291,7 +296,7 @@ async def create_evaluation_round(
     await _execute(request, batch)
     return EvaluationRoundView(
         id=round_id,
-        program_id=program_id,
+        event_id=event_id,
         name=body.name,
         status="open",
         assignment_count=len(assignment_pairs),
@@ -300,97 +305,79 @@ async def create_evaluation_round(
 
 
 @evaluation_router.get(
-    "/api/v1/admin/programs/{program_id}/evaluation-rounds/current",
+    "/api/v1/admin/events/{event_id}/evaluation-rounds/current",
     response_model=EvaluationRoundView | None,
     operation_id="getCurrentEvaluationRound",
     tags=["evaluations"],
 )
 async def get_current_evaluation_round(
-    program_id: str, request: Request
+    event_id: str, request: Request
 ) -> EvaluationRoundView | None:
     db = _db(request)
-    program = row_mapping(
-        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
-        .bind(program_id)
-        .first()
-    )
-    if program is None:
-        raise HTTPException(status_code=404)
+    organization_id = await _event_organization_id(db, event_id)
     await require_permission(
         request,
         Permission.EVALUATION_RESULTS_READ,
-        ResourceContext(str(program["organization_id"]), str(program["event_id"])),
+        ResourceContext(organization_id, event_id),
         mutation=False,
     )
     row = row_mapping(
         await db.prepare(
-            """SELECT r.id, r.program_id, r.name, r.status, COUNT(a.id) AS assignment_count,
+            """SELECT r.id, r.event_id, r.name, r.status, COUNT(a.id) AS assignment_count,
                   COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
            FROM evaluation_rounds r LEFT JOIN evaluation_assignments a ON a.round_id = r.id
-           WHERE r.program_id = ?1 AND r.status = 'open'
+           WHERE r.organization_id = ?1 AND r.event_id = ?2 AND r.status = 'open'
            GROUP BY r.id ORDER BY r.created_at_ms DESC LIMIT 1"""
         )
-        .bind(program_id)
+        .bind(organization_id, event_id)
         .first()
     )
     return EvaluationRoundView.model_validate(row) if row is not None else None
 
 
 @evaluation_router.get(
-    "/api/v1/admin/programs/{program_id}/evaluation-rounds",
+    "/api/v1/admin/events/{event_id}/evaluation-rounds",
     response_model=EvaluationRoundList,
     operation_id="listEvaluationRounds",
     tags=["evaluations"],
 )
-async def list_evaluation_rounds(program_id: str, request: Request) -> EvaluationRoundList:
+async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationRoundList:
     db = _db(request)
-    program = row_mapping(
-        await db.prepare("SELECT organization_id,event_id FROM programs WHERE id=?1 LIMIT 1")
-        .bind(program_id)
-        .first()
-    )
-    if program is None:
-        raise HTTPException(status_code=404)
+    organization_id = await _event_organization_id(db, event_id)
     await require_permission(
         request,
         Permission.EVALUATION_RESULTS_READ,
-        ResourceContext(str(program["organization_id"]), str(program["event_id"])),
+        ResourceContext(organization_id, event_id),
         mutation=False,
     )
     rows = result_rows(
         await db.prepare(
-            """SELECT r.id,r.program_id,r.name,r.status,COUNT(a.id) AS assignment_count,
+            """SELECT r.id,r.event_id,r.name,r.status,COUNT(a.id) AS assignment_count,
                       COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
                FROM evaluation_rounds r
                LEFT JOIN evaluation_assignments a ON a.round_id=r.id
-               WHERE r.program_id=?1 GROUP BY r.id
+               WHERE r.organization_id=?1 AND r.event_id=?2 GROUP BY r.id
                ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 50"""
         )
-        .bind(program_id)
+        .bind(organization_id, event_id)
         .all()
     )
     return EvaluationRoundList(data=[EvaluationRoundView.model_validate(row) for row in rows])
 
 
 @evaluation_router.get(
-    "/api/v1/admin/programs/{program_id}/evaluators",
+    "/api/v1/admin/events/{event_id}/evaluators",
     response_model=EvaluatorList,
-    operation_id="listProgramEvaluators",
+    operation_id="listEventEvaluators",
     tags=["evaluations"],
 )
-async def list_program_evaluators(program_id: str, request: Request) -> EvaluatorList:
+async def list_event_evaluators(event_id: str, request: Request) -> EvaluatorList:
     db = _db(request)
-    program = row_mapping(
-        await db.prepare("SELECT organization_id, event_id FROM programs WHERE id = ?1")
-        .bind(program_id)
-        .first()
-    )
-    if program is None:
-        raise HTTPException(status_code=404)
+    organization_id = await _event_organization_id(db, event_id)
     await require_permission(
         request,
         Permission.SUBMISSION_MANAGE,
-        ResourceContext(str(program["organization_id"]), str(program["event_id"])),
+        ResourceContext(organization_id, event_id),
         mutation=False,
     )
     rows = result_rows(
@@ -401,7 +388,7 @@ async def list_program_evaluators(program_id: str, request: Request) -> Evaluato
              AND em.role = 'evaluator' AND em.status = 'active' AND u.status = 'active'
            ORDER BY u.normalized_email LIMIT 100"""
         )
-        .bind(program["organization_id"], program["event_id"])
+        .bind(organization_id, event_id)
         .all()
     )
     return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
@@ -604,7 +591,7 @@ async def add_round_submissions(
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT organization_id,event_id,program_id,rubric_json,status
+            """SELECT organization_id,event_id,rubric_json,status
                FROM evaluation_rounds WHERE id=?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -620,17 +607,16 @@ async def add_round_submissions(
     )
     if round_row["status"] != "open":
         raise HTTPException(status_code=409)
-    placeholders = ",".join(f"?{index + 4}" for index in range(len(body.submission_ids)))
+    placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
     submissions = result_rows(
         await db.prepare(
             f"""SELECT id FROM submissions WHERE organization_id=?1 AND event_id=?2
-                  AND program_id=?3 AND status='submitted'
+                  AND status='submitted'
                   AND id IN ({placeholders})"""  # noqa: S608
         )
         .bind(
             round_row["organization_id"],
             round_row["event_id"],
-            round_row["program_id"],
             *body.submission_ids,
         )
         .all()
@@ -1387,7 +1373,7 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         await _timed_first(
             request,
             db.prepare(
-            """SELECT id, organization_id, event_id, program_id, name, status
+            """SELECT id, organization_id, event_id, name, status
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
             ).bind(round_id),
         )
@@ -1541,7 +1527,6 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
     return EvaluationRoundResults(
         round_id=round_id,
         event_id=str(round_row["event_id"]),
-        program_id=str(round_row["program_id"]),
         round_name=str(round_row["name"]),
         status=str(round_row["status"]),
         assigned_count=assigned_count,
@@ -1995,7 +1980,7 @@ async def record_submission_decision(
 async def _round_view(db, round_id: str) -> EvaluationRoundView:
     row = row_mapping(
         await db.prepare(
-            """SELECT r.id, r.program_id, r.name, r.status, COUNT(a.id) AS assignment_count,
+            """SELECT r.id, r.event_id, r.name, r.status, COUNT(a.id) AS assignment_count,
                   COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
            FROM evaluation_rounds r LEFT JOIN evaluation_assignments a ON a.round_id = r.id
            WHERE r.id = ?1 GROUP BY r.id"""

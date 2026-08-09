@@ -70,10 +70,9 @@ class BrowserTelemetryPayload(BaseModel):
     schema_version: Literal[1]
     page_template: Literal[
         "/engine-room",
-        "/admin/programs",
         "/admin/events/{event_id}/cfp",
         "/cfp/{slug}",
-        "/admin/programs/{program_id}/submissions",
+        "/admin/events/{event_id}/submissions",
         "/reviews",
         "/admin/evaluation-rounds/{round_id}",
     ]
@@ -167,7 +166,7 @@ def public_engine_room_status(*, environment: str = "local") -> EngineRoomStatus
             ),
             CapabilityProgressItem(
                 area="CFP management",
-                capability="Call-for-speakers program, form and submission journey",
+                capability="Call for Proposals, form and submission journey",
                 state="complete",
                 evidence=(
                     "Published forms, conditional fields, drafts, uploads, "

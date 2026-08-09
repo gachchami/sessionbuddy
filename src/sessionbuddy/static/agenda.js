@@ -845,7 +845,11 @@
         `/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/items/${encodeURIComponent(item.id)}?version=${encodeURIComponent(item.version)}`,
         {
           method: "DELETE",
-          headers: { "x-csrf-token": state.csrf, "idempotency-key": key() },
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": state.csrf,
+            "idempotency-key": key(),
+          },
         },
       );
       byId("editor").close();

@@ -7,7 +7,6 @@ from uuid import uuid4
 UserId = NewType("UserId", str)
 OrganizationId = NewType("OrganizationId", str)
 EventId = NewType("EventId", str)
-ProgramId = NewType("ProgramId", str)
 
 
 def new_id() -> str:

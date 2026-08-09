@@ -101,34 +101,20 @@ test.describe("form validation and workflow wiring", () => {
       body: JSON.stringify({
         organization_id: organizationId,
         event_id: eventId,
-        program: null,
+        event_name: "Conference 2030",
+        event_starts_at_ms: 1_900_000_000_000,
         published_form: null,
       }),
     }));
-    let programWrites = 0;
-    await page.route("**/api/v1/admin/programs", async (route) => {
-      programWrites += 1;
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({ id: programId, organization_id: organizationId, event_id: eventId, name: "Main program", status: "open" }),
-      });
-    });
     let publishWrites = 0;
     let publishedBody: Record<string, unknown> | null = null;
-    await page.route(`**/api/v1/admin/programs/${programId}/forms/publish`, async (route) => {
+    await page.route(`**/api/v1/admin/events/${eventId}/cfp/publish`, async (route) => {
       publishWrites += 1;
       publishedBody = route.request().postDataJSON();
       await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ slug: "conference-2030" }) });
     });
 
     await page.goto(`/admin/events/${eventId}/cfp`);
-    await page.locator("#program-form").getByRole("button", { name: "Create program" }).click();
-    expect(programWrites).toBe(0);
-    await page.getByLabel("Program name").fill("Main program");
-    await page.getByRole("button", { name: "Create program" }).click();
-    await expect.poll(() => programWrites).toBe(1);
-    await expect(page.locator("#program-form")).toBeHidden();
     const form = page.locator("#publish-form");
     await form.getByLabel("Public URL slug").fill("ab");
     await form.getByRole("button", { name: "Publish form" }).click();
@@ -148,12 +134,11 @@ test.describe("form validation and workflow wiring", () => {
   test("review round and evaluator forms block incomplete payloads", async ({ page }) => {
     await polyfillUuid(page);
     await mockSession(page);
-    await page.route(`**/api/v1/admin/programs/${programId}/submissions`, (route) => route.fulfill({
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
         organization_id: organizationId,
         event_id: eventId,
-        program_id: programId,
         data: [{
           id: assignmentId,
           speaker_name: "Speaker",
@@ -169,10 +154,10 @@ test.describe("form validation and workflow wiring", () => {
         }],
       }),
     }));
-    await page.route(`**/api/v1/admin/programs/${programId}/evaluators`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) }));
-    await page.route(`**/api/v1/admin/programs/${programId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluators`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
     let roundWrites = 0;
-    await page.route(`**/api/v1/admin/programs/${programId}/evaluation-rounds`, async (route) => {
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
         return;
@@ -181,7 +166,7 @@ test.describe("form validation and workflow wiring", () => {
       await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "11111111-1111-4111-8111-111111111111", name: "Initial review", assignment_count: 1, evaluator_count: 1 }) });
     });
 
-    await page.goto(`/admin/programs/${programId}/submissions`);
+    await page.goto(`/admin/events/${eventId}/submissions`);
     await page.getByRole("button", { name: "View details" }).click();
     const detail = page.getByRole("dialog", { name: "Submission details" });
     await expect(detail).toContainText("speaker@example.com");

@@ -53,10 +53,10 @@ class AssetRepository:
     def __init__(self, db: D1Database) -> None:
         self._db = db
 
-    async def current_clean_for_scope(
-        self, scope: AssetAccessScope, asset_id: str
+    async def clean_version_for_scope(
+        self, scope: AssetAccessScope, asset_id: str, version_id: str | None = None
     ) -> PrivateAsset | None:
-        values: list[object] = [scope.organization_id, scope.event_id, asset_id]
+        values: list[object] = [scope.organization_id, scope.event_id, asset_id, version_id]
         query = """SELECT v.id, v.object_key, v.original_filename, v.content_type,
                           v.byte_size
                    FROM speaker_assets a
@@ -69,7 +69,8 @@ class AssetRepository:
                    JOIN people p
                      ON p.organization_id = es.organization_id AND p.id = es.person_id
                    WHERE a.organization_id = ?1 AND a.event_id = ?2 AND a.id = ?3
-                     AND v.scan_state = 'clean' AND v.is_current = 1"""
+                     AND v.scan_state IN ('clean','superseded')
+                     AND ((?4 IS NULL AND v.is_current=1) OR v.id=?4)"""
         if not scope.event_admin:
             if scope.event_speaker_id is None:
                 return None
@@ -85,8 +86,9 @@ class AssetRepository:
                        JOIN people p
                          ON p.organization_id = es.organization_id AND p.id = es.person_id
                        WHERE a.organization_id = ?1 AND a.event_id = ?2 AND a.id = ?3
-                         AND v.scan_state = 'clean' AND v.is_current = 1
-                         AND a.event_speaker_id = ?4 AND p.user_id = ?5"""
+                         AND v.scan_state IN ('clean','superseded')
+                         AND ((?4 IS NULL AND v.is_current=1) OR v.id=?4)
+                         AND a.event_speaker_id = ?5 AND p.user_id = ?6"""
             values.extend((scope.event_speaker_id, scope.actor_user_id))
         row = row_mapping(await self._db.prepare(query).bind(*values).first())
         if row is None:
@@ -105,11 +107,12 @@ class AssetRepository:
         asset_id: str,
         *,
         now_ms: int,
+        version_id: str | None = None,
         ttl_ms: int = 60_000,
     ) -> DownloadGrant | None:
         if not 1_000 <= ttl_ms <= 300_000:
             raise ValueError("download grant TTL must be between 1 and 300 seconds")
-        asset = await self.current_clean_for_scope(scope, asset_id)
+        asset = await self.clean_version_for_scope(scope, asset_id, version_id)
         if asset is None:
             return None
         token = generate_token()
@@ -154,8 +157,7 @@ class AssetRepository:
                        WHERE version_row.organization_id = grant_row.organization_id
                          AND version_row.event_id = grant_row.event_id
                          AND version_row.id = grant_row.asset_version_id
-                         AND version_row.scan_state = 'clean'
-                         AND version_row.is_current = 1
+                         AND version_row.scan_state IN ('clean','superseded')
                      )
                    RETURNING organization_id, event_id, asset_version_id"""
             )
@@ -169,7 +171,7 @@ class AssetRepository:
                 """SELECT object_key, original_filename, content_type, byte_size
                    FROM speaker_asset_versions
                    WHERE organization_id = ?1 AND event_id = ?2 AND id = ?3
-                     AND scan_state = 'clean' AND is_current = 1"""
+                     AND scan_state IN ('clean','superseded')"""
             )
             .bind(row["organization_id"], row["event_id"], row["asset_version_id"])
             .first()

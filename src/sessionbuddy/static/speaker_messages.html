@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speaker messages · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=15">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
+  <script src="/app-shell/assets/api-client.js?v=1" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
+  <script src="/admin/speakers/assets/messages.js?v=2" defer></script>
+</head>
+<body class="app-body">
+  <a class="skip-link" href="#main">Skip to speaker messages</a>
+  <header data-auth-shell></header>
+  <main id="main" class="shell page" tabindex="-1">
+    <div class="page-heading"><div><p class="eyebrow">Communication</p><h1>Speaker messages</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" href="#">View speakers</a></div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading speakers…</div>
+    <div class="message-workspace">
+      <section class="card" aria-labelledby="recipients-title">
+        <div class="section-heading"><div><h2 id="recipients-title">Recipients</h2><p class="section-summary">Only active speaker records can receive messages.</p></div><span id="recipient-count" class="badge">0 selected</span></div>
+        <div class="filter-bar"><label>Search recipients<input id="recipient-search" type="search" placeholder="Name, email, company, or session"></label><button id="select-visible" class="secondary" type="button">Select visible</button></div>
+        <div id="recipient-list" class="recipient-list"><p class="empty">Loading recipients…</p></div>
+      </section>
+      <section class="card" aria-labelledby="compose-title">
+        <div class="section-heading"><div><h2 id="compose-title">Compose</h2><p class="section-summary">Merge fields are personalized in the preview.</p></div></div>
+        <form id="message-form">
+          <label>Template<select id="message-template"><option value="">Write from scratch</option><option value="welcome">Speaker welcome</option><option value="deadline">Deadline reminder</option></select></label>
+          <div class="personalization-help"><strong>Personalize each email</strong><span>Choose a field below. Each selected speaker will see their own details; you can verify every email before sending.</span></div>
+          <div class="personalization-toolbar" aria-label="Personalize message"><span>Insert:</span><button class="secondary" type="button" data-merge-field="{{speaker.name}}">Speaker name</button><button class="secondary" type="button" data-merge-field="{{submission.title}}">Session title</button><button class="secondary" type="button" data-merge-field="{{event.name}}">Event name</button><button class="secondary" type="button" data-merge-field="{{portal.link}}">Portal link</button></div>
+          <label>Subject<input name="subject" maxlength="200" required></label>
+          <label>Message<textarea name="body_text" rows="8" maxlength="10000" required></textarea></label>
+          <div class="actions"><button id="preview-message" class="secondary" type="button">Preview message</button><button id="send-message" disabled>Send message</button></div>
+        </form>
+      </section>
+    </div>
+    <section id="message-preview" class="card" hidden aria-labelledby="preview-title"><h2 id="preview-title">Preview</h2><div id="message-preview-content" class="public-link"></div></section>
+    <section class="directory-section" aria-labelledby="history-title"><div class="section-heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Recent delivery activity for this event.</p></div></div><div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Updated</th></tr></thead><tbody id="message-history"><tr><td colspan="4">Loading messages…</td></tr></tbody></table></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
+  </main>
+</body>
+</html>

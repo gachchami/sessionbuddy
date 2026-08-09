@@ -200,6 +200,45 @@ async def test_download_fails_closed_for_unscanned_or_expired_version(
     assert bucket.requested == []
 
 
+async def test_historical_clean_version_has_its_own_scoped_single_use_grant(
+    database: AsyncSqlite,
+) -> None:
+    add_asset(database.connection)
+    add_version(database.connection, "version-1", 1, state="superseded")
+    add_version(database.connection, "version-2", 2, state="clean", current=1)
+    repository = AssetRepository(database)
+
+    historical = await repository.create_download_grant(
+        owner_scope(), "asset-a", version_id="version-1", now_ms=2_000
+    )
+    assert historical is not None
+    bucket = Bucket(
+        {
+            "private/org-a/event-a/version-1": b"old bytes",
+            "private/org-a/event-a/version-2": b"current bytes",
+        }
+    )
+    download = await repository.consume_download_grant(
+        bucket, actor_user_id="user-a", token=historical.token, now_ms=2_001
+    )
+    assert download is not None
+    assert download.body.body == b"old bytes"
+    assert bucket.requested == ["private/org-a/event-a/version-1"]
+    assert await repository.consume_download_grant(
+        bucket, actor_user_id="user-a", token=historical.token, now_ms=2_002
+    ) is None
+
+    assert await repository.create_download_grant(
+        owner_scope(actor_user_id="user-b"),
+        "asset-a",
+        version_id="version-1",
+        now_ms=2_000,
+    ) is None
+    assert await repository.create_download_grant(
+        owner_scope(), "asset-a", version_id="missing", now_ms=2_000
+    ) is None
+
+
 async def test_scan_consumer_promotes_clean_exact_job_once(database: AsyncSqlite) -> None:
     add_asset(database.connection)
     add_version(database.connection, "version-1", 1, state="uploaded")
