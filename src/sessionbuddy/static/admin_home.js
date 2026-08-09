@@ -1,7 +1,7 @@
 (() => {
   "use strict";
   const byId = (id) => document.getElementById(id);
-  const state = { session: null, organizations: [], events: [] };
+  const state = { session: null, organizations: [] };
   const make = (tag, text, className) => {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -40,42 +40,6 @@
     } catch (_) { return "Date unavailable"; }
   }
 
-  function localInputValue(date) {
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-    return local.toISOString().slice(0, 16);
-  }
-
-  function resetEventForm() {
-    const form = byId("event-form");
-    form.reset();
-    byId("event-form-status").hidden = true;
-    byId("event-form-status").className = "status status-compact";
-    const start = new Date();
-    start.setDate(start.getDate() + 1);
-    start.setHours(9, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(17, 0, 0, 0);
-    form.elements.starts_at.value = localInputValue(start);
-    form.elements.ends_at.value = localInputValue(end);
-    form.elements.starts_at.min = localInputValue(new Date());
-    form.elements.ends_at.min = form.elements.starts_at.value;
-    form.elements.time_zone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    form.elements.organization_id.replaceChildren(
-      ...state.organizations.map((organization) => new Option(organization.name, organization.id))
-    );
-  }
-
-  function openEventDialog() {
-    resetEventForm();
-    byId("event-dialog").showModal();
-    byId("event-form").elements.name.focus();
-  }
-
-  function closeEventDialog() {
-    if (byId("event-dialog").open) byId("event-dialog").close();
-    resetEventForm();
-  }
-
   async function loadDashboard() {
     const organizations = (await api("/api/v1/admin/organizations")).data;
     if (!organizations.length) throw new Error("This account does not manage an organization or event.");
@@ -94,8 +58,6 @@
     const events = eventGroups.flatMap(({ organization, events: items }) =>
       items.map((event) => ({ ...event, organization_name: organization.name }))
     );
-    state.events = events;
-
     byId("metric-workspace").textContent = organizations.length === 1
       ? organizations[0].name
       : `${organizations.length} organizations`;
@@ -112,9 +74,8 @@
     } else {
       const empty = make("p", "No events yet. Create the first event to begin.", "empty");
       if (state.organizations.length) {
-        const create = make("button", "Create a new event");
-        create.type = "button";
-        create.addEventListener("click", openEventDialog);
+        const create = make("a", "Create a new event", "button");
+        create.href = "/admin/events#event-form";
         empty.append(document.createElement("br"), create);
       }
       eventList.replaceChildren(empty);
@@ -143,46 +104,6 @@
     }
     setStatus(`${organizations.length} organization${organizations.length === 1 ? "" : "s"}, ${events.length} event${events.length === 1 ? "" : "s"}, and ${speakers.length} speaker${speakers.length === 1 ? "" : "s"}.`);
   }
-
-  byId("new-event").addEventListener("click", openEventDialog);
-  byId("close-event-dialog").addEventListener("click", closeEventDialog);
-  byId("cancel-event").addEventListener("click", closeEventDialog);
-  byId("event-dialog").addEventListener("cancel", () => resetEventForm());
-  byId("event-form").elements.starts_at.addEventListener("change", (event) => {
-    event.currentTarget.form.elements.ends_at.min = event.currentTarget.value;
-  });
-  byId("event-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = Object.fromEntries(new FormData(form));
-    const startsAt = new Date(values.starts_at).getTime();
-    const endsAt = new Date(values.ends_at).getTime();
-    form.elements.starts_at.setCustomValidity(startsAt > Date.now() ? "" : "The event must start in the future.");
-    form.elements.ends_at.setCustomValidity(endsAt > startsAt ? "" : "The event must end after it starts.");
-    if (!form.reportValidity()) return;
-    const submit = byId("create-event");
-    submit.disabled = true;
-    try {
-      const created = await api(`/api/v1/admin/organizations/${encodeURIComponent(values.organization_id)}/events`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.session.csrf_token },
-        body: JSON.stringify({
-          name: values.name.trim(), starts_at_ms: startsAt, ends_at_ms: endsAt,
-          time_zone: values.time_zone, delivery_mode: values.delivery_mode,
-          location: values.location.trim(), description: values.description.trim()
-        })
-      });
-      closeEventDialog();
-      await loadDashboard();
-      setStatus(`${created.name} was created. Open it from the event list when you are ready.`);
-    } catch (error) {
-      const status = byId("event-form-status");
-      status.textContent = window.SessionBuddyApi.message(error, "The event could not be created. Try again.");
-      status.classList.add("error");
-      status.hidden = false;
-      status.focus();
-    } finally { submit.disabled = false; }
-  });
 
   async function initialize() {
     state.session = await api("/api/v1/auth/session");

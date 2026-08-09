@@ -22,6 +22,9 @@ from .models import (
     AdminSpeakerUpdate,
     IntegrationTokenCreate,
     IntegrationTokenView,
+    OrganizationSpeaker,
+    OrganizationSpeakerList,
+    OrganizationSpeakerParticipation,
     PublicEventList,
     PublicEventSummary,
     PublicSpeaker,
@@ -380,6 +383,78 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
         .all()
     )
     return SpeakerTargetList(data=[_speaker_target(row) for row in rows])
+
+
+@competition_router.get(
+    "/api/v1/admin/organizations/{organization_id}/speakers",
+    response_model=OrganizationSpeakerList,
+    tags=["speaker-onboarding"],
+)
+async def list_organization_speakers(
+    organization_id: str, request: Request
+) -> OrganizationSpeakerList:
+    await require_permission(
+        request,
+        Permission.ORGANIZATION_MANAGE,
+        ResourceContext(organization_id),
+        mutation=False,
+    )
+    rows = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT p.id AS person_id,p.user_id,COALESCE(u.email,'') AS email,
+                      p.display_name,COALESCE(p.job_title,'') AS job_title,
+                      COALESCE(p.company,'') AS company,
+                      COALESCE(p.biography,'') AS biography,
+                      COALESCE(p.location,'') AS location,p.links_json,p.version,
+                      es.id AS event_speaker_id,es.event_id,e.name AS event_name,
+                      es.selection_status,
+                      COALESCE((SELECT s.proposal_title FROM submission_speakers ss
+                        JOIN submissions s ON s.id=ss.submission_id
+                        WHERE ss.event_speaker_id=es.id
+                        ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 1),
+                        'No proposal') AS proposal_title
+               FROM people p
+               JOIN event_speakers es ON es.organization_id=p.organization_id
+                 AND es.person_id=p.id
+               JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id
+               LEFT JOIN users u ON u.id=p.user_id
+               WHERE p.organization_id=?1 AND p.archived_at_ms IS NULL
+                 AND e.status!='archived' AND es.status!='withdrawn'
+               ORDER BY p.display_name,p.id,e.starts_at_ms DESC,e.id,es.id LIMIT 5000"""
+        )
+        .bind(organization_id)
+        .all()
+    )
+    people: dict[str, OrganizationSpeaker] = {}
+    for row in rows:
+        person_id = str(row["person_id"])
+        person = people.get(person_id)
+        if person is None:
+            person = OrganizationSpeaker(
+                person_id=person_id,
+                user_id=str(row["user_id"]) if row["user_id"] is not None else None,
+                email=str(row["email"]),
+                display_name=str(row["display_name"]),
+                job_title=str(row["job_title"]),
+                company=str(row["company"]),
+                biography=str(row["biography"]),
+                location=str(row["location"]),
+                links=json.loads(str(row["links_json"])),
+                version=int(row["version"]),
+                participations=[],
+            )
+            people[person_id] = person
+        person.participations.append(
+            OrganizationSpeakerParticipation(
+                event_id=str(row["event_id"]),
+                event_name=str(row["event_name"]),
+                event_speaker_id=str(row["event_speaker_id"]),
+                selection_status=str(row["selection_status"]),
+                proposal_title=str(row["proposal_title"]),
+            )
+        )
+    return OrganizationSpeakerList(organization_id=organization_id, data=list(people.values()))
 
 
 def _speaker_target(row) -> SpeakerTarget:

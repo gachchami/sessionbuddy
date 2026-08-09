@@ -5,49 +5,47 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_home_opens_event_creation_without_changing_the_background_page() -> None:
+def test_home_links_to_the_canonical_full_event_form() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
-    assert 'id="new-event" type="button"' in page
-    assert 'href="/admin/events#event-form"' not in page
-    assert 'id="event-dialog"' in page
-    assert 'id="event-form"' in page
-    assert 'id="event-form-status"' in page
-    assert 'byId("event-dialog").showModal()' in script
-    assert 'create.addEventListener("click", openEventDialog)' in script
+    assert 'id="new-event" class="button" href="/admin/events#event-form"' in page
+    assert 'create.href = "/admin/events#event-form"' in script
+    assert 'id="event-dialog"' not in page
+    assert 'id="event-form"' not in page
+    assert "openEventDialog" not in script
 
 
-def test_home_event_form_creates_in_place_and_refreshes_the_dashboard() -> None:
-    page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
-    script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
+def test_canonical_events_route_opens_its_complete_form_from_the_hash() -> None:
+    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
+    script = (STATIC / "events_admin.js").read_text(encoding="utf-8")
 
     for name in (
-        "organization_id",
         "name",
-        "starts_at",
-        "ends_at",
+        "start_date",
+        "start_time",
+        "end_date",
+        "end_time",
         "time_zone",
         "delivery_mode",
         "location",
         "description",
+        "accent_color",
+        "logo_file",
+        "cover_file",
+        "website_url",
+        "email_sender_name",
+        "email_reply_to",
     ):
         assert f'name="{name}"' in page
-    endpoint = (
-        "/api/v1/admin/organizations/"
-        "${encodeURIComponent(values.organization_id)}/events"
-    )
-    assert endpoint in script
-    assert "await loadDashboard();" in script
-    assert "location.assign" not in script
-    assert "location.replace" not in script
-    assert 'byId("event-form-status")' in script
+    assert 'location.hash === "#event-form"' in script
+    assert "openEventDialog();" in script
 
 
 def test_home_only_offers_creation_to_organization_administrators() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
-    assert 'id="new-event" type="button" hidden' in page
+    assert 'href="/admin/events#event-form" hidden' in page
     assert 'access.roles.includes("organization_admin")' in script
     assert 'byId("new-event").hidden = state.organizations.length === 0' in script

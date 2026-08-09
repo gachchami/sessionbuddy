@@ -156,6 +156,11 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .entity-card:has(h3 a:focus-visible) { outline: 3px solid var(--focus); outline-offset: 3px; }
 .entity-card .result { margin: 0 0 1rem; }
 .entity-card__action { position: relative; z-index: 1; width: fit-content; margin-top: auto; font-size: .87rem; font-weight: 780; text-decoration: none; }
+.speaker-profile-card { min-height: 0; }
+.speaker-participations { display: grid; gap: .55rem; margin: .85rem 0 0; padding: 0; list-style: none; }
+.speaker-participations li { display: grid; gap: .1rem; padding-top: .55rem; border-top: 1px solid var(--line); }
+.speaker-participations a { width: fit-content; font-weight: 750; text-decoration: none; }
+.speaker-participations span { color: var(--muted); font-size: .82rem; }
 .tool-card { min-height: 10.5rem; }
 .next-step-card { display: flex; align-items: center; justify-content: space-between; gap: 2rem; margin-top: 1.5rem; padding: 1.35rem 1.5rem; border: 1px solid #b9cdfd; border-radius: .85rem; background: linear-gradient(135deg, #f7f9ff, #eef4ff); }
 .next-step-card h2 { margin-bottom: .25rem; }

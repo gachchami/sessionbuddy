@@ -90,6 +90,33 @@ class SpeakerTargetList(BaseModel):
     data: list[SpeakerTarget]
 
 
+class OrganizationSpeakerParticipation(BaseModel):
+    event_id: str
+    event_name: str
+    event_speaker_id: str
+    selection_status: Literal["invited", "submitted", "accepted", "rejected"]
+    proposal_title: str
+
+
+class OrganizationSpeaker(BaseModel):
+    person_id: str
+    user_id: str | None
+    email: str
+    display_name: str
+    job_title: str
+    company: str
+    biography: str
+    location: str
+    links: list[str]
+    version: int
+    participations: list[OrganizationSpeakerParticipation]
+
+
+class OrganizationSpeakerList(BaseModel):
+    organization_id: str
+    data: list[OrganizationSpeaker]
+
+
 class AdminSpeakerUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     display_name: str = Field(min_length=1, max_length=200)

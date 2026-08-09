@@ -4,17 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=15">
+  <link rel="stylesheet" href="/product/assets/product.css?v=16">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
-  <script src="/admin/speakers/assets/speakers.js?v=3" defer></script>
+  <script src="/admin/speakers/assets/speakers.js?v=4" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to speakers</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading"><div><h1 id="page-title">Speakers</h1><p id="page-summary" class="lede">People speaking at your events.</p></div><a id="invite-speaker" class="button" href="/admin/events">Invite speaker</a></div>
+    <div class="page-heading">
+      <div>
+        <h1 id="page-title">Speakers</h1>
+        <p id="page-summary" class="lede">One profile per person, with their participation across your events.</p>
+      </div>
+      <a id="invite-speaker" class="button" href="/admin/events">Invite speaker</a>
+    </div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section id="speaker-detail" class="card" hidden aria-labelledby="speaker-name">
       <p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p>
@@ -22,9 +28,10 @@
       <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="#">Back to event speakers</a></div>
     </section>
     <section class="directory-section" aria-labelledby="directory-title">
-      <div class="section-heading"><h2 id="directory-title">All speakers</h2><span id="speaker-count" class="badge">—</span></div>
+      <div class="section-heading"><h2 id="directory-title">Speaker profiles</h2><span id="speaker-count" class="badge">—</span></div>
       <form id="speaker-filters" class="filter-bar" role="search">
         <label>Search<input id="speaker-search" type="search" placeholder="Name, email, company, or session"></label>
+        <label id="event-filter-field">Event<select id="speaker-event-filter"><option value="">All events</option></select></label>
         <label>Status<select id="speaker-status"><option value="">All statuses</option><option value="invited">Invited</option><option value="submitted">Submitted</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label>
       </form>
       <div id="speaker-list" class="entity-grid"><p class="empty">Loading speaker directory…</p></div>
