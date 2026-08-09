@@ -225,6 +225,23 @@ class CoSpeakerInput(BaseModel):
         return _validate_email_address(value)
 
 
+class CoSpeakerView(CoSpeakerInput):
+    id: str
+    invitation_status: Literal["pending", "accepted", "declined", "removed"]
+    expires_at_ms: int | None = None
+
+
+class CoSpeakerInvitationView(CoSpeakerView):
+    submission_id: str
+    proposal_title: str
+    event_name: str
+
+
+class CoSpeakerInvitationCreated(BaseModel):
+    co_speaker: CoSpeakerView
+    invitation_url: str | None = None
+
+
 class SubmissionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     speaker_name: str = Field(min_length=1, max_length=200)
@@ -254,6 +271,7 @@ class SubmissionUpdate(SubmissionCreate):
 
 
 class SubmissionView(SubmissionCreate):
+    co_speakers: list[CoSpeakerView] = Field(default_factory=list, max_length=10)
     id: str
     status: Literal["submitted", "withdrawn", "accepted", "rejected"]
     submitted_at_ms: int

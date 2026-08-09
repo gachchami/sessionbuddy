@@ -178,7 +178,7 @@
     form.classList.remove("validation-attempted");
     for (const field of form.querySelectorAll('[aria-invalid="true"]')) field.removeAttribute("aria-invalid");
     byId("event-form-help").className = "result";
-    byId("event-form-help").innerHTML = 'Fields marked <span class="required-marker" aria-hidden="true">*</span> are required.';
+    byId("event-form-help").innerHTML = 'Fields <span class="required-marker-group">marked <span class="required-marker" aria-hidden="true">*</span></span> are required.';
     form.elements.event_id.value = "";
     form.elements.version.value = "";
     form.elements.time_zone.value = browserTimeZone();
@@ -243,6 +243,7 @@
     form.elements.delivery_mode.value = event.delivery_mode;
     form.elements.location.value = event.location || "";
     form.elements.description.value = event.description || "";
+    window.SessionBuddyApi.refreshCharacterCounters(form);
     form.elements.email_sender_name.value = event.email_sender_name || "";
     form.elements.email_reply_to.value = event.email_reply_to || "";
     form.elements.accent_color.value = event.accent_color || "#3159d9";

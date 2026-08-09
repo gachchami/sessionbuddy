@@ -15,6 +15,7 @@
 .setup-card { padding: clamp(1.25rem,4vw,2rem); border: 1px solid #e4e7ec; border-radius: .75rem; background: white; box-shadow: 0 8px 24px rgba(16,24,40,.06); }
 .setup-card .status { margin-top: 0; }
 .setup-card h2 { font-size: clamp(1.4rem,3vw,1.75rem); }
+.setup-card .field-label { min-height: 1.1rem; }
 .setup-card button, .setup-card .button { width: 100%; margin-top: .5rem; }
 .setup-card .help { margin: -.5rem 0 1rem; line-height: 1.5; }
 @media (max-width: 48rem) {

@@ -87,7 +87,7 @@
               <label for="social-link">Other social profile</label>
               <div><input id="social-link" name="social_link" type="url" inputmode="url" placeholder="https://bsky.app/profile/your-name" maxlength="500" aria-describedby="social-link-error"><p id="social-link-error" class="field-error"></p></div>
               <label for="biography">Biography <span>required</span></label>
-              <div><textarea id="biography" name="biography" rows="7" maxlength="5000" required aria-describedby="biography-help biography-count biography-error"></textarea><div class="field-meta"><p id="biography-help" class="help">Write a short introduction for event materials.</p><p id="biography-count" class="help">0 of 5,000 characters</p></div><p id="biography-error" class="field-error"></p></div>
+              <div><textarea id="biography" name="biography" rows="7" maxlength="5000" required aria-describedby="biography-help biography-count biography-error" data-character-counter="manual"></textarea><div class="field-meta"><p id="biography-help" class="help">Write a short introduction for event materials.</p><p id="biography-count" class="help character-counter" aria-live="polite">0 of 5,000 characters</p></div><p id="biography-error" class="field-error"></p></div>
             </div>
             <div id="stale-warning" class="stale-warning" role="alert" tabindex="-1" hidden>
               <strong>Your profile changed elsewhere.</strong>

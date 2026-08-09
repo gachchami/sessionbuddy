@@ -318,6 +318,7 @@ function ReviewWorkspace() {
                 <textarea
                   name="internal_comment"
                   rows={4}
+                  maxLength={5000}
                   defaultValue={assignment.internal_comment}
                   disabled={assignment.evaluation_state === "final"}
                 />
@@ -362,6 +363,7 @@ function ReviewWorkspace() {
                   <textarea
                     id={`conflict-note-${assignment.id}`}
                     rows={3}
+                    maxLength={1000}
                     required
                   />
                 </label>
@@ -590,6 +592,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             Reason
             <textarea
               rows={3}
+              maxLength={2000}
               value={forceCloseReason}
               onChange={(event) => setForceCloseReason(event.target.value)}
               placeholder="Organizer closed the round before every review was final."
@@ -845,6 +848,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       <textarea
                         id={`reason-${submission.submission_id}`}
                         rows={3}
+                        maxLength={2000}
                         required={!complete}
                       />
                     </label>

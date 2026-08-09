@@ -107,8 +107,59 @@
   }
 
   function installFormValidation() {
+    let counterSequence = 0;
+    const updateCharacterCounter = (control) => {
+      const counterId = control.dataset.characterCounterId;
+      const counter = counterId ? document.getElementById(counterId) : null;
+      if (!counter) return;
+      counter.textContent = `${control.value.length.toLocaleString()} of ${control.maxLength.toLocaleString()} characters`;
+    };
+    const installCharacterCounters = (root = document) => {
+      const selector = 'textarea[maxlength]:not([readonly]):not([data-character-counter="manual"])';
+      const controls = root.matches?.(selector) ? [root] : [];
+      controls.push(...(root.querySelectorAll?.(selector) || []));
+      for (const control of controls) {
+        if (!control.dataset.characterCounterId) {
+          const counter = document.createElement("small");
+          counter.id = `character-counter-${++counterSequence}`;
+          counter.className = "character-counter";
+          counter.setAttribute("aria-live", "polite");
+          control.dataset.characterCounterId = counter.id;
+          const describedBy = new Set((control.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean));
+          describedBy.add(counter.id);
+          control.setAttribute("aria-describedby", [...describedBy].join(" "));
+          control.after(counter);
+          control.addEventListener("input", () => updateCharacterCounter(control));
+        }
+        updateCharacterCounter(control);
+      }
+    };
+    const requiredLabel = (label, control) => {
+      const existing = Array.from(label.children).find((child) => child.classList.contains("field-label"));
+      if (existing) return existing;
+      const wrapper = document.createElement("span");
+      wrapper.className = "field-label";
+      if (!label.contains(control)) {
+        wrapper.append(...label.childNodes);
+        label.append(wrapper);
+        return wrapper;
+      }
+      let controlBranch = control;
+      while (controlBranch.parentElement && controlBranch.parentElement !== label) controlBranch = controlBranch.parentElement;
+      if (label.firstChild === controlBranch) {
+        while (controlBranch.nextSibling) wrapper.append(controlBranch.nextSibling);
+        controlBranch.after(wrapper);
+        return wrapper;
+      }
+      while (label.firstChild && label.firstChild !== controlBranch) wrapper.append(label.firstChild);
+      label.insertBefore(wrapper, controlBranch);
+      return wrapper;
+    };
     const markRequiredFields = (root = document) => {
-      for (const control of root.querySelectorAll?.("input:required, textarea:required, select:required") || []) {
+      const selector = "input:required, textarea:required, select:required";
+      const controls = root.matches?.(selector) ? [root] : [];
+      controls.push(...(root.querySelectorAll?.(selector) || []));
+      for (const control of controls) {
         const escaped = window.CSS?.escape ? CSS.escape(control.id || "") : control.id;
         const label = control.closest("label") || (escaped ? document.querySelector(`label[for="${escaped}"]`) : null);
         if (!label || label.querySelector(".required-marker")) continue;
@@ -116,8 +167,7 @@
         marker.className = "required-marker";
         marker.setAttribute("aria-hidden", "true");
         marker.textContent = "*";
-        if (label.contains(control)) label.insertBefore(marker, control);
-        else label.append(" ", marker);
+        requiredLabel(label, control).append(marker);
       }
     };
     const validateRequiredText = (form) => {
@@ -128,9 +178,13 @@
       }
     };
     markRequiredFields();
+    installCharacterCounters();
     new MutationObserver((records) => {
       for (const record of records) for (const node of record.addedNodes) {
-        if (node.nodeType === Node.ELEMENT_NODE) markRequiredFields(node);
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          markRequiredFields(node);
+          installCharacterCounters(node);
+        }
       }
     }).observe(document.documentElement, { childList: true, subtree: true });
     document.addEventListener("click", (event) => {
@@ -167,15 +221,23 @@
       for (const control of event.target.querySelectorAll?.('[aria-invalid="true"]') || []) {
         control.removeAttribute("aria-invalid");
       }
+      requestAnimationFrame(() => installCharacterCounters(event.target));
     }, true);
+    document.addEventListener("focusin", (event) => {
+      if (event.target.matches?.('textarea[maxlength]:not([readonly])')) updateCharacterCounter(event.target);
+    }, true);
+    window.addEventListener("pageshow", () => installCharacterCounters());
+
+    return { installCharacterCounters };
   }
 
-  installFormValidation();
+  const formValidation = installFormValidation();
 
   window.SessionBuddyApi = Object.freeze({
     ApiError,
     message,
     parseResponse,
+    refreshCharacterCounters: formValidation.installCharacterCounters,
     redirectIfSignedOut,
     request,
     signInPath

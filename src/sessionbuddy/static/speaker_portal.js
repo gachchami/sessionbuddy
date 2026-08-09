@@ -70,7 +70,10 @@
     for (const field of task.form_fields || []) {
       const label = make("label", field.label);
       let input;
-      if (field.type === "textarea") input = document.createElement("textarea");
+      if (field.type === "textarea") {
+        input = document.createElement("textarea");
+        input.maxLength = 4000;
+      }
       else if (field.type === "select") {
         input = document.createElement("select");
         input.append(new Option("Choose…", ""));
@@ -588,6 +591,7 @@
       }
       form.elements.file.value = "";
       form.elements.version_comment.value = "";
+      window.SessionBuddyApi.refreshCharacterCounters(form);
       await loadAssets();
       const portal = await api("/api/v1/speaker/portal"); renderPortal(portal);
       announceOnboardingChange();

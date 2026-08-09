@@ -1,6 +1,41 @@
 {
   "schema_version": 1,
   "api_routes": {
+    "GET /api/v1/co-speaker-invitations/{token}": {
+      "owner": "program-management",
+      "slo": { "p95_ms": 500, "error_rate_max": 0.001 },
+      "benchmark": "co-speaker-invitation-detail",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/co-speaker-invitations/{token}/accept": {
+      "owner": "program-management",
+      "slo": { "p95_ms": 800, "error_rate_max": 0.001 },
+      "benchmark": "co-speaker-invitation-accept",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/co-speaker-invitations/{token}/decline": {
+      "owner": "program-management",
+      "slo": { "p95_ms": 600, "error_rate_max": 0.001 },
+      "benchmark": "co-speaker-invitation-decline",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}/resend": {
+      "owner": "program-management",
+      "slo": { "p95_ms": 800, "error_rate_max": 0.001 },
+      "benchmark": "co-speaker-invitation-resend",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "DELETE /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}": {
+      "owner": "program-management",
+      "slo": { "p95_ms": 700, "error_rate_max": 0.001 },
+      "benchmark": "co-speaker-remove",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "GET /api/v1/public/events": {
       "owner": "platform",
       "slo": {
@@ -416,6 +451,32 @@
         "api-explorer"
       ],
       "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/event-assets/{kind}": {
+      "owner": "platform",
+      "slo": {
+        "p95_ms": 2000,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-stage-event-branding",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/public/event-assets/{asset_name}": {
+      "owner": "platform",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "public-event-branding",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "PATCH /api/v1/admin/events/{event_id}": {
       "owner": "identity",

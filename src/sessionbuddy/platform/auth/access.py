@@ -120,6 +120,22 @@ async def error_page_stylesheet() -> Response:
     )
 
 
+@access_router.get("/co-speaker-invitations/{token}", include_in_schema=False)
+async def co_speaker_invitation_page(token: str) -> Response:
+    return Response(
+        _asset("co_speaker_invitation.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get(
+    "/co-speaker-invitations/assets/invitation.js", include_in_schema=False
+)
+async def co_speaker_invitation_javascript() -> Response:
+    return Response(_asset("co_speaker_invitation.js"), media_type="text/javascript")
+
+
 @access_router.get("/admin", include_in_schema=False)
 async def admin_home_page() -> Response:
     return Response(
@@ -237,7 +253,7 @@ class BootstrapCreate(BaseModel):
     ends_at_ms: int | None = Field(default=None, ge=0)
     time_zone: str | None = Field(default=None, min_length=1, max_length=100)
     event_location: str | None = Field(default=None, min_length=1, max_length=500)
-    event_description: str | None = Field(default=None, min_length=1, max_length=5000)
+    event_description: str | None = Field(default=None, min_length=1, max_length=2000)
     event_delivery_mode: Literal["in_person", "virtual", "hybrid"] | None = None
 
     @field_validator("admin_email")
@@ -395,7 +411,7 @@ class EventCreate(BaseModel):
     time_zone: str = Field(min_length=1, max_length=100)
     location: str = Field(min_length=1, max_length=500)
     delivery_mode: Literal["in_person", "virtual", "hybrid"]
-    description: str = Field(min_length=1, max_length=5000)
+    description: str = Field(min_length=1, max_length=2000)
     accent_color: str | None = Field(default="#3159d9", pattern=r"^#[0-9A-Fa-f]{6}$")
     logo_url: str | None = Field(default=None, max_length=2000)
     cover_image_url: str | None = Field(default=None, max_length=2000)

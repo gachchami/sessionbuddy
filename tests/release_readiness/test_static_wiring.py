@@ -162,6 +162,135 @@ def test_event_creation_waits_for_selected_image_uploads() -> None:
     assert "uploadSelectedAsset(" not in create_request
 
 
+@pytest.mark.parametrize(
+    ("logo_url", "cover_image_url"),
+    (
+        ("https://assets.example.test/logo.png", ""),
+        ("", "https://assets.example.test/cover.webp"),
+        (
+            "https://assets.example.test/logo.png",
+            "https://assets.example.test/cover.webp",
+        ),
+        ("", ""),
+    ),
+    ids=("logo-only", "cover-only", "logo-and-cover", "no-branding"),
+)
+def test_event_create_payload_supports_every_branding_state(
+    logo_url: str, cover_image_url: str
+) -> None:
+    page = (STATIC / "events_admin.html").read_text()
+    script = (STATIC / "events_admin.js").read_text()
+    submit_handler = script.split(
+        'byId("event-form").addEventListener("submit", async (event) => {', 1
+    )[1]
+    body_source = submit_handler.split("const body = {", 1)[1].split("};", 1)[0]
+
+    # The staged upload references live in hidden form controls, so FormData
+    # includes them without exposing implementation URLs as editable fields.
+    assert '<input name="logo_url" type="hidden">' in page
+    assert '<input name="cover_image_url" type="hidden">' in page
+
+    payload_fields = dict(
+        re.findall(
+            r"(logo_url|cover_image_url|website_url): values\.(\w+) \|\| null",
+            body_source,
+        )
+    )
+    assert payload_fields == {
+        "logo_url": "logo_url",
+        "cover_image_url": "cover_image_url",
+        "website_url": "website_url",
+    }
+
+    form_values = {
+        "logo_url": logo_url,
+        "cover_image_url": cover_image_url,
+        "website_url": "https://conference.example.test",
+    }
+    create_payload = {
+        target: form_values[source] or None
+        for target, source in payload_fields.items()
+    }
+    assert create_payload == {
+        "logo_url": logo_url or None,
+        "cover_image_url": cover_image_url or None,
+        "website_url": "https://conference.example.test",
+    }
+
+
+def test_event_create_button_tracks_pending_branding_uploads() -> None:
+    page = (STATIC / "events_admin.html").read_text()
+    script = (STATIC / "events_admin.js").read_text()
+    availability = script.split("function updateSaveAvailability() {", 1)[1].split(
+        "\n  }", 1
+    )[0]
+    upload_handler = script.split("async function uploadSelectedAsset(kind) {", 1)[1]
+    upload_success = upload_handler.split("try {", 1)[1].split("} catch", 1)[0]
+
+    # With neither image selected, Create starts enabled. Choosing either file
+    # makes it pending and disables Create through the shared state function.
+    assert re.search(r'<button[^>]*id="save-event"(?![^>]*disabled)[^>]*>', page)
+    assert "form.elements.logo_file.files[0]" in availability
+    assert "form.elements.cover_file.files[0]" in availability
+    assert 'byId("save-event").disabled = pending;' in availability
+
+    logo_change = script.split(
+        'elements.logo_file.addEventListener("change", (event) => {', 1
+    )[1].split(
+        'elements.cover_file.addEventListener("change", (event) => {', 1
+    )[0]
+    cover_change = script.split(
+        'elements.cover_file.addEventListener("change", (event) => {', 1
+    )[1].split("async function uploadEventAsset", 1)[0]
+    assert "updateSaveAvailability();" in logo_change
+    assert "updateSaveAvailability();" in cover_change
+
+    # Successful staging first stores the durable reference, then clears the
+    # selected file and recomputes availability, enabling Create again only
+    # after the upload has completed.
+    stored_at = upload_success.index(".value = uploaded.asset_url")
+    cleared_at = upload_success.index('input.value = ""')
+    refreshed_at = upload_success.index("updateSaveAvailability();")
+    assert stored_at < cleared_at < refreshed_at
+
+
+def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> None:
+    page = (STATIC / "events_admin.html").read_text()
+    stylesheet = (STATIC / "product.css").read_text()
+
+    for kind in ("logo", "cover"):
+        card = page.split(
+            f'<section class="image-upload" aria-labelledby="event-{kind}-label">', 1
+        )[1].split("</section>", 1)[0]
+        assert card.index(f'for="event-{kind}-file"') < card.index(
+            f'id="event-{kind}-preview-frame"'
+        )
+        assert card.index(f'id="event-{kind}-preview-frame"') < card.index(
+            f'id="upload-event-{kind}"'
+        )
+        assert 'class="secondary image-upload__submit"' in card
+
+    upload_card_rule = stylesheet.split(".image-upload {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: column" in upload_card_rule
+    assert "align-self: start" in upload_card_rule
+    preview_rule = stylesheet.split("\n.image-upload__preview {", 1)[1].split("}", 1)[0]
+    assert "max-height:" in preview_rule
+    assert "overflow: hidden" in preview_rule
+
+
+def test_cfp_workspace_retries_only_transient_not_found_responses() -> None:
+    script = (STATIC / "admin_programs.js").read_text()
+    loader = script.split("async function loadWorkspace(eventId) {", 1)[1].split(
+        "\n  }", 1
+    )[0]
+    assert "[0, 150, 350]" in loader
+    assert "error.status !== 404" in loader
+    assert "delay === 350" in loader
+    assert "return await api(path)" in loader
+    restore = script.split("async function restoreSession() {", 1)[1]
+    assert "const workspace = await loadWorkspace(eventId);" in restore
+
+
 def test_public_event_pages_render_cover_images() -> None:
     for page_name, script_name in (
         ("public_cfp.html", "public_cfp.js"),

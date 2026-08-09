@@ -13,6 +13,8 @@ from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth import (
     authenticate_request,
+    generate_token,
+    hash_token,
     normalize_email,
 )
 from sessionbuddy.platform.auth.http import require_permission
@@ -28,6 +30,9 @@ from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limi
 
 from .models import (
     CfpWorkspaceView,
+    CoSpeakerInvitationCreated,
+    CoSpeakerInvitationView,
+    CoSpeakerView,
     FormPublish,
     FormUpdate,
     OwnedSubmissionList,
@@ -57,6 +62,200 @@ def _db(request: Request):
     if db is None:
         raise HTTPException(status_code=503)
     return db
+
+
+def _co_speaker_view(row) -> CoSpeakerView:
+    values = dict(row)
+    values["expires_at_ms"] = values.pop("invitation_expires_at_ms", None)
+    return CoSpeakerView.model_validate(values)
+
+
+def _co_speaker_page_url(request: Request, token: str) -> str:
+    base = str(getattr(_env(request), "PUBLIC_BASE_URL", "")).rstrip("/")
+    return f"{base}/co-speaker-invitations/{token}"
+
+
+def _co_speaker_expiry(now: int, closes_at_ms: object) -> int:
+    expiry = now + 7 * 86_400_000
+    return min(expiry, int(closes_at_ms)) if closes_at_ms is not None else expiry
+
+
+async def _owned_co_speaker_context(
+    request: Request, slug: str, submission_id: str, co_speaker_id: str
+):
+    authenticated = await authenticate_request(request)
+    row = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT c.id,c.organization_id,c.event_id,c.submission_id,c.display_name,
+                      c.email,c.normalized_email,c.role,c.invitation_status,
+                      c.invitation_expires_at_ms,c.invitation_version,c.user_id,
+                      s.submitter_user_id,s.proposal_title,f.closes_at_ms,e.name AS event_name
+               FROM submission_contributors c
+               JOIN submissions s ON s.id=c.submission_id
+               JOIN call_for_speaker_forms f ON f.id=s.form_id
+               JOIN events e ON e.id=s.event_id
+               WHERE c.id=?1 AND c.submission_id=?2 AND f.slug=?3
+                 AND s.submitter_user_id=?4 AND c.invitation_status!='removed' LIMIT 1"""
+        )
+        .bind(co_speaker_id, submission_id, slug, authenticated.actor.user_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(row["organization_id"]),
+            str(row["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    return authenticated, row
+
+
+async def _reconcile_co_speakers(
+    request: Request,
+    *,
+    submission_id: str,
+    organization_id: str,
+    event_id: str,
+    invitation_deadline_ms: object,
+    proposal_title: str,
+    primary_name: str,
+    desired,
+    actor_user_id: str,
+) -> None:
+    db, now = _db(request), utc_now_ms()
+    existing = result_rows(
+        await db.prepare(
+            """SELECT id,normalized_email,user_id,invitation_status
+               FROM submission_contributors WHERE submission_id=?1
+                 AND invitation_status!='removed'"""
+        )
+        .bind(submission_id)
+        .all()
+    )
+    desired_by_email = {normalize_email(item.email): item for item in desired}
+    existing_by_email = {str(row["normalized_email"]): row for row in existing}
+    batch = CommandBatch(db)
+    queued: list[str] = []
+    for normalized, current in existing_by_email.items():
+        contributor = desired_by_email.get(normalized)
+        if contributor is not None:
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE submission_contributors SET display_name=?1,email=?2,
+                         updated_at_ms=?3 WHERE id=?4 AND invitation_status!='removed'"""
+                ).bind(contributor.display_name, contributor.email, now, current["id"])
+            )
+            continue
+        batch.add_statement(
+            db.prepare(
+                """DELETE FROM submission_speakers
+                   WHERE submission_id=?1 AND role='co_speaker' AND event_speaker_id IN (
+                     SELECT es.id FROM event_speakers es JOIN people p ON p.id=es.person_id
+                     WHERE es.event_id=?2 AND p.user_id=?3)"""
+            ).bind(submission_id, event_id, current["user_id"])
+        )
+        batch.add_statement(
+            db.prepare(
+                """UPDATE submission_contributors SET invitation_status='removed',
+                     invitation_token_hash=NULL,invitation_expires_at_ms=NULL,removed_at_ms=?1,
+                     updated_at_ms=?1 WHERE id=?2 AND invitation_status!='removed'"""
+            ).bind(now, current["id"])
+        )
+        if current["user_id"] is not None:
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_memberships SET status='revoked',revoked_at_ms=?1,
+                         updated_at_ms=?1 WHERE organization_id=?2 AND event_id=?3
+                         AND user_id=?4 AND role='speaker' AND NOT EXISTS (
+                           SELECT 1 FROM submission_contributors c
+                           WHERE c.organization_id=?2 AND c.event_id=?3 AND c.user_id=?4
+                             AND c.invitation_status='accepted' AND c.id!=?5)
+                         AND NOT EXISTS (
+                           SELECT 1 FROM submission_speakers ss
+                           JOIN event_speakers es ON es.id=ss.event_speaker_id
+                           JOIN people p ON p.id=es.person_id
+                           WHERE ss.event_id=?3 AND p.user_id=?4 AND ss.role='primary')"""
+                ).bind(now, organization_id, event_id, current["user_id"], current["id"])
+            )
+        batch.audit(
+            AuditEvent(
+                actor_type="user", actor_user_id=actor_user_id,
+                action="submission.co_speaker.remove", target_type="submission_contributor",
+                target_id=str(current["id"]), result="succeeded",
+                correlation_id=request.state.request_id, occurred_at_ms=now,
+                organization_id=organization_id, event_id=event_id,
+            )
+        )
+    for normalized, contributor in desired_by_email.items():
+        if normalized in existing_by_email:
+            continue
+        contributor_id, token, message_id = new_id(), generate_token(), new_id()
+        expires_at = _co_speaker_expiry(now, invitation_deadline_ms)
+        if expires_at <= now:
+            raise HTTPException(status_code=409, detail="Applications are closed.")
+        invitation_url = _co_speaker_page_url(request, token)
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO submission_contributors
+                   (id,organization_id,event_id,submission_id,display_name,email,
+                    normalized_email,role,created_at_ms,updated_at_ms,invitation_status,
+                    invitation_token_hash,invitation_expires_at_ms,invited_at_ms,
+                    invitation_version)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8,'pending',
+                          ?9,?10,?8,1)
+                   ON CONFLICT(submission_id,normalized_email) DO UPDATE SET
+                     display_name=excluded.display_name,email=excluded.email,
+                     invitation_status='pending',invitation_token_hash=excluded.invitation_token_hash,
+                     invitation_expires_at_ms=excluded.invitation_expires_at_ms,
+                     invited_at_ms=excluded.invited_at_ms,declined_at_ms=NULL,removed_at_ms=NULL,
+                     invitation_version=submission_contributors.invitation_version+1,
+                     updated_at_ms=excluded.updated_at_ms"""
+            ).bind(
+                contributor_id, organization_id, event_id, submission_id,
+                contributor.display_name, contributor.email, normalized, now,
+                hash_token(token), expires_at,
+            )
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO communication_messages
+                   (id,organization_id,event_id,recipient_email,subject,html_body,
+                    deterministic_key,status,queued_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,'queued',?8,?8)"""
+            ).bind(
+                message_id, organization_id, event_id, contributor.email,
+                f"Invitation to co-present {proposal_title}",
+                f'<p>{escape(primary_name)} invited you to co-present.</p>'
+                f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
+                f"co-speaker:{contributor_id}:v1", now,
+            )
+        )
+        prior = await db.prepare(
+            "SELECT id FROM submission_contributors WHERE submission_id=?1 AND normalized_email=?2"
+        ).bind(submission_id, normalized).first("id")
+        if prior is not None:
+            contributor_id = str(prior)
+        batch.audit(
+            AuditEvent(
+                actor_type="user", actor_user_id=actor_user_id,
+                action="submission.co_speaker.invite", target_type="submission_contributor",
+                target_id=contributor_id, result="succeeded",
+                correlation_id=request.state.request_id, occurred_at_ms=now,
+                organization_id=organization_id, event_id=event_id,
+            )
+        )
+        queued.append(message_id)
+    await _execute(request, batch)
+    queue = getattr(_env(request), "COMMUNICATION_QUEUE", None)
+    if queue is not None:
+        for message_id in queued:
+            await queue.send({"schema_version": 1, "message_id": message_id})
 
 
 async def _timed_first(request: Request, statement, column: str | None = None):
@@ -187,6 +386,14 @@ def _validate_cfp_deadline(closes_at_ms: int | None, event_starts_at_ms: int) ->
         )
 
 
+def _validate_cfp_opening(opens_at_ms: int | None, now_ms: int) -> None:
+    if opens_at_ms is not None and opens_at_ms < now_ms:
+        raise HTTPException(
+            status_code=422,
+            detail="The Call for Proposals opening time cannot be in the past.",
+        )
+
+
 @cfp_router.post(
     "/api/v1/admin/events/{event_id}/cfp/publish",
     response_model=PublishedFormView,
@@ -228,6 +435,7 @@ async def publish_form(
             raise HTTPException(status_code=409)
         return await _form_by_id(db, str(replay["response_resource_id"]))
     now = utc_now_ms()
+    _validate_cfp_opening(body.opens_at_ms, now)
     form_id = new_id()
     existing_form = await db.prepare(
         """SELECT 1 AS found FROM call_for_speaker_forms
@@ -351,6 +559,7 @@ async def update_published_form(
     _validate_cfp_deadline(body.closes_at_ms, int(current["starts_at_ms"]))
     form_id = str(current["id"])
     now = utc_now_ms()
+    _validate_cfp_opening(body.opens_at_ms, now)
     schema_json = json.dumps(
         {
             "fields": [field.model_dump() for field in body.fields],
@@ -591,6 +800,7 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
                  s.submitter_user_id=?2 OR EXISTS (
                    SELECT 1 FROM submission_contributors c
                    WHERE c.submission_id=s.id AND c.normalized_email=?3
+                     AND c.invitation_status='accepted'
                  )
                )
                ORDER BY s.updated_at_ms DESC,s.id DESC LIMIT 25"""
@@ -604,8 +814,10 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
         answers = json.loads(str(values.pop("answers_json")))
         contributors = result_rows(
             await db.prepare(
-                """SELECT display_name,email,role FROM submission_contributors
-                   WHERE submission_id=?1 ORDER BY display_name,id"""
+                """SELECT id,display_name,email,role,invitation_status,
+                          invitation_expires_at_ms AS expires_at_ms
+                   FROM submission_contributors WHERE submission_id=?1
+                     AND invitation_status!='removed' ORDER BY display_name,id"""
             )
             .bind(values["id"])
             .all()
@@ -621,6 +833,391 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
             )
         )
     return OwnedSubmissionList(data=data)
+
+
+@cfp_router.get(
+    "/api/v1/co-speaker-invitations/{token}",
+    response_model=CoSpeakerInvitationView,
+    tags=["submissions"],
+)
+async def get_co_speaker_invitation(token: str, request: Request) -> CoSpeakerInvitationView:
+    if len(token) < 32:
+        raise HTTPException(status_code=404)
+    row = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT c.id,c.submission_id,c.display_name,c.email,c.role,c.invitation_status,
+                      c.invitation_expires_at_ms,s.proposal_title,e.name AS event_name
+               FROM submission_contributors c
+               JOIN submissions s ON s.id=c.submission_id
+               JOIN events e ON e.id=c.event_id
+               WHERE c.invitation_token_hash=?1 AND c.invitation_status='pending'
+                 AND c.invitation_expires_at_ms>?2 LIMIT 1"""
+        )
+        .bind(hash_token(token), utc_now_ms())
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    values = dict(row)
+    values["expires_at_ms"] = values.pop("invitation_expires_at_ms")
+    return CoSpeakerInvitationView.model_validate(values)
+
+
+async def _respond_to_co_speaker_invitation(
+    token: str, request: Request, response_status: str
+) -> CoSpeakerInvitationView:
+    if len(token) < 32:
+        raise HTTPException(status_code=404)
+    db, now = _db(request), utc_now_ms()
+    row = row_mapping(
+        await db.prepare(
+            """SELECT c.id,c.organization_id,c.event_id,c.submission_id,c.display_name,
+                      c.email,c.normalized_email,c.role,c.invitation_status,
+                      c.invitation_expires_at_ms,s.proposal_title,e.name AS event_name
+               FROM submission_contributors c
+               JOIN submissions s ON s.id=c.submission_id
+               JOIN events e ON e.id=c.event_id
+               WHERE c.invitation_token_hash=?1 AND c.invitation_status='pending'
+                 AND c.invitation_expires_at_ms>?2 LIMIT 1"""
+        )
+        .bind(hash_token(token), now)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    batch = CommandBatch(db)
+    user_id: str | None = None
+    if response_status == "accepted":
+        existing_user = row_mapping(
+            await db.prepare("SELECT id FROM users WHERE normalized_email=?1 LIMIT 1")
+            .bind(row["normalized_email"])
+            .first()
+        )
+        user_id = str(existing_user["id"]) if existing_user is not None else new_id()
+        if existing_user is None:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO users
+                       (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?3,'active',?4,?4,?4)"""
+                ).bind(user_id, row["email"], row["normalized_email"], now)
+            )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO organization_memberships
+                   (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,'member','active',?4,?4)
+                   ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
+                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+            ).bind(new_id(), row["organization_id"], user_id, now)
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_memberships
+                   (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
+                   ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
+                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+            ).bind(new_id(), row["organization_id"], row["event_id"], user_id, now)
+        )
+        person = row_mapping(
+            await db.prepare(
+                "SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1"
+            )
+            .bind(row["organization_id"], user_id)
+            .first()
+        )
+        person_id = str(person["id"]) if person is not None else new_id()
+        if person is None:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO people
+                       (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?3,?4,?5,?5)"""
+                ).bind(person_id, row["organization_id"], user_id, row["display_name"], now)
+            )
+        speaker = row_mapping(
+            await db.prepare(
+                """SELECT id FROM event_speakers
+                   WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
+            )
+            .bind(row["organization_id"], row["event_id"], person_id)
+            .first()
+        )
+        speaker_id = str(speaker["id"]) if speaker is not None else new_id()
+        if speaker is None:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO event_speakers
+                       (id,organization_id,event_id,person_id,status,accepted_at_ms,
+                        last_activity_at_ms,created_at_ms,updated_at_ms,selection_status)
+                       VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
+                ).bind(speaker_id, row["organization_id"], row["event_id"], person_id, now)
+            )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO submission_speakers
+                   (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                    snapshot_name,created_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,'co_speaker',?6,?7)
+                   ON CONFLICT(organization_id,event_id,submission_id,event_speaker_id)
+                   DO UPDATE SET snapshot_name=excluded.snapshot_name"""
+            ).bind(
+                new_id(), row["organization_id"], row["event_id"], row["submission_id"],
+                speaker_id, row["display_name"], now,
+            )
+        )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE submission_contributors SET invitation_status=?1,user_id=?2,
+                 invitation_token_hash=NULL,invitation_expires_at_ms=NULL,
+                 accepted_at_ms=CASE WHEN ?1='accepted' THEN ?3 ELSE accepted_at_ms END,
+                 declined_at_ms=CASE WHEN ?1='declined' THEN ?3 ELSE declined_at_ms END,
+                 updated_at_ms=?3
+               WHERE id=?4 AND invitation_token_hash=?5 AND invitation_status='pending'
+                 AND invitation_expires_at_ms>?3"""
+        ).bind(response_status, user_id, now, row["id"], hash_token(token))
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO submission_contributor_invitation_guards
+               (id,contributor_id,applied_changes,created_at_ms)
+               VALUES(?1,?2,changes(),?3)"""
+        ).bind(new_id(), row["id"], now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user" if user_id else "anonymous",
+            actor_user_id=user_id,
+            action=f"submission.co_speaker.{response_status}",
+            target_type="submission_contributor",
+            target_id=str(row["id"]),
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+        )
+    )
+    await _execute(request, batch)
+    return CoSpeakerInvitationView(
+        id=str(row["id"]),
+        submission_id=str(row["submission_id"]),
+        display_name=str(row["display_name"]),
+        email=str(row["email"]),
+        role="co_speaker",
+        invitation_status=response_status,
+        expires_at_ms=None,
+        proposal_title=str(row["proposal_title"]),
+        event_name=str(row["event_name"]),
+    )
+
+
+@cfp_router.post(
+    "/api/v1/co-speaker-invitations/{token}/accept",
+    response_model=CoSpeakerInvitationView,
+    tags=["submissions"],
+)
+async def accept_co_speaker_invitation(
+    token: str, request: Request
+) -> CoSpeakerInvitationView:
+    return await _respond_to_co_speaker_invitation(token, request, "accepted")
+
+
+@cfp_router.post(
+    "/api/v1/co-speaker-invitations/{token}/decline",
+    response_model=CoSpeakerInvitationView,
+    tags=["submissions"],
+)
+async def decline_co_speaker_invitation(
+    token: str, request: Request
+) -> CoSpeakerInvitationView:
+    return await _respond_to_co_speaker_invitation(token, request, "declined")
+
+
+@cfp_router.post(
+    "/api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}/resend",
+    response_model=CoSpeakerInvitationCreated,
+    tags=["submissions"],
+)
+async def resend_co_speaker_invitation(
+    slug: str,
+    submission_id: str,
+    co_speaker_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> CoSpeakerInvitationCreated:
+    key = _idempotency_key(idempotency_key)
+    authenticated, row = await _owned_co_speaker_context(
+        request, slug, submission_id, co_speaker_id
+    )
+    if row["invitation_status"] == "accepted":
+        raise HTTPException(status_code=409)
+    db, now = _db(request), utc_now_ms()
+    token, message_id = generate_token(), new_id()
+    expires_at = _co_speaker_expiry(now, row["closes_at_ms"])
+    if expires_at <= now:
+        raise HTTPException(status_code=409, detail="Applications are closed.")
+    fingerprint = hashlib.sha256(
+        f"{co_speaker_id}:{row['invitation_version']}".encode()
+    ).digest()
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        route_key="POST /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{id}/resend",
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    invitation_url = _co_speaker_page_url(request, token)
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE submission_contributors SET invitation_status='pending',
+                 invitation_token_hash=?1,invitation_expires_at_ms=?2,invited_at_ms=?3,
+                 declined_at_ms=NULL,invitation_version=invitation_version+1,updated_at_ms=?3
+               WHERE id=?4 AND invitation_status IN ('pending','declined')"""
+        ).bind(hash_token(token), expires_at, now, co_speaker_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO submission_contributor_invitation_guards
+               (id,contributor_id,applied_changes,created_at_ms)
+               VALUES(?1,?2,changes(),?3)"""
+        ).bind(new_id(), co_speaker_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,queued_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,'queued',?8,?8)"""
+        ).bind(
+            message_id,
+            row["organization_id"],
+            row["event_id"],
+            row["email"],
+            f"Invitation to co-present {row['proposal_title']}",
+            f'<p>You were invited to co-present at {escape(str(row["event_name"]))}.</p>'
+            f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
+            f"co-speaker:{co_speaker_id}:v{int(row['invitation_version']) + 1}",
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="submission.co_speaker.resend",
+            target_type="submission_contributor",
+            target_id=co_speaker_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="submission_contributor",
+        resource_id=co_speaker_id,
+        completed_at_ms=now,
+    )
+    await _execute(request, batch)
+    queue = getattr(_env(request), "COMMUNICATION_QUEUE", None)
+    if queue is not None:
+        await queue.send({"schema_version": 1, "message_id": message_id})
+    view = CoSpeakerView(
+        id=co_speaker_id,
+        display_name=str(row["display_name"]),
+        email=str(row["email"]),
+        role="co_speaker",
+        invitation_status="pending",
+        expires_at_ms=expires_at,
+    )
+    return CoSpeakerInvitationCreated(
+        co_speaker=view,
+        invitation_url=(
+            invitation_url
+            if getattr(_env(request), "APP_ENV", "production") == "local"
+            else None
+        ),
+    )
+
+
+@cfp_router.delete(
+    "/api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}",
+    status_code=204,
+    tags=["submissions"],
+)
+async def remove_co_speaker(
+    slug: str, submission_id: str, co_speaker_id: str, request: Request
+) -> None:
+    authenticated, row = await _owned_co_speaker_context(
+        request, slug, submission_id, co_speaker_id
+    )
+    db, now = _db(request), utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM submission_speakers
+               WHERE submission_id=?1 AND role='co_speaker' AND event_speaker_id IN (
+                 SELECT es.id FROM event_speakers es JOIN people p ON p.id=es.person_id
+                 WHERE es.event_id=?2 AND p.user_id=?3)"""
+        ).bind(submission_id, row["event_id"], row["user_id"])
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE submission_contributors SET invitation_status='removed',
+                 invitation_token_hash=NULL,invitation_expires_at_ms=NULL,removed_at_ms=?1,
+                 updated_at_ms=?1 WHERE id=?2 AND invitation_status!='removed'"""
+        ).bind(now, co_speaker_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO submission_contributor_invitation_guards
+               (id,contributor_id,applied_changes,created_at_ms)
+               VALUES(?1,?2,changes(),?3)"""
+        ).bind(new_id(), co_speaker_id, now)
+    )
+    if row["user_id"] is not None:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE event_memberships SET status='revoked',revoked_at_ms=?1,updated_at_ms=?1
+                   WHERE organization_id=?2 AND event_id=?3 AND user_id=?4 AND role='speaker'
+                     AND NOT EXISTS (
+                       SELECT 1 FROM submission_contributors c
+                       WHERE c.organization_id=?2 AND c.event_id=?3 AND c.user_id=?4
+                         AND c.invitation_status='accepted' AND c.id!=?5)
+                     AND NOT EXISTS (
+                       SELECT 1 FROM submission_speakers ss
+                       JOIN event_speakers es ON es.id=ss.event_speaker_id
+                       JOIN people p ON p.id=es.person_id
+                       WHERE ss.event_id=?3 AND p.user_id=?4 AND ss.role='primary')"""
+            ).bind(
+                now, row["organization_id"], row["event_id"], row["user_id"], co_speaker_id
+            )
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="submission.co_speaker.remove",
+            target_type="submission_contributor",
+            target_id=co_speaker_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+        )
+    )
+    await _execute(request, batch)
 
 
 @cfp_router.patch(
@@ -731,32 +1328,17 @@ async def update_submission(
         .bind(body.speaker_name, submission_id)
         .run()
     )
-    await (
-        db.prepare("DELETE FROM submission_contributors WHERE submission_id=?1")
-        .bind(submission_id)
-        .run()
+    await _reconcile_co_speakers(
+        request,
+        submission_id=submission_id,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        invitation_deadline_ms=row["closes_at_ms"],
+        proposal_title=body.proposal_title,
+        primary_name=body.speaker_name,
+        desired=body.co_speakers,
+        actor_user_id=authenticated.actor.user_id,
     )
-    if body.co_speakers:
-        await db.batch(
-            [
-                db.prepare(
-                    """INSERT INTO submission_contributors
-                       (id,organization_id,event_id,submission_id,display_name,email,
-                        normalized_email,role,created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
-                ).bind(
-                    new_id(),
-                    row["organization_id"],
-                    row["event_id"],
-                    submission_id,
-                    contributor.display_name,
-                    contributor.email,
-                    normalize_email(contributor.email),
-                    now,
-                )
-                for contributor in body.co_speakers
-            ]
-        )
     return await _editable_submission_by_id(db, submission_id)
 
 
@@ -837,32 +1419,17 @@ async def update_submission_as_organizer(
         .bind(body.speaker_name, submission_id)
         .run()
     )
-    await (
-        db.prepare("DELETE FROM submission_contributors WHERE submission_id=?1")
-        .bind(submission_id)
-        .run()
+    await _reconcile_co_speakers(
+        request,
+        submission_id=submission_id,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        invitation_deadline_ms=None,
+        proposal_title=body.proposal_title,
+        primary_name=body.speaker_name,
+        desired=body.co_speakers,
+        actor_user_id=authenticated.actor.user_id,
     )
-    if body.co_speakers:
-        await db.batch(
-            [
-                db.prepare(
-                    """INSERT INTO submission_contributors
-                       (id,organization_id,event_id,submission_id,display_name,email,
-                        normalized_email,role,created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
-                ).bind(
-                    new_id(),
-                    row["organization_id"],
-                    row["event_id"],
-                    submission_id,
-                    contributor.display_name,
-                    contributor.email,
-                    normalize_email(contributor.email),
-                    now,
-                )
-                for contributor in body.co_speakers
-            ]
-        )
     batch = CommandBatch(db)
     batch.audit(
         AuditEvent(
@@ -1021,15 +1588,25 @@ async def create_submission(
                VALUES(?1,?2,changes(),?3)"""
         ).bind(new_id(), submission_id, now)
     )
+    co_speaker_message_ids: list[str] = []
     for contributor in body.co_speakers:
+        contributor_id = new_id()
+        invitation_token = generate_token()
+        invitation_expires_at = _co_speaker_expiry(now, form["closes_at_ms"])
+        invitation_url = _co_speaker_page_url(request, invitation_token)
+        invitation_message_id = new_id()
+        co_speaker_message_ids.append(invitation_message_id)
         batch.add_statement(
             db.prepare(
                 """INSERT INTO submission_contributors
                    (id,organization_id,event_id,submission_id,display_name,email,
-                    normalized_email,role,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
+                    normalized_email,role,created_at_ms,updated_at_ms,invitation_status,
+                    invitation_token_hash,invitation_expires_at_ms,invited_at_ms,
+                    invitation_version)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8,'pending',
+                          ?9,?10,?8,1)"""
             ).bind(
-                new_id(),
+                contributor_id,
                 form["organization_id"],
                 form["event_id"],
                 submission_id,
@@ -1037,6 +1614,40 @@ async def create_submission(
                 contributor.email,
                 normalize_email(contributor.email),
                 now,
+                hash_token(invitation_token),
+                invitation_expires_at,
+            )
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO communication_messages
+                   (id,organization_id,event_id,recipient_email,subject,html_body,
+                    deterministic_key,status,queued_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,'queued',?8,?8)"""
+            ).bind(
+                invitation_message_id,
+                form["organization_id"],
+                form["event_id"],
+                contributor.email,
+                f"Invitation to co-present {body.proposal_title}",
+                f'<p>{escape(body.speaker_name)} invited you to co-present.</p>'
+                f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
+                f"co-speaker:{contributor_id}:v1",
+                now,
+            )
+        )
+        batch.audit(
+            AuditEvent(
+                actor_type="user",
+                actor_user_id=submitter_user_id,
+                action="submission.co_speaker.invite",
+                target_type="submission_contributor",
+                target_id=contributor_id,
+                result="succeeded",
+                correlation_id=request.state.request_id,
+                occurred_at_ms=now,
+                organization_id=str(form["organization_id"]),
+                event_id=str(form["event_id"]),
             )
         )
     batch.add_statement(
@@ -1162,21 +1773,12 @@ async def create_submission(
     queue = getattr(_env(request), "COMMUNICATION_QUEUE", None)
     if queue is not None:
         try:
-            await queue.send({"schema_version": 1, "message_id": message_id})
+            for queued_message_id in [message_id, *co_speaker_message_ids]:
+                await queue.send({"schema_version": 1, "message_id": queued_message_id})
         except Exception:
             # The durable queued row remains visible to operators for replay.
             record_timing(request, "domain", 0)
-    return PrivateSubmissionView(
-        id=submission_id,
-        editable=True,
-        status="submitted",
-        submitted_at_ms=now,
-        version=1,
-        routed_category=routing["category"],
-        routed_track=routing["track"],
-        routed_review_queue=routing["review_queue"],
-        **body.model_dump(),
-    )
+    return await _editable_submission_by_id(db, submission_id)
 
 
 @cfp_router.get(
@@ -1226,8 +1828,10 @@ async def list_submissions(
         contributors = result_rows(
             await _db(request)
             .prepare(
-                """SELECT display_name,email,role FROM submission_contributors
-                   WHERE submission_id=?1 ORDER BY display_name,id"""
+                """SELECT id,display_name,email,role,invitation_status,
+                          invitation_expires_at_ms AS expires_at_ms
+                   FROM submission_contributors WHERE submission_id=?1
+                     AND invitation_status!='removed' ORDER BY display_name,id"""
             )
             .bind(row["id"])
             .all()
@@ -1306,8 +1910,10 @@ async def _submission_by_id(db, submission_id: str) -> SubmissionView:
     answers = json.loads(str(row.pop("answers_json")))
     contributors = result_rows(
         await db.prepare(
-            """SELECT display_name,email,role FROM submission_contributors
-               WHERE submission_id=?1 ORDER BY display_name,id"""
+            """SELECT id,display_name,email,role,invitation_status,
+                      invitation_expires_at_ms AS expires_at_ms
+               FROM submission_contributors WHERE submission_id=?1
+                 AND invitation_status!='removed' ORDER BY display_name,id"""
         )
         .bind(submission_id)
         .all()

@@ -26,7 +26,7 @@
     const open = document.createElement("a");
     open.href = href;
     open.className = "entity-card__action";
-    open.textContent = "Continue →";
+    open.textContent = "Open →";
     card.append(meta, heading, summary, open);
     return card;
   }
@@ -67,8 +67,6 @@
     byId("public-schedule").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
     const nextHref = cfpLive ? reviewPath : `${prefix}/cfp`;
-    byId("primary-action").href = nextHref;
-    byId("primary-action").textContent = cfpLive ? "Review submissions" : "Set up Call for Proposals";
     byId("event-actions").hidden = false;
     byId("next-step-title").textContent = cfpLive ? "Review incoming proposals" : "Publish your Call for Proposals";
     byId("next-step-summary").textContent = cfpLive
@@ -77,7 +75,7 @@
     byId("next-step-action").href = nextHref;
     byId("next-step-action").textContent = cfpLive ? "Open submissions" : "Set up the form";
     byId("event-tools").replaceChildren(
-      tool(1, "Collect proposals", "Publish the form and share one CFP link.", `${prefix}/cfp`, cfpLive ? "Live" : "Set up"),
+      tool(1, "Call for Proposals", "Manage the form and its public link.", `${prefix}/cfp`, cfpLive ? "Live" : "Not published"),
       tool(2, "Review & decide", "Evaluate submissions and choose the program.", reviewPath, cfpLive ? "Ready" : "Waiting"),
       tool(3, "Prepare speakers", "Invite people and track onboarding work.", `${prefix}/onboarding`, `${speakers.length} speakers`),
       tool(4, "Build the agenda", "Place accepted sessions and resolve conflicts.", `${prefix}/agenda`),

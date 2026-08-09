@@ -1,15 +1,20 @@
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 
+from sessionbuddy.cfp.models import DEFAULT_FORM_FIELDS
+from sessionbuddy.cfp.router import get_form
+from sessionbuddy.competition.router import public_speakers
 from sessionbuddy.platform.auth import access
 from sessionbuddy.platform.auth.http import AuthenticatedContext
 from sessionbuddy.platform.authorization import Actor, Permission, Role
 from sessionbuddy.platform.db.types import utc_now_ms
+from sessionbuddy.scheduling.router import get_public_schedule
 from tests.speaker_operations.test_asset_boundary import AsyncSqlite
 
 MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
@@ -95,18 +100,24 @@ def branding_request(database: AsyncSqlite, bucket: Bucket, body: bytes = PNG) -
 
 @pytest.fixture
 def allow_organization_admin(monkeypatch):
+    authenticated_context = AuthenticatedContext(
+        Actor(
+            "user-a",
+            organization_roles={"org-a": frozenset({Role.ORGANIZATION_ADMIN})},
+        ),
+        "session-a",
+    )
+
     async def allowed(request, permission, context, **kwargs):
         assert permission in {Permission.ORGANIZATION_MANAGE, Permission.EVENT_MANAGE}
         assert context.organization_id == "org-a"
-        return AuthenticatedContext(
-            Actor(
-                "user-a",
-                organization_roles={"org-a": frozenset({Role.ORGANIZATION_ADMIN})},
-            ),
-            "session-a",
-        )
+        return authenticated_context
+
+    async def authenticated(request):
+        return authenticated_context
 
     monkeypatch.setattr(access, "require_permission", allowed)
+    monkeypatch.setattr(access, "authenticate_request", authenticated)
 
 
 async def test_staged_logo_is_scoped_stored_and_attached_atomically(
@@ -237,3 +248,123 @@ async def test_public_branding_url_streams_only_a_registered_object(
             "not-registered.png", branding_request(database, bucket, b"")
         )
     assert missing.value.status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("include_logo", "include_cover"),
+    ((True, False), (False, True), (True, True), (False, False)),
+    ids=("logo-only", "cover-only", "both", "neither"),
+)
+async def test_event_branding_matrix_is_consistent_across_public_views(
+    branding_database,
+    allow_organization_admin,
+    include_logo: bool,
+    include_cover: bool,
+) -> None:
+    connection, database = branding_database
+    bucket = Bucket()
+    expected: dict[str, str | None] = {"logo": None, "cover": None}
+    for kind, enabled in (("logo", include_logo), ("cover", include_cover)):
+        if enabled:
+            uploaded = await access.upload_organization_event_asset(
+                "org-a", kind, branding_request(database, bucket)
+            )
+            expected[kind] = uploaded.asset_url
+
+    now = utc_now_ms()
+    website_url = "https://events.example.test/conference"
+    created = await access.create_event(
+        "org-a",
+        access.EventCreate(
+            name="Branding matrix event",
+            starts_at_ms=now + 86_400_000,
+            ends_at_ms=now + 172_800_000,
+            time_zone="UTC",
+            location="Online",
+            delivery_mode="virtual",
+            description="An event used to verify every branding combination.",
+            logo_url=expected["logo"],
+            cover_image_url=expected["cover"],
+            website_url=website_url,
+        ),
+        branding_request(database, bucket, b""),
+    )
+    assert created.logo_url == expected["logo"]
+    assert created.cover_image_url == expected["cover"]
+    assert created.website_url == website_url
+
+    saved = connection.execute(
+        "SELECT logo_url,cover_image_url,website_url FROM events WHERE id=?",
+        (created.id,),
+    ).fetchone()
+    assert tuple(saved) == (expected["logo"], expected["cover"], website_url)
+
+    attached_rows = connection.execute(
+        """SELECT kind,asset_url,event_id,status FROM event_branding_assets
+           WHERE event_id=? ORDER BY kind""",
+        (created.id,),
+    ).fetchall()
+    assert {
+        row["kind"]: (row["asset_url"], row["event_id"], row["status"])
+        for row in attached_rows
+    } == {
+        kind: (asset_url, created.id, "attached")
+        for kind, asset_url in expected.items()
+        if asset_url is not None
+    }
+
+    for asset_url in (value for value in expected.values() if value is not None):
+        response = await access.public_event_branding_asset(
+            asset_url.rsplit("/", 1)[1], branding_request(database, bucket, b"")
+        )
+        assert b"".join([chunk async for chunk in response.body_iterator]) == PNG
+
+    event_list = await access.list_events(
+        "org-a", branding_request(database, bucket, b"")
+    )
+    event_view = next(item for item in event_list.data if item.id == created.id)
+    assert event_view.logo_url == expected["logo"]
+    assert event_view.cover_image_url == expected["cover"]
+    assert event_view.website_url == website_url
+
+    slug = f"branding-{int(include_logo)}-{int(include_cover)}"
+    schema_json = json.dumps(
+        {"fields": [field.model_dump(mode="json") for field in DEFAULT_FORM_FIELDS]}
+    )
+    connection.execute(
+        """INSERT INTO call_for_speaker_forms
+           (id,organization_id,event_id,version,slug,welcome_text,schema_json,status,
+            published_at_ms,created_at_ms,updated_at_ms)
+           VALUES(?,?,?,?,?,?,?,'published',?,?,?)""",
+        (
+            f"form-{slug}",
+            "org-a",
+            created.id,
+            1,
+            slug,
+            "Submit your proposal.",
+            schema_json,
+            now,
+            now,
+            now,
+        ),
+    )
+    published_form = await get_form(slug, branding_request(database, bucket, b""))
+    assert published_form.logo_url == expected["logo"]
+    assert published_form.cover_image_url == expected["cover"]
+
+    public_schedule = await get_public_schedule(
+        created.id,
+        branding_request(database, bucket, b""),
+        Response(),
+    )
+    assert public_schedule["event"]["logo_url"] == expected["logo"]
+    assert public_schedule["event"]["cover_image_url"] == expected["cover"]
+    assert public_schedule["event"]["website_url"] == website_url
+
+    public_gallery = await public_speakers(
+        created.id, branding_request(database, bucket, b"")
+    )
+    assert public_gallery.event["logo_url"] == expected["logo"]
+    assert public_gallery.event["cover_image_url"] == expected["cover"]
+    assert public_gallery.event["website_url"] == website_url

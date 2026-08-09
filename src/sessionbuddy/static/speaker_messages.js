@@ -115,6 +115,7 @@
     const form = byId("message-form");
     form.elements.subject.value = selected.subject;
     form.elements.body_text.value = selected.body;
+    window.SessionBuddyApi.refreshCharacterCounters(form);
     invalidatePreview();
   });
   byId("message-form").addEventListener("focusin", (event) => {

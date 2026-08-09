@@ -6,7 +6,7 @@
   <title>Submit a proposal · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=15">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/product/assets/public-cfp.js?v=12" defer></script>
+  <script src="/product/assets/public-cfp.js?v=13" defer></script>
 </head>
 <body class="public-body">
   <a class="skip-link" href="#main">Skip to proposal form</a>
@@ -22,7 +22,7 @@
     <section id="proposal-card" class="card" hidden aria-labelledby="title">
       <form id="proposal-form">
         <div id="dynamic-fields"></div>
-        <fieldset id="co-speakers"><legend>Co-speakers <span class="optional">Optional</span></legend><p class="help">Add anyone presenting this proposal with you.</p><div id="co-speaker-rows"></div><button id="add-co-speaker" class="secondary" type="button">Add co-speaker</button></fieldset>
+        <fieldset id="co-speakers"><legend>Co-speakers <span class="optional">Optional</span></legend><p class="help">Add anyone presenting this proposal with you. Each person receives their own invitation.</p><div id="co-speaker-rows"></div><button id="add-co-speaker" class="secondary" type="button">Add co-speaker</button><section id="co-speaker-invitations" class="co-speaker-invitations" aria-labelledby="co-speaker-invitations-title" hidden><h3 id="co-speaker-invitations-title">Invitation status</h3><div id="co-speaker-invitation-list"></div></section></fieldset>
         <section id="review-panel" class="review-panel" hidden aria-labelledby="review-title"><h2 id="review-title">Review your proposal</h2><p>Confirm these details before submitting.</p><dl id="review-list" class="review-list"></dl></section>
         <div class="actions"><button id="save-draft" class="secondary" type="button">Save draft</button><button id="back-to-form" class="secondary" type="button" hidden>Back</button><button id="review-proposal" type="button">Review proposal</button><button id="submit-proposal" type="submit" hidden>Confirm submission</button></div>
       </form>

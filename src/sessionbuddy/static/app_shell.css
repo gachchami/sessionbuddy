@@ -15,7 +15,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 1.1rem .9rem 1.5rem;
   border-right: 1px solid #e4e7ec;
   background: #ffffff;
@@ -47,7 +47,17 @@
 .sb-app-brand__text strong { color: #182230; font-size: .98rem; }
 .sb-app-brand__text small { color: #667085; font-size: .66rem; font-weight: 650; }
 .sb-sidebar__group { display: grid; gap: .45rem; }
-.sb-sidebar__event { padding-top: 1rem; border-top: 1px solid #eaecf0; }
+.sb-sidebar__primary { flex: 0 0 auto; }
+.sb-sidebar__event {
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 1rem .25rem .4rem 0;
+  border-top: 1px solid #eaecf0;
+}
 .sb-sidebar__label { margin: 0; padding: 0 .7rem; color: #667085; font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .sb-sidebar__nav { display: grid; gap: .18rem; }
 .sb-sidebar__section {

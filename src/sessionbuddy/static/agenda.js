@@ -422,6 +422,7 @@
       const form = byId("editor-form");
       form.elements.title.value = content.title;
       form.elements.abstract.value = content.abstract;
+      window.SessionBuddyApi.refreshCharacterCounters(form);
       form.elements.content_status.value = content.content_status;
       form.elements.content_version.value = content.version;
       list.replaceChildren();
@@ -481,6 +482,7 @@
     form.elements.content_version.value = item.content_version || 1;
     form.elements.title.value = item.title;
     form.elements.abstract.value = item.abstract || "";
+    window.SessionBuddyApi.refreshCharacterCounters(form);
     form.elements.content_status.value = item.content_status || "draft";
     form.elements.start_at.value = item.start_at_ms
       ? localInput(item.start_at_ms)

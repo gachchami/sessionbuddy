@@ -92,12 +92,14 @@
     const container = byId("dynamic-fields");
     container.replaceChildren();
     for (const field of fields) {
-      const label = make("label", field.label);
+      const label = make("label");
+      const fieldLabel = make("span", field.label, "field-label");
       if (field.required) {
         const marker = make("span", "*", "required-marker");
         marker.setAttribute("aria-hidden", "true");
-        label.append(marker);
+        fieldLabel.append(marker);
       }
+      label.append(fieldLabel);
       label.dataset.fieldKey = field.key;
       let input;
       if (field.type === "textarea") {
@@ -155,15 +157,21 @@
     state.applyConditions();
   }
 
-  function addCoSpeakerRow(value = {}) {
+  function addCoSpeakerRow(value = {}, focus = false) {
     const row = make("div", undefined, "form-grid co-speaker-row");
     const nameLabel = make("label", "Name"); const name = document.createElement("input");
     name.name = "co_speaker_name"; name.required = true; name.maxLength = 200; name.value = value.display_name || ""; nameLabel.append(name);
     const emailLabel = make("label", "Email"); const email = document.createElement("input");
     email.name = "co_speaker_email"; email.type = "email"; email.required = true; email.maxLength = 320; email.value = value.email || ""; emailLabel.append(email);
     const role = make("p", "Role: Co-speaker", "help");
-    const remove = make("button", "Remove", "secondary"); remove.type = "button"; remove.addEventListener("click", () => row.remove());
-    row.append(nameLabel, emailLabel, role, remove); byId("co-speaker-rows").append(row);
+    const remove = make("button", "Remove", "secondary"); remove.type = "button"; remove.addEventListener("click", () => {
+      row.remove();
+      validateCoSpeakers(byId("proposal-form"));
+    });
+    const actions = make("div", undefined, "co-speaker-row__actions");
+    actions.append(role, remove);
+    row.append(nameLabel, emailLabel, actions); byId("co-speaker-rows").append(row);
+    if (focus) name.focus();
   }
 
   function coSpeakers() {
@@ -172,6 +180,95 @@
       email: row.querySelector('[name="co_speaker_email"]').value.trim(),
       role: "co_speaker"
     }));
+  }
+
+  function validateCoSpeakers(form) {
+    const primaryEmail = String(form.elements.namedItem("speaker_email")?.value || "").trim().toLowerCase();
+    const rows = [...byId("co-speaker-rows").querySelectorAll(".co-speaker-row")];
+    const seen = new Set();
+    let valid = rows.length <= 10;
+    for (const row of rows) {
+      const email = row.querySelector('[name="co_speaker_email"]');
+      const normalized = email.value.trim().toLowerCase();
+      email.setCustomValidity("");
+      if (normalized && normalized === primaryEmail) {
+        email.setCustomValidity("A co-speaker must use a different email from the primary speaker.");
+        valid = false;
+      } else if (normalized && seen.has(normalized)) {
+        email.setCustomValidity("Each co-speaker must use a different email.");
+        valid = false;
+      }
+      if (normalized) seen.add(normalized);
+    }
+    byId("add-co-speaker").disabled = rows.length >= 10;
+    return valid;
+  }
+
+  function invitationStatus(value) {
+    return { pending: "Pending", accepted: "Accepted", declined: "Declined", removed: "Removed" }[value] || "Pending";
+  }
+
+  function invitationEndpoint(submission, invitation) {
+    return `/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(submission.id)}/co-speakers/${encodeURIComponent(invitation.id)}`;
+  }
+
+  async function reloadSubmissions(selectedId) {
+    const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
+    state.submissions = mine.data || [];
+    renderExistingSubmissions();
+    const selected = state.submissions.find((submission) => submission.id === selectedId);
+    if (selected) chooseSubmission(selected);
+  }
+
+  function renderCoSpeakerInvitations(submission) {
+    const section = byId("co-speaker-invitations");
+    const list = byId("co-speaker-invitation-list");
+    const invitations = (submission.co_speakers || []).filter((item) => item.id);
+    section.hidden = !submission.editable || invitations.length === 0;
+    list.replaceChildren();
+    for (const invitation of invitations) {
+      const card = make("article", undefined, "co-speaker-invitation");
+      const identity = make("div");
+      identity.append(make("strong", invitation.display_name), make("span", invitation.email, "help"));
+      const meta = make("div", undefined, "co-speaker-invitation__meta");
+      const badge = make("span", invitationStatus(invitation.invitation_status), `badge${invitation.invitation_status === "accepted" ? " success" : ""}`);
+      meta.append(badge);
+      if (invitation.invitation_status === "pending" && invitation.expires_at_ms) {
+        meta.append(make("span", `Expires ${new Date(invitation.expires_at_ms).toLocaleString()}`, "help"));
+      }
+      const actions = make("div", undefined, "actions");
+      if (["pending", "declined"].includes(invitation.invitation_status)) {
+        const resend = make("button", "Send again", "secondary");
+        resend.type = "button";
+        resend.addEventListener("click", async () => {
+          resend.disabled = true;
+          try {
+            await api(`${invitationEndpoint(submission, invitation)}/resend`, {
+              method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
+            });
+            await reloadSubmissions(submission.id);
+            setStatus(`A new invitation was sent to ${invitation.email}.`, "success");
+          } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); resend.disabled = false; }
+        });
+        actions.append(resend);
+      }
+      if (invitation.invitation_status !== "removed") {
+        const remove = make("button", "Remove", "secondary");
+        remove.type = "button";
+        remove.addEventListener("click", async () => {
+          remove.disabled = true;
+          try {
+            await api(invitationEndpoint(submission, invitation), {
+              method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }
+            });
+            await reloadSubmissions(submission.id);
+            setStatus(`${invitation.display_name} was removed from this proposal.`, "success");
+          } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); remove.disabled = false; }
+        });
+        actions.append(remove);
+      }
+      card.append(identity, meta, actions); list.append(card);
+    }
   }
 
   function restoreValues(values) {
@@ -259,8 +356,10 @@
       speaker_email: submission.speaker_email, proposal_title: submission.proposal_title,
       proposal_abstract: submission.proposal_abstract });
     byId("co-speaker-rows").replaceChildren();
-    (submission.co_speakers || []).forEach(addCoSpeakerRow);
+    (submission.co_speakers || []).filter((item) => item.invitation_status !== "removed").forEach(addCoSpeakerRow);
+    renderCoSpeakerInvitations(submission);
     const form = byId("proposal-form");
+    validateCoSpeakers(form);
     for (const control of form.elements) control.disabled = !editable;
     if (editable) lockSignedInEmail();
     byId("submit-proposal").textContent = editable ? "Save changes" : "Confirm submission";
@@ -293,6 +392,7 @@
       for (const control of byId("proposal-form").elements) control.disabled = false;
       byId("proposal-form").reset();
       byId("co-speaker-rows").replaceChildren();
+      byId("co-speaker-invitations").hidden = true;
       lockSignedInEmail();
       byId("submit-proposal").textContent = "Confirm submission";
       setStatus("Starting a new proposal. This will create a separate submission.");
@@ -313,6 +413,12 @@
       if (Array.isArray(value)) value = value.join(", ");
       const group = document.createElement("div");
       group.append(make("dt", field.label), make("dd", String(value || "Not provided")));
+      list.append(group);
+    }
+    const speakers = coSpeakers();
+    if (speakers.length) {
+      const group = document.createElement("div");
+      group.append(make("dt", "Co-speakers"), make("dd", speakers.map((speaker) => `${speaker.display_name} (${speaker.email})`).join(", ")));
       list.append(group);
     }
   }
@@ -475,7 +581,10 @@
       setStatus(window.SessionBuddyApi.message(error, "We could not send the sign-in link. Try again."), "error");
     }
   });
-  byId("add-co-speaker").addEventListener("click", () => addCoSpeakerRow());
+  byId("add-co-speaker").addEventListener("click", () => {
+    if (byId("co-speaker-rows").children.length < 10) addCoSpeakerRow({}, true);
+    validateCoSpeakers(byId("proposal-form"));
+  });
 
   byId("change-cfp-email").addEventListener("click", () => {
     const form = byId("sign-in-form");
@@ -498,6 +607,7 @@
         return;
       }
       if (state.editingSubmission) {
+        validateCoSpeakers(byId("proposal-form"));
         if (!byId("proposal-form").reportValidity()) {
           setStatus("Complete the highlighted required fields before saving changes.", "error");
           return;
@@ -520,6 +630,7 @@
   });
 
   byId("review-proposal").addEventListener("click", () => {
+    validateCoSpeakers(byId("proposal-form"));
     if (!byId("proposal-form").reportValidity()) {
       setStatus("Complete the highlighted required fields before reviewing your proposal.", "error");
       return;
@@ -540,6 +651,13 @@
     button.disabled = true;
     button.textContent = "Submitting…";
     try {
+      validateCoSpeakers(form);
+      if (!form.reportValidity()) {
+        setStatus("Check each co-speaker name and email before continuing.", "error");
+        button.disabled = false;
+        button.textContent = "Confirm submission";
+        return;
+      }
       if (!state.authenticated) {
         const saved = saveBrowserDraft(true);
         const email = String(saved.answers.speaker_email || "").trim();

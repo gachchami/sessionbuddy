@@ -104,6 +104,7 @@
       selectedSpeaker = selected;
       const form = byId("speaker-form");
       ["display_name", "email", "job_title", "company", "location", "biography", "version"].forEach((name) => { form.elements[name].value = selected[name] ?? ""; });
+      window.SessionBuddyApi.refreshCharacterCounters(form);
       form.elements.links.value = (selected.links || []).join("\n");
       byId("speaker-onboarding").href = `/admin/events/${encodeURIComponent(selected.event.id)}/onboarding`;
       byId("speaker-directory").href = `/admin/events/${encodeURIComponent(selected.event.id)}/speakers`;

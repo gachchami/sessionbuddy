@@ -39,6 +39,19 @@
     });
   }
 
+  async function loadWorkspace(eventId) {
+    const path = `/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`;
+    for (const delay of [0, 150, 350]) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        return await api(path);
+      } catch (error) {
+        if (error.status !== 404 || delay === 350) throw error;
+      }
+    }
+    throw new Error("The event could not be loaded.");
+  }
+
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
@@ -75,6 +88,18 @@
     if (!value) return "";
     const date = new Date(value);
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  function earliestOpeningMs() {
+    return Math.ceil(Date.now() / 60000) * 60000;
+  }
+
+  function syncAvailabilityLimits(form) {
+    const opens = form.elements.opens_at;
+    const closes = form.elements.closes_at;
+    opens.min = toLocalInput(earliestOpeningMs());
+    closes.min = opens.value ? toLocalInput(toEpoch(opens.value) + 60000) : "";
+    closes.max = state.eventStartsAtMs ? toLocalInput(state.eventStartsAtMs - 1) : "";
   }
 
   function eventIdFromPage(session) {
@@ -131,6 +156,7 @@
     editor.elements.submission_limit.value = form.submission_limit || "";
     if (form.success_title) editor.elements.success_title.value = form.success_title;
     if (form.success_message) editor.elements.success_message.value = form.success_message;
+    window.SessionBuddyApi.refreshCharacterCounters(editor);
     if (typeof form.redirect_to_portal === "boolean") {
       editor.elements.redirect_to_portal.checked = form.redirect_to_portal;
     }
@@ -326,8 +352,13 @@
     const opens = form.elements.opens_at;
     const closes = form.elements.closes_at;
     opens.setCustomValidity(""); closes.setCustomValidity("");
+    syncAvailabilityLimits(form);
+    const opensAt = toEpoch(opens.value);
     const closesAt = toEpoch(closes.value);
-    if (opens.value && closes.value && closesAt <= toEpoch(opens.value)) {
+    if (opensAt !== null && opensAt < Date.now()) {
+      opens.setCustomValidity("Opening time cannot be in the past.");
+    }
+    if (opensAt !== null && closesAt !== null && closesAt <= opensAt) {
       closes.setCustomValidity("Closing time must be after opening time.");
     } else if (closesAt !== null && closesAt >= state.eventStartsAtMs) {
       closes.setCustomValidity("The Call for Proposals must close before the event starts.");
@@ -368,6 +399,7 @@
   function installBuilder() {
     const publish = byId("publish-form");
     publish.addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+    publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
     const submit = publish.querySelector('button[type="submit"], button:not([type])');
     const heading = make("h3", "Form questions");
     const help = make("p", "The four identity/proposal fields are required. Add event-specific questions and optional conditions below.");
@@ -401,7 +433,7 @@
       const eventId = eventIdFromPage(session);
       if (!eventId) throw new Error("Choose an event before opening its Call for Proposals.");
       state.csrf = session.csrf_token;
-      const workspace = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`);
+      const workspace = await loadWorkspace(eventId);
       state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
       state.eventName = workspace.event_name;
       state.eventStartsAtMs = workspace.event_starts_at_ms;
@@ -414,7 +446,7 @@
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-|-$/g, "") || `event-${eventId.slice(0, 8)}`;
       }
-      byId("publish-form").elements.closes_at.max = toLocalInput(state.eventStartsAtMs);
+      syncAvailabilityLimits(byId("publish-form"));
       byId("manage-access").href = `/admin/events/${encodeURIComponent(eventId)}/access`;
       byId("manage-access").hidden = false;
       renderWorkspace();

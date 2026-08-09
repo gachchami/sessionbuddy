@@ -213,7 +213,11 @@
     brand.append(mark, brandText);
     sidebar.append(brand);
 
-    const primaryGroup = make("div", undefined, "sb-sidebar__group");
+    const primaryGroup = make(
+      "div",
+      undefined,
+      "sb-sidebar__group sb-sidebar__primary"
+    );
     primaryGroup.append(make("p", "Main", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
     nav.setAttribute("aria-label", "Main navigation");

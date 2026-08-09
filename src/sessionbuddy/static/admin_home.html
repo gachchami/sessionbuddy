@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=7">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=8" defer></script>
-  <script src="/admin/home/assets/home.js?v=2" defer></script>
+  <script src="/admin/home/assets/home.js?v=3" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -16,7 +16,7 @@
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading">
       <div><h1>Home</h1><p class="lede">Events, speakers, and access at a glance.</p></div>
-      <a class="button" href="/admin/events#event-form">Create event</a>
+      <button id="new-event" type="button" hidden>Create a new event</button>
     </div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
 
@@ -35,6 +35,29 @@
       <div class="section-heading"><div><h2 id="speakers-title">Recent speakers</h2></div><a class="text-link" href="/admin/speakers">View all</a></div>
       <div id="speaker-list" class="entity-grid"><p class="empty">Loading speakers…</p></div>
     </section>
+
+    <dialog id="event-dialog" class="form-dialog form-dialog--wide" aria-labelledby="event-form-title">
+      <div class="dialog-heading">
+        <div><h2 id="event-form-title">Create a new event</h2><p class="result">Add the essentials now. You can add branding and email settings later.</p></div>
+        <button id="close-event-dialog" type="button" class="icon-button" aria-label="Close event form">×</button>
+      </div>
+      <div id="event-form-status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
+      <form id="event-form">
+        <label>Organization<select name="organization_id" required></select></label>
+        <label>Event name<input name="name" maxlength="200" required></label>
+        <div class="form-grid">
+          <label>Starts<input name="starts_at" type="datetime-local" required></label>
+          <label>Ends<input name="ends_at" type="datetime-local" required></label>
+        </div>
+        <label>Time zone<input name="time_zone" maxlength="100" readonly required><small>Uses your browser time zone. You can change it later from Events.</small></label>
+        <div class="form-grid">
+          <label>Attendance format<select name="delivery_mode" required><option value="" selected disabled>Select a format</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select></label>
+          <label>Location<input name="location" maxlength="500" placeholder="Venue, city, or meeting URL" required></label>
+        </div>
+        <label>Description<textarea name="description" rows="4" maxlength="2000" required></textarea></label>
+        <div class="dialog-actions"><button id="cancel-event" class="secondary" type="button">Cancel</button><button id="create-event" type="submit">Create event</button></div>
+      </form>
+    </dialog>
 
   </main>
 </body>

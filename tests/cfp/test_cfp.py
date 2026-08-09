@@ -110,7 +110,7 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     assert "Advanced routing" in page
     assert "Add question" in script
     assert "state.program" not in script
-    assert 'elements.closes_at.max = toLocalInput(state.eventStartsAtMs)' in script
+    assert "toLocalInput(state.eventStartsAtMs - 1)" in script
     assert "The Call for Proposals must close before the event starts." in script
     assert 'summaryIdentity.append(make("strong", field.label))' in script
     assert 'if (!core) summaryIdentity.append(make("small", field.key))' in script
