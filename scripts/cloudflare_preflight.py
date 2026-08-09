@@ -340,7 +340,7 @@ def remote_checks(
             f"HTTP {health_status}" if health_status else health_body,
         )
     )
-    for path in ("/sign-in", "/admin/events", "/admin/programs"):
+    for path in ("/sign-in", "/admin/events", "/admin"):
         status, _ = request_status(f"{base_url}{path}")
         checks.append(
             Check(
