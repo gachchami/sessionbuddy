@@ -43,7 +43,7 @@ async def sign_in_page() -> Response:
     )
 
 
-async def _setup_is_configured(db: D1Database) -> bool:
+async def setup_is_configured(db: D1Database) -> bool:
     return row_mapping(await db.prepare(_SETUP_COMPLETED_SQL).first()) is not None
 
 
@@ -51,9 +51,9 @@ async def _setup_is_configured(db: D1Database) -> bool:
 async def setup_page(request: Request) -> Response:
     environment = request.scope.get("env")
     db = getattr(environment, "DB", None) if environment is not None else None
-    if db is not None and await _setup_is_configured(db):
+    if db is not None and await setup_is_configured(db):
         return RedirectResponse(
-            "/sign-in?redirect=%2Fadmin",
+            "/",
             status_code=303,
             headers={"Cache-Control": "no-store"},
         )
@@ -401,7 +401,7 @@ def _email(value: str) -> tuple[str, str]:
     tags=["administration"],
 )
 async def setup_status(request: Request) -> SetupStatus:
-    return SetupStatus(configured=await _setup_is_configured(database(request)))
+    return SetupStatus(configured=await setup_is_configured(database(request)))
 
 
 @access_router.post("/api/v1/bootstrap", response_model=BootstrapView, tags=["administration"])
@@ -423,7 +423,7 @@ async def bootstrap_tenant(
         if body.ends_at_ms <= body.starts_at_ms:
             raise HTTPException(status_code=422)
     db = database(request)
-    if await _setup_is_configured(db):
+    if await setup_is_configured(db):
         raise HTTPException(status_code=409)
     credential = row_mapping(
         await db.prepare(

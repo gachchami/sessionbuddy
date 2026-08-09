@@ -181,6 +181,9 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
 ) -> None:
     connection, _queue, environment = production_environment
     async with _client(environment) as client:
+        initial_home = await client.get("/", follow_redirects=False)
+        assert initial_home.status_code == 303
+        assert initial_home.headers["location"] == "/setup"
         page = await client.get("/setup")
         initial = await client.get("/api/v1/setup/status")
         assert page.status_code == 200
@@ -203,8 +206,11 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         assert (await client.get("/api/v1/setup/status")).json() == {"configured": True}
         closed_setup = await client.get("/setup", follow_redirects=False)
         assert closed_setup.status_code == 303
-        assert closed_setup.headers["location"] == "/sign-in?redirect=%2Fadmin"
+        assert closed_setup.headers["location"] == "/"
         assert "Set up SessionBuddy" not in closed_setup.text
+        configured_home = await client.get("/", follow_redirects=False)
+        assert configured_home.status_code == 200
+        assert "Plan your conference program in one place" in configured_home.text
         assert connection.execute(
             "SELECT COUNT(*) FROM instance_setup WHERE singleton_key='primary'"
         ).fetchone()[0] == 1

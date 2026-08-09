@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from sessionbuddy.api.errors import ErrorDetail, ErrorEnvelope
 from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
@@ -12,7 +12,7 @@ from sessionbuddy.console import embedded_assets, engine_room_router
 from sessionbuddy.evaluation import evaluation_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
 from sessionbuddy.platform.auth import session_router
-from sessionbuddy.platform.auth.access import access_router
+from sessionbuddy.platform.auth.access import access_router, setup_is_configured
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
@@ -41,7 +41,15 @@ app.include_router(create_communications_router(communications_service))
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def root() -> HTMLResponse:
+async def root(request: Request) -> Response:
+    environment = request.scope.get("env")
+    db = getattr(environment, "DB", None) if environment is not None else None
+    if db is not None and not await setup_is_configured(db):
+        return RedirectResponse(
+            "/setup",
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
     return HTMLResponse(
         embedded_assets.LANDING_HTML,
         headers={"Cache-Control": "no-store"},
