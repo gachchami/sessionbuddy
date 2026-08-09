@@ -612,6 +612,58 @@
         "title": "AgendaSetup",
         "type": "object"
       },
+      "AiTriageView": {
+        "additionalProperties": false,
+        "properties": {
+          "generated_at_ms": {
+            "minimum": 0.0,
+            "title": "Generated At Ms",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "recommendation": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "score": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "integer"
+          },
+          "source": {
+            "const": "workers_ai",
+            "default": "workers_ai",
+            "title": "Source",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "model",
+          "score",
+          "recommendation",
+          "rationale",
+          "generated_at_ms"
+        ],
+        "title": "AiTriageView",
+        "type": "object"
+      },
       "ApiHealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -907,6 +959,35 @@
         "title": "CfpWorkspaceView",
         "type": "object"
       },
+      "CoSpeakerInput": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "const": "co_speaker",
+            "default": "co_speaker",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "email"
+        ],
+        "title": "CoSpeakerInput",
+        "type": "object"
+      },
       "CommunicationStatus": {
         "additionalProperties": false,
         "properties": {
@@ -940,6 +1021,10 @@
             ],
             "title": "Provider Message Id"
           },
+          "recipient_email": {
+            "title": "Recipient Email",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "queued",
@@ -950,12 +1035,23 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "title": "Updated At Ms",
+            "type": "integer"
           }
         },
         "required": [
           "id",
+          "recipient_email",
+          "subject",
           "status",
-          "attempt_count"
+          "attempt_count",
+          "updated_at_ms"
         ],
         "title": "CommunicationStatus",
         "type": "object"
@@ -1343,6 +1439,11 @@
             "title": "Blind Review",
             "type": "boolean"
           },
+          "comment_required": {
+            "default": false,
+            "title": "Comment Required",
+            "type": "boolean"
+          },
           "criteria": {
             "items": {
               "$ref": "#/components/schemas/EvaluationCriterion"
@@ -1498,6 +1599,75 @@
         "title": "EvaluationCriterion",
         "type": "object"
       },
+      "EvaluationDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluator_name": {
+            "title": "Evaluator Name",
+            "type": "string"
+          },
+          "internal_comment": {
+            "default": "",
+            "title": "Internal Comment",
+            "type": "string"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "state": {
+            "enum": [
+              "not_started",
+              "draft",
+              "final"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluator_name",
+          "state"
+        ],
+        "title": "EvaluationDetail",
+        "type": "object"
+      },
+      "EvaluationRoundCloseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "EvaluationRoundCloseRequest",
+        "type": "object"
+      },
       "EvaluationRoundClosed": {
         "additionalProperties": false,
         "properties": {
@@ -1532,6 +1702,11 @@
           "blind_review": {
             "default": true,
             "title": "Blind Review",
+            "type": "boolean"
+          },
+          "comment_required": {
+            "default": false,
+            "title": "Comment Required",
             "type": "boolean"
           },
           "criteria": {
@@ -1653,6 +1828,13 @@
           "assigned_count": {
             "title": "Assigned Count",
             "type": "integer"
+          },
+          "available_evaluators": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluatorView"
+            },
+            "title": "Available Evaluators",
+            "type": "array"
           },
           "average_rating": {
             "anyOf": [
@@ -1932,6 +2114,26 @@
           "conflict_count"
         ],
         "title": "EvaluatorProgress",
+        "type": "object"
+      },
+      "EvaluatorReminderQueued": {
+        "additionalProperties": false,
+        "properties": {
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "queued",
+            "default": "queued",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id"
+        ],
+        "title": "EvaluatorReminderQueued",
         "type": "object"
       },
       "EvaluatorView": {
@@ -3011,6 +3213,18 @@
       "InvitationCreate": {
         "additionalProperties": false,
         "properties": {
+          "company": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Display Name",
+            "type": "string"
+          },
           "email": {
             "maxLength": 320,
             "minLength": 3,
@@ -3023,6 +3237,12 @@
             "minimum": 1.0,
             "title": "Expires In Days",
             "type": "integer"
+          },
+          "job_title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Job Title",
+            "type": "string"
           },
           "role": {
             "enum": [
@@ -3484,6 +3704,23 @@
           "version"
         ],
         "title": "OrganizationView",
+        "type": "object"
+      },
+      "OwnedSubmissionList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "OwnedSubmissionList",
         "type": "object"
       },
       "ProgramCreate": {
@@ -4175,6 +4412,92 @@
         "title": "ResourceView",
         "type": "object"
       },
+      "RoundEvaluatorAdd": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluator_user_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Evaluator User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evaluator_user_id"
+        ],
+        "title": "RoundEvaluatorAdd",
+        "type": "object"
+      },
+      "RoundEvaluatorChange": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_count": {
+            "minimum": 0.0,
+            "title": "Assignment Count",
+            "type": "integer"
+          },
+          "evaluator_user_id": {
+            "title": "Evaluator User Id",
+            "type": "string"
+          },
+          "round_id": {
+            "title": "Round Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "round_id",
+          "evaluator_user_id",
+          "assignment_count"
+        ],
+        "title": "RoundEvaluatorChange",
+        "type": "object"
+      },
+      "RoundSubmissionAdd": {
+        "additionalProperties": false,
+        "properties": {
+          "submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Submission Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "submission_ids"
+        ],
+        "title": "RoundSubmissionAdd",
+        "type": "object"
+      },
+      "RoundSubmissionChange": {
+        "additionalProperties": false,
+        "properties": {
+          "assignment_count": {
+            "minimum": 0.0,
+            "title": "Assignment Count",
+            "type": "integer"
+          },
+          "round_id": {
+            "title": "Round Id",
+            "type": "string"
+          },
+          "submission_count": {
+            "minimum": 0.0,
+            "title": "Submission Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "round_id",
+          "submission_count",
+          "assignment_count"
+        ],
+        "title": "RoundSubmissionChange",
+        "type": "object"
+      },
       "SLODefinition": {
         "additionalProperties": false,
         "properties": {
@@ -4395,6 +4718,49 @@
         "title": "SpeakerAssetList",
         "type": "object"
       },
+      "SpeakerAssetVersionView": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "current",
+              "superseded"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "uploaded_at_ms": {
+            "title": "Uploaded At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generation",
+          "filename",
+          "content_type",
+          "byte_size",
+          "state",
+          "uploaded_at_ms"
+        ],
+        "title": "SpeakerAssetVersionView",
+        "type": "object"
+      },
       "SpeakerAssetView": {
         "additionalProperties": false,
         "properties": {
@@ -4431,6 +4797,22 @@
             "const": "clean",
             "title": "State",
             "type": "string"
+          },
+          "uploaded_at_ms": {
+            "title": "Uploaded At Ms",
+            "type": "integer"
+          },
+          "version_count": {
+            "default": 1,
+            "title": "Version Count",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerAssetVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
           }
         },
         "required": [
@@ -4440,7 +4822,8 @@
           "content_type",
           "byte_size",
           "state",
-          "generation"
+          "generation",
+          "uploaded_at_ms"
         ],
         "title": "SpeakerAssetView",
         "type": "object"
@@ -4561,6 +4944,10 @@
           "event": {
             "$ref": "#/components/schemas/SpeakerEventView"
           },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
           "profile": {
             "$ref": "#/components/schemas/SpeakerProfileView"
           },
@@ -4585,6 +4972,7 @@
         },
         "required": [
           "event",
+          "event_speaker_id",
           "profile",
           "tasks",
           "submissions",
@@ -4699,6 +5087,15 @@
       "SpeakerSubmissionView": {
         "additionalProperties": false,
         "properties": {
+          "editable": {
+            "default": false,
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "form_slug": {
+            "title": "Form Slug",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4715,7 +5112,8 @@
         "required": [
           "id",
           "proposal_title",
-          "status"
+          "status",
+          "form_slug"
         ],
         "title": "SpeakerSubmissionView",
         "type": "object"
@@ -5067,6 +5465,14 @@
             "title": "Answers",
             "type": "object"
           },
+          "co_speakers": {
+            "items": {
+              "$ref": "#/components/schemas/CoSpeakerInput"
+            },
+            "maxItems": 10,
+            "title": "Co Speakers",
+            "type": "array"
+          },
           "proposal_abstract": {
             "maxLength": 5000,
             "minLength": 1,
@@ -5118,6 +5524,11 @@
             "title": "Internal Reason",
             "type": "string"
           },
+          "override_incomplete_reviews": {
+            "default": false,
+            "title": "Override Incomplete Reviews",
+            "type": "boolean"
+          },
           "send_email": {
             "default": false,
             "title": "Send Email",
@@ -5161,6 +5572,11 @@
             "maxLength": 2000,
             "title": "Internal Reason",
             "type": "string"
+          },
+          "override_incomplete_reviews": {
+            "default": false,
+            "title": "Override Incomplete Reviews",
+            "type": "boolean"
           },
           "round_id": {
             "title": "Round Id",
@@ -5337,9 +5753,21 @@
             ],
             "title": "Decision"
           },
+          "internal_reason": {
+            "default": "",
+            "title": "Internal Reason",
+            "type": "string"
+          },
           "proposal_title": {
             "title": "Proposal Title",
             "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationDetail"
+            },
+            "title": "Reviews",
+            "type": "array"
           },
           "speaker_name": {
             "title": "Speaker Name",
@@ -5394,6 +5822,87 @@
         "title": "SubmissionList",
         "type": "object"
       },
+      "SubmissionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxProperties": 100,
+            "title": "Answers",
+            "type": "object"
+          },
+          "co_speakers": {
+            "items": {
+              "$ref": "#/components/schemas/CoSpeakerInput"
+            },
+            "maxItems": 10,
+            "title": "Co Speakers",
+            "type": "array"
+          },
+          "proposal_abstract": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Proposal Abstract",
+            "type": "string"
+          },
+          "proposal_title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Speaker Email",
+            "type": "string"
+          },
+          "speaker_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Speaker Name",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "speaker_name",
+          "speaker_email",
+          "proposal_title",
+          "proposal_abstract",
+          "version"
+        ],
+        "title": "SubmissionUpdate",
+        "type": "object"
+      },
       "SubmissionView": {
         "additionalProperties": false,
         "properties": {
@@ -5426,6 +5935,14 @@
             "maxProperties": 100,
             "title": "Answers",
             "type": "object"
+          },
+          "co_speakers": {
+            "items": {
+              "$ref": "#/components/schemas/CoSpeakerInput"
+            },
+            "maxItems": 10,
+            "title": "Co Speakers",
+            "type": "array"
           },
           "id": {
             "title": "Id",
@@ -5495,13 +6012,20 @@
           "status": {
             "enum": [
               "submitted",
-              "withdrawn"
+              "withdrawn",
+              "accepted",
+              "rejected"
             ],
             "title": "Status",
             "type": "string"
           },
           "submitted_at_ms": {
             "title": "Submitted At Ms",
+            "type": "integer"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
             "type": "integer"
           }
         },
@@ -5907,6 +6431,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRoundCloseRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -5930,6 +6464,161 @@
           }
         },
         "summary": "Close Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/evaluators": {
+      "post": {
+        "operationId": "addEvaluationRoundEvaluator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoundEvaluatorAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundEvaluatorChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Round Evaluator",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/reminder": {
+      "post": {
+        "operationId": "remindEvaluationRoundEvaluator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evaluator_user_id",
+            "required": true,
+            "schema": {
+              "title": "Evaluator User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluatorReminderQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remind Round Evaluator",
+        "tags": [
+          "evaluations",
+          "communications"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove": {
+      "post": {
+        "operationId": "removeEvaluationRoundEvaluator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evaluator_user_id",
+            "required": true,
+            "schema": {
+              "title": "Evaluator User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundEvaluatorChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Round Evaluator",
         "tags": [
           "evaluations"
         ]
@@ -6007,6 +6696,58 @@
           }
         },
         "summary": "Get Round Results",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/submissions": {
+      "post": {
+        "operationId": "addEvaluationRoundSubmissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoundSubmissionAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoundSubmissionChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Round Submissions",
         "tags": [
           "evaluations"
         ]
@@ -6320,6 +7061,74 @@
       }
     },
     "/api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
+      "delete": {
+        "operationId": "unschedule_agenda_item_api_v1_admin_events__event_id__agenda_items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unschedule Agenda Item",
+        "tags": [
+          "agenda"
+        ]
+      },
       "patch": {
         "operationId": "move_agenda_item_api_v1_admin_events__event_id__agenda_items__item_id__patch",
         "parameters": [
@@ -8819,6 +9628,49 @@
         ]
       }
     },
+    "/api/v1/admin/submissions/{submission_id}/ai-triage": {
+      "post": {
+        "operationId": "triageSubmissionWithWorkersAi",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiTriageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Triage Submission",
+        "tags": [
+          "evaluations",
+          "ai"
+        ]
+      }
+    },
     "/api/v1/assets/download": {
       "post": {
         "operationId": "consumePrivateAssetDownloadGrant",
@@ -9523,6 +10375,109 @@
           }
         },
         "summary": "Create Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/mine": {
+      "get": {
+        "operationId": "listMyCallForSpeakersSubmissions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnedSubmissionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List My Submissions",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/{submission_id}": {
+      "patch": {
+        "operationId": "updateMyCallForSpeakersSubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Submission",
         "tags": [
           "submissions"
         ]

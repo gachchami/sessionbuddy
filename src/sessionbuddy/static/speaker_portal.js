@@ -159,6 +159,11 @@
         make("h3", submission.proposal_title),
         make("p", submission.status.replaceAll("_", " "), `state-badge${submission.status === "accepted" ? " success" : ""}`)
       );
+      if (submission.editable && submission.form_slug) {
+        const edit = make("a", "Edit proposal", "button secondary");
+        edit.href = `/cfp/${encodeURIComponent(submission.form_slug)}?submission_id=${encodeURIComponent(submission.id)}`;
+        item.append(edit);
+      }
       list.append(item);
     });
   }
@@ -442,7 +447,21 @@
       if (!assets.length) list.append(make("li", "No clean assets uploaded yet.", "empty"));
       assets.forEach((asset) => {
         const item = document.createElement("li");
-        item.append(make("strong", asset.filename), make("span", asset.state.replaceAll("_", " ")));
+        if (asset.kind === "headshot") {
+          const preview = document.createElement("img");
+          preview.src = `/api/v1/public/events/${encodeURIComponent(eventId)}/speakers/${encodeURIComponent(state.portal.event_speaker_id)}/headshot`;
+          preview.alt = "Current headshot"; preview.loading = "lazy"; preview.className = "asset-preview";
+          preview.addEventListener("error", () => preview.remove());
+          item.append(preview);
+        }
+        item.append(make("strong", asset.filename), make("span", `${asset.state.replaceAll("_", " ")} · version ${asset.generation} of ${asset.version_count}`));
+        if (asset.versions?.length > 1) {
+          const details = document.createElement("details");
+          details.append(make("summary", `${asset.versions.length} saved versions`));
+          const history = document.createElement("ol");
+          asset.versions.forEach((version) => history.append(make("li", `Version ${version.generation} · ${version.filename} · ${version.state} · ${new Date(version.uploaded_at_ms).toLocaleString()}`)));
+          details.append(history); item.append(details);
+        }
         list.append(item);
       });
       status.textContent = `${assets.length} current clean asset${assets.length === 1 ? "" : "s"}.`;

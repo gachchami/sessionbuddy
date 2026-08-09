@@ -72,6 +72,18 @@ DEFAULT_FORM_FIELDS = (
 )
 
 
+def _validate_email_address(value: str) -> str:
+    if "\r" in value or "\n" in value:
+        raise ValueError("email must be one valid address")
+    try:
+        address = Address(addr_spec=value)
+    except (IndexError, ValueError) as exc:
+        raise ValueError("email must be one valid address") from exc
+    if not address.username or not address.domain or "." not in address.domain:
+        raise ValueError("email must be one valid address")
+    return value
+
+
 class ProgramCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     organization_id: str = Field(min_length=36, max_length=36)
@@ -215,6 +227,19 @@ class CfpWorkspaceView(BaseModel):
     published_form: PublishedFormView | None = None
 
 
+class CoSpeakerInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    display_name: str = Field(min_length=1, max_length=200)
+    email: str = Field(min_length=3, max_length=320)
+    role: Literal["co_speaker"] = "co_speaker"
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _validate_email_address(value)
+
+
 class SubmissionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     speaker_name: str = Field(min_length=1, max_length=200)
@@ -224,26 +249,31 @@ class SubmissionCreate(BaseModel):
     answers: dict[str, str | list[str] | bool | int | float | None] = Field(
         default_factory=dict, max_length=100
     )
+    co_speakers: list[CoSpeakerInput] = Field(default_factory=list, max_length=10)
 
     @field_validator("speaker_email")
     @classmethod
     def validate_speaker_email(cls, value: str) -> str:
-        if "\r" in value or "\n" in value:
-            raise ValueError("speaker email must be one valid address")
-        try:
-            address = Address(addr_spec=value)
-        except (IndexError, ValueError) as exc:
-            raise ValueError("speaker email must be one valid address") from exc
-        if not address.username or not address.domain or "." not in address.domain:
-            raise ValueError("speaker email must be one valid address")
-        return value
+        return _validate_email_address(value)
+
+    @model_validator(mode="after")
+    def validate_co_speakers(self):
+        emails = [item.email.casefold() for item in self.co_speakers]
+        if len(emails) != len(set(emails)) or self.speaker_email.casefold() in emails:
+            raise ValueError("speaker emails must be unique")
+        return self
+
+
+class SubmissionUpdate(SubmissionCreate):
+    version: int = Field(ge=1)
 
 
 class SubmissionView(SubmissionCreate):
     id: str
     program_id: str
-    status: Literal["submitted", "withdrawn"]
+    status: Literal["submitted", "withdrawn", "accepted", "rejected"]
     submitted_at_ms: int
+    version: int = 1
     routed_category: str | None = None
     routed_track: str | None = None
     routed_review_queue: str | None = None
@@ -254,6 +284,12 @@ class SubmissionList(BaseModel):
     organization_id: str
     event_id: str
     program_id: str
+    data: list[SubmissionView]
+
+
+class OwnedSubmissionList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     data: list[SubmissionView]
 
 

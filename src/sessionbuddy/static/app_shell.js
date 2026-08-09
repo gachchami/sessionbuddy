@@ -139,7 +139,7 @@
       if (location.pathname.includes("/speakers")) return "Event speakers";
       if (location.pathname.includes("/access")) return "People & access";
       if (location.pathname.includes("/onboarding")) return "Speaker onboarding";
-      if (location.pathname.includes("/workspace")) return "Resources";
+      if (location.pathname.includes("/workspace")) return "Resources & publishing";
       if (location.pathname.includes("/agenda")) return "Agenda";
       if (location.pathname.endsWith("/cfp")) return "Call for speakers";
       if (location.pathname === "/admin/programs") return "Call for speakers";
@@ -161,7 +161,7 @@
       ["People & access", `${prefix}/access`, "access"],
       ["Speakers", `${prefix}/speakers`, "mic"],
       ["Onboarding", `${prefix}/onboarding`, "tasks"],
-      ["Resources", `${prefix}/workspace`, "resource"],
+      ["Resources & embeds", `${prefix}/workspace`, "resource"],
       ["Agenda", `${prefix}/agenda`, "agenda"],
       ["Public schedule", `/events/${encoded}/schedule`, "external"]
     ];
@@ -178,12 +178,19 @@
     const roles = roleSet(session);
     const organizer = roles.has("organization_admin") || roles.has("event_admin");
     const section = currentSection();
+    if (location.pathname.startsWith("/admin") && !organizer) {
+      if (roles.has("evaluator")) location.replace("/reviews");
+      else if (roles.has("speaker")) location.replace("/speaker");
+      else location.replace("/account");
+      return;
+    }
+    const organizerWorkspace = organizer && !["speaker", "reviews"].includes(section);
     const currentEventId = eventIdFromLocation();
     document.body.classList.add("sb-shell-authenticated");
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
-    const brand = link("", organizer ? "/admin" : roles.has("speaker") ? "/speaker" : "/reviews");
+    const brand = link("", organizerWorkspace ? "/admin" : section === "speaker" ? "/speaker" : "/reviews");
     brand.className = "sb-app-brand";
     const mark = make("span", "S", "sb-app-brand__mark");
     mark.setAttribute("aria-hidden", "true");
@@ -196,7 +203,7 @@
     primaryGroup.append(make("p", "Main", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
     nav.setAttribute("aria-label", "Main navigation");
-    if (organizer) {
+    if (organizerWorkspace) {
       nav.append(
         navLink("Home", "/admin", "home", section === "home"),
         navLink("Organizations", "/admin#organizations", "building"),
@@ -204,11 +211,11 @@
         navLink("Speakers", "/admin/speakers", "people", section === "speakers" && !currentEventId)
       );
     }
-    if (roles.has("evaluator") || organizer) nav.append(navLink("Reviews", "/reviews", "review", section === "reviews"));
-    if (roles.has("speaker")) nav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
+    if (section === "reviews" || (organizerWorkspace && (roles.has("evaluator") || organizer))) nav.append(navLink("Reviews", "/reviews", "review", section === "reviews"));
+    if (section === "speaker" || (organizerWorkspace && roles.has("speaker"))) nav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
     primaryGroup.append(nav);
     sidebar.append(primaryGroup);
-    if (organizer && currentEventId) sidebar.append(eventNav(currentEventId));
+    if (organizerWorkspace && currentEventId) sidebar.append(eventNav(currentEventId));
 
     const topbar = make("div", undefined, "sb-topbar");
     const menuButton = make("button", undefined, "sb-menu-button");

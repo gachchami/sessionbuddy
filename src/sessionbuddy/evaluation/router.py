@@ -17,13 +17,16 @@ from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mappi
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
 from .models import (
+    AiTriageView,
     AssignmentReassign,
     ConflictDeclaration,
     ConflictProgress,
     ConflictView,
     EvaluationAssignmentList,
     EvaluationAssignmentView,
+    EvaluationDetail,
     EvaluationRoundClosed,
+    EvaluationRoundCloseRequest,
     EvaluationRoundCreate,
     EvaluationRoundList,
     EvaluationRoundResults,
@@ -32,14 +35,21 @@ from .models import (
     EvaluationView,
     EvaluatorList,
     EvaluatorProgress,
+    EvaluatorReminderQueued,
     EvaluatorView,
     ReassignmentView,
+    RoundEvaluatorAdd,
+    RoundEvaluatorChange,
+    RoundSubmissionAdd,
+    RoundSubmissionChange,
     SubmissionDecisionCreate,
     SubmissionDecisionView,
     SubmissionEvaluationResult,
 )
 
 evaluation_router = APIRouter()
+
+AI_TRIAGE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 
 
 def _asset(name: str) -> str:
@@ -205,10 +215,11 @@ async def create_evaluation_round(
     rubric = {
         "rating": {"min": body.rating_min, "max": body.rating_max, "required": True},
         "recommendation": {"choices": body.recommendations, "required": True},
-        "internal_comment": {"required": False},
+        "internal_comment": {"required": body.comment_required},
         "guidance": body.evaluator_guidance,
         "criteria": [criterion.model_dump() for criterion in body.criteria],
         "blind_review": body.blind_review,
+        "assignment_strategy": body.assignment_strategy,
     }
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
@@ -384,7 +395,7 @@ async def list_program_evaluators(program_id: str, request: Request) -> Evaluato
     )
     rows = result_rows(
         await db.prepare(
-            """SELECT u.id AS user_id, u.email AS display_name
+            """SELECT u.id AS user_id, COALESCE(u.display_name,u.email) AS display_name
            FROM event_memberships em JOIN users u ON u.id = em.user_id
            WHERE em.organization_id = ?1 AND em.event_id = ?2
              AND em.role = 'evaluator' AND em.status = 'active' AND u.status = 'active'
@@ -394,6 +405,470 @@ async def list_program_evaluators(program_id: str, request: Request) -> Evaluato
         .all()
     )
     return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
+
+
+@evaluation_router.post(
+    "/api/v1/admin/submissions/{submission_id}/ai-triage",
+    response_model=AiTriageView,
+    operation_id="triageSubmissionWithWorkersAi",
+    tags=["evaluations", "ai"],
+)
+async def triage_submission(submission_id: str, request: Request) -> AiTriageView:
+    db = _db(request)
+    submission = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,event_id,proposal_title,proposal_abstract
+               FROM submissions WHERE id=?1 LIMIT 1"""
+        ).bind(submission_id).first()
+    )
+    if submission is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request, Permission.EVALUATION_RESULTS_READ,
+        ResourceContext(str(submission["organization_id"]), str(submission["event_id"])),
+        mutation=True,
+    )
+    ai = getattr(request.scope.get("env"), "AI", None)
+    if ai is None:
+        raise HTTPException(status_code=503)
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a conference proposal triage assistant. Evaluate only the proposal "
+                    "content. Return a 0-10 score, one recommendation, and a specific rationale. "
+                    "This is advisory; a human makes the final decision. Do not infer protected "
+                    "traits or score the identity, reputation, employer, or demographic profile "
+                    "of any speaker."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Title: {submission['proposal_title']}\n\n"
+                    f"Abstract: {submission['proposal_abstract']}"
+                ),
+            },
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "score": {"type": "integer", "minimum": 0, "maximum": 10},
+                    "recommendation": {"type": "string"},
+                    "rationale": {"type": "string"},
+                },
+                "required": ["score", "recommendation", "rationale"],
+            },
+        },
+    }
+    try:
+        raw = await ai.run(AI_TRIAGE_MODEL, payload)
+        converted = to_python(raw)
+        result = converted.get("response", converted) if isinstance(converted, dict) else None
+        if isinstance(result, str):
+            result = json.loads(result)
+        if not isinstance(result, dict):
+            raise ValueError("Workers AI returned no structured response")
+        view = AiTriageView(
+            submission_id=submission_id, model=AI_TRIAGE_MODEL,
+            score=int(result["score"]), recommendation=str(result["recommendation"]),
+            rationale=str(result["rationale"]), generated_at_ms=utc_now_ms(),
+        )
+        await db.prepare(
+            """INSERT INTO ai_triage_results
+               (id,organization_id,event_id,submission_id,model,score,recommendation,
+                rationale,generated_by_user_id,generated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"""
+        ).bind(
+            new_id(), submission["organization_id"], submission["event_id"], submission_id,
+            view.model, view.score, view.recommendation, view.rationale,
+            auth.actor.user_id, view.generated_at_ms,
+        ).run()
+        return view
+    except Exception as exc:
+        raise HTTPException(status_code=502) from exc
+
+
+@evaluation_router.post(
+    "/api/v1/admin/evaluation-rounds/{round_id}/evaluators",
+    response_model=RoundEvaluatorChange,
+    operation_id="addEvaluationRoundEvaluator",
+    tags=["evaluations"],
+)
+async def add_round_evaluator(
+    round_id: str,
+    body: RoundEvaluatorAdd,
+    request: Request,
+) -> RoundEvaluatorChange:
+    db = _db(request)
+    round_row = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,event_id,status FROM evaluation_rounds
+               WHERE id=?1 LIMIT 1"""
+        )
+        .bind(round_id)
+        .first()
+    )
+    if round_row is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request,
+        Permission.SUBMISSION_MANAGE,
+        ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
+        mutation=True,
+    )
+    if round_row["status"] != "open":
+        raise HTTPException(status_code=409)
+    membership = await db.prepare(
+        """SELECT 1 AS found FROM event_memberships
+           WHERE organization_id=?1 AND event_id=?2 AND user_id=?3
+             AND role='evaluator' AND status='active' LIMIT 1"""
+    ).bind(
+        round_row["organization_id"], round_row["event_id"], body.evaluator_user_id
+    ).first("found")
+    if membership is None:
+        raise HTTPException(status_code=400)
+    submission_ids = [
+        str(row["submission_id"])
+        for row in result_rows(
+            await db.prepare(
+                """SELECT DISTINCT submission_id FROM evaluation_assignments
+                   WHERE round_id=?1 ORDER BY submission_id"""
+            )
+            .bind(round_id)
+            .all()
+        )
+    ]
+    existing_ids = {
+        str(row["submission_id"])
+        for row in result_rows(
+            await db.prepare(
+                """SELECT submission_id FROM evaluation_assignments
+                   WHERE round_id=?1 AND evaluator_user_id=?2"""
+            )
+            .bind(round_id, body.evaluator_user_id)
+            .all()
+        )
+    }
+    missing_ids = [
+        submission_id for submission_id in submission_ids if submission_id not in existing_ids
+    ]
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    for submission_id in missing_ids:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO evaluation_assignments
+                   (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,
+                    status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,'assigned',?7,?7)"""
+            ).bind(
+                new_id(), round_row["organization_id"], round_row["event_id"], round_id,
+                submission_id, body.evaluator_user_id, now,
+            )
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user", actor_user_id=auth.actor.user_id,
+            action="evaluation_round.evaluator.add", target_type="evaluation_round",
+            target_id=round_id, result="succeeded", correlation_id=request.state.request_id,
+            occurred_at_ms=now, organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            metadata={
+                "evaluator_user_id": body.evaluator_user_id,
+                "assignment_count": len(missing_ids),
+            },
+        )
+    )
+    await batch.execute()
+    return RoundEvaluatorChange(
+        round_id=round_id, evaluator_user_id=body.evaluator_user_id,
+        assignment_count=len(missing_ids),
+    )
+
+
+@evaluation_router.post(
+    "/api/v1/admin/evaluation-rounds/{round_id}/submissions",
+    response_model=RoundSubmissionChange,
+    operation_id="addEvaluationRoundSubmissions",
+    tags=["evaluations"],
+)
+async def add_round_submissions(
+    round_id: str,
+    body: RoundSubmissionAdd,
+    request: Request,
+) -> RoundSubmissionChange:
+    db = _db(request)
+    round_row = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,event_id,program_id,rubric_json,status
+               FROM evaluation_rounds WHERE id=?1 LIMIT 1"""
+        )
+        .bind(round_id)
+        .first()
+    )
+    if round_row is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request,
+        Permission.SUBMISSION_MANAGE,
+        ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
+        mutation=True,
+    )
+    if round_row["status"] != "open":
+        raise HTTPException(status_code=409)
+    placeholders = ",".join(f"?{index + 4}" for index in range(len(body.submission_ids)))
+    submissions = result_rows(
+        await db.prepare(
+            f"""SELECT id FROM submissions WHERE organization_id=?1 AND event_id=?2
+                  AND program_id=?3 AND status='submitted'
+                  AND id IN ({placeholders})"""  # noqa: S608
+        )
+        .bind(
+            round_row["organization_id"],
+            round_row["event_id"],
+            round_row["program_id"],
+            *body.submission_ids,
+        )
+        .all()
+    )
+    if {str(row["id"]) for row in submissions} != set(body.submission_ids):
+        raise HTTPException(status_code=400)
+    existing_ids = {
+        str(row["submission_id"])
+        for row in result_rows(
+            await db.prepare(
+                """SELECT DISTINCT submission_id FROM evaluation_assignments
+                   WHERE round_id=?1"""
+            )
+            .bind(round_id)
+            .all()
+        )
+    }
+    new_submission_ids = [
+        submission_id
+        for submission_id in body.submission_ids
+        if submission_id not in existing_ids
+    ]
+    evaluator_ids = [
+        str(row["evaluator_user_id"])
+        for row in result_rows(
+            await db.prepare(
+                """SELECT evaluator_user_id,COUNT(*) AS assignment_count
+                   FROM evaluation_assignments
+                   WHERE round_id=?1 AND status!='revoked'
+                   GROUP BY evaluator_user_id
+                   ORDER BY assignment_count,evaluator_user_id"""
+            )
+            .bind(round_id)
+            .all()
+        )
+    ]
+    if not evaluator_ids:
+        raise HTTPException(status_code=409, detail="Add a reviewer before adding submissions.")
+    rubric = json.loads(str(round_row["rubric_json"]))
+    strategy = str(rubric.get("assignment_strategy", "balanced"))
+    if strategy not in {"all", "balanced"}:
+        strategy = "balanced"
+    assignment_pairs = _assignment_pairs(new_submission_ids, evaluator_ids, strategy)
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    for submission_id, evaluator_id in assignment_pairs:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO evaluation_assignments
+                   (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,
+                    status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,'assigned',?7,?7)"""
+            ).bind(
+                new_id(),
+                round_row["organization_id"],
+                round_row["event_id"],
+                round_id,
+                submission_id,
+                evaluator_id,
+                now,
+            )
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="evaluation_round.submissions.add",
+            target_type="evaluation_round",
+            target_id=round_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            metadata={
+                "submission_count": len(new_submission_ids),
+                "assignment_count": len(assignment_pairs),
+            },
+        )
+    )
+    await batch.execute()
+    return RoundSubmissionChange(
+        round_id=round_id,
+        submission_count=len(new_submission_ids),
+        assignment_count=len(assignment_pairs),
+    )
+
+
+@evaluation_router.post(
+    "/api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove",
+    response_model=RoundEvaluatorChange,
+    operation_id="removeEvaluationRoundEvaluator",
+    tags=["evaluations"],
+)
+async def remove_round_evaluator(
+    round_id: str,
+    evaluator_user_id: str,
+    request: Request,
+) -> RoundEvaluatorChange:
+    db = _db(request)
+    round_row = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,event_id,status FROM evaluation_rounds
+               WHERE id=?1 LIMIT 1"""
+        ).bind(round_id).first()
+    )
+    if round_row is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request, Permission.SUBMISSION_MANAGE,
+        ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
+        mutation=True,
+    )
+    if round_row["status"] != "open":
+        raise HTTPException(status_code=409)
+    saved = int(
+        await db.prepare(
+            """SELECT COUNT(*) AS count_value FROM evaluations e
+               JOIN evaluation_assignments a ON a.id=e.assignment_id
+               WHERE a.round_id=?1 AND a.evaluator_user_id=?2"""
+        ).bind(round_id, evaluator_user_id).first("count_value") or 0
+    )
+    if saved:
+        raise HTTPException(status_code=409)
+    uncovered = int(
+        await db.prepare(
+            """SELECT COUNT(*) AS count_value FROM evaluation_assignments target
+               WHERE target.round_id=?1 AND target.evaluator_user_id=?2
+                 AND target.status!='revoked' AND NOT EXISTS (
+                   SELECT 1 FROM evaluation_assignments replacement
+                   WHERE replacement.round_id=target.round_id
+                     AND replacement.submission_id=target.submission_id
+                     AND replacement.evaluator_user_id!=target.evaluator_user_id
+                     AND replacement.status!='revoked'
+                 )"""
+        ).bind(round_id, evaluator_user_id).first("count_value") or 0
+    )
+    if uncovered:
+        raise HTTPException(status_code=409)
+    active_count = int(
+        await db.prepare(
+            """SELECT COUNT(*) AS count_value FROM evaluation_assignments
+               WHERE round_id=?1 AND evaluator_user_id=?2 AND status!='revoked'"""
+        ).bind(round_id, evaluator_user_id).first("count_value") or 0
+    )
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM evaluation_assignments
+               WHERE round_id=?1 AND evaluator_user_id=?2 AND status!='revoked'"""
+        ).bind(round_id, evaluator_user_id)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user", actor_user_id=auth.actor.user_id,
+            action="evaluation_round.evaluator.remove", target_type="evaluation_round",
+            target_id=round_id, result="succeeded", correlation_id=request.state.request_id,
+            occurred_at_ms=now, organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            metadata={"evaluator_user_id": evaluator_user_id, "assignment_count": active_count},
+        )
+    )
+    await batch.execute()
+    return RoundEvaluatorChange(
+        round_id=round_id, evaluator_user_id=evaluator_user_id, assignment_count=active_count
+    )
+
+
+@evaluation_router.post(
+    "/api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/reminder",
+    response_model=EvaluatorReminderQueued,
+    operation_id="remindEvaluationRoundEvaluator",
+    tags=["evaluations", "communications"],
+)
+async def remind_round_evaluator(
+    round_id: str, evaluator_user_id: str, request: Request
+) -> EvaluatorReminderQueued:
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT r.organization_id,r.event_id,r.name,u.email,
+                      COUNT(a.id) AS assigned_count,
+                      SUM(CASE WHEN e.state='final' THEN 1 ELSE 0 END) AS completed_count
+               FROM evaluation_rounds r
+               JOIN evaluation_assignments a ON a.round_id=r.id AND a.status!='revoked'
+               JOIN users u ON u.id=a.evaluator_user_id
+               LEFT JOIN evaluations e ON e.assignment_id=a.id
+               WHERE r.id=?1 AND a.evaluator_user_id=?2 AND r.status='open'
+               GROUP BY r.id,u.id LIMIT 1"""
+        ).bind(round_id, evaluator_user_id).first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request, Permission.COMMUNICATION_SEND,
+        ResourceContext(str(row["organization_id"]), str(row["event_id"])), mutation=True,
+    )
+    outstanding = int(row["assigned_count"] or 0) - int(row["completed_count"] or 0)
+    if outstanding <= 0:
+        raise HTTPException(status_code=409)
+    now, message_id = utc_now_ms(), new_id()
+    deterministic = f"evaluation-reminder:{round_id}:{evaluator_user_id}:{now // 3_600_000}"
+    html_body = (
+        f"<p>You have {outstanding} outstanding review"
+        f"{'s' if outstanding != 1 else ''} in {escape(str(row['name']))}.</p>"
+        "<p>Open SessionBuddy and finish your assigned reviews.</p>"
+    )
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_user_id,recipient_email,subject,
+                html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)"""
+        ).bind(
+            message_id, row["organization_id"], row["event_id"], evaluator_user_id,
+            row["email"], f"Review reminder: {row['name']}", html_body, deterministic, now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user", actor_user_id=auth.actor.user_id,
+            action="evaluation_round.evaluator.remind", target_type="evaluation_round",
+            target_id=round_id, result="succeeded", correlation_id=request.state.request_id,
+            occurred_at_ms=now, organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]), metadata={"outstanding_count": outstanding},
+        )
+    )
+    await batch.execute()
+    queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
+    if queue is not None:
+        try:
+            await queue.send({"schema_version": 1, "message_id": message_id})
+        except Exception:
+            # The durable queued message remains visible for operator replay.
+            record_timing(request, "domain", 0)
+    return EvaluatorReminderQueued(message_id=message_id)
 
 
 @evaluation_router.get(
@@ -458,6 +933,9 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                 rating_max=int(rubric["rating"]["max"]),
                 recommendations=list(rubric["recommendation"]["choices"]),
                 evaluator_guidance=str(rubric.get("guidance", "")),
+                comment_required=bool(
+                    rubric.get("internal_comment", {}).get("required", False)
+                ),
                 criteria=list(rubric.get("criteria", [])),
                 criterion_scores=json.loads(str(row["criterion_scores_json"])),
                 blind_review=bool(rubric.get("blind_review", False)),
@@ -554,6 +1032,12 @@ async def save_evaluation(
     if not rating_min <= rating <= rating_max:
         raise HTTPException(status_code=422)
     if body.recommendation not in rubric["recommendation"]["choices"]:
+        raise HTTPException(status_code=422)
+    if (
+        body.state == "final"
+        and rubric.get("internal_comment", {}).get("required")
+        and not body.internal_comment
+    ):
         raise HTTPException(status_code=422)
 
     key = _key(idempotency_key)
@@ -924,18 +1408,47 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
                   COUNT(a.id) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
                   AVG(CASE WHEN e.state = 'final' THEN e.rating END) AS average_rating,
-                  d.decision
+                  d.decision,d.internal_reason
            FROM evaluation_assignments a
            JOIN submissions s ON s.id = a.submission_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            LEFT JOIN submission_decisions d
              ON d.round_id = a.round_id AND d.submission_id = a.submission_id
            WHERE a.round_id = ?1 AND a.status != 'revoked'
-           GROUP BY s.id, s.speaker_name, s.proposal_title, d.decision
+           GROUP BY s.id, s.speaker_name, s.proposal_title, d.decision,d.internal_reason
            ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 100"""
             ).bind(round_id),
         )
     )
+    review_rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT a.submission_id,COALESCE(u.display_name,u.email) AS evaluator_name,
+                          COALESCE(e.state,'not_started') AS state,e.rating,e.recommendation,
+                          COALESCE(e.internal_comment,'') AS internal_comment
+                   FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
+                   LEFT JOIN evaluations e ON e.assignment_id=a.id
+                   WHERE a.round_id=?1 AND a.status!='revoked'
+                   ORDER BY a.submission_id,u.normalized_email,a.id"""
+            ).bind(round_id),
+        )
+    )
+    reviews_by_submission: dict[str, list[EvaluationDetail]] = {}
+    for review in review_rows:
+        reviews_by_submission.setdefault(str(review["submission_id"]), []).append(
+            EvaluationDetail(
+                evaluator_name=str(review["evaluator_name"]),
+                state=str(review["state"]),
+                rating=int(review["rating"]) if review["rating"] is not None else None,
+                recommendation=(
+                    str(review["recommendation"])
+                    if review["recommendation"] is not None
+                    else None
+                ),
+                internal_comment=str(review["internal_comment"]),
+            )
+        )
     submissions = [
         SubmissionEvaluationResult(
             submission_id=str(row["submission_id"]),
@@ -949,6 +1462,8 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
                 else None
             ),
             decision=(str(row["decision"]) if row["decision"] is not None else None),
+            internal_reason=str(row["internal_reason"] or ""),
+            reviews=reviews_by_submission.get(str(row["submission_id"]), []),
         )
         for row in rows
     ]
@@ -958,7 +1473,7 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         await _timed_all(
             request,
             db.prepare(
-                """SELECT a.evaluator_user_id, u.email AS display_name,
+                """SELECT a.evaluator_user_id, COALESCE(u.display_name,u.email) AS display_name,
                   SUM(CASE WHEN a.status != 'revoked' THEN 1 ELSE 0 END) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
                   COUNT(c.id) AS conflict_count
@@ -980,11 +1495,27 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         )
         for row in evaluator_rows
     ]
+    available_evaluator_rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT u.id AS user_id,COALESCE(u.display_name,u.email) AS display_name
+                   FROM event_memberships em JOIN users u ON u.id=em.user_id
+                   WHERE em.organization_id=?1 AND em.event_id=?2
+                     AND em.role='evaluator' AND em.status='active' AND u.status='active'
+                   ORDER BY u.normalized_email LIMIT 100"""
+            ).bind(round_row["organization_id"], round_row["event_id"]),
+        )
+    )
+    available_evaluators = [
+        EvaluatorView.model_validate(row) for row in available_evaluator_rows
+    ]
     conflict_rows = result_rows(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT c.assignment_id, c.evaluator_user_id, u.email AS evaluator_name,
+                """SELECT c.assignment_id, c.evaluator_user_id,
+                  COALESCE(u.display_name,u.email) AS evaluator_name,
                   s.proposal_title, c.conflict_type,
                   NOT EXISTS (
                     SELECT 1 FROM evaluation_assignments replacement
@@ -1018,6 +1549,7 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         average_rating=_weighted_mean(weighted_ratings),
         submissions=submissions,
         evaluators=evaluator_progress,
+        available_evaluators=available_evaluators,
         conflicts=conflicts,
     )
 
@@ -1080,6 +1612,7 @@ async def export_round_results(round_id: str, request: Request) -> Response:
 async def close_evaluation_round(
     round_id: str,
     request: Request,
+    body: EvaluationRoundCloseRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EvaluationRoundClosed:
     db = _db(request)
@@ -1103,7 +1636,7 @@ async def close_evaluation_round(
     if round_row["status"] == "closed":
         return EvaluationRoundClosed(round_id=round_id)
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/close"
-    fingerprint = hashlib.sha256(round_id.encode()).digest()
+    fingerprint = _fingerprint(body)
     replay = await _idempotency_replay(db, auth.actor.user_id, route, key, fingerprint)
     if replay is not None:
         return EvaluationRoundClosed(round_id=round_id)
@@ -1121,12 +1654,13 @@ async def close_evaluation_round(
         .bind(round_id)
         .first()
     )
-    if (
+    incomplete = (
         counts is None
         or int(counts["total_submissions"] or 0) == 0
         or int(counts["covered_submissions"] or 0) < int(counts["total_submissions"] or 0)
         or int(counts["outstanding"] or 0) > 0
-    ):
+    )
+    if incomplete and not body.force:
         raise HTTPException(status_code=409)
     now = utc_now_ms()
     record = IdempotencyRecord(
@@ -1158,7 +1692,12 @@ async def close_evaluation_round(
             occurred_at_ms=now,
             organization_id=str(round_row["organization_id"]),
             event_id=str(round_row["event_id"]),
-            metadata={"evaluations_read_only": True},
+            metadata={
+                "evaluations_read_only": True,
+                "forced": body.force,
+                "outstanding_count": int(counts["outstanding"] or 0) if counts else 0,
+                "reason_length": len(body.reason),
+            },
         )
     )
     batch.complete_idempotency(
@@ -1207,7 +1746,8 @@ async def record_submission_decision(
         ResourceContext(str(context["organization_id"]), str(context["event_id"])),
         mutation=True,
     )
-    if int(context["completed_count"] or 0) < int(context["assigned_count"]):
+    incomplete_reviews = int(context["completed_count"] or 0) < int(context["assigned_count"])
+    if incomplete_reviews and not body.override_incomplete_reviews:
         raise HTTPException(status_code=409)
     speaker = row_mapping(
         await db.prepare(
@@ -1423,6 +1963,7 @@ async def record_submission_decision(
                 "version": version,
                 "communication_queued": bool(communication_id),
                 "onboarding_created": body.decision == "accepted",
+                "review_override": incomplete_reviews,
             },
         )
     )

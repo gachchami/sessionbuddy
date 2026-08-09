@@ -178,6 +178,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .speaker-initials { color: #53627a; font-size: 2.4rem; font-weight: 850; letter-spacing: -.04em; }
 .speaker-card__body { padding: 1.2rem; }
 .speaker-card__body p { color: var(--muted); }
+body[data-layout="gallery"] .speaker-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+body[data-layout="gallery"] .speaker-card__media { aspect-ratio: 1; }
 .session-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0 0; padding: 0; list-style: none; }
 .session-chips li { padding: .3rem .55rem; border-radius: 99rem; background: #edf1f7; color: #44526a; font-size: .76rem; font-weight: 700; }
 body.embedded .public-header { display: none; }

@@ -19,6 +19,9 @@
       "head_sampling_rate": 0.1
     }
   },
+  "ai": {
+    "binding": "AI"
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -86,6 +89,9 @@
   "env": {
     "dev": {
       "name": "sessionbuddy-development",
+      "ai": {
+        "binding": "AI"
+      },
       "d1_databases": [
         {
           "binding": "DB",

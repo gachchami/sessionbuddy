@@ -498,6 +498,7 @@
       item.track_id,
       "No track",
     );
+    byId("unschedule-item").hidden = !item.id;
     clearConflicts();
     byId("preview-state").textContent = "Change a field to check conflicts.";
     byId("editor").showModal();
@@ -634,6 +635,7 @@
         },
       );
       render();
+      showConflicts([]);
       status(`${label[0].toUpperCase()}${label.slice(1)} archived.`);
     } catch (error) {
       status(error.message || `The ${label} could not be archived.`, true);
@@ -660,6 +662,7 @@
         );
         form.reset();
         render();
+        showConflicts([]);
         status(`${kind === "room" ? "Room" : "Track"} added.`);
       } catch (error) {
         status(error.message || `The ${kind} could not be added.`, true);
@@ -694,6 +697,7 @@
       );
       state.model = result;
       render();
+      showConflicts([]);
       const scheduled = result.auto_schedule?.scheduled_count || 0;
       const remaining = result.auto_schedule?.remaining_count || 0;
       status(
@@ -827,6 +831,33 @@
       );
     } finally {
       byId("save-item").disabled = false;
+    }
+  });
+  byId("unschedule-item").addEventListener("click", async () => {
+    const item = state.selected;
+    if (!item?.id || !window.confirm(`Move “${item.title}” back to unscheduled sessions?`)) return;
+    const button = byId("unschedule-item");
+    button.disabled = true;
+    try {
+      await api(
+        `/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/items/${encodeURIComponent(item.id)}?version=${encodeURIComponent(item.version)}`,
+        {
+          method: "DELETE",
+          headers: { "x-csrf-token": state.csrf, "idempotency-key": key() },
+        },
+      );
+      byId("editor").close();
+      await load(false);
+      status("Session moved back to unscheduled sessions.");
+    } catch (error) {
+      status(
+        error.status === 409
+          ? "The schedule changed elsewhere. Refresh and try again."
+          : "The session could not be unscheduled.",
+        true,
+      );
+    } finally {
+      button.disabled = false;
     }
   });
   ["close-editor", "cancel-editor"].forEach((id) =>

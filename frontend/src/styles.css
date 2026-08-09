@@ -1,6 +1,8 @@
 :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #182230; background: #f7f8fa; font-synthesis: none; --ink:#182230; --muted:#667085; --line:#e4e7ec; --navy:#182230; --blue:#2563eb; }
 * { box-sizing: border-box; }
 body { max-width: 100%; margin: 0; overflow-x: hidden; }
+html { scroll-padding-top: 5rem; }
+:where(button, a, input, select, textarea, summary) { scroll-margin-top: 5rem; }
 main { width: min(72rem, calc(100% - 2rem)); margin: auto; padding: clamp(1.75rem, 4vw, 3.25rem) 0; }
 .hero { max-width: 52rem; }
 .hero > p:last-child { color: var(--muted); font-size: 1.05rem; line-height: 1.65; }

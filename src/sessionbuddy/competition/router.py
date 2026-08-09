@@ -121,7 +121,13 @@ async def event_workspace_js() -> Response:
     "/events/{event_id}/speakers", response_class=HTMLResponse, include_in_schema=False
 )
 @competition_router.get(
+    "/events/{event_id}/gallery", response_class=HTMLResponse, include_in_schema=False
+)
+@competition_router.get(
     "/embeds/events/{event_id}/speakers", response_class=HTMLResponse, include_in_schema=False
+)
+@competition_router.get(
+    "/embeds/events/{event_id}/gallery", response_class=HTMLResponse, include_in_schema=False
 )
 async def public_speaker_gallery_page(event_id: str) -> HTMLResponse:
     return HTMLResponse(
@@ -1061,7 +1067,11 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                 """SELECT ac.id,s.proposal_title FROM submission_speakers ss
                    JOIN accepted_sessions ac ON ac.submission_id=ss.submission_id
                    JOIN submissions s ON s.id=ss.submission_id
-                   WHERE ss.event_speaker_id=?1 ORDER BY s.proposal_title"""
+                   JOIN agenda_items ai ON ai.accepted_session_id=ac.id
+                   JOIN schedule_revisions sr ON sr.id=ai.revision_id
+                   WHERE ss.event_speaker_id=?1 AND ac.content_status='approved'
+                     AND sr.status='published'
+                   ORDER BY s.proposal_title"""
             )
             .bind(row["id"])
             .all()

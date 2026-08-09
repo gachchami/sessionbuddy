@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -84,6 +85,22 @@ def test_cfp_write_models_are_strict_and_bounded() -> None:
         critical_api_ms=25,
     )
     assert telemetry.page_template == "/admin/programs"
+
+
+def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() -> None:
+    submission = SubmissionCreate(
+        speaker_name="Primary Speaker",
+        speaker_email="primary@example.com",
+        proposal_title="A proposal",
+        proposal_abstract="A useful abstract",
+        co_speakers=[{"display_name": "Co Speaker", "email": "co@example.com"}],
+    )
+    assert submission.co_speakers[0].role == "co_speaker"
+
+    script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
+    assert 'make("p", "Role: Co-speaker"' in script
+    assert 'if (state.editingSubmission)' in script
+    assert 'method: "PATCH"' in script
 
 
 def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
@@ -326,4 +343,6 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'page_template: "/admin/programs/{program_id}/submissions"' in submissions_js.text
     assert "View details" in submissions_js.text
     assert "item.answers" in submissions_js.text
+    assert 'location.pathname.startsWith("/admin") && !organizer' in app_shell_js.text
+    assert 'location.replace("/speaker")' in app_shell_js.text
     assert "@media (max-width: 48rem)" in css.text

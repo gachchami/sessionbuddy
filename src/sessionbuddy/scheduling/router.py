@@ -3,7 +3,7 @@ import json
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.agenda import (
@@ -102,7 +102,9 @@ async def agenda_js(request: Request) -> Response:
 
 
 @scheduling_router.get("/events/{event_id}/schedule", include_in_schema=False)
+@scheduling_router.get("/events/{event_id}/sessions", include_in_schema=False)
 @scheduling_router.get("/embeds/events/{event_id}/schedule", include_in_schema=False)
+@scheduling_router.get("/embeds/events/{event_id}/sessions", include_in_schema=False)
 async def schedule_page(event_id: str, request: Request) -> HTMLResponse:
     return HTMLResponse(
         _asset("schedule.html"),
@@ -988,6 +990,110 @@ async def move_agenda_item(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     return await _save_item(event_id, request, body, idempotency_key, item_id)
+
+
+@scheduling_router.delete(
+    "/api/v1/admin/events/{event_id}/agenda/items/{item_id}",
+    status_code=204,
+    tags=["agenda"],
+)
+async def unschedule_agenda_item(
+    event_id: str,
+    item_id: str,
+    request: Request,
+    version: int = Query(ge=1),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> Response:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    revision = await _revision(db, organization_id, event_id)
+    if revision is None:
+        raise HTTPException(status_code=409)
+    key = _key(idempotency_key)
+    route = "DELETE /api/v1/admin/events/{event_id}/agenda/items/{item_id}"
+    fingerprint = hashlib.sha256(f"{item_id}:{version}".encode()).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND event_id=?4 AND state='completed'"""
+        )
+        .bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest(), event_id)
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return Response(status_code=204)
+    item = row_mapping(
+        await db.prepare(
+            """SELECT id FROM agenda_items WHERE organization_id=?1 AND event_id=?2
+                 AND revision_id=?3 AND id=?4 AND version=?5 LIMIT 1"""
+        )
+        .bind(organization_id, event_id, revision["id"], item_id, version)
+        .first()
+    )
+    if item is None:
+        raise HTTPException(status_code=409)
+    now = utc_now_ms()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM agenda_item_speakers WHERE organization_id=?1 AND event_id=?2
+                 AND revision_id=?3 AND agenda_item_id=?4"""
+        ).bind(organization_id, event_id, revision["id"], item_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM agenda_items WHERE organization_id=?1 AND event_id=?2
+                 AND revision_id=?3 AND id=?4 AND version=?5"""
+        ).bind(organization_id, event_id, revision["id"], item_id, version)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO agenda_write_guards
+               (id,agenda_item_id,applied_changes,created_at_ms)
+               VALUES (?1,?2,changes(),?3)"""
+        ).bind(new_id(), item_id, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.item.unschedule",
+            target_type="agenda_item",
+            target_id=item_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=204,
+        resource_type="agenda_item",
+        resource_id=item_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    return Response(status_code=204)
 
 
 @scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/publish", tags=["agenda"])

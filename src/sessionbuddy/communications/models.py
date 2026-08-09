@@ -63,10 +63,13 @@ class SpeakerMessageSendRequest(SpeakerMessagePreviewRequest):
 class CommunicationStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
+    recipient_email: str
+    subject: str
     status: Literal["queued", "sending", "delivered", "failed", "cancelled"]
     attempt_count: int
     provider_message_id: str | None = None
     last_error_code: str | None = None
+    updated_at_ms: int
 
 
 class CommunicationStatusList(BaseModel):

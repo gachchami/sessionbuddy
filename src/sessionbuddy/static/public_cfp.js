@@ -4,7 +4,8 @@
   const slug = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
   const state = {
     csrf: "", form: null, draftVersion: 0, publicSession: crypto.randomUUID(),
-    files: new Map(), uploaded: new Map(), applyConditions: () => {}
+    files: new Map(), uploaded: new Map(), applyConditions: () => {},
+    sessionEmail: "", editingSubmission: null, submissions: []
   };
 
   function setStatus(message, kind = "") {
@@ -146,6 +147,25 @@
     state.applyConditions();
   }
 
+  function addCoSpeakerRow(value = {}) {
+    const row = make("div", undefined, "form-grid co-speaker-row");
+    const nameLabel = make("label", "Name"); const name = document.createElement("input");
+    name.name = "co_speaker_name"; name.required = true; name.maxLength = 200; name.value = value.display_name || ""; nameLabel.append(name);
+    const emailLabel = make("label", "Email"); const email = document.createElement("input");
+    email.name = "co_speaker_email"; email.type = "email"; email.required = true; email.maxLength = 320; email.value = value.email || ""; emailLabel.append(email);
+    const role = make("p", "Role: Co-speaker", "help");
+    const remove = make("button", "Remove", "secondary"); remove.type = "button"; remove.addEventListener("click", () => row.remove());
+    row.append(nameLabel, emailLabel, role, remove); byId("co-speaker-rows").append(row);
+  }
+
+  function coSpeakers() {
+    return [...document.querySelectorAll(".co-speaker-row")].map((row) => ({
+      display_name: row.querySelector('[name="co_speaker_name"]').value.trim(),
+      email: row.querySelector('[name="co_speaker_email"]').value.trim(),
+      role: "co_speaker"
+    }));
+  }
+
   function restoreValues(values) {
     for (const field of state.form.fields || []) {
       const control = byId("proposal-form").elements.namedItem(field.key);
@@ -171,6 +191,59 @@
     state.draftVersion = draft.version;
     restoreValues(draft.answers || {});
     setStatus("Your saved draft has been restored.");
+  }
+
+  function lockSignedInEmail() {
+    const email = byId("proposal-form").elements.namedItem("speaker_email");
+    if (!email || !state.sessionEmail) return;
+    email.value = state.sessionEmail;
+    email.readOnly = true;
+    email.setAttribute("aria-describedby", "signed-in-email-help");
+    let help = byId("signed-in-email-help");
+    if (!help) {
+      help = make("small");
+      help.id = "signed-in-email-help";
+      email.closest("label")?.append(help);
+    }
+    help.textContent = `Signed in as ${state.sessionEmail}.`;
+  }
+
+  function chooseSubmission(submission) {
+    state.editingSubmission = submission;
+    restoreValues({ ...submission.answers, speaker_name: submission.speaker_name,
+      speaker_email: submission.speaker_email, proposal_title: submission.proposal_title,
+      proposal_abstract: submission.proposal_abstract });
+    lockSignedInEmail();
+    byId("co-speaker-rows").replaceChildren();
+    (submission.co_speakers || []).forEach(addCoSpeakerRow);
+    byId("submit-proposal").textContent = "Save changes";
+    setStatus(`Editing “${submission.proposal_title}”. Changes update this proposal; they do not create a duplicate.`, "success");
+  }
+
+  function renderExistingSubmissions() {
+    const card = byId("proposal-card");
+    card.querySelector(".existing-submissions")?.remove();
+    if (!state.submissions.length) return;
+    const section = make("section", undefined, "existing-submissions");
+    section.append(make("h2", "Your proposals"), make("p", "Edit an existing proposal or start another one."));
+    for (const submission of state.submissions) {
+      const button = make("button", `Edit “${submission.proposal_title}”`, "secondary");
+      button.type = "button";
+      button.addEventListener("click", () => chooseSubmission(submission));
+      section.append(button);
+    }
+    const another = make("button", "Start another proposal", "secondary");
+    another.type = "button";
+    another.addEventListener("click", () => {
+      state.editingSubmission = null;
+      byId("proposal-form").reset();
+      byId("co-speaker-rows").replaceChildren();
+      lockSignedInEmail();
+      byId("submit-proposal").textContent = "Confirm submission";
+      setStatus("Starting a new proposal. This will create a separate submission.");
+    });
+    section.append(another);
+    card.prepend(section);
   }
 
   function renderReview() {
@@ -278,14 +351,24 @@
       try {
         const session = await api("/api/v1/auth/session");
         state.csrf = session.csrf_token;
+        state.sessionEmail = session.email || "";
         await api(`/api/v1/forms/${encodeURIComponent(slug)}/access`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
           body: "{}"
         });
         byId("proposal-card").hidden = false;
-        setStatus("Your proposal is ready to edit.");
-        await loadDraft();
+        lockSignedInEmail();
+        const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
+        state.submissions = mine.data || [];
+        renderExistingSubmissions();
+        const requested = new URLSearchParams(location.search).get("submission_id");
+        const selected = state.submissions.find((submission) => submission.id === requested);
+        if (selected) chooseSubmission(selected);
+        else {
+          setStatus(state.submissions.length ? "Choose an existing proposal to edit, or start another one." : "Start your first proposal below.");
+          await loadDraft();
+        }
       } catch (error) {
         if (error.status !== 401) throw error;
         byId("sign-in-card").hidden = false;
@@ -316,6 +399,7 @@
       setStatus(window.SessionBuddyApi.message(error, "We could not send the sign-in link. Try again."), "error");
     }
   });
+  byId("add-co-speaker").addEventListener("click", () => addCoSpeakerRow());
 
   byId("change-cfp-email").addEventListener("click", () => {
     const form = byId("sign-in-form");
@@ -332,6 +416,22 @@
 
   byId("save-draft").addEventListener("click", async () => {
     try {
+      if (state.editingSubmission) {
+        if (!byId("proposal-form").reportValidity()) {
+          setStatus("Complete the highlighted required fields before saving changes.", "error");
+          return;
+        }
+        const values = { ...state.editingSubmission.answers, ...answers({ includeUploads: false }) };
+        const submission = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(state.editingSubmission.id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+          body: JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values, co_speakers: coSpeakers(), version: state.editingSubmission.version })
+        });
+        state.editingSubmission = submission;
+        state.submissions = state.submissions.map((item) => item.id === submission.id ? submission : item);
+        setStatus("Changes saved to this proposal.", "success");
+        return;
+      }
       const draft = await api(`/api/v1/forms/${encodeURIComponent(slug)}/draft`, { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: JSON.stringify({ answers: answers({ includeUploads: false }), version: state.draftVersion }) });
       state.draftVersion = draft.version;
       setStatus("Draft saved.", "success");
@@ -360,23 +460,29 @@
     button.textContent = "Submitting…";
     try {
       await uploadFiles();
-      const values = answers();
-      const submission = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions`, {
-        method: "POST",
+      const enteredValues = answers();
+      const values = state.editingSubmission
+        ? { ...state.editingSubmission.answers, ...enteredValues }
+        : enteredValues;
+      const target = state.editingSubmission
+        ? `/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(state.editingSubmission.id)}`
+        : `/api/v1/forms/${encodeURIComponent(slug)}/submissions`;
+      const submission = await api(target, {
+        method: state.editingSubmission ? "PATCH" : "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`, "x-public-session-id": state.publicSession },
-        body: JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values })
+        body: JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values, co_speakers: coSpeakers(), ...(state.editingSubmission ? { version: state.editingSubmission.version } : {}) })
       });
       setStep("done");
       form.hidden = true;
       const receipt = byId("receipt");
       receipt.className = "empty-state";
-      receipt.replaceChildren(make("h2", state.form.success_title), make("p", state.form.success_message), make("p", `Receipt ${submission.id}`));
+      receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : state.form.success_title), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
       if (state.form.redirect_to_portal) {
         const link = make("a", "Open speaker portal", "button");
         link.href = "/speaker";
         receipt.append(link);
       }
-      setStatus("Proposal submitted successfully.", "success");
+      setStatus(state.editingSubmission ? "Proposal updated successfully." : "Proposal submitted successfully.", "success");
     } catch (error) {
       setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : window.SessionBuddyApi.message(error), "error");
       byId("status").focus();

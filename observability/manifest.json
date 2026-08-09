@@ -380,6 +380,20 @@
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
+    "GET /api/v1/forms/{slug}/submissions/mine": {
+      "owner": "program-management",
+      "slo": {"p95_ms": 300, "error_rate_max": 0.001},
+      "benchmark": "cfp-list-owned-submissions",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "PATCH /api/v1/forms/{slug}/submissions/{submission_id}": {
+      "owner": "program-management",
+      "slo": {"p95_ms": 400, "error_rate_max": 0.001},
+      "benchmark": "cfp-update-owned-submission",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "GET /api/v1/admin/programs/{program_id}/submissions": {
       "owner": "program-management",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
@@ -443,6 +457,34 @@
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators": {
+      "owner": "evaluation",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "evaluation-add-round-reviewer",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions": {
+      "owner": "evaluation",
+      "slo": {"p95_ms": 600, "error_rate_max": 0.001},
+      "benchmark": "evaluation-add-round-submissions",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove": {
+      "owner": "evaluation",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "evaluation-remove-round-reviewer",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/reminder": {
+      "owner": "evaluation",
+      "slo": {"p95_ms": 700, "error_rate_max": 0.001},
+      "benchmark": "evaluation-remind-round-reviewer",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "POST /api/v1/admin/evaluation-rounds/{round_id}/close": {
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
@@ -454,6 +496,13 @@
       "owner": "evaluation",
       "slo": {"p95_ms": 300, "error_rate_max": 0.001},
       "benchmark": "evaluation-record-decision",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/submissions/{submission_id}/ai-triage": {
+      "owner": "evaluation",
+      "slo": {"p95_ms": 5000, "error_rate_max": 0.01},
+      "benchmark": "evaluation-ai-advisory-triage",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
@@ -587,6 +636,13 @@
       "owner": "agenda",
       "slo": {"p95_ms": 500, "error_rate_max": 0.001},
       "benchmark": "scheduling-move-agenda-item",
+      "dashboards": ["release-health", "api-explorer"],
+      "runbook": "docs/debugging-runbook.md#database-regression"
+    },
+    "DELETE /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
+      "owner": "agenda",
+      "slo": {"p95_ms": 500, "error_rate_max": 0.001},
+      "benchmark": "scheduling-unschedule-agenda-item",
       "dashboards": ["release-health", "api-explorer"],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },

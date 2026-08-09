@@ -259,6 +259,9 @@ class InvitationCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     role: Literal["event_admin", "evaluator", "speaker"]
     expires_in_days: int = Field(default=14, ge=1, le=30)
+    display_name: str = Field(default="", max_length=200)
+    job_title: str = Field(default="", max_length=200)
+    company: str = Field(default="", max_length=200)
 
     @field_validator("email")
     @classmethod
@@ -957,12 +960,13 @@ async def create_invitation(
         db.prepare(
             """INSERT INTO identity_invitations
          (id,organization_id,event_id,normalized_email,email,role,status,invited_by_user_id,
-          expires_at_ms,created_at_ms,updated_at_ms)
-         VALUES(?1,?2,?3,?4,?5,?6,'pending',?7,?8,?9,?9)
+          expires_at_ms,created_at_ms,updated_at_ms,display_name,job_title,company)
+         VALUES(?1,?2,?3,?4,?5,?6,'pending',?7,?8,?9,?9,?10,?11,?12)
          ON CONFLICT(organization_id,event_id,normalized_email,role) DO UPDATE SET
            email=excluded.email,status='pending',invited_by_user_id=excluded.invited_by_user_id,
            expires_at_ms=excluded.expires_at_ms,accepted_at_ms=NULL,revoked_at_ms=NULL,
-           updated_at_ms=excluded.updated_at_ms"""
+           updated_at_ms=excluded.updated_at_ms,display_name=excluded.display_name,
+           job_title=excluded.job_title,company=excluded.company"""
         )
         .bind(
             invitation_id,
@@ -974,6 +978,9 @@ async def create_invitation(
             authenticated.actor.user_id,
             now + body.expires_in_days * 86_400_000,
             now,
+            body.display_name,
+            body.job_title,
+            body.company,
         )
         .run()
     )
@@ -1348,15 +1355,28 @@ async def revoke_event_member(
     )
     if changed is None:
         raise HTTPException(status_code=404)
-    await (
+    audit = CommandBatch(db)
+    # A plain organization `member` row is only an affiliation anchor. Once
+    # this person has no active event role in the organization, revoke that
+    # otherwise-empty affiliation as part of offboarding. Historical rows and
+    # their foreign-key relationships remain intact.
+    audit.add_statement(
+        db.prepare(
+            """UPDATE organization_memberships
+               SET status='revoked',revoked_at_ms=?1,version=version+1,updated_at_ms=?1
+               WHERE organization_id=?2 AND user_id=?3 AND role='member' AND status='active'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM event_memberships em
+                   WHERE em.organization_id=?2 AND em.user_id=?3 AND em.status='active'
+                 )"""
+        ).bind(now, organization_id, user_id)
+    )
+    audit.add_statement(
         db.prepare(
             """UPDATE users SET authorization_version=authorization_version+1,
                updated_at_ms=?1 WHERE id=?2"""
-        )
-        .bind(now, user_id)
-        .run()
+        ).bind(now, user_id)
     )
-    audit = CommandBatch(db)
     audit.audit(
         AuditEvent(
             actor_type="user",
@@ -1509,7 +1529,8 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
     if challenge["invitation_id"] is not None:
         invitation = row_mapping(
             await db.prepare(
-                """SELECT id,organization_id,event_id,email,normalized_email,role
+                """SELECT id,organization_id,event_id,email,normalized_email,role,
+                          display_name,job_title,company
                    FROM identity_invitations WHERE id=?1 AND status='pending'
                      AND expires_at_ms>?2 LIMIT 1"""
             )
@@ -1570,6 +1591,9 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
                 event_id=str(invitation["event_id"]),
                 user_id=str(user_id),
                 email=str(invitation["email"]),
+                display_name=str(invitation["display_name"] or ""),
+                job_title=str(invitation["job_title"] or ""),
+                company=str(invitation["company"] or ""),
                 now=now,
             )
         batch.add_statement(
@@ -1687,6 +1711,9 @@ async def _add_speaker_profile(
     user_id: str,
     email: str,
     now: int,
+    display_name: str = "",
+    job_title: str = "",
+    company: str = "",
 ) -> None:
     person = row_mapping(
         await db.prepare("SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1")
@@ -1695,13 +1722,23 @@ async def _add_speaker_profile(
     )
     person_id = str(person["id"]) if person is not None else new_id()
     if person is None:
-        display_name = email.partition("@")[0].strip()[:200] or "Speaker"
+        display_name = display_name or email.partition("@")[0].strip()[:200] or "Speaker"
         batch.add_statement(
             db.prepare(
                 """INSERT INTO people
-                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?5)"""
-            ).bind(person_id, organization_id, user_id, display_name, now)
+                   (id,organization_id,user_id,display_name,job_title,company,
+                    created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?7)"""
+            ).bind(person_id, organization_id, user_id, display_name, job_title, company, now)
+        )
+    elif any((display_name, job_title, company)):
+        batch.add_statement(
+            db.prepare(
+                """UPDATE people SET display_name=COALESCE(NULLIF(?1,''),display_name),
+                          job_title=COALESCE(NULLIF(?2,''),job_title),
+                          company=COALESCE(NULLIF(?3,''),company),updated_at_ms=?4,
+                          version=version+1 WHERE id=?5 AND organization_id=?6"""
+            ).bind(display_name, job_title, company, now, person_id, organization_id)
         )
     event_speaker = row_mapping(
         await db.prepare(

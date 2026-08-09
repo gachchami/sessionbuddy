@@ -19,6 +19,7 @@ class EvaluationRoundCreate(BaseModel):
     rating_max: int = Field(ge=1, le=10)
     recommendations: list[str] = Field(min_length=2, max_length=8)
     evaluator_guidance: str = Field(default="", max_length=1000)
+    comment_required: bool = False
     criteria: list[EvaluationCriterion] = Field(default_factory=list, max_length=8)
     blind_review: bool = True
     review_opens_at_ms: int | None = Field(default=None, ge=0)
@@ -100,6 +101,7 @@ class EvaluationAssignmentView(BaseModel):
     rating_max: int
     recommendations: list[str]
     evaluator_guidance: str = ""
+    comment_required: bool = False
     criteria: list[EvaluationCriterion] = Field(default_factory=list)
     criterion_scores: dict[str, int] = Field(default_factory=dict)
     blind_review: bool = False
@@ -127,6 +129,61 @@ class AssignmentReassign(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     evaluator_user_id: str = Field(min_length=36, max_length=36)
+
+
+class RoundEvaluatorAdd(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    evaluator_user_id: str = Field(min_length=36, max_length=36)
+
+
+class RoundEvaluatorChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    round_id: str
+    evaluator_user_id: str
+    assignment_count: int = Field(ge=0)
+
+
+class RoundSubmissionAdd(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    submission_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def valid_submission_ids(self):
+        if any(len(value) != 36 for value in self.submission_ids):
+            raise ValueError("submission_ids must contain UUIDs")
+        if len(set(self.submission_ids)) != len(self.submission_ids):
+            raise ValueError("submission_ids must be unique")
+        return self
+
+
+class RoundSubmissionChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    round_id: str
+    submission_count: int = Field(ge=0)
+    assignment_count: int = Field(ge=0)
+
+
+class EvaluatorReminderQueued(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message_id: str
+    status: Literal["queued"] = "queued"
+
+
+class AiTriageView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    submission_id: str
+    source: Literal["workers_ai"] = "workers_ai"
+    model: str
+    score: int = Field(ge=0, le=10)
+    recommendation: str = Field(min_length=1, max_length=80)
+    rationale: str = Field(min_length=1, max_length=4000)
+    generated_at_ms: int = Field(ge=0)
 
 
 class ReassignmentView(BaseModel):
@@ -187,6 +244,13 @@ class SubmissionDecisionCreate(BaseModel):
     internal_reason: str = Field(default="", max_length=2000)
     send_email: bool = False
     speaker_message: str = Field(default="", max_length=4000)
+    override_incomplete_reviews: bool = False
+
+    @model_validator(mode="after")
+    def valid_override(self):
+        if self.override_incomplete_reviews and not self.internal_reason:
+            raise ValueError("an organizer override requires an internal reason")
+        return self
 
 
 class SubmissionDecisionView(SubmissionDecisionCreate):
@@ -195,6 +259,16 @@ class SubmissionDecisionView(SubmissionDecisionCreate):
     round_id: str
     version: int
     communication_queued: bool = False
+
+
+class EvaluationDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evaluator_name: str
+    state: Literal["not_started", "draft", "final"]
+    rating: int | None = None
+    recommendation: str | None = None
+    internal_comment: str = ""
 
 
 class SubmissionEvaluationResult(BaseModel):
@@ -207,6 +281,8 @@ class SubmissionEvaluationResult(BaseModel):
     completed_count: int
     average_rating: float | None
     decision: Literal["accepted", "rejected"] | None
+    internal_reason: str = ""
+    reviews: list[EvaluationDetail] = Field(default_factory=list)
 
 
 class EvaluationRoundResults(BaseModel):
@@ -222,6 +298,7 @@ class EvaluationRoundResults(BaseModel):
     average_rating: float | None
     submissions: list[SubmissionEvaluationResult]
     evaluators: list[EvaluatorProgress]
+    available_evaluators: list[EvaluatorView] = Field(default_factory=list)
     conflicts: list[ConflictProgress]
 
 
@@ -230,3 +307,16 @@ class EvaluationRoundClosed(BaseModel):
 
     round_id: str
     status: Literal["closed"] = "closed"
+
+
+class EvaluationRoundCloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    force: bool = False
+    reason: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def valid_force(self):
+        if self.force and not self.reason:
+            raise ValueError("a forced close requires a reason")
+        return self

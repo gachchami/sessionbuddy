@@ -43,8 +43,10 @@ class SQLiteStatement:
 class SQLiteD1:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
+        self.prepare_count = 0
 
     def prepare(self, sql: str) -> SQLiteStatement:
+        self.prepare_count += 1
         return SQLiteStatement(self.connection, sql)
 
     async def batch(self, statements: list[SQLiteStatement]):
@@ -53,7 +55,10 @@ class SQLiteD1:
             self.connection.execute("BEGIN")
             for statement in statements:
                 cursor = self.connection.execute(statement.sql, statement.parameters)
-                results.append({"meta": {"changes": max(0, cursor.rowcount)}})
+                result: dict[str, object] = {"meta": {"changes": max(0, cursor.rowcount)}}
+                if cursor.description is not None:
+                    result["results"] = [dict(row) for row in cursor.fetchall()]
+                results.append(result)
             self.connection.commit()
         except Exception:
             self.connection.rollback()
@@ -625,6 +630,44 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         connection.commit()
 
+        submissions_after_decision = await admin_again.get(
+            f"/api/v1/admin/programs/{program.json()['id']}/submissions"
+        )
+        assert submissions_after_decision.status_code == 200
+        decided_submission = next(
+            item
+            for item in submissions_after_decision.json()["data"]
+            if item["id"] == submission.json()["id"]
+        )
+        assert decided_submission["status"] == "accepted"
+
+        agenda_item = await admin_again.post(
+            f"/api/v1/admin/events/{event_id}/agenda/items",
+            headers={**headers, "idempotency-key": "agenda-item-integration-2026"},
+            json={
+                "session_id": "session-content",
+                "start_at_ms": 1_900_000_000_000,
+                "end_at_ms": 1_900_003_600_000,
+                "room_id": agenda.json()["rooms"][0]["id"],
+                "version": 0,
+            },
+        )
+        assert agenda_item.status_code == 201
+        unscheduled = await admin_again.delete(
+            f"/api/v1/admin/events/{event_id}/agenda/items/{agenda_item.json()['id']}",
+            headers={**headers, "idempotency-key": "agenda-unschedule-integration-2026"},
+            params={"version": agenda_item.json()["version"]},
+        )
+        assert unscheduled.status_code == 204
+        agenda_after_unschedule = await admin_again.get(
+            f"/api/v1/admin/events/{event_id}/agenda"
+        )
+        assert [item["session_id"] for item in agenda_after_unschedule.json()["items"]] == []
+        assert "session-content" in {
+            item["session_id"]
+            for item in agenda_after_unschedule.json()["unscheduled_sessions"]
+        }
+
         content_url = f"/api/v1/admin/events/{event_id}/sessions/session-content/content"
         initial_content = await admin_again.get(content_url)
         assert initial_content.status_code == 200
@@ -665,6 +708,37 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert restored_content.json()["title"] == "Production identity"
         assert restored_content.json()["content_status"] == "draft"
 
+        second_event = await admin_again.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=headers,
+            json={
+                "name": "Next Speaker Summit",
+                "starts_at_ms": 1_901_000_000_000,
+                "ends_at_ms": 1_901_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+            },
+        )
+        assert second_event.status_code == 201
+        second_event_id = second_event.json()["id"]
+        second_program = await admin_again.post(
+            "/api/v1/admin/programs",
+            headers={**headers, "idempotency-key": "second-program-integration-2026"},
+            json={
+                "organization_id": organization_id,
+                "event_id": second_event_id,
+                "name": "Next Speaker Summit CFP",
+            },
+        )
+        assert second_program.status_code == 201
+        assert (
+            await admin_again.post(
+                f"/api/v1/admin/programs/{second_program.json()['id']}/forms/publish",
+                headers={**headers, "idempotency-key": "second-form-integration-2026"},
+                json={"slug": "next-speaker-summit", "welcome_text": "Join the next event."},
+            )
+        ).status_code == 201
+
         invitations = await admin_again.get(f"/api/v1/admin/events/{event_id}/invitations")
         assert [(item["role"], item["status"]) for item in invitations.json()["data"]] == [
             ("speaker", "accepted")
@@ -694,8 +768,43 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         ("speaker", "revoked"),
     ]
     assert connection.execute(
+        """SELECT status FROM organization_memberships
+           WHERE organization_id=? AND user_id=?""",
+        (organization_id, speaker_member["user_id"]),
+    ).fetchone()["status"] == "revoked"
+    assert connection.execute(
         "SELECT 1 FROM audit_events WHERE action='event_membership.revoke'"
     ).fetchone()
+
+    async with _client(environment) as returning_speaker:
+        requested = await returning_speaker.post(
+            "/api/v1/auth/magic-links",
+            json={
+                "email": "speaker@example.com",
+                "redirect_path": "/cfp/next-speaker-summit",
+                "form_slug": "next-speaker-summit",
+            },
+        )
+        assert requested.status_code == 202
+        assert (
+            await returning_speaker.get(
+                f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
+                follow_redirects=False,
+            )
+        ).status_code == 303
+        returning_session = (await returning_speaker.get("/api/v1/auth/session")).json()
+        assert returning_session["event_access"] == [
+            {
+                "organization_id": organization_id,
+                "event_id": second_event_id,
+                "roles": ["speaker"],
+            }
+        ]
+        assert connection.execute(
+            """SELECT status FROM organization_memberships
+               WHERE organization_id=? AND user_id=?""",
+            (organization_id, speaker_member["user_id"]),
+        ).fetchone()["status"] == "active"
 
 
 async def test_existing_user_accepts_a_new_role_invitation(production_environment) -> None:

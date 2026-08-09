@@ -8,13 +8,15 @@
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/gallery/assets/gallery.js?v=1" defer></script>
 </head>
-<body class="public-body">
+<body class="public-body" data-layout="directory">
   <a class="skip-link" href="#main">Skip to speakers</a>
   <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a><a id="schedule-link" class="text-link" href="#">View schedule</a></div></header>
   <main id="main" class="shell page" tabindex="-1">
     <div class="page-heading"><div><p class="eyebrow">Meet the speakers</p><h1 id="event-name">Event speakers</h1><p id="status" class="lede" role="status" aria-live="polite">Loading the accepted speaker lineup…</p></div><img id="event-logo" class="event-logo" alt="" hidden></div>
+    <label id="speaker-search-label">Search speakers<input id="speaker-search" type="search" placeholder="Name, company, topic, or biography"></label>
     <section id="speaker-grid" class="speaker-gallery" aria-label="Accepted speakers"></section>
     <section id="empty" class="empty-state" hidden><strong>The lineup is being prepared.</strong><p>Accepted speakers will appear here as the program is finalized.</p></section>
+    <dialog id="speaker-profile"><form method="dialog"><button class="secondary">Close</button></form><div id="speaker-profile-content"></div></dialog>
   </main>
 </body>
 </html>

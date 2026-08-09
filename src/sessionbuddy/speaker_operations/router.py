@@ -44,6 +44,7 @@ from .models import (
     OnboardingRow,
     OnboardingSummary,
     SpeakerAssetList,
+    SpeakerAssetVersionView,
     SpeakerAssetView,
     SpeakerEventView,
     SpeakerPortalView,
@@ -75,6 +76,17 @@ def _db(request: Request):
 
 def _product_asset(request: Request, name: str, media_type: str) -> Response:
     return Response(_asset(name), media_type=media_type, headers={"Cache-Control": "no-store"})
+
+
+def _speaker_asset_version_view(row: dict[str, object]) -> SpeakerAssetVersionView:
+    return SpeakerAssetVersionView(
+        generation=int(row["generation"]),
+        filename=str(row["original_filename"]),
+        content_type=str(row["content_type"]),
+        byte_size=int(row["byte_size"]),
+        state="current" if int(row["is_current"]) == 1 else "superseded",
+        uploaded_at_ms=int(row["uploaded_at_ms"]),
+    )
 
 
 @speaker_operations_router.get("/speaker", response_class=HTMLResponse, include_in_schema=False)
@@ -514,7 +526,7 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
         await _timed_all(
             request,
             db.prepare(
-                """SELECT s.id, s.proposal_title,
+                """SELECT s.id, s.proposal_title,f.slug AS form_slug,
                           COALESCE((SELECT d.decision FROM submission_decisions d
                             WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
                               AND d.submission_id=s.id
@@ -523,6 +535,7 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
                    JOIN submissions s
                      ON s.organization_id = ss.organization_id
                     AND s.event_id = ss.event_id AND s.id = ss.submission_id
+                   JOIN call_for_speaker_forms f ON f.id=s.form_id
                    WHERE ss.organization_id = ?1 AND ss.event_id = ?2
                      AND ss.event_speaker_id = ?3
                    ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 25"""
@@ -559,6 +572,7 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
             ends_at_ms=int(row["ends_at_ms"]),
             time_zone=str(row["time_zone"]),
         ),
+        event_speaker_id=str(row["event_speaker_id"]),
         profile=_profile(row),
         tasks=task_views,
         submissions=[
@@ -566,6 +580,8 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
                 id=str(submission["id"]),
                 proposal_title=str(submission["proposal_title"]),
                 status=str(submission["status"]),
+                form_slug=str(submission["form_slug"]),
+                editable=str(submission["status"]) == "submitted",
             )
             for submission in submissions
         ],
@@ -602,12 +618,13 @@ def _validate_task_response(schema: object, answers: dict[str, object]) -> None:
             raise HTTPException(status_code=409)
         value = answers.get(str(field.get("key", "")))
         field_type = field.get("type")
-        blank = value is None or value == "" or value == [] or (
-            isinstance(value, str) and not value.strip()
+        blank = (
+            value is None
+            or value == ""
+            or value == []
+            or (isinstance(value, str) and not value.strip())
         )
-        if field.get("required") and (
-            blank or (field_type == "checkbox" and value is not True)
-        ):
+        if field.get("required") and (blank or (field_type == "checkbox" and value is not True)):
             raise HTTPException(status_code=422)
         if blank:
             continue
@@ -1043,8 +1060,11 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
             request,
             _db(request)
             .prepare(
-                """SELECT a.id, a.kind, av.original_filename, av.content_type,
-                          av.byte_size, av.generation
+                """SELECT a.id,a.kind,av.original_filename,av.content_type,av.byte_size,
+                          av.generation,av.uploaded_at_ms,
+                          (SELECT COUNT(*) FROM speaker_asset_versions history
+                           WHERE history.asset_id=a.id AND history.scan_state IN
+                             ('clean','superseded')) AS version_count
                    FROM speaker_assets a
                    JOIN speaker_asset_versions av
                      ON av.organization_id = a.organization_id AND av.event_id = a.event_id
@@ -1056,8 +1076,21 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
             .bind(speaker["organization_id"], event_id, speaker["event_speaker_id"]),
         )
     )
-    return SpeakerAssetList(
-        data=[
+    data = []
+    for row in rows:
+        versions = result_rows(
+            await _db(request)
+            .prepare(
+                """SELECT generation,original_filename,content_type,byte_size,is_current,
+                          uploaded_at_ms
+                   FROM speaker_asset_versions WHERE asset_id=?1
+                     AND scan_state IN ('clean','superseded')
+                   ORDER BY generation DESC LIMIT 25"""
+            )
+            .bind(row["id"])
+            .all()
+        )
+        data.append(
             SpeakerAssetView(
                 id=str(row["id"]),
                 kind=str(row["kind"]),
@@ -1066,10 +1099,12 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
                 byte_size=int(row["byte_size"]),
                 state="clean",
                 generation=int(row["generation"]),
+                uploaded_at_ms=int(row["uploaded_at_ms"]),
+                version_count=int(row["version_count"]),
+                versions=[_speaker_asset_version_view(version) for version in versions],
             )
-            for row in rows
-        ]
-    )
+        )
+    return SpeakerAssetList(data=data)
 
 
 @speaker_operations_router.get(
@@ -1078,9 +1113,7 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
     operation_id="listAdminSpeakerAssets",
     tags=["speaker-assets"],
 )
-async def list_admin_speaker_assets(
-    event_id: str, request: Request
-) -> AdminSpeakerAssetList:
+async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpeakerAssetList:
     event = await _admin_event(request, event_id)
     await require_permission(
         request,
@@ -1621,9 +1654,7 @@ async def complete_speaker_upload(
             job_id=str(row["version_id"]),
         )
         try:
-            provider_result = await SignedScannerAdapter(environment).scan(
-                stored_body, job=job
-            )
+            provider_result = await SignedScannerAdapter(environment).scan(stored_body, job=job)
         except Exception as exc:
             raise HTTPException(status_code=503) from exc
         if provider_result.verdict == "error":

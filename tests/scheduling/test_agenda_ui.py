@@ -41,6 +41,13 @@ def test_existing_agenda_can_manage_resources_and_build_a_draft() -> None:
     assert "Review the draft before publishing" in javascript
 
 
+def test_scheduled_session_can_be_returned_to_unscheduled_list() -> None:
+    html, javascript = read("agenda_admin.html"), read("agenda.js")
+    assert 'id="unschedule-item"' in html
+    assert 'method: "DELETE"' in javascript
+    assert "Session moved back to unscheduled sessions." in javascript
+
+
 def test_auto_schedule_and_resource_inputs_are_bounded() -> None:
     assert AgendaResourceCreate(name="  Main stage  ").name == "Main stage"
     assert AgendaAutoSchedule(session_minutes=45, gap_minutes=15).session_minutes == 45
@@ -99,3 +106,5 @@ def test_read_only_schedule_has_staff_speaker_views_and_empty_error_states() -> 
     assert 'id="empty"' in html
     assert "The organizer has not published the schedule yet." in javascript
     assert ".catch((error)" in javascript
+    assert 'id="download-calendar"' in html
+    assert "BEGIN:VCALENDAR" in javascript

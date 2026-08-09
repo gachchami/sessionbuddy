@@ -80,6 +80,8 @@ class SpeakerSubmissionView(BaseModel):
     id: str
     proposal_title: str
     status: str
+    form_slug: str
+    editable: bool = False
 
 
 class SpeakerEventView(BaseModel):
@@ -96,6 +98,7 @@ class SpeakerPortalView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event: SpeakerEventView
+    event_speaker_id: str
     profile: SpeakerProfileView
     tasks: list[SpeakerTaskView]
     submissions: list[SpeakerSubmissionView]
@@ -188,6 +191,20 @@ class SpeakerAssetView(BaseModel):
     byte_size: int
     state: Literal["clean"]
     generation: int
+    uploaded_at_ms: int
+    version_count: int = 1
+    versions: list["SpeakerAssetVersionView"] = Field(default_factory=list)
+
+
+class SpeakerAssetVersionView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generation: int
+    filename: str
+    content_type: str
+    byte_size: int
+    state: Literal["current", "superseded"]
+    uploaded_at_ms: int
 
 
 class SpeakerAssetList(BaseModel):

@@ -62,6 +62,25 @@
       form.reset(); showInvitationLink(invitation); byId("status").textContent = "Invitation created and queued for delivery."; await load();
     } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").focus(); }
   });
+  const role = byId("invite-form").elements.role;
+  const emailLabel = byId("invite-form").elements.email.closest("label");
+  const speakerDetails = document.createElement("fieldset");
+  speakerDetails.hidden = role.value !== "speaker";
+  const legend = document.createElement("legend"); legend.textContent = "Speaker details";
+  const fields = [
+    ["display_name", "Name", true], ["job_title", "Job title", false], ["company", "Company", false]
+  ];
+  speakerDetails.append(legend);
+  fields.forEach(([name, labelText, required]) => {
+    const label = document.createElement("label"); label.textContent = labelText;
+    const input = document.createElement("input"); input.name = name; input.maxLength = 200;
+    input.required = required && role.value === "speaker"; label.append(input); speakerDetails.append(label);
+  });
+  emailLabel.after(speakerDetails);
+  role.addEventListener("change", () => {
+    speakerDetails.hidden = role.value !== "speaker";
+    speakerDetails.querySelector('[name="display_name"]').required = role.value === "speaker";
+  });
   byId("copy-invite").addEventListener("click", async () => {
     const input = byId("invite-url");
     try { await navigator.clipboard.writeText(input.value); byId("status").textContent = "Invitation link copied."; }

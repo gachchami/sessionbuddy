@@ -4,7 +4,7 @@
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "" };
+  const state = { csrf: "", taskMutation: null };
 
   function setStatus(message, error = false) {
     byId("status").textContent = message;
@@ -126,13 +126,30 @@
     if (!event.currentTarget.reportValidity()) return;
     const fields = values.field_label ? [{ key: "response", label: values.field_label, type: values.field_type, required: Boolean(values.field_required), choices: [] }] : [];
     const due = values.due_at ? new Date(values.due_at).getTime() : null;
+    const payloads = speakerIds.map((eventSpeakerId) => ({ event_speaker_id: eventSpeakerId, submission_id: null, title: values.title, help_text: values.help_text, due_at_ms: due, fields }));
+    const fingerprint = JSON.stringify(payloads);
+    if (!state.taskMutation || state.taskMutation.fingerprint !== fingerprint) {
+      state.taskMutation = {
+        fingerprint,
+        keys: new Map(speakerIds.map((eventSpeakerId) => [eventSpeakerId, `${crypto.randomUUID()}-${crypto.randomUUID()}`]))
+      };
+    }
+    const button = event.currentTarget.querySelector('button[type="submit"], button:not([type])');
+    button.disabled = true;
     try {
-      await Promise.all(speakerIds.map((eventSpeakerId) =>
-        api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-tasks`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ event_speaker_id: eventSpeakerId, submission_id: null, title: values.title, help_text: values.help_text, due_at_ms: due, fields }) })
+      await Promise.all(payloads.map((payload) =>
+        api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-tasks`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": state.taskMutation.keys.get(payload.event_speaker_id) },
+          body: JSON.stringify(payload)
+        })
       ));
       event.currentTarget.reset();
+      state.taskMutation = null;
       setStatus(`Task assigned to ${speakerIds.length} speaker${speakerIds.length === 1 ? "" : "s"}.`);
-    } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
+    } catch (error) {
+      setStatus(`${window.SessionBuddyApi.message(error)} Retry Assign task; the same request will not be duplicated.`, true);
+    } finally { button.disabled = false; }
   });
   byId("task-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("token-form").addEventListener("submit", async (event) => {
@@ -142,21 +159,36 @@
       byId("token-value").textContent = body.token; byId("token-result").hidden = false; event.currentTarget.reset(); setStatus("Read-only integration token generated.");
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
-  document.querySelectorAll(".copy-share").forEach((button) => button.addEventListener("click", async () => {
-    const field = byId(button.dataset.copy);
+  function renderEmbed() {
+    const type = byId("embed-type").value;
+    const enabled = byId("embed-enabled").checked;
+    const title = byId("embed-title").value.trim() || "Event program";
+    const height = Math.max(320, Math.min(1600, Number(byId("embed-height").value) || 640));
+    const encoded = encodeURIComponent(eventId);
+    const publicUrl = `${location.origin}/events/${encoded}/${type}`;
+    const embedUrl = `${location.origin}/embeds/events/${encoded}/${type}`;
+    byId("embed-url").value = publicUrl;
+    byId("open-embed").href = publicUrl;
+    byId("embed-code").value = enabled
+      ? `<iframe src="${embedUrl}" title="${title.replaceAll('"', '&quot;')}" loading="lazy" style="width:100%;min-height:${height}px;border:0"></iframe>`
+      : "Embed disabled. Enable it to generate code.";
+    byId("copy-embed").disabled = !enabled;
+    localStorage.setItem(`sessionbuddy:embed:${eventId}`, JSON.stringify({ type, enabled, title, height }));
+  }
+  byId("embed-builder").addEventListener("input", renderEmbed);
+  byId("copy-embed").addEventListener("click", async () => {
+    const field = byId("embed-code");
     try { await navigator.clipboard.writeText(field.value); setStatus("Embed code copied."); }
     catch (_) { field.focus(); field.select(); setStatus("Copy the selected embed code."); }
-  }));
+  });
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");
     const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
-    const encoded = encodeURIComponent(eventId);
-    const scheduleUrl = `${location.origin}/events/${encoded}/schedule`;
-    const speakersUrl = `${location.origin}/events/${encoded}/speakers`;
-    byId("schedule-url").value = scheduleUrl; byId("speakers-url").value = speakersUrl;
-    byId("schedule-embed").value = `<iframe src="${location.origin}/embeds/events/${encoded}/schedule" title="Event schedule" loading="lazy" style="width:100%;min-height:640px;border:0"></iframe>`;
-    byId("speakers-embed").value = `<iframe src="${location.origin}/embeds/events/${encoded}/speakers" title="Event speakers" loading="lazy" style="width:100%;min-height:640px;border:0"></iframe>`;
-    byId("open-schedule").href = scheduleUrl; byId("open-speakers").href = speakersUrl;
+    try {
+      const saved = JSON.parse(localStorage.getItem(`sessionbuddy:embed:${eventId}`) || "null");
+      if (saved) { byId("embed-type").value = saved.type || "schedule"; byId("embed-enabled").checked = saved.enabled !== false; byId("embed-title").value = saved.title || "Event program"; byId("embed-height").value = saved.height || 640; }
+    } catch (_) { /* use defaults */ }
+    renderEmbed();
     byId("event-id").textContent = eventId; byId("api-base").textContent = `${location.origin}/v1`;
     byId("onboarding-link").href = `/admin/events/${encodeURIComponent(eventId)}/onboarding`;
     const results = await Promise.allSettled([loadResources(), loadTargets(), loadAssets()]);

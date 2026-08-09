@@ -169,7 +169,10 @@ class D1CommunicationsService:
                 )
                 if existing is not None:
                     ids.append(str(existing))
-            await self._publish_delivery_requests(ids)
+            try:
+                await self._publish_delivery_requests(ids)
+            except HTTPException:
+                pass
             return ManualSendResponse(message_ids=ids)
         batch, ids = CommandBatch(self.db), []
         batch.begin_idempotency(record, now)
@@ -236,7 +239,13 @@ class D1CommunicationsService:
             await batch.execute()
         except PersistenceError as exc:
             raise HTTPException(status_code=409) from exc
-        await self._publish_delivery_requests(ids)
+        try:
+            await self._publish_delivery_requests(ids)
+        except HTTPException:
+            # The messages and durable outbox records are already committed. A
+            # transient Queue publish failure must not tell the caller that the
+            # send failed; the outbox dispatcher can safely retry it.
+            pass
         return ManualSendResponse(message_ids=ids)
 
     async def preview_speaker_message(
@@ -245,17 +254,26 @@ class D1CommunicationsService:
         if self.organization_id is None:
             raise HTTPException(status_code=404)
         recipients: list[RecipientPreview] = []
-        html_body = f"<p>{escape(body.body_text).replace(chr(10), '<br>')}</p>"
         for event_speaker_id in body.event_speaker_ids:
             row = row_mapping(
                 await self.db.prepare(
-                    """SELECT u.id,u.email,p.display_name
+                    """SELECT u.id,u.email,p.display_name,e.name AS event_name,
+                              COALESCE((SELECT s.proposal_title
+                                FROM submission_speakers ss JOIN submissions s
+                                  ON s.organization_id=ss.organization_id
+                                 AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                                WHERE ss.organization_id=es.organization_id
+                                  AND ss.event_id=es.event_id
+                                  AND ss.event_speaker_id=es.id
+                                ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 1),'')
+                                AS proposal_title
                        FROM event_speakers es
                        JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id
                        JOIN users u ON u.id=p.user_id AND u.status='active'
                        JOIN event_memberships em ON em.organization_id=es.organization_id
                          AND em.event_id=es.event_id AND em.user_id=u.id
                          AND em.role='speaker' AND em.status='active'
+                       JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id
                        WHERE es.id=?1 AND es.organization_id=?2 AND es.event_id=?3
                          AND es.status!='withdrawn' LIMIT 1"""
                 )
@@ -264,13 +282,29 @@ class D1CommunicationsService:
             )
             if row is None:
                 raise HTTPException(status_code=404)
+            display_name = str(row["display_name"])
+            public_base = str(
+                getattr(self.request.scope.get("env"), "PUBLIC_BASE_URL", "")
+            ).rstrip("/")
+            values = {
+                "event.name": str(row["event_name"]),
+                "speaker.name": display_name,
+                "speaker.first_name": display_name.split(maxsplit=1)[0],
+                "submission.title": str(row["proposal_title"]),
+                "portal.link": f"{public_base}/speaker" if public_base else "/speaker",
+            }
+            try:
+                rendered_subject = render_template(body.subject, values)
+                rendered_body = render_template(body.body_text, values)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
             recipients.append(
                 RecipientPreview(
                     recipient_user_id=str(row["id"]),
-                    display_name=str(row["display_name"]),
+                    display_name=display_name,
                     email=str(row["email"]),
-                    subject=body.subject,
-                    html_body=html_body,
+                    subject=rendered_subject,
+                    html_body=f"<p>{rendered_body.replace(chr(10), '<br>')}</p>",
                 )
             )
         return RecipientPreviewResponse(recipients=recipients)
@@ -324,7 +358,10 @@ class D1CommunicationsService:
                 )
                 if existing is not None:
                     ids.append(str(existing))
-            await self._publish_delivery_requests(ids)
+            try:
+                await self._publish_delivery_requests(ids)
+            except HTTPException:
+                pass
             return ManualSendResponse(message_ids=ids)
         batch, ids = CommandBatch(self.db), []
         batch.begin_idempotency(record, now)
@@ -390,7 +427,11 @@ class D1CommunicationsService:
             await batch.execute()
         except PersistenceError as exc:
             raise HTTPException(status_code=409) from exc
-        await self._publish_delivery_requests(ids)
+        try:
+            await self._publish_delivery_requests(ids)
+        except HTTPException:
+            # D1 and the durable outbox already own delivery at this point.
+            pass
         return ManualSendResponse(message_ids=ids)
 
     async def queue_task_reminder(
@@ -523,7 +564,8 @@ class D1CommunicationsService:
             raise HTTPException(status_code=404)
         rows = result_rows(
             await self.db.prepare(
-                """SELECT id,status,attempt_count,provider_message_id,last_error_code
+                """SELECT id,recipient_email,subject,status,attempt_count,
+                          provider_message_id,last_error_code,updated_at_ms
                    FROM communication_messages WHERE organization_id=?1 AND event_id=?2
                ORDER BY updated_at_ms DESC,id DESC LIMIT 100"""
             )

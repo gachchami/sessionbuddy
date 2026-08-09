@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,7 @@ from sessionbuddy.evaluation.models import (
     ConflictDeclaration,
     EvaluationRoundCreate,
     EvaluationSave,
+    RoundSubmissionAdd,
     SubmissionDecisionCreate,
 )
 from sessionbuddy.evaluation.router import _assignment_pairs, _weighted_mean
@@ -66,6 +68,16 @@ def test_assignment_strategies_are_deterministic() -> None:
         ("s2", "e1"),
         ("s2", "e2"),
     ]
+    assert RoundSubmissionAdd(submission_ids=["a" * 36]).submission_ids == ["a" * 36]
+
+
+def test_round_workspaces_support_late_submissions_and_audited_force_close() -> None:
+    root = Path(__file__).parents[2]
+    submissions = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
+    reviews = (root / "frontend/src/main.tsx").read_text()
+    assert "Add selected submissions to open round" in submissions
+    assert "/submissions`" in submissions
+    assert "Organizer closed the round before every review was final." in reviews
 
 
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:

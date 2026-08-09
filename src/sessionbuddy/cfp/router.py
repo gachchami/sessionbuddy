@@ -30,6 +30,7 @@ from .models import (
     CfpWorkspaceView,
     FormPublish,
     FormUpdate,
+    OwnedSubmissionList,
     ProgramCreate,
     ProgramView,
     PublishedFormView,
@@ -37,6 +38,7 @@ from .models import (
     SubmissionDraftUpsert,
     SubmissionDraftView,
     SubmissionList,
+    SubmissionUpdate,
     SubmissionView,
 )
 
@@ -644,6 +646,157 @@ async def save_submission_draft(
     return SubmissionDraftView.model_validate({**row, "answers": answers})
 
 
+@cfp_router.get(
+    "/api/v1/forms/{slug}/submissions/mine",
+    response_model=OwnedSubmissionList,
+    operation_id="listMyCallForSpeakersSubmissions",
+    tags=["submissions"],
+)
+async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionList:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    form = await _form_context(db, slug)
+    if form is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(form["organization_id"]),
+            str(form["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=False,
+    )
+    rows = result_rows(
+        await db.prepare(
+            """SELECT s.id,s.program_id,s.speaker_name,s.speaker_email,s.proposal_title,
+                      s.proposal_abstract,s.answers_json,
+                      COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
+                      s.routed_category,s.routed_track,s.routed_review_queue
+               FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
+               WHERE s.form_id=?1 AND s.submitter_user_id=?2
+               ORDER BY s.updated_at_ms DESC,s.id DESC LIMIT 25"""
+        ).bind(form["id"], authenticated.actor.user_id).all()
+    )
+    data = []
+    for row in rows:
+        values = dict(row)
+        answers = json.loads(str(values.pop("answers_json")))
+        contributors = result_rows(
+            await db.prepare(
+                """SELECT display_name,email,role FROM submission_contributors
+                   WHERE submission_id=?1 ORDER BY display_name,id"""
+            ).bind(values["id"]).all()
+        )
+        data.append(
+            SubmissionView.model_validate(
+                {**values, "answers": answers, "co_speakers": contributors}
+            )
+        )
+    return OwnedSubmissionList(data=data)
+
+
+@cfp_router.patch(
+    "/api/v1/forms/{slug}/submissions/{submission_id}",
+    response_model=SubmissionView,
+    operation_id="updateMyCallForSpeakersSubmission",
+    tags=["submissions"],
+)
+async def update_submission(
+    slug: str,
+    submission_id: str,
+    body: SubmissionUpdate,
+    request: Request,
+) -> SubmissionView:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT s.organization_id,s.event_id,s.program_id,s.form_id,s.status,
+                      s.submitter_user_id,f.schema_json,f.opens_at_ms,f.closes_at_ms
+               FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
+               WHERE s.id=?1 AND f.slug=?2 LIMIT 1"""
+        ).bind(submission_id, slug).first()
+    )
+    if row is None or str(row["submitter_user_id"] or "") != authenticated.actor.user_id:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(row["organization_id"]), str(row["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    if row["status"] != "submitted":
+        raise HTTPException(status_code=409)
+    now = utc_now_ms()
+    if row["opens_at_ms"] is not None and now < int(row["opens_at_ms"]):
+        raise HTTPException(status_code=409, detail="Applications have not opened yet.")
+    if row["closes_at_ms"] is not None and now >= int(row["closes_at_ms"]):
+        raise HTTPException(status_code=409, detail="Applications are closed.")
+    decided = await db.prepare(
+        "SELECT 1 AS found FROM submission_decisions WHERE submission_id=?1 LIMIT 1"
+    ).bind(submission_id).first("found")
+    if decided is not None:
+        raise HTTPException(status_code=409)
+    normalized_email = await db.prepare(
+        "SELECT normalized_email FROM users WHERE id=?1"
+    ).bind(authenticated.actor.user_id).first("normalized_email")
+    if normalized_email is None or normalize_email(body.speaker_email) != str(normalized_email):
+        raise HTTPException(status_code=422)
+    schema = json.loads(str(row["schema_json"]))
+    _validate_submission_schema(schema, body)
+    await _validate_upload_answers(
+        db, schema, body.answers, event_id=str(row["event_id"]),
+        user_id=authenticated.actor.user_id,
+    )
+    routing = _route_submission(schema, body.answers)
+    await db.prepare(
+        """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
+                  speaker_name=?3,speaker_email=?4,answers_json=?5,
+                  routed_category=?6,routed_track=?7,routed_review_queue=?8,
+                  version=version+1,updated_at_ms=?9
+           WHERE id=?10 AND submitter_user_id=?11 AND status='submitted' AND version=?12"""
+    ).bind(
+        body.proposal_title, body.proposal_abstract, body.speaker_name, body.speaker_email,
+        json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
+        routing["category"], routing["track"], routing["review_queue"], now,
+        submission_id, authenticated.actor.user_id, body.version,
+    ).run()
+    updated_version = await db.prepare(
+        "SELECT version FROM submissions WHERE id=?1 AND submitter_user_id=?2"
+    ).bind(submission_id, authenticated.actor.user_id).first("version")
+    if updated_version is None or int(updated_version) != body.version + 1:
+        raise HTTPException(status_code=409)
+    await db.prepare(
+        """UPDATE submission_speakers SET snapshot_name=?1
+           WHERE submission_id=?2 AND role='primary'"""
+    ).bind(body.speaker_name, submission_id).run()
+    await db.prepare("DELETE FROM submission_contributors WHERE submission_id=?1").bind(
+        submission_id
+    ).run()
+    if body.co_speakers:
+        await db.batch(
+            [
+                db.prepare(
+                    """INSERT INTO submission_contributors
+                       (id,organization_id,event_id,submission_id,display_name,email,
+                        normalized_email,role,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
+                ).bind(
+                    new_id(), row["organization_id"], row["event_id"], submission_id,
+                    contributor.display_name, contributor.email,
+                    normalize_email(contributor.email), now,
+                )
+                for contributor in body.co_speakers
+            ]
+        )
+    return await _submission_by_id(db, submission_id)
+
+
 @cfp_router.post(
     "/api/v1/forms/{slug}/submissions",
     response_model=SubmissionView,
@@ -781,6 +934,19 @@ async def create_submission(
                VALUES(?1,?2,changes(),?3)"""
         ).bind(new_id(), submission_id, now)
     )
+    for contributor in body.co_speakers:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO submission_contributors
+                   (id,organization_id,event_id,submission_id,display_name,email,
+                    normalized_email,role,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8)"""
+            ).bind(
+                new_id(), form["organization_id"], form["event_id"], submission_id,
+                contributor.display_name, contributor.email,
+                normalize_email(contributor.email), now,
+            )
+        )
     if submitter_user_id is not None:
         batch.add_statement(
             db.prepare("DELETE FROM submission_drafts WHERE form_id=?1 AND user_id=?2").bind(
@@ -913,6 +1079,7 @@ async def create_submission(
         program_id=str(form["program_id"]),
         status="submitted",
         submitted_at_ms=now,
+        version=1,
         routed_category=routing["category"],
         routed_track=routing["track"],
         routed_review_queue=routing["review_queue"],
@@ -947,11 +1114,13 @@ async def list_submissions(
     result = (
         await _db(request)
         .prepare(
-            """SELECT id, program_id, speaker_name, speaker_email, proposal_title,
-                  proposal_abstract,answers_json,status,submitted_at_ms,routed_category,
-                  routed_track,routed_review_queue FROM submissions
-           WHERE organization_id = ?1 AND event_id = ?2 AND program_id = ?3
-           ORDER BY submitted_at_ms DESC, id DESC LIMIT 100"""
+            """SELECT s.id,s.program_id,s.speaker_name,s.speaker_email,s.proposal_title,
+                  s.proposal_abstract,s.answers_json,
+                  COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
+                  s.routed_category,s.routed_track,s.routed_review_queue
+               FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
+               WHERE s.organization_id=?1 AND s.event_id=?2 AND s.program_id=?3
+               ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 100"""
         )
         .bind(program["organization_id"], program["event_id"], program_id)
         .all()
@@ -959,7 +1128,17 @@ async def list_submissions(
     data = []
     for row in result_rows(result):
         answers = json.loads(str(row.pop("answers_json")))
-        data.append(SubmissionView.model_validate({**row, "answers": answers}))
+        contributors = result_rows(
+            await _db(request).prepare(
+                """SELECT display_name,email,role FROM submission_contributors
+                   WHERE submission_id=?1 ORDER BY display_name,id"""
+            ).bind(row["id"]).all()
+        )
+        data.append(
+            SubmissionView.model_validate(
+                {**row, "answers": answers, "co_speakers": contributors}
+            )
+        )
     return SubmissionList(
         organization_id=str(program["organization_id"]),
         event_id=str(program["event_id"]),
@@ -1020,7 +1199,7 @@ async def _submission_by_id(db, submission_id: str) -> SubmissionView:
     row = row_mapping(
         await db.prepare(
             """SELECT id, program_id, speaker_name, speaker_email, proposal_title,
-                      proposal_abstract, answers_json, status, submitted_at_ms,
+                      proposal_abstract, answers_json, status, submitted_at_ms,version,
                       routed_category,routed_track,routed_review_queue
                FROM submissions WHERE id = ?1"""
         )
@@ -1030,7 +1209,15 @@ async def _submission_by_id(db, submission_id: str) -> SubmissionView:
     if row is None:
         raise HTTPException(status_code=404)
     answers = json.loads(str(row.pop("answers_json")))
-    return SubmissionView.model_validate({**row, "answers": answers})
+    contributors = result_rows(
+        await db.prepare(
+            """SELECT display_name,email,role FROM submission_contributors
+               WHERE submission_id=?1 ORDER BY display_name,id"""
+        ).bind(submission_id).all()
+    )
+    return SubmissionView.model_validate(
+        {**row, "answers": answers, "co_speakers": contributors}
+    )
 
 
 def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[bool, str]:
@@ -1090,6 +1277,15 @@ def _route_submission(
             value = rule.get(destination)
             if routed[destination] is None and isinstance(value, str) and value:
                 routed[destination] = value
+    # A conventional field named for a routing destination should remain useful
+    # without forcing an organizer to duplicate it as a routing rule. Explicit
+    # rules always win; these values are only fallbacks.
+    for destination in routed:
+        if routed[destination] is not None:
+            continue
+        value = answers.get(destination)
+        if isinstance(value, str) and value.strip():
+            routed[destination] = value.strip()[:120]
     return routed
 
 

@@ -70,3 +70,32 @@ def test_browser_api_parsing_is_centralized() -> None:
         if re.search(r"fetch\(\s*[`\"']/api/", source) or ".json()" in source:
             violations.append(str(path.relative_to(STATIC.parents[2])))
     assert not violations, f"API calls bypass the shared response handler: {violations}"
+
+
+def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
+    gallery = (STATIC / "speaker_gallery.js").read_text()
+    assert 'dataset.layout = galleryLayout ? "gallery" : "directory"' in gallery
+    assert 'byId("speaker-search").addEventListener("input", render)' in gallery
+    assert 'byId("speaker-profile")' in gallery
+
+
+def test_custom_speaker_task_retries_reuse_idempotency_keys() -> None:
+    script = (STATIC / "event_workspace.js").read_text()
+    assert "taskMutation" in script
+    assert "the same request will not be duplicated" in script
+
+
+def test_speaker_message_retries_reuse_idempotency_key() -> None:
+    script = (STATIC / "speaker_directory.js").read_text()
+    assert "messageMutation" in script
+    assert "already queued recipients will not be duplicated" in script
+
+
+def test_public_schedule_export_reports_success() -> None:
+    script = (STATIC / "schedule.js").read_text()
+    assert "Downloaded ${selected.length} session" in script
+
+
+def test_cfp_signed_in_email_help_is_not_duplicated() -> None:
+    script = (STATIC / "public_cfp.js").read_text()
+    assert 'let help = byId("signed-in-email-help")' in script

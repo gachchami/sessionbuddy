@@ -54,6 +54,13 @@ UUIDv4 is the P0 choice because it is cryptographically random, opaque, availabl
 - Application writes set `created_at_ms` and `updated_at_ms`; do not depend on database wall-clock defaults for externally visible timestamps.
 - Use optimistic concurrency on editable records through a nonnegative `version INTEGER` incremented by conditional updates (`WHERE id = ? AND version = ?`).
 
+`organization_memberships.role = 'member'` is an internal affiliation marker,
+not an application permission. It anchors event-scoped speakers, evaluators, and
+event administrators to the organization that owns their event, satisfying the
+tenant foreign-key boundary. It grants no UI or API capabilities and must not be
+presented as an assignable user role. `organization_admin` is the only
+organization-wide permission-bearing role.
+
 ### 3.3 Naming and constraints
 
 - Use plural `snake_case` table names and `snake_case` columns.

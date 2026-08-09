@@ -163,6 +163,8 @@
 }
 .app-body.sb-shell-authenticated > #root { min-height: 100vh; margin-left: var(--sb-sidebar-width); padding-top: 4rem; }
 .app-body.sb-shell-authenticated > #root > main { width: auto; max-width: none; margin: 0; padding: clamp(1.5rem, 3vw, 3rem); }
+.app-body.sb-shell-authenticated { scroll-padding-top: 5rem; }
+.app-body.sb-shell-authenticated :where(button, a, input, select, textarea, summary) { scroll-margin-top: 5rem; }
 
 .sb-guest-header { border-bottom: 1px solid #e4e7ec; background: white; color: #182230; }
 .sb-guest-header__inner { width: min(76rem, calc(100% - 2rem)); min-height: 4.5rem; display: flex; align-items: center; margin-inline: auto; }

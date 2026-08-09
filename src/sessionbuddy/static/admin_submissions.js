@@ -14,6 +14,42 @@
   const parts = location.pathname.split("/").filter(Boolean);
   const programId = parts[2] || "";
   const state = { csrf: "", userId: "", submissions: [], evaluators: [] };
+  const prerequisites = document.createElement("p");
+  prerequisites.id = "round-prerequisites";
+  prerequisites.className = "help";
+  prerequisites.setAttribute("role", "status");
+  byId("open-round").before(prerequisites);
+  function updatePrerequisites() {
+    const missing = [];
+    if (!state.submissions.length) missing.push("publish the call and receive at least one submission");
+    if (!state.evaluators.length) missing.push("invite at least one reviewer");
+    prerequisites.textContent = missing.length
+      ? `Before opening a round: ${missing.join("; ")}.`
+      : "Choose submissions and reviewers, then open the round.";
+    byId("open-round").disabled = missing.length > 0;
+  }
+  function addRemoveButton(row) {
+    if (row.querySelector("button")) return;
+    const remove = document.createElement("button");
+    remove.type = "button"; remove.className = "secondary"; remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      if (byId("criteria").querySelectorAll(".criterion-row").length <= 1) {
+        byId("status").textContent = "Keep at least one scorecard criterion.";
+        return;
+      }
+      row.remove();
+    });
+    row.append(remove);
+  }
+  byId("criteria").querySelectorAll(".criterion-row").forEach(addRemoveButton);
+  const guidance = byId("round-form").elements.evaluator_guidance.closest("label");
+  const commentRequired = document.createElement("label");
+  commentRequired.className = "check-label";
+  const commentRequiredInput = document.createElement("input");
+  commentRequiredInput.type = "checkbox";
+  commentRequiredInput.name = "comment_required";
+  commentRequired.append(commentRequiredInput, " Require a written reviewer comment");
+  guidance.after(commentRequired);
   function renderRoundHistory(rounds) {
     const container = byId("round-history");
     container.replaceChildren();
@@ -34,7 +70,37 @@
     const link = document.createElement("a");
     link.href = `/admin/evaluation-rounds/${round.id}`;
     link.textContent = "Monitor round and record decisions";
-    byId("round-result").replaceChildren(link);
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "secondary";
+    add.textContent = "Add selected submissions to open round";
+    add.addEventListener("click", async () => {
+      const submissionIds = [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
+      if (!submissionIds.length) {
+        byId("status").textContent = "Select at least one submission.";
+        return;
+      }
+      add.disabled = true;
+      try {
+        const result = await api(`/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/submissions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+          body: JSON.stringify({ submission_ids: submissionIds })
+        });
+        byId("status").textContent = result.submission_count
+          ? `${result.submission_count} submission${result.submission_count === 1 ? "" : "s"} added with ${result.assignment_count} review assignment${result.assignment_count === 1 ? "" : "s"}.`
+          : "Every selected submission is already in this round.";
+      } catch (error) {
+        byId("status").textContent = window.SessionBuddyApi.message(error);
+        byId("status").classList.add("error");
+      } finally {
+        add.disabled = false;
+      }
+    });
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(link, add);
+    byId("round-result").replaceChildren(actions);
     byId("open-round").disabled = true;
     byId("round-fields").disabled = true;
   }
@@ -78,6 +144,21 @@
       detailRow("Review queue", item.routed_review_queue),
       ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(humanize(key), answerText(value)))
     );
+    if (item.co_speakers?.length) {
+      details.append(detailRow("Co-speakers", item.co_speakers.map((person) => `${person.display_name} (${person.email}) · ${person.role === "co_speaker" ? "Co-speaker" : person.role}`).join(", ")));
+    }
+    const aiActions = document.createElement("div"); aiActions.className = "actions";
+    const triage = document.createElement("button"); triage.type = "button"; triage.className = "secondary"; triage.textContent = "Run AI first pass";
+    triage.addEventListener("click", async () => {
+      triage.disabled = true; triage.textContent = "Analyzing…";
+      try {
+        const result = await api(`/api/v1/admin/submissions/${encodeURIComponent(item.id)}/ai-triage`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: "{}" });
+        details.append(detailRow("AI score", `${result.score}/10`), detailRow("AI recommendation", result.recommendation), detailRow("AI rationale", result.rationale), detailRow("Source", "Workers AI · advisory only; not a human review"));
+        byId("status").textContent = "AI first pass ready. A human reviewer still makes the decision.";
+      } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error, "AI triage is temporarily unavailable."); byId("status").classList.add("error"); }
+      finally { triage.disabled = false; triage.textContent = "Run AI first pass"; }
+    });
+    aiActions.append(triage); details.after(aiActions);
     const dialog = byId("submission-detail");
     dialog.addEventListener("close", () => trigger.focus(), { once: true });
     dialog.showModal();
@@ -121,7 +202,8 @@
         selection.type = "checkbox";
         selection.name = "submission_ids";
         selection.value = item.id;
-        selection.checked = true;
+        selection.checked = item.status === "submitted";
+        selection.disabled = item.status !== "submitted";
         selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
         selectionCell.append(selection);
         row.append(selectionCell);
@@ -141,7 +223,7 @@
         body.append(row);
       });
       byId("status").textContent = `${result.data.length} submission${result.data.length === 1 ? "" : "s"}.`;
-      byId("open-round").disabled = !result.data.length || !state.evaluators.length;
+      updatePrerequisites();
       const history = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`);
       renderRoundHistory(history.data);
       const currentRound = history.data.find((round) => round.status === "open") || null;
@@ -207,7 +289,7 @@
       const round = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
-        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), submission_ids: [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value), evaluator_user_ids: values.getAll("evaluator_user_ids") })
+        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), submission_ids: [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value), evaluator_user_ids: values.getAll("evaluator_user_ids") })
       });
       byId("status").textContent = `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
       showRound(round);
@@ -223,8 +305,7 @@
     const row = document.createElement("div"); row.className = "form-grid criterion-row";
     const label = document.createElement("label"); label.textContent = "Criterion"; const name = document.createElement("input"); name.name = "criterion_label"; name.required = true; name.maxLength = 120; label.append(name);
     const weightLabel = document.createElement("label"); weightLabel.textContent = "Weight"; const weight = document.createElement("input"); weight.name = "criterion_weight"; weight.type = "number"; weight.min = "1"; weight.max = "100"; weight.required = true; weightLabel.append(weight);
-    const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary"; remove.textContent = "Remove"; remove.addEventListener("click", () => row.remove());
-    row.append(label, weightLabel, remove); container.append(row); name.focus();
+    row.append(label, weightLabel); addRemoveButton(row); container.append(row); name.focus();
   });
   load();
 })();
