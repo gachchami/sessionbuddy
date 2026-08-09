@@ -29,10 +29,10 @@ from .models import (
     ResourceCreate,
     ResourceList,
     ResourceView,
+    SessionContentVersionView,
     SpeakerTarget,
     SpeakerTargetList,
     SpeakerTaskCreate,
-    SessionContentVersionView,
 )
 
 competition_router = APIRouter()
@@ -539,8 +539,12 @@ async def _save_session_content(
     db, organization_id = _db(request), str(event["organization_id"])
     session = row_mapping(
         await db.prepare(
-            """SELECT submission_id,version FROM accepted_sessions
-               WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+            """SELECT ac.submission_id,ac.version,ac.content_status,
+                      s.proposal_title,s.proposal_abstract
+               FROM accepted_sessions ac JOIN submissions s
+                 ON s.organization_id=ac.organization_id AND s.event_id=ac.event_id
+                AND s.id=ac.submission_id
+               WHERE ac.organization_id=?1 AND ac.event_id=?2 AND ac.id=?3 LIMIT 1"""
         )
         .bind(organization_id, event_id, accepted_session_id)
         .first()
@@ -551,6 +555,25 @@ async def _save_session_content(
         raise HTTPException(status_code=409)
     now, next_version = utc_now_ms(), body.version + 1
     batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT OR IGNORE INTO session_content_versions
+               (id,organization_id,event_id,accepted_session_id,version,title,abstract,
+                content_status,changed_by_user_id,created_at_ms)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"""
+        ).bind(
+            new_id(),
+            organization_id,
+            event_id,
+            accepted_session_id,
+            body.version,
+            session["proposal_title"],
+            session["proposal_abstract"],
+            session["content_status"],
+            auth.actor.user_id,
+            now,
+        )
+    )
     batch.add_statement(
         db.prepare(
             """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,

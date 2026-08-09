@@ -121,6 +121,191 @@
         "title": "AccountProfileView",
         "type": "object"
       },
+      "AdminSessionContentRestore": {
+        "additionalProperties": false,
+        "properties": {
+          "current_version": {
+            "minimum": 1.0,
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "history_version": {
+            "minimum": 1.0,
+            "title": "History Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "history_version",
+          "current_version"
+        ],
+        "title": "AdminSessionContentRestore",
+        "type": "object"
+      },
+      "AdminSessionContentUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Abstract",
+            "type": "string"
+          },
+          "content_status": {
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "title": "Content Status",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "title",
+          "abstract",
+          "content_status",
+          "version"
+        ],
+        "title": "AdminSessionContentUpdate",
+        "type": "object"
+      },
+      "AdminSessionContentView": {
+        "properties": {
+          "abstract": {
+            "title": "Abstract",
+            "type": "string"
+          },
+          "accepted_session_id": {
+            "title": "Accepted Session Id",
+            "type": "string"
+          },
+          "content_status": {
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "title": "Content Status",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/SessionContentVersionView"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted_session_id",
+          "title",
+          "abstract",
+          "content_status",
+          "version",
+          "history"
+        ],
+        "title": "AdminSessionContentView",
+        "type": "object"
+      },
+      "AdminSpeakerAssetList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/AdminSpeakerAssetView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "AdminSpeakerAssetList",
+        "type": "object"
+      },
+      "AdminSpeakerAssetView": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "speaker_name": {
+            "title": "Speaker Name",
+            "type": "string"
+          },
+          "uploaded_at_ms": {
+            "title": "Uploaded At Ms",
+            "type": "integer"
+          },
+          "version_count": {
+            "title": "Version Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "event_speaker_id",
+          "speaker_name",
+          "kind",
+          "filename",
+          "content_type",
+          "byte_size",
+          "generation",
+          "version_count",
+          "uploaded_at_ms"
+        ],
+        "title": "AdminSpeakerAssetView",
+        "type": "object"
+      },
       "AdminSpeakerTaskView": {
         "properties": {
           "due_at_ms": {
@@ -164,6 +349,101 @@
           "due_at_ms"
         ],
         "title": "AdminSpeakerTaskView",
+        "type": "object"
+      },
+      "AdminSpeakerUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "biography": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "job_title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Location",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "version"
+        ],
+        "title": "AdminSpeakerUpdate",
+        "type": "object"
+      },
+      "AgendaAutoSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "gap_minutes": {
+            "default": 15,
+            "maximum": 120.0,
+            "minimum": 0.0,
+            "title": "Gap Minutes",
+            "type": "integer"
+          },
+          "room_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Room Ids",
+            "type": "array"
+          },
+          "session_minutes": {
+            "default": 45,
+            "maximum": 240.0,
+            "minimum": 10.0,
+            "title": "Session Minutes",
+            "type": "integer"
+          },
+          "start_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At Ms"
+          }
+        },
+        "title": "AgendaAutoSchedule",
         "type": "object"
       },
       "AgendaCandidate": {
@@ -263,6 +543,46 @@
           "version"
         ],
         "title": "AgendaPublish",
+        "type": "object"
+      },
+      "AgendaResourceCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AgendaResourceCreate",
+        "type": "object"
+      },
+      "AgendaResourceUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "AgendaResourceUpdate",
         "type": "object"
       },
       "AgendaSetup": {
@@ -1018,6 +1338,25 @@
       "EvaluationAssignmentView": {
         "additionalProperties": false,
         "properties": {
+          "blind_review": {
+            "default": false,
+            "title": "Blind Review",
+            "type": "boolean"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationCriterion"
+            },
+            "title": "Criteria",
+            "type": "array"
+          },
+          "criterion_scores": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Criterion Scores",
+            "type": "object"
+          },
           "evaluation_state": {
             "enum": [
               "not_started",
@@ -1086,6 +1425,17 @@
             "title": "Recommendations",
             "type": "array"
           },
+          "review_closes_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Closes At Ms"
+          },
           "round_id": {
             "title": "Round Id",
             "type": "string"
@@ -1119,6 +1469,35 @@
         "title": "EvaluationAssignmentView",
         "type": "object"
       },
+      "EvaluationCriterion": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "weight": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Weight",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "weight"
+        ],
+        "title": "EvaluationCriterion",
+        "type": "object"
+      },
       "EvaluationRoundClosed": {
         "additionalProperties": false,
         "properties": {
@@ -1149,6 +1528,19 @@
             ],
             "title": "Assignment Strategy",
             "type": "string"
+          },
+          "blind_review": {
+            "default": true,
+            "title": "Blind Review",
+            "type": "boolean"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationCriterion"
+            },
+            "maxItems": 8,
+            "title": "Criteria",
+            "type": "array"
           },
           "evaluator_guidance": {
             "default": "",
@@ -1192,6 +1584,30 @@
             "title": "Recommendations",
             "type": "array"
           },
+          "review_closes_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Closes At Ms"
+          },
+          "review_opens_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Opens At Ms"
+          },
           "submission_ids": {
             "items": {
               "type": "string"
@@ -1212,6 +1628,23 @@
           "assignment_strategy"
         ],
         "title": "EvaluationRoundCreate",
+        "type": "object"
+      },
+      "EvaluationRoundList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRoundView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "EvaluationRoundList",
         "type": "object"
       },
       "EvaluationRoundResults": {
@@ -1323,7 +1756,11 @@
             "type": "string"
           },
           "status": {
-            "const": "open",
+            "enum": [
+              "draft",
+              "open",
+              "closed"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -1342,6 +1779,14 @@
       "EvaluationSave": {
         "additionalProperties": false,
         "properties": {
+          "criterion_scores": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "maxProperties": 8,
+            "title": "Criterion Scores",
+            "type": "object"
+          },
           "internal_comment": {
             "default": "",
             "maxLength": 5000,
@@ -1383,6 +1828,14 @@
           "assignment_id": {
             "title": "Assignment Id",
             "type": "string"
+          },
+          "criterion_scores": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "maxProperties": 8,
+            "title": "Criterion Scores",
+            "type": "object"
           },
           "id": {
             "title": "Id",
@@ -2320,6 +2773,157 @@
         "title": "FormRoutingRule",
         "type": "object"
       },
+      "FormUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "closes_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closes At Ms"
+          },
+          "conditions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormCondition"
+            },
+            "maxItems": 200,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "fields": {
+            "default": [
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "speaker_name",
+                "label": "Speaker name",
+                "placeholder": "",
+                "required": true,
+                "type": "text"
+              },
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "speaker_email",
+                "label": "Email",
+                "placeholder": "",
+                "required": true,
+                "type": "email"
+              },
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "proposal_title",
+                "label": "Proposal title",
+                "placeholder": "",
+                "required": true,
+                "type": "text"
+              },
+              {
+                "choices": [],
+                "help_text": "",
+                "key": "proposal_abstract",
+                "label": "Proposal abstract",
+                "placeholder": "",
+                "required": true,
+                "type": "textarea"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FormFieldDefinition"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
+          "opens_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opens At Ms"
+          },
+          "redirect_to_portal": {
+            "default": true,
+            "title": "Redirect To Portal",
+            "type": "boolean"
+          },
+          "routing_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormRoutingRule"
+            },
+            "maxItems": 200,
+            "title": "Routing Rules",
+            "type": "array"
+          },
+          "slug": {
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "title": "Slug",
+            "type": "string"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "success_message": {
+            "default": "We sent a confirmation to your email address.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Success Message",
+            "type": "string"
+          },
+          "success_title": {
+            "default": "Proposal received",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Success Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "welcome_text": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Welcome Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "welcome_text",
+          "version"
+        ],
+        "title": "FormUpdate",
+        "type": "object"
+      },
       "GenericAccepted": {
         "properties": {
           "accepted": {
@@ -2435,6 +3039,61 @@
           "role"
         ],
         "title": "InvitationCreate",
+        "type": "object"
+      },
+      "InvitationCreatedView": {
+        "properties": {
+          "accept_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accept Url"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "event_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "email",
+          "role"
+        ],
+        "title": "InvitationCreatedView",
         "type": "object"
       },
       "InvitationList": {
@@ -2895,6 +3554,92 @@
           "status"
         ],
         "title": "ProgramView",
+        "type": "object"
+      },
+      "PublicEventList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PublicEventSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "PublicEventList",
+        "type": "object"
+      },
+      "PublicEventSummary": {
+        "properties": {
+          "cfp_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Slug"
+          },
+          "delivery_mode": {
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "schedule_published": {
+            "title": "Schedule Published",
+            "type": "boolean"
+          },
+          "speaker_count": {
+            "title": "Speaker Count",
+            "type": "integer"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone",
+          "location",
+          "delivery_mode",
+          "cfp_slug",
+          "schedule_published",
+          "speaker_count"
+        ],
+        "title": "PublicEventSummary",
         "type": "object"
       },
       "PublicSpeaker": {
@@ -3467,6 +4212,48 @@
         "title": "SLODefinition",
         "type": "object"
       },
+      "SessionContentVersionView": {
+        "properties": {
+          "abstract": {
+            "title": "Abstract",
+            "type": "string"
+          },
+          "changed_by": {
+            "title": "Changed By",
+            "type": "string"
+          },
+          "content_status": {
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "title": "Content Status",
+            "type": "string"
+          },
+          "created_at_ms": {
+            "title": "Created At Ms",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "abstract",
+          "content_status",
+          "changed_by",
+          "created_at_ms"
+        ],
+        "title": "SessionContentVersionView",
+        "type": "object"
+      },
       "SessionCreated": {
         "properties": {
           "authenticated": {
@@ -3692,6 +4479,78 @@
         "title": "SpeakerEventView",
         "type": "object"
       },
+      "SpeakerMessagePreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body_text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Body Text",
+            "type": "string"
+          },
+          "event_speaker_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Event Speaker Ids",
+            "type": "array"
+          },
+          "subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_speaker_ids",
+          "subject",
+          "body_text"
+        ],
+        "title": "SpeakerMessagePreviewRequest",
+        "type": "object"
+      },
+      "SpeakerMessageSendRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "body_text": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Body Text",
+            "type": "string"
+          },
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "event_speaker_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Event Speaker Ids",
+            "type": "array"
+          },
+          "subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_speaker_ids",
+          "subject",
+          "body_text",
+          "confirmed"
+        ],
+        "title": "SpeakerMessageSendRequest",
+        "type": "object"
+      },
       "SpeakerPortalView": {
         "additionalProperties": false,
         "properties": {
@@ -3863,12 +4722,39 @@
       },
       "SpeakerTarget": {
         "properties": {
+          "biography": {
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
           },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
           "event_speaker_id": {
             "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "job_title": {
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
             "type": "string"
           },
           "proposal_title": {
@@ -3883,11 +4769,34 @@
             ],
             "title": "Selection Status",
             "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
           "event_speaker_id",
+          "user_id",
+          "email",
           "display_name",
+          "job_title",
+          "company",
+          "biography",
+          "location",
+          "links",
+          "version",
           "selection_status",
           "proposal_title"
         ],
@@ -5026,6 +5935,41 @@
         ]
       }
     },
+    "/api/v1/admin/evaluation-rounds/{round_id}/export.csv": {
+      "get": {
+        "operationId": "exportEvaluationRoundResults",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Round Results",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
     "/api/v1/admin/evaluation-rounds/{round_id}/results": {
       "get": {
         "operationId": "getEvaluationRoundResults",
@@ -5235,6 +6179,75 @@
           }
         },
         "summary": "Get Admin Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/auto-schedule": {
+      "post": {
+        "operationId": "auto_schedule_agenda_api_v1_admin_events__event_id__agenda_auto_schedule_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaAutoSchedule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Auto Schedule Agenda Api V1 Admin Events  Event Id  Agenda Auto Schedule Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Auto Schedule Agenda",
         "tags": [
           "agenda"
         ]
@@ -5487,6 +6500,121 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/agenda/rooms": {
+      "post": {
+        "operationId": "create_agenda_room_api_v1_admin_events__event_id__agenda_rooms_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaResourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Agenda Room Api V1 Admin Events  Event Id  Agenda Rooms Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agenda Room",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/rooms/{room_id}": {
+      "patch": {
+        "operationId": "update_agenda_room_api_v1_admin_events__event_id__agenda_rooms__room_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "room_id",
+            "required": true,
+            "schema": {
+              "title": "Room Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaResourceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Agenda Room Api V1 Admin Events  Event Id  Agenda Rooms  Room Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Agenda Room",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/agenda/setup": {
       "post": {
         "operationId": "setup_admin_agenda_api_v1_admin_events__event_id__agenda_setup_post",
@@ -5553,6 +6681,163 @@
         "summary": "Setup Admin Agenda",
         "tags": [
           "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/tracks": {
+      "post": {
+        "operationId": "create_agenda_track_api_v1_admin_events__event_id__agenda_tracks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaResourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create Agenda Track Api V1 Admin Events  Event Id  Agenda Tracks Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Agenda Track",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}": {
+      "patch": {
+        "operationId": "update_agenda_track_api_v1_admin_events__event_id__agenda_tracks__track_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaResourceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Update Agenda Track Api V1 Admin Events  Event Id  Agenda Tracks  Track Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Agenda Track",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/assets": {
+      "get": {
+        "operationId": "listAdminSpeakerAssets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSpeakerAssetList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Admin Speaker Assets",
+        "tags": [
+          "speaker-assets"
         ]
       }
     },
@@ -5854,6 +7139,126 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/communications/speakers/preview": {
+      "post": {
+        "operationId": "previewSpeakerCommunication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeakerMessagePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipientPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Speakers",
+        "tags": [
+          "communications"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/communications/speakers/send": {
+      "post": {
+        "operationId": "queueSpeakerCommunication",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeakerMessageSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManualSendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Speakers",
+        "tags": [
+          "communications"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {
       "post": {
         "operationId": "create_accelevents_token_api_v1_admin_events__event_id__integrations_accelevents_tokens_post",
@@ -5975,7 +7380,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationView"
+                  "$ref": "#/components/schemas/InvitationCreatedView"
                 }
               }
             },
@@ -6037,6 +7442,57 @@
           }
         },
         "summary": "Revoke Invitation",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend": {
+      "post": {
+        "operationId": "resend_invitation_api_v1_admin_events__event_id__invitations__invitation_id__resend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationCreatedView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Invitation",
         "tags": [
           "administration"
         ]
@@ -6359,6 +7815,177 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content": {
+      "get": {
+        "operationId": "get_admin_session_content_api_v1_admin_events__event_id__sessions__accepted_session_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "accepted_session_id",
+            "required": true,
+            "schema": {
+              "title": "Accepted Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionContentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Admin Session Content",
+        "tags": [
+          "session-content"
+        ]
+      },
+      "patch": {
+        "operationId": "update_admin_session_content_api_v1_admin_events__event_id__sessions__accepted_session_id__content_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "accepted_session_id",
+            "required": true,
+            "schema": {
+              "title": "Accepted Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSessionContentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionContentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Admin Session Content",
+        "tags": [
+          "session-content"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content/restore": {
+      "post": {
+        "operationId": "restore_admin_session_content_api_v1_admin_events__event_id__sessions__accepted_session_id__content_restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "accepted_session_id",
+            "required": true,
+            "schema": {
+              "title": "Accepted Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSessionContentRestore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSessionContentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Admin Session Content",
+        "tags": [
+          "session-content"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/speaker-targets": {
       "get": {
         "operationId": "list_speaker_targets_api_v1_admin_events__event_id__speaker_targets_get",
@@ -6533,6 +8160,67 @@
         "summary": "Remind",
         "tags": [
           "communications"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}": {
+      "patch": {
+        "operationId": "update_admin_speaker_api_v1_admin_events__event_id__speakers__event_speaker_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSpeakerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Admin Speaker",
+        "tags": [
+          "speaker-onboarding"
         ]
       }
     },
@@ -6761,6 +8449,46 @@
       }
     },
     "/api/v1/admin/programs/{program_id}/evaluation-rounds": {
+      "get": {
+        "operationId": "listEvaluationRounds",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Evaluation Rounds",
+        "tags": [
+          "evaluations"
+        ]
+      },
       "post": {
         "operationId": "createEvaluationRound",
         "parameters": [
@@ -6983,6 +8711,67 @@
           }
         },
         "summary": "Publish Form",
+        "tags": [
+          "forms"
+        ]
+      }
+    },
+    "/api/v1/admin/programs/{program_id}/forms/{form_id}": {
+      "patch": {
+        "operationId": "updatePublishedCallForSpeakersForm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "program_id",
+            "required": true,
+            "schema": {
+              "title": "Program Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "form_id",
+            "required": true,
+            "schema": {
+              "title": "Form Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishedFormView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Published Form",
         "tags": [
           "forms"
         ]
@@ -7512,6 +9301,49 @@
         ]
       }
     },
+    "/api/v1/forms/{slug}/access": {
+      "post": {
+        "description": "Enroll an authenticated user into an open public CFP without another sign-in.",
+        "operationId": "ensure_cfp_speaker_access_api_v1_forms__slug__access_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ensure Cfp Speaker Access",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
     "/api/v1/forms/{slug}/draft": {
       "get": {
         "operationId": "get_submission_draft_api_v1_forms__slug__draft_get",
@@ -7714,6 +9546,27 @@
         "summary": "Api Health",
         "tags": [
           "operations"
+        ]
+      }
+    },
+    "/api/v1/public/events": {
+      "get": {
+        "operationId": "list_public_events_api_v1_public_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEventList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Public Events",
+        "tags": [
+          "public-program"
         ]
       }
     },

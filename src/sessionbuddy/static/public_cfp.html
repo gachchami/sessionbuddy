@@ -6,7 +6,7 @@
   <title>Submit a proposal · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=12">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/product/assets/public-cfp.js?v=10" defer></script>
+  <script src="/product/assets/public-cfp.js?v=11" defer></script>
 </head>
 <body class="public-body">
   <a class="skip-link" href="#main">Skip to proposal form</a>
@@ -15,6 +15,7 @@
     <div class="page-heading"><div><p class="eyebrow">Call for speakers</p><h1 id="title">Submit a proposal</h1><p id="welcome" class="lede">Loading the published form…</p></div></div>
     <ol class="step-indicator" aria-label="Submission progress"><li id="step-details" aria-current="step">1 · Proposal</li><li id="step-review">2 · Review</li><li id="step-done">3 · Complete</li></ol>
     <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div>
+    <section id="call-details" class="card" hidden aria-labelledby="call-details-title"><h2 id="call-details-title">Before you start</h2><p id="call-deadline"></p><p>The form asks for:</p><ul id="call-fields"></ul></section>
     <section id="closed-card" class="card" hidden><h2>Submissions are not open</h2><p id="availability"></p></section>
     <section id="sign-in-card" class="card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><h2 id="sign-in-title">Sign in to submit</h2><p>Enter your email to receive a secure link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Sign in</button></form></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Link expires in 15 minutes.</p><button id="change-cfp-email" class="secondary" type="button">Change email</button></div></section>
     <section id="proposal-card" class="card" hidden aria-labelledby="title">

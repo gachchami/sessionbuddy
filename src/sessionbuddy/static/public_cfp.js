@@ -44,6 +44,19 @@
     return node;
   }
 
+  function renderCallDetails(form) {
+    const dates = [];
+    if (form.opens_at_ms) dates.push(`Opens ${new Date(form.opens_at_ms).toLocaleString()}`);
+    if (form.closes_at_ms) dates.push(`Closes ${new Date(form.closes_at_ms).toLocaleString()}`);
+    byId("call-deadline").textContent = dates.length
+      ? `${dates.join(" · ")}. Times are shown in your local time zone.`
+      : "The organizer has not set a closing date.";
+    byId("call-fields").replaceChildren(...form.fields.map((field) =>
+      make("li", `${field.label}${field.required ? " (required)" : ""}`)
+    ));
+    byId("call-details").hidden = false;
+  }
+
   function fieldValue(field) {
     const control = byId("proposal-form").elements.namedItem(field.key);
     if (!control) return null;
@@ -255,6 +268,7 @@
       if (state.form.accent_color) document.documentElement.style.setProperty("--blue", state.form.accent_color);
       if (state.form.logo_url) { byId("event-logo").src = state.form.logo_url; byId("event-logo").hidden = false; }
       renderFields(state.form.fields || [], state.form.conditions || []);
+      renderCallDetails(state.form);
       if (state.form.accepting_submissions === false) {
         byId("closed-card").hidden = false;
         byId("availability").textContent = state.form.availability_message;
@@ -325,11 +339,17 @@
   });
 
   byId("review-proposal").addEventListener("click", () => {
-    if (!byId("proposal-form").reportValidity()) return;
+    if (!byId("proposal-form").reportValidity()) {
+      setStatus("Complete the highlighted required fields before reviewing your proposal.", "error");
+      return;
+    }
     showReview(true);
     setStatus("Not submitted yet. Review your proposal, then select Confirm submission.");
     byId("review-title").focus?.();
   });
+  byId("proposal-form").addEventListener("invalid", () => {
+    setStatus("Complete the highlighted required fields before continuing.", "error");
+  }, true);
   byId("back-to-form").addEventListener("click", () => { showReview(false); setStatus("You can continue editing your proposal."); });
 
   byId("proposal-form").addEventListener("submit", async (event) => {

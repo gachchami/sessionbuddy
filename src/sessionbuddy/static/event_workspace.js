@@ -10,7 +10,7 @@
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
   }
-  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+  const api = (path, options = {}, behavior = {}) => window.SessionBuddyApi.request(path, options, behavior);
   function slug(value) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80); }
   function mutationHeaders() { return { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }; }
   function approvedEmbed(value) {
@@ -53,13 +53,15 @@
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
         body: "{}"
       });
-      const response = await fetch("/api/v1/assets/download", {
+      let response;
+      await api("/api/v1/assets/download", {
         method: "POST",
-        credentials: "same-origin",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
         body: JSON.stringify({ token: grant.token })
+      }, {
+        expectJson: false,
+        onResponse: (received) => { response = received; }
       });
-      if (!response.ok) await window.SessionBuddyApi.parseResponse(response, { expectJson: false });
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url; link.download = asset.filename; link.click();

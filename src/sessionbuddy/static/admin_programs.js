@@ -71,6 +71,12 @@
     return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
   }
 
+  function toLocalInput(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
   function eventIdFromPage(session) {
     const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/cfp$/);
     if (match) {
@@ -90,8 +96,9 @@
     byId("program-result").textContent = program
       ? `${program.name} · ${program.status}`
       : "No program created yet.";
-    publishButton.disabled = !program || Boolean(published);
-    publishForm.hidden = Boolean(published);
+    publishButton.disabled = !program;
+    publishButton.textContent = published ? "Save changes" : "Publish form";
+    publishForm.hidden = !program;
     byId("published-note").hidden = !published;
     byId("publish-result").textContent = published
       ? "Published. Use the CFP link above, then review proposals as they arrive."
@@ -114,6 +121,28 @@
     byId("cfp-url").value = publicUrl;
     byId("open-cfp-url").href = publicUrl;
     byId("review-submissions").href = `/admin/programs/${encodeURIComponent(program.id)}/submissions`;
+  }
+
+  function loadPublishedSettings(form) {
+    const conditions = new Map((form.conditions || []).map((item) => [item.target_key, item]));
+    state.fields = (form.fields || coreFields).map((field) => ({
+      ...field,
+      condition: conditions.get(field.key)
+    }));
+    state.routingRules = structuredClone(form.routing_rules || []);
+    const editor = byId("publish-form");
+    editor.elements.slug.value = form.slug;
+    if (form.welcome_text) editor.elements.welcome_text.value = form.welcome_text;
+    editor.elements.opens_at.value = toLocalInput(form.opens_at_ms);
+    editor.elements.closes_at.value = toLocalInput(form.closes_at_ms);
+    editor.elements.submission_limit.value = form.submission_limit || "";
+    if (form.success_title) editor.elements.success_title.value = form.success_title;
+    if (form.success_message) editor.elements.success_message.value = form.success_message;
+    if (typeof form.redirect_to_portal === "boolean") {
+      editor.elements.redirect_to_portal.checked = form.redirect_to_portal;
+    }
+    renderFields();
+    renderRoutingRules();
   }
 
   function renderFields() {
@@ -338,6 +367,7 @@
       state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
       state.program = workspace.program;
       state.publishedForm = workspace.published_form;
+      if (state.publishedForm) loadPublishedSettings(state.publishedForm);
       byId("manage-access").href = `/admin/events/${encodeURIComponent(eventId)}/access`;
       byId("manage-access").hidden = false;
       renderWorkspace();
@@ -381,27 +411,37 @@
       const values = Object.fromEntries(new FormData(event.currentTarget));
       const schema = readFields();
       const routingRules = readRoutingRules();
-      const form = await api(`/api/v1/admin/programs/${state.program.id}/forms/publish`, {
-        method: "POST",
-        headers: { ...admin(), "idempotency-key": key() },
-        body: JSON.stringify({
-          slug: values.slug,
-          welcome_text: values.welcome_text,
-          ...schema,
-          routing_rules: routingRules,
-          opens_at_ms: toEpoch(values.opens_at),
-          closes_at_ms: toEpoch(values.closes_at),
-          submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
-          success_title: values.success_title,
-          success_message: values.success_message,
-          redirect_to_portal: event.currentTarget.elements.redirect_to_portal.checked,
-          confirmation_subject: values.confirmation_subject,
-          confirmation_body: values.confirmation_body
-        })
-      });
+      const payload = {
+        slug: values.slug,
+        welcome_text: values.welcome_text,
+        ...schema,
+        routing_rules: routingRules,
+        opens_at_ms: toEpoch(values.opens_at),
+        closes_at_ms: toEpoch(values.closes_at),
+        submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
+        success_title: values.success_title,
+        success_message: values.success_message,
+        redirect_to_portal: event.currentTarget.elements.redirect_to_portal.checked
+      };
+      const updating = Boolean(state.publishedForm);
+      if (updating) payload.version = state.publishedForm.version;
+      else {
+        payload.confirmation_subject = values.confirmation_subject;
+        payload.confirmation_body = values.confirmation_body;
+      }
+      const form = await api(
+        updating
+          ? `/api/v1/admin/programs/${state.program.id}/forms/${state.publishedForm.id}`
+          : `/api/v1/admin/programs/${state.program.id}/forms/publish`,
+        {
+          method: updating ? "PATCH" : "POST",
+          headers: updating ? admin() : { ...admin(), "idempotency-key": key() },
+          body: JSON.stringify(payload)
+        }
+      );
       state.publishedForm = form;
       renderWorkspace();
-      setStatus("Form published successfully.");
+      setStatus(updating ? "Published form updated." : "Form published successfully.");
     } catch (error) {
       setStatus(error.status === 409 ? "That public slug is already in use. Choose another." : window.SessionBuddyApi.message(error), true);
     }

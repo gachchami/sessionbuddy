@@ -173,6 +173,10 @@ test.describe("form validation and workflow wiring", () => {
     await page.route(`**/api/v1/admin/programs/${programId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
     let roundWrites = 0;
     await page.route(`**/api/v1/admin/programs/${programId}/evaluation-rounds`, async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
+        return;
+      }
       roundWrites += 1;
       await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "11111111-1111-4111-8111-111111111111", name: "Initial review", assignment_count: 1, evaluator_count: 1 }) });
     });
@@ -202,6 +206,7 @@ test.describe("form validation and workflow wiring", () => {
       id: assignmentId, round_id: "11111111-1111-4111-8111-111111111111", round_name: "Initial review",
       submission_id: assignmentId, proposal_title: "A proposal", proposal_abstract: "Abstract", speaker_name: "Speaker",
       rating_min: 1, rating_max: 5, recommendations: ["accept", "reject"], evaluator_guidance: "", evaluation_state: "not_started",
+      criteria: [], criterion_scores: {}, blind_review: false, review_closes_at_ms: null,
       rating: null, recommendation: null, internal_comment: "",
     };
     await page.route("**/api/v1/evaluator/assignments", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [assignment] }) }));
@@ -383,8 +388,8 @@ test.describe("form validation and workflow wiring", () => {
       revision: { id: "11111111-1111-4111-8111-111111111111", version: 1, state: "draft" },
       rooms: [{ id: "22222222-2222-4222-8222-222222222222", name: "Main stage" }],
       tracks: [{ id: "33333333-3333-4333-8333-333333333333", name: "General" }],
-      items: scheduled ? [{ id: "44444444-4444-4444-8444-444444444444", session_id: assignmentId, title: "A proposal", start_at_ms: savedCandidate?.start_at_ms, end_at_ms: savedCandidate?.end_at_ms, room_id: "22222222-2222-4222-8222-222222222222", room_name: "Main stage", track_id: null, track_name: null, version: 1 }] : [],
-      unscheduled_sessions: scheduled ? [] : [{ session_id: assignmentId, title: "A proposal" }],
+      items: scheduled ? [{ id: "44444444-4444-4444-8444-444444444444", session_id: assignmentId, title: "A proposal", abstract: "Abstract", content_status: "approved", content_version: 1, start_at_ms: savedCandidate?.start_at_ms, end_at_ms: savedCandidate?.end_at_ms, room_id: "22222222-2222-4222-8222-222222222222", room_name: "Main stage", track_id: null, track_name: null, version: 1 }] : [],
+      unscheduled_sessions: scheduled ? [] : [{ session_id: assignmentId, title: "A proposal", abstract: "Abstract", content_status: "approved", content_version: 1 }],
     });
     await page.route(`**/api/v1/admin/events/${eventId}/agenda`, async (route) => {
       if (!configured) { await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "Not found" } }) }); return; }

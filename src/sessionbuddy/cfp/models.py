@@ -88,7 +88,7 @@ class ProgramView(BaseModel):
     status: Literal["draft", "open", "closed", "archived"]
 
 
-class FormPublish(BaseModel):
+class FormSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     slug: str = Field(min_length=3, max_length=80, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     welcome_text: str = Field(min_length=1, max_length=1000)
@@ -105,17 +105,8 @@ class FormPublish(BaseModel):
         default="We sent a confirmation to your email address.", min_length=1, max_length=2000
     )
     redirect_to_portal: bool = True
-    confirmation_subject: str = Field(
-        default="We received your proposal", min_length=1, max_length=200
-    )
-    confirmation_body: str = Field(
-        default="Thank you for submitting. Your proposal is now ready for review.",
-        min_length=1,
-        max_length=4000,
-    )
-
     @model_validator(mode="after")
-    def validate_schema(self) -> "FormPublish":
+    def validate_schema(self) -> "FormSettings":
         keys = [field.key for field in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError("field keys must be unique")
@@ -174,6 +165,21 @@ class FormPublish(BaseModel):
         ):
             raise ValueError("form closing time must be after its opening time")
         return self
+
+
+class FormPublish(FormSettings):
+    confirmation_subject: str = Field(
+        default="We received your proposal", min_length=1, max_length=200
+    )
+    confirmation_body: str = Field(
+        default="Thank you for submitting. Your proposal is now ready for review.",
+        min_length=1,
+        max_length=4000,
+    )
+
+
+class FormUpdate(FormSettings):
+    version: int = Field(ge=1)
 
 
 class PublishedFormView(BaseModel):

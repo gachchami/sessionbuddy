@@ -421,6 +421,15 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "Workshop room",
         ]
         assert [track["name"] for track in agenda.json()["tracks"]] == ["General"]
+        empty_publish = await admin.post(
+            f"/api/v1/admin/events/{event_id}/agenda/publish",
+            headers=mutation_headers,
+            json={
+                "revision_id": agenda.json()["revision"]["id"],
+                "version": agenda.json()["revision"]["version"],
+            },
+        )
+        assert empty_publish.status_code == 409
         added_room = await admin.post(
             f"/api/v1/admin/events/{event_id}/agenda/rooms",
             headers=mutation_headers,
@@ -495,6 +504,35 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert live_workspace.json()["organization_id"] == organization_id
         assert live_workspace.json()["event_id"] == event_id
         assert live_workspace.json()["published_form"]["slug"] == "speaker-summit"
+        published_form = live_workspace.json()["published_form"]
+        update_payload = {
+            "version": published_form["version"],
+            "slug": published_form["slug"],
+            "welcome_text": "Share your revised session proposal.",
+            "fields": published_form["fields"],
+            "conditions": published_form["conditions"],
+            "routing_rules": published_form["routing_rules"],
+            "opens_at_ms": published_form["opens_at_ms"],
+            "closes_at_ms": published_form["closes_at_ms"],
+            "submission_limit": published_form["submission_limit"],
+            "success_title": published_form["success_title"],
+            "success_message": published_form["success_message"],
+            "redirect_to_portal": published_form["redirect_to_portal"],
+        }
+        updated_form = await admin.patch(
+            f"/api/v1/admin/programs/{program.json()['id']}/forms/{published_form['id']}",
+            headers=mutation_headers,
+            json=update_payload,
+        )
+        assert updated_form.status_code == 200
+        assert updated_form.json()["version"] == published_form["version"] + 1
+        assert updated_form.json()["welcome_text"] == "Share your revised session proposal."
+        stale_form = await admin.patch(
+            f"/api/v1/admin/programs/{program.json()['id']}/forms/{published_form['id']}",
+            headers=mutation_headers,
+            json=update_payload,
+        )
+        assert stale_form.status_code == 409
 
     async with _client(environment) as speaker:
         requested = await speaker.post(
@@ -565,6 +603,68 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "origin": "https://test",
             "x-csrf-token": session["csrf_token"],
         }
+        connection.execute(
+            """INSERT INTO evaluation_rounds
+               (id,organization_id,event_id,program_id,name,rubric_json,status,
+                created_at_ms,updated_at_ms,closed_at_ms)
+               VALUES ('round-content',?,?,?,'Final','{}','closed',1000,1000,1000)""",
+            (organization_id, event_id, program.json()["id"]),
+        )
+        connection.execute(
+            """INSERT INTO submission_decisions
+               (id,organization_id,event_id,round_id,submission_id,decision,
+                internal_reason,decided_by_user_id,decided_at_ms,updated_at_ms)
+               VALUES ('decision-content',?,?,'round-content',?,'accepted','',?,1000,1000)""",
+            (organization_id, event_id, submission.json()["id"], session["user_id"]),
+        )
+        connection.execute(
+            """INSERT INTO accepted_sessions
+               (id,organization_id,event_id,submission_id,decision_id,created_at_ms)
+               VALUES ('session-content',?,?,?,'decision-content',1000)""",
+            (organization_id, event_id, submission.json()["id"]),
+        )
+        connection.commit()
+
+        content_url = f"/api/v1/admin/events/{event_id}/sessions/session-content/content"
+        initial_content = await admin_again.get(content_url)
+        assert initial_content.status_code == 200
+        assert initial_content.json()["version"] == 1
+        assert initial_content.json()["content_status"] == "draft"
+        approved_content = await admin_again.patch(
+            content_url,
+            headers=headers,
+            json={
+                "title": "Production identity: revised",
+                "abstract": "A publication-ready session abstract.",
+                "content_status": "approved",
+                "version": 1,
+            },
+        )
+        assert approved_content.status_code == 200
+        assert approved_content.json()["version"] == 2
+        assert approved_content.json()["content_status"] == "approved"
+        assert [item["version"] for item in approved_content.json()["history"]] == [2, 1]
+        stale_content = await admin_again.patch(
+            content_url,
+            headers=headers,
+            json={
+                "title": "Stale update",
+                "abstract": "This update must not overwrite the approved copy.",
+                "content_status": "draft",
+                "version": 1,
+            },
+        )
+        assert stale_content.status_code == 409
+        restored_content = await admin_again.post(
+            f"{content_url}/restore",
+            headers=headers,
+            json={"history_version": 1, "current_version": 2},
+        )
+        assert restored_content.status_code == 200
+        assert restored_content.json()["version"] == 3
+        assert restored_content.json()["title"] == "Production identity"
+        assert restored_content.json()["content_status"] == "draft"
+
         invitations = await admin_again.get(f"/api/v1/admin/events/{event_id}/invitations")
         assert [(item["role"], item["status"]) for item in invitations.json()["data"]] == [
             ("speaker", "accepted")

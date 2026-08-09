@@ -104,17 +104,28 @@ async def agenda_js(request: Request) -> Response:
 @scheduling_router.get("/events/{event_id}/schedule", include_in_schema=False)
 @scheduling_router.get("/embeds/events/{event_id}/schedule", include_in_schema=False)
 async def schedule_page(event_id: str, request: Request) -> HTMLResponse:
-    return HTMLResponse(_asset("schedule.html"), headers={"Cache-Control": "private, no-store"})
+    return HTMLResponse(
+        _asset("schedule.html"),
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @scheduling_router.get("/schedule/assets/schedule.css", include_in_schema=False)
 async def schedule_css() -> Response:
-    return Response(_asset("schedule.css"), media_type="text/css")
+    return Response(
+        _asset("schedule.css"),
+        media_type="text/css",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @scheduling_router.get("/schedule/assets/schedule.js", include_in_schema=False)
 async def schedule_js() -> Response:
-    return Response(_asset("schedule.js"), media_type="text/javascript")
+    return Response(
+        _asset("schedule.js"),
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 async def _event_scope(request: Request, event_id: str, permission: Permission, *, mutation: bool):
@@ -1002,6 +1013,8 @@ async def publish_agenda(event_id: str, request: Request, body: AgendaPublish) -
         .bind(organization_id, event_id, body.revision_id)
         .all()
     )
+    if not item_rows:
+        raise HTTPException(status_code=409)
     speaker_rows = result_rows(
         await db.prepare(
             """SELECT ais.agenda_item_id,ais.event_speaker_id
@@ -1237,7 +1250,10 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
 
 
 @scheduling_router.get("/api/v1/public/events/{event_id}/schedule", tags=["public-program"])
-async def get_public_schedule(event_id: str, request: Request) -> dict[str, object]:
+async def get_public_schedule(
+    event_id: str, request: Request, response: Response
+) -> dict[str, object]:
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
     db = _db(request)
     event = row_mapping(
         await db.prepare(

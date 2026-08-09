@@ -544,6 +544,9 @@ test.describe("dynamic form drafts", () => {
         body: JSON.stringify({ csrf_token: "browser-test-csrf" }),
       });
     });
+    await page.route(`**/api/v1/forms/${slug}/access`, async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) });
+    });
 
     const response = await page.goto(`/cfp/${slug}`);
     expect(response?.ok()).toBeTruthy();
@@ -624,6 +627,9 @@ test.describe("dynamic form drafts", () => {
         contentType: "application/json",
         body: JSON.stringify({ csrf_token: "browser-test-csrf" }),
       });
+    });
+    await page.route(`**/api/v1/forms/${slug}/access`, async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) });
     });
 
     await page.goto(`/cfp/${slug}`);

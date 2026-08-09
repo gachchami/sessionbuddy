@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
-  <script src="/product/assets/admin-programs.js?v=10" defer></script>
+  <script src="/product/assets/admin-programs.js?v=11" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
@@ -47,7 +47,7 @@
       </section>
       <section class="card" aria-labelledby="publish-title">
         <p class="eyebrow">Step 2</p><h2 id="publish-title">Configure the proposal form</h2>
-        <p id="published-note" class="result" hidden>This proposal form is published. Its link is available above.</p>
+        <p id="published-note" class="result" hidden>Changes here update the live form immediately. Existing submissions are preserved.</p>
         <form id="publish-form">
           <label>Public URL slug<input name="slug" placeholder="conference-2026" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" required><small>3–80 lowercase letters, numbers, and hyphens.</small></label>
           <label>Welcome message<textarea name="welcome_text" maxlength="1000" required>Share the session you want to bring to our community.</textarea></label>

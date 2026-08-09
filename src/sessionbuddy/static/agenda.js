@@ -217,6 +217,7 @@
       encodeURIComponent(eventId)
     }/schedule`;
     byId("item-count").textContent = String(model.items.length);
+    byId("publish").disabled = model.items.length === 0;
     renderResources();
     const unscheduled = byId("unscheduled");
     unscheduled.replaceChildren();
@@ -757,6 +758,7 @@
   );
   byId("publish").addEventListener("click", async () => {
     const button = byId("publish");
+    const hiddenDrafts = state.model.items.filter((item) => item.content_status !== "approved").length;
     button.disabled = true;
     try {
       await api(
@@ -774,7 +776,9 @@
         },
       );
       await load(false);
-      status("Agenda published. Calendar updates were queued for speakers.");
+      status(hiddenDrafts
+        ? `Agenda published. ${hiddenDrafts} session${hiddenDrafts === 1 ? " remains" : "s remain"} hidden until content is approved.`
+        : "Agenda published. Calendar updates were queued for speakers.");
     } catch (error) {
       status(
         error.status === 409
@@ -783,7 +787,7 @@
         true,
       );
     } finally {
-      button.disabled = false;
+      button.disabled = state.model.items.length === 0;
     }
   });
   byId("editor-form").addEventListener("input", (event) => {
@@ -814,12 +818,11 @@
       await save(candidate);
       status("Session scheduled successfully.");
     } catch (error) {
-      state.model = before;
-      render();
+      try { await load(false); } catch (_) { state.model = before; render(); }
       status(
         error.status === 409
-          ? "The schedule changed or conflicts. Your edit was rolled back."
-          : error.message || "The edit could not be saved and was rolled back.",
+          ? "The schedule or content changed elsewhere. Latest saved data was reloaded."
+          : "The complete edit could not be saved. Latest saved data was reloaded.",
         true,
       );
     } finally {
@@ -838,7 +841,7 @@
       return;
     }
     try {
-      const session = await api("/api/v1/session");
+      const session = await api("/api/v1/auth/session");
       state.csrf = session.csrf_token;
       try {
         await load();

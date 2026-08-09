@@ -29,6 +29,7 @@ from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limi
 from .models import (
     CfpWorkspaceView,
     FormPublish,
+    FormUpdate,
     ProgramCreate,
     ProgramView,
     PublishedFormView,
@@ -404,6 +405,97 @@ async def publish_form(
         resource_type="call_for_speaker_form",
         resource_id=form_id,
         completed_at_ms=now,
+    )
+    await _execute(request, batch)
+    return await _form_by_id(db, form_id)
+
+
+@cfp_router.patch(
+    "/api/v1/admin/programs/{program_id}/forms/{form_id}",
+    response_model=PublishedFormView,
+    operation_id="updatePublishedCallForSpeakersForm",
+    tags=["forms"],
+)
+async def update_published_form(
+    program_id: str,
+    form_id: str,
+    request: Request,
+    body: FormUpdate,
+) -> PublishedFormView:
+    db = _db(request)
+    current = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,event_id,version FROM call_for_speaker_forms
+               WHERE id=?1 AND program_id=?2 AND status='published' LIMIT 1"""
+        )
+        .bind(form_id, program_id)
+        .first()
+    )
+    if current is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request,
+        Permission.FORM_MANAGE,
+        ResourceContext(str(current["organization_id"]), str(current["event_id"])),
+        mutation=True,
+    )
+    if int(current["version"]) != body.version:
+        raise HTTPException(status_code=409)
+    now = utc_now_ms()
+    schema_json = json.dumps(
+        {
+            "fields": [field.model_dump() for field in body.fields],
+            "conditions": [condition.model_dump() for condition in body.conditions],
+            "routing_rules": [rule.model_dump() for rule in body.routing_rules],
+        },
+        separators=(",", ":"),
+    )
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE call_for_speaker_forms
+               SET version=version+1,slug=?1,welcome_text=?2,schema_json=?3,
+                   opens_at_ms=?4,closes_at_ms=?5,submission_limit=?6,
+                   success_title=?7,success_message=?8,redirect_to_portal=?9,
+                   updated_at_ms=?10
+               WHERE id=?11 AND program_id=?12 AND status='published' AND version=?13"""
+        ).bind(
+            body.slug,
+            body.welcome_text,
+            schema_json,
+            body.opens_at_ms,
+            body.closes_at_ms,
+            body.submission_limit,
+            body.success_title,
+            body.success_message,
+            int(body.redirect_to_portal),
+            now,
+            form_id,
+            program_id,
+            body.version,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO cfp_form_write_guards
+               (id,form_id,applied_changes,created_at_ms)
+               VALUES (?1,?2,changes(),?3)"""
+        ).bind(new_id(), form_id, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="form.update",
+            target_type="call_for_speaker_form",
+            target_id=form_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(current["organization_id"]),
+            event_id=str(current["event_id"]),
+            metadata={"version": body.version + 1},
+        )
     )
     await _execute(request, batch)
     return await _form_by_id(db, form_id)
