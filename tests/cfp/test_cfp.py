@@ -311,6 +311,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "data-auth-shell" in admin.text
     assert "Submit a proposal" in public.text
     assert "Submissions" in submissions.text
+    assert 'id="submission-detail"' in submissions.text
     for javascript in (admin_js.text, public_js.text, submissions_js.text):
         assert "innerHTML" not in javascript
         assert "__sessionbuddyTelemetryDraft" in javascript
@@ -323,4 +324,6 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "const form = event.currentTarget" in public_js.text
     assert "event.currentTarget.querySelectorAll" not in public_js.text
     assert 'page_template: "/admin/programs/{program_id}/submissions"' in submissions_js.text
+    assert "View details" in submissions_js.text
+    assert "item.answers" in submissions_js.text
     assert "@media (max-width: 48rem)" in css.text

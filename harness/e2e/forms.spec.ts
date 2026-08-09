@@ -150,7 +150,24 @@ test.describe("form validation and workflow wiring", () => {
     await mockSession(page);
     await page.route(`**/api/v1/admin/programs/${programId}/submissions`, (route) => route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ organization_id: organizationId, event_id: eventId, program_id: programId, data: [{ id: assignmentId, speaker_name: "Speaker", proposal_title: "A proposal", proposal_abstract: "Abstract", status: "submitted" }] }),
+      body: JSON.stringify({
+        organization_id: organizationId,
+        event_id: eventId,
+        program_id: programId,
+        data: [{
+          id: assignmentId,
+          speaker_name: "Speaker",
+          speaker_email: "speaker@example.com",
+          proposal_title: "A proposal",
+          proposal_abstract: "Abstract",
+          status: "submitted",
+          submitted_at_ms: 1_900_000_000_000,
+          routed_category: null,
+          routed_track: "Platform",
+          routed_review_queue: "Technical",
+          answers: { audience_level: "Intermediate" },
+        }],
+      }),
     }));
     await page.route(`**/api/v1/admin/programs/${programId}/evaluators`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) }));
     await page.route(`**/api/v1/admin/programs/${programId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
@@ -161,6 +178,13 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/programs/${programId}/submissions`);
+    await page.getByRole("button", { name: "View details" }).click();
+    const detail = page.getByRole("dialog", { name: "Submission details" });
+    await expect(detail).toContainText("speaker@example.com");
+    await expect(detail).toContainText("Platform");
+    await expect(detail).toContainText("Audience level");
+    await expect(detail).toContainText("Intermediate");
+    await detail.getByRole("button", { name: "Close" }).click();
     await page.getByLabel("Minimum rating").fill("5");
     await page.getByLabel("Maximum rating").fill("5");
     await page.getByRole("button", { name: "Open evaluation round" }).click();

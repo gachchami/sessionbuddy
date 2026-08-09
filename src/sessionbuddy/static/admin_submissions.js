@@ -33,6 +33,39 @@
       onResponse: (response) => recordTelemetry(started, response)
     });
   }
+  function detailRow(label, value) {
+    const group = document.createElement("div");
+    group.append(document.createElement("dt"), document.createElement("dd"));
+    group.firstChild.textContent = label;
+    group.lastChild.textContent = value === null || value === undefined || value === "" ? "Not provided" : String(value);
+    return group;
+  }
+  function humanize(key) {
+    return key.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+  }
+  function answerText(value) {
+    if (Array.isArray(value)) return value.length ? value.join(", ") : "Not provided";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return value;
+  }
+  function showSubmission(item, trigger) {
+    const details = byId("submission-detail-list");
+    details.replaceChildren(
+      detailRow("Speaker", item.speaker_name),
+      detailRow("Email", item.speaker_email),
+      detailRow("Title", item.proposal_title),
+      detailRow("Abstract", item.proposal_abstract),
+      detailRow("Status", item.status),
+      detailRow("Submitted", new Date(item.submitted_at_ms).toLocaleString()),
+      detailRow("Routed category", item.routed_category),
+      detailRow("Routed track", item.routed_track),
+      detailRow("Review queue", item.routed_review_queue),
+      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(humanize(key), answerText(value)))
+    );
+    const dialog = byId("submission-detail");
+    dialog.addEventListener("close", () => trigger.focus(), { once: true });
+    dialog.showModal();
+  }
   async function load() {
     try {
       const session = await api("/api/v1/auth/session");
@@ -60,7 +93,7 @@
       if (!result.data.length) {
         const row = document.createElement("tr");
         const cell = document.createElement("td");
-        cell.colSpan = 5;
+        cell.colSpan = 6;
         cell.textContent = "No submissions yet.";
         row.append(cell);
         body.append(row);
@@ -81,6 +114,14 @@
           cell.textContent = value;
           row.append(cell);
         });
+        const detailCell = document.createElement("td");
+        const detailButton = document.createElement("button");
+        detailButton.type = "button";
+        detailButton.className = "secondary";
+        detailButton.textContent = "View details";
+        detailButton.addEventListener("click", () => showSubmission(item, detailButton));
+        detailCell.append(detailButton);
+        row.append(detailCell);
         body.append(row);
       });
       byId("status").textContent = `${result.data.length} submission${result.data.length === 1 ? "" : "s"}.`;

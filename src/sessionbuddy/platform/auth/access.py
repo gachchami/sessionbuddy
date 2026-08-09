@@ -1227,7 +1227,7 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
         .first()
     )
     submission_context = None
-    if user is None and invitation is None and body.form_slug is not None:
+    if body.form_slug is not None:
         submission_context = row_mapping(
             await db.prepare(
                 """SELECT organization_id,event_id FROM call_for_speaker_forms
@@ -1236,9 +1236,17 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
             .bind(body.form_slug)
             .first()
         )
-    if user is None and invitation is None and submission_context is None:
+    if invitation is not None:
+        context = invitation
+        provisioning_context = "invitation"
+    elif submission_context is not None:
+        context = submission_context
+        provisioning_context = "submission"
+    elif user is not None:
+        context = user
+        provisioning_context = "existing_user"
+    else:
         return GenericAccepted()
-    context = invitation or user or submission_context
     now, raw_token, challenge_id = utc_now_ms(), generate_token(), new_id()
     await (
         db.prepare(
@@ -1251,13 +1259,7 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
             challenge_id,
             normalized,
             hash_token(raw_token),
-            (
-                "invitation"
-                if invitation is not None
-                else "existing_user"
-                if user is not None
-                else "submission"
-            ),
+            provisioning_context,
             body.redirect_path,
             now + 15 * 60 * 1000,
             now,
@@ -1404,28 +1406,38 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
             )
         )
         await batch.execute()
-    elif user_id is None and challenge["provisioning_context"] == "submission":
-        user_id = new_id()
-        batch = CommandBatch(db)
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO users
-                   (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?2,'active',?3,?3,?3)"""
-            ).bind(user_id, challenge["normalized_email"], now)
+    elif challenge["provisioning_context"] == "submission":
+        existing_user = row_mapping(
+            await db.prepare("SELECT id FROM users WHERE normalized_email=?1 LIMIT 1")
+            .bind(challenge["normalized_email"])
+            .first()
         )
+        user_id = str(existing_user["id"]) if existing_user is not None else new_id()
+        batch = CommandBatch(db)
+        if existing_user is None:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO users
+                       (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?2,'active',?3,?3,?3)"""
+                ).bind(user_id, challenge["normalized_email"], now)
+            )
         batch.add_statement(
             db.prepare(
                 """INSERT INTO organization_memberships
                    (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,'member','active',?4,?4)"""
+                   VALUES(?1,?2,?3,'member','active',?4,?4)
+                   ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
+                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
             ).bind(new_id(), challenge["organization_id"], user_id, now)
         )
         batch.add_statement(
             db.prepare(
                 """INSERT INTO event_memberships
                    (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)"""
+                   VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
+                   ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
+                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
             ).bind(new_id(), challenge["organization_id"], challenge["event_id"], user_id, now)
         )
         await _add_speaker_profile(

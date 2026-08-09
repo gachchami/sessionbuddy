@@ -707,3 +707,91 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
         "identity.invitation.create",
         "identity.invitation.revoke",
     }
+
+
+async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        bootstrap = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Admin Speaker Events",
+                "admin_name": "Admin Speaker",
+                "admin_email": "admin@example.com",
+                "event_name": "Admin Speaker Summit",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "UTC",
+            },
+        )
+        organization_id = bootstrap.json()["organization_id"]
+        event_id = bootstrap.json()["event_id"]
+        await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin/events"},
+        )
+        await client.get(
+            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            follow_redirects=False,
+        )
+        session = (await client.get("/api/v1/auth/session")).json()
+        headers = {"origin": "https://test", "x-csrf-token": session["csrf_token"]}
+        program = await client.post(
+            "/api/v1/admin/programs",
+            headers={**headers, "idempotency-key": "admin-speaker-program"},
+            json={
+                "organization_id": organization_id,
+                "event_id": event_id,
+                "name": "Admin Speaker CFP",
+            },
+        )
+        published = await client.post(
+            f"/api/v1/admin/programs/{program.json()['id']}/forms/publish",
+            headers={**headers, "idempotency-key": "admin-speaker-form"},
+            json={"slug": "admin-speaker", "welcome_text": "Share your proposal."},
+        )
+        assert published.status_code == 201
+        assert (await client.get("/api/v1/speaker/portal")).status_code == 404
+
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={
+                "email": "admin@example.com",
+                "form_slug": "admin-speaker",
+                "redirect_path": "/cfp/admin-speaker",
+            },
+        )
+        assert requested.status_code == 202
+        challenge = connection.execute(
+            """SELECT provisioning_context,event_id FROM authentication_challenges
+               ORDER BY created_at_ms DESC,id DESC LIMIT 1"""
+        ).fetchone()
+        assert tuple(challenge) == ("submission", event_id)
+        verified = await client.get(
+            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            follow_redirects=False,
+        )
+        assert verified.status_code == 303
+        assert verified.headers["location"] == "/cfp/admin-speaker"
+        cfp_session = (await client.get("/api/v1/auth/session")).json()
+        event_access = next(
+            access for access in cfp_session["event_access"] if access["event_id"] == event_id
+        )
+        assert event_access["roles"] == ["event_admin", "speaker"]
+        cfp_headers = {
+            "origin": "https://test",
+            "x-csrf-token": cfp_session["csrf_token"],
+        }
+        draft = await client.put(
+            "/api/v1/forms/admin-speaker/draft",
+            headers=cfp_headers,
+            json={"answers": {"proposal_title": "Admin on stage"}, "version": 0},
+        )
+        assert draft.status_code == 200
+        assert draft.json()["version"] == 1
+        portal = await client.get("/api/v1/speaker/portal")
+        assert portal.status_code == 200
+        assert portal.json()["event"]["id"] == event_id
