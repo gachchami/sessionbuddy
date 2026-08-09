@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -106,3 +107,13 @@ def test_dashboard_cursor_is_signed_and_filter_bound() -> None:
             state="open",
             task_type="profile",
         )
+
+
+def test_asset_slot_versions_by_speaker_session_and_kind_not_task_id() -> None:
+    source = (
+        Path(__file__).parents[2] / "src/sessionbuddy/speaker_operations/router.py"
+    ).read_text()
+    slot_query = source.split("slot = row_mapping(", 1)[1].split("asset_id =", 1)[0]
+    assert "COALESCE(task_id" not in slot_query
+    assert "AND kind = ?5" in slot_query
+    assert "COALESCE(submission_id, '') = COALESCE(?6, '')" in source

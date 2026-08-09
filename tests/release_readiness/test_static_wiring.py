@@ -77,6 +77,7 @@ def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
     assert 'dataset.layout = galleryLayout ? "gallery" : "directory"' in gallery
     assert 'byId("speaker-search").addEventListener("input", render)' in gallery
     assert 'byId("speaker-profile")' in gallery
+    assert "speaker.links" in gallery
 
 
 def test_custom_speaker_task_retries_reuse_idempotency_keys() -> None:
@@ -89,11 +90,15 @@ def test_speaker_message_retries_reuse_idempotency_key() -> None:
     script = (STATIC / "speaker_directory.js").read_text()
     assert "messageMutation" in script
     assert "already queued recipients will not be duplicated" in script
+    assert "Delivery was confirmed from message history" in script
 
 
 def test_public_schedule_export_reports_success() -> None:
     script = (STATIC / "schedule.js").read_text()
     assert "Downloaded ${selected.length} session" in script
+    assert "weekday" in script
+    assert "schedule-search" in script
+    assert "sessionsOnly" in script
 
 
 def test_cfp_signed_in_email_help_is_not_duplicated() -> None:

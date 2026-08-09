@@ -183,7 +183,11 @@
     ["display_name", "job_title", "company", "location", "biography"].forEach((name) => {
       form.elements[name].value = profile[name] || "";
     });
-    form.elements.website.value = profile.links?.[0] || "";
+    const links = profile.links || [];
+    form.elements.linkedin.value = links.find((value) => { try { return new URL(value).hostname.toLowerCase().endsWith("linkedin.com"); } catch (_) { return false; } }) || "";
+    const remaining = links.filter((value) => value !== form.elements.linkedin.value);
+    form.elements.website.value = remaining[0] || "";
+    form.elements.social_link.value = remaining[1] || "";
     state.version = profile.version;
     updateBiographyCount();
     clearErrors();
@@ -252,11 +256,12 @@
     const errors = [];
     if (!values.display_name.trim()) errors.push({ field: "display_name", message: "Enter your name." });
     if (!values.biography.trim()) errors.push({ field: "biography", message: "Enter your biography." });
-    if (values.website) {
+    for (const field of ["website", "linkedin", "social_link"]) {
+      if (!values[field]) continue;
       try {
-        const url = new URL(values.website);
+        const url = new URL(values[field]);
         if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-      } catch (_) { errors.push({ field: "website", message: "Enter a complete HTTP or HTTPS website address." }); }
+      } catch (_) { errors.push({ field, message: "Enter a complete HTTP or HTTPS address." }); }
     }
     return errors;
   }
@@ -286,8 +291,10 @@
     const button = byId("save-profile");
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const errors = clientErrors(values);
-    values.links = values.website ? [values.website] : [];
+    values.links = [values.website, values.linkedin, values.social_link].filter(Boolean);
     delete values.website;
+    delete values.linkedin;
+    delete values.social_link;
     if (errors.length) { showErrors(errors); return; }
     clearErrors();
     button.disabled = true;

@@ -1,8 +1,8 @@
 (() => {
   "use strict";
   const REFRESH_MS = 5000;
-  const ALLOWED_STATES = new Set(["", "open", "completed", "overdue", "due_soon"]);
-  const ALLOWED_TASK_TYPES = new Set(["", "biography", "profile", "headshot", "slides", "supporting_document"]);
+  const ALLOWED_STATES = new Set(["all", "open", "completed", "overdue", "due_soon"]);
+  const ALLOWED_TASK_TYPES = new Set(["", "profile", "headshot", "slides", "supporting_document", "custom"]);
   const routeMatch = location.pathname.match(/^\/admin\/events\/([^/]+)\/onboarding$/);
   let eventId = "";
   try { eventId = routeMatch ? decodeURIComponent(routeMatch[1]) : ""; } catch (_) { eventId = ""; }
@@ -48,7 +48,7 @@
     const selectedState = byId("state").value;
     const taskType = byId("task-type").value;
     return {
-      state: ALLOWED_STATES.has(selectedState) ? selectedState : "",
+      state: ALLOWED_STATES.has(selectedState) ? selectedState : "all",
       task_type: ALLOWED_TASK_TYPES.has(taskType) ? taskType : ""
     };
   }
@@ -56,7 +56,7 @@
   function query(cursor = null) {
     const params = new URLSearchParams();
     const filters = selectedFilters();
-    if (filters.state) params.set("state", filters.state);
+    params.set("state", filters.state);
     if (filters.task_type) params.set("task_type", filters.task_type);
     if (cursor) params.set("cursor", cursor);
     return params.toString();
@@ -65,7 +65,7 @@
   function preserveFilters() {
     const params = new URLSearchParams();
     const filters = selectedFilters();
-    if (filters.state) params.set("state", filters.state);
+    if (filters.state !== "all") params.set("state", filters.state);
     if (filters.task_type) params.set("task_type", filters.task_type);
     history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
   }
@@ -90,8 +90,11 @@
       const td = make("td", value, index === 1 ? "task-name" : index === 2 && isOverdue(row) ? "overdue" : ""); tr.append(td);
     });
     const action = document.createElement("td");
-    const button = make("button", "Send reminder", "compact secondary"); button.type = "button";
-    button.addEventListener("click", () => sendReminder(row, button)); action.append(button); tr.append(action);
+    if (["open", "overdue", "due_soon"].includes(row.state)) {
+      const button = make("button", "Send reminder", "compact secondary"); button.type = "button";
+      button.addEventListener("click", () => sendReminder(row, button)); action.append(button);
+    } else action.append(make("span", row.state === "completed" ? "Completed" : "Waived", "muted"));
+    tr.append(action);
     byId("onboarding-rows").append(tr);
   }
 
@@ -103,9 +106,12 @@
     [["Session", row.proposal_title], ["Missing", row.task_title], ["Due", formatDate(row.due_at_ms)], ["Last activity", formatDate(row.last_activity_at_ms)]].forEach(([label, value]) => {
       list.append(make("dt", label), make("dd", value, label === "Due" && isOverdue(row) ? "overdue" : ""));
     });
-    const reminder = make("button", "Send reminder", "compact secondary"); reminder.type = "button";
-    reminder.addEventListener("click", () => sendReminder(row, reminder));
-    item.append(list, reminder); byId("onboarding-cards").append(item);
+    item.append(list);
+    if (["open", "overdue", "due_soon"].includes(row.state)) {
+      const reminder = make("button", "Send reminder", "compact secondary"); reminder.type = "button";
+      reminder.addEventListener("click", () => sendReminder(row, reminder)); item.append(reminder);
+    }
+    byId("onboarding-cards").append(item);
   }
 
   function speakerLink(row) {
@@ -137,6 +143,7 @@
     byId("count-overdue").textContent = summary.overdue;
     byId("count-due-soon").textContent = summary.due_soon;
     const incoming = data.data;
+    byId("list-title").textContent = selectedFilters().state === "open" ? "Outstanding tasks" : "Speaker tasks";
     if (!append) {
       state.rows = [];
       byId("onboarding-rows").replaceChildren();
@@ -189,9 +196,9 @@
 
   function initializeFilters() {
     const params = new URLSearchParams(location.search);
-    const selectedState = params.get("state") || "";
+    const selectedState = params.get("state") || "all";
     const taskType = params.get("task_type") || "";
-    byId("state").value = ALLOWED_STATES.has(selectedState) ? selectedState : "";
+    byId("state").value = ALLOWED_STATES.has(selectedState) ? selectedState : "all";
     byId("task-type").value = ALLOWED_TASK_TYPES.has(taskType) ? taskType : "";
     preserveFilters();
   }

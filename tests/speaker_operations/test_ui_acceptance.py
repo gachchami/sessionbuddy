@@ -31,6 +31,14 @@ def test_dashboard_has_actor_scoped_links_and_graceful_reminder_action() -> None
     assert 'id="status"' in html and 'aria-live="polite"' in html
 
 
+def test_dashboard_all_tasks_filter_is_explicit_and_completed_rows_have_no_reminder() -> None:
+    javascript = source("admin_onboarding.js")
+    html = source("admin_onboarding.html")
+    assert '<option value="all">All tasks</option>' in html
+    assert 'params.set("state", filters.state)' in javascript
+    assert '["open", "overdue", "due_soon"].includes(row.state)' in javascript
+
+
 def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     javascript = source("speaker_portal.js")
     html = source("speaker_portal.html")
@@ -48,6 +56,9 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert "object_key" not in javascript
     assert "innerHTML" not in javascript
     assert 'url.hostname.endsWith(".r2.cloudflarestorage.com")' in javascript
+    assert 'id="linkedin"' in html
+    assert 'id="social-link"' in html
+    assert '[values.website, values.linkedin, values.social_link]' in javascript
 
 
 def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:

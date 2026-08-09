@@ -1,4 +1,6 @@
 .schedule-filters { display: flex; gap: .5rem; max-width: 100%; overflow-x: auto; margin: 1.25rem 0; padding-bottom: .25rem; }
+.schedule-search { display: grid; gap: .4rem; max-width: 34rem; margin-top: 1.25rem; font-weight: 700; }
+.schedule-search input { width: 100%; }
 .schedule-filters button { min-width: max-content; }
 .schedule { display: grid; gap: 1.15rem; }
 .schedule.week-view { grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); align-items: start; }

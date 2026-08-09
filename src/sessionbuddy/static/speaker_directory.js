@@ -17,14 +17,14 @@
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   async function loadMessageHistory() {
-    if (!selectedEventId) return;
+    if (!selectedEventId) return [];
     const result = await api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/communications`);
     const body = byId("message-history");
     body.replaceChildren();
     if (!result.data.length) {
       const row = document.createElement("tr");
       const cell = document.createElement("td"); cell.colSpan = 4; cell.textContent = "No messages sent for this event yet.";
-      row.append(cell); body.append(row); return;
+      row.append(cell); body.append(row); return result.data;
     }
     for (const message of result.data) {
       const row = document.createElement("tr");
@@ -33,6 +33,7 @@
       });
       body.append(row);
     }
+    return result.data;
   }
 
   function speakerCard(item) {
@@ -248,7 +249,21 @@
       } catch (_) {
         byId("status").textContent = `${result.message_ids.length} message${result.message_ids.length === 1 ? "" : "s"} queued. Delivery history could not be refreshed yet.`;
       }
-    } catch (error) { byId("status").textContent = `${window.SessionBuddyApi.message(error)} Retry Send; already queued recipients will not be duplicated.`; byId("status").classList.add("error"); button.disabled = false; }
+    } catch (error) {
+      try {
+        const history = await loadMessageHistory();
+        const selectedIds = new Set(previewedMessage.event_speaker_ids);
+        const expectedEmails = new Set(allSpeakers.filter((speaker) => selectedIds.has(speaker.event_speaker_id)).map((speaker) => speaker.email));
+        const delivered = history.filter((message) => message.subject === previewedMessage.subject && expectedEmails.has(message.recipient_email));
+        if (expectedEmails.size && new Set(delivered.map((message) => message.recipient_email)).size === expectedEmails.size) {
+          event.currentTarget.reset(); document.querySelectorAll('input[name="speaker_recipient"]').forEach((input) => { input.checked = false; });
+          previewedMessage = null; messageMutation = null; byId("message-preview").hidden = true;
+          byId("status").classList.remove("error"); byId("status").textContent = `${expectedEmails.size} message${expectedEmails.size === 1 ? "" : "s"} queued. Delivery was confirmed from message history.`;
+          return;
+        }
+      } catch (_) { /* Keep the original delivery error below. */ }
+      byId("status").textContent = `${window.SessionBuddyApi.message(error)} Retry Send; already queued recipients will not be duplicated.`; byId("status").classList.add("error"); button.disabled = false;
+    }
   });
 
   initialize().catch((error) => {

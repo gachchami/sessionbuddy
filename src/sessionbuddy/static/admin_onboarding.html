@@ -29,13 +29,13 @@
     <section class="panel" aria-labelledby="filters-title">
       <div class="section-heading"><h2 id="filters-title">Filters</h2><button id="refresh" class="secondary" type="button">Refresh</button></div>
       <form id="filters" class="filters">
-        <label for="state">Task state<select id="state" name="state"><option value="">All tasks</option><option value="open">All outstanding</option><option value="completed">Completed</option><option value="overdue">Overdue outstanding</option><option value="due_soon">Due-soon outstanding</option></select></label>
-        <label for="task-type">Task type<select id="task-type" name="task_type"><option value="">All task types</option><option value="biography">Biography</option><option value="profile">Profile</option><option value="headshot">Headshot</option><option value="slides">Slides</option><option value="supporting_document">Supporting document</option></select></label>
+        <label for="state">Task state<select id="state" name="state"><option value="all">All tasks</option><option value="open">All outstanding</option><option value="completed">Completed</option><option value="overdue">Overdue outstanding</option><option value="due_soon">Due-soon outstanding</option></select></label>
+        <label for="task-type">Task type<select id="task-type" name="task_type"><option value="">All task types</option><option value="profile">Profile</option><option value="headshot">Headshot</option><option value="slides">Slides</option><option value="supporting_document">Supporting document</option><option value="custom">Custom task</option></select></label>
         <div class="filter-actions"><button type="submit">Apply filters</button><button id="clear-filters" class="secondary" type="button">Clear</button></div>
       </form>
     </section>
     <section class="panel" aria-labelledby="list-title" aria-busy="true" id="results-panel">
-      <div class="section-heading"><h2 id="list-title">Speakers needing attention</h2><span id="result-count" class="count">—</span></div>
+      <div class="section-heading"><h2 id="list-title">Speaker tasks</h2><span id="result-count" class="count">—</span></div>
       <div class="desktop-table"><table><thead><tr><th scope="col">Speaker</th><th scope="col">Session</th><th scope="col">Missing task</th><th scope="col">Due</th><th scope="col">Last activity</th><th scope="col">Action</th></tr></thead><tbody id="onboarding-rows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
       <ul id="onboarding-cards" class="mobile-cards" aria-label="Onboarding results"><li>Loading…</li></ul>
       <div id="empty" class="empty" hidden><strong>No speakers match this view.</strong><p>Try clearing a filter, or check again after new onboarding activity.</p></div>

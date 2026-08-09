@@ -39,6 +39,9 @@ def test_existing_agenda_can_manage_resources_and_build_a_draft() -> None:
     assert "/agenda/auto-schedule" in javascript
     assert "/agenda/${kind}s" in javascript
     assert "Review the draft before publishing" in javascript
+    assert "Publishing agenda" in javascript
+    assert "published_revision" in javascript
+    assert "weekday" in javascript
 
 
 def test_scheduled_session_can_be_returned_to_unscheduled_list() -> None:

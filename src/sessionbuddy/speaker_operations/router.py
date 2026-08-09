@@ -261,7 +261,7 @@ async def _admin_event(request: Request, event_id: str):
 async def get_admin_onboarding_dashboard(
     event_id: str,
     request: Request,
-    state: Literal["open", "completed", "overdue", "due_soon"] = "open",
+    state: Literal["all", "open", "completed", "overdue", "due_soon"] = "all",
     task_type: Literal["profile", "headshot", "slides", "supporting_document", "custom"]
     | None = None,
     cursor: str | None = None,
@@ -336,6 +336,7 @@ async def get_admin_onboarding_dashboard(
         or {}
     )
     state_sql = {
+        "all": "t.state IN ('open', 'completed', 'waived')",
         "open": "t.state = 'open'",
         "completed": "t.state = 'completed'",
         "overdue": "t.state = 'open' AND t.due_at_ms < ?5",
@@ -1398,14 +1399,13 @@ async def authorize_speaker_upload(
         await db.prepare(
             """SELECT id FROM speaker_assets WHERE organization_id = ?1 AND event_id = ?2
            AND event_speaker_id = ?3 AND COALESCE(submission_id, '') = COALESCE(?4, '')
-           AND COALESCE(task_id, '') = COALESCE(?5, '') AND kind = ?6 LIMIT 1"""
+           AND kind = ?5 ORDER BY created_at_ms, id LIMIT 1"""
         )
         .bind(
             speaker["organization_id"],
             event_id,
             speaker["event_speaker_id"],
             body.submission_id,
-            body.task_id,
             body.kind,
         )
         .first()
@@ -1596,7 +1596,7 @@ async def complete_speaker_upload(
                   ui.expected_content_type, ui.expected_byte_size,
                   ui.expected_checksum_sha256, ui.expires_at_ms, ui.consumed_at_ms,
                   av.id AS version_id, av.asset_id, av.object_key, av.generation,
-                  av.scan_state, a.kind
+                  av.scan_state, a.kind, a.submission_id
            FROM upload_intents ui
            JOIN speaker_asset_versions av ON av.organization_id = ui.organization_id
             AND av.event_id = ui.event_id AND av.id = ui.asset_version_id
@@ -1749,13 +1749,15 @@ async def complete_speaker_upload(
                 """UPDATE speaker_tasks SET state = 'completed', completed_at_ms = ?1,
                       version = version + 1, updated_at_ms = ?1
                WHERE organization_id = ?2 AND event_id = ?3 AND event_speaker_id = ?4
-                 AND task_type = ?5 AND state = 'open'"""
+                 AND task_type = ?5 AND state = 'open'
+                 AND COALESCE(submission_id, '') = COALESCE(?6, '')"""
             ).bind(
                 now,
                 speaker["organization_id"],
                 event_id,
                 speaker["event_speaker_id"],
                 row["kind"],
+                row["submission_id"],
             )
         )
         state = "clean"

@@ -5,8 +5,9 @@
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(eventId)) eventId = "";
   const embedded = location.pathname.startsWith("/embeds/");
+  const sessionsOnly = location.pathname.endsWith("/sessions");
   const storageKey = `sessionbuddy:itinerary:${eventId}`;
-  const state = { model: null, view: location.pathname.endsWith("/sessions") ? "list" : "list", itinerary: new Set() };
+  const state = { model: null, view: "list", query: "", itinerary: new Set() };
   try { state.itinerary = new Set(JSON.parse(localStorage.getItem(storageKey) || "[]")); } catch (_) { state.itinerary = new Set(); }
   const byId = (id) => document.getElementById(id);
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
@@ -45,7 +46,8 @@
   }
   function toggleItinerary(id) { if (state.itinerary.has(id)) state.itinerary.delete(id); else state.itinerary.add(id); saveItinerary(); render(); }
   function render() {
-    const visible = state.view === "mine" ? state.model.items.filter((item) => state.itinerary.has(item.id)) : state.model.items;
+    const source = state.view === "mine" ? state.model.items.filter((item) => state.itinerary.has(item.id)) : state.model.items;
+    const visible = state.query ? source.filter((item) => [item.title, item.description, item.speaker_names, item.room_name, item.track_name].join(" ").toLowerCase().includes(state.query)) : source;
     const groups = new Map();
     visible.forEach((item) => { const key = group(item); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); });
     const root = byId("schedule"); root.replaceChildren(); root.classList.toggle("week-view", state.view === "week");
@@ -57,15 +59,18 @@
       const list = make("ol", undefined, "schedule-list");
       items.sort((a, b) => a.start_at_ms - b.start_at_ms).forEach((item) => {
         const row = make("li", undefined, "schedule-item");
-        const time = make("time", `${format(item.start_at_ms, { hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`); time.dateTime = new Date(item.start_at_ms).toISOString();
+        const time = make("time", `${format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`); time.dateTime = new Date(item.start_at_ms).toISOString();
         const details = document.createElement("div"); details.append(make("h3", item.title), make("p", `${item.speaker_names || "Speaker TBA"} · ${item.room_name}${item.track_name ? ` · ${item.track_name}` : ""}`));
         if (item.description) details.append(make("p", item.description, "description"));
         const add = make("button", state.itinerary.has(item.id) ? "✓" : "+", "itinerary-button"); add.type = "button"; add.setAttribute("aria-pressed", String(state.itinerary.has(item.id))); add.setAttribute("aria-label", `${state.itinerary.has(item.id) ? "Remove" : "Add"} ${item.title} ${state.itinerary.has(item.id) ? "from" : "to"} my itinerary`); add.addEventListener("click", () => toggleItinerary(item.id));
-        row.append(time, details, add); list.append(row);
+        row.append(time, details);
+        if (!sessionsOnly) row.append(add);
+        list.append(row);
       }); section.append(list); root.append(section);
     });
   }
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; document.querySelectorAll("[data-view]").forEach((item) => { const active = item === button; item.setAttribute("aria-pressed", String(active)); item.classList.toggle("secondary", !active); }); render(); }));
+  byId("schedule-search").addEventListener("input", (event) => { state.query = event.currentTarget.value.trim().toLowerCase(); render(); });
   byId("download-calendar").addEventListener("click", downloadCalendar);
   async function load() {
     if (!eventId) throw new Error("Invalid schedule link");
@@ -77,7 +82,8 @@
       body = await window.SessionBuddyApi.request(`/api/v1/events/${encodeURIComponent(eventId)}/schedule`);
     }
     state.model = body; document.body.classList.toggle("embedded", embedded);
-    byId("title").textContent = body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
+    if (sessionsOnly) document.querySelector(".schedule-filters").hidden = true;
+    byId("title").textContent = sessionsOnly ? `${body.event.name} sessions` : body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
     byId("timezone").textContent = body.revision
       ? `Times shown in ${body.event.time_zone}. Published revision ${body.revision.version}.`
       : `Times will be shown in ${body.event.time_zone}.`;

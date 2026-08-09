@@ -196,6 +196,14 @@ async def _speaker_ids(db, organization_id: str, event_id: str, accepted_session
 
 async def _agenda_model(db, event, revision) -> dict[str, object]:
     organization_id, event_id = str(event["organization_id"]), str(event["id"])
+    published_revision = row_mapping(
+        await db.prepare(
+            """SELECT id,revision_number,version FROM schedule_revisions
+               WHERE organization_id=?1 AND event_id=?2 AND status='published' LIMIT 1"""
+        )
+        .bind(organization_id, event_id)
+        .first()
+    )
     items = result_rows(
         await db.prepare(
             """SELECT ai.id,ai.accepted_session_id AS session_id,s.proposal_title AS title,
@@ -253,6 +261,7 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
             "version": revision["version"],
             "state": revision["status"],
         },
+        "published_revision": published_revision,
         "items": items,
         "unscheduled_sessions": unscheduled,
         "rooms": rooms,

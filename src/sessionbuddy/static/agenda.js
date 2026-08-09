@@ -150,7 +150,7 @@
         make(
           "p",
           `${
-            format(item.start_at_ms, { hour: "numeric", minute: "2-digit" })
+            format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
           }–${
             format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })
           } · ${item.room_name}`,
@@ -211,8 +211,9 @@
     byId("revision-card").hidden = false;
     byId("event-title").textContent = model.event.name;
     byId("timezone").textContent = `Draft agenda · ${model.event.time_zone}`;
-    byId("revision").textContent =
-      `v${model.revision.version} · ${model.revision.state}`;
+    byId("revision").textContent = model.published_revision
+      ? `Draft v${model.revision.version} · latest published revision ${model.published_revision.revision_number}`
+      : `v${model.revision.version} · ${model.revision.state}`;
     byId("published-link").href = `/events/${
       encodeURIComponent(eventId)
     }/schedule`;
@@ -445,6 +446,7 @@
   }
   async function restoreContent(item, historyVersion, button) {
     button.disabled = true;
+    status("Publishing agenda…");
     try {
       const content = await api(
         `/api/v1/admin/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(item.session_id)}/content/restore`,

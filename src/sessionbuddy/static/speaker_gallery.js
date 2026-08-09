@@ -8,6 +8,29 @@
   const byId = (id) => document.getElementById(id);
   const state = { speakers: [] };
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+  function openProfile(speaker, role) {
+    const dialog = byId("speaker-profile");
+    const content = byId("speaker-profile-content");
+    content.replaceChildren(make("h2", speaker.display_name));
+    if (role) content.append(make("p", role, "muted"));
+    if (speaker.biography) content.append(make("p", speaker.biography));
+    if (speaker.links?.length) {
+      const links = make("p", undefined, "speaker-links");
+      speaker.links.forEach((value, index) => {
+        const anchor = make("a", (() => { try { return new URL(value).hostname.replace(/^www\./, ""); } catch (_) { return "Profile"; } })());
+        anchor.href = value; anchor.target = "_blank"; anchor.rel = "noopener noreferrer";
+        if (index) links.append(" · ");
+        links.append(anchor);
+      });
+      content.append(links);
+    }
+    if (speaker.sessions.length) {
+      const list = document.createElement("ul");
+      speaker.sessions.forEach((session) => list.append(make("li", session.title)));
+      content.append(list);
+    }
+    dialog.showModal();
+  }
   function speakerCard(speaker) {
     const card = document.createElement("article"); card.className = "speaker-card";
     const media = document.createElement("div"); media.className = "speaker-card__media";
@@ -17,24 +40,10 @@
     const role = [speaker.job_title, speaker.company].filter(Boolean).join(" · "); if (role) body.append(make("p", role, "muted"));
     if (!galleryLayout && speaker.biography) body.append(make("p", speaker.biography, "speaker-bio"));
     if (speaker.sessions.length) { const list = document.createElement("ul"); list.className = "session-chips"; speaker.sessions.forEach((session) => list.append(make("li", session.title))); body.append(list); }
-    if (galleryLayout) {
-      const details = make("button", "View profile", "secondary");
-      details.type = "button";
-      details.addEventListener("click", () => {
-        const dialog = byId("speaker-profile");
-        const content = byId("speaker-profile-content");
-        content.replaceChildren(make("h2", speaker.display_name));
-        if (role) content.append(make("p", role, "muted"));
-        if (speaker.biography) content.append(make("p", speaker.biography));
-        if (speaker.sessions.length) {
-          const list = document.createElement("ul");
-          speaker.sessions.forEach((session) => list.append(make("li", session.title)));
-          content.append(list);
-        }
-        dialog.showModal();
-      });
-      body.append(details);
-    }
+    const details = make("button", "View profile", "secondary");
+    details.type = "button";
+    details.addEventListener("click", () => openProfile(speaker, role));
+    body.append(details);
     card.append(media, body); return card;
   }
   function render() {
@@ -54,7 +63,6 @@
   }
   byId("speaker-search").addEventListener("input", render);
   if (galleryLayout) {
-    byId("speaker-search-label").hidden = true;
     byId("speaker-grid").setAttribute("aria-label", "Speaker photo gallery");
   }
   load().catch((error) => { byId("status").textContent = window.SessionBuddyApi.message(error, "The speaker gallery is unavailable. Try again."); byId("status").classList.add("error-text"); });
