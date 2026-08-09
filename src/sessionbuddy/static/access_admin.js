@@ -4,12 +4,7 @@
   const eventId = match ? decodeURIComponent(match[1]) : "";
   const byId = (id) => document.getElementById(id);
   let csrf = "";
-  async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: "same-origin", ...options });
-    const body = response.status === 204 ? null : await response.json();
-    if (!response.ok) { const error = new Error(body?.error?.message || `Request failed (${response.status})`); error.status = response.status; throw error; }
-    return body;
-  }
+  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
   function item(text) { const node = document.createElement("li"); node.textContent = text; return node; }
   async function load() {
     const session = await api("/api/v1/auth/session");
@@ -48,8 +43,8 @@
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) }) });
       form.reset(); byId("status").textContent = "Invitation created and queued for delivery."; await load();
-    } catch (error) { byId("status").textContent = error.message; byId("status").focus(); }
+    } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").focus(); }
   });
   if (!eventId) { byId("status").textContent = "This event link is invalid."; return; }
-  load().catch((error) => { if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`); else byId("status").textContent = error.message; });
+  load().catch((error) => { if (!window.SessionBuddyApi.redirectIfSignedOut(error)) byId("status").textContent = window.SessionBuddyApi.message(error); });
 })();

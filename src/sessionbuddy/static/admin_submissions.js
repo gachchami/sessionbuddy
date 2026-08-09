@@ -29,11 +29,9 @@
   }
   async function api(path, options = {}) {
     const started = performance.now();
-    const response = await fetch(path, options);
-    recordTelemetry(started, response);
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error?.message || `Request failed (${response.status})`);
-    return body;
+    return window.SessionBuddyApi.request(path, options, {
+      onResponse: (response) => recordTelemetry(started, response)
+    });
   }
   async function load() {
     try {
@@ -90,7 +88,7 @@
       const currentRound = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds/current`);
       if (currentRound) showRound(currentRound);
     } catch (error) {
-      byId("status").textContent = `${error.message}. Return to Programs and sign in.`;
+      byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to Programs and try again.");
       byId("status").classList.add("error");
     }
   }
@@ -137,7 +135,7 @@
       byId("status").textContent = `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
       showRound(round);
     } catch (error) {
-      byId("status").textContent = error.message;
+      byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
       button.disabled = false;
     }

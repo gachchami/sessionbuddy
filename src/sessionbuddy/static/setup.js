@@ -4,16 +4,6 @@
   const status = document.getElementById("status");
   const submit = document.getElementById("complete-setup");
 
-  async function json(response) {
-    const body = await response.json();
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
-  }
-
   function validTimeZone(value) {
     if (!value) return true;
     try { new Intl.DateTimeFormat(undefined, { timeZone: value }).format(); return true; }
@@ -21,7 +11,7 @@
   }
 
   async function initialize() {
-    const state = await json(await fetch("/api/v1/setup/status", { credentials: "same-origin" }));
+    const state = await window.SessionBuddyApi.request("/api/v1/setup/status");
     if (state.configured) {
       location.replace("/");
       return;
@@ -55,14 +45,13 @@
     };
     let setupCompleted = false;
     try {
-      await json(await fetch("/api/v1/bootstrap", {
+      await window.SessionBuddyApi.request("/api/v1/bootstrap", {
         method: "POST",
-        credentials: "same-origin",
         headers: { "content-type": "application/json", "x-bootstrap-token": deploymentKey },
         body: JSON.stringify(payload)
-      }));
+      });
       setupCompleted = true;
-      await fetch("/api/v1/auth/magic-links", {
+      await window.SessionBuddyApi.request("/api/v1/auth/magic-links", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: values.admin_email, redirect_path: "/admin" })
@@ -76,7 +65,7 @@
       status.className = "status error";
       status.textContent = error.status === 404
         ? "The deployment setup key is missing or incorrect."
-        : error.message;
+        : window.SessionBuddyApi.message(error);
       status.focus();
       submit.disabled = false;
       form.setAttribute("aria-busy", "false");
@@ -85,7 +74,7 @@
 
   initialize().catch((error) => {
     status.className = "status error";
-    status.textContent = error.message;
+    status.textContent = window.SessionBuddyApi.message(error);
     status.focus();
   });
 })();

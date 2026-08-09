@@ -10,10 +10,7 @@
   const key = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 
   async function api(path, options = {}) {
-    const response = await fetch(path, { ...options, credentials: "same-origin", headers: { accept: "application/json", ...(options.headers || {}) } });
-    let body = null; try { body = await response.json(); } catch (_) { body = null; }
-    if (!response.ok) { const error = new Error(body?.error?.message || `Request failed (${response.status})`); error.status = response.status; error.body = body; throw error; }
-    return body;
+    return window.SessionBuddyApi.request(path, options);
   }
   function status(message, error = false) { byId("status").textContent = message; byId("status").classList.toggle("error", error); }
   function format(value, options = {}) { try { return new Intl.DateTimeFormat(undefined, { timeZone: state.model.event.time_zone, ...options }).format(new Date(value)); } catch (_) { return "Date unavailable"; } }

@@ -8,17 +8,7 @@
     return node;
   };
 
-  async function api(path) {
-    const response = await fetch(path, { credentials: "same-origin" });
-    let body = null;
-    try { body = await response.json(); } catch (_) { body = null; }
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
-  }
+  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function setStatus(message, error = false) {
     byId("status").textContent = message;
@@ -117,7 +107,6 @@
   }
 
   initialize().catch((error) => {
-    if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
-    else setStatus(error.message, true);
+    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();

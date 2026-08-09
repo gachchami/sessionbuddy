@@ -39,15 +39,9 @@
 
   async function api(path, options = {}) {
     const started = performance.now();
-    const response = await fetch(path, { ...options, credentials: "same-origin", headers: { accept: "application/json", ...(options.headers || {}) } });
-    recordTelemetry(started, response);
-    let body = null;
-    try { body = await response.json(); } catch (_) { body = null; }
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status; throw error;
-    }
-    return body;
+    return window.SessionBuddyApi.request(path, options, {
+      onResponse: (response) => recordTelemetry(started, response)
+    });
   }
 
   function selectedFilters() {

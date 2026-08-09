@@ -60,7 +60,9 @@ def _db(request: Request):
 async def _timed_first(request: Request, statement, column: str | None = None):
     started = perf_counter()
     try:
-        return await statement.first(column)
+        # D1 treats an explicit JavaScript null as a requested column named
+        # "null". Omit the argument entirely when the caller wants the row.
+        return await statement.first() if column is None else await statement.first(column)
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)
 

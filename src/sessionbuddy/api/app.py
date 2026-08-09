@@ -1,3 +1,7 @@
+import logging
+import time
+from html import escape
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -16,6 +20,8 @@ from sessionbuddy.platform.auth.access import access_router, setup_is_configured
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
+
+logger = logging.getLogger("sessionbuddy.error")
 
 app = FastAPI(
     title="Sessionbuddy API",
@@ -92,6 +98,9 @@ def _error_response(
     message: str,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
+    response_headers = _failure_headers(request)
+    if headers:
+        response_headers.update(headers)
     envelope = ErrorEnvelope(
         error=ErrorDetail(code=code, message=message),
         request_id=request.state.request_id,
@@ -99,12 +108,70 @@ def _error_response(
     return JSONResponse(
         status_code=status,
         content=envelope.model_dump(exclude_none=True),
-        headers=headers,
+        headers=response_headers,
+    )
+
+
+def _failure_headers(request: Request) -> dict[str, str]:
+    request_id = str(getattr(request.state, "request_id", ""))
+    started_ns = getattr(request.state, "request_started_ns", None)
+    headers = {"Cache-Control": "no-store"}
+    if request_id:
+        headers["X-Request-ID"] = request_id
+    if isinstance(started_ns, int):
+        elapsed_ms = max(0.0, (time.perf_counter_ns() - started_ns) / 1_000_000)
+        headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+    return headers
+
+
+def _expects_browser_page(request: Request) -> bool:
+    return not request.url.path.startswith("/api/") and "text/html" in request.headers.get(
+        "accept", ""
+    ).lower()
+
+
+def _browser_error_response(
+    request: Request,
+    *,
+    status: int,
+    title: str,
+    heading: str,
+    message: str,
+    primary_label: str,
+    primary_href: str,
+) -> HTMLResponse:
+    request_id = str(getattr(request.state, "request_id", ""))
+    reference = (
+        f'<p class="reference">Reference: {escape(request_id)}</p>' if request_id else ""
+    )
+    page = (
+        embedded_assets.ERROR_PAGE_HTML.replace("{{TITLE}}", escape(title))
+        .replace("{{STATUS}}", str(status))
+        .replace("{{HEADING}}", escape(heading))
+        .replace("{{MESSAGE}}", escape(message))
+        .replace("{{PRIMARY_LABEL}}", escape(primary_label))
+        .replace("{{PRIMARY_HREF}}", escape(primary_href, quote=True))
+        .replace("{{REFERENCE}}", reference)
+    )
+    return HTMLResponse(
+        page,
+        status_code=status,
+        headers=_failure_headers(request),
     )
 
 
 @app.exception_handler(404)
-async def not_found(request: Request, _exception: Exception) -> JSONResponse:
+async def not_found(request: Request, _exception: Exception) -> Response:
+    if _expects_browser_page(request):
+        return _browser_error_response(
+            request,
+            status=404,
+            title="Page not found",
+            heading="We could not find that page.",
+            message="The link may be outdated, or the page may have moved.",
+            primary_label="Open SessionBuddy",
+            primary_href="/admin",
+        )
     return _error_response(request, 404, "resource_not_found", "Resource not found")
 
 
@@ -140,4 +207,32 @@ async def validation_error(request: Request, _exception: RequestValidationError)
         422,
         "validation_failed",
         "The request could not be processed",
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exception: Exception) -> Response:
+    request_id = str(getattr(request.state, "request_id", ""))
+    logger.error(
+        "Unhandled request failure request_id=%s method=%s path=%s exception_type=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        type(exception).__name__,
+    )
+    if _expects_browser_page(request):
+        return _browser_error_response(
+            request,
+            status=500,
+            title="Something went wrong",
+            heading="We could not load this page.",
+            message="Try again. If the problem continues, share the reference below with support.",
+            primary_label="Try again",
+            primary_href=request.url.path,
+        )
+    return _error_response(
+        request,
+        500,
+        "internal_error",
+        "Something went wrong on our side. Try again.",
     )

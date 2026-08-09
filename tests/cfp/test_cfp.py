@@ -10,10 +10,35 @@ from sessionbuddy.api.app import app
 from sessionbuddy.cfp.models import FormPublish, ProgramCreate, SubmissionCreate
 from sessionbuddy.cfp.router import (
     _published_form_view,
+    _timed_first,
     _validate_draft_schema,
     _validate_submission_schema,
 )
 from sessionbuddy.console.models import BrowserTelemetryPayload
+
+
+class CloudflareFirstStatement:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, ...]] = []
+
+    async def first(self, *args: object):
+        self.calls.append(args)
+        if args == (None,):
+            raise RuntimeError("D1_COLUMN_NOTFOUND: Column not found (null)")
+        return {"id": "event-1"} if not args else "event-1"
+
+
+async def test_timed_first_omits_the_column_argument_for_full_rows() -> None:
+    request = SimpleNamespace(state=SimpleNamespace(timings={}))
+    statement = CloudflareFirstStatement()
+
+    row = await _timed_first(request, statement)
+    identifier = await _timed_first(request, statement, "id")
+
+    assert row == {"id": "event-1"}
+    assert identifier == "event-1"
+    assert statement.calls == [(), ("id",)]
+    assert request.state.timings["db"] >= 0
 
 
 def test_cfp_write_models_are_strict_and_bounded() -> None:

@@ -107,13 +107,11 @@
     signOut.addEventListener("click", async () => {
       signOut.disabled = true;
       try {
-        const response = await fetch("/api/v1/session/logout", {
+        await window.SessionBuddyApi.request("/api/v1/session/logout", {
           method: "POST",
-          credentials: "same-origin",
           headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
           body: "{}"
         });
-        if (!response.ok) throw new Error("Sign out failed");
         location.assign("/");
       } catch (_) {
         signOut.disabled = false;
@@ -280,13 +278,35 @@
     shell.replaceChildren(inner);
   }
 
+  function renderUnavailableShell() {
+    document.body.classList.add("sb-shell-guest");
+    const inner = make("div", undefined, "sb-guest-header__inner");
+    const brand = link("", "/");
+    brand.className = "sb-app-brand";
+    const mark = make("span", "S", "sb-app-brand__mark");
+    mark.setAttribute("aria-hidden", "true");
+    brand.append(mark, make("span", "SessionBuddy"));
+    const retry = make("button", "Try again", "sb-guest-sign-in");
+    retry.type = "button";
+    retry.addEventListener("click", () => location.reload());
+    inner.append(brand, make("span", "Temporarily unavailable"), retry);
+    shell.className = "sb-guest-header";
+    shell.replaceChildren(inner);
+  }
+
   async function initialize() {
-    const response = await fetch("/api/v1/auth/session", { credentials: "same-origin" });
-    if (!response.ok) {
+    let session;
+    try {
+      session = await window.SessionBuddyApi.request("/api/v1/auth/session");
+    } catch (error) {
+      if (error.status !== 401) {
+        if (shell) renderUnavailableShell();
+        return;
+      }
       if (landingAccount) {
         try {
-          const setupResponse = await fetch("/api/v1/setup/status", { credentials: "same-origin" });
-          if (setupResponse.ok && !(await setupResponse.json()).configured) {
+          const setupState = await window.SessionBuddyApi.request("/api/v1/setup/status");
+          if (!setupState.configured) {
             location.assign("/setup");
             return;
           }
@@ -296,14 +316,10 @@
       else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
       return;
     }
-    const session = await response.json();
     if (shell) renderShell(session);
     if (landingAccount) renderLandingAccount(session);
     window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));
   }
 
-  initialize().catch(() => {
-    if (shell?.hasAttribute("data-allow-guest")) renderGuestShell();
-    else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
-  });
+  initialize().catch(() => { if (shell) renderUnavailableShell(); });
 })();

@@ -10,12 +10,7 @@
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
   }
-  async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: "same-origin", ...options });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) throw Object.assign(new Error(body?.error?.message || `Request failed (${response.status})`), { status: response.status });
-    return body;
-  }
+  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
   function slug(value) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80); }
   function mutationHeaders() { return { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }; }
   function approvedEmbed(value) {
@@ -60,7 +55,7 @@
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/resources`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ title: values.title, slug: values.slug, summary: values.summary, body_text: values.body_text, embed_url: values.embed_url || null, status: values.status, sort_order: Number(values.sort_order) }) });
       event.currentTarget.reset(); delete event.currentTarget.elements.slug.dataset.edited; event.currentTarget.elements.sort_order.value = "0"; setStatus("Resource published to the speaker portal."); await loadResources();
-    } catch (error) { setStatus(error.message, true); }
+    } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
   byId("task-form").addEventListener("submit", async (event) => {
     event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget));
@@ -72,7 +67,7 @@
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-tasks`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ event_speaker_id: values.event_speaker_id, submission_id: null, title: values.title, help_text: values.help_text, due_at_ms: due, fields }) });
       event.currentTarget.reset(); setStatus("Custom task assigned to the speaker.");
-    } catch (error) { setStatus(error.message, true); }
+    } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
   byId("task-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("token-form").addEventListener("submit", async (event) => {
@@ -80,7 +75,7 @@
     try {
       const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/integrations/accelevents/tokens`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ label }) });
       byId("token-value").textContent = body.token; byId("token-result").hidden = false; event.currentTarget.reset(); setStatus("Read-only integration token generated.");
-    } catch (error) { setStatus(error.message, true); }
+    } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");
@@ -89,5 +84,5 @@
     byId("onboarding-link").href = `/admin/events/${encodeURIComponent(eventId)}/onboarding`;
     await Promise.all([loadResources(), loadTargets()]); setStatus("Resources ready.");
   }
-  initialize().catch((error) => { if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`); else setStatus(error.message, true); });
+  initialize().catch((error) => { if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true); });
 })();

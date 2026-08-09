@@ -32,16 +32,9 @@
 
   async function api(path, options = {}) {
     const started = performance.now();
-    const response = await fetch(path, { credentials: "same-origin", ...options });
-    recordTelemetry(started, response);
-    let body = null;
-    try { body = await response.json(); } catch (_) { body = null; }
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
+    return window.SessionBuddyApi.request(path, options, {
+      onResponse: (response) => recordTelemetry(started, response)
+    });
   }
 
   function make(tag, text, className) {
@@ -154,9 +147,13 @@
   }
 
   async function loadDraft() {
-    const response = await fetch(`/api/v1/forms/${encodeURIComponent(slug)}/draft`, { credentials: "same-origin" });
-    if (!response.ok) return;
-    const draft = await response.json();
+    let draft;
+    try {
+      draft = await api(`/api/v1/forms/${encodeURIComponent(slug)}/draft`);
+    } catch (error) {
+      if ([401, 404].includes(error.status)) return;
+      throw error;
+    }
     if (!draft) return;
     state.draftVersion = draft.version;
     restoreValues(draft.answers || {});
@@ -214,8 +211,13 @@
     });
     const uploadUrl = safeUploadUrl(authorization.upload_url);
     if (!uploadUrl || authorization.expires_at_ms <= Date.now()) throw new Error("The upload authorization expired.");
-    const upload = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": file.type, ...(authorization.headers || {}) }, body: file });
-    if (!upload.ok) throw new Error(`Upload failed (${upload.status}).`);
+    let upload;
+    try {
+      upload = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": file.type, ...(authorization.headers || {}) }, body: file });
+    } catch (_) {
+      throw new Error("The file could not be uploaded. Check your connection and try again.");
+    }
+    if (!upload.ok) throw new Error("The file could not be uploaded. Try again.");
     const completionPath = `/api/v1/speaker/events/${encodeURIComponent(state.form.event_id)}/upload-intents/${encodeURIComponent(authorization.intent_id)}/complete`;
     let completion = await api(completionPath, {
       method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
@@ -259,18 +261,18 @@
         setStatus(state.form.availability_message);
         return;
       }
-      const sessionResponse = await fetch("/api/v1/auth/session", { credentials: "same-origin" });
-      if (sessionResponse.ok) {
-        const session = await sessionResponse.json();
+      try {
+        const session = await api("/api/v1/auth/session");
         state.csrf = session.csrf_token;
         byId("proposal-card").hidden = false;
         setStatus("Your proposal is ready to edit.");
         await loadDraft();
-      } else {
+      } catch (error) {
+        if (error.status !== 401) throw error;
         byId("sign-in-card").hidden = false;
         setStatus("Sign in with your email address to begin.");
       }
-    } catch (error) { setStatus(error.message, "error"); }
+    } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   }
 
   byId("sign-in-form").addEventListener("submit", async (event) => {
@@ -292,7 +294,7 @@
       form.elements.email.disabled = false;
       button.disabled = false;
       button.textContent = "Sign in";
-      setStatus(error.message, "error");
+      setStatus(window.SessionBuddyApi.message(error, "We could not send the sign-in link. Try again."), "error");
     }
   });
 
@@ -314,7 +316,7 @@
       const draft = await api(`/api/v1/forms/${encodeURIComponent(slug)}/draft`, { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: JSON.stringify({ answers: answers({ includeUploads: false }), version: state.draftVersion }) });
       state.draftVersion = draft.version;
       setStatus("Draft saved.", "success");
-    } catch (error) { setStatus(error.message, "error"); }
+    } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   });
 
   byId("review-proposal").addEventListener("click", () => {
@@ -351,7 +353,7 @@
       }
       setStatus("Proposal submitted successfully.", "success");
     } catch (error) {
-      setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : error.message, "error");
+      setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : window.SessionBuddyApi.message(error), "error");
       byId("status").focus();
       button.disabled = false;
       button.textContent = "Confirm submission";

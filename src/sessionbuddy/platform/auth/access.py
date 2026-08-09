@@ -87,6 +87,24 @@ async def app_shell_javascript() -> Response:
     return Response(_asset("app_shell.js"), media_type="text/javascript")
 
 
+@access_router.get("/app-shell/assets/api-client.js", include_in_schema=False)
+async def api_client_javascript() -> Response:
+    return Response(
+        _asset("api_client.js"),
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@access_router.get("/app-shell/assets/error-page.css", include_in_schema=False)
+async def error_page_stylesheet() -> Response:
+    return Response(
+        _asset("error_page.css"),
+        media_type="text/css",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
 @access_router.get("/admin", include_in_schema=False)
 async def admin_home_page() -> Response:
     return Response(

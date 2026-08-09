@@ -18,12 +18,11 @@
   }
   async function load() {
     if (!eventId) throw new Error("Invalid speaker gallery link.");
-    const response = await fetch(`/api/v1/public/events/${encodeURIComponent(eventId)}/speakers`, { headers: { accept: "application/json" } });
-    const body = await response.json(); if (!response.ok) throw new Error(body?.error?.message || "Speaker gallery unavailable.");
+    const body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/speakers`);
     document.documentElement.style.setProperty("--blue", body.event.accent_color || "#3159d9"); byId("event-name").textContent = body.event.name;
     byId("schedule-link").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; }
     byId("speaker-grid").replaceChildren(...body.data.map(speakerCard)); byId("empty").hidden = body.data.length !== 0; byId("status").textContent = `${body.data.length} accepted speaker${body.data.length === 1 ? "" : "s"}.`;
   }
-  load().catch((error) => { byId("status").textContent = error.message; byId("status").classList.add("error-text"); });
+  load().catch((error) => { byId("status").textContent = window.SessionBuddyApi.message(error, "The speaker gallery is unavailable. Try again."); byId("status").classList.add("error-text"); });
 })();

@@ -17,16 +17,7 @@
     catch (_) { return false; }
   }
 
-  async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: "same-origin", ...options });
-    const body = await response.json();
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
-  }
+  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function setProfile(profile) {
     const form = byId("profile-form");
@@ -106,7 +97,7 @@
       window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
     } catch (error) {
       byId("status").className = "status error";
-      byId("status").textContent = error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : error.message;
+      byId("status").textContent = error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : window.SessionBuddyApi.message(error);
       byId("status").focus();
     } finally {
       button.disabled = false;
@@ -114,7 +105,9 @@
   });
 
   initialize().catch((error) => {
-    if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
-    else { byId("status").textContent = error.message; byId("status").classList.add("error"); }
+    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
+      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").classList.add("error");
+    }
   });
 })();

@@ -18,6 +18,10 @@ const appShellJavaScript = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/app_shell.js"),
   "utf8",
 );
+const apiClientJavaScript = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/api_client.js"),
+  "utf8",
+);
 const homepageUrl = /^https?:\/\/[^/]+\/(?:\?.*)?$/;
 
 async function serveConfiguredHomepage(page: import("@playwright/test").Page) {
@@ -29,6 +33,9 @@ async function serveConfiguredHomepage(page: import("@playwright/test").Page) {
   });
   await page.route("**/app-shell/assets/app-shell.css*", async (route) => {
     await route.fulfill({ contentType: "text/css", body: appShellCss });
+  });
+  await page.route("**/app-shell/assets/api-client.js*", async (route) => {
+    await route.fulfill({ contentType: "text/javascript", body: apiClientJavaScript });
   });
   await page.route("**/app-shell/assets/app-shell.js*", async (route) => {
     await route.fulfill({ contentType: "text/javascript", body: appShellJavaScript });

@@ -90,7 +90,7 @@
         {
           "binding": "DB",
           "database_name": "sessionbuddy-development",
-          "database_id": "bafabb77-7cbd-4b3b-bc30-7df9b9d078e2",
+          "database_id": "194988de-5006-453c-ae49-f7f10dd6c46f",
           "migrations_dir": "migrations"
         }
       ],

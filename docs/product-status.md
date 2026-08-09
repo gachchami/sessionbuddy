@@ -8,7 +8,8 @@ are no longer used as product or architecture terminology.
 Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded browser-based first-run setup for a named
 administrator, passwordless email identity, invitation and
 submission-context provisioning, opaque sessions, RBAC, CSRF/origin protection,
-rate limiting, structured errors, request IDs, observability, containerized
+rate limiting, structured API errors, safe shared browser error handling,
+branded browser 404/500 recovery pages, request IDs, observability, containerized
 development, editable account profiles, browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
 
@@ -62,7 +63,8 @@ coverage, large-dataset seeding, database backup/restore checks, desktop and
 mobile browser form/flow tests (including rejected invalid writes), API benchmarks,
 Lighthouse audits, Cloudflare packaging, remote D1
 migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
-health checks, browser-route checks, and the anonymous identity boundary.
+health checks, browser-route checks, desktop/mobile API-failure recovery checks,
+and the anonymous identity boundary.
 
 The isolated Cloudflare development rehearsal is complete with 23 passing
 preflight checks. Resend and direct-R2 credentials are configured, the

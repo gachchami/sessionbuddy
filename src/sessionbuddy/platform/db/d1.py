@@ -1,13 +1,17 @@
 """Minimal protocols and conversion boundary for the Cloudflare D1 FFI proxy."""
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, cast, overload
 
 
 class D1PreparedStatement(Protocol):
     def bind(self, *values: object) -> "D1PreparedStatement": ...
 
-    async def first(self, column: str | None = None) -> Any: ...
+    @overload
+    async def first(self) -> Any: ...
+
+    @overload
+    async def first(self, column: str) -> Any: ...
 
     async def run(self) -> Any: ...
 

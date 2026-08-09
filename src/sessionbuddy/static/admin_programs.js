@@ -8,8 +8,8 @@
   ];
   const state = { context: null, csrf: null, program: null, publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
-  const json = () => ({ "content-type": "application/json" });
-  const admin = () => ({ ...json(), "x-csrf-token": state.csrf });
+  const jsonHeaders = () => ({ "content-type": "application/json" });
+  const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
   const key = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 
   function recordTelemetry(started, response) {
@@ -34,15 +34,9 @@
 
   async function api(path, options = {}) {
     const started = performance.now();
-    const response = await fetch(path, options);
-    recordTelemetry(started, response);
-    const body = response.status === 204 ? null : await response.json();
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
+    return window.SessionBuddyApi.request(path, options, {
+      onResponse: (response) => recordTelemetry(started, response)
+    });
   }
 
   function setStatus(message, error = false) {
@@ -353,7 +347,7 @@
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         return;
       }
-      setStatus(error.message, true);
+      setStatus(window.SessionBuddyApi.message(error), true);
     }
   }
 
@@ -376,7 +370,7 @@
       renderWorkspace();
       setStatus("Program created. Review and publish its public form.");
     } catch (error) {
-      setStatus(error.message, true);
+      setStatus(window.SessionBuddyApi.message(error), true);
     }
   });
 
@@ -409,7 +403,7 @@
       renderWorkspace();
       setStatus("Form published successfully.");
     } catch (error) {
-      setStatus(error.status === 409 ? "That public slug is already in use. Choose another." : error.message, true);
+      setStatus(error.status === 409 ? "That public slug is already in use. Choose another." : window.SessionBuddyApi.message(error), true);
     }
   });
 

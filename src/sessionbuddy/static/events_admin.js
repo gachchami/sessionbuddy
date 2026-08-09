@@ -14,16 +14,7 @@
     ["Etc/UTC", "UTC"]
   ]);
 
-  async function api(path, options = {}) {
-    const response = await fetch(path, { credentials: "same-origin", ...options });
-    const body = response.status === 204 ? null : await response.json();
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
-  }
+  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function setStatus(message, error = false) {
     const status = byId("status");
@@ -445,10 +436,6 @@
 
   populateTimeZones();
   initialize().catch((error) => {
-    if (error.status === 401) {
-      location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
-    } else {
-      setStatus(error.message, true);
-    }
+    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();

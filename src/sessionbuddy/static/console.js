@@ -56,10 +56,11 @@
   async function load() {
     const started = performance.now();
     try {
-      const response = await fetch("/api/v1/engine-room/status", { headers: { accept: "application/json" } });
-      if (!response.ok) throw new Error(`Status API returned ${response.status}`);
-      const model = await response.json();
-      const requestId = response.headers.get("x-request-id");
+      let responseEvidence = null;
+      const model = await window.SessionBuddyApi.request("/api/v1/engine-room/status", {}, {
+        onResponse: (response) => { responseEvidence = response; }
+      });
+      const requestId = responseEvidence?.headers.get("x-request-id");
       const requestMs = Math.max(0, performance.now() - started);
       byId("api-state").textContent = "Healthy response";
       byId("environment").textContent = `${model.environment} · ${model.data_classification}`;
@@ -68,7 +69,7 @@
       byId("request-id").textContent = requestId || "Unavailable";
       byId("notice").textContent = "Current API evidence loaded. Historical charts are not connected yet.";
 
-      const timings = parseServerTiming(response.headers.get("server-timing"));
+      const timings = parseServerTiming(responseEvidence?.headers.get("server-timing"));
       const timingList = byId("timings"); timingList.replaceChildren();
       (timings.length ? timings : [{ name: "round trip", duration: requestMs }]).forEach((item) => {
         const wrap = document.createElement("div");
@@ -105,7 +106,7 @@
       window.__sessionbuddyTelemetryDraft = telemetryDraft(requestId, requestMs);
     } catch (error) {
       byId("api-state").textContent = "Unavailable";
-      byId("notice").textContent = `Telemetry missing: ${error.message}`;
+      byId("notice").textContent = window.SessionBuddyApi.message(error, "Platform status is unavailable. Try again.");
       byId("notice").classList.add("error");
     }
   }

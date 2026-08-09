@@ -41,18 +41,17 @@
     setSending(true);
     showStatus("");
     try {
-      const response = await fetch("/api/v1/auth/magic-links", {
+      await window.SessionBuddyApi.request("/api/v1/auth/magic-links", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: address, redirect_path: redirect })
       });
-      if (!response.ok) throw new Error(`Request failed (${response.status})`);
       sentMessage.textContent = `We sent a sign-in link to ${address}.`;
       entry.hidden = true;
       confirmation.hidden = false;
       confirmation.focus();
     } catch (error) {
-      showStatus(error.message, true);
+      showStatus(window.SessionBuddyApi.message(error, "We could not send the sign-in link. Try again."), true);
       status.focus();
       setSending(false);
     }

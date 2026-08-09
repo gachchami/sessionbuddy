@@ -43,6 +43,7 @@ class RequestObservabilityMiddleware(BaseHTTPMiddleware):
             else str(uuid.uuid4())
         )
         request.state.request_id = request_id
+        request.state.request_started_ns = started_ns
         request.state.timings = {}
         response: Response | None = None
         status_code = 500

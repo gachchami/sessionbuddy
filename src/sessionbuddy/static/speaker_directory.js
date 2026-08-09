@@ -9,16 +9,7 @@
     selectedSpeakerId = pathMatch?.[2] ? decodeURIComponent(pathMatch[2]) : "";
   } catch (_) { selectedEventId = ""; selectedSpeakerId = ""; }
 
-  async function api(path) {
-    const response = await fetch(path, { credentials: "same-origin" });
-    const body = await response.json();
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      throw error;
-    }
-    return body;
-  }
+  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function speakerCard(item) {
     const card = document.createElement("article");
@@ -93,7 +84,9 @@
   }
 
   initialize().catch((error) => {
-    if (error.status === 401) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
-    else { byId("status").textContent = error.message; byId("status").classList.add("error"); }
+    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
+      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").classList.add("error");
+    }
   });
 })();

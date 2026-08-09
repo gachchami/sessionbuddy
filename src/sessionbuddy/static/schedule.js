@@ -38,11 +38,13 @@
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; document.querySelectorAll("[data-view]").forEach((item) => { const active = item === button; item.setAttribute("aria-pressed", String(active)); item.classList.toggle("secondary", !active); }); render(); }));
   async function load() {
     if (!eventId) throw new Error("Invalid schedule link");
-    let response = await fetch(`/api/v1/public/events/${encodeURIComponent(eventId)}/schedule`, { headers: { accept: "application/json" } });
-    if (response.status === 401 || response.status === 403) {
-      response = await fetch(`/api/v1/events/${encodeURIComponent(eventId)}/schedule`, { credentials: "same-origin", headers: { accept: "application/json" } });
+    let body;
+    try {
+      body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/schedule`);
+    } catch (error) {
+      if (![401, 403].includes(error.status)) throw error;
+      body = await window.SessionBuddyApi.request(`/api/v1/events/${encodeURIComponent(eventId)}/schedule`);
     }
-    const body = await response.json(); if (!response.ok) throw new Error(body?.error?.message || "Schedule unavailable");
     state.model = body; document.body.classList.toggle("embedded", embedded);
     byId("title").textContent = body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
     byId("timezone").textContent = body.revision
@@ -55,5 +57,5 @@
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").hidden = false; }
     saveItinerary(); render();
   }
-  load().catch((error) => { byId("status").textContent = error.message; byId("status").classList.add("error"); });
+  load().catch((error) => { byId("status").textContent = window.SessionBuddyApi.message(error, "The schedule is unavailable. Try again."); byId("status").classList.add("error"); });
 })();

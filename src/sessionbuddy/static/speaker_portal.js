@@ -36,19 +36,9 @@
 
   async function api(path, options = {}) {
     const started = performance.now();
-    const response = await fetch(path, { credentials: "same-origin", ...options });
-    recordTelemetry(started, response);
-    let body = null;
-    if (response.status !== 204) {
-      try { body = await response.json(); } catch (_) { body = null; }
-    }
-    if (!response.ok) {
-      const error = new Error(body?.error?.message || `Request failed (${response.status})`);
-      error.status = response.status;
-      error.details = body?.error?.details || [];
-      throw error;
-    }
-    return body;
+    return window.SessionBuddyApi.request(path, options, {
+      onResponse: (response) => recordTelemetry(started, response)
+    });
   }
 
   function formatDate(value, timezone) {
@@ -508,7 +498,7 @@
       const portal = await api("/api/v1/speaker/portal"); renderPortal(portal);
       announceOnboardingChange();
     } catch (error) {
-      status.textContent = error.message || "Upload failed. Choose the file and try again.";
+      status.textContent = window.SessionBuddyApi.message(error, "Upload failed. Choose the file and try again.");
       status.classList.add("error");
     } finally { button.disabled = false; }
   }));
