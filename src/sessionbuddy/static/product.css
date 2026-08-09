@@ -216,6 +216,8 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .program-step--complete .help { display: none; }
 .program-step--complete .result { margin: 0 0 0 auto; }
 .question-card { margin: .65rem 0; padding: 0; overflow: hidden; background: white; }
+.question-card--system { background: #f8fbff; }
+.question-card--system .question-editor > summary small { font-family: inherit; font-size: .78rem; }
 .question-editor > summary { min-height: 4.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; cursor: pointer; list-style: none; }
 .question-editor > summary::-webkit-details-marker { display: none; }
 .question-editor > summary > span:first-child { display: grid; gap: .12rem; }

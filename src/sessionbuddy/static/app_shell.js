@@ -198,8 +198,9 @@
     }
     const organizerWorkspace = organizer && !["speaker", "reviews"].includes(section);
     const currentEventId = eventIdFromLocation();
+    const globalOrganizerWorkspace = organizerWorkspace && !currentEventId;
     document.body.classList.add("sb-shell-authenticated");
-    document.body.classList.remove("sb-shell-global");
+    document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace);
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
@@ -253,7 +254,23 @@
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
-    topbar.append(menuButton, crumb, accountMenu(session, roles));
+    if (globalOrganizerWorkspace) {
+      const topbarBrand = link("", "/admin");
+      topbarBrand.className = "sb-global-brand";
+      const topbarMark = make("span", "S", "sb-app-brand__mark");
+      topbarMark.setAttribute("aria-hidden", "true");
+      topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
+      const globalNav = make("nav", undefined, "sb-global-nav");
+      globalNav.setAttribute("aria-label", "Workspace navigation");
+      globalNav.append(
+        navLink("Home", "/admin", "home", section === "home"),
+        navLink("Events", "/admin/events", "calendar", section === "events"),
+        navLink("People", "/admin/speakers", "people", section === "speakers")
+      );
+      topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
+    } else {
+      topbar.append(menuButton, crumb, accountMenu(session, roles));
+    }
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");
     backdrop.type = "button";

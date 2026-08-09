@@ -98,6 +98,7 @@
     const opens = form.elements.opens_at;
     const closes = form.elements.closes_at;
     opens.min = toLocalInput(earliestOpeningMs());
+    opens.max = state.eventStartsAtMs ? toLocalInput(state.eventStartsAtMs - 1) : "";
     closes.min = opens.value ? toLocalInput(toEpoch(opens.value) + 60000) : "";
     closes.max = state.eventStartsAtMs ? toLocalInput(state.eventStartsAtMs - 1) : "";
   }
@@ -267,6 +268,37 @@
       editor.append(editorSummary, editorBody);
       card.append(legend, editor);
       list.append(card);
+      if (index === 1) {
+        const coSpeakers = make("article");
+        coSpeakers.className = "question-card question-card--system";
+        const coSpeakerDetails = make("details");
+        coSpeakerDetails.className = "question-editor";
+        const coSpeakerSummary = make("summary");
+        const coSpeakerIdentity = make("span");
+        coSpeakerIdentity.append(
+          make("strong", "Co-speakers"),
+          make("small", "Name and email for each additional presenter")
+        );
+        const coSpeakerMeta = make("span");
+        coSpeakerMeta.className = "question-editor__meta";
+        const optionalBadge = make("span", "Optional");
+        optionalBadge.className = "badge";
+        const repeatableBadge = make("span", "Repeatable");
+        repeatableBadge.className = "badge";
+        coSpeakerMeta.append(optionalBadge, repeatableBadge);
+        coSpeakerSummary.append(coSpeakerIdentity, coSpeakerMeta);
+        const coSpeakerBody = make("div");
+        coSpeakerBody.className = "question-editor__body";
+        coSpeakerBody.append(
+          make(
+            "p",
+            "Speakers may add up to 10 co-speakers. Each person receives an invitation to accept or decline and complete their own profile."
+          )
+        );
+        coSpeakerDetails.append(coSpeakerSummary, coSpeakerBody);
+        coSpeakers.append(coSpeakerDetails);
+        list.append(coSpeakers);
+      }
     });
   }
 
@@ -357,6 +389,8 @@
     const closesAt = toEpoch(closes.value);
     if (opensAt !== null && opensAt < Date.now()) {
       opens.setCustomValidity("Opening time cannot be in the past.");
+    } else if (opensAt !== null && opensAt >= state.eventStartsAtMs) {
+      opens.setCustomValidity("The Call for Proposals must open before the event starts.");
     }
     if (opensAt !== null && closesAt !== null && closesAt <= opensAt) {
       closes.setCustomValidity("Closing time must be after opening time.");
@@ -402,7 +436,7 @@
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
     const submit = publish.querySelector('button[type="submit"], button:not([type])');
     const heading = make("h3", "Form questions");
-    const help = make("p", "The four identity/proposal fields are required. Add event-specific questions and optional conditions below.");
+    const help = make("p", "Speaker and proposal details are required. Co-speakers are optional. Add event-specific questions below.");
     const fields = make("div");
     fields.id = "form-fields";
     const add = make("button", "Add question");

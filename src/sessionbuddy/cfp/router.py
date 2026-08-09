@@ -386,11 +386,18 @@ def _validate_cfp_deadline(closes_at_ms: int | None, event_starts_at_ms: int) ->
         )
 
 
-def _validate_cfp_opening(opens_at_ms: int | None, now_ms: int) -> None:
+def _validate_cfp_opening(
+    opens_at_ms: int | None, now_ms: int, event_starts_at_ms: int
+) -> None:
     if opens_at_ms is not None and opens_at_ms < now_ms:
         raise HTTPException(
             status_code=422,
             detail="The Call for Proposals opening time cannot be in the past.",
+        )
+    if opens_at_ms is not None and opens_at_ms >= event_starts_at_ms:
+        raise HTTPException(
+            status_code=422,
+            detail="The Call for Proposals must open before the event starts.",
         )
 
 
@@ -435,7 +442,7 @@ async def publish_form(
             raise HTTPException(status_code=409)
         return await _form_by_id(db, str(replay["response_resource_id"]))
     now = utc_now_ms()
-    _validate_cfp_opening(body.opens_at_ms, now)
+    _validate_cfp_opening(body.opens_at_ms, now, int(event["starts_at_ms"]))
     form_id = new_id()
     existing_form = await db.prepare(
         """SELECT 1 AS found FROM call_for_speaker_forms
@@ -559,7 +566,7 @@ async def update_published_form(
     _validate_cfp_deadline(body.closes_at_ms, int(current["starts_at_ms"]))
     form_id = str(current["id"])
     now = utc_now_ms()
-    _validate_cfp_opening(body.opens_at_ms, now)
+    _validate_cfp_opening(body.opens_at_ms, now, int(current["starts_at_ms"]))
     schema_json = json.dumps(
         {
             "fields": [field.model_dump() for field in body.fields],
