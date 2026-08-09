@@ -196,6 +196,27 @@ class SpeakerAssetList(BaseModel):
     data: list[SpeakerAssetView]
 
 
+class AdminSpeakerAssetView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    event_speaker_id: str
+    speaker_name: str
+    kind: Literal["headshot", "slides", "supporting_document"]
+    filename: str
+    content_type: str
+    byte_size: int
+    generation: int
+    version_count: int
+    uploaded_at_ms: int
+
+
+class AdminSpeakerAssetList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: list[AdminSpeakerAssetView]
+
+
 class AssetDownloadGrantView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

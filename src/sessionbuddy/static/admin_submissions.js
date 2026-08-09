@@ -14,6 +14,22 @@
   const parts = location.pathname.split("/").filter(Boolean);
   const programId = parts[2] || "";
   const state = { csrf: "", userId: "", submissions: [], evaluators: [] };
+  function renderRoundHistory(rounds) {
+    const container = byId("round-history");
+    container.replaceChildren();
+    if (!rounds.length) {
+      const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "No evaluation rounds yet."; container.append(empty); return;
+    }
+    for (const round of rounds) {
+      const card = document.createElement("article"); card.className = "entity-card";
+      const heading = document.createElement("h3"); const link = document.createElement("a"); link.href = `/admin/evaluation-rounds/${encodeURIComponent(round.id)}`; link.textContent = round.name; heading.append(link);
+      const summary = document.createElement("p"); summary.className = "result"; summary.textContent = `${round.status} · ${round.assignment_count} assignments · ${round.evaluator_count} reviewers`;
+      const actions = document.createElement("div"); actions.className = "actions";
+      const monitor = document.createElement("a"); monitor.className = "button secondary"; monitor.href = link.href; monitor.textContent = "Open";
+      const exportLink = document.createElement("a"); exportLink.className = "button secondary"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
+      actions.append(monitor, exportLink); card.append(heading, summary, actions); container.append(card);
+    }
+  }
   function showRound(round) {
     const link = document.createElement("a");
     link.href = `/admin/evaluation-rounds/${round.id}`;
@@ -126,7 +142,9 @@
       });
       byId("status").textContent = `${result.data.length} submission${result.data.length === 1 ? "" : "s"}.`;
       byId("open-round").disabled = !result.data.length || !state.evaluators.length;
-      const currentRound = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds/current`);
+      const history = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`);
+      renderRoundHistory(history.data);
+      const currentRound = history.data.find((round) => round.status === "open") || null;
       if (currentRound) showRound(currentRound);
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to Programs and try again.");
@@ -147,6 +165,12 @@
           ? "Recommendations must be unique."
           : "";
     recommendationInput.setCustomValidity(recommendationError);
+    const opens = form.elements.review_opens_at.value ? new Date(form.elements.review_opens_at.value).getTime() : null;
+    const closes = form.elements.review_closes_at.value ? new Date(form.elements.review_closes_at.value).getTime() : null;
+    form.elements.review_closes_at.setCustomValidity(opens !== null && closes !== null && closes <= opens ? "Review close must be after review open." : "");
+    const weights = [...form.querySelectorAll('input[name="criterion_weight"]')].map((input) => Number(input.value));
+    const weightError = weights.reduce((total, value) => total + value, 0) === 100 ? "" : "Criterion weights must total 100.";
+    form.querySelector('input[name="criterion_weight"]')?.setCustomValidity(weightError);
     const submissions = [...document.querySelectorAll('input[name="submission_ids"]:checked')];
     const evaluators = form.querySelectorAll('input[name="evaluator_user_ids"]:checked');
     if (!submissions.length || !evaluators.length) {
@@ -168,10 +192,22 @@
       if (!validateRound(event.currentTarget)) { button.disabled = false; return; }
       const values = new FormData(event.currentTarget);
       const recommendations = String(values.get("recommendations") || "").split(",").map((choice) => choice.trim()).filter(Boolean);
+      const labels = values.getAll("criterion_label").map((value) => String(value).trim());
+      const weights = values.getAll("criterion_weight").map(Number);
+      const usedKeys = new Set();
+      const criteria = labels.map((label, index) => {
+        const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32) || `criterion_${index + 1}`;
+        let key = /^[a-z]/.test(base) ? base : `criterion_${base}`;
+        while (usedKeys.has(key)) key = `${key.slice(0, 36)}_${index + 1}`;
+        usedKeys.add(key);
+        return { key, label, weight: weights[index] };
+      });
+      const reviewOpens = values.get("review_opens_at") ? new Date(String(values.get("review_opens_at"))).getTime() : null;
+      const reviewCloses = values.get("review_closes_at") ? new Date(String(values.get("review_closes_at"))).getTime() : null;
       const round = await api(`/api/v1/admin/programs/${encodeURIComponent(programId)}/evaluation-rounds`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
-        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), assignment_strategy: values.get("assignment_strategy"), submission_ids: [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value), evaluator_user_ids: values.getAll("evaluator_user_ids") })
+        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), submission_ids: [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value), evaluator_user_ids: values.getAll("evaluator_user_ids") })
       });
       byId("status").textContent = `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
       showRound(round);
@@ -180,6 +216,15 @@
       byId("status").classList.add("error");
       button.disabled = false;
     }
+  });
+  byId("add-criterion").addEventListener("click", () => {
+    const container = byId("criteria");
+    if (container.querySelectorAll(".criterion-row").length >= 8) { byId("status").textContent = "A scorecard can contain up to eight criteria."; return; }
+    const row = document.createElement("div"); row.className = "form-grid criterion-row";
+    const label = document.createElement("label"); label.textContent = "Criterion"; const name = document.createElement("input"); name.name = "criterion_label"; name.required = true; name.maxLength = 120; label.append(name);
+    const weightLabel = document.createElement("label"); weightLabel.textContent = "Weight"; const weight = document.createElement("input"); weight.name = "criterion_weight"; weight.type = "number"; weight.min = "1"; weight.max = "100"; weight.required = true; weightLabel.append(weight);
+    const remove = document.createElement("button"); remove.type = "button"; remove.className = "secondary"; remove.textContent = "Remove"; remove.addEventListener("click", () => row.remove());
+    row.append(label, weightLabel, remove); container.append(row); name.focus();
   });
   load();
 })();

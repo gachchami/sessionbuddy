@@ -73,13 +73,81 @@ class TaskFormField(BaseModel):
 
 class SpeakerTarget(BaseModel):
     event_speaker_id: str
+    user_id: str | None
+    email: str
     display_name: str
+    job_title: str
+    company: str
+    biography: str
+    location: str
+    links: list[str]
+    version: int
     selection_status: Literal["submitted", "accepted", "rejected"]
     proposal_title: str
 
 
 class SpeakerTargetList(BaseModel):
     data: list[SpeakerTarget]
+
+
+class AdminSpeakerUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    display_name: str = Field(min_length=1, max_length=200)
+    job_title: str = Field(default="", max_length=200)
+    company: str = Field(default="", max_length=200)
+    biography: str = Field(default="", max_length=5000)
+    location: str = Field(default="", max_length=300)
+    links: list[str] = Field(default_factory=list, max_length=10)
+    version: int = Field(ge=1)
+
+    @field_validator("links")
+    @classmethod
+    def validate_links(cls, values: list[str]) -> list[str]:
+        if len(values) != len(set(values)):
+            raise ValueError("links must be unique")
+        for value in values:
+            parsed = urlparse(value)
+            if (
+                len(value) > 2000
+                or parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+            ):
+                raise ValueError("links must use an absolute HTTP or HTTPS URL")
+        return values
+
+
+class SessionContentVersionView(BaseModel):
+    version: int
+    title: str
+    abstract: str
+    content_status: Literal["draft", "approved"]
+    changed_by: str
+    created_at_ms: int
+
+
+class AdminSessionContentView(BaseModel):
+    accepted_session_id: str
+    title: str
+    abstract: str
+    content_status: Literal["draft", "approved"]
+    version: int
+    history: list[SessionContentVersionView]
+
+
+class AdminSessionContentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    title: str = Field(min_length=1, max_length=200)
+    abstract: str = Field(min_length=1, max_length=5000)
+    content_status: Literal["draft", "approved"]
+    version: int = Field(ge=1)
+
+
+class AdminSessionContentRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    history_version: int = Field(ge=1)
+    current_version: int = Field(ge=1)
 
 
 class SpeakerTaskCreate(BaseModel):
@@ -135,3 +203,20 @@ class PublicSpeaker(BaseModel):
 class PublicSpeakerGallery(BaseModel):
     event: dict[str, str | None]
     data: list[PublicSpeaker]
+
+
+class PublicEventSummary(BaseModel):
+    id: str
+    name: str
+    starts_at_ms: int
+    ends_at_ms: int
+    time_zone: str
+    location: str
+    delivery_mode: Literal["in_person", "virtual", "hybrid"]
+    cfp_slug: str | None
+    schedule_published: bool
+    speaker_count: int
+
+
+class PublicEventList(BaseModel):
+    data: list[PublicEventSummary]

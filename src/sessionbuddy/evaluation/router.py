@@ -1,6 +1,8 @@
 import hashlib
 import json
+from csv import writer
 from html import escape
+from io import StringIO
 from time import perf_counter
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -23,6 +25,7 @@ from .models import (
     EvaluationAssignmentView,
     EvaluationRoundClosed,
     EvaluationRoundCreate,
+    EvaluationRoundList,
     EvaluationRoundResults,
     EvaluationRoundView,
     EvaluationSave,
@@ -204,6 +207,8 @@ async def create_evaluation_round(
         "recommendation": {"choices": body.recommendations, "required": True},
         "internal_comment": {"required": False},
         "guidance": body.evaluator_guidance,
+        "criteria": [criterion.model_dump() for criterion in body.criteria],
+        "blind_review": body.blind_review,
     }
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
@@ -220,8 +225,8 @@ async def create_evaluation_round(
         db.prepare(
             """INSERT INTO evaluation_rounds
                (id, organization_id, event_id, program_id, name, rubric_json, status,
-                created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?7)"""
+                review_opens_at_ms,review_closes_at_ms,created_at_ms, updated_at_ms)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?9)"""
         ).bind(
             round_id,
             organization_id,
@@ -229,6 +234,8 @@ async def create_evaluation_round(
             program_id,
             body.name,
             json.dumps(rubric, separators=(",", ":"), sort_keys=True),
+            body.review_opens_at_ms,
+            body.review_closes_at_ms,
             now,
         )
     )
@@ -319,6 +326,42 @@ async def get_current_evaluation_round(
 
 
 @evaluation_router.get(
+    "/api/v1/admin/programs/{program_id}/evaluation-rounds",
+    response_model=EvaluationRoundList,
+    operation_id="listEvaluationRounds",
+    tags=["evaluations"],
+)
+async def list_evaluation_rounds(program_id: str, request: Request) -> EvaluationRoundList:
+    db = _db(request)
+    program = row_mapping(
+        await db.prepare("SELECT organization_id,event_id FROM programs WHERE id=?1 LIMIT 1")
+        .bind(program_id)
+        .first()
+    )
+    if program is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.EVALUATION_RESULTS_READ,
+        ResourceContext(str(program["organization_id"]), str(program["event_id"])),
+        mutation=False,
+    )
+    rows = result_rows(
+        await db.prepare(
+            """SELECT r.id,r.program_id,r.name,r.status,COUNT(a.id) AS assignment_count,
+                      COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
+               FROM evaluation_rounds r
+               LEFT JOIN evaluation_assignments a ON a.round_id=r.id
+               WHERE r.program_id=?1 GROUP BY r.id
+               ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 50"""
+        )
+        .bind(program_id)
+        .all()
+    )
+    return EvaluationRoundList(data=[EvaluationRoundView.model_validate(row) for row in rows])
+
+
+@evaluation_router.get(
     "/api/v1/admin/programs/{program_id}/evaluators",
     response_model=EvaluatorList,
     operation_id="listProgramEvaluators",
@@ -361,25 +404,31 @@ async def list_program_evaluators(program_id: str, request: Request) -> Evaluato
 )
 async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
     authenticated = await authenticate_request(request)
+    now = utc_now_ms()
     rows = result_rows(
         await _timed_all(
             request,
             _db(request)
             .prepare(
                 """SELECT a.id, a.round_id, r.name AS round_name, a.submission_id,
-                      s.proposal_title, s.proposal_abstract, s.speaker_name,
-                      r.organization_id, r.event_id, r.rubric_json,
+                      s.proposal_title, s.proposal_abstract,
+                      CASE WHEN COALESCE(json_extract(r.rubric_json,'$.blind_review'),0)=1
+                           THEN 'Hidden for blind review' ELSE s.speaker_name END AS speaker_name,
+                      r.organization_id, r.event_id, r.rubric_json,r.review_closes_at_ms,
                       COALESCE(e.state, 'not_started') AS evaluation_state,
                       e.rating, e.recommendation,
-                      COALESCE(e.internal_comment, '') AS internal_comment
+                      COALESCE(e.internal_comment, '') AS internal_comment,
+                      COALESCE(e.criterion_scores_json, '{}') AS criterion_scores_json
                FROM evaluation_assignments a
                JOIN evaluation_rounds r ON r.id = a.round_id AND r.status = 'open'
                JOIN submissions s ON s.id = a.submission_id
                LEFT JOIN evaluations e ON e.assignment_id = a.id
                WHERE a.evaluator_user_id = ?1 AND a.status != 'revoked'
+                 AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
+                 AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2)
                ORDER BY a.created_at_ms DESC, a.id DESC LIMIT 100"""
             )
-            .bind(authenticated.actor.user_id),
+            .bind(authenticated.actor.user_id, now),
         )
     )
     data: list[EvaluationAssignmentView] = []
@@ -409,6 +458,14 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                 rating_max=int(rubric["rating"]["max"]),
                 recommendations=list(rubric["recommendation"]["choices"]),
                 evaluator_guidance=str(rubric.get("guidance", "")),
+                criteria=list(rubric.get("criteria", [])),
+                criterion_scores=json.loads(str(row["criterion_scores_json"])),
+                blind_review=bool(rubric.get("blind_review", False)),
+                review_closes_at_ms=(
+                    int(row["review_closes_at_ms"])
+                    if row["review_closes_at_ms"] is not None
+                    else None
+                ),
                 evaluation_state=str(row["evaluation_state"]),
                 rating=int(row["rating"]) if row["rating"] is not None else None,
                 recommendation=(
@@ -437,7 +494,8 @@ async def save_evaluation(
         await db.prepare(
             """SELECT a.id, a.organization_id, a.event_id, a.round_id, a.evaluator_user_id,
                   a.status, r.status AS round_status, r.rubric_json, e.id AS evaluation_id,
-                  e.state AS existing_state, COALESCE(e.version, 0) AS existing_version
+                  r.review_opens_at_ms,r.review_closes_at_ms,e.state AS existing_state,
+                  COALESCE(e.version, 0) AS existing_version
            FROM evaluation_assignments a JOIN evaluation_rounds r ON r.id = a.round_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id WHERE a.id = ?1 LIMIT 1"""
         )
@@ -446,6 +504,14 @@ async def save_evaluation(
     )
     if assignment is None:
         raise HTTPException(status_code=404)
+    now = utc_now_ms()
+    within_window = (
+        (assignment["review_opens_at_ms"] is None or int(assignment["review_opens_at_ms"]) <= now)
+        and (
+            assignment["review_closes_at_ms"] is None
+            or int(assignment["review_closes_at_ms"]) > now
+        )
+    )
     authenticated = await require_permission(
         request,
         Permission.EVALUATION_SAVE,
@@ -453,7 +519,7 @@ async def save_evaluation(
             str(assignment["organization_id"]),
             str(assignment["event_id"]),
             evaluator_assigned=True,
-            evaluation_round_open=assignment["round_status"] == "open",
+            evaluation_round_open=assignment["round_status"] == "open" and within_window,
         ),
         mutation=True,
     )
@@ -462,7 +528,30 @@ async def save_evaluation(
     if assignment["status"] == "revoked" or assignment["existing_state"] == "final":
         raise HTTPException(status_code=409)
     rubric = json.loads(str(assignment["rubric_json"]))
-    if not rubric["rating"]["min"] <= body.rating <= rubric["rating"]["max"]:
+    rating_min, rating_max = int(rubric["rating"]["min"]), int(rubric["rating"]["max"])
+    criteria = list(rubric.get("criteria", []))
+    criterion_keys = {str(criterion["key"]) for criterion in criteria}
+    if not set(body.criterion_scores) <= criterion_keys:
+        raise HTTPException(status_code=422)
+    if body.state == "final" and criteria and set(body.criterion_scores) != criterion_keys:
+        raise HTTPException(status_code=422)
+    if any(not rating_min <= score <= rating_max for score in body.criterion_scores.values()):
+        raise HTTPException(status_code=422)
+    rating = body.rating
+    if criteria and body.criterion_scores:
+        rating = round(
+            sum(
+                body.criterion_scores[str(criterion["key"])] * int(criterion["weight"])
+                for criterion in criteria
+                if str(criterion["key"]) in body.criterion_scores
+            )
+            / sum(
+                int(criterion["weight"])
+                for criterion in criteria
+                if str(criterion["key"]) in body.criterion_scores
+            )
+        )
+    if not rating_min <= rating <= rating_max:
         raise HTTPException(status_code=422)
     if body.recommendation not in rubric["recommendation"]["choices"]:
         raise HTTPException(status_code=422)
@@ -486,7 +575,6 @@ async def save_evaluation(
             raise HTTPException(status_code=409)
         return await _evaluation_view(db, str(replay["response_resource_id"]))
 
-    now = utc_now_ms()
     evaluation_id = str(assignment["evaluation_id"] or new_id())
     version = int(assignment["existing_version"]) + 1
     finalized_at = now if body.state == "final" else None
@@ -505,12 +593,13 @@ async def save_evaluation(
         db.prepare(
             """INSERT INTO evaluations
            (id, organization_id, event_id, round_id, assignment_id, evaluator_user_id,
-            rating, recommendation, internal_comment, state, version, created_at_ms,
-            updated_at_ms, finalized_at_ms)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13)
+            rating, recommendation, internal_comment,criterion_scores_json,state, version,
+            created_at_ms,updated_at_ms, finalized_at_ms)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?14)
            ON CONFLICT(assignment_id) DO UPDATE SET rating = excluded.rating,
              recommendation = excluded.recommendation,
-             internal_comment = excluded.internal_comment, state = excluded.state,
+             internal_comment = excluded.internal_comment,
+             criterion_scores_json=excluded.criterion_scores_json,state = excluded.state,
              version = excluded.version, updated_at_ms = excluded.updated_at_ms,
              finalized_at_ms = excluded.finalized_at_ms
            WHERE evaluations.state = 'draft'"""
@@ -521,9 +610,10 @@ async def save_evaluation(
             assignment["round_id"],
             assignment_id,
             authenticated.actor.user_id,
-            body.rating,
+            rating,
             body.recommendation,
             body.internal_comment,
+            json.dumps(body.criterion_scores, separators=(",", ":"), sort_keys=True),
             body.state,
             version,
             now,
@@ -561,7 +651,14 @@ async def save_evaluation(
     )
     await _execute(request, batch)
     return EvaluationView(
-        id=evaluation_id, assignment_id=assignment_id, version=version, **body.model_dump()
+        id=evaluation_id,
+        assignment_id=assignment_id,
+        rating=rating,
+        recommendation=body.recommendation,
+        internal_comment=body.internal_comment,
+        criterion_scores=body.criterion_scores,
+        state=body.state,
+        version=version,
     )
 
 
@@ -922,6 +1019,55 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         submissions=submissions,
         evaluators=evaluator_progress,
         conflicts=conflicts,
+    )
+
+
+@evaluation_router.get(
+    "/api/v1/admin/evaluation-rounds/{round_id}/export.csv",
+    response_class=Response,
+    operation_id="exportEvaluationRoundResults",
+    tags=["evaluations"],
+)
+async def export_round_results(round_id: str, request: Request) -> Response:
+    results = await get_round_results(round_id, request)
+    output = StringIO(newline="")
+    csv = writer(output)
+    csv.writerow(
+        [
+            "submission_id",
+            "proposal_title",
+            "speaker_name",
+            "assigned_reviews",
+            "completed_reviews",
+            "average_rating",
+            "decision",
+        ]
+    )
+
+    def safe(value: object) -> object:
+        if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+            return f"'{value}"
+        return value
+
+    for submission in results.submissions:
+        csv.writerow(
+            [
+                submission.submission_id,
+                safe(submission.proposal_title),
+                safe(submission.speaker_name),
+                submission.assigned_count,
+                submission.completed_count,
+                submission.average_rating if submission.average_rating is not None else "",
+                submission.decision or "",
+            ]
+        )
+    return Response(
+        output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="evaluation-round-{round_id}.csv"',
+        },
     )
 
 
@@ -1324,7 +1470,8 @@ async def _round_view(db, round_id: str) -> EvaluationRoundView:
 async def _evaluation_view(db, evaluation_id: str) -> EvaluationView:
     row = row_mapping(
         await db.prepare(
-            """SELECT id, assignment_id, rating, recommendation, internal_comment, state, version
+            """SELECT id, assignment_id, rating, recommendation, internal_comment,
+                      criterion_scores_json,state, version
            FROM evaluations WHERE id = ?1"""
         )
         .bind(evaluation_id)
@@ -1332,6 +1479,7 @@ async def _evaluation_view(db, evaluation_id: str) -> EvaluationView:
     )
     if row is None:
         raise HTTPException(status_code=404)
+    row["criterion_scores"] = json.loads(str(row.pop("criterion_scores_json")))
     return EvaluationView.model_validate(row)
 
 

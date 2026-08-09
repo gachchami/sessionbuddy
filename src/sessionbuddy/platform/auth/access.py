@@ -274,6 +274,10 @@ class InvitationView(BaseModel):
     status: Literal["pending", "accepted", "revoked", "expired"] = "pending"
 
 
+class InvitationCreatedView(InvitationView):
+    accept_url: str | None = None
+
+
 class InvitationList(BaseModel):
     data: list[InvitationView]
 
@@ -924,13 +928,13 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
 
 @access_router.post(
     "/api/v1/admin/events/{event_id}/invitations",
-    response_model=InvitationView,
+    response_model=InvitationCreatedView,
     status_code=201,
     tags=["administration"],
 )
 async def create_invitation(
     event_id: str, body: InvitationCreate, request: Request
-) -> InvitationView:
+) -> InvitationCreatedView:
     db = database(request)
     event = row_mapping(
         await db.prepare(
@@ -1000,37 +1004,90 @@ async def create_invitation(
         )
     )
     await audit.execute()
+    accept_url = await _issue_invitation_link(
+        request,
+        invitation_id=str(row["id"]),
+        organization_id=str(event["organization_id"]),
+        event_id=event_id,
+        email=email,
+        normalized_email=normalized,
+        role=body.role,
+        now=now,
+    )
+    return InvitationCreatedView(**row, accept_url=accept_url)
+
+
+async def _issue_invitation_link(
+    request: Request,
+    *,
+    invitation_id: str,
+    organization_id: str,
+    event_id: str,
+    email: str,
+    normalized_email: str,
+    role: Literal["event_admin", "evaluator", "speaker"],
+    now: int,
+) -> str | None:
+    """Create a short-lived, one-time acceptance link and queue its delivery."""
     base = str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip("/")
-    if base.startswith("https://"):
-        message_id = new_id()
-        destination = {
-            "speaker": "/speaker",
-            "evaluator": "/reviews",
-            "event_admin": "/admin",
-        }[body.role]
-        sign_in_link = f"{base}/sign-in?redirect={destination}"
-        await (
-            db.prepare(
-                """INSERT INTO communication_messages
+    parsed = urlparse(base)
+    is_local = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+    if parsed.scheme != "https" and not is_local:
+        return None
+    destination = {
+        "speaker": "/speaker",
+        "evaluator": "/reviews",
+        "event_admin": "/admin",
+    }[role]
+    db = database(request)
+    user_id = await (
+        db.prepare("SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1")
+        .bind(normalized_email)
+        .first("id")
+    )
+    raw_token, challenge_id, message_id = generate_token(), new_id(), new_id()
+    accept_url = f"{base}/auth/verify?token={raw_token}"
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO authentication_challenges
+               (id,normalized_email,token_hash,purpose,provisioning_context,redirect_path,
+                expires_at_ms,created_at_ms,user_id,organization_id,event_id,invitation_id)
+               VALUES(?1,?2,?3,'sign_in','invitation',?4,?5,?6,?7,?8,?9,?10)"""
+        ).bind(
+            challenge_id,
+            normalized_email,
+            hash_token(raw_token),
+            destination,
+            now + 15 * 60 * 1000,
+            now,
+            user_id,
+            organization_id,
+            event_id,
+            invitation_id,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO communication_messages
                (id,organization_id,event_id,recipient_email,subject,html_body,
                 deterministic_key,status,queued_at_ms,updated_at_ms)
                VALUES(?1,?2,?3,?4,'You are invited to SessionBuddy',?5,?6,'queued',?7,?7)"""
-            )
-            .bind(
-                message_id,
-                event["organization_id"],
-                event_id,
-                email,
-                f'<p><a href="{escape(sign_in_link)}">Accept your SessionBuddy invitation</a></p>',
-                f"identity-invitation:{row['id']}:{now}",
-                now,
-            )
-            .run()
+        ).bind(
+            message_id,
+            organization_id,
+            event_id,
+            email,
+            f'<p><a href="{escape(accept_url)}">Accept your SessionBuddy invitation</a></p>',
+            f"identity-invitation:{invitation_id}:{challenge_id}",
+            now,
         )
-        queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
-        if queue is not None:
-            await queue.send({"schema_version": 1, "message_id": message_id})
-    return InvitationView(**row)
+    )
+    await batch.execute()
+    queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
+    if queue is not None:
+        await queue.send({"schema_version": 1, "message_id": message_id})
+    return accept_url
 
 
 async def _managed_event(request: Request, event_id: str, *, mutation: bool):
@@ -1074,6 +1131,59 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
     return InvitationList(data=[InvitationView(**row) for row in result_rows(result)])
 
 
+@access_router.post(
+    "/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
+    response_model=InvitationCreatedView,
+    tags=["administration"],
+)
+async def resend_invitation(
+    event_id: str, invitation_id: str, request: Request
+) -> InvitationCreatedView:
+    db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
+    now = utc_now_ms()
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id,event_id,email,normalized_email,role,status
+               FROM identity_invitations
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3
+                 AND status='pending' AND expires_at_ms>?4 LIMIT 1"""
+        )
+        .bind(invitation_id, organization_id, event_id, now)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    role: Literal["event_admin", "evaluator", "speaker"] = row["role"]
+    accept_url = await _issue_invitation_link(
+        request,
+        invitation_id=invitation_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        email=str(row["email"]),
+        normalized_email=str(row["normalized_email"]),
+        role=role,
+        now=now,
+    )
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="identity.invitation.resend",
+            target_type="identity_invitation",
+            target_id=invitation_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={"role": role},
+        )
+    )
+    await audit.execute()
+    return InvitationCreatedView(**row, accept_url=accept_url)
+
+
 @access_router.delete(
     "/api/v1/admin/events/{event_id}/invitations/{invitation_id}",
     status_code=204,
@@ -1110,6 +1220,85 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
     )
     await audit.execute()
     return Response(status_code=204)
+
+
+@access_router.post(
+    "/api/v1/forms/{slug}/access",
+    response_model=GenericAccepted,
+    tags=["authentication"],
+)
+async def ensure_cfp_speaker_access(slug: str, request: Request) -> GenericAccepted:
+    """Enroll an authenticated user into an open public CFP without another sign-in."""
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    db, now = database(request), utc_now_ms()
+    form = row_mapping(
+        await db.prepare(
+            """SELECT organization_id,event_id FROM call_for_speaker_forms
+               WHERE slug=?1 AND status='published' LIMIT 1"""
+        )
+        .bind(slug)
+        .first()
+    )
+    if form is None:
+        raise HTTPException(status_code=404)
+    email = await (
+        db.prepare("SELECT email FROM users WHERE id=?1 AND status='active' LIMIT 1")
+        .bind(authenticated.actor.user_id)
+        .first("email")
+    )
+    if email is None:
+        raise HTTPException(status_code=404)
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,'member','active',?4,?4)
+               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
+                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(new_id(), form["organization_id"], authenticated.actor.user_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
+               ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
+                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(
+            new_id(),
+            form["organization_id"],
+            form["event_id"],
+            authenticated.actor.user_id,
+            now,
+        )
+    )
+    await _add_speaker_profile(
+        batch,
+        db,
+        organization_id=str(form["organization_id"]),
+        event_id=str(form["event_id"]),
+        user_id=authenticated.actor.user_id,
+        email=str(email),
+        now=now,
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="cfp.speaker_access.ensure",
+            target_type="event",
+            target_id=str(form["event_id"]),
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(form["organization_id"]),
+            event_id=str(form["event_id"]),
+        )
+    )
+    await batch.execute()
+    return GenericAccepted()
 
 
 @access_router.get(

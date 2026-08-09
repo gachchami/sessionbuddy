@@ -73,12 +73,8 @@ async def test_public_status_model_is_safe_and_explicit_about_missing_data(
     assert payload["measurements_are_live"] is False
     assert {item["state"] for item in payload["coverage"]} >= {"available", "planned"}
     assert not ({"tenant_id", "user_id", "event_id", "email"} & payload.keys())
-    assert {item["state"] for item in payload["build_progress"]} == {
-        "complete",
-        "in_progress",
-        "pending",
-    }
-    assert sum(item["state"] == "complete" for item in payload["build_progress"]) == 3
+    assert {item["state"] for item in payload["build_progress"]} == {"complete"}
+    assert sum(item["state"] == "complete" for item in payload["build_progress"]) == 5
 
 
 def test_browser_telemetry_contract_rejects_private_or_arbitrary_dimensions() -> None:

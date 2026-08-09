@@ -8,6 +8,10 @@
     selectedEventId = pathMatch ? decodeURIComponent(pathMatch[1]) : new URLSearchParams(location.search).get("event_id") || "";
     selectedSpeakerId = pathMatch?.[2] ? decodeURIComponent(pathMatch[2]) : "";
   } catch (_) { selectedEventId = ""; selectedSpeakerId = ""; }
+  let csrf = "";
+  let selectedSpeaker = null;
+  let previewedMessage = null;
+  let allSpeakers = [];
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
@@ -31,16 +35,47 @@
     const proposal = document.createElement("p");
     proposal.className = "result";
     proposal.textContent = item.proposal_title;
+    const identity = document.createElement("p");
+    identity.className = "muted";
+    identity.textContent = [item.job_title, item.company].filter(Boolean).join(" · ") || item.email;
     const open = document.createElement("a");
     open.className = "entity-card__action";
     open.href = name.href;
     open.textContent = "View speaker →";
-    card.append(top, heading, proposal, open);
+    card.append(top, heading, identity, proposal, open);
+    const select = document.createElement("label"); select.className = "check-label entity-card__action";
+    const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.name = "speaker_recipient"; checkbox.value = item.event_speaker_id;
+    select.append(checkbox, document.createTextNode(" Select for message")); card.append(select);
     return card;
   }
 
+  function renderDirectory() {
+    const query = byId("speaker-search").value.trim().toLowerCase();
+    const selectionStatus = byId("speaker-status").value;
+    const speakers = allSpeakers.filter((speaker) => {
+      const searchable = [speaker.display_name, speaker.email, speaker.job_title, speaker.company, speaker.proposal_title, speaker.event.name]
+        .join(" ").toLowerCase();
+      return (!query || searchable.includes(query)) && (!selectionStatus || speaker.selection_status === selectionStatus);
+    });
+    const list = byId("speaker-list");
+    list.replaceChildren();
+    if (speakers.length) list.append(...speakers.map(speakerCard));
+    else {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = allSpeakers.length
+        ? "No speakers match these filters."
+        : "No speakers yet. Invite one or publish a call for speakers.";
+      list.append(empty);
+    }
+    byId("speaker-count").textContent = String(speakers.length);
+    byId("status").classList.remove("error");
+    byId("status").textContent = `${speakers.length} of ${allSpeakers.length} speaker${allSpeakers.length === 1 ? "" : "s"} shown.`;
+  }
+
   async function initialize() {
-    await api("/api/v1/auth/session");
+    const session = await api("/api/v1/auth/session");
+    csrf = session.csrf_token;
     const organizations = (await api("/api/v1/admin/organizations")).data;
     const eventGroups = await Promise.all(organizations.map(async (organization) => ({
       organization,
@@ -54,10 +89,13 @@
       speakers: (await api(`/api/v1/admin/events/${encodeURIComponent(event.id)}/speaker-targets`)).data
     })));
     const speakers = groups.flatMap(({ event, speakers: items }) => items.map((speaker) => ({ ...speaker, event })));
+    allSpeakers = speakers;
     const activeEvent = events.length === 1 ? events[0] : null;
     if (activeEvent) {
       byId("page-title").textContent = `${activeEvent.name} speakers`;
       byId("page-summary").textContent = `Browse speaker records for ${activeEvent.name}.`;
+      byId("invite-speaker").href = `/admin/events/${encodeURIComponent(activeEvent.id)}/access`;
+      byId("message-panel").hidden = false;
     }
     if (selectedSpeakerId) {
       const selected = speakers.find((speaker) => speaker.event_speaker_id === selectedSpeakerId);
@@ -66,22 +104,73 @@
       byId("speaker-event").textContent = `${selected.event.organization_name} · ${selected.event.name} · ${selected.selection_status}`;
       byId("speaker-name").textContent = selected.display_name;
       byId("speaker-proposal").textContent = selected.proposal_title;
+      selectedSpeaker = selected;
+      const form = byId("speaker-form");
+      ["display_name", "email", "job_title", "company", "location", "biography", "version"].forEach((name) => { form.elements[name].value = selected[name] ?? ""; });
+      form.elements.links.value = (selected.links || []).join("\n");
       byId("speaker-onboarding").href = `/admin/events/${encodeURIComponent(selected.event.id)}/onboarding`;
       byId("speaker-directory").href = `/admin/events/${encodeURIComponent(selected.event.id)}/speakers`;
       document.title = `${selected.display_name} · SessionBuddy`;
     }
-    const list = byId("speaker-list");
-    list.replaceChildren();
-    if (speakers.length) list.append(...speakers.map(speakerCard));
-    else {
-      const empty = document.createElement("p");
-      empty.className = "empty";
-      empty.textContent = "No speakers yet. They will appear after proposals are submitted.";
-      list.append(empty);
-    }
-    byId("speaker-count").textContent = String(speakers.length);
-    byId("status").textContent = `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} shown.`;
+    renderDirectory();
   }
+
+  byId("speaker-filters").addEventListener("input", renderDirectory);
+
+  byId("speaker-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!selectedSpeaker) return;
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const values = Object.fromEntries(new FormData(form));
+    const links = String(values.links || "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    try {
+      const updated = await api(`/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf },
+        body: JSON.stringify({ display_name: values.display_name, job_title: values.job_title, company: values.company, biography: values.biography, location: values.location, links, version: Number(values.version) })
+      });
+      selectedSpeaker = { ...selectedSpeaker, ...updated };
+      form.elements.version.value = updated.version;
+      byId("speaker-name").textContent = updated.display_name;
+      byId("status").textContent = "Speaker details saved.";
+    } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").classList.add("error"); }
+  });
+
+  function messagePayload() {
+    const form = byId("message-form");
+    const values = Object.fromEntries(new FormData(form));
+    const eventSpeakerIds = [...document.querySelectorAll('input[name="speaker_recipient"]:checked')].map((input) => input.value);
+    if (!eventSpeakerIds.length) { byId("status").textContent = "Select at least one speaker to message."; byId("status").classList.add("error"); return null; }
+    if (!form.reportValidity()) return null;
+    return { event_speaker_ids: eventSpeakerIds, subject: values.subject, body_text: values.body_text };
+  }
+
+  byId("message-form").addEventListener("input", () => { previewedMessage = null; byId("send-message").disabled = true; byId("message-preview").hidden = true; });
+  document.addEventListener("change", (event) => { if (event.target.matches?.('input[name="speaker_recipient"]')) { previewedMessage = null; byId("send-message").disabled = true; byId("message-preview").hidden = true; } });
+  byId("preview-message").addEventListener("click", async () => {
+    const payload = messagePayload();
+    if (!payload || !selectedEventId) return;
+    try {
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/communications/speakers/preview`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify(payload) });
+      previewedMessage = payload;
+      byId("message-preview").textContent = `Ready for ${result.recipients.length} recipient${result.recipients.length === 1 ? "" : "s"}: ${result.recipients.map((recipient) => recipient.email).join(", ")}`;
+      byId("message-preview").hidden = false;
+      byId("send-message").disabled = false;
+      byId("status").classList.remove("error"); byId("status").textContent = "Preview ready. Confirm to queue delivery.";
+    } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").classList.add("error"); }
+  });
+  byId("message-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!previewedMessage || !selectedEventId) return;
+    const button = byId("send-message"); button.disabled = true;
+    try {
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/communications/speakers/send`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: JSON.stringify({ ...previewedMessage, confirmed: true }) });
+      event.currentTarget.reset(); document.querySelectorAll('input[name="speaker_recipient"]').forEach((input) => { input.checked = false; });
+      previewedMessage = null; byId("message-preview").hidden = true;
+      byId("status").classList.remove("error"); byId("status").textContent = `${result.message_ids.length} message${result.message_ids.length === 1 ? "" : "s"} queued.`;
+    } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").classList.add("error"); button.disabled = false; }
+  });
 
   initialize().catch((error) => {
     if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {

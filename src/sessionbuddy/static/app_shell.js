@@ -3,7 +3,8 @@
 
   const shell = document.querySelector("[data-auth-shell]");
   const landingAccount = document.querySelector("[data-landing-account]");
-  if (!shell && !landingAccount) return;
+  const publicEvents = document.querySelector("[data-public-events]");
+  if (!shell && !landingAccount && !publicEvents) return;
 
   const make = (tag, text, className) => {
     const node = document.createElement(tag);
@@ -263,6 +264,32 @@
     }
   }
 
+  async function renderPublicEvents() {
+    if (!publicEvents) return;
+    try {
+      const response = await window.SessionBuddyApi.request("/api/v1/public/events");
+      publicEvents.replaceChildren();
+      if (!response.data.length) {
+        publicEvents.append(make("p", "No public events are available yet.", "public-events-empty"));
+        return;
+      }
+      for (const event of response.data) {
+        const card = make("article", undefined, "role-card");
+        card.append(make("span", new Date(event.starts_at_ms).toLocaleDateString(), "role-label"), make("h3", event.name));
+        const details = [event.location, event.delivery_mode.replaceAll("_", " ")].filter(Boolean).join(" · ");
+        card.append(make("p", details || "Event details coming soon."));
+        const actions = make("div", undefined, "public-event-actions");
+        if (event.cfp_slug) actions.append(link("Call for speakers →", `/cfp/${encodeURIComponent(event.cfp_slug)}`));
+        if (event.schedule_published) actions.append(link("Schedule →", `/events/${encodeURIComponent(event.id)}/schedule`));
+        if (event.speaker_count) actions.append(link("Speakers →", `/events/${encodeURIComponent(event.id)}/speakers`));
+        if (!actions.children.length) actions.append(make("span", "Program details coming soon.", "role-label"));
+        card.append(actions); publicEvents.append(card);
+      }
+    } catch (_) {
+      publicEvents.replaceChildren(make("p", "Public events could not be loaded.", "public-events-empty"));
+    }
+  }
+
   function renderGuestShell() {
     document.body.classList.add("sb-shell-guest");
     const inner = make("div", undefined, "sb-guest-header__inner");
@@ -295,6 +322,7 @@
   }
 
   async function initialize() {
+    renderPublicEvents();
     let session;
     try {
       session = await window.SessionBuddyApi.request("/api/v1/auth/session");

@@ -36,6 +36,8 @@ from sessionbuddy.platform.storage import (
 
 from .asset_boundary import AssetAccessScope, AssetRepository, ScanJob
 from .models import (
+    AdminSpeakerAssetList,
+    AdminSpeakerAssetView,
     AssetDownloadGrantView,
     AssetDownloadToken,
     OnboardingDashboardView,
@@ -1064,6 +1066,64 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
                 byte_size=int(row["byte_size"]),
                 state="clean",
                 generation=int(row["generation"]),
+            )
+            for row in rows
+        ]
+    )
+
+
+@speaker_operations_router.get(
+    "/api/v1/admin/events/{event_id}/assets",
+    response_model=AdminSpeakerAssetList,
+    operation_id="listAdminSpeakerAssets",
+    tags=["speaker-assets"],
+)
+async def list_admin_speaker_assets(
+    event_id: str, request: Request
+) -> AdminSpeakerAssetList:
+    event = await _admin_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_READ,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=False,
+    )
+    rows = result_rows(
+        await _timed_all(
+            request,
+            _db(request)
+            .prepare(
+                """SELECT a.id,a.event_speaker_id,p.display_name AS speaker_name,a.kind,
+                          current.original_filename,current.content_type,current.byte_size,
+                          current.generation,current.uploaded_at_ms,
+                          (SELECT count(*) FROM speaker_asset_versions history
+                           WHERE history.asset_id=a.id AND history.scan_state IN
+                             ('clean','superseded')) AS version_count
+                   FROM speaker_assets a
+                   JOIN event_speakers es ON es.id=a.event_speaker_id
+                     AND es.organization_id=a.organization_id AND es.event_id=a.event_id
+                   JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
+                   JOIN speaker_asset_versions current ON current.asset_id=a.id
+                     AND current.is_current=1 AND current.scan_state='clean'
+                   WHERE a.organization_id=?1 AND a.event_id=?2
+                   ORDER BY current.uploaded_at_ms DESC,a.id LIMIT 500"""
+            )
+            .bind(event["organization_id"], event_id),
+        )
+    )
+    return AdminSpeakerAssetList(
+        data=[
+            AdminSpeakerAssetView(
+                id=str(row["id"]),
+                event_speaker_id=str(row["event_speaker_id"]),
+                speaker_name=str(row["speaker_name"]),
+                kind=str(row["kind"]),
+                filename=str(row["original_filename"]),
+                content_type=str(row["content_type"]),
+                byte_size=int(row["byte_size"]),
+                generation=int(row["generation"]),
+                version_count=int(row["version_count"]),
+                uploaded_at_ms=int(row["uploaded_at_ms"]),
             )
             for row in rows
         ]

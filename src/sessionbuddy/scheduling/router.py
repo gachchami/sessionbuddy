@@ -1,6 +1,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -24,9 +25,49 @@ from sessionbuddy.platform.db.commands import (
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
-from .models import AgendaCandidate, AgendaPublish, AgendaSetup
+from .models import (
+    AgendaAutoSchedule,
+    AgendaCandidate,
+    AgendaPublish,
+    AgendaResourceCreate,
+    AgendaResourceUpdate,
+    AgendaSetup,
+)
 
 scheduling_router = APIRouter()
+
+_RESOURCE_SELECT_BY_NAME = {
+    "room": """SELECT id,status,version FROM event_rooms
+               WHERE organization_id=?1 AND event_id=?2 AND lower(name)=lower(?3) LIMIT 1""",
+    "track": """SELECT id,status,version FROM event_tracks
+                WHERE organization_id=?1 AND event_id=?2 AND lower(name)=lower(?3) LIMIT 1""",
+}
+_RESOURCE_RESTORE = {
+    "room": """UPDATE event_rooms
+               SET status='active',name=?1,version=version+1,updated_at_ms=?2
+               WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND status='archived'""",
+    "track": """UPDATE event_tracks
+                SET status='active',name=?1,version=version+1,updated_at_ms=?2
+                WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND status='archived'""",
+}
+_RESOURCE_SELECT_BY_ID = {
+    "room": """SELECT id,status,version FROM event_rooms
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1""",
+    "track": """SELECT id,status,version FROM event_tracks
+                WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1""",
+}
+_RESOURCE_IN_USE = {
+    "room": """SELECT id FROM agenda_items WHERE organization_id=?1 AND event_id=?2
+               AND revision_id=?3 AND room_id=?4 LIMIT 1""",
+    "track": """SELECT id FROM agenda_items WHERE organization_id=?1 AND event_id=?2
+                AND revision_id=?3 AND track_id=?4 LIMIT 1""",
+}
+_RESOURCE_UPDATE = {
+    "room": """UPDATE event_rooms SET status=?1,version=version+1,updated_at_ms=?2
+               WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND version=?6""",
+    "track": """UPDATE event_tracks SET status=?1,version=version+1,updated_at_ms=?2
+                WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND version=?6""",
+}
 
 
 
@@ -108,7 +149,7 @@ def _blob(value: object) -> bytes:
     return converted if isinstance(converted, bytes) else bytes(converted)
 
 
-def _fingerprint(body: AgendaCandidate | AgendaSetup) -> bytes:
+def _fingerprint(body: AgendaAutoSchedule | AgendaCandidate | AgendaSetup) -> bytes:
     return hashlib.sha256(
         json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
     ).digest()
@@ -145,6 +186,8 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
     items = result_rows(
         await db.prepare(
             """SELECT ai.id,ai.accepted_session_id AS session_id,s.proposal_title AS title,
+                      s.proposal_abstract AS abstract,ac.content_status,
+                      ac.version AS content_version,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                       ai.room_id,r.name AS room_name,ai.track_id,t.name AS track_name,ai.version
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
@@ -158,7 +201,9 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
     )
     unscheduled = result_rows(
         await db.prepare(
-            """SELECT ac.id AS session_id,s.proposal_title AS title
+            """SELECT ac.id AS session_id,s.proposal_title AS title,
+                      s.proposal_abstract AS abstract,ac.content_status,
+                      ac.version AS content_version
                FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
@@ -170,7 +215,7 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
     )
     rooms = result_rows(
         await db.prepare(
-            """SELECT id,name FROM event_rooms
+            """SELECT id,name,status,version FROM event_rooms
                WHERE organization_id=?1 AND event_id=?2 AND status='active'
                ORDER BY name"""
         )
@@ -179,7 +224,7 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
     )
     tracks = result_rows(
         await db.prepare(
-            """SELECT id,name FROM event_tracks
+            """SELECT id,name,status,version FROM event_tracks
                WHERE organization_id=?1 AND event_id=?2 AND status='active'
                ORDER BY name"""
         )
@@ -314,6 +359,390 @@ async def setup_admin_agenda(
     if revision is None:
         raise HTTPException(status_code=409)
     return await _agenda_model(db, event, revision)
+
+
+async def _create_agenda_resource(
+    event_id: str,
+    request: Request,
+    body: AgendaResourceCreate,
+    *,
+    resource: str,
+) -> dict[str, object]:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    revision = await _revision(db, organization_id, event_id)
+    if revision is None:
+        raise HTTPException(status_code=409, detail="Create the agenda first")
+    existing = row_mapping(
+        await db.prepare(_RESOURCE_SELECT_BY_NAME[resource])
+        .bind(organization_id, event_id, body.name)
+        .first()
+    )
+    if existing is not None and str(existing["status"]) == "active":
+        raise HTTPException(status_code=409, detail=f"That {resource} already exists")
+    now, resource_id = utc_now_ms(), str(existing["id"]) if existing else new_id()
+    batch = CommandBatch(db)
+    if existing is None:
+        if resource == "room":
+            statement = db.prepare(
+                """INSERT INTO event_rooms
+                   (id,organization_id,event_id,name,status,version,created_at_ms,updated_at_ms)
+                   VALUES (?1,?2,?3,?4,'active',1,?5,?5)"""
+            ).bind(resource_id, organization_id, event_id, body.name, now)
+        else:
+            statement = db.prepare(
+                """INSERT INTO event_tracks
+                   (id,organization_id,event_id,name,is_exclusive,status,version,
+                    created_at_ms,updated_at_ms)
+                   VALUES (?1,?2,?3,?4,0,'active',1,?5,?5)"""
+            ).bind(resource_id, organization_id, event_id, body.name, now)
+    else:
+        statement = db.prepare(_RESOURCE_RESTORE[resource]).bind(
+            body.name, now, organization_id, event_id, resource_id
+        )
+    batch.add_statement(statement)
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action=f"agenda.{resource}.create",
+            target_type=f"event_{resource}",
+            target_id=resource_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    return await _agenda_model(db, event, revision)
+
+
+async def _update_agenda_resource(
+    event_id: str,
+    resource_id: str,
+    request: Request,
+    body: AgendaResourceUpdate,
+    *,
+    resource: str,
+) -> dict[str, object]:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    revision = await _revision(db, organization_id, event_id)
+    if revision is None:
+        raise HTTPException(status_code=409)
+    row = row_mapping(
+        await db.prepare(_RESOURCE_SELECT_BY_ID[resource])
+        .bind(organization_id, event_id, resource_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    if int(row["version"]) != body.version:
+        raise HTTPException(status_code=409, detail="This item changed. Refresh and try again.")
+    if body.status == "archived":
+        if resource == "room":
+            active = row_mapping(
+                await db.prepare(
+                    """SELECT count(*) AS total FROM event_rooms
+                       WHERE organization_id=?1 AND event_id=?2 AND status='active'"""
+                )
+                .bind(organization_id, event_id)
+                .first()
+            )
+            if active is not None and int(active["total"]) <= 1:
+                raise HTTPException(status_code=409, detail="An agenda needs at least one room")
+        used = row_mapping(
+            await db.prepare(_RESOURCE_IN_USE[resource])
+            .bind(organization_id, event_id, revision["id"], resource_id)
+            .first()
+        )
+        if used is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Move scheduled sessions before archiving this {resource}",
+            )
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(_RESOURCE_UPDATE[resource]).bind(
+            body.status, now, organization_id, event_id, resource_id, body.version
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action=f"agenda.{resource}.{body.status}",
+            target_type=f"event_{resource}",
+            target_id=resource_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    return await _agenda_model(db, event, revision)
+
+
+@scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/rooms", tags=["agenda"])
+async def create_agenda_room(
+    event_id: str, request: Request, body: AgendaResourceCreate
+) -> dict[str, object]:
+    return await _create_agenda_resource(event_id, request, body, resource="room")
+
+
+@scheduling_router.patch(
+    "/api/v1/admin/events/{event_id}/agenda/rooms/{room_id}", tags=["agenda"]
+)
+async def update_agenda_room(
+    event_id: str, room_id: str, request: Request, body: AgendaResourceUpdate
+) -> dict[str, object]:
+    return await _update_agenda_resource(
+        event_id, room_id, request, body, resource="room"
+    )
+
+
+@scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/tracks", tags=["agenda"])
+async def create_agenda_track(
+    event_id: str, request: Request, body: AgendaResourceCreate
+) -> dict[str, object]:
+    return await _create_agenda_resource(event_id, request, body, resource="track")
+
+
+@scheduling_router.patch(
+    "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}", tags=["agenda"]
+)
+async def update_agenda_track(
+    event_id: str, track_id: str, request: Request, body: AgendaResourceUpdate
+) -> dict[str, object]:
+    return await _update_agenda_resource(
+        event_id, track_id, request, body, resource="track"
+    )
+
+
+def _agenda_date(timestamp_ms: int, time_zone: str) -> str:
+    try:
+        zone = ZoneInfo(time_zone)
+    except Exception:
+        zone = UTC
+    return datetime.fromtimestamp(timestamp_ms / 1000, zone).strftime("%Y-%m-%d")
+
+
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/agenda/auto-schedule", tags=["agenda"]
+)
+async def auto_schedule_agenda(
+    event_id: str,
+    request: Request,
+    body: AgendaAutoSchedule,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    revision = await _revision(db, organization_id, event_id)
+    if revision is None:
+        raise HTTPException(status_code=409)
+    key, fingerprint = _key(idempotency_key), _fingerprint(body)
+    route = "POST /api/v1/admin/events/{event_id}/agenda/auto-schedule"
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND event_id=?4 AND state='completed'"""
+        )
+        .bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest(), event_id)
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return await _agenda_model(db, event, revision)
+    rooms = result_rows(
+        await db.prepare(
+            """SELECT id FROM event_rooms WHERE organization_id=?1 AND event_id=?2
+               AND status='active' ORDER BY name,id"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
+    available_rooms = [str(row["id"]) for row in rooms]
+    if body.room_ids:
+        if not set(body.room_ids).issubset(set(available_rooms)):
+            raise HTTPException(status_code=422, detail="Choose active rooms from this event")
+        available_rooms = body.room_ids
+    if not available_rooms:
+        raise HTTPException(status_code=409, detail="Add an active room first")
+    sessions = result_rows(
+        await db.prepare(
+            """SELECT ac.id,s.proposal_title
+               FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
+               WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
+                 SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
+                   AND ai.accepted_session_id=ac.id)
+               ORDER BY s.proposal_title,ac.id"""
+        )
+        .bind(organization_id, event_id, revision["id"])
+        .all()
+    )
+    existing = result_rows(
+        await db.prepare(
+            """SELECT ai.id,ai.room_id,ai.starts_at_ms,ai.ends_at_ms,
+                      COALESCE(group_concat(ais.event_speaker_id, ','),'') AS speaker_ids
+               FROM agenda_items ai LEFT JOIN agenda_item_speakers ais
+                 ON ais.agenda_item_id=ai.id AND ais.revision_id=ai.revision_id
+               WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+               GROUP BY ai.id"""
+        )
+        .bind(organization_id, event_id, revision["id"])
+        .all()
+    )
+    allocations = [
+        {
+            "room_id": str(row["room_id"]),
+            "start": int(row["starts_at_ms"]),
+            "end": int(row["ends_at_ms"]),
+            "speakers": frozenset(filter(None, str(row["speaker_ids"]).split(","))),
+        }
+        for row in existing
+    ]
+    start = max(int(event["starts_at_ms"]), body.start_at_ms or int(event["starts_at_ms"]))
+    duration = body.session_minutes * 60_000
+    gap = body.gap_minutes * 60_000
+    planned: list[dict[str, object]] = []
+    for session in sessions:
+        speaker_ids = frozenset(
+            await _speaker_ids(db, organization_id, event_id, str(session["id"]))
+        )
+        choices: list[tuple[int, str]] = []
+        for room_id in available_rooms:
+            candidate = start
+            while candidate + duration <= int(event["ends_at_ms"]):
+                conflicts = [
+                    value
+                    for value in allocations
+                    if value["start"] < candidate + duration
+                    and value["end"] > candidate
+                    and (
+                        value["room_id"] == room_id
+                        or bool(value["speakers"] & speaker_ids)
+                    )
+                ]
+                if not conflicts:
+                    choices.append((candidate, room_id))
+                    break
+                candidate = max(int(value["end"]) + gap for value in conflicts)
+        if not choices:
+            continue
+        starts_at_ms, room_id = min(choices, key=lambda value: (value[0], value[1]))
+        allocation = {
+            "id": new_id(),
+            "session_id": str(session["id"]),
+            "room_id": room_id,
+            "start": starts_at_ms,
+            "end": starts_at_ms + duration,
+            "speakers": speaker_ids,
+        }
+        allocations.append(allocation)
+        planned.append(allocation)
+    now = utc_now_ms()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    for item in planned:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO agenda_items
+                   (id,organization_id,event_id,revision_id,accepted_session_id,room_id,
+                    track_id,event_date,event_time_zone,starts_at_ms,ends_at_ms,version,
+                    created_at_ms,updated_at_ms)
+                   VALUES (?1,?2,?3,?4,?5,?6,NULL,?7,?8,?9,?10,1,?11,?11)"""
+            ).bind(
+                item["id"],
+                organization_id,
+                event_id,
+                revision["id"],
+                item["session_id"],
+                item["room_id"],
+                _agenda_date(int(item["start"]), str(event["time_zone"])),
+                event["time_zone"],
+                item["start"],
+                item["end"],
+                now,
+            )
+        )
+        for speaker_id in item["speakers"]:
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO agenda_item_speakers
+                       (id,organization_id,event_id,revision_id,agenda_item_id,
+                        event_speaker_id,created_at_ms)
+                       VALUES (?1,?2,?3,?4,?5,?6,?7)"""
+                ).bind(
+                    new_id(),
+                    organization_id,
+                    event_id,
+                    revision["id"],
+                    item["id"],
+                    speaker_id,
+                    now,
+                )
+            )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.auto_schedule",
+            target_type="schedule_revision",
+            target_id=str(revision["id"]),
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={"scheduled_count": len(planned), "requested_count": len(sessions)},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="schedule_revision",
+        resource_id=str(revision["id"]),
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    model = await _agenda_model(db, event, revision)
+    model["auto_schedule"] = {
+        "scheduled_count": len(planned),
+        "remaining_count": len(sessions) - len(planned),
+    }
+    return model
 
 
 async def _slot(request: Request, event, revision, body: AgendaCandidate) -> AgendaSlot:
@@ -845,6 +1274,7 @@ async def get_public_schedule(event_id: str, request: Request) -> dict[str, obje
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+                 AND ac.content_status='approved'
                GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
         )
         .bind(event["organization_id"], event_id, revision["id"])

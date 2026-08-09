@@ -10,6 +10,8 @@ from .models import (
     RecipientPreviewRequest,
     RecipientPreviewResponse,
     ReminderQueuedResponse,
+    SpeakerMessagePreviewRequest,
+    SpeakerMessageSendRequest,
 )
 
 
@@ -20,6 +22,14 @@ class CommunicationsService(Protocol):
     ) -> RecipientPreviewResponse: ...
     async def queue_manual_send(
         self, event_id: str, body: ManualSendRequest, idempotency_key: str
+    ) -> ManualSendResponse: ...
+
+    async def preview_speaker_message(
+        self, event_id: str, body: SpeakerMessagePreviewRequest
+    ) -> RecipientPreviewResponse: ...
+
+    async def queue_speaker_message(
+        self, event_id: str, body: SpeakerMessageSendRequest, idempotency_key: str
     ) -> ManualSendResponse: ...
 
     async def queue_task_reminder(

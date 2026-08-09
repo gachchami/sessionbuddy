@@ -55,7 +55,11 @@ h1 { max-width: 14ch; margin: 0; font-size: clamp(2.5rem,5.2vw,4.2rem); }
 .workflow-list div span { color: #667085; font-size: .78rem; }
 .step-state { color: #475467; font-size: .7rem; font-weight: 650; }
 
-.role-section, .platform-section, .closing-section { padding: clamp(4rem,7vw,6rem) 0; }
+.role-section, .public-events-section, .platform-section, .closing-section { padding: clamp(4rem,7vw,6rem) 0; }
+.public-events-section { border-top: 1px solid #e4e7ec; background: #f8fafc; }
+.public-event-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: auto; }
+.public-event-actions a { margin-top: 0; }
+.public-events-empty { color: #667085; }
 .section-heading { max-width: 42rem; }
 .section-heading h2, .platform-grid h2, .closing-card h2 { margin: 0; font-size: clamp(2rem,3.7vw,3rem); }
 .section-heading > p:last-child { max-width: 38rem; margin: 1rem 0 0; color: #667085; line-height: 1.6; }

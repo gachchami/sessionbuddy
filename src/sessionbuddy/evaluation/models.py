@@ -3,6 +3,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class EvaluationCriterion(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    label: str = Field(min_length=1, max_length=120)
+    weight: int = Field(ge=1, le=100)
+
+
 class EvaluationRoundCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -11,6 +19,10 @@ class EvaluationRoundCreate(BaseModel):
     rating_max: int = Field(ge=1, le=10)
     recommendations: list[str] = Field(min_length=2, max_length=8)
     evaluator_guidance: str = Field(default="", max_length=1000)
+    criteria: list[EvaluationCriterion] = Field(default_factory=list, max_length=8)
+    blind_review: bool = True
+    review_opens_at_ms: int | None = Field(default=None, ge=0)
+    review_closes_at_ms: int | None = Field(default=None, ge=0)
     submission_ids: list[str] = Field(min_length=1, max_length=100)
     evaluator_user_ids: list[str] = Field(min_length=1, max_length=50)
     assignment_strategy: Literal["all", "balanced"]
@@ -31,6 +43,16 @@ class EvaluationRoundCreate(BaseModel):
             raise ValueError("submission_ids must be unique")
         if len(set(self.evaluator_user_ids)) != len(self.evaluator_user_ids):
             raise ValueError("evaluator_user_ids must be unique")
+        if len({criterion.key for criterion in self.criteria}) != len(self.criteria):
+            raise ValueError("criteria keys must be unique")
+        if self.criteria and sum(criterion.weight for criterion in self.criteria) != 100:
+            raise ValueError("criteria weights must total 100")
+        if (
+            self.review_opens_at_ms is not None
+            and self.review_closes_at_ms is not None
+            and self.review_closes_at_ms <= self.review_opens_at_ms
+        ):
+            raise ValueError("review close must be after review open")
         return self
 
 
@@ -40,9 +62,15 @@ class EvaluationRoundView(BaseModel):
     id: str
     program_id: str
     name: str
-    status: Literal["open"]
+    status: Literal["draft", "open", "closed"]
     assignment_count: int
     evaluator_count: int
+
+
+class EvaluationRoundList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: list[EvaluationRoundView]
 
 
 class EvaluatorView(BaseModel):
@@ -72,6 +100,10 @@ class EvaluationAssignmentView(BaseModel):
     rating_max: int
     recommendations: list[str]
     evaluator_guidance: str = ""
+    criteria: list[EvaluationCriterion] = Field(default_factory=list)
+    criterion_scores: dict[str, int] = Field(default_factory=dict)
+    blind_review: bool = False
+    review_closes_at_ms: int | None = None
     evaluation_state: Literal["not_started", "draft", "final"]
     rating: int | None = None
     recommendation: str | None = None
@@ -138,6 +170,7 @@ class EvaluationSave(BaseModel):
     rating: int = Field(ge=0, le=10)
     recommendation: str = Field(min_length=1, max_length=80)
     internal_comment: str = Field(default="", max_length=5000)
+    criterion_scores: dict[str, int] = Field(default_factory=dict, max_length=8)
     state: Literal["draft", "final"]
 
 

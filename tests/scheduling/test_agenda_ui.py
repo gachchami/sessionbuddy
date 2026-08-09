@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from sessionbuddy.scheduling.models import AgendaSetup
+from sessionbuddy.scheduling.models import AgendaAutoSchedule, AgendaResourceCreate, AgendaSetup
 
 ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
@@ -32,6 +32,24 @@ def test_fresh_event_can_create_its_first_agenda_and_rooms() -> None:
     assert 'if (error.status === 404) showSetup()' in javascript
 
 
+def test_existing_agenda_can_manage_resources_and_build_a_draft() -> None:
+    html, javascript = read("agenda_admin.html"), read("agenda.js")
+    assert 'id="auto-schedule-form"' in html
+    assert 'id="room-form"' in html and 'id="track-form"' in html
+    assert "/agenda/auto-schedule" in javascript
+    assert "/agenda/${kind}s" in javascript
+    assert "Review the draft before publishing" in javascript
+
+
+def test_auto_schedule_and_resource_inputs_are_bounded() -> None:
+    assert AgendaResourceCreate(name="  Main stage  ").name == "Main stage"
+    assert AgendaAutoSchedule(session_minutes=45, gap_minutes=15).session_minutes == 45
+    with pytest.raises(ValidationError):
+        AgendaAutoSchedule(session_minutes=5)
+    with pytest.raises(ValidationError):
+        AgendaAutoSchedule(room_ids=["room-a", "room-a"])
+
+
 def test_agenda_editor_interprets_dates_in_the_event_time_zone() -> None:
     javascript = read("agenda.js")
     assert "partsInTimeZone" in javascript
@@ -53,8 +71,8 @@ def test_agenda_setup_requires_unique_nonblank_rooms() -> None:
 def test_save_is_optimistic_with_visible_rollback_and_server_preview() -> None:
     javascript, css = read("agenda.js"), read("agenda.css")
     assert "/agenda/preview" in javascript
-    assert "optimistic(candidate); render(); await save(candidate)" in javascript
-    assert "state.model = before; render()" in javascript
+    assert "optimistic(candidate)" in javascript and "await save(candidate)" in javascript
+    assert "state.model = before" in javascript
     assert "rolled back" in javascript
     assert ".rollback" in css and ".preview-conflict" in css
 

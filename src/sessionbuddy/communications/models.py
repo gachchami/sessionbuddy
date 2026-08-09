@@ -41,6 +41,25 @@ class ManualSendResponse(BaseModel):
     status: Literal["queued"] = "queued"
 
 
+class SpeakerMessagePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    event_speaker_ids: list[str] = Field(min_length=1, max_length=100)
+    subject: str = Field(min_length=1, max_length=200)
+    body_text: str = Field(min_length=1, max_length=10_000)
+
+    @model_validator(mode="after")
+    def validate_speakers(self) -> "SpeakerMessagePreviewRequest":
+        if any(len(value) != 36 for value in self.event_speaker_ids):
+            raise ValueError("event_speaker_ids must contain UUIDs")
+        if len(self.event_speaker_ids) != len(set(self.event_speaker_ids)):
+            raise ValueError("event_speaker_ids must be unique")
+        return self
+
+
+class SpeakerMessageSendRequest(SpeakerMessagePreviewRequest):
+    confirmed: Literal[True]
+
+
 class CommunicationStatus(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str

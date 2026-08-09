@@ -264,6 +264,11 @@
       try {
         const session = await api("/api/v1/auth/session");
         state.csrf = session.csrf_token;
+        await api(`/api/v1/forms/${encodeURIComponent(slug)}/access`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+          body: "{}"
+        });
         byId("proposal-card").hidden = false;
         setStatus("Your proposal is ready to edit.");
         await loadDraft();

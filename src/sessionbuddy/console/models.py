@@ -168,14 +168,14 @@ def public_engine_room_status(*, environment: str = "local") -> EngineRoomStatus
             CapabilityProgressItem(
                 area="CFP management",
                 capability="Call-for-speakers program, form and submission journey",
-                state="in_progress",
-                evidence="Next reviewable product slice",
+                state="complete",
+                evidence="Published forms, conditional fields, drafts, uploads, and validated submissions",
             ),
             CapabilityProgressItem(
                 area="Evaluation, speaker operations, and scheduling",
                 capability="Speaker portal, evaluation, communications and agenda",
-                state="pending",
-                evidence="Sequenced after the measured CFP management slice",
+                state="complete",
+                evidence="Weighted review rounds, speaker workflows, messaging, agenda conflicts, and publication",
             ),
         ],
     )

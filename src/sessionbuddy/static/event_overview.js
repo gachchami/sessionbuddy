@@ -5,7 +5,7 @@
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
 
-  const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+  const api = (path) => window.SessionBuddyApi.request(path);
 
   function tool(title, description, href) {
     const card = document.createElement("article");
@@ -76,9 +76,11 @@
   }
 
   initialize().catch((error) => {
-    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
-      byId("status").textContent = window.SessionBuddyApi.message(error);
-      byId("status").classList.add("error");
-    }
+    if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+    byId("status").textContent = window.SessionBuddyApi.message(
+      error,
+      "The event could not be loaded. Try again.",
+    );
+    byId("status").classList.add("error");
   });
 })();

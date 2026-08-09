@@ -25,6 +25,8 @@ from .models import (
     RecipientPreviewRequest,
     RecipientPreviewResponse,
     ReminderQueuedResponse,
+    SpeakerMessagePreviewRequest,
+    SpeakerMessageSendRequest,
 )
 from .rendering import render_template
 
@@ -216,6 +218,160 @@ class D1CommunicationsService:
                 actor_type="user",
                 actor_user_id=self.actor.user_id if self.actor else None,
                 action="communication.manual.queue",
+                target_type="communication_batch",
+                result="succeeded",
+                correlation_id=self.request.state.request_id,
+                occurred_at_ms=now,
+                metadata={"recipient_count": len(ids)},
+            )
+        )
+        batch.complete_idempotency(
+            record,
+            status=202,
+            resource_type="communication_batch",
+            resource_id=record.id,
+            completed_at_ms=now,
+        )
+        try:
+            await batch.execute()
+        except PersistenceError as exc:
+            raise HTTPException(status_code=409) from exc
+        await self._publish_delivery_requests(ids)
+        return ManualSendResponse(message_ids=ids)
+
+    async def preview_speaker_message(
+        self, event_id: str, body: SpeakerMessagePreviewRequest
+    ) -> RecipientPreviewResponse:
+        if self.organization_id is None:
+            raise HTTPException(status_code=404)
+        recipients: list[RecipientPreview] = []
+        html_body = f"<p>{escape(body.body_text).replace(chr(10), '<br>')}</p>"
+        for event_speaker_id in body.event_speaker_ids:
+            row = row_mapping(
+                await self.db.prepare(
+                    """SELECT u.id,u.email,p.display_name
+                       FROM event_speakers es
+                       JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id
+                       JOIN users u ON u.id=p.user_id AND u.status='active'
+                       JOIN event_memberships em ON em.organization_id=es.organization_id
+                         AND em.event_id=es.event_id AND em.user_id=u.id
+                         AND em.role='speaker' AND em.status='active'
+                       WHERE es.id=?1 AND es.organization_id=?2 AND es.event_id=?3
+                         AND es.status!='withdrawn' LIMIT 1"""
+                )
+                .bind(event_speaker_id, self.organization_id, event_id)
+                .first()
+            )
+            if row is None:
+                raise HTTPException(status_code=404)
+            recipients.append(
+                RecipientPreview(
+                    recipient_user_id=str(row["id"]),
+                    display_name=str(row["display_name"]),
+                    email=str(row["email"]),
+                    subject=body.subject,
+                    html_body=html_body,
+                )
+            )
+        return RecipientPreviewResponse(recipients=recipients)
+
+    async def queue_speaker_message(
+        self, event_id: str, body: SpeakerMessageSendRequest, idempotency_key: str
+    ) -> ManualSendResponse:
+        preview = await self.preview_speaker_message(event_id, body)
+        if self.organization_id is None:
+            raise HTTPException(status_code=404)
+        now = utc_now_ms()
+        fingerprint = hashlib.sha256(body.model_dump_json().encode()).digest()
+        record = IdempotencyRecord(
+            principal_key=self.actor.user_id if self.actor else "missing-actor",
+            route_key="communications.speakers.send",
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            organization_id=self.organization_id,
+            event_id=event_id,
+            expires_at_ms=now + 86_400_000,
+        )
+        replay = row_mapping(
+            await self.db.prepare(
+                """SELECT request_fingerprint,state FROM idempotency_records
+                   WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                     AND event_id=?4 LIMIT 1"""
+            )
+            .bind(record.principal_key, record.route_key, record.key_hash, event_id)
+            .first()
+        )
+        if replay is not None:
+            if (
+                bytes(replay["request_fingerprint"]) != fingerprint
+                or replay["state"] != "completed"
+            ):
+                raise HTTPException(status_code=409)
+            ids = []
+            for recipient in preview.recipients:
+                existing = await (
+                    self.db.prepare(
+                        """SELECT id FROM communication_messages
+                           WHERE organization_id=?1 AND event_id=?2
+                             AND deterministic_key=?3 LIMIT 1"""
+                    )
+                    .bind(
+                        self.organization_id,
+                        event_id,
+                        f"speaker-bulk:{idempotency_key}:{recipient.recipient_user_id}",
+                    )
+                    .first("id")
+                )
+                if existing is not None:
+                    ids.append(str(existing))
+            await self._publish_delivery_requests(ids)
+            return ManualSendResponse(message_ids=ids)
+        batch, ids = CommandBatch(self.db), []
+        batch.begin_idempotency(record, now)
+        for recipient in preview.recipients:
+            message_id = new_id()
+            ids.append(message_id)
+            deterministic_key = (
+                f"speaker-bulk:{idempotency_key}:{recipient.recipient_user_id}"
+            )
+            batch.add_statement(
+                self.db.prepare(
+                    """INSERT INTO communication_messages
+                       (id,organization_id,event_id,recipient_user_id,recipient_email,subject,
+                        html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)"""
+                ).bind(
+                    message_id,
+                    self.organization_id,
+                    event_id,
+                    recipient.recipient_user_id,
+                    recipient.email,
+                    recipient.subject,
+                    recipient.html_body,
+                    deterministic_key,
+                    now,
+                )
+            )
+            batch.outbox(
+                OutboxMessage(
+                    organization_id=self.organization_id,
+                    event_id=event_id,
+                    topic="communication.delivery.requested",
+                    aggregate_type="communication_message",
+                    aggregate_id=message_id,
+                    deduplication_key=deterministic_key,
+                    payload={"message_id": message_id},
+                    available_at_ms=now,
+                    created_at_ms=now,
+                )
+            )
+        batch.audit(
+            AuditEvent(
+                organization_id=self.organization_id,
+                event_id=event_id,
+                actor_type="user",
+                actor_user_id=self.actor.user_id if self.actor else None,
+                action="communication.speakers.queue",
                 target_type="communication_batch",
                 result="succeeded",
                 correlation_id=self.request.state.request_id,

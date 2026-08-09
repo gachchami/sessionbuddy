@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -41,3 +43,36 @@ class AgendaCandidate(StrictModel):
 class AgendaPublish(StrictModel):
     revision_id: str = Field(min_length=1, max_length=128)
     version: int = Field(ge=1)
+
+
+class AgendaResourceCreate(StrictModel):
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("name is required")
+        return cleaned
+
+
+class AgendaResourceUpdate(StrictModel):
+    status: Literal["active", "archived"]
+    version: int = Field(ge=1)
+
+
+class AgendaAutoSchedule(StrictModel):
+    start_at_ms: int | None = Field(default=None, ge=0)
+    session_minutes: int = Field(default=45, ge=10, le=240)
+    gap_minutes: int = Field(default=15, ge=0, le=120)
+    room_ids: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("room_ids")
+    @classmethod
+    def validate_room_ids(cls, values: list[str]) -> list[str]:
+        if any(not value or len(value) > 128 for value in values):
+            raise ValueError("invalid room id")
+        if len(values) != len(set(values)):
+            raise ValueError("room ids must be unique")
+        return values

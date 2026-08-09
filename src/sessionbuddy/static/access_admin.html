@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
-  <script src="/admin/access/assets/access.js?v=2" defer></script>
+  <script src="/admin/access/assets/access.js?v=3" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to access management</a>
@@ -18,7 +18,7 @@
     <p class="lede">Invite administrators, reviewers, and speakers.</p>
     <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Checking your session…</div>
     <div class="grid">
-      <section class="card"><h2>Send invitation</h2><form id="invite-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Event role<select name="role"><option value="speaker">Speaker</option><option value="evaluator">Reviewer</option><option value="event_admin">Event administrator</option></select></label><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="14" selected>14 days</option><option value="30">30 days</option></select></label><button>Invite</button></form></section>
+      <section class="card"><h2>Send invitation</h2><form id="invite-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Event role<select name="role"><option value="speaker">Speaker</option><option value="evaluator">Reviewer</option><option value="event_admin">Event administrator</option></select></label><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="14" selected>14 days</option><option value="30">30 days</option></select></label><button>Invite</button></form><div id="invite-result" class="public-link" hidden><strong>Invitation ready</strong><p>The email is queued. You can also share this one-time link directly; it expires in 15 minutes.</p><label>Acceptance link<input id="invite-url" readonly></label><button id="copy-invite" class="secondary" type="button">Copy link</button></div></section>
       <section class="card"><h2>Invitations</h2><ul id="invitation-list" class="item-list"><li>Loading…</li></ul></section>
       <section class="card wide"><h2>Event members</h2><ul id="member-list" class="item-list"><li>Loading…</li></ul></section>
     </div>

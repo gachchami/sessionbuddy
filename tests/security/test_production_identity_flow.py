@@ -421,6 +421,35 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "Workshop room",
         ]
         assert [track["name"] for track in agenda.json()["tracks"]] == ["General"]
+        added_room = await admin.post(
+            f"/api/v1/admin/events/{event_id}/agenda/rooms",
+            headers=mutation_headers,
+            json={"name": "Auditorium"},
+        )
+        assert added_room.status_code == 200
+        assert [room["name"] for room in added_room.json()["rooms"]] == [
+            "Auditorium",
+            "Main stage",
+            "Workshop room",
+        ]
+        general_track = added_room.json()["tracks"][0]
+        archived_track = await admin.patch(
+            f"/api/v1/admin/events/{event_id}/agenda/tracks/{general_track['id']}",
+            headers=mutation_headers,
+            json={"status": "archived", "version": general_track["version"]},
+        )
+        assert archived_track.status_code == 200
+        assert archived_track.json()["tracks"] == []
+        empty_auto_schedule = await admin.post(
+            f"/api/v1/admin/events/{event_id}/agenda/auto-schedule",
+            headers={**mutation_headers, "idempotency-key": "agenda-auto-empty-2026"},
+            json={"session_minutes": 45, "gap_minutes": 15, "room_ids": []},
+        )
+        assert empty_auto_schedule.status_code == 200
+        assert empty_auto_schedule.json()["auto_schedule"] == {
+            "scheduled_count": 0,
+            "remaining_count": 0,
+        }
         replayed_agenda = await admin.post(
             f"/api/v1/admin/events/{event_id}/agenda/setup",
             headers=agenda_headers,
@@ -657,8 +686,17 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             json={"email": "reviewer@example.com", "role": "evaluator"},
         )
         assert temporary.status_code == 201
+        assert temporary.json()["accept_url"].startswith("https://test/auth/verify?token=")
         listed = await client.get(f"/api/v1/admin/events/{event_id}/invitations")
         assert listed.json()["data"][0]["id"] == temporary.json()["id"]
+        assert "accept_url" not in listed.json()["data"][0]
+        resent = await client.post(
+            f"/api/v1/admin/events/{event_id}/invitations/{temporary.json()['id']}/resend",
+            headers=headers,
+            json={},
+        )
+        assert resent.status_code == 200
+        assert resent.json()["accept_url"] != temporary.json()["accept_url"]
         revoked = await client.delete(
             f"/api/v1/admin/events/{event_id}/invitations/{temporary.json()['id']}",
             headers=headers,
@@ -670,14 +708,8 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             json={"email": "admin@example.com", "role": "speaker"},
         )
         assert invitation.status_code == 201
-
-        requested = await client.post(
-            "/api/v1/auth/magic-links",
-            json={"email": "admin@example.com", "redirect_path": "/speaker"},
-        )
-        assert requested.status_code == 202
         accepted = await client.get(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            invitation.json()["accept_url"],
             follow_redirects=False,
         )
         assert accepted.status_code == 303
@@ -705,6 +737,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
     assert actions == {
         "identity.invitation.accept",
         "identity.invitation.create",
+        "identity.invitation.resend",
         "identity.invitation.revoke",
     }
 
@@ -756,26 +789,12 @@ async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
         assert published.status_code == 201
         assert (await client.get("/api/v1/speaker/portal")).status_code == 404
 
-        requested = await client.post(
-            "/api/v1/auth/magic-links",
-            json={
-                "email": "admin@example.com",
-                "form_slug": "admin-speaker",
-                "redirect_path": "/cfp/admin-speaker",
-            },
+        enrolled = await client.post(
+            "/api/v1/forms/admin-speaker/access",
+            headers={**headers, "content-type": "application/json"},
+            json={},
         )
-        assert requested.status_code == 202
-        challenge = connection.execute(
-            """SELECT provisioning_context,event_id FROM authentication_challenges
-               ORDER BY created_at_ms DESC,id DESC LIMIT 1"""
-        ).fetchone()
-        assert tuple(challenge) == ("submission", event_id)
-        verified = await client.get(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
-            follow_redirects=False,
-        )
-        assert verified.status_code == 303
-        assert verified.headers["location"] == "/cfp/admin-speaker"
+        assert enrolled.status_code == 200
         cfp_session = (await client.get("/api/v1/auth/session")).json()
         event_access = next(
             access for access in cfp_session["event_access"] if access["event_id"] == event_id
@@ -795,3 +814,6 @@ async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
         portal = await client.get("/api/v1/speaker/portal")
         assert portal.status_code == 200
         assert portal.json()["event"]["id"] == event_id
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='cfp.speaker_access.ensure'"
+        ).fetchone()[0] == 1

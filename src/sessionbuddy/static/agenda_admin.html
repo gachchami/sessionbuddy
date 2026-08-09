@@ -1,8 +1,172 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Agenda editor · SessionBuddy</title><link rel="stylesheet" href="/product/assets/product.css?v=11"><link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=2"><link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3"><script src="/app-shell/assets/api-client.js?v=1" defer></script><script src="/app-shell/assets/app-shell.js?v=4" defer></script><script src="/admin/agenda/assets/agenda.js?v=2" defer></script></head>
-<body class="app-body"><a class="skip-link" href="#main">Skip to content</a><header data-auth-shell></header>
-<main id="main" class="shell" tabindex="-1"><section class="agenda-hero"><div><h1 id="event-title">Agenda</h1><p id="timezone" class="lede">Loading schedule…</p></div><div id="revision-card" class="revision" hidden><span>Draft revision</span><strong id="revision">—</strong></div></section><div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
-<section id="agenda-setup" class="panel setup-panel" aria-labelledby="agenda-setup-title" hidden><p class="eyebrow">First step</p><h2 id="agenda-setup-title">Set up the schedule</h2><p class="help">Add at least one room. Tracks are optional and can represent topics or stages.</p><form id="agenda-setup-form"><label>Rooms<input name="room_names" placeholder="Main stage, Workshop room" maxlength="2000" required><small>Separate multiple rooms with commas.</small></label><label>Tracks <span class="optional">Optional</span><input name="track_names" placeholder="Engineering, Design" maxlength="2000"><small>Separate multiple tracks with commas.</small></label><button type="submit">Create agenda</button></form></section>
-<div id="agenda-workspace" hidden><section class="agenda-toolbar" aria-labelledby="view-title"><div><h2 id="view-title">View</h2></div><fieldset><legend class="sr-only">Agenda view</legend><div class="segmented"><label><input type="radio" name="view" value="list" checked><span>List</span></label><label><input type="radio" name="view" value="day"><span>Day</span></label><label><input type="radio" name="view" value="week"><span>Week</span></label><label><input type="radio" name="view" value="track"><span>Track</span></label><label><input type="radio" name="view" value="room"><span>Room</span></label></div></fieldset><button id="refresh" class="secondary" type="button">Refresh</button><a id="published-link" class="button secondary" href="#" target="_blank" rel="noopener">Open public schedule</a><button id="publish" type="button">Publish agenda</button></section>
-<div class="agenda-layout"><aside class="panel" aria-labelledby="unscheduled-title"><h2 id="unscheduled-title">Unscheduled sessions</h2><p class="help">Drag a session into a group, or select Edit to schedule it with the keyboard form.</p><ul id="unscheduled" class="session-list"><li>Loading…</li></ul></aside><section id="agenda" class="panel board-panel" aria-labelledby="agenda-title" aria-busy="true"><div class="section-heading"><h2 id="agenda-title">Draft schedule</h2><span id="item-count" class="count">—</span></div><div id="conflict-banner" class="conflict" role="alert" tabindex="-1" hidden><strong>That change conflicts with the schedule.</strong><ul></ul></div><div id="board" class="agenda-board"></div><div id="empty" class="empty" hidden><strong>No sessions are scheduled.</strong><p>Add an accepted session from the unscheduled list.</p></div></section></div></div>
-<dialog id="editor" aria-labelledby="editor-title"><form id="editor-form"><div class="dialog-heading"><div><p class="eyebrow">Keyboard editor</p><h2 id="editor-title">Schedule session</h2></div><button id="close-editor" class="icon-button secondary" type="button" aria-label="Close schedule editor">×</button></div><div id="editor-errors" class="conflict" role="alert" tabindex="-1" hidden><strong>Review this schedule change.</strong><ul></ul></div><input name="item_id" type="hidden"><input name="session_id" type="hidden"><input name="version" type="hidden"><label>Session<input name="title" readonly></label><div class="form-grid"><label>Starts<input name="start_at" type="datetime-local" required></label><label>Ends<input name="end_at" type="datetime-local" required></label><label>Room<select name="room_id" required></select></label><label>Track<select name="track_id"><option value="">No track</option></select></label></div><p id="preview-state" class="preview-state" role="status" aria-live="polite">Change a field to check conflicts.</p><div class="actions"><button id="cancel-editor" class="secondary" type="button">Cancel</button><button id="save-item" type="submit">Save to draft</button></div></form></dialog></main></body></html>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta name="generator" content="HTML Tidy for Mac OS X (vers 31 October 2006 - Apple Inc. build 13462), see www.w3.org">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>
+      Agenda editor &#194;&#183; SessionBuddy
+    </title>
+    <link rel="stylesheet" href="/product/assets/product.css?v=11" type="text/css">
+    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=2" type="text/css">
+    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3" type="text/css">
+    <script src="/app-shell/assets/api-client.js?v=1" defer type="text/javascript">
+</script>
+    <script src="/app-shell/assets/app-shell.js?v=4" defer type="text/javascript">
+</script>
+    <script src="/admin/agenda/assets/agenda.js?v=2" defer type="text/javascript">
+</script>
+  </head>
+  <body class="app-body">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header data-auth-shell></header>
+    <main id="main" class="shell" tabindex="-1">
+      <section class="agenda-hero">
+        <div>
+          <h1 id="event-title">
+            Agenda
+          </h1>
+          <p id="timezone" class="lede">
+            Loading schedule&#226;&#8364;&#166;
+          </p>
+        </div>
+        <div id="revision-card" class="revision" hidden="">
+          <span>Draft revision</span><strong id="revision">&#226;&#8364;&#8221;</strong>
+        </div>
+      </section>
+      <div id="status" class="status" role="status" aria-live="polite">
+        Checking your session&#226;&#8364;&#166;
+      </div>
+      <section id="agenda-setup" class="panel setup-panel" aria-labelledby="agenda-setup-title" hidden>
+        <p class="eyebrow">
+          First step
+        </p>
+        <h2 id="agenda-setup-title">
+          Set up the schedule
+        </h2>
+        <p class="help">
+          Add at least one room. Tracks are optional and can represent topics or stages.
+        </p>
+        <form id="agenda-setup-form">
+          <label>Rooms<input name="room_names" placeholder="Main stage, Workshop room" maxlength="2000" required=""><small>Separate multiple rooms with commas.</small></label><label>Tracks <span class="optional">Optional</span><input name="track_names" placeholder="Engineering, Design" maxlength="2000"><small>Separate multiple tracks with commas.</small></label><button type="submit">Create agenda</button>
+        </form>
+      </section>
+      <div id="agenda-workspace" hidden="">
+        <section class="agenda-toolbar" aria-labelledby="view-title">
+          <div>
+            <h2 id="view-title">
+              View
+            </h2>
+          </div>
+          <fieldset>
+            <legend class="sr-only">Agenda view</legend>
+            <div class="segmented">
+              <label><input type="radio" name="view" value="list" checked><span>List</span></label><label><input type="radio" name="view" value="day"><span>Day</span></label><label><input type="radio" name="view" value="week"><span>Week</span></label><label><input type="radio" name="view" value="track"><span>Track</span></label><label><input type="radio" name="view" value="room"><span>Room</span></label>
+            </div>
+          </fieldset><button id="refresh" class="secondary" type="button">Refresh</button><a id="published-link" class="button secondary" href="#" target="_blank" rel="noopener">Open public schedule</a><button id="publish" type="button">Publish agenda</button>
+        </section>
+        <details class="panel agenda-tools">
+          <summary>Schedule tools</summary>
+          <div class="tool-grid">
+            <section aria-labelledby="auto-title">
+              <h2 id="auto-title">Build a first draft</h2>
+              <p class="help">Place unscheduled sessions into available rooms without room or speaker conflicts. Review everything before publishing.</p>
+              <form id="auto-schedule-form">
+                <label>Start time<input name="start_at" type="datetime-local" required></label>
+                <div class="form-grid">
+                  <label>Session length<input name="session_minutes" type="number" min="10" max="240" value="45" required><small>Minutes</small></label>
+                  <label>Break<input name="gap_minutes" type="number" min="0" max="120" value="15" required><small>Minutes</small></label>
+                </div>
+                <button id="auto-schedule" type="submit">Build draft schedule</button>
+              </form>
+            </section>
+            <section aria-labelledby="rooms-title">
+              <h2 id="rooms-title">Rooms</h2>
+              <form id="room-form" class="inline-form">
+                <label><span class="sr-only">New room name</span><input name="name" maxlength="200" placeholder="New room" required></label>
+                <button type="submit">Add</button>
+              </form>
+              <ul id="room-list" class="resource-list"></ul>
+            </section>
+            <section aria-labelledby="tracks-title">
+              <h2 id="tracks-title">Tracks</h2>
+              <form id="track-form" class="inline-form">
+                <label><span class="sr-only">New track name</span><input name="name" maxlength="200" placeholder="New track" required></label>
+                <button type="submit">Add</button>
+              </form>
+              <ul id="track-list" class="resource-list"></ul>
+            </section>
+          </div>
+        </details>
+        <div class="agenda-layout">
+          <aside class="panel" aria-labelledby="unscheduled-title">
+            <h2 id="unscheduled-title">
+              Unscheduled sessions
+            </h2>
+            <p class="help">
+              Drag a session into a group, or select Edit to schedule it with the keyboard form.
+            </p>
+            <ul id="unscheduled" class="session-list">
+              <li>Loading&hellip;
+              </li>
+            </ul>
+          </aside>
+          <section id="agenda" class="panel board-panel" aria-labelledby="agenda-title" aria-busy="true">
+            <div class="section-heading">
+              <h2 id="agenda-title">
+                Draft schedule
+              </h2><span id="item-count" class="count">&mdash;</span>
+            </div>
+            <div id="conflict-banner" class="conflict" role="alert" tabindex="-1" hidden="">
+              <strong>That change conflicts with the schedule.</strong>
+              <ul></ul>
+            </div>
+            <div id="board" class="agenda-board"></div>
+            <div id="empty" class="empty" hidden="">
+              <strong>No sessions are scheduled.</strong>
+              <p>
+                Add an accepted session from the unscheduled list.
+              </p>
+            </div>
+          </section>
+        </div>
+      </div>
+      <dialog id="editor" aria-labelledby="editor-title">
+        <form id="editor-form">
+          <div class="dialog-heading">
+            <div>
+              <p class="eyebrow">
+                Keyboard editor
+              </p>
+              <h2 id="editor-title">
+                Schedule session
+              </h2>
+            </div><button id="close-editor" class="icon-button secondary" type="button" aria-label="Close schedule editor">&times;</button>
+          </div>
+          <div id="editor-errors" class="conflict" role="alert" tabindex="-1" hidden="">
+            <strong>Review this schedule change.</strong>
+            <ul></ul>
+          </div><input name="item_id" type="hidden"><input name="session_id" type="hidden"><input name="version" type="hidden"><input name="content_version" type="hidden">
+          <label>Session title<input name="title" maxlength="200" required></label>
+          <label>Abstract<textarea name="abstract" rows="5" maxlength="5000" required></textarea></label>
+          <label>Public content status<select name="content_status"><option value="draft">Draft — hidden from the public schedule</option><option value="approved">Approved — visible after agenda publication</option></select></label>
+          <div class="form-grid">
+            <label>Starts<input name="start_at" type="datetime-local" required=""></label><label>Ends<input name="end_at" type="datetime-local" required=""></label><label>Room<select name="room_id" required="">
+              </select></label><label>Track<select name="track_id">
+              <option value="">
+                No track
+              </option>
+            </select></label>
+          </div>
+          <p id="preview-state" class="preview-state" role="status" aria-live="polite">
+            Change a field to check conflicts.
+          </p>
+          <details><summary>Content history</summary><ul id="content-history" class="resource-list"><li class="help">No changes recorded yet.</li></ul></details>
+          <div class="actions">
+            <button id="cancel-editor" class="secondary" type="button">Cancel</button><button id="save-item" type="submit">Save to draft</button>
+          </div>
+        </form>
+      </dialog>
+    </main>
+  </body>
+</html>

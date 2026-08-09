@@ -8,22 +8,28 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=3">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=4" defer></script>
-  <script src="/admin/speakers/assets/speakers.js?v=1" defer></script>
+  <script src="/admin/speakers/assets/speakers.js?v=2" defer></script>
 </head>
 <body class="app-body">
   <a class="skip-link" href="#main">Skip to speakers</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading"><div><h1 id="page-title">Speakers</h1><p id="page-summary" class="lede">People speaking at your events.</p></div></div>
+    <div class="page-heading"><div><h1 id="page-title">Speakers</h1><p id="page-summary" class="lede">People speaking at your events.</p></div><a id="invite-speaker" class="button" href="/admin/events">Invite speaker</a></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section id="speaker-detail" class="card" hidden aria-labelledby="speaker-name">
       <p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p>
+      <form id="speaker-form"><input name="version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">One per line</span><textarea name="links" rows="3"></textarea></label></div><label>Biography<textarea name="biography" rows="6" maxlength="5000"></textarea></label><button>Save speaker details</button></form>
       <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="#">Back to event speakers</a></div>
     </section>
     <section class="directory-section" aria-labelledby="directory-title">
       <div class="section-heading"><h2 id="directory-title">All speakers</h2><span id="speaker-count" class="badge">—</span></div>
+      <form id="speaker-filters" class="filter-bar" role="search">
+        <label>Search<input id="speaker-search" type="search" placeholder="Name, email, company, or session"></label>
+        <label>Status<select id="speaker-status"><option value="">All statuses</option><option value="submitted">Submitted</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label>
+      </form>
       <div id="speaker-list" class="entity-grid"><p class="empty">Loading speaker directory…</p></div>
     </section>
+    <section id="message-panel" class="card" hidden aria-labelledby="message-title"><h2 id="message-title">Message speakers</h2><p class="help">Select speakers above, preview every recipient, then confirm delivery.</p><form id="message-form"><label>Subject<input name="subject" maxlength="200" required></label><label>Message<textarea name="body_text" maxlength="10000" required></textarea></label><div class="actions"><button id="preview-message" class="secondary" type="button">Preview recipients</button><button id="send-message" disabled>Send message</button></div></form><div id="message-preview" class="public-link" hidden></div></section>
   </main>
 </body>
 </html>

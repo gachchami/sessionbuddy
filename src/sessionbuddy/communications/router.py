@@ -17,6 +17,8 @@ from .models import (
     RecipientPreviewRequest,
     RecipientPreviewResponse,
     ReminderQueuedResponse,
+    SpeakerMessagePreviewRequest,
+    SpeakerMessageSendRequest,
 )
 from .service import CommunicationsService
 
@@ -66,6 +68,42 @@ def create_communications_router(service_provider: ServiceProvider) -> APIRouter
         context = await service.context_for_event(authenticated.actor, event_id)
         _enforce(request, authenticated, Permission.COMMUNICATION_SEND, context)
         return await service.queue_manual_send(event_id, body, idempotency_key)
+
+    @router.post(
+        "/api/v1/admin/events/{event_id}/communications/speakers/preview",
+        response_model=RecipientPreviewResponse,
+        operation_id="previewSpeakerCommunication",
+        tags=["communications"],
+    )
+    async def preview_speakers(
+        event_id: str, body: SpeakerMessagePreviewRequest, request: Request
+    ):
+        authenticated = await authenticate_request(request)
+        service = service_provider(request)
+        context = await service.context_for_event(authenticated.actor, event_id)
+        _enforce(request, authenticated, Permission.COMMUNICATION_SEND, context)
+        return await service.preview_speaker_message(event_id, body)
+
+    @router.post(
+        "/api/v1/admin/events/{event_id}/communications/speakers/send",
+        response_model=ManualSendResponse,
+        status_code=202,
+        operation_id="queueSpeakerCommunication",
+        tags=["communications"],
+    )
+    async def send_speakers(
+        event_id: str,
+        body: SpeakerMessageSendRequest,
+        request: Request,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ):
+        if not idempotency_key or not 16 <= len(idempotency_key) <= 255:
+            raise HTTPException(status_code=400)
+        authenticated = await authenticate_request(request)
+        service = service_provider(request)
+        context = await service.context_for_event(authenticated.actor, event_id)
+        _enforce(request, authenticated, Permission.COMMUNICATION_SEND, context)
+        return await service.queue_speaker_message(event_id, body, idempotency_key)
 
     @router.post(
         "/api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders",

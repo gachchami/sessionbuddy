@@ -15,9 +15,15 @@ from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mappi
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
 from .models import (
+    AdminSessionContentRestore,
+    AdminSessionContentUpdate,
+    AdminSessionContentView,
     AdminSpeakerTaskView,
+    AdminSpeakerUpdate,
     IntegrationTokenCreate,
     IntegrationTokenView,
+    PublicEventList,
+    PublicEventSummary,
     PublicSpeaker,
     PublicSpeakerGallery,
     ResourceCreate,
@@ -26,9 +32,38 @@ from .models import (
     SpeakerTarget,
     SpeakerTargetList,
     SpeakerTaskCreate,
+    SessionContentVersionView,
 )
 
 competition_router = APIRouter()
+
+
+@competition_router.get(
+    "/api/v1/public/events", response_model=PublicEventList, tags=["public-program"]
+)
+async def list_public_events(request: Request) -> PublicEventList:
+    rows = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT e.id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,
+                      COALESCE(e.location,'') AS location,e.delivery_mode,
+                      (SELECT f.slug FROM call_for_speaker_forms f
+                       WHERE f.organization_id=e.organization_id AND f.event_id=e.id
+                         AND f.status='published'
+                       ORDER BY f.published_at_ms DESC,f.id DESC LIMIT 1) AS cfp_slug,
+                      EXISTS(SELECT 1 FROM schedule_revisions r
+                       WHERE r.organization_id=e.organization_id AND r.event_id=e.id
+                         AND r.status='published') AS schedule_published,
+                      (SELECT COUNT(*) FROM event_speakers es
+                       WHERE es.organization_id=e.organization_id AND es.event_id=e.id
+                         AND es.selection_status='accepted'
+                         AND es.status!='withdrawn') AS speaker_count
+               FROM events e WHERE e.status='active'
+               ORDER BY e.starts_at_ms,e.id LIMIT 100"""
+        )
+        .all()
+    )
+    return PublicEventList(data=[PublicEventSummary.model_validate(row) for row in rows])
 
 
 def _blob(value: object) -> bytes:
@@ -308,20 +343,332 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
     rows = result_rows(
         await _db(request)
         .prepare(
-            """SELECT es.id AS event_speaker_id,p.display_name,es.selection_status,
+            """SELECT es.id AS event_speaker_id,p.user_id,COALESCE(u.email,'') AS email,
+                      p.display_name,COALESCE(p.job_title,'') AS job_title,
+                      COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
+                      COALESCE(p.location,'') AS location,p.links_json,p.version,
+                      es.selection_status,
                       COALESCE((SELECT s.proposal_title FROM submission_speakers ss
                         JOIN submissions s ON s.id=ss.submission_id
                         WHERE ss.event_speaker_id=es.id ORDER BY s.submitted_at_ms DESC LIMIT 1),
                         'No proposal') AS proposal_title
                FROM event_speakers es JOIN people p ON p.organization_id=es.organization_id
                  AND p.id=es.person_id
+               LEFT JOIN users u ON u.id=p.user_id
                WHERE es.organization_id=?1 AND es.event_id=?2
                ORDER BY p.display_name,es.id LIMIT 500"""
         )
         .bind(event["organization_id"], event_id)
         .all()
     )
-    return SpeakerTargetList(data=[SpeakerTarget.model_validate(row) for row in rows])
+    return SpeakerTargetList(data=[_speaker_target(row) for row in rows])
+
+
+def _speaker_target(row) -> SpeakerTarget:
+    return SpeakerTarget(
+        event_speaker_id=str(row["event_speaker_id"]),
+        user_id=str(row["user_id"]) if row["user_id"] is not None else None,
+        email=str(row["email"]),
+        display_name=str(row["display_name"]),
+        job_title=str(row["job_title"]),
+        company=str(row["company"]),
+        biography=str(row["biography"]),
+        location=str(row["location"]),
+        links=json.loads(str(row["links_json"])),
+        version=int(row["version"]),
+        selection_status=str(row["selection_status"]),
+        proposal_title=str(row["proposal_title"]),
+    )
+
+
+@competition_router.patch(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}",
+    response_model=SpeakerTarget,
+    tags=["speaker-onboarding"],
+)
+async def update_admin_speaker(
+    event_id: str, event_speaker_id: str, body: AdminSpeakerUpdate, request: Request
+) -> SpeakerTarget:
+    event, auth = await _managed_event(request, event_id, mutation=True)
+    db, now = _db(request), utc_now_ms()
+    changed = row_mapping(
+        await db.prepare(
+            """UPDATE people SET display_name=?1,job_title=?2,company=?3,biography=?4,
+                      location=?5,links_json=?6,version=version+1,updated_at_ms=?7
+               WHERE organization_id=?8 AND version=?9 AND id=(
+                 SELECT person_id FROM event_speakers
+                 WHERE id=?10 AND organization_id=?8 AND event_id=?11)
+               RETURNING id"""
+        )
+        .bind(
+            body.display_name,
+            body.job_title or None,
+            body.company or None,
+            body.biography or None,
+            body.location or None,
+            json.dumps(body.links, separators=(",", ":")),
+            now,
+            event["organization_id"],
+            body.version,
+            event_speaker_id,
+            event_id,
+        )
+        .first()
+    )
+    if changed is None:
+        exists = await (
+            db.prepare(
+                """SELECT 1 AS found FROM event_speakers
+                   WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
+            )
+            .bind(event_speaker_id, event["organization_id"], event_id)
+            .first("found")
+        )
+        raise HTTPException(status_code=409 if exists is not None else 404)
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="speaker.profile.admin_update",
+            target_type="event_speaker",
+            target_id=event_speaker_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+        )
+    )
+    await audit.execute()
+    row = row_mapping(
+        await db.prepare(
+            """SELECT es.id AS event_speaker_id,p.user_id,COALESCE(u.email,'') AS email,
+                      p.display_name,COALESCE(p.job_title,'') AS job_title,
+                      COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
+                      COALESCE(p.location,'') AS location,p.links_json,p.version,
+                      es.selection_status,
+                      COALESCE((SELECT s.proposal_title FROM submission_speakers ss
+                        JOIN submissions s ON s.id=ss.submission_id
+                        WHERE ss.event_speaker_id=es.id ORDER BY s.submitted_at_ms DESC LIMIT 1),
+                        'No proposal') AS proposal_title
+               FROM event_speakers es JOIN people p ON p.organization_id=es.organization_id
+                 AND p.id=es.person_id LEFT JOIN users u ON u.id=p.user_id
+               WHERE es.id=?1 AND es.organization_id=?2 AND es.event_id=?3 LIMIT 1"""
+        )
+        .bind(event_speaker_id, event["organization_id"], event_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    return _speaker_target(row)
+
+
+async def _session_content_view(
+    db, organization_id: str, event_id: str, accepted_session_id: str
+) -> AdminSessionContentView:
+    current = row_mapping(
+        await db.prepare(
+            """SELECT ac.id,s.proposal_title,s.proposal_abstract,
+                      ac.content_status,ac.version
+               FROM accepted_sessions ac JOIN submissions s
+                 ON s.organization_id=ac.organization_id AND s.event_id=ac.event_id
+                AND s.id=ac.submission_id
+               WHERE ac.organization_id=?1 AND ac.event_id=?2 AND ac.id=?3 LIMIT 1"""
+        )
+        .bind(organization_id, event_id, accepted_session_id)
+        .first()
+    )
+    if current is None:
+        raise HTTPException(status_code=404)
+    history = result_rows(
+        await db.prepare(
+            """SELECT history.version,history.title,history.abstract,
+                      history.content_status,history.created_at_ms,
+                      COALESCE(u.display_name,u.email) AS changed_by
+               FROM session_content_versions history JOIN users u
+                 ON u.id=history.changed_by_user_id
+               WHERE history.organization_id=?1 AND history.event_id=?2
+                 AND history.accepted_session_id=?3
+               ORDER BY history.version DESC LIMIT 50"""
+        )
+        .bind(organization_id, event_id, accepted_session_id)
+        .all()
+    )
+    return AdminSessionContentView(
+        accepted_session_id=str(current["id"]),
+        title=str(current["proposal_title"]),
+        abstract=str(current["proposal_abstract"]),
+        content_status=str(current["content_status"]),
+        version=int(current["version"]),
+        history=[
+            SessionContentVersionView(
+                version=int(row["version"]),
+                title=str(row["title"]),
+                abstract=str(row["abstract"]),
+                content_status=str(row["content_status"]),
+                changed_by=str(row["changed_by"]),
+                created_at_ms=int(row["created_at_ms"]),
+            )
+            for row in history
+        ],
+    )
+
+
+@competition_router.get(
+    "/api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content",
+    response_model=AdminSessionContentView,
+    tags=["session-content"],
+)
+async def get_admin_session_content(
+    event_id: str, accepted_session_id: str, request: Request
+) -> AdminSessionContentView:
+    event, _ = await _managed_event(request, event_id, mutation=False)
+    return await _session_content_view(
+        _db(request), str(event["organization_id"]), event_id, accepted_session_id
+    )
+
+
+async def _save_session_content(
+    event_id: str,
+    accepted_session_id: str,
+    request: Request,
+    body: AdminSessionContentUpdate,
+) -> AdminSessionContentView:
+    event, auth = await _managed_event(request, event_id, mutation=True)
+    db, organization_id = _db(request), str(event["organization_id"])
+    session = row_mapping(
+        await db.prepare(
+            """SELECT submission_id,version FROM accepted_sessions
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+        )
+        .bind(organization_id, event_id, accepted_session_id)
+        .first()
+    )
+    if session is None:
+        raise HTTPException(status_code=404)
+    if int(session["version"]) != body.version:
+        raise HTTPException(status_code=409)
+    now, next_version = utc_now_ms(), body.version + 1
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
+                      updated_at_ms=?3
+               WHERE organization_id=?4 AND event_id=?5 AND id=?6"""
+        ).bind(
+            body.title,
+            body.abstract,
+            now,
+            organization_id,
+            event_id,
+            session["submission_id"],
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE accepted_sessions SET content_status=?1,version=version+1
+               WHERE organization_id=?2 AND event_id=?3 AND id=?4 AND version=?5"""
+        ).bind(body.content_status, organization_id, event_id, accepted_session_id, body.version)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_content_write_guards
+               (id,accepted_session_id,applied_changes,created_at_ms)
+               VALUES (?1,?2,changes(),?3)"""
+        ).bind(new_id(), accepted_session_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_content_versions
+               (id,organization_id,event_id,accepted_session_id,version,title,abstract,
+                content_status,changed_by_user_id,created_at_ms)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"""
+        ).bind(
+            new_id(),
+            organization_id,
+            event_id,
+            accepted_session_id,
+            next_version,
+            body.title,
+            body.abstract,
+            body.content_status,
+            auth.actor.user_id,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="session.content.update",
+            target_type="accepted_session",
+            target_id=accepted_session_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={"version": next_version, "content_status": body.content_status},
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    return await _session_content_view(db, organization_id, event_id, accepted_session_id)
+
+
+@competition_router.patch(
+    "/api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content",
+    response_model=AdminSessionContentView,
+    tags=["session-content"],
+)
+async def update_admin_session_content(
+    event_id: str,
+    accepted_session_id: str,
+    body: AdminSessionContentUpdate,
+    request: Request,
+) -> AdminSessionContentView:
+    return await _save_session_content(event_id, accepted_session_id, request, body)
+
+
+@competition_router.post(
+    "/api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content/restore",
+    response_model=AdminSessionContentView,
+    tags=["session-content"],
+)
+async def restore_admin_session_content(
+    event_id: str,
+    accepted_session_id: str,
+    body: AdminSessionContentRestore,
+    request: Request,
+) -> AdminSessionContentView:
+    event, _ = await _managed_event(request, event_id, mutation=True)
+    row = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT title,abstract,content_status FROM session_content_versions
+               WHERE organization_id=?1 AND event_id=?2 AND accepted_session_id=?3
+                 AND version=?4 LIMIT 1"""
+        )
+        .bind(
+            event["organization_id"],
+            event_id,
+            accepted_session_id,
+            body.history_version,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    restored = AdminSessionContentUpdate(
+        title=str(row["title"]),
+        abstract=str(row["abstract"]),
+        content_status=str(row["content_status"]),
+        version=body.current_version,
+    )
+    return await _save_session_content(event_id, accepted_session_id, request, restored)
 
 
 @competition_router.post(

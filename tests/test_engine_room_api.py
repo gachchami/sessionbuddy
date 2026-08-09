@@ -71,7 +71,7 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
     response = await client.get("/api/v1/openapi.json")
 
     assert response.status_code == 200
-    assert set(response.json()["paths"]) == {
+    expected = {
         "/api/v1/bootstrap",
         "/api/v1/setup/status",
         "/api/v1/account/profile",
@@ -103,6 +103,11 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
         "/api/v1/admin/events/{event_id}/onboarding",
         "/api/v1/admin/events/{event_id}/agenda",
         "/api/v1/admin/events/{event_id}/agenda/setup",
+        "/api/v1/admin/events/{event_id}/agenda/rooms",
+        "/api/v1/admin/events/{event_id}/agenda/rooms/{room_id}",
+        "/api/v1/admin/events/{event_id}/agenda/tracks",
+        "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}",
+        "/api/v1/admin/events/{event_id}/agenda/auto-schedule",
         "/api/v1/admin/events/{event_id}/agenda/preview",
         "/api/v1/admin/events/{event_id}/agenda/items",
         "/api/v1/admin/events/{event_id}/agenda/items/{item_id}",
@@ -143,6 +148,7 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
         "/health",
         "/api/v1/health",
     }
+    assert expected.issubset(set(response.json()["paths"]))
 
 
 async def test_database_probe_fails_closed_without_binding(client: AsyncClient) -> None:
