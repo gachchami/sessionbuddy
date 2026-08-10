@@ -406,9 +406,16 @@ test.describe("administration empty states", () => {
     await page.getByRole("textbox", { name: "Name", exact: true }).fill("Example Speaker");
     await page.getByRole("button", { name: "Send invitation" }).click();
 
-    await expect(page.getByRole("status")).toHaveText("Event access is up to date.");
-    await expect(page.getByRole("textbox", { name: "Email address" })).toHaveValue("");
+    // The success feedback must survive the list refresh (load() writes its
+    // own generic status; the outcome message is set after it).
+    await expect(page.getByRole("status")).toHaveText("Invitation created and emailed to the invitee.");
+    // A successful send closes the dialog and the invitation appears in the
+    // list; reopening presents a fresh, reset form.
+    await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
     await expect(page.getByText("speaker@example.com · speaker · pending")).toBeVisible();
+    await page.getByRole("button", { name: "Invite someone" }).click();
+    await expect(page.getByRole("textbox", { name: "Email address" })).toHaveValue("");
+    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("");
   });
 
   test("the authenticated event workspace stays navigable on mobile", async ({ page }) => {

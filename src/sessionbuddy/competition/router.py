@@ -362,10 +362,18 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                         COALESCE(p.biography,'') AS biography,
                         COALESCE(p.location,'') AS location,p.links_json,p.version,
                         es.selection_status,
-                        COALESCE((SELECT s.proposal_title FROM submission_speakers ss
-                          JOIN submissions s ON s.id=ss.submission_id
-                          WHERE ss.event_speaker_id=es.id
-                          ORDER BY s.submitted_at_ms DESC LIMIT 1),
+                        COALESCE(
+                          -- Prefer the ACCEPTED submission; fall back to newest.
+                          (SELECT s.proposal_title FROM submission_speakers ss
+                            JOIN submissions s ON s.id=ss.submission_id
+                            JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
+                             AND ac.event_id=s.event_id AND ac.submission_id=s.id
+                            WHERE ss.event_speaker_id=es.id
+                            ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+                          (SELECT s.proposal_title FROM submission_speakers ss
+                            JOIN submissions s ON s.id=ss.submission_id
+                            WHERE ss.event_speaker_id=es.id
+                            ORDER BY s.submitted_at_ms DESC LIMIT 1),
                           'No proposal') AS proposal_title
                  FROM event_speakers es JOIN people p
                    ON p.organization_id=es.organization_id AND p.id=es.person_id
@@ -695,9 +703,17 @@ async def update_admin_speaker(
                       COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
                       es.selection_status,
-                      COALESCE((SELECT s.proposal_title FROM submission_speakers ss
-                        JOIN submissions s ON s.id=ss.submission_id
-                        WHERE ss.event_speaker_id=es.id ORDER BY s.submitted_at_ms DESC LIMIT 1),
+                      COALESCE(
+                        -- Prefer the ACCEPTED submission; fall back to newest.
+                        (SELECT s.proposal_title FROM submission_speakers ss
+                          JOIN submissions s ON s.id=ss.submission_id
+                          JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
+                           AND ac.event_id=s.event_id AND ac.submission_id=s.id
+                          WHERE ss.event_speaker_id=es.id
+                          ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+                        (SELECT s.proposal_title FROM submission_speakers ss
+                          JOIN submissions s ON s.id=ss.submission_id
+                          WHERE ss.event_speaker_id=es.id ORDER BY s.submitted_at_ms DESC LIMIT 1),
                         'No proposal') AS proposal_title
                FROM event_speakers es JOIN people p ON p.organization_id=es.organization_id
                  AND p.id=es.person_id LEFT JOIN users u ON u.id=p.user_id
@@ -800,6 +816,17 @@ async def _save_session_content(
         raise HTTPException(status_code=404)
     if int(session["version"]) != body.version:
         raise HTTPException(status_code=409)
+    if (
+        body.title == str(session["proposal_title"])
+        and body.abstract == str(session["proposal_abstract"])
+        and body.content_status == str(session["content_status"])
+    ):
+        # Nothing changed: saving is idempotent. Without this guard every
+        # no-op save (an untouched editor dialog, a restore of the current
+        # version) minted a new version, silently shifting the numbering
+        # users see in Content history — the eval run's apparent
+        # "restore is off-by-one" was exactly this drift.
+        return await _session_content_view(db, organization_id, event_id, accepted_session_id)
     now, next_version = utc_now_ms(), body.version + 1
     batch = CommandBatch(db)
     batch.add_statement(

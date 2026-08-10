@@ -1085,7 +1085,16 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
             await db.prepare(
                 "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
                 "e.name AS event_name,es.selection_status,"
-                "COALESCE((SELECT s.proposal_title FROM submission_speakers ss"
+                "COALESCE("
+                # Prefer the ACCEPTED submission; fall back to the newest one.
+                "(SELECT s.proposal_title FROM submission_speakers ss"
+                " JOIN submissions s ON s.id=ss.submission_id"
+                " JOIN accepted_sessions ac ON ac.organization_id=s.organization_id"
+                " AND ac.event_id=s.event_id AND ac.submission_id=s.id"
+                " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
+                " AND ss.event_speaker_id=es.id"
+                " ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),"
+                "(SELECT s.proposal_title FROM submission_speakers ss"
                 " JOIN submissions s ON s.id=ss.submission_id"
                 " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
                 " AND ss.event_speaker_id=es.id"
@@ -1129,7 +1138,16 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
             await db.prepare(
                 "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
                 "e.name AS event_name,es.selection_status,"
-                "COALESCE((SELECT s.proposal_title FROM submission_speakers ss"
+                "COALESCE("
+                # Prefer the ACCEPTED submission; fall back to the newest one.
+                "(SELECT s.proposal_title FROM submission_speakers ss"
+                " JOIN submissions s ON s.id=ss.submission_id"
+                " JOIN accepted_sessions ac ON ac.organization_id=s.organization_id"
+                " AND ac.event_id=s.event_id AND ac.submission_id=s.id"
+                " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
+                " AND ss.event_speaker_id=es.id"
+                " ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),"
+                "(SELECT s.proposal_title FROM submission_speakers ss"
                 " JOIN submissions s ON s.id=ss.submission_id"
                 " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
                 " AND ss.event_speaker_id=es.id"

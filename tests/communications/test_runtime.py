@@ -18,6 +18,7 @@ from sessionbuddy.communications.runtime import (
     consume_delivery,
     consume_reminder,
     dispatch_stuck_deliveries,
+    park_unconfigured_delivery,
     requeue_exhausted_deliveries,
     retry_delay_ms,
 )
@@ -325,6 +326,7 @@ async def test_dispatcher_backlog_age_excludes_permanent_and_exhausted_failures(
         ("permanent", 1, "provider_rejected", 1),
         ("exhausted", 12, "provider_unavailable", 2),
         ("actionable", 1, "invalid_response", 490_000),
+        ("parked", 1, "provider_unconfigured", 3),
     ):
         connection.execute(
             """INSERT INTO communication_messages
@@ -339,7 +341,9 @@ async def test_dispatcher_backlog_age_excludes_permanent_and_exhausted_failures(
     result = await dispatch_stuck_deliveries(AsyncSqlite(connection), Queue(), 500_000)
 
     assert result.oldest_pending_age_ms == 10_000
-    assert result.exhausted == 1
+    # Parked provider_unconfigured rows surface as exhausted (recoverable via
+    # requeue) but never distort the pending-age signal.
+    assert result.exhausted == 2
 
 
 @pytest.mark.asyncio
@@ -388,6 +392,7 @@ async def test_operator_requeue_only_resets_exhausted_transient_failures() -> No
     for values in (
         ("transient", "org-a", 12, "provider_unavailable"),
         ("permanent", "org-a", 12, "provider_rejected"),
+        ("parked", "org-a", 1, "provider_unconfigured"),
     ):
         connection.execute(
             """INSERT INTO communication_messages
@@ -402,13 +407,20 @@ async def test_operator_requeue_only_resets_exhausted_transient_failures() -> No
         AsyncSqlite(connection), queue, "org-a", 500_000
     )
 
-    assert result == RequeueResult(1, 1, 1, 0)
-    assert queue.messages == [{"schema_version": 1, "message_id": "transient"}]
+    assert result == RequeueResult(2, 2, 2, 0)
+    assert {message["message_id"] for message in queue.messages} == {"transient", "parked"}
     state = connection.execute(
         """SELECT status,attempt_count,attempt_limit,last_error_code
            FROM communication_messages WHERE id='transient'"""
     ).fetchone()
     assert tuple(state) == ("queued", 12, 24, None)
+    # Parked while unconfigured: recoverable through the SAME operator action,
+    # no manual SQL required once credentials are restored.
+    parked = connection.execute(
+        """SELECT status,last_error_code FROM communication_messages
+           WHERE id='parked'"""
+    ).fetchone()
+    assert tuple(parked) == ("queued", None)
 
 
 def test_delivery_retry_backoff_is_exponential_and_capped() -> None:
@@ -538,3 +550,22 @@ async def test_reminder_consumer_materializes_due_version_once_and_marks_dispatc
         connection.execute("SELECT state FROM reminder_schedules WHERE id='schedule'").fetchone()[0]
         == "dispatched"
     )
+
+
+async def test_unconfigured_provider_parks_delivery_permanently() -> None:
+    """No credentials => permanent failure, acked; never a retry storm."""
+    repository = Repository(claim())
+    acknowledged = await park_unconfigured_delivery(
+        '{"schema_version":1,"message_id":"m"}', repository, 1000
+    )
+    assert acknowledged is True
+    assert ("claim", "m", 1000) in repository.events
+    assert ("failed", "provider_unconfigured", False) in repository.events
+
+
+async def test_unconfigured_provider_acks_unknown_or_claimed_messages() -> None:
+    repository = Repository(None)
+    assert await park_unconfigured_delivery(
+        '{"schema_version":1,"message_id":"m"}', repository, 1000
+    ) is True
+    assert await park_unconfigured_delivery("not-json", Repository(None), 1000) is True

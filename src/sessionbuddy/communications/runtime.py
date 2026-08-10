@@ -245,8 +245,9 @@ async def dispatch_stuck_deliveries(
                     (status='failed' AND attempt_count<attempt_limit AND last_error_code IN
                       ('provider_unavailable','invalid_response'))) AS oldest_pending_at_ms,
                  (SELECT COUNT(*) FROM communication_messages
-                  WHERE status='failed' AND attempt_count>=attempt_limit AND last_error_code IN
-                    ('provider_unavailable','invalid_response')) AS exhausted"""
+                  WHERE status='failed' AND ((attempt_count>=attempt_limit AND last_error_code IN
+                    ('provider_unavailable','invalid_response'))
+                    OR last_error_code='provider_unconfigured')) AS exhausted"""
         ).first()
     )
     oldest_at = int(summary["oldest_pending_at_ms"]) if summary and summary.get(
@@ -280,8 +281,11 @@ async def requeue_exhausted_deliveries(
             db.prepare(
                 """SELECT id FROM communication_messages
                    WHERE organization_id=?1 AND status='failed'
-                     AND attempt_count>=attempt_limit
-                     AND last_error_code IN ('provider_unavailable','invalid_response')
+                     AND ((attempt_count>=attempt_limit
+                           AND last_error_code IN ('provider_unavailable','invalid_response'))
+                       -- Parked while the provider was unconfigured: no retry
+                       -- budget was consumed, recoverable once configured.
+                       OR last_error_code='provider_unconfigured')
                    ORDER BY updated_at_ms,id LIMIT ?2"""
             )
             .bind(organization_id, limit)
@@ -296,8 +300,9 @@ async def requeue_exhausted_deliveries(
                    SET status='queued',attempt_limit=attempt_limit+?4,
                        last_error_code=NULL,updated_at_ms=?1
                    WHERE id=?2 AND organization_id=?3 AND status='failed'
-                     AND attempt_count>=attempt_limit AND last_error_code IN
-                       ('provider_unavailable','invalid_response')"""
+                     AND ((attempt_count>=attempt_limit AND last_error_code IN
+                       ('provider_unavailable','invalid_response'))
+                       OR last_error_code='provider_unconfigured')"""
             ).bind(now_ms, str(row["id"]), organization_id, retry_budget_increment)
             for row in chunk
         ]
@@ -488,6 +493,28 @@ class ResendProvider:
             retryable=retryable,
             error_code="provider_unavailable" if retryable else "provider_rejected",
         )
+
+
+async def park_unconfigured_delivery(
+    raw: str | bytes | Mapping[str, object] | object,
+    repository: DeliveryRepository,
+    now_ms: int,
+) -> bool:
+    """Record a permanent failure when no email provider is configured.
+
+    Retrying cannot succeed without credentials, so retry storms only burn
+    Worker CPU (a suspected contributor to the eval-run 1102 outage). The
+    durable row is marked failed with a distinct error code so operators can
+    requeue after fixing configuration. Returns True (ack the message).
+    """
+    try:
+        envelope = DeliveryEnvelope.parse(raw)
+    except (ValueError, json.JSONDecodeError, UnicodeError):
+        return True
+    claim = await repository.claim(envelope.message_id, now_ms)
+    if claim is not None:
+        await repository.failed(claim, "provider_unconfigured", False, now_ms)
+    return True
 
 
 async def consume_delivery(

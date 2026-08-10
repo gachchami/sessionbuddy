@@ -399,13 +399,24 @@ async def get_admin_onboarding_dashboard(
                 f"""SELECT t.id AS task_id, t.task_type, t.title AS task_title, t.state,
                            t.due_at_ms, t.updated_at_ms, es.id AS event_speaker_id,
                            es.last_activity_at_ms, p.display_name,
-                           COALESCE((SELECT s.proposal_title FROM submission_speakers ss
-                             JOIN submissions s ON s.organization_id = ss.organization_id
-                              AND s.event_id = ss.event_id AND s.id = ss.submission_id
-                             WHERE ss.organization_id = es.organization_id
-                               AND ss.event_id = es.event_id
-                               AND ss.event_speaker_id = es.id
-                             ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 1), '')
+                           COALESCE(
+                             -- Prefer the ACCEPTED submission; fall back to newest.
+                             (SELECT s.proposal_title FROM submission_speakers ss
+                               JOIN submissions s ON s.organization_id = ss.organization_id
+                                AND s.event_id = ss.event_id AND s.id = ss.submission_id
+                               JOIN accepted_sessions ac ON ac.organization_id = s.organization_id
+                                AND ac.event_id = s.event_id AND ac.submission_id = s.id
+                               WHERE ss.organization_id = es.organization_id
+                                 AND ss.event_id = es.event_id
+                                 AND ss.event_speaker_id = es.id
+                               ORDER BY ac.created_at_ms DESC, ac.id DESC LIMIT 1),
+                             (SELECT s.proposal_title FROM submission_speakers ss
+                               JOIN submissions s ON s.organization_id = ss.organization_id
+                                AND s.event_id = ss.event_id AND s.id = ss.submission_id
+                               WHERE ss.organization_id = es.organization_id
+                                 AND ss.event_id = es.event_id
+                                 AND ss.event_speaker_id = es.id
+                               ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 1), '')
                              AS proposal_title
                     FROM speaker_tasks t
                     JOIN event_speakers es ON es.organization_id = t.organization_id

@@ -104,7 +104,13 @@
     const values = Object.fromEntries(new FormData(form));
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) }) });
-      form.reset(); byId("status").textContent = "Invitation created and emailed to the invitee."; await load();
+      // The work is done: close the dialog so the sender sees the pending
+      // invitation appear in the list instead of a stale, still-open form.
+      form.reset(); byId("invite-dialog").close();
+      await load();
+      // Set the outcome AFTER load(), which ends by writing its own generic
+      // status line — otherwise the success feedback vanishes instantly.
+      byId("status").textContent = "Invitation created and emailed to the invitee.";
     } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").focus(); }
   });
   const role = byId("invite-form").elements.role;
@@ -122,12 +128,17 @@
     input.required = required && role.value === "speaker"; label.append(input); speakerDetails.append(label);
   });
   emailLabel.after(speakerDetails);
-  role.addEventListener("change", () => {
+  // The fieldset must track the CURRENT role at every entry point — role
+  // change, form reset, and dialog open — or the form renders with stale
+  // fields (e.g. speaker selected but the speaker details hidden).
+  function syncSpeakerDetails() {
     speakerDetails.hidden = role.value !== "speaker";
     speakerDetails.querySelector('[name="display_name"]').required = role.value === "speaker";
-  });
+  }
+  role.addEventListener("change", syncSpeakerDetails);
+  byId("invite-form").addEventListener("reset", () => requestAnimationFrame(syncSpeakerDetails));
   const inviteDialog = byId("invite-dialog");
-  byId("open-invite").addEventListener("click", () => inviteDialog.showModal());
+  byId("open-invite").addEventListener("click", () => { syncSpeakerDetails(); inviteDialog.showModal(); });
   byId("close-invite").addEventListener("click", () => inviteDialog.close());
   byId("cancel-invite").addEventListener("click", () => inviteDialog.close());
   if (!eventId) { byId("status").textContent = "This event link is invalid."; return; }

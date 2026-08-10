@@ -2216,8 +2216,8 @@
       "kind": "queue",
       "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq",
       "handler": "src/entry.py::Default.queue -> consume_delivery",
-      "success_signal": "none (KNOWN GAP: exceptions are swallowed into retries; track via communication_messages status transitions and the cron recovery log)",
-      "alert_condition": "sessionbuddy-communications-dlq depth greater than zero",
+      "success_signal": "successful sends ack silently; failures emit structured log event communication_delivery_failed (level error, reason=exception class or provider_unconfigured)",
+      "alert_condition": "communication_delivery_failed at level error, or growth in sessionbuddy-communications-dlq depth; reason=provider_unconfigured means RESEND_API_KEY/RESEND_FROM_ADDRESS are missing and affected rows are parked failed for requeue-exhausted after configuration is fixed",
       "dashboards": [
         "release-health"
       ],

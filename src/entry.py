@@ -13,6 +13,7 @@ from sessionbuddy.communications.runtime import (
     consume_delivery,
     consume_reminder,
     dispatch_stuck_deliveries,
+    park_unconfigured_delivery,
 )
 from sessionbuddy.communications.runtime import ReminderWorkflow as _ReminderWorkflow
 from sessionbuddy.platform.db.d1 import to_python
@@ -92,16 +93,62 @@ class Default(WorkerEntrypoint):
                 continue
             try:
                 DeliveryEnvelope.parse(body)
-                provider = ResendProvider(
-                    str(getattr(self.env, "RESEND_API_KEY", "")),
-                    str(getattr(self.env, "RESEND_FROM_ADDRESS", "")),
-                )
-                acknowledged = await consume_delivery(
-                    body,
-                    D1DeliveryRepository(self.env.DB),
-                    provider,
-                    utc_now_ms(),
-                )
             except Exception:
+                # A retry can never fix a malformed body; ack it out of the
+                # queue and leave a trace instead of retrying to the DLQ.
+                print(
+                    json.dumps(
+                        {
+                            "event": "communication_delivery_failed",
+                            "level": "error",
+                            "reason": "malformed_envelope",
+                        },
+                        separators=(",", ":"),
+                    )
+                )
+                message.ack()
+                continue
+            try:
+                api_key = str(getattr(self.env, "RESEND_API_KEY", ""))
+                from_address = str(getattr(self.env, "RESEND_FROM_ADDRESS", ""))
+                if not api_key or not from_address:
+                    # A retry can never succeed without provider credentials;
+                    # park the durable row as a permanent failure instead of
+                    # burning Worker CPU on a retry storm.
+                    print(
+                        json.dumps(
+                            {
+                                "event": "communication_delivery_failed",
+                                "level": "error",
+                                "reason": "provider_unconfigured",
+                            },
+                            separators=(",", ":"),
+                        )
+                    )
+                    acknowledged = await park_unconfigured_delivery(
+                        body, D1DeliveryRepository(self.env.DB), utc_now_ms()
+                    )
+                else:
+                    provider = ResendProvider(api_key, from_address)
+                    acknowledged = await consume_delivery(
+                        body,
+                        D1DeliveryRepository(self.env.DB),
+                        provider,
+                        utc_now_ms(),
+                    )
+            except Exception as error:  # noqa: BLE001 - queue boundary
+                # The old bare handler swallowed every failure silently; the
+                # eval-run outage (Cloudflare 1101/1102 after an invitation
+                # send) was undiagnosable for exactly that reason.
+                print(
+                    json.dumps(
+                        {
+                            "event": "communication_delivery_failed",
+                            "level": "error",
+                            "reason": type(error).__name__,
+                        },
+                        separators=(",", ":"),
+                    )
+                )
                 acknowledged = False
             message.ack() if acknowledged else message.retry()

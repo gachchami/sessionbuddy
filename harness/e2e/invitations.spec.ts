@@ -76,6 +76,8 @@ test.describe("invitation dialog", () => {
     await page.getByRole("button", { name: "Send invitation" }).click();
 
     await expect(page.getByText("speaker@example.com · speaker · pending")).toBeVisible();
+    // A successful send closes the dialog; the sender lands on the updated list.
+    await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
     // The dialog offers no link surface at all.
     await expect(page.getByText("Acceptance link")).toHaveCount(0);
     await expect(page.getByText("Invitation ready")).toHaveCount(0);
@@ -84,6 +86,19 @@ test.describe("invitation dialog", () => {
     await expect(page.locator("#invite-url")).toHaveCount(0);
     const pageContent = await page.content();
     expect(pageContent).not.toContain("SHOULD-NEVER-RENDER");
+
+    // Reopening presents a consistent form: role back to Speaker with the
+    // speaker-details fields visible (they must track the role through
+    // reset/close/reopen, not just explicit role changes).
+    await page.getByRole("button", { name: "Invite someone" }).click();
+    await expect(page.getByRole("combobox", { name: "Event role" })).toHaveValue("speaker");
+    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
+    await page.getByRole("combobox", { name: "Event role" }).selectOption("evaluator");
+    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeHidden();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "Invite someone" }).click();
+    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeHidden();
+    await expect(page.getByRole("combobox", { name: "Event role" })).toHaveValue("evaluator");
   });
 
   test("resending an invitation reports delivery without exposing a link", async ({ page }) => {
