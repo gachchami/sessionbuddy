@@ -400,4 +400,20 @@ def _clean_result_statements(db: D1Database, job: ScanJob, now_ms: int) -> list[
             job.generation,
             job.checksum_sha256,
         ),
+        # Production parity with the inline local path: a clean, current version
+        # completes the matching onboarding task in the same atomic batch.
+        db.prepare(
+            """UPDATE speaker_tasks SET state='completed', completed_at_ms=?1,
+                      version=version+1, updated_at_ms=?1
+                 WHERE state='open' AND organization_id=?2 AND event_id=?3
+                   AND EXISTS (
+                     SELECT 1 FROM speaker_asset_versions v
+                     JOIN speaker_assets a ON a.id=v.asset_id
+                     WHERE v.id=?4 AND v.is_current=1 AND v.scan_state='clean'
+                       AND a.event_speaker_id=speaker_tasks.event_speaker_id
+                       AND a.kind=speaker_tasks.task_type
+                       AND COALESCE(a.submission_id,'')
+                           = COALESCE(speaker_tasks.submission_id,'')
+                   )"""
+        ).bind(now_ms, job.organization_id, job.event_id, job.asset_version_id),
     ]

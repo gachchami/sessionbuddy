@@ -6,7 +6,7 @@ import re
 from email.headerregistry import Address
 from html import escape
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -2269,6 +2269,42 @@ async def _add_speaker_profile(
 
 
 @access_router.get("/auth/verify", include_in_schema=False)
+async def magic_link_interstitial(token: str = "", *, request: Request) -> Response:
+    """Render a confirm step instead of consuming the single-use token on GET.
+
+    Corporate mail scanners prefetch emailed links; consuming on GET burned the
+    token before the speaker ever clicked. The button posts back to the same
+    path, which scanners do not follow."""
+    if not token:
+        return Response(
+            _asset("auth_link_error.html"),
+            media_type="text/html",
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
+    action = f"/auth/verify?token={quote(token)}"
+    page = (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        "<meta name=\"robots\" content=\"noindex\"><title>Confirm sign in · SessionBuddy</title>"
+        "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,"
+        "Helvetica,Arial,sans-serif;color:#182230;background:#f7f8fa;display:grid;"
+        "place-items:center;min-height:100vh;margin:0}main{max-width:26rem;padding:2rem;"
+        "background:#fff;border:1px solid #e4e7ec;border-radius:.75rem;text-align:center}"
+        "button{min-height:2.75rem;padding:.65rem 1.4rem;border:0;border-radius:.5rem;"
+        "background:#2563eb;color:#fff;font:inherit;font-weight:650;cursor:pointer}"
+        "p{color:#667085}</style></head><body><main><h1>Almost signed in</h1>"
+        "<p>Select continue to finish signing in to SessionBuddy. "
+        "This link works once and expires 15 minutes after it was sent.</p>"
+        f"<form method=\"post\" action=\"{action}\">"
+        "<button type=\"submit\">Continue</button></form></main></body></html>"
+    )
+    return Response(
+        page, media_type="text/html", headers={"Cache-Control": "no-store"}
+    )
+
+
+@access_router.post("/auth/verify", include_in_schema=False)
 async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> Response:
     cookie_response = Response()
     try:

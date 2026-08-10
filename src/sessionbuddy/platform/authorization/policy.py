@@ -44,6 +44,10 @@ ROLE_GRANTS = {
 OWNERSHIP_PERMISSIONS = SPEAKER_GRANTS
 ASSIGNMENT_PERMISSIONS = EVALUATOR_GRANTS
 
+# Self-scoped reads that must work before the first submission creates any
+# membership: a CFP-provisioned user saving/reading their own draft.
+PRE_MEMBERSHIP_SELF_PERMISSIONS = frozenset({Permission.SUBMISSION_READ_OWN})
+
 
 def authorize(
     actor: Actor, permission: Permission, context: ResourceContext
@@ -62,6 +66,12 @@ def authorize(
     )
     roles = org_roles | event_roles
     if not roles:
+        if (
+            permission in PRE_MEMBERSHIP_SELF_PERMISSIONS
+            and context.resource_owner_user_id is not None
+            and context.resource_owner_user_id == actor.user_id
+        ):
+            return AuthorizationDecision(True, "self_scope")
         return AuthorizationDecision(False, "tenant_membership_required")
     if not any(permission in ROLE_GRANTS[role] for role in roles):
         return AuthorizationDecision(False, "permission_not_granted")

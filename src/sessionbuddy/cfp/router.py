@@ -1301,6 +1301,21 @@ async def update_submission(
     if normalized_email is None or normalize_email(body.speaker_email) != str(normalized_email):
         raise HTTPException(status_code=422)
     schema = json.loads(str(row["schema_json"]))
+    # Preserve previously uploaded file answers: an edit that does not
+    # re-attach a file must never clobber the stored upload reference.
+    stored_answers = json.loads(
+        str(
+            await db.prepare("SELECT answers_json FROM submissions WHERE id=?1")
+            .bind(submission_id)
+            .first("answers_json")
+            or "{}"
+        )
+    )
+    for field in schema.get("fields", []):
+        if isinstance(field, dict) and field.get("type") in {"file", "image"}:
+            key = str(field.get("key", ""))
+            if key and not body.answers.get(key) and stored_answers.get(key):
+                body.answers[key] = stored_answers[key]
     _validate_submission_schema(schema, body)
     await _validate_upload_answers(
         db,

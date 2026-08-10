@@ -2142,27 +2142,42 @@ async def record_submission_decision(
                     )
                 )
     elif speaker["event_speaker_id"] is not None:
+        # Downgrade selection status only when no OTHER submission of this
+        # speaker has an accepted decision — a rejection of proposal B must not
+        # clobber the accepted status earned by proposal A.
         batch.add_statement(
             db.prepare(
                 """UPDATE event_speakers SET selection_status='rejected',last_activity_at_ms=?1,
-                          updated_at_ms=?1 WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
+                          updated_at_ms=?1 WHERE organization_id=?2 AND event_id=?3 AND id=?4
+                     AND NOT EXISTS (
+                       SELECT 1 FROM submission_decisions d
+                       JOIN submission_speakers ss ON ss.submission_id=d.submission_id
+                       WHERE ss.organization_id=?2 AND ss.event_id=?3
+                         AND ss.event_speaker_id=?4 AND d.decision='accepted'
+                         AND d.submission_id!=?5
+                     )"""
             ).bind(
                 now,
                 context["organization_id"],
                 context["event_id"],
                 speaker["event_speaker_id"],
+                submission_id,
             )
         )
+        # Waive only the rejected submission's tasks, never tasks that belong
+        # to another (accepted) submission of the same speaker.
         batch.add_statement(
             db.prepare(
                 """UPDATE speaker_tasks SET state='waived',waived_at_ms=?1,updated_at_ms=?1,
                           version=version+1 WHERE organization_id=?2 AND event_id=?3
-                          AND event_speaker_id=?4 AND state='open'"""
+                          AND event_speaker_id=?4 AND state='open'
+                          AND COALESCE(submission_id,'')=?5"""
             ).bind(
                 now,
                 context["organization_id"],
                 context["event_id"],
                 speaker["event_speaker_id"],
+                submission_id,
             )
         )
     if communication_id is not None:

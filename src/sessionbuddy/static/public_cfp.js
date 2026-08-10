@@ -275,7 +275,23 @@
     for (const field of state.form.fields || []) {
       const control = byId("proposal-form").elements.namedItem(field.key);
       const value = values[field.key];
-      if (!control || value === undefined || ["file", "image"].includes(field.type)) continue;
+      if (!control || value === undefined) continue;
+      if (["file", "image"].includes(field.type)) {
+        // Show that a file already exists and stop requiring a re-upload;
+        // the server keeps the stored file unless a new one is chosen.
+        if (state.editingSubmission && value) {
+          control.required = false;
+          const noteId = `${field.key}-existing-file`;
+          if (!document.getElementById(noteId) && control.closest("label")) {
+            const note = document.createElement("p");
+            note.id = noteId;
+            note.className = "help";
+            note.textContent = "A file is already attached. Choose a new file only to replace it.";
+            control.closest("label").append(note);
+          }
+        }
+        continue;
+      }
       if (field.type === "checkbox") control.checked = Boolean(value);
       else if (field.type === "multiselect" && Array.isArray(value)) {
         [...control.options].forEach((option) => { option.selected = value.includes(option.value); });

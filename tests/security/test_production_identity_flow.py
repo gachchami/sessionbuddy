@@ -158,7 +158,7 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
         )
         connection.commit()
 
-        browser = await client.get(f"/auth/verify?token={token}")
+        browser = await client.post(f"/auth/verify?token={token}")
         assert browser.status_code == 404
         assert browser.headers["content-type"].startswith("text/html")
         assert browser.headers["cache-control"] == "no-store"
@@ -241,7 +241,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
             )
         ).status_code == 202
         assert (
-            await client.get(
+            await client.post(
                 f"/auth/verify?token={_token(connection, 'asha@example.com')}",
                 follow_redirects=False,
             )
@@ -391,7 +391,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
         assert requested.status_code == 202
-        verified = await admin.get(
+        verified = await admin.post(
             f"/auth/verify?token={_token(connection, 'admin@example.com')}",
             follow_redirects=False,
         )
@@ -583,7 +583,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             json={"email": "speaker@example.com", "redirect_path": "/speaker"},
         )
         assert requested.status_code == 202
-        verified = await speaker.get(
+        verified = await speaker.post(
             f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
             follow_redirects=False,
         )
@@ -644,7 +644,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "/api/v1/auth/magic-links",
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
-        await admin_again.get(
+        await admin_again.post(
             f"/auth/verify?token={_token(connection, 'admin@example.com')}",
             follow_redirects=False,
         )
@@ -835,7 +835,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert requested.status_code == 202
         assert (
-            await returning_speaker.get(
+            await returning_speaker.post(
                 f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
                 follow_redirects=False,
             )
@@ -866,7 +866,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             "/api/v1/auth/magic-links",
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
-        verified = await client.get(
+        verified = await client.post(
             f"/auth/verify?token={_token(connection, 'admin@example.com')}",
             follow_redirects=False,
         )
@@ -962,7 +962,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             json={"email": "admin@example.com", "role": "speaker"},
         )
         assert invitation.status_code == 201
-        accepted = await client.get(
+        accepted = await client.post(
             invitation.json()["accept_url"],
             follow_redirects=False,
         )
@@ -1022,7 +1022,7 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
             "/api/v1/auth/magic-links",
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
-        await client.get(
+        await client.post(
             f"/auth/verify?token={_token(connection, 'admin@example.com')}",
             follow_redirects=False,
         )
