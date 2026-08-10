@@ -78,6 +78,16 @@
       "name": "PUBLIC_RATE_LIMITER",
       "namespace_id": "1002",
       "simple": {"limit": 50, "period": 60}
+    },
+    {
+      "name": "CFP_UPLOAD_AUTH_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": {"limit": 10, "period": 60}
+    },
+    {
+      "name": "CFP_UPLOAD_POLL_RATE_LIMITER",
+      "namespace_id": "1004",
+      "simple": {"limit": 240, "period": 60}
     }
   ],
   "vars": {
@@ -151,6 +161,16 @@
           "name": "PUBLIC_RATE_LIMITER",
           "namespace_id": "1002",
           "simple": {"limit": 50, "period": 60}
+        },
+        {
+          "name": "CFP_UPLOAD_AUTH_RATE_LIMITER",
+          "namespace_id": "1003",
+          "simple": {"limit": 10, "period": 60}
+        },
+        {
+          "name": "CFP_UPLOAD_POLL_RATE_LIMITER",
+          "namespace_id": "1004",
+          "simple": {"limit": 240, "period": 60}
         }
       ],
       "vars": {

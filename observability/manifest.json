@@ -3,37 +3,67 @@
   "api_routes": {
     "GET /api/v1/co-speaker-invitations/{token}": {
       "owner": "program-management",
-      "slo": { "p95_ms": 500, "error_rate_max": 0.001 },
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
       "benchmark": "co-speaker-invitation-detail",
-      "dashboards": ["release-health", "api-explorer"],
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/co-speaker-invitations/{token}/accept": {
       "owner": "program-management",
-      "slo": { "p95_ms": 800, "error_rate_max": 0.001 },
+      "slo": {
+        "p95_ms": 800,
+        "error_rate_max": 0.001
+      },
       "benchmark": "co-speaker-invitation-accept",
-      "dashboards": ["release-health", "api-explorer"],
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/co-speaker-invitations/{token}/decline": {
       "owner": "program-management",
-      "slo": { "p95_ms": 600, "error_rate_max": 0.001 },
+      "slo": {
+        "p95_ms": 600,
+        "error_rate_max": 0.001
+      },
       "benchmark": "co-speaker-invitation-decline",
-      "dashboards": ["release-health", "api-explorer"],
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}/resend": {
       "owner": "program-management",
-      "slo": { "p95_ms": 800, "error_rate_max": 0.001 },
+      "slo": {
+        "p95_ms": 800,
+        "error_rate_max": 0.001
+      },
       "benchmark": "co-speaker-invitation-resend",
-      "dashboards": ["release-health", "api-explorer"],
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "DELETE /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}": {
       "owner": "program-management",
-      "slo": { "p95_ms": 700, "error_rate_max": 0.001 },
+      "slo": {
+        "p95_ms": 700,
+        "error_rate_max": 0.001
+      },
       "benchmark": "co-speaker-remove",
-      "dashboards": ["release-health", "api-explorer"],
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "GET /api/v1/public/events": {
@@ -1506,6 +1536,32 @@
         "error_rate_max": 0.001
       },
       "benchmark": "evaluation-list-evaluators",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/cfp/forms/{form_id}/upload-authorizations": {
+      "owner": "cfp-intake",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "cfp-staged-upload-authorize",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/cfp/forms/{form_id}/upload-authorizations/{staged_id}/complete": {
+      "owner": "cfp-intake",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "cfp-staged-upload-complete",
       "dashboards": [
         "release-health",
         "api-explorer"

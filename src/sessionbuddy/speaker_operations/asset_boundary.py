@@ -299,7 +299,7 @@ async def consume_scan_job(
         .first()
     )
     if row is None:
-        return ScanDisposition(ack=True, reason="stale_or_complete")
+        return await _consume_staged_scan_job(db, bucket, scanner, job, now_ms=now_ms)
     try:
         await (
             db.prepare(
@@ -364,6 +364,58 @@ async def consume_scan_job(
                 )
             )
         await execute_batch(db, statements)
+        return ScanDisposition(ack=True, reason=result.verdict)
+    except Exception:
+        return ScanDisposition(ack=False, reason="infrastructure_failure")
+
+
+async def _consume_staged_scan_job(
+    db: D1Database,
+    bucket: PrivateBucket,
+    scanner: MalwareScanner,
+    job: ScanJob,
+    *,
+    now_ms: int,
+) -> ScanDisposition:
+    """Scan a staged CFP upload (no speaker graph exists yet for these rows)."""
+    staged = row_mapping(
+        await db.prepare(
+            """SELECT object_key, status FROM cfp_staged_assets
+               WHERE id=?1 AND checksum_sha256=?2 AND organization_id=?3 AND event_id=?4
+                 AND status IN ('uploaded','scanning')"""
+        )
+        .bind(job.asset_version_id, job.checksum_sha256, job.organization_id, job.event_id)
+        .first()
+    )
+    if staged is None:
+        return ScanDisposition(ack=True, reason="stale_or_complete")
+    try:
+        await (
+            db.prepare(
+                """UPDATE cfp_staged_assets SET status='scanning', updated_at_ms=?1
+               WHERE id=?2 AND checksum_sha256=?3 AND status='uploaded'"""
+            )
+            .bind(now_ms, job.asset_version_id, job.checksum_sha256)
+            .run()
+        )
+        stored = await bucket.get(str(staged["object_key"]))
+        if stored is None:
+            return ScanDisposition(ack=False, reason="object_unavailable")
+        result = await scanner.scan(stored, job=job)
+        if result.verdict == "error":
+            return ScanDisposition(ack=False, reason="scanner_error")
+        if result.verdict == "clean":
+            status, code = "staged", "clean"
+        else:
+            status, code = "rejected", result.signature_code or result.verdict
+        await (
+            db.prepare(
+                """UPDATE cfp_staged_assets SET status=?1, scan_result_code=?2, updated_at_ms=?3
+               WHERE id=?4 AND checksum_sha256=?5 AND status='scanning'"""
+            )
+            .bind(status, code, now_ms, job.asset_version_id, job.checksum_sha256)
+            .run()
+        )
         return ScanDisposition(ack=True, reason=result.verdict)
     except Exception:
         return ScanDisposition(ack=False, reason="infrastructure_failure")

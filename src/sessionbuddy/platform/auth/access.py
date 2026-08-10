@@ -2053,7 +2053,7 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
         await db.prepare(
             """UPDATE authentication_challenges SET consumed_at_ms=?1
            WHERE token_hash=?2 AND consumed_at_ms IS NULL AND expires_at_ms>?1
-           RETURNING user_id,normalized_email,organization_id,event_id,provisioning_context,
+           RETURNING id,user_id,normalized_email,organization_id,event_id,provisioning_context,
                      invitation_id,redirect_path"""
         )
         .bind(now, hash_token(token))
@@ -2061,6 +2061,30 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
     )
     if challenge is None:
         raise HTTPException(status_code=404)
+    try:
+        return await _finish_magic_link_sign_in(db, request, response, challenge, now)
+    except BaseException:
+        # Consume-on-success: if provisioning or session creation fails after
+        # the atomic consumption above, restore the challenge so the link is
+        # not burned by a transient failure. The guard on consumed_at_ms means
+        # only this request's own consumption can be rolled back.
+        try:
+            await (
+                db.prepare(
+                    """UPDATE authentication_challenges SET consumed_at_ms=NULL
+                   WHERE id=?1 AND consumed_at_ms=?2"""
+                )
+                .bind(challenge["id"], now)
+                .run()
+            )
+        except Exception:  # noqa: S110 - restoration is strictly best effort
+            pass
+        raise
+
+
+async def _finish_magic_link_sign_in(
+    db, request: Request, response: Response, challenge, now: int
+) -> SessionCreated:
     user_id = challenge["user_id"]
     if challenge["invitation_id"] is not None:
         invitation = row_mapping(
@@ -2274,7 +2298,10 @@ async def magic_link_interstitial(token: str = "", *, request: Request) -> Respo
 
     Corporate mail scanners prefetch emailed links; consuming on GET burned the
     token before the speaker ever clicked. The button posts back to the same
-    path, which scanners do not follow."""
+    path (preserving the token and, through the stored challenge, the requested
+    redirect), which scanners do not follow. The page is a packaged static
+    asset styled by the shared stylesheet so the strict CSP (style-src 'self')
+    never blocks it."""
     if not token:
         return Response(
             _asset("auth_link_error.html"),
@@ -2283,25 +2310,8 @@ async def magic_link_interstitial(token: str = "", *, request: Request) -> Respo
             headers={"Cache-Control": "no-store"},
         )
     action = f"/auth/verify?token={quote(token)}"
-    page = (
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        "<meta name=\"robots\" content=\"noindex\"><title>Confirm sign in · SessionBuddy</title>"
-        "<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,"
-        "Helvetica,Arial,sans-serif;color:#182230;background:#f7f8fa;display:grid;"
-        "place-items:center;min-height:100vh;margin:0}main{max-width:26rem;padding:2rem;"
-        "background:#fff;border:1px solid #e4e7ec;border-radius:.75rem;text-align:center}"
-        "button{min-height:2.75rem;padding:.65rem 1.4rem;border:0;border-radius:.5rem;"
-        "background:#2563eb;color:#fff;font:inherit;font-weight:650;cursor:pointer}"
-        "p{color:#667085}</style></head><body><main><h1>Almost signed in</h1>"
-        "<p>Select continue to finish signing in to SessionBuddy. "
-        "This link works once and expires 15 minutes after it was sent.</p>"
-        f"<form method=\"post\" action=\"{action}\">"
-        "<button type=\"submit\">Continue</button></form></main></body></html>"
-    )
-    return Response(
-        page, media_type="text/html", headers={"Cache-Control": "no-store"}
-    )
+    page = _asset("auth_link_confirm.html").replace("__CONFIRM_ACTION__", escape(action))
+    return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 @access_router.post("/auth/verify", include_in_schema=False)

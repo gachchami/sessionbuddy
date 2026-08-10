@@ -27,7 +27,6 @@ from sessionbuddy.platform.db.commands import (
 )
 from sessionbuddy.platform.db.d1 import (
     PersistenceError,
-    execute_batch,
     result_rows,
     row_mapping,
     to_python,
@@ -1407,90 +1406,6 @@ async def consume_asset_download_grant(
     )
 
 
-async def _provision_cfp_uploader(request: Request, event_id: str):
-    """First-time CFP submitters have no speaker record yet, but the public
-    form must accept file answers before the submission exists. When the event
-    has an open published CFP, provision the same idempotent speaker graph
-    that create_submission builds, so upload authorization can proceed."""
-    authenticated = await authenticate_request(request)
-    db = _db(request)
-    form = row_mapping(
-        await db.prepare(
-            """SELECT organization_id,event_id FROM call_for_speaker_forms
-               WHERE event_id=?1 AND status='published'
-                 AND (opens_at_ms IS NULL OR opens_at_ms<=?2)
-                 AND (closes_at_ms IS NULL OR closes_at_ms>?2) LIMIT 1"""
-        )
-        .bind(event_id, utc_now_ms())
-        .first()
-    )
-    if form is None:
-        raise HTTPException(status_code=404)
-    organization_id = str(form["organization_id"])
-    email = str(
-        await db.prepare("SELECT email FROM users WHERE id=?1 LIMIT 1")
-        .bind(authenticated.actor.user_id)
-        .first("email")
-        or ""
-    )
-    if not email:
-        raise HTTPException(status_code=404)
-    now = utc_now_ms()
-    statements = [
-        db.prepare(
-            """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'member','active',?4,?4)
-               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), organization_id, authenticated.actor.user_id, now),
-        db.prepare(
-            """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
-               ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET
-                 status='active', revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), organization_id, event_id, authenticated.actor.user_id, now),
-    ]
-    person = row_mapping(
-        await db.prepare(
-            "SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1"
-        )
-        .bind(organization_id, authenticated.actor.user_id)
-        .first()
-    )
-    person_id = str(person["id"]) if person is not None else new_id()
-    if person is None:
-        statements.append(
-            db.prepare(
-                """INSERT INTO people
-                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?5)"""
-            ).bind(person_id, organization_id, authenticated.actor.user_id, email, now)
-        )
-    speaker = row_mapping(
-        await db.prepare(
-            """SELECT id FROM event_speakers
-               WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
-        )
-        .bind(organization_id, event_id, person_id)
-        .first()
-    )
-    if speaker is None:
-        statements.append(
-            db.prepare(
-                """INSERT INTO event_speakers
-                   (id,organization_id,event_id,person_id,status,accepted_at_ms,
-                    last_activity_at_ms,created_at_ms,updated_at_ms,selection_status)
-                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
-            ).bind(new_id(), organization_id, event_id, person_id, now)
-        )
-    await execute_batch(db, statements)
-    # Force the permission layer to re-read the just-created memberships.
-    request.state.authenticated_context = None
-    return await _speaker_for_event(request, event_id)
-
-
 @speaker_operations_router.post(
     "/api/v1/speaker/events/{event_id}/upload-authorizations",
     response_model=UploadAuthorizationView,
@@ -1504,12 +1419,7 @@ async def authorize_speaker_upload(
     body: UploadAuthorizationCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> UploadAuthorizationView:
-    try:
-        authenticated, speaker = await _speaker_for_event(request, event_id)
-    except HTTPException as error:
-        if error.status_code != 404:
-            raise
-        authenticated, speaker = await _provision_cfp_uploader(request, event_id)
+    authenticated, speaker = await _speaker_for_event(request, event_id)
     await require_permission(
         request,
         Permission.SPEAKER_ASSET_UPLOAD_OWN,

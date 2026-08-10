@@ -4,7 +4,8 @@
   const slug = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
   const state = {
     csrf: "", form: null, draftVersion: 0, publicSession: crypto.randomUUID(),
-    files: new Map(), uploaded: new Map(), applyConditions: () => {},
+    files: new Map(), uploaded: new Map(), existingFiles: new Map(),
+    applyConditions: () => {},
     sessionEmail: "", authenticated: false, editingSubmission: null,
     viewingSubmission: null, submissions: []
   };
@@ -271,14 +272,35 @@
     }
   }
 
+  function resetProposalFiles() {
+    // One reset for every piece of per-proposal file state so nothing leaks
+    // between proposals within a single page session: selections, uploaded
+    // references, existing-attachment notes, and required-field relaxations.
+    state.files.clear();
+    state.uploaded.clear();
+    state.existingFiles.clear();
+    for (const field of state.form?.fields || []) {
+      if (!["file", "image"].includes(field.type)) continue;
+      const control = byId("proposal-form").elements.namedItem(field.key);
+      if (!control) continue;
+      control.value = "";
+      control.required = control.dataset.required === "true";
+      document.getElementById(`${field.key}-existing-file`)?.remove();
+    }
+    state.applyConditions();
+  }
+
   function restoreValues(values) {
     for (const field of state.form.fields || []) {
       const control = byId("proposal-form").elements.namedItem(field.key);
       const value = values[field.key];
       if (!control || value === undefined) continue;
       if (["file", "image"].includes(field.type)) {
-        // Show that a file already exists and stop requiring a re-upload;
+        // Track that a file already exists and stop requiring a re-upload;
         // the server keeps the stored file unless a new one is chosen.
+        if ((state.editingSubmission || state.viewingSubmission) && value) {
+          state.existingFiles.set(field.key, value);
+        }
         if (state.editingSubmission && value) {
           control.required = false;
           const noteId = `${field.key}-existing-file`;
@@ -366,6 +388,7 @@
 
   function chooseSubmission(submission) {
     const editable = submission.editable === true;
+    resetProposalFiles();
     state.viewingSubmission = submission;
     state.editingSubmission = editable ? submission : null;
     restoreValues({ ...submission.answers, speaker_name: submission.speaker_name,
@@ -407,6 +430,7 @@
       state.viewingSubmission = null;
       for (const control of byId("proposal-form").elements) control.disabled = false;
       byId("proposal-form").reset();
+      resetProposalFiles();
       byId("co-speaker-rows").replaceChildren();
       byId("co-speaker-invitations").hidden = true;
       lockSignedInEmail();
@@ -424,7 +448,9 @@
       const wrapper = byId("proposal-form").elements.namedItem(field.key)?.closest("label");
       if (wrapper?.hidden) continue;
       let value = ["file", "image"].includes(field.type)
-        ? state.files.get(field.key)?.name || "No file selected" : fieldValue(field);
+        ? state.files.get(field.key)?.name
+          || (state.existingFiles.has(field.key) ? "Existing file attached" : "No file selected")
+        : fieldValue(field);
       if (typeof value === "boolean") value = value ? "Yes" : "No";
       if (Array.isArray(value)) value = value.join(", ");
       const group = document.createElement("div");
@@ -467,10 +493,12 @@
     const kind = field.type === "image" ? "headshot" : "supporting_document";
     const max = field.type === "image" ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
     if (file.size <= 0 || file.size > max) throw new Error(`${field.label} is too large.`);
-    const authorization = await api(`/api/v1/speaker/events/${encodeURIComponent(state.form.event_id)}/upload-authorizations`, {
+    // Staged CFP uploads only need a verified email session; the speaker
+    // record is created when the submission itself succeeds.
+    const authorization = await api(`/api/v1/cfp/forms/${encodeURIComponent(state.form.id)}/upload-authorizations`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
-      body: JSON.stringify({ kind, submission_id: null, task_id: null, filename: file.name, content_type: file.type, byte_size: file.size, checksum_sha256: await checksum(file) })
+      body: JSON.stringify({ kind, filename: file.name, content_type: file.type, byte_size: file.size, checksum_sha256: await checksum(file) })
     });
     const uploadUrl = safeUploadUrl(authorization.upload_url);
     if (!uploadUrl || authorization.expires_at_ms <= Date.now()) throw new Error("The upload authorization expired.");
@@ -481,7 +509,7 @@
       throw new Error("The file could not be uploaded. Check your connection and try again.");
     }
     if (!upload.ok) throw new Error("The file could not be uploaded. Try again.");
-    const completionPath = `/api/v1/speaker/events/${encodeURIComponent(state.form.event_id)}/upload-intents/${encodeURIComponent(authorization.intent_id)}/complete`;
+    const completionPath = `/api/v1/cfp/forms/${encodeURIComponent(state.form.id)}/upload-authorizations/${encodeURIComponent(authorization.staged_id)}/complete`;
     let completion = await api(completionPath, {
       method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
     });
@@ -493,8 +521,8 @@
       });
     }
     if (completion.state === "rejected") throw new Error(`${field.label} did not pass the safety check.`);
-    if (completion.state !== "clean") throw new Error(`${field.label} is still being checked. Try again in a moment.`);
-    state.uploaded.set(field.key, `upload:${authorization.intent_id}`);
+    if (completion.state !== "staged") throw new Error(`${field.label} is still being checked. Try again in a moment.`);
+    state.uploaded.set(field.key, `staged:${authorization.staged_id}`);
   }
 
   async function uploadFiles() {
@@ -708,6 +736,7 @@
       receipt.scrollIntoView({ behavior: "smooth", block: "center" });
       receipt.focus({ preventScroll: true });
       clearBrowserDraft();
+      resetProposalFiles();
     } catch (error) {
       setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : window.SessionBuddyApi.message(error), "error");
       byId("status").focus();

@@ -313,3 +313,37 @@ class SubmissionDraftView(BaseModel):
     answers: dict[str, str | list[str] | bool | int | float | None]
     version: int
     updated_at_ms: int
+
+
+class StagedUploadCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    kind: Literal["headshot", "supporting_document"]
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=100)
+    byte_size: int = Field(gt=0, le=20 * 1024 * 1024)
+    checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value: str) -> str:
+        if "/" in value or "\\" in value or value in {".", ".."}:
+            raise ValueError("filename must not contain a path")
+        return value
+
+
+class StagedUploadAuthorizationView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    staged_id: str
+    upload_url: str
+    method: Literal["PUT"] = "PUT"
+    headers: dict[str, str]
+    expires_at_ms: int
+
+
+class StagedUploadCompletionView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    staged_id: str
+    state: Literal["pending_upload", "uploaded", "scanning", "staged", "rejected", "claimed"]

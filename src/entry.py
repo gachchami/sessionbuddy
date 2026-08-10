@@ -4,6 +4,7 @@ import asgi
 from workers import WorkerEntrypoint
 
 from sessionbuddy.api.app import app
+from sessionbuddy.cfp.staged_uploads import purge_expired_staged_assets
 from sessionbuddy.communications.runtime import (
     D1DeliveryRepository,
     DeliveryEnvelope,
@@ -48,6 +49,19 @@ class Default(WorkerEntrypoint):
                     "publish_failures": result.publish_failures,
                     "exhausted": result.exhausted,
                     "oldest_pending_age_ms": result.oldest_pending_age_ms,
+                },
+                separators=(",", ":"),
+            )
+        )
+        purge = await purge_expired_staged_assets(self.env.DB, self.env.ASSETS, utc_now_ms())
+        print(
+            json.dumps(
+                {
+                    "event": "cfp_staged_upload_purge",
+                    "level": "error" if purge.delete_failures else "info",
+                    "deleted_rows": purge.deleted_rows,
+                    "deleted_objects": purge.deleted_objects,
+                    "delete_failures": purge.delete_failures,
                 },
                 separators=(",", ":"),
             )

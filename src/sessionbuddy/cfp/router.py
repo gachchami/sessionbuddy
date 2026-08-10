@@ -3,6 +3,7 @@ import hmac
 import json
 import re
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from datetime import UTC, datetime
 from email.headerregistry import Address
 from html import escape
 from time import perf_counter
@@ -19,16 +20,25 @@ from sessionbuddy.platform.auth import (
     hash_token,
     normalize_email,
 )
-from sessionbuddy.platform.auth.http import require_permission, secret
+from sessionbuddy.platform.auth.http import guard_mutation, require_permission, secret
 from sessionbuddy.platform.authorization import Permission, ResourceContext
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
     IdempotencyRecord,
 )
-from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
+from sessionbuddy.platform.db.d1 import (
+    PersistenceError,
+    execute_batch,
+    result_rows,
+    row_mapping,
+    to_python,
+)
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
+from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
+from sessionbuddy.speaker_operations.asset_boundary import ScanJob
+from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 from .models import (
     CfpWorkspaceView,
@@ -41,12 +51,27 @@ from .models import (
     OwnedSubmissionList,
     PrivateSubmissionView,
     PublishedFormView,
+    StagedUploadAuthorizationView,
+    StagedUploadCompletionView,
+    StagedUploadCreate,
     SubmissionCreate,
     SubmissionDraftUpsert,
     SubmissionDraftView,
     SubmissionList,
     SubmissionUpdate,
     SubmissionView,
+)
+from .staged_uploads import (
+    MAX_ACTIVE_STAGED_BYTES,
+    MAX_ACTIVE_STAGED_FILES,
+    MAX_STAGED_AUTHORIZATIONS_PER_HOUR,
+    STAGED_ASSET_RULES,
+    STAGED_AUTHORIZATION_WINDOW_MS,
+    STAGED_UPLOAD_TTL_MS,
+    STAGED_UPLOAD_URL_TTL_MS,
+    build_staged_claim,
+    staged_references,
+    staged_upload_token,
 )
 
 cfp_router = APIRouter()
@@ -143,6 +168,9 @@ async def _reconcile_co_speakers(
     )
     desired_by_email = {normalize_email(item.email): item for item in desired}
     existing_by_email = {str(row["normalized_email"]): row for row in existing}
+    if not desired_by_email and not existing_by_email:
+        # Nothing to reconcile; an empty command batch is not executable.
+        return
     batch = CommandBatch(db)
     queued: list[str] = []
     for normalized, current in existing_by_email.items():
@@ -1241,6 +1269,376 @@ async def remove_co_speaker(
     await _execute(request, batch)
 
 
+def _bucket(request: Request):
+    bucket = getattr(request.scope.get("env"), "ASSETS", None)
+    if bucket is None:
+        raise HTTPException(status_code=503)
+    return bucket
+
+
+async def _open_staged_form(db, form_id: str, now: int):
+    form = row_mapping(
+        await db.prepare(
+            """SELECT id, organization_id, event_id FROM call_for_speaker_forms
+               WHERE id=?1 AND status='published'
+                 AND (opens_at_ms IS NULL OR opens_at_ms<=?2)
+                 AND (closes_at_ms IS NULL OR closes_at_ms>?2) LIMIT 1"""
+        )
+        .bind(form_id, now)
+        .first()
+    )
+    if form is None:
+        raise HTTPException(status_code=404)
+    return form
+
+
+async def _staged_authorization_view(
+    request: Request, staged_id: str, token: str
+) -> StagedUploadAuthorizationView:
+    row = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT id, object_key, content_type, created_at_ms
+               FROM cfp_staged_assets WHERE id=?1 LIMIT 1"""
+        )
+        .bind(staged_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    environment = _env(request)
+    content_type = str(row["content_type"])
+    upload_expires = utc_now_ms() + STAGED_UPLOAD_URL_TTL_MS
+    if getattr(environment, "APP_ENV", "production") == "local":
+        upload_url = f"/api/v1/cfp/uploads/{staged_id}/content?token={token}"
+        headers = {"content-type": content_type}
+    else:
+        required = (
+            str(getattr(environment, "CLOUDFLARE_ACCOUNT_ID", "")),
+            str(getattr(environment, "R2_BUCKET_NAME", "")),
+            str(getattr(environment, "R2_ACCESS_KEY_ID", "")),
+            str(getattr(environment, "R2_SECRET_ACCESS_KEY", "")),
+        )
+        if not all(required):
+            raise HTTPException(status_code=503)
+        upload_url, headers = presign_r2_put(
+            account_id=required[0],
+            bucket=required[1],
+            object_key=str(row["object_key"]),
+            access_key_id=required[2],
+            secret_access_key=required[3],
+            content_type=content_type,
+            now=datetime.now(UTC),
+            expires_seconds=STAGED_UPLOAD_URL_TTL_MS // 1000,
+        )
+    return StagedUploadAuthorizationView(
+        staged_id=staged_id,
+        upload_url=upload_url,
+        headers=headers,
+        expires_at_ms=upload_expires,
+    )
+
+
+@cfp_router.post(
+    "/api/v1/cfp/forms/{form_id}/upload-authorizations",
+    response_model=StagedUploadAuthorizationView,
+    status_code=201,
+    operation_id="authorizeCfpStagedUpload",
+    tags=["submissions"],
+)
+async def authorize_cfp_staged_upload(
+    form_id: str,
+    request: Request,
+    body: StagedUploadCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> StagedUploadAuthorizationView:
+    """Stage a CFP file answer before the submission (and speaker graph) exist.
+
+    Requires only an authenticated session: no person, speaker, or membership
+    rows are read or written here, so a revoked or brand-new user gains no
+    access through this route.
+    """
+    key = _idempotency_key(idempotency_key)
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    await enforce_rate_limit(
+        request,
+        binding_name="CFP_UPLOAD_AUTH_RATE_LIMITER",
+        policy=RateLimitPolicy("cfp.staged_upload.authorize", limit=10, window_seconds=60),
+        subject=f"{authenticated.actor.user_id}:{form_id}:{_request_source(request)}",
+    )
+    db = _db(request)
+    now = utc_now_ms()
+    form = await _open_staged_form(db, form_id, now)
+    allowed_types, max_bytes = STAGED_ASSET_RULES[body.kind]
+    if body.content_type not in allowed_types or body.byte_size > max_bytes:
+        raise HTTPException(status_code=400)
+    route = "POST /api/v1/cfp/forms/{form_id}/upload-authorizations"
+    fingerprint = _fingerprint(body)
+    replay = await _find_replay(db, authenticated.actor.user_id, route, key)
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        staged_id = str(replay["response_resource_id"])
+        return await _staged_authorization_view(
+            request, staged_id, staged_upload_token(secret(request, "UPLOAD_HMAC_KEY"), staged_id)
+        )
+    # Claimed rows leave the active-usage quota below, so also cap how many
+    # authorizations a user can create per form per hour regardless of status —
+    # a submit-and-restage loop cannot grow R2 storage unboundedly.
+    created_in_window = int(
+        await db.prepare(
+            """SELECT COUNT(*) AS created_count FROM cfp_staged_assets
+               WHERE form_id=?1 AND user_id=?2 AND created_at_ms>?3"""
+        )
+        .bind(form_id, authenticated.actor.user_id, now - STAGED_AUTHORIZATION_WINDOW_MS)
+        .first("created_count")
+        or 0
+    )
+    if created_in_window >= MAX_STAGED_AUTHORIZATIONS_PER_HOUR:
+        raise HTTPException(status_code=429, headers={"Retry-After": "3600"})
+    usage = row_mapping(
+        await db.prepare(
+            """SELECT COUNT(*) AS staged_count, COALESCE(SUM(byte_size), 0) AS staged_bytes
+               FROM cfp_staged_assets
+               WHERE form_id=?1 AND user_id=?2 AND expires_at_ms>?3
+                 AND status IN ('pending_upload', 'uploaded', 'scanning', 'staged')"""
+        )
+        .bind(form_id, authenticated.actor.user_id, now)
+        .first()
+    )
+    if usage is not None and (
+        int(usage["staged_count"]) >= MAX_ACTIVE_STAGED_FILES
+        or int(usage["staged_bytes"]) + body.byte_size > MAX_ACTIVE_STAGED_BYTES
+    ):
+        raise HTTPException(status_code=429)
+    staged_id = new_id()
+    token = staged_upload_token(secret(request, "UPLOAD_HMAC_KEY"), staged_id)
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        organization_id=str(form["organization_id"]),
+        event_id=str(form["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO cfp_staged_assets
+               (id, organization_id, event_id, form_id, user_id, kind, object_key,
+                original_filename, content_type, byte_size, checksum_sha256,
+                upload_token_hash, status, expires_at_ms, created_at_ms, updated_at_ms)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                       'pending_upload', ?13, ?14, ?14)"""
+        ).bind(
+            staged_id,
+            form["organization_id"],
+            form["event_id"],
+            form_id,
+            authenticated.actor.user_id,
+            body.kind,
+            f"staged/{staged_id}/{new_id()}",
+            body.filename,
+            body.content_type,
+            body.byte_size,
+            bytes.fromhex(body.checksum_sha256),
+            hash_token(token),
+            now + STAGED_UPLOAD_TTL_MS,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(form["organization_id"]),
+            event_id=str(form["event_id"]),
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="cfp.staged_upload.authorize",
+            target_type="cfp_staged_asset",
+            target_id=staged_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"kind": body.kind},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="cfp_staged_asset",
+        resource_id=staged_id,
+        completed_at_ms=now,
+    )
+    await _execute(request, batch)
+    return await _staged_authorization_view(request, staged_id, token)
+
+
+@cfp_router.put(
+    "/api/v1/cfp/uploads/{staged_id}/content",
+    status_code=204,
+    include_in_schema=False,
+)
+async def local_staged_upload_content(staged_id: str, request: Request, token: str) -> None:
+    if getattr(_env(request), "APP_ENV", "production") != "local":
+        raise HTTPException(status_code=404)
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT object_key, content_type, byte_size, checksum_sha256,
+                      upload_token_hash, status, expires_at_ms
+               FROM cfp_staged_assets WHERE id=?1 LIMIT 1"""
+        )
+        .bind(staged_id)
+        .first()
+    )
+    if (
+        row is None
+        or str(row["status"]) != "pending_upload"
+        or int(row["expires_at_ms"]) < utc_now_ms()
+        or not hmac.compare_digest(_blob(row["upload_token_hash"]), hash_token(token))
+    ):
+        raise HTTPException(status_code=404)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0]
+    content_length = request.headers.get("content-length")
+    if content_type != str(row["content_type"]):
+        raise HTTPException(status_code=400)
+    if content_length is not None and int(content_length) != int(row["byte_size"]):
+        raise HTTPException(status_code=400)
+    body = await request.body()
+    if len(body) != int(row["byte_size"]):
+        raise HTTPException(status_code=400)
+    if not hmac.compare_digest(hashlib.sha256(body).digest(), _blob(row["checksum_sha256"])):
+        raise HTTPException(status_code=400)
+    await _bucket(request).put(str(row["object_key"]), body)
+
+
+@cfp_router.post(
+    "/api/v1/cfp/forms/{form_id}/upload-authorizations/{staged_id}/complete",
+    response_model=StagedUploadCompletionView,
+    operation_id="completeCfpStagedUpload",
+    tags=["submissions"],
+)
+async def complete_cfp_staged_upload(
+    form_id: str,
+    staged_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> StagedUploadCompletionView:
+    _idempotency_key(idempotency_key)
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    # Completion is polled (~1/s per in-flight upload while a scan runs), so it
+    # gets its own, much more generous bucket than authorization.
+    await enforce_rate_limit(
+        request,
+        binding_name="CFP_UPLOAD_POLL_RATE_LIMITER",
+        policy=RateLimitPolicy("cfp.staged_upload.complete", limit=240, window_seconds=60),
+        subject=f"{authenticated.actor.user_id}:{form_id}:{_request_source(request)}",
+    )
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id, organization_id, event_id, object_key, content_type, byte_size,
+                      checksum_sha256, status, expires_at_ms
+               FROM cfp_staged_assets
+               WHERE id=?1 AND form_id=?2 AND user_id=?3 LIMIT 1"""
+        )
+        .bind(staged_id, form_id, authenticated.actor.user_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    status = str(row["status"])
+    if status in {"staged", "rejected", "claimed", "scanning"}:
+        return StagedUploadCompletionView(staged_id=staged_id, state=status)
+    now = utc_now_ms()
+    if status == "uploaded":
+        await _enqueue_staged_scan(request, row)
+        return StagedUploadCompletionView(staged_id=staged_id, state="uploaded")
+    if int(row["expires_at_ms"]) < now:
+        raise HTTPException(status_code=404)
+    stored = await _bucket(request).head(str(row["object_key"]))
+    if stored is None or int(stored.size) != int(row["byte_size"]):
+        raise HTTPException(status_code=409)
+    environment = _env(request)
+    local = getattr(environment, "APP_ENV", "production") == "local"
+    scan_bypassed = malware_scan_disabled(environment)
+    if scan_bypassed:
+        state, code = "staged", "development_bypass"
+    elif local:
+        stored_body = await _bucket(request).get(str(row["object_key"]))
+        if stored_body is None:
+            raise HTTPException(status_code=409)
+        job = _staged_scan_job(row)
+        try:
+            provider_result = await SignedScannerAdapter(environment).scan(stored_body, job=job)
+        except Exception as exc:
+            raise HTTPException(status_code=503) from exc
+        if provider_result.verdict == "error":
+            raise HTTPException(status_code=503)
+        if provider_result.verdict == "clean":
+            state, code = "staged", "clamav_clean"
+        else:
+            state, code = "rejected", provider_result.signature_code or "malware_detected"
+    else:
+        state, code = "uploaded", None
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE cfp_staged_assets SET status=?1, scan_result_code=?2, updated_at_ms=?3
+               WHERE id=?4 AND status='pending_upload'"""
+        ).bind(state, code, now, staged_id)
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="cfp.staged_upload.complete",
+            target_type="cfp_staged_asset",
+            target_id=staged_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={
+                "state": state,
+                "malware_scan_bypassed": int(scan_bypassed),
+                "local_scan": int(local and not scan_bypassed),
+            },
+        )
+    )
+    await _execute(request, batch)
+    if state == "uploaded":
+        await _enqueue_staged_scan(request, row)
+    return StagedUploadCompletionView(staged_id=staged_id, state=state)
+
+
+def _staged_scan_job(row) -> "ScanJob":
+    return ScanJob(
+        schema_version=1,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        asset_version_id=str(row["id"]),
+        generation=1,
+        checksum_sha256=_blob(row["checksum_sha256"]),
+        job_id=str(row["id"]),
+    )
+
+
+async def _enqueue_staged_scan(request: Request, row) -> None:
+    queue = getattr(_env(request), "ASSET_SCAN_QUEUE", None)
+    if queue is None:
+        raise HTTPException(status_code=503)
+    try:
+        await queue.send(_staged_scan_job(row).to_message())
+    except Exception as exc:
+        raise HTTPException(status_code=503) from exc
+
+
 @cfp_router.patch(
     "/api/v1/forms/{slug}/submissions/{submission_id}",
     response_model=PrivateSubmissionView,
@@ -1257,7 +1655,7 @@ async def update_submission(
     db = _db(request)
     row = row_mapping(
         await db.prepare(
-            """SELECT s.organization_id,s.event_id,s.form_id,s.status,
+            """SELECT s.organization_id,s.event_id,s.form_id,s.status,s.version,
                       s.submitter_user_id,f.schema_json,f.opens_at_ms,f.closes_at_ms
                FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
                WHERE s.id=?1 AND f.slug=?2 LIMIT 1"""
@@ -1278,6 +1676,8 @@ async def update_submission(
         mutation=True,
     )
     if row["status"] != "submitted":
+        raise HTTPException(status_code=409)
+    if int(row["version"]) != body.version:
         raise HTTPException(status_code=409)
     now = utc_now_ms()
     if row["opens_at_ms"] is not None and now < int(row["opens_at_ms"]):
@@ -1321,9 +1721,40 @@ async def update_submission(
         db,
         schema,
         body.answers,
+        form_id=str(row["form_id"]),
         event_id=str(row["event_id"]),
         user_id=authenticated.actor.user_id,
     )
+    staged_ids = staged_references(schema, body.answers)
+    staged_claim = None
+    if staged_ids:
+        primary_speaker_id = (
+            await db.prepare(
+                """SELECT event_speaker_id FROM submission_speakers
+                   WHERE submission_id=?1 AND role='primary' LIMIT 1"""
+            )
+            .bind(submission_id)
+            .first("event_speaker_id")
+        )
+        if primary_speaker_id is None:
+            raise HTTPException(status_code=409)
+        staged_claim = await build_staged_claim(
+            db,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+            event_speaker_id=str(primary_speaker_id),
+            submission_id=submission_id,
+            form_id=str(row["form_id"]),
+            user_id=authenticated.actor.user_id,
+            staged_ids=staged_ids,
+            now=now,
+        )
+        body.answers = {
+            key: staged_claim.answer_rewrites.get(value, value)
+            if isinstance(value, str)
+            else value
+            for key, value in body.answers.items()
+        }
     routing = _route_submission(schema, body.answers)
     await _validate_routed_track(
         db,
@@ -1331,37 +1762,45 @@ async def update_submission(
         event_id=str(row["event_id"]),
         routing=routing,
     )
-    await (
-        db.prepare(
-            """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
-                  speaker_name=?3,speaker_email=?4,answers_json=?5,
-                  routed_category=?6,routed_track=?7,routed_review_queue=?8,
-                  version=version+1,updated_at_ms=?9
-           WHERE id=?10 AND submitter_user_id=?11 AND status='submitted' AND version=?12"""
-        )
-        .bind(
-            body.proposal_title,
-            body.proposal_abstract,
-            body.speaker_name,
-            body.speaker_email,
-            json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
-            routing["category"],
-            routing["track"],
-            routing["review_queue"],
-            now,
-            submission_id,
-            authenticated.actor.user_id,
-            body.version,
-        )
-        .run()
+    update_statement = db.prepare(
+        """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
+              speaker_name=?3,speaker_email=?4,answers_json=?5,
+              routed_category=?6,routed_track=?7,routed_review_queue=?8,
+              version=version+1,updated_at_ms=?9
+       WHERE id=?10 AND submitter_user_id=?11 AND status='submitted' AND version=?12"""
+    ).bind(
+        body.proposal_title,
+        body.proposal_abstract,
+        body.speaker_name,
+        body.speaker_email,
+        json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
+        routing["category"],
+        routing["track"],
+        routing["review_queue"],
+        now,
+        submission_id,
+        authenticated.actor.user_id,
+        body.version,
     )
-    updated_version = (
-        await db.prepare("SELECT version FROM submissions WHERE id=?1 AND submitter_user_id=?2")
-        .bind(submission_id, authenticated.actor.user_id)
-        .first("version")
-    )
-    if updated_version is None or int(updated_version) != body.version + 1:
-        raise HTTPException(status_code=409)
+    # Two tabs editing the same proposal can race: the loser's optimistic
+    # UPDATE matches zero rows, yet any statements after it in the batch would
+    # still run — claiming a staged file against answers that were never
+    # stored. The write guard records changes() from the UPDATE immediately
+    # after it, and its CHECK (applied_changes = 1) aborts the whole D1 batch
+    # when the UPDATE did not win, rolling every later statement back with it.
+    # The guard runs in BOTH branches so a lost race is always detected inside
+    # the transaction itself, not by a read-back that a third concurrent
+    # request could skew.
+    write_guard = db.prepare(
+        """INSERT INTO submission_write_guards
+           (id,submission_id,applied_changes,created_at_ms)
+           VALUES(?1,?2,changes(),?3)"""
+    ).bind(new_id(), submission_id, now)
+    claim_statements = staged_claim.statements if staged_claim is not None else []
+    try:
+        await execute_batch(db, [update_statement, write_guard, *claim_statements])
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
     await (
         db.prepare(
             """UPDATE submission_speakers SET snapshot_name=?1
@@ -1563,6 +2002,7 @@ async def create_submission(
         db,
         schema,
         body.answers,
+        form_id=str(form["id"]),
         event_id=str(form["event_id"]),
         user_id=authenticated.actor.user_id,
     )
@@ -1582,6 +2022,40 @@ async def create_submission(
         event_id=str(form["event_id"]),
         routing=routing,
     )
+    person = row_mapping(
+        await db.prepare("SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1")
+        .bind(form["organization_id"], submitter_user_id)
+        .first()
+    )
+    person_id = str(person["id"]) if person is not None else new_id()
+    speaker = row_mapping(
+        await db.prepare(
+            """SELECT id FROM event_speakers
+               WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
+        )
+        .bind(form["organization_id"], form["event_id"], person_id)
+        .first()
+    )
+    event_speaker_id = str(speaker["id"]) if speaker is not None else new_id()
+    legacy_upload_references = _upload_references(schema, body.answers)
+    staged_claim = await build_staged_claim(
+        db,
+        organization_id=str(form["organization_id"]),
+        event_id=str(form["event_id"]),
+        event_speaker_id=event_speaker_id,
+        submission_id=submission_id,
+        form_id=str(form["id"]),
+        user_id=submitter_user_id,
+        staged_ids=staged_references(schema, body.answers),
+        now=now,
+    )
+    if staged_claim.answer_rewrites:
+        body.answers = {
+            key: staged_claim.answer_rewrites.get(value, value)
+            if isinstance(value, str)
+            else value
+            for key, value in body.answers.items()
+        }
     message_id = new_id()
     record = IdempotencyRecord(
         principal_key=principal_key,
@@ -1594,6 +2068,47 @@ async def create_submission(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    # Provision the speaker graph only as part of a successful submission, and
+    # never resurrect a revoked membership: insert where absent, otherwise
+    # leave the existing row (including its status) untouched. These run before
+    # the submission insert because the submission-owner integrity trigger
+    # requires an active organization membership to exist at insert time — a
+    # still-revoked membership therefore aborts the whole batch.
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,'member','active',?4,?4)
+               ON CONFLICT(organization_id,user_id) DO NOTHING"""
+        ).bind(new_id(), form["organization_id"], submitter_user_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
+               ON CONFLICT(organization_id,event_id,user_id,role) DO NOTHING"""
+        ).bind(
+            new_id(), form["organization_id"], form["event_id"], submitter_user_id, now
+        )
+    )
+    if person is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO people
+                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?5)"""
+            ).bind(person_id, form["organization_id"], submitter_user_id, body.speaker_name, now)
+        )
+    if speaker is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_speakers
+                   (id,organization_id,event_id,person_id,status,accepted_at_ms,last_activity_at_ms,
+                    created_at_ms,updated_at_ms,selection_status)
+                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
+            ).bind(event_speaker_id, form["organization_id"], form["event_id"], person_id, now)
+        )
     batch.add_statement(
         db.prepare(
             """INSERT INTO submissions
@@ -1701,58 +2216,6 @@ async def create_submission(
     )
     batch.add_statement(
         db.prepare(
-            """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'member','active',?4,?4)
-               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), form["organization_id"], submitter_user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
-               ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(
-            new_id(), form["organization_id"], form["event_id"], submitter_user_id, now
-        )
-    )
-    person = row_mapping(
-        await db.prepare("SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1")
-        .bind(form["organization_id"], submitter_user_id)
-        .first()
-    )
-    person_id = str(person["id"]) if person is not None else new_id()
-    if person is None:
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO people
-                   (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?5)"""
-            ).bind(person_id, form["organization_id"], submitter_user_id, body.speaker_name, now)
-        )
-    speaker = row_mapping(
-        await db.prepare(
-            """SELECT id FROM event_speakers
-               WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
-        )
-        .bind(form["organization_id"], form["event_id"], person_id)
-        .first()
-    )
-    event_speaker_id = str(speaker["id"]) if speaker is not None else new_id()
-    if speaker is None:
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO event_speakers
-                   (id,organization_id,event_id,person_id,status,accepted_at_ms,last_activity_at_ms,
-                    created_at_ms,updated_at_ms,selection_status)
-                   VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
-            ).bind(event_speaker_id, form["organization_id"], form["event_id"], person_id, now)
-        )
-    batch.add_statement(
-        db.prepare(
             """UPDATE event_speakers SET selection_status=
                          CASE WHEN selection_status='accepted' THEN 'accepted' ELSE 'submitted' END,
                          last_activity_at_ms=?1,updated_at_ms=?1
@@ -1774,7 +2237,7 @@ async def create_submission(
             now,
         )
     )
-    for answer in _upload_references(schema, body.answers):
+    for answer in legacy_upload_references:
         batch.add_statement(
             db.prepare(
                 """UPDATE speaker_assets SET submission_id=?1,updated_at_ms=?2
@@ -1783,6 +2246,8 @@ async def create_submission(
                          WHERE ui.id=?3 LIMIT 1)"""
             ).bind(submission_id, now, answer)
         )
+    for statement in staged_claim.statements:
+        batch.add_statement(statement)
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -2248,22 +2713,40 @@ async def _validate_upload_answers(
     schema: dict[str, object],
     answers: dict[str, object],
     *,
+    form_id: str,
     event_id: str,
     user_id: str,
 ) -> None:
     raw_fields = schema.get("fields", [])
     if not isinstance(raw_fields, list):
         raise HTTPException(status_code=409)
+    now = utc_now_ms()
     for field in raw_fields:
         if not isinstance(field, dict) or field.get("type") not in {"file", "image"}:
             continue
         value = answers.get(str(field.get("key", "")))
         if value in (None, "") and not field.get("required"):
             continue
-        if not isinstance(value, str) or not value.startswith("upload:"):
+        if not isinstance(value, str):
+            raise HTTPException(status_code=422)
+        expected_kind = "headshot" if field.get("type") == "image" else "supporting_document"
+        if value.startswith("staged:"):
+            staged_id = value.removeprefix("staged:")
+            found = (
+                await db.prepare(
+                    """SELECT 1 AS found FROM cfp_staged_assets
+                       WHERE id=?1 AND form_id=?2 AND user_id=?3 AND kind=?4
+                         AND status='staged' AND expires_at_ms>?5 LIMIT 1"""
+                )
+                .bind(staged_id, form_id, user_id, expected_kind, now)
+                .first("found")
+            )
+            if found is None:
+                raise HTTPException(status_code=422)
+            continue
+        if not value.startswith("upload:"):
             raise HTTPException(status_code=422)
         intent_id = value.removeprefix("upload:")
-        expected_kind = "headshot" if field.get("type") == "image" else "supporting_document"
         found = (
             await db.prepare(
                 """SELECT 1 AS found FROM upload_intents ui
@@ -2409,5 +2892,7 @@ def _validate_form_field_value(
             raise HTTPException(status_code=422)
     elif field_type == "checkbox" and value not in (True, False):
         raise HTTPException(status_code=422)
-    elif field_type in {"file", "image"} and not str(value).startswith("upload:"):
+    elif field_type in {"file", "image"} and not (
+        str(value).startswith("upload:") or str(value).startswith("staged:")
+    ):
         raise HTTPException(status_code=422)

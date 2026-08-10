@@ -41,6 +41,7 @@ ASSETS = {
     "co_speaker_invitation.js": "CO_SPEAKER_INVITATION_JS",
     "sign_in.html": "SIGN_IN_HTML",
     "auth_link_error.html": "AUTH_LINK_ERROR_HTML",
+    "auth_link_confirm.html": "AUTH_LINK_CONFIRM_HTML",
     "sign_in.js": "SIGN_IN_JS",
     "access_admin.html": "ACCESS_ADMIN_HTML",
     "access_admin.js": "ACCESS_ADMIN_JS",

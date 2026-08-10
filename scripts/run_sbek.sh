@@ -58,6 +58,25 @@ if [ "${1:-}" = "auth" ]; then
       --persona "$persona" --url "$target_url" --at /sign-in --paste-link "$@"
 fi
 
+# Complete a pasted magic link directly, handling the /auth/verify confirmation
+# page (GET renders a Continue button; the POST consumes the token). Use this
+# when the eval kit's own --paste-link flow stalls on the interstitial.
+if [ "${1:-}" = "auth-link" ]; then
+  shift
+  persona=${1:-}
+  link=${2:-}
+  if [ -z "$persona" ] || [ -z "$link" ]; then
+    echo "Usage: scripts/run_sbek.sh auth-link <persona> <magic-link-url>" >&2
+    exit 2
+  fi
+  exec docker run --rm \
+    -v "$eval_root:/eval" \
+    -v "$(pwd)/scripts/sbek_auth_link.mjs:/sbek-auth-link.mjs:ro" \
+    -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    "$playwright_image" \
+    node /sbek-auth-link.mjs "$persona" "$host_name" "$link"
+fi
+
 missing_personas=""
 required_personas="organizer speaker"
 if [ -f "$eval_root/.auth/$host_name.reviewer.json" ]; then

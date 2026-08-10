@@ -6195,6 +6195,116 @@
         "title": "SpeakerTaskView",
         "type": "object"
       },
+      "StagedUploadAuthorizationView": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at_ms": {
+            "title": "Expires At Ms",
+            "type": "integer"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "const": "PUT",
+            "default": "PUT",
+            "title": "Method",
+            "type": "string"
+          },
+          "staged_id": {
+            "title": "Staged Id",
+            "type": "string"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "staged_id",
+          "upload_url",
+          "headers",
+          "expires_at_ms"
+        ],
+        "title": "StagedUploadAuthorizationView",
+        "type": "object"
+      },
+      "StagedUploadCompletionView": {
+        "additionalProperties": false,
+        "properties": {
+          "staged_id": {
+            "title": "Staged Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending_upload",
+              "uploaded",
+              "scanning",
+              "staged",
+              "rejected",
+              "claimed"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "staged_id",
+          "state"
+        ],
+        "title": "StagedUploadCompletionView",
+        "type": "object"
+      },
+      "StagedUploadCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 20971520.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "checksum_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Checksum Sha256",
+            "type": "string"
+          },
+          "content_type": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "headshot",
+              "supporting_document"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "filename",
+          "content_type",
+          "byte_size",
+          "checksum_sha256"
+        ],
+        "title": "StagedUploadCreate",
+        "type": "object"
+      },
       "SubmissionAnswerView": {
         "additionalProperties": false,
         "properties": {
@@ -10979,6 +11089,142 @@
         "summary": "Bootstrap Tenant",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/cfp/forms/{form_id}/upload-authorizations": {
+      "post": {
+        "description": "Stage a CFP file answer before the submission (and speaker graph) exist.\n\nRequires only an authenticated session: no person, speaker, or membership\nrows are read or written here, so a revoked or brand-new user gains no\naccess through this route.",
+        "operationId": "authorizeCfpStagedUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "form_id",
+            "required": true,
+            "schema": {
+              "title": "Form Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StagedUploadCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedUploadAuthorizationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize Cfp Staged Upload",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/cfp/forms/{form_id}/upload-authorizations/{staged_id}/complete": {
+      "post": {
+        "operationId": "completeCfpStagedUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "form_id",
+            "required": true,
+            "schema": {
+              "title": "Form Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "staged_id",
+            "required": true,
+            "schema": {
+              "title": "Staged Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedUploadCompletionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Cfp Staged Upload",
+        "tags": [
+          "submissions"
         ]
       }
     },

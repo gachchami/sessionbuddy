@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Confirm sign in · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=23">
+</head>
+<body class="auth-body auth-error-page">
+  <a class="skip-link" href="#main">Skip to confirmation</a>
+  <header class="app-header auth-header">
+    <div class="shell app-header__inner">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
+    </div>
+  </header>
+  <main id="main" class="auth-main auth-error-shell" tabindex="-1">
+    <section class="auth-card auth-error-card">
+      <h1>Almost signed in</h1>
+      <p class="auth-intro">Select continue to finish signing in to SessionBuddy. This link works once and expires 15 minutes after it was sent.</p>
+      <form method="post" action="__CONFIRM_ACTION__">
+        <button class="button" type="submit">Continue</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
