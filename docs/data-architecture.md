@@ -12,7 +12,7 @@ This document defines the tables and rules needed before product feature work st
 
 - organizations, events, programs, users, memberships, authentication challenges, and sessions;
 - tenant keys and query-scoping rules;
-- idempotency records, transactional outbox messages, and audit events;
+- idempotency records, durable communication messages, and audit events;
 - migration, seed, retention, and verification practices; and
 - attachment points for later feature tables.
 
@@ -38,7 +38,7 @@ Preview databases contain synthetic data only. Production data must never be cop
 - Generate UUIDv4 identifiers with Python 3.13's standard-library `uuid.uuid4()`.
 - Store them as canonical lowercase `TEXT` values, including hyphens, and expose the same values as opaque API identifiers.
 - Never use D1 `ROWID`, insertion order, an email address, or a slug as a public identifier.
-- Generate all identifiers before beginning a write batch. This allows domain, audit, and outbox rows to be committed atomically without reading generated keys.
+- Generate all identifiers before beginning a write batch. This allows domain, audit, and capability-owned delivery rows to be committed atomically without reading generated keys.
 - Do not encode tenant, entity type, or private information in an identifier.
 
 UUIDv4 is the P0 choice because it is cryptographically random, opaque, available in Python 3.13's standard library under Pyodide, and avoids adding an identifier package to the Worker bundle. Python 3.13 does not provide standard-library UUIDv7. UUIDv7 may be adopted later only after a pure-Python/PyEmscripten-compatible implementation is pinned and its collision, clock rollback, and cold-start behavior are verified. The `TEXT` schema does not change if that happens. Authorization must never rely on identifier opacity.
@@ -335,7 +335,7 @@ statements = [
     db.prepare(INSERT_IDEMPOTENCY_SQL).bind(*idempotency_values),
     db.prepare(INSERT_DOMAIN_SQL).bind(*domain_values),
     db.prepare(INSERT_AUDIT_SQL).bind(*audit_values),
-    db.prepare(INSERT_OUTBOX_SQL).bind(*outbox_values),
+    db.prepare(INSERT_COMMUNICATION_SQL).bind(*communication_values),
     db.prepare(COMPLETE_IDEMPOTENCY_SQL).bind(*completion_values),
 ]
 results = await db.batch(statements)
@@ -348,7 +348,7 @@ A command batch contains only the consistency unit for one user-visible action:
 1. create/reserve the idempotency record when required;
 2. insert or conditionally update domain rows;
 3. append the required audit event;
-4. append outbox messages for each asynchronous consequence; and
+4. append durable capability-owned records for each asynchronous consequence; and
 5. mark the idempotency record completed with its stable response reference.
 
 All IDs and timestamps are prepared before the batch. Keep batches short and bounded; never send email, call R2, execute a Workflow, or perform network I/O within the database consistency unit. A zero-row optimistic update or state precondition is a command conflict, not success.
@@ -386,47 +386,22 @@ CREATE INDEX idx_idempotency_expiry
 
 `principal_key` is a non-secret, stable namespace such as authenticated user ID or a server-derived public form/draft identity. The application hashes the supplied key and a canonical request representation. A repeated key with a different fingerprint returns a conflict. Do not store arbitrary response bodies or private form answers; store the status and stable resource reference, then rehydrate an authorized response.
 
-For a new command, insert the idempotency row, domain row, audit row, outbox row, and completion update in one batch. On a unique-key race, roll back and read the winning record. Because the transaction is atomic, another request never observes the inserted `in_progress` state from this normal path. Recovery handling for deliberately long-running commands belongs in their Workflow, not in an open database transaction.
+For a new command, insert the idempotency row, domain row, audit row, and completion update in one batch. On a unique-key race, roll back and read the winning record. Because the transaction is atomic, another request never observes the inserted `in_progress` state from this normal path. Recovery handling for deliberately long-running commands belongs in their Workflow, not in an open database transaction.
 
 Retention is route-specific and must exceed the maximum legitimate retry window. The default proposal is 24 hours for ordinary API mutations and through the form deadline plus 24 hours for final public submission keys. Product/security owners must approve final values.
 
-## 9. Transactional outbox
+## 9. Communication delivery ledger
 
-```sql
-CREATE TABLE outbox_messages (
-  id TEXT PRIMARY KEY NOT NULL,
-  organization_id TEXT,
-  event_id TEXT,
-  topic TEXT NOT NULL,
-  payload_version INTEGER NOT NULL CHECK (payload_version >= 1),
-  aggregate_type TEXT NOT NULL,
-  aggregate_id TEXT NOT NULL,
-  deduplication_key TEXT NOT NULL,
-  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-  available_at_ms INTEGER NOT NULL,
-  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
-  claimed_at_ms INTEGER,
-  claim_expires_at_ms INTEGER,
-  published_at_ms INTEGER,
-  last_error_code TEXT,
-  created_at_ms INTEGER NOT NULL,
-  FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE RESTRICT,
-  FOREIGN KEY (organization_id, event_id)
-    REFERENCES events(organization_id, id) ON DELETE RESTRICT,
-  UNIQUE (topic, deduplication_key)
-);
+`communication_messages` is the authoritative delivery ledger. Email-producing
+commands insert a queued row as part of their database batch and then publish a
+message identifier to Cloudflare Queues. A scheduled dispatcher republishes
+aged queued rows, retryable failures after capped exponential backoff, and stale
+consumer claims. Resend idempotency keys and conditional D1 claims make duplicate
+queue envelopes harmless.
 
-CREATE INDEX idx_outbox_dispatch
-  ON outbox_messages(available_at_ms, id)
-  WHERE published_at_ms IS NULL;
-
-CREATE INDEX idx_outbox_event_recent
-  ON outbox_messages(organization_id, event_id, created_at_ms DESC, id DESC);
-```
-
-The outbox stores the minimum identifiers and versioned facts needed by a consumer, never message bodies, form answers, tokens, signed asset URLs, or large blobs. The dispatcher reads a small indexed page of unpublished rows, claims each row with a conditional update and expiring lease, publishes to Cloudflare Queues or starts a Workflow, then conditionally marks it published. A crash may publish twice, so every downstream consumer also persists/enforces its deterministic message key. “Exactly once” is not claimed; the contract is atomic intent plus at-least-once delivery with idempotent effects.
-
-Queue publication failure never rolls back a committed domain change. Queue age, attempts, expired claims, and terminal operational failures are observable. Retries use capped exponential backoff and a dead-letter/operator recovery path defined with the consuming feature.
+Queue publication failure never rolls back a committed domain change. Structured
+dispatcher logs report recovery, publication failures, exhausted attempts, and
+oldest pending age without including recipient or message content.
 
 ## 10. Audit events
 
@@ -479,12 +454,12 @@ Audit events are append-only to application roles. Corrections are represented b
 Later feature tables attach as follows without changing the foundation contract:
 
 - **People and speakers:** `people` is organization-owned and may link to a verified `user_id`; event speaker participation is an event-owned join. Speaker-owned queries require the verified person/user ownership link, not merely an email match.
-- **Forms and submissions:** form definitions and immutable versions are program-owned. A submission carries organization, event, program, form-version, and person/submitter references. Finalization uses idempotency, audit, and outbox in one transaction.
+- **Forms and submissions:** form definitions and immutable versions are program-owned. A submission carries organization, event, program, form-version, and person/submitter references. Finalization uses idempotency and audit in one transaction; any notification is a durable communication row in that same consistency unit.
 - **Tasks and assets:** event-owned, with explicit speaker/person ownership. D1 stores private R2 object keys and scan/version state only; bytes and signed URLs never enter D1.
 - **Evaluations:** rounds are event/program-owned. Assignments connect evaluator membership to a submission. Authorization always joins or verifies the assignment inside the tenant boundary.
-- **Communications:** messages and delivery attempts reference outbox-derived deterministic keys. Provider callbacks are separately idempotent.
-- **Agenda:** revisions and items are event-owned. Conflict protection and publication are transactional and auditable; publishing produces outbox facts after the successful state change.
-- **Dashboard:** projections are rebuildable event-owned read models derived from authoritative rows/outbox facts. Push delivery is advisory; snapshot reads remain correct.
+- **Communications:** messages are the durable delivery ledger and delivery attempts reference their deterministic keys. Provider callbacks are separately idempotent.
+- **Agenda:** revisions and items are event-owned. Conflict protection and publication are transactional and auditable; asynchronous publication effects use capability-owned durable records.
+- **Dashboard:** projections are rebuildable event-owned read models derived from authoritative rows. Push delivery is advisory; snapshot reads remain correct.
 
 Every new event-owned table must include:
 
@@ -516,7 +491,7 @@ The final retention schedule and privacy/legal requirements are unresolved in `r
 - revoke memberships and sessions rather than deleting their security history;
 - support user deactivation immediately, while deletion/anonymization is a separately audited workflow that preserves referential and legally required records;
 - delete expired authentication challenges, expired sessions, and expired idempotency records in bounded scheduled batches;
-- retain outbox rows long enough for operational investigation, then remove or compact published payloads under an approved policy;
+- retain communication messages and delivery attempts long enough for operational investigation, then remove or compact delivered payloads under an approved policy;
 - retain audit events indefinitely pending the approved policy; and
 - treat R2 object retention separately from D1 metadata, with deletion jobs idempotent and reconciliation able to find orphaned metadata/objects.
 
@@ -534,7 +509,7 @@ The design accounts for current documented D1 behavior:
 - Indexes reduce rows read but increase rows written and storage. Use partial/composite indexes only for demonstrated access paths.
 - Read replicas are eventually consistent. Authentication, authorization membership resolution, read-after-write redirects, idempotency resolution, conflict checks, and other correctness-sensitive paths read from the primary/session path with the required consistency. Replica use, if enabled later, is restricted to explicitly stale-tolerant read views with snapshot reconciliation.
 - D1 Time Travel is recovery tooling, not application versioning or a substitute for tested exports/restores.
-- Store files in R2, not D1, and keep outbox/audit payloads bounded well below row limits.
+- Store files in R2, not D1, and keep communication/audit payloads bounded well below row limits.
 
 Current limits must be rechecked against official Cloudflare documentation before production provisioning because plan limits and platform capabilities can change.
 
@@ -549,9 +524,9 @@ The foundation is ready for feature work only when automated tests prove:
 5. membership revocation immediately removes database-backed access;
 6. two consumers of one authentication challenge yield exactly one successful consumption;
 7. revoked, idle-expired, absolute-expired, and rotated sessions fail validation;
-8. two identical idempotent commands create one domain row, one audit event, and one outbox message, while a changed payload conflicts;
-9. a forced failure in any command-batch statement rolls back domain, audit, outbox, and idempotency writes together;
-10. an outbox crash/retry can publish more than once but the test consumer performs its external effect once;
+8. two identical idempotent commands create one domain row, one audit event, and one communication message, while a changed payload conflicts;
+9. a forced failure in any command-batch statement rolls back domain, audit, communication, and idempotency writes together;
+10. a Queue publish crash/retry can publish more than once but the test consumer performs its external effect once;
 11. audit metadata redaction fixtures reject prohibited keys/content;
 12. cursor pagination has no gaps or duplicates for a stable dataset and is tenant bounded;
 13. large-list `EXPLAIN QUERY PLAN` fixtures use the intended indexes and measured query timing meets the applicable budget;
@@ -583,7 +558,7 @@ Exact CLI database names/flags live in checked-in scripts so CI and developers d
 3. **Identifier evolution:** UUIDv4 from Python 3.13 is selected for P0. Revisit UUIDv7 only if measured UUIDv4 index locality becomes material and a Pyodide-compatible implementation passes runtime tests.
 4. **Database topology:** confirm one shared production D1 database for MVP. Database-per-tenant is explicitly rejected for the initial architecture.
 5. **Authentication provisioning:** decide whether a verified unknown email creates a user automatically, requires a speaker submission/invitation link, or is rejected with a non-disclosing response.
-6. **Retention:** approve exact lifetimes for sessions, challenges, idempotency records, published outbox rows, audit events, and user deletion/anonymization.
+6. **Retention:** approve exact lifetimes for sessions, challenges, idempotency records, delivered communication rows, audit events, and user deletion/anonymization.
 7. **Read replication:** keep disabled or primary-consistent for foundation correctness paths; decide later whether stale-tolerant public/admin reads justify enabling it.
 
 ## 18. Official references

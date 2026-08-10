@@ -26,9 +26,9 @@ This is the common diagnostic path for API, page, and asynchronous failures. Use
 
 ## Async delay or failure
 
-1. Follow correlation and deterministic idempotency keys from domain commit to outbox, Queue, Workflow, and provider callback.
+1. Follow correlation and deterministic idempotency keys from the committed communication row to Queue, Workflow, and provider callback.
 2. Inspect oldest-message age, attempts, safe error code, dead-letter state, Workflow lateness, and provider status.
-3. Confirm the domain mutation committed before replaying an effect. Use only the authorized, audited replay action; never edit queue/outbox state manually.
+3. Confirm the domain mutation committed before replaying an effect. Use only the authorized, audited replay action; never edit communication or Queue state manually.
 
 ## Availability
 

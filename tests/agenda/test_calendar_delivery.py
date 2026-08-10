@@ -105,7 +105,6 @@ async def test_stable_uid_sequence_and_retry_safe_delivery(database) -> None:
     assert f"UID:{uid}\r\n" in versions[1]["ics_content"]
     assert "SEQUENCE:1\r\n" in versions[1]["ics_content"]
     assert connection.execute("SELECT count(*) FROM communication_messages").fetchone()[0] == 2
-    assert connection.execute("SELECT count(*) FROM outbox_messages").fetchone()[0] == 2
 
 
 @pytest.mark.asyncio

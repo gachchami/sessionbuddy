@@ -1,6 +1,6 @@
 """Async, tenant-scoped persistence primitives for Cloudflare D1."""
 
-from .commands import AuditEvent, CommandBatch, IdempotencyRecord, OutboxMessage
+from .commands import AuditEvent, CommandBatch, IdempotencyRecord
 from .d1 import D1Database, D1PreparedStatement, execute_batch
 from .repositories import EventRepository, OrganizationRepository
 from .scopes import EventScope, OrganizationScope
@@ -15,6 +15,5 @@ __all__ = [
     "IdempotencyRecord",
     "OrganizationRepository",
     "OrganizationScope",
-    "OutboxMessage",
     "execute_batch",
 ]

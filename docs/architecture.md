@@ -54,7 +54,7 @@ Before product feature agents branch, an isolated preview must prove all of the 
 3. Session signing, cryptographic random-token creation, hashing, CSRF comparison, and time-zone behavior use supported APIs and meet security tests.
 4. D1 transactions, R2 operations/signing design, Queue producer/consumer, Workflow execution, and Durable Object/WebSocket access work from Python through the supported SDK/FFI.
 5. Every locked runtime dependency imports and exercises its critical path under local `workerd` and deployed preview; a CPython-only pytest pass is insufficient.
-6. A representative public read, authenticated read, D1 write/outbox transaction, and list query meet the requirements p95 budget with production-shaped data.
+6. A representative public read, authenticated read, D1 write/queued-communication transaction, and list query meet the requirements p95 budget with production-shaped data.
 7. Cold-isolate latency, CPU time, Worker bundle size, and memory are recorded. Any miss blocks the Python architecture pending dependency reduction or explicit runtime reconsideration.
 
 This gate is a risk-control decision, not permission to silently replace Python. If Python Workers beta lacks a required binding or cannot meet the release budgets, the integrator must present measured evidence and obtain a new architecture decision.
@@ -69,13 +69,13 @@ Cloudflare edge: TLS, WAF/rate rules, public-version cache
 Python application Worker (Pyodide)
   |-- static React/Vite shell and fingerprinted assets
   |-- FastAPI /api/v1 through Workers ASGI adapter
-  |-- D1 transaction + outbox writer
+  |-- D1 transaction + durable communication writer
   |-- R2 signing/authorized-download adapter
   |-- Queue producer/consumer entry point
   |-- Workflow entry classes
   `-- EventHub Durable Object RPC/WebSocket proxy
         |
-        |-- D1: authoritative domain state and outbox
+        |-- D1: authoritative domain and communication delivery state
         |-- R2: private uploads
         |-- Queue: email, calendar, scan and projection jobs
         |-- Workflows: reminders and durable communication
@@ -102,7 +102,7 @@ backend/
   platform/
     auth/                        identity and session primitives
     authorization/               centralized permissions and tenant scope
-    db/                          D1 adapters, transactions, outbox
+    db/                          D1 adapters and transactions
     storage/                     R2 keys, signing, quarantine
     messaging/                   queue envelopes, producer, consumers
     workflows/                   Workflow entry classes and adapters
@@ -124,7 +124,7 @@ Rules:
 
 1. API routers translate HTTP concerns and call feature application services; they do not issue D1 statements or access bindings directly.
 2. Features own use cases and domain rules. They depend on narrow platform protocols and `shared`, not another feature's persistence implementation.
-3. Cross-feature side effects use a versioned outbox event or explicit application-service protocol.
+3. Cross-feature side effects use durable capability-owned records and versioned queue envelopes or an explicit application-service protocol.
 4. Platform modules contain mechanisms. Central authorization accepts named permissions and resource context; handlers cannot bypass it.
 5. `entry.py` and `app.py` are composition roots and remain small. Feature registration is through feature-owned routers assembled in one registry.
 6. The frontend uses the generated API types, but generated code is not imported into domain modules.
@@ -136,10 +136,10 @@ Use stable binding names across environments; only resource identifiers change.
 
 | Binding | Name | Responsibility | Request-path rule |
 | --- | --- | --- | --- |
-| D1 | `DB` | Domain records, sessions, idempotency, audit, outbox | Bounded, indexed, parameterized queries only. |
+| D1 | `DB` | Domain records, sessions, idempotency, audit, communication delivery | Bounded, indexed, parameterized queries only. |
 | R2 | `PRIVATE_ASSETS` | Headshots, slides, documents under opaque tenant keys | Metadata/signing only; upload bytes go directly to R2. |
 | Static assets | `STATIC_CONTENT` | Built React shell and fingerprinted browser assets | Immutable caching for hashes; controlled shell caching. |
-| Queue | `ASYNC_JOBS` | Delivery, scan, calendar, projection, integration jobs | Publish after commit/outbox claim; never await providers. |
+| Queue | `ASYNC_JOBS` | Delivery, scan, calendar, projection, integration jobs | Publish after durable state commits; never await providers. |
 | Workflow | `COMMUNICATION_WORKFLOW` | Reminders, cancellation/reschedule, durable multi-step sends | Start or signal only after committed intent. |
 | Durable Object | `EVENT_HUB` | Per-event dashboard invalidation fan-out | Failure never changes the domain mutation outcome. |
 | Analytics Engine, if selected | `METRICS` | Low-cardinality latency and queue-delay metrics | Never include PII, answers, tokens, or object URLs. |
@@ -208,7 +208,7 @@ Requirements Section 8 blocks release. The Python choice does not relax any budg
 - The shell contains useful route-specific loading/identity context but no private cacheable data. Lazy-load form-builder, agenda, rich-editor, chart, and admin-only chunks.
 - Perform independent D1 reads concurrently only when that reduces latency without creating excessive statements. Every list uses cursor pagination and tenant-leading indexes verified by `EXPLAIN QUERY PLAN` on the 10k seed.
 - Keep large answers, message bodies, audit detail, and asset metadata out of lists; select named columns.
-- Commit domain state and outbox intent together and return after commit. External work is asynchronous.
+- Commit domain state and durable communication intent together and return after commit. External work is asynchronous.
 - Use direct R2 upload, explicit responsive image dimensions, and lazy loading.
 - Emit `Server-Timing` for total Worker, auth, D1, validation, and serialization duration without private data.
 - Report warm and cold p50/p75/p95, error rate, CPU, memory, D1 time/query count, queue delay, browser bytes, LCP, INP, and CLS.
@@ -244,7 +244,7 @@ The minimum console set is release health, API explorer, page performance, async
 
 ### 10.2 Standard diagnostic path
 
-The debugging path is browser navigation/route transition -> correlated API request -> authentication/authorization -> D1 statements -> outbox/Queue/Workflow -> provider callback. The shared observability package owns correlation propagation, field names, phase timers, redaction, cardinality checks, sampling, and exporters. A feature supplies only a stable owner, route/job/page template, applicable low-cardinality outcome, SLO, and benchmark journey.
+The debugging path is browser navigation/route transition -> correlated API request -> authentication/authorization -> D1 statements -> durable communication/Queue/Workflow -> provider callback. The shared observability package owns correlation propagation, field names, phase timers, redaction, cardinality checks, sampling, and exporters. A feature supplies only a stable owner, route/job/page template, applicable low-cardinality outcome, SLO, and benchmark journey.
 
 For a regression, identify the deployment and symptom, reproduce with synthetic data, split browser/network/Worker/D1 time, compare like-for-like baselines, inspect query plan/count/rows and response/bundle size, add a regression test, verify in staging, and record before/after evidence. Ad hoc production body logging and unaudited debug endpoints are prohibited.
 

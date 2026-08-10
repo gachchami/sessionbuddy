@@ -790,6 +790,19 @@
       ],
       "runbook": "docs/debugging-runbook.md#database-regression"
     },
+    "POST /api/v1/engine-room/communications/requeue-exhausted": {
+      "owner": "platform-operations",
+      "slo": {
+        "p95_ms": 1000,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "engine-room-communication-recovery",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-regression"
+    },
     "GET /api/v1/admin/events/{event_id}/cfp": {
       "owner": "program-management",
       "slo": {

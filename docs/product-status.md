@@ -50,7 +50,12 @@ fixed-length R2-to-scanner streaming, asynchronous malware scanning, private
 download grants, cursor-paginated communications, reminders, and admin progress
 views. Pending speaker invitations appear in the event roster without granting
 speaker permissions before acceptance, and public profiles include each
-published session's time, room, and track.
+published session's time, room, and track. A scheduled communication dispatcher
+republishes stuck queued messages, retries transient provider failures, and
+recovers abandoned delivery claims with bounded attempts. Organization
+administrators can use an audited Engine Room recovery endpoint to extend the
+retry budget for exhausted transient failures after correcting a provider issue;
+permanent rejections are never requeued by that action.
 
 ## Scheduling
 

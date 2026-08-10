@@ -20,7 +20,6 @@ from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
     IdempotencyRecord,
-    OutboxMessage,
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
@@ -1224,23 +1223,6 @@ async def publish_agenda(event_id: str, request: Request, body: AgendaPublish) -
                 row["starts_at_ms"],
                 row["ends_at_ms"],
                 now,
-            )
-        )
-        batch.outbox(
-            OutboxMessage(
-                topic="agenda.calendar.sync_requested",
-                aggregate_type="agenda_item",
-                aggregate_id=str(row["id"]),
-                deduplication_key=f"agenda:{row['id']}:publish:{body.version + 1}",
-                payload={
-                    "schema_version": 1,
-                    "agenda_item_id": str(row["id"]),
-                    "revision_id": body.revision_id,
-                },
-                available_at_ms=now,
-                created_at_ms=now,
-                organization_id=organization_id,
-                event_id=event_id,
             )
         )
     for row in speaker_rows:

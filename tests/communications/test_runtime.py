@@ -9,12 +9,17 @@ from sessionbuddy.communications.runtime import (
     D1DeliveryRepository,
     DeliveryClaim,
     DeliveryEnvelope,
+    DispatchResult,
     ProviderResult,
     ReminderEnvelope,
     ReminderWorkflow,
+    RequeueResult,
     ResendProvider,
     consume_delivery,
     consume_reminder,
+    dispatch_stuck_deliveries,
+    requeue_exhausted_deliveries,
+    retry_delay_ms,
 )
 from tests.speaker_operations.test_asset_boundary import AsyncSqlite
 from tests.speaker_operations.test_speaker_onboarding_schema import (
@@ -257,6 +262,219 @@ class Queue:
 
 
 @pytest.mark.asyncio
+async def test_dispatcher_republishes_queued_and_retryable_failed_messages() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event_platform(connection)
+    messages = [
+        ("queued", "queued", 0, None, 1),
+        ("fresh-queued", "queued", 0, None, 499_000),
+        ("retryable", "failed", 2, "provider_unavailable", 2),
+        ("invalid", "failed", 1, "invalid_response", 3),
+        ("permanent", "failed", 1, "provider_rejected", 4),
+        ("exhausted", "failed", 12, "provider_unavailable", 5),
+        ("delivered", "delivered", 1, None, 6),
+    ]
+    for message_id, status, attempts, error, updated in messages:
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,attempt_count,last_error_code,queued_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                message_id,
+                "org-a",
+                "event-a",
+                f"{message_id}@example.test",
+                "Subject",
+                "Body",
+                f"key:{message_id}",
+                status,
+                attempts,
+                error,
+                1,
+                updated,
+            ),
+        )
+    queue = Queue()
+
+    result = await dispatch_stuck_deliveries(AsyncSqlite(connection), queue, 500_000)
+
+    assert result == DispatchResult(
+        recovered_sending=0,
+        published=3,
+        publish_failures=0,
+        exhausted=1,
+        oldest_pending_age_ms=499_999,
+    )
+    assert {item["message_id"] for item in queue.messages} == {"queued", "retryable", "invalid"}
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_backlog_age_excludes_permanent_and_exhausted_failures() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event_platform(connection)
+    for values in (
+        ("permanent", 1, "provider_rejected", 1),
+        ("exhausted", 12, "provider_unavailable", 2),
+        ("actionable", 1, "invalid_response", 490_000),
+    ):
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,attempt_count,last_error_code,queued_at_ms,updated_at_ms)
+               VALUES
+                 (?,'org-a','event-a','person@example.test','Subject','Body',
+                  ?,'failed',?,?,1,?)""",
+            (values[0], f"key:{values[0]}", values[1], values[2], values[3]),
+        )
+
+    result = await dispatch_stuck_deliveries(AsyncSqlite(connection), Queue(), 500_000)
+
+    assert result.oldest_pending_age_ms == 10_000
+    assert result.exhausted == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_recovery_batches_twenty_five_messages_per_d1_round_trip() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event_platform(connection)
+    for index in range(30):
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,attempt_count,queued_at_ms,updated_at_ms)
+               VALUES
+                 (?,'org-a','event-a','person@example.test','Subject','Body',
+                  ?,'sending',1,1,1)""",
+            (f"stale-{index}", f"key:stale-{index}"),
+        )
+
+    class CountingDatabase(AsyncSqlite):
+        def __init__(self, value):
+            super().__init__(value)
+            self.batch_calls = 0
+
+        async def batch(self, statements):
+            self.batch_calls += 1
+            return await super().batch(statements)
+
+    db = CountingDatabase(connection)
+    result = await dispatch_stuck_deliveries(db, Queue(), 500_000)
+
+    assert result.recovered_sending == 30
+    assert db.batch_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_operator_requeue_only_resets_exhausted_transient_failures() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event_platform(connection)
+    for values in (
+        ("transient", "org-a", 12, "provider_unavailable"),
+        ("permanent", "org-a", 12, "provider_rejected"),
+    ):
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,attempt_count,last_error_code,queued_at_ms,updated_at_ms)
+               VALUES (?,?,'event-a','person@example.test','Subject','Body',?,'failed',?,?,1,1)""",
+            (values[0], values[1], f"key:{values[0]}", values[2], values[3]),
+        )
+    queue = Queue()
+
+    result = await requeue_exhausted_deliveries(
+        AsyncSqlite(connection), queue, "org-a", 500_000
+    )
+
+    assert result == RequeueResult(1, 1, 1, 0)
+    assert queue.messages == [{"schema_version": 1, "message_id": "transient"}]
+    state = connection.execute(
+        """SELECT status,attempt_count,attempt_limit,last_error_code
+           FROM communication_messages WHERE id='transient'"""
+    ).fetchone()
+    assert tuple(state) == ("queued", 12, 24, None)
+
+
+def test_delivery_retry_backoff_is_exponential_and_capped() -> None:
+    assert retry_delay_ms(0) == 60 * 1000
+    assert retry_delay_ms(1) == 2 * 60 * 1000
+    assert retry_delay_ms(8) == 256 * 60 * 1000
+    assert retry_delay_ms(9) == 6 * 60 * 60 * 1000
+    assert retry_delay_ms(100) == 6 * 60 * 60 * 1000
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_recovers_stale_sending_but_not_active_claims() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event_platform(connection)
+    for message_id, updated in (("stale", 100_000), ("active", 900_000)):
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,attempt_count,queued_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,?,?,?,'sending',1,?,?)""",
+            (
+                message_id,
+                "org-a",
+                "event-a",
+                f"{message_id}@example.test",
+                "Subject",
+                "Body",
+                f"key:{message_id}",
+                1,
+                updated,
+            ),
+        )
+        connection.execute(
+            """INSERT INTO communication_delivery_attempts
+               (id,organization_id,event_id,message_id,attempt_number,status,started_at_ms)
+               VALUES (?,?,?,?,1,'started',?)""",
+            (f"attempt-{message_id}", "org-a", "event-a", message_id, updated),
+        )
+    queue = Queue()
+
+    result = await dispatch_stuck_deliveries(AsyncSqlite(connection), queue, 1_000_000)
+
+    assert result == DispatchResult(
+        recovered_sending=1,
+        published=0,
+        publish_failures=0,
+        exhausted=0,
+        oldest_pending_age_ms=100_000,
+    )
+    assert queue.messages == []
+    assert connection.execute(
+        "SELECT status FROM communication_messages WHERE id='active'"
+    ).fetchone()[0] == "sending"
+    assert connection.execute(
+        "SELECT status FROM communication_delivery_attempts WHERE id='attempt-stale'"
+    ).fetchone()[0] == "retryable_failure"
+    assert connection.execute(
+        "SELECT status FROM communication_delivery_attempts WHERE id='attempt-active'"
+    ).fetchone()[0] == "started"
+
+
+@pytest.mark.asyncio
 async def test_reminder_workflow_sleeps_then_enqueues_versioned_schedule() -> None:
     workflow = object.__new__(ReminderWorkflow)
     workflow.env = SimpleNamespace(COMMUNICATION_QUEUE=Queue())
@@ -319,10 +537,4 @@ async def test_reminder_consumer_materializes_due_version_once_and_marks_dispatc
     assert (
         connection.execute("SELECT state FROM reminder_schedules WHERE id='schedule'").fetchone()[0]
         == "dispatched"
-    )
-    assert (
-        connection.execute(
-            "SELECT count(*) FROM outbox_messages WHERE aggregate_id=?", (message_id,)
-        ).fetchone()[0]
-        == 1
     )

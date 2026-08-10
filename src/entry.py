@@ -1,3 +1,5 @@
+import json
+
 import asgi
 from workers import WorkerEntrypoint
 
@@ -9,6 +11,7 @@ from sessionbuddy.communications.runtime import (
     ResendProvider,
     consume_delivery,
     consume_reminder,
+    dispatch_stuck_deliveries,
 )
 from sessionbuddy.communications.runtime import ReminderWorkflow as _ReminderWorkflow
 from sessionbuddy.platform.db.d1 import to_python
@@ -22,6 +25,33 @@ ReminderWorkflow = _ReminderWorkflow
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
         return await asgi.fetch(app, request, self.env)
+
+    async def scheduled(self, _controller):
+        result = await dispatch_stuck_deliveries(
+            self.env.DB,
+            self.env.COMMUNICATION_QUEUE,
+            utc_now_ms(),
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "communication_delivery_dispatch",
+                    "level": (
+                        "error"
+                        if result.publish_failures
+                        or result.exhausted
+                        or result.oldest_pending_age_ms >= 30 * 60 * 1000
+                        else "info"
+                    ),
+                    "recovered": result.recovered_sending,
+                    "published": result.published,
+                    "publish_failures": result.publish_failures,
+                    "exhausted": result.exhausted,
+                    "oldest_pending_age_ms": result.oldest_pending_age_ms,
+                },
+                separators=(",", ":"),
+            )
+        )
 
     async def queue(self, batch, _environment=None, _context=None):
         # The deployed Python runtime currently forwards the JavaScript-style

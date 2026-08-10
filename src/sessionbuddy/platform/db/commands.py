@@ -1,4 +1,4 @@
-"""Builders for the atomic idempotency/domain/audit/outbox command shape."""
+"""Builders for atomic idempotency, domain, and audit command batches."""
 
 import json
 from dataclasses import dataclass, field
@@ -23,21 +23,6 @@ class IdempotencyRecord:
     @property
     def key_hash(self) -> bytes:
         return sha256(self.idempotency_key.encode()).digest()
-
-
-@dataclass(frozen=True, slots=True)
-class OutboxMessage:
-    topic: str
-    aggregate_type: str
-    aggregate_id: str
-    deduplication_key: str
-    payload: dict[str, object]
-    available_at_ms: int
-    created_at_ms: int
-    organization_id: str | None = None
-    event_id: str | None = None
-    payload_version: int = 1
-    id: str = field(default_factory=new_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,28 +95,6 @@ class CommandBatch:
                 event.correlation_id,
                 _canonical_json(safe),
                 event.occurred_at_ms,
-            )
-        )
-
-    def outbox(self, message: OutboxMessage) -> None:
-        self.__statements.append(
-            self.__db.prepare(
-                """INSERT INTO outbox_messages
-               (id, organization_id, event_id, topic, payload_version, aggregate_type,
-                aggregate_id, deduplication_key, payload_json, available_at_ms, created_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"""
-            ).bind(
-                message.id,
-                message.organization_id,
-                message.event_id,
-                message.topic,
-                message.payload_version,
-                message.aggregate_type,
-                message.aggregate_id,
-                message.deduplication_key,
-                _canonical_json(message.payload),
-                message.available_at_ms,
-                message.created_at_ms,
             )
         )
 

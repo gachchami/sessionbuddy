@@ -22,7 +22,7 @@ Identifiers exposed outside the database use the approved P0 UUIDv4 convention o
 - A body-bearing JSON mutation rejects a missing or incompatible `Content-Type` with `415` and a body over the route limit with `413` before parsing.
 - Unknown keys are rejected for authentication, authorization context, identifiers, state transitions, uploads, and other security-sensitive objects. Other request objects should also be strict unless forward compatibility is intentionally documented.
 - Response DTOs are explicit allow-lists. Database rows are never serialized directly.
-- `X-Request-Id` accepts a syntactically valid caller value or is generated at ingress. It is returned to the caller and becomes the correlation ID in logs, audit records, and outbox entries.
+- `X-Request-Id` accepts a syntactically valid caller value or is generated at ingress. It is returned to the caller and becomes the correlation ID in logs, audit records, and durable delivery entries.
 
 ### 2.2 OpenAPI and validation
 
@@ -78,7 +78,7 @@ Use conditional updates (`version` or `updated_at` precondition) for mutation ra
 
 All retriable creates and action endpoints require `Idempotency-Key`, a 16–255 character high-entropy caller value. Scope a record by `(principal_id or public-session-id, organization_id, event_id, method, normalized_route, key)`. Store a SHA-256 hash of the canonical validated request, execution state, response status/body, created IDs, and expiry.
 
-- The first request atomically creates the idempotency record, domain mutation, and outbox row in one D1 batch/transaction boundary.
+- The first request atomically creates the idempotency record, domain mutation, and any durable communication row in one D1 batch/transaction boundary.
 - An identical completed retry returns the stored response with `Idempotency-Replayed: true`.
 - Reusing a key with a different request hash returns `409 idempotency_conflict`.
 - A concurrent in-progress duplicate returns `409 idempotency_in_progress` with bounded `Retry-After`.
@@ -167,7 +167,7 @@ Audit records are append-only and contain: public audit ID, occurred-at UTC time
 
 Application logs are structured and separately redacted. Record route templates rather than resource URLs; do not log request/response bodies by default. Define retention and administrator access before production. Security telemetry includes login request/verification outcomes, CSRF/origin failures, repeated authorization denials, upload-signing abuse, rate-limit events, and audit-write failures.
 
-Domain changes and outbound work use a transactional outbox row written with the domain mutation. Consumers claim work idempotently using a deterministic message key. Webhooks verify the provider signature over the raw body, enforce timestamp/replay windows, and store provider event IDs uniquely before applying effects.
+Domain changes and outbound communications use a capability-owned durable message row written with the domain mutation. Consumers claim work idempotently using a deterministic message key. Webhooks verify the provider signature over the raw body, enforce timestamp/replay windows, and store provider event IDs uniquely before applying effects.
 
 ## 6. Rate-limit interface
 
@@ -229,7 +229,7 @@ The integration runner must allocate a unique local port and temporary persisten
 | Evaluator scope | Assigned/unassigned submissions, another evaluation, closed round, revoked assignment, enumeration | Only active assignment and lifecycle permit access |
 | Speaker ownership | Another speaker's profile, submission, task, asset and guessed IDs/list filters | `404`; public/private DTO boundary intact |
 | Public serialization | Snapshot every public response using records populated with private fields | No contacts, notes, evaluations, tasks, object keys, or private URLs |
-| Idempotency | Sequential/concurrent identical retry, changed-body reuse, different principals/events, consumer replay | One domain row and outbox effect; correct replay/conflict behavior |
+| Idempotency | Sequential/concurrent identical retry, changed-body reuse, different principals/events, consumer replay | One domain row and communication effect; correct replay/conflict behavior |
 | SQL/data scope | Injection payloads, prepared-binding assertion, query-plan/index checks on large tenant fixtures | No injection; bounded indexed tenant query |
 | Rate limits | Deterministic local thresholds/recovery; production binding smoke test; layered auth subjects | Predictable `429`/`Retry-After`; restart unnecessary; no disclosure |
 | Audit/logging | Allowed/denied/failed sensitive actions and seeded canary secrets/private values | Complete actor/tenant/action/target/result; no canary leakage |

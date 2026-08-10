@@ -98,6 +98,10 @@
             ],
             "title": "Job Title"
           },
+          "profile_complete": {
+            "title": "Profile Complete",
+            "type": "boolean"
+          },
           "time_zone": {
             "anyOf": [
               {
@@ -116,6 +120,7 @@
         },
         "required": [
           "email",
+          "profile_complete",
           "version"
         ],
         "title": "AccountProfileView",
@@ -1186,6 +1191,62 @@
         "title": "CoSpeakerView",
         "type": "object"
       },
+      "CommunicationRequeueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 250,
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "organization_id": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Organization Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id"
+        ],
+        "title": "CommunicationRequeueRequest",
+        "type": "object"
+      },
+      "CommunicationRequeueResult": {
+        "additionalProperties": false,
+        "properties": {
+          "publish_failures": {
+            "minimum": 0.0,
+            "title": "Publish Failures",
+            "type": "integer"
+          },
+          "published": {
+            "minimum": 0.0,
+            "title": "Published",
+            "type": "integer"
+          },
+          "requeued": {
+            "minimum": 0.0,
+            "title": "Requeued",
+            "type": "integer"
+          },
+          "selected": {
+            "minimum": 0.0,
+            "title": "Selected",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "selected",
+          "requeued",
+          "published",
+          "publish_failures"
+        ],
+        "title": "CommunicationRequeueResult",
+        "type": "object"
+      },
       "CommunicationStatus": {
         "additionalProperties": false,
         "properties": {
@@ -1481,6 +1542,11 @@
               }
             ],
             "title": "Organization Id"
+          },
+          "profile_complete": {
+            "default": false,
+            "title": "Profile Complete",
+            "type": "boolean"
           },
           "user_id": {
             "title": "User Id",
@@ -5536,6 +5602,87 @@
         "title": "SpeakerPortalView",
         "type": "object"
       },
+      "SpeakerProfilePageView": {
+        "properties": {
+          "biography": {
+            "title": "Biography",
+            "type": "string"
+          },
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "job_title": {
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "participations": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSpeakerParticipation"
+            },
+            "title": "Participations",
+            "type": "array"
+          },
+          "person_id": {
+            "title": "Person Id",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "person_id",
+          "user_id",
+          "email",
+          "display_name",
+          "job_title",
+          "company",
+          "biography",
+          "location",
+          "links",
+          "version",
+          "participations",
+          "can_edit"
+        ],
+        "title": "SpeakerProfilePageView",
+        "type": "object"
+      },
       "SpeakerProfileUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -5709,6 +5856,17 @@
             "title": "Location",
             "type": "string"
           },
+          "person_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Id"
+          },
           "proposal_title": {
             "title": "Proposal Title",
             "type": "string"
@@ -5741,6 +5899,7 @@
         },
         "required": [
           "event_speaker_id",
+          "person_id",
           "user_id",
           "email",
           "display_name",
@@ -10839,6 +10998,48 @@
         ]
       }
     },
+    "/api/v1/engine-room/communications/requeue-exhausted": {
+      "post": {
+        "description": "Requeue transient failures for one organization after an operator repair.",
+        "operationId": "requeueExhaustedCommunications",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationRequeueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationRequeueResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Requeue Exhausted Communications",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/engine-room/database": {
       "get": {
         "description": "Exercise the configured D1 binding without returning tenant or schema data.",
@@ -11121,49 +11322,6 @@
         "summary": "Get Form",
         "tags": [
           "forms"
-        ]
-      }
-    },
-    "/api/v1/forms/{slug}/access": {
-      "post": {
-        "description": "Enroll an authenticated user into an open public CFP without another sign-in.",
-        "operationId": "ensure_cfp_speaker_access_api_v1_forms__slug__access_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "slug",
-            "required": true,
-            "schema": {
-              "title": "Slug",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericAccepted"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Ensure Cfp Speaker Access",
-        "tags": [
-          "authentication"
         ]
       }
     },
@@ -11951,6 +12109,98 @@
         "summary": "Setup Status",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/speaker-profiles/{person_id}": {
+      "get": {
+        "operationId": "get_speaker_profile_page_api_v1_speaker_profiles__person_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerProfilePageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Speaker Profile Page",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      },
+      "patch": {
+        "operationId": "update_own_speaker_profile_page_api_v1_speaker_profiles__person_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "person_id",
+            "required": true,
+            "schema": {
+              "title": "Person Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSpeakerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerProfilePageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Own Speaker Profile Page",
+        "tags": [
+          "speaker-onboarding"
         ]
       }
     },

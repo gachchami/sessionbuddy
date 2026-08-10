@@ -17,11 +17,11 @@ This record resolves the choices raised by `architecture.md`, `data-architecture
 8. **Sessions:** default to 12-hour idle and 30-day absolute expiry. Rotate after sign-in, privilege changes, and security events. Any concurrency overlap must be short and explicitly tested.
 9. **Concurrency:** editable-resource version mismatches return `409 conflict` with the current opaque resource version when disclosure is authorized. The project does not mix this with `If-Match`/`412` semantics.
 10. **Static/private assets:** reserve `STATIC_CONTENT` for generated frontend assets and `PRIVATE_ASSETS` for R2.
-11. **Queues and real time:** the initial Python queue consumer ships in the same Worker bundle. Outbox dispatch and external delivery remain outside user-facing transactions. EventHub stays Python if its hibernatable WebSocket path passes the compatibility gate; otherwise a minimal TypeScript auxiliary Worker may own only transient invalidation fan-out.
+11. **Queues and real time:** the initial Python queue consumer ships in the same Worker bundle. Durable communication rows are committed before Queue publication, and scheduled recovery keeps external delivery outside user-facing transactions. EventHub stays Python if its hibernatable WebSocket path passes the compatibility gate; otherwise a minimal TypeScript auxiliary Worker may own only transient invalidation fan-out.
 12. **Uploads:** later portal work uses direct R2 presigned uploads through a narrow, measured SigV4 dependency. Uploads stay quarantined until completion validation and asynchronous scanning. Scanner choice and upload limits remain blocking decisions for the asset feature, not the foundation scaffold.
 13. **Rate limiting:** feature code uses the injectable policy interface. Production thresholds are configuration selected after representative tests; D1 enforces correctness guarantees.
 14. **OpenAPI:** generation and CI drift checks are mandatory. `/api/v1/openapi.json` is available in local and preview; production exposure defaults to authenticated organization administrators until an integration use case approves public exposure.
-15. **Retention:** authentication challenges expire after 15 minutes; ordinary idempotency records after at least 24 hours; final submission keys through deadline plus 24 hours. Audit, outbox, user deletion, and asset retention require an approved policy before production and are not automatically purged meanwhile.
+15. **Retention:** authentication challenges expire after 15 minutes; ordinary idempotency records after at least 24 hours; final submission keys through deadline plus 24 hours. Audit, communication delivery, user deletion, and asset retention require an approved policy before production and are not automatically purged meanwhile.
 16. **Read replication:** foundation correctness paths use primary/session-consistent D1 reads. Replica use is deferred to measured, stale-tolerant read views.
 17. **Source hosting:** GitHub or Forge is operational preference and does not affect the runtime architecture.
 18. **Observability:** FastAPI middleware emits structured route-template metrics and safe `Server-Timing` breakdowns. The browser reports sampled Web Vitals/navigation timings. CI and staging retain machine-readable benchmark history keyed by dataset, commit, deployment, cold/warm state, and device profile; Section 8 regression gates block promotion.
@@ -64,7 +64,7 @@ This record resolves the choices raised by `architecture.md`, `data-architecture
 
 ## Foundation scope boundary
 
-platform foundation scaffolds configuration, API conventions, health/readiness surfaces, schema migrations, authentication/RBAC interfaces, tenant-scoped persistence primitives, audit/outbox/idempotency primitives, deterministic foundation seeds, and test commands. It does not implement submission, speaker, evaluation, communication, agenda, or dashboard product journeys.
+platform foundation scaffolds configuration, API conventions, health/readiness surfaces, schema migrations, authentication/RBAC interfaces, tenant-scoped persistence primitives, audit/idempotency primitives, deterministic foundation seeds, and test commands. It does not implement submission, speaker, evaluation, communication, agenda, or dashboard product journeys.
 
 ## Current verification status
 

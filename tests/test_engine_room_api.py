@@ -130,6 +130,7 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
         "/api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders",
         "/api/v1/engine-room/database",
         "/api/v1/engine-room/status",
+        "/api/v1/engine-room/communications/requeue-exhausted",
         "/api/v1/forms/{slug}",
         "/api/v1/forms/{slug}/draft",
         "/api/v1/forms/{slug}/submissions",

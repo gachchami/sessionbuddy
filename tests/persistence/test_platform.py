@@ -6,7 +6,6 @@ from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
     IdempotencyRecord,
-    OutboxMessage,
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows
 from sessionbuddy.platform.db.repositories import EventRepository
@@ -124,34 +123,20 @@ async def test_command_batch_has_required_atomic_shape_and_redacts_provider_erro
             metadata={"changed_fields": ["name"]},
         )
     )
-    batch.outbox(
-        OutboxMessage(
-            topic="thing.created",
-            aggregate_type="thing",
-            aggregate_id="domain-id",
-            deduplication_key="thing:domain-id:v1",
-            payload={"thing_id": "domain-id"},
-            available_at_ms=1000,
-            created_at_ms=1000,
-            organization_id="org-a",
-            event_id="event-a",
-        )
-    )
     batch.complete_idempotency(
         record, status=201, resource_type="thing", resource_id="domain-id", completed_at_ms=1000
     )
     await batch.execute()
-    assert len(db.batch_statements) == 5
+    assert len(db.batch_statements) == 4
     assert [
         "idempotency_records",
         "domain",
         "audit_events",
-        "outbox_messages",
         "idempotency_records",
     ] == [
         next(
             name
-            for name in ("idempotency_records", "domain", "audit_events", "outbox_messages")
+            for name in ("idempotency_records", "domain", "audit_events")
             if name in statement.sql
         )
         for statement in db.batch_statements

@@ -24,7 +24,6 @@ from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
     IdempotencyRecord,
-    OutboxMessage,
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
@@ -912,19 +911,6 @@ async def update_speaker_profile(
             correlation_id=request.state.request_id,
             occurred_at_ms=now,
             metadata={"fields_changed": 6, "task_reconciled": 1},
-        )
-    )
-    batch.outbox(
-        OutboxMessage(
-            organization_id=str(row["organization_id"]),
-            event_id=str(row["event_id"]),
-            topic="speaker.onboarding.changed",
-            aggregate_type="event_speaker",
-            aggregate_id=str(row["event_speaker_id"]),
-            deduplication_key=f"profile:{row['person_id']}:{body.version + 1}",
-            payload={"event_speaker_id": str(row["event_speaker_id"]), "version": body.version + 1},
-            available_at_ms=now,
-            created_at_ms=now,
         )
     )
     batch.complete_idempotency(
@@ -1922,26 +1908,6 @@ async def complete_speaker_upload(
                 "malware_scan_bypassed": int(scan_bypassed),
                 "generation": int(row["generation"]),
             },
-        )
-    )
-    batch.outbox(
-        OutboxMessage(
-            organization_id=str(speaker["organization_id"]),
-            event_id=event_id,
-            topic=(
-                "speaker.onboarding.changed"
-                if inline_completion
-                else "speaker.asset.scan_requested"
-            ),
-            aggregate_type="speaker_asset_version",
-            aggregate_id=str(row["version_id"]),
-            deduplication_key=f"asset:{row['version_id']}:uploaded",
-            payload={
-                "asset_version_id": str(row["version_id"]),
-                "generation": int(row["generation"]),
-            },
-            available_at_ms=now,
-            created_at_ms=now,
         )
     )
     try:

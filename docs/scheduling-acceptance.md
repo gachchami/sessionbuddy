@@ -15,7 +15,7 @@ Scheduling implements the conflict-safe agenda slice from `requirements.md` Sect
   schedule.
 - Publication records audit and durable calendar-sync intent. Stable per-recipient
   UIDs, monotonic RFC 5545 sequence numbers, immutable ICS versions, private email
-  messages, and deterministic outbox keys make delivery retry-safe.
+  messages, and deterministic delivery keys make delivery retry-safe.
 - Admin list/day/week/track/room views support drag-and-drop and an equivalent
   keyboard form. Authenticated staff and speakers get a responsive read-only view.
 

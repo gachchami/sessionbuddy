@@ -10,7 +10,6 @@ from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
     IdempotencyRecord,
-    OutboxMessage,
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
@@ -51,7 +50,7 @@ class D1CommunicationsService:
             for message_id in message_ids:
                 await queue.send({"schema_version": 1, "message_id": message_id})
         except Exception as exc:
-            # The committed outbox record makes this recoverable by a later dispatcher.
+            # The committed queued message is recoverable by the scheduled dispatcher.
             raise HTTPException(status_code=503) from exc
 
     async def context_for_event(self, actor: Actor, event_id: str) -> ResourceContext:
@@ -201,19 +200,6 @@ class D1CommunicationsService:
                     now,
                 )
             )
-            batch.outbox(
-                OutboxMessage(
-                    organization_id=str(template["organization_id"]),
-                    event_id=event_id,
-                    topic="communication.delivery.requested",
-                    aggregate_type="communication_message",
-                    aggregate_id=message_id,
-                    deduplication_key=deterministic_key,
-                    payload={"message_id": message_id},
-                    available_at_ms=now,
-                    created_at_ms=now,
-                )
-            )
         batch.audit(
             AuditEvent(
                 organization_id=str(template["organization_id"]),
@@ -242,9 +228,9 @@ class D1CommunicationsService:
         try:
             await self._publish_delivery_requests(ids)
         except HTTPException:
-            # The messages and durable outbox records are already committed. A
+            # The messages are already committed. A
             # transient Queue publish failure must not tell the caller that the
-            # send failed; the outbox dispatcher can safely retry it.
+            # send failed; the scheduled dispatcher can safely retry it.
             pass
         return ManualSendResponse(message_ids=ids)
 
@@ -389,19 +375,6 @@ class D1CommunicationsService:
                     now,
                 )
             )
-            batch.outbox(
-                OutboxMessage(
-                    organization_id=self.organization_id,
-                    event_id=event_id,
-                    topic="communication.delivery.requested",
-                    aggregate_type="communication_message",
-                    aggregate_id=message_id,
-                    deduplication_key=deterministic_key,
-                    payload={"message_id": message_id},
-                    available_at_ms=now,
-                    created_at_ms=now,
-                )
-            )
         batch.audit(
             AuditEvent(
                 organization_id=self.organization_id,
@@ -430,7 +403,7 @@ class D1CommunicationsService:
         try:
             await self._publish_delivery_requests(ids)
         except HTTPException:
-            # D1 and the durable outbox already own delivery at this point.
+            # D1 already owns durable delivery state at this point.
             pass
         return ManualSendResponse(message_ids=ids)
 
@@ -516,19 +489,6 @@ class D1CommunicationsService:
                 html_body,
                 deterministic,
                 now,
-            )
-        )
-        batch.outbox(
-            OutboxMessage(
-                organization_id=str(row["organization_id"]),
-                event_id=event_id,
-                topic="communication.delivery.requested",
-                aggregate_type="communication_message",
-                aggregate_id=message_id,
-                deduplication_key=deterministic,
-                payload={"message_id": message_id},
-                available_at_ms=now,
-                created_at_ms=now,
             )
         )
         batch.audit(

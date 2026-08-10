@@ -58,6 +58,22 @@ class DatabaseStatus(BaseModel):
     query_ms: float = Field(ge=0)
 
 
+class CommunicationRequeueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    organization_id: str = Field(min_length=1, max_length=100)
+    limit: int = Field(default=250, ge=1, le=1000)
+
+
+class CommunicationRequeueResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected: int = Field(ge=0)
+    requeued: int = Field(ge=0)
+    published: int = Field(ge=0)
+    publish_failures: int = Field(ge=0)
+
+
 class BrowserTelemetryPayload(BaseModel):
     """Allow-listed, privacy-safe browser measurement envelope.
 

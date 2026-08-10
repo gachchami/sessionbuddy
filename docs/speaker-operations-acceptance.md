@@ -14,7 +14,7 @@ onboarding:
   from the browser.
 - Profile updates use CSRF, strict schemas, optimistic versions, and idempotency.
   A successful biography update completes the linked profile task in the same D1
-  batch and records one safe audit event and one outbox fact.
+  batch and records one safe audit event and one durable communication message.
 - Foreign-owned and unassigned protected resources use the shared non-disclosing
   `404` authorization behavior.
 - Portal and dashboard task queries have separate tenant-scoped indexes for the

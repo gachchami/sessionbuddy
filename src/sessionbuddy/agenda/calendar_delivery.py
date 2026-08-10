@@ -104,7 +104,7 @@ async def queue_calendar_changes(
         invitation_id = str(existing["id"]) if existing else new_id()
         uid = str(existing["calendar_uid"]) if existing else f"{new_id()}@sessionbuddy"
         sequence = int(existing["sequence"]) + 1 if existing else 0
-        message_id, version_id, outbox_id = new_id(), new_id(), new_id()
+        message_id, version_id = new_id(), new_id()
         ics = render_ics(
             CalendarInvitation(
                 uid=uid,
@@ -193,27 +193,6 @@ async def queue_calendar_changes(
                     digest,
                     ics,
                     message_id,
-                    now_ms,
-                ),
-                db.prepare(
-                    """INSERT INTO outbox_messages
-                       (id,organization_id,event_id,topic,payload_version,aggregate_type,
-                        aggregate_id,deduplication_key,payload_json,available_at_ms,created_at_ms)
-                       VALUES (?1,?2,?3,'communication.delivery.requested',1,
-                               'communication_message',?4,?5,?6,?7,?7)"""
-                ).bind(
-                    outbox_id,
-                    change.organization_id,
-                    change.event_id,
-                    message_id,
-                    deterministic,
-                    json.dumps(
-                        {
-                            "schema_version": 1,
-                            "message_id": message_id,
-                        },
-                        separators=(",", ":"),
-                    ),
                     now_ms,
                 ),
             ]

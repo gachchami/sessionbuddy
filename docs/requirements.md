@@ -106,7 +106,7 @@ Policies are centralized, deny by default, and accept a named permission plus re
 - Upload signing verifies tenant, ownership, purpose, type, and size. Objects remain private and use unguessable keys; download authorization is checked before issuing a short-lived URL.
 - Security headers include a restrictive Content Security Policy, frame policy, MIME sniffing protection, referrer policy, and least-privilege permissions policy.
 - Sensitive mutations record actor, organization, event, action, target, result, timestamp, and correlation ID without storing secrets or unnecessary private content.
-- Database changes and outbound effects use a transactional outbox. Consumers are idempotent and authenticate webhook/provider callbacks.
+- Database changes and outbound communication intent are committed as durable queued message rows. Consumers are idempotent and authenticate webhook/provider callbacks.
 - Logs and traces redact tokens, cookies, email-link secrets, form answers, private asset URLs, and message bodies.
 - Dependencies and deployed configuration receive automated vulnerability and secret scanning in CI.
 
@@ -122,7 +122,7 @@ All of the following must pass locally and in an isolated preview before feature
 6. Evaluators cannot enumerate or access unassigned submissions, other evaluations, or closed-round mutations.
 7. Speakers cannot enumerate or access another person's profile, submission, task, or asset.
 8. Public endpoints never serialize private contacts, evaluations, internal notes, tasks, or private asset locations.
-9. Idempotent retries create one domain record and one outbox effect.
+9. Idempotent retries create one domain record and one durable communication effect.
 10. Rate limits activate predictably and recovery does not require application restart.
 11. Audit events identify the correct actor, tenant, action, target, and result for sensitive operations.
 12. Tenant-scoped large-list queries are indexed, bounded, and meet the applicable performance budget.
@@ -394,7 +394,7 @@ Minimum dashboards:
 1. **Release health:** deployment version, traffic, error rate, API p50/p75/p95/p99, page Web Vitals, cold-start/import failures, and comparison with the accepted baseline.
 2. **API explorer:** route-template latency, throughput, error class, response size, D1 duration/query count/rows read, cache state, and slow-trace links. It supports environment, deployment, route, method, and time filters.
 3. **Page performance:** LCP, INP, CLS, TTFB, route-transition duration, critical-path API time, device class, and browser family for each page template.
-4. **Async operations:** outbox age, queue depth/oldest message, retry and dead-letter counts, Workflow lateness/failure, email/provider status, and replay links restricted to authorized operators.
+4. **Async operations:** actionable communication backlog age, queue depth/oldest message, retry and exhausted counts, Workflow lateness/failure, email/provider status, and replay links restricted to authorized operators.
 5. **Security and access:** authentication failures, rate-limit activity, CSRF/origin failures, authorization-denial trends, session revocations, and suspicious cross-tenant probes without exposing raw credentials, emails, or request bodies.
 6. **Storage and real time:** D1 failure/latency/rows-read trends, migration version, R2 quarantine mismatches, WebSocket connection failures, and dashboard propagation delay.
 
@@ -414,7 +414,7 @@ Every production issue and performance regression uses the same evidence chain:
 
 1. Identify environment, deployment version, affected route/page template, time window, and user-visible symptom.
 2. Reproduce with synthetic or redacted data locally or in an isolated preview; never copy production private content into development.
-3. Follow the correlation ID from browser navigation through API request, authorization, D1 work, outbox/queue, Workflow, and provider callback as applicable.
+3. Follow the correlation ID from browser navigation through API request, authorization, D1 work, durable communication/Queue, Workflow, and provider callback as applicable.
 4. Split latency using browser Navigation Timing, Web Vitals, `Server-Timing`, Worker spans, and D1 query metadata before proposing a fix.
 5. Compare the affected measurement with the accepted benchmark using the same seed, concurrency, viewport/device, and cold/warm conditions.
 6. Verify query plans, query count, response bytes, cache behavior, bundle changes, queue age, and error/retry state.
@@ -476,7 +476,7 @@ Source hosting may use GitHub or Forge; it has no runtime impact and is not a pr
 - Rich text is sanitized. Uploads are private, validated, scanned, and served through authorized or expiring URLs.
 - Public responses never contain private emails, evaluations, internal notes, task details, or unscanned assets.
 - Rate limits protect authentication, submission, upload signing, and communication endpoints.
-- Database commits and outbound side effects use an outbox/idempotent consumer pattern.
+- Database commits persist outbound communication intent before Queue publication; consumers are idempotent and scheduled recovery republishes stranded work.
 - Data survives deploys and restarts. Automated backups have a quarterly restore test with recorded recovery time and point.
 - Failure of email, scanning, or dashboard push does not roll back valid domain data; failures are retriable and visible.
 - MVP workflows target WCAG 2.1 AA, are keyboard operable, use programmatic labels/errors, and never use color alone.

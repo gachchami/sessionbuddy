@@ -19,6 +19,9 @@
       "head_sampling_rate": 0.1
     }
   },
+  "triggers": {
+    "crons": ["*/2 * * * *"]
+  },
   "ai": {
     "binding": "AI"
   },
@@ -89,6 +92,9 @@
   "env": {
     "dev": {
       "name": "sessionbuddy-development",
+      "triggers": {
+        "crons": ["*/2 * * * *"]
+      },
       "ai": {
         "binding": "AI"
       },
