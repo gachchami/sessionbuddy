@@ -457,16 +457,34 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .account-profile-heading > div:first-child > p:last-child { margin: .45rem 0 0; color: var(--muted); }
 .account-role-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4rem; }
 .account-role-chip { display: inline-flex; align-items: center; padding: .4rem .65rem; border: 1px solid #dcd4ff; border-radius: 99rem; background: #f5f1ff; color: #5934cb; font-size: .72rem; font-weight: 700; }
+.account-headshot { display: grid; grid-template-columns: 7rem minmax(0,1fr); gap: 1.25rem; align-items: center; margin: 0 0 1.5rem; padding: 1.15rem; border: 1px solid #e3def2; border-radius: .8rem; background: linear-gradient(135deg,#faf9ff,#fff); }
+.account-headshot h3,.account-headshot p { margin: 0 0 .35rem; }
+.account-headshot__preview { width: 7rem; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border: 1px solid #dcd4ff; border-radius: 1.25rem; background: #eeeaff; color: #5934cb; font-size: 1.6rem; font-weight: 800; }
+.account-headshot__preview img { width: 100%; height: 100%; object-fit: cover; }
+.account-headshot__choose { position: relative; margin: 0; }
+.account-headshot__choose input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.account-link-fields { margin-top: 1.5rem; background: #fff; }
+.account-link-fields .form-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .account-password-fields { margin: 1.75rem 0 0; padding: 1.25rem; border: 1px solid #e3def2; border-radius: .8rem; background: #faf9fd; }
 .account-password-fields legend { padding: 0 .35rem; color: #182230; font-size: 1rem; font-weight: 750; }
 .account-password-fields > p { margin: -.1rem 0 1rem; color: var(--muted); font-size: .82rem; }
-.account-form-footer { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin-top: 1.25rem; }
+.account-form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 1.5rem; margin-top: 1.25rem; }
 .account-form-footer .help { max-width: 42rem; margin: 0; }
 .account-form-footer button { flex: 0 0 auto; }
 @media (max-width: 42rem) {
   .account-profile-heading, .account-form-footer { align-items: stretch; flex-direction: column; }
   .account-role-list { justify-content: flex-start; }
   .account-form-footer button { width: 100%; }
+  .account-profile-panel { padding: 1rem; }
+  .account-headshot { grid-template-columns: 1fr; justify-items: center; padding: 1rem; text-align: center; }
+  .account-headshot__preview { width: 6rem; border-radius: 1rem; }
+  .account-headshot > div:last-child { width: 100%; min-width: 0; }
+  .account-headshot .actions { align-items: stretch; flex-direction: column; }
+  .account-headshot .actions > * { width: 100%; min-height: 2.75rem; margin: 0; }
+  .account-headshot .actions > .account-headshot__choose,
+  .account-headshot .actions > button { flex: 0 0 auto; }
+  .account-link-fields,.account-password-fields { padding: .85rem; }
+  .account-link-fields .form-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 48rem) {
   .auth-main { width: min(32rem,calc(100% - 1.5rem)); grid-template-columns: 1fr; gap: 2rem; padding-block: 2.25rem 3rem; }

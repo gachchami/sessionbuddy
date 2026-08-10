@@ -35,14 +35,11 @@
 .sb-app-brand__mark {
   width: 2.35rem;
   height: 2.35rem;
-  display: grid;
+  display: block;
   flex: 0 0 auto;
-  place-items: center;
-  border-radius: .7rem;
-  background: linear-gradient(135deg, var(--sb-purple), var(--sb-sky));
+  border-radius: .55rem;
   box-shadow: 0 .4rem 1rem rgba(109,74,255,.22);
-  color: white;
-  font-size: .8rem;
+  object-fit: contain;
 }
 .sb-app-brand__text { display: grid; gap: .05rem; }
 .sb-app-brand__text strong { color: #182230; font-size: .98rem; }

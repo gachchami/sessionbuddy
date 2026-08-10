@@ -12,6 +12,8 @@
 
   let session;
   let version;
+  let selectedHeadshot;
+  let previewObjectUrl;
   const query = new URLSearchParams(location.search);
   const onboarding = query.get("onboarding") === "1";
   const nextPath = query.get("next") || "";
@@ -24,6 +26,14 @@
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
+  function showStatus(message, kind = "", focus = false) {
+    const status = byId("status");
+    status.hidden = false;
+    status.className = `status${kind ? ` ${kind}` : ""}`;
+    status.textContent = message;
+    if (focus) status.focus();
+  }
+
   function setProfile(profile) {
     const form = byId("profile-form");
     byId("account-email").value = profile.email;
@@ -32,6 +42,10 @@
     form.elements.job_title.value = profile.job_title || "";
     form.elements.company.value = profile.company || "";
     form.elements.time_zone.value = profile.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    form.elements.description.value = profile.description || "";
+    form.elements.website_url.value = profile.website_url || "";
+    form.elements.linkedin_url.value = profile.linkedin_url || "";
+    form.elements.x_url.value = profile.x_url || "";
     const roleNodes = (profile.roles || []).map((role) => {
       const item = document.createElement("span");
       item.className = "account-role-chip";
@@ -39,10 +53,22 @@
       return item;
     });
     byId("profile-roles").replaceChildren(...roleNodes);
+    const initials = `${profile.first_name?.[0] || ""}${profile.last_name?.[0] || ""}`.toUpperCase() || "SB";
+    byId("headshot-fallback").textContent = initials;
+    if (profile.headshot_url) {
+      byId("headshot-preview").src = `${profile.headshot_url}?v=${profile.version}`;
+      byId("headshot-preview").hidden = false;
+      byId("headshot-fallback").hidden = true;
+      byId("remove-headshot").hidden = false;
+    } else {
+      byId("headshot-preview").hidden = true;
+      byId("headshot-fallback").hidden = false;
+      byId("remove-headshot").hidden = true;
+    }
     byId("password-legend").childNodes[0].textContent = profile.has_password ? "Change password " : "Create a password ";
     byId("password-help").textContent = profile.has_password
-      ? "Leave both fields blank to keep your current password. Use at least 15 characters to change it."
-      : "Add a password to sign in without waiting for an email link. Use at least 15 characters.";
+      ? "Leave both fields blank to keep your current password. Use at least 15 characters to change it. Changing it signs you out on every device."
+      : "Add a password to sign in without waiting for an email link. Use at least 15 characters. Changing it signs you out on every device.";
     version = profile.version;
   }
 
@@ -115,7 +141,7 @@
       access.push(accessCard(
         labels[role] || role,
         active ? "Active account role" : "Account role",
-        [role],
+        [],
         destination
       ));
     }
@@ -135,14 +161,55 @@
     if (onboarding && !session.profile_complete) {
       byId("account-title").textContent = "Complete your profile";
       byId("account-summary").textContent = "Add your details before continuing.";
-      byId("status").textContent = "Complete the required field, then save your profile.";
+      showStatus("Complete the required fields, then save your profile.");
       byId("profile-form").elements.first_name.focus();
-    } else {
-      byId("status").textContent = "Your account is up to date.";
     }
   }
 
   byId("profile-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("headshot-input").addEventListener("change", (event) => {
+    selectedHeadshot = event.target.files?.[0];
+    if (!selectedHeadshot) return;
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = URL.createObjectURL(selectedHeadshot);
+    byId("headshot-preview").src = previewObjectUrl;
+    byId("headshot-preview").hidden = false;
+    byId("headshot-fallback").hidden = true;
+    byId("upload-headshot").disabled = false;
+  });
+  byId("upload-headshot").addEventListener("click", async () => {
+    if (!selectedHeadshot) return;
+    const button = byId("upload-headshot");
+    button.disabled = true;
+    try {
+      await api("/api/v1/account/headshot", {
+        method: "PUT",
+        headers: { "content-type": selectedHeadshot.type, "x-csrf-token": session.csrf_token },
+        body: selectedHeadshot
+      });
+      selectedHeadshot = undefined;
+      byId("headshot-input").value = "";
+      byId("remove-headshot").hidden = false;
+      showStatus("Headshot saved.", "success");
+    } catch (error) {
+      showStatus(window.SessionBuddyApi.message(error), "error", true);
+      button.disabled = false;
+    }
+  });
+  byId("remove-headshot").addEventListener("click", async () => {
+    const button = byId("remove-headshot");
+    button.disabled = true;
+    try {
+      await api("/api/v1/account/headshot", { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token } });
+      byId("headshot-preview").hidden = true;
+      byId("headshot-fallback").hidden = false;
+      button.hidden = true;
+      showStatus("Headshot removed.", "success");
+    } catch (error) {
+      showStatus(window.SessionBuddyApi.message(error), "error", true);
+      button.disabled = false;
+    }
+  });
   byId("organization-settings-list").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.target.closest("form[data-organization-id]");
@@ -161,14 +228,11 @@
       form.dataset.version = String(organization.version);
       form.querySelector("h3").textContent = organization.name;
       form.elements.name.value = organization.name;
-      byId("status").className = "status success";
-      byId("status").textContent = "Organization saved.";
+      showStatus("Organization saved.", "success");
     } catch (error) {
-      byId("status").className = "status error";
-      byId("status").textContent = error.status === 409
+      showStatus(error.status === 409
         ? "The organization changed elsewhere. Reload and try again."
-        : window.SessionBuddyApi.message(error);
-      byId("status").focus();
+        : window.SessionBuddyApi.message(error), "error", true);
     } finally { button.disabled = false; }
   });
   byId("profile-form").addEventListener("submit", async (event) => {
@@ -181,8 +245,7 @@
     if (!event.currentTarget.reportValidity()) return;
     const button = byId("save-profile");
     button.disabled = true;
-    byId("status").className = "status";
-    byId("status").textContent = "Saving your profile…";
+    showStatus("Saving your profile…");
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
     try {
       const profile = await api("/api/v1/account/profile", {
@@ -194,16 +257,19 @@
           job_title: values.job_title || null,
           company: values.company || null,
           time_zone: values.time_zone || null,
+          description: values.description || null,
+          website_url: values.website_url || null,
+          linkedin_url: values.linkedin_url || null,
+          x_url: values.x_url || null,
           password: values.password || null,
           password_confirmation: values.password_confirmation || null,
           version
         })
       });
       setProfile(profile);
-      byId("status").className = "status success";
-      byId("status").textContent = values.password
+      showStatus(values.password
         ? "Profile and password saved. Sign in again to continue."
-        : "Profile saved.";
+        : "Profile saved.", "success");
       event.currentTarget.elements.password.value = "";
       event.currentTarget.elements.password_confirmation.value = "";
       window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
@@ -214,9 +280,7 @@
         location.replace(safeNext);
       }
     } catch (error) {
-      byId("status").className = "status error";
-      byId("status").textContent = error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : window.SessionBuddyApi.message(error);
-      byId("status").focus();
+      showStatus(error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : window.SessionBuddyApi.message(error), "error", true);
     } finally {
       button.disabled = false;
     }
@@ -224,8 +288,7 @@
 
   initialize().catch((error) => {
     if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
-      byId("status").textContent = window.SessionBuddyApi.message(error);
-      byId("status").classList.add("error");
+      showStatus(window.SessionBuddyApi.message(error), "error", true);
     }
   });
 })();

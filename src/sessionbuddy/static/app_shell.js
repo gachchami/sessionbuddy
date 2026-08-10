@@ -56,6 +56,13 @@
     return node;
   }
 
+  function brandMark() {
+    const mark = make("img", undefined, "sb-app-brand__mark");
+    mark.src = "/landing/assets/sessionbuddy-favicon.svg";
+    mark.alt = "";
+    return mark;
+  }
+
   function eventIdFromLocation() {
     const match = location.pathname.match(/^\/admin\/events\/([^/]+)/);
     if (match) {
@@ -165,7 +172,7 @@
     const avatar = make("span", initials(session), "sb-account__avatar");
     avatar.setAttribute("aria-hidden", "true");
     const identity = make("span", undefined, "sb-account__identity");
-    identity.append(make("strong", displayName(session)), make("span", active ? "Active role" : "Account"));
+    identity.append(make("strong", displayName(session)), make("span", active ? roleLabel(active.role) : "Account"));
     summary.append(avatar, identity);
 
     const menu = make("div", undefined, "sb-account__menu");
@@ -308,8 +315,7 @@
       organizerWorkspace ? "/admin" : roles.has("speaker") ? "/speaker" : "/reviews"
     );
     brand.className = "sb-app-brand";
-    const mark = make("span", "S", "sb-app-brand__mark");
-    mark.setAttribute("aria-hidden", "true");
+    const mark = brandMark();
     const brandText = make("span", undefined, "sb-app-brand__text");
     brandText.append(make("strong", "SessionBuddy"));
     brand.append(mark, brandText);
@@ -328,11 +334,7 @@
         navLink("Home", "/admin", "home", !currentEventId && section === "home"),
         navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
       );
-      // The People directory API requires organization-wide management, so
-      // only render its entry point for accounts that can actually open it.
-      if (canManageOrganization(session)) {
-        nav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
-      }
+      nav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
     }
     primaryGroup.append(nav);
     if (organizerWorkspace) sidebar.append(primaryGroup);
@@ -378,17 +380,14 @@
         navLink("Home", "/admin", "home", !currentEventId && section === "home"),
         navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
       );
-      if (canManageOrganization(session)) {
-        globalNav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
-      }
+      globalNav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
       if (currentEventId) {
         topbar.classList.add("sb-topbar--event");
         topbar.append(menuButton, make("span", undefined, "sb-topbar__brand-space"), globalNav, accountMenu(session, roles));
       } else {
         const topbarBrand = link("", "/admin");
         topbarBrand.className = "sb-global-brand";
-        const topbarMark = make("span", "S", "sb-app-brand__mark");
-        topbarMark.setAttribute("aria-hidden", "true");
+        const topbarMark = brandMark();
         topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
         topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
       }
@@ -492,8 +491,7 @@
     const inner = make("div", undefined, "sb-guest-header__inner");
     const brand = link("", "/");
     brand.className = "sb-app-brand";
-    const mark = make("span", "S", "sb-app-brand__mark");
-    mark.setAttribute("aria-hidden", "true");
+    const mark = brandMark();
     brand.append(mark, make("span", "SessionBuddy"));
     const signIn = link("Sign in", `/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
     signIn.className = "sb-guest-sign-in";
@@ -507,8 +505,7 @@
     const inner = make("div", undefined, "sb-guest-header__inner");
     const brand = link("", "/");
     brand.className = "sb-app-brand";
-    const mark = make("span", "S", "sb-app-brand__mark");
-    mark.setAttribute("aria-hidden", "true");
+    const mark = brandMark();
     brand.append(mark, make("span", "SessionBuddy"));
     const retry = make("button", "Try again", "sb-guest-sign-in");
     retry.type = "button";

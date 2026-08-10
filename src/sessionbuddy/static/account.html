@@ -4,38 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=24">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=12">
+  <link rel="stylesheet" href="/product/assets/product.css?v=25">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=13">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=15" defer></script>
-  <script src="/account/assets/account.js?v=8" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=16" defer></script>
+  <script src="/account/assets/account.js?v=9" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page account-page organizer-main" tabindex="-1">
     <div class="page-heading organizer-hero"><div><p class="eyebrow">Personal settings</p><h1 id="account-title">Account</h1><p id="account-summary" class="lede">Profile details and access.</p></div></div>
-    <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1">Loading…</div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
     <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title">
       <div class="account-profile-heading"><div><p class="eyebrow">Your identity</p><h2 id="profile-title">Profile</h2><p>Used across every SessionBuddy workspace you can access.</p></div><div id="profile-roles" class="account-role-list" aria-label="Assigned roles"></div></div>
+      <section class="account-headshot" aria-labelledby="headshot-title">
+        <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
+        <div><h3 id="headshot-title">Headshot</h3><p class="help">A square JPG, PNG, or WebP works best. Maximum 5 MB.</p>
+          <div class="actions"><label class="button secondary account-headshot__choose">Choose image<input id="headshot-input" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="upload-headshot" type="button" disabled>Save headshot</button><button id="remove-headshot" class="secondary" type="button" hidden>Remove</button></div>
+        </div>
+      </section>
       <form id="profile-form">
         <div class="form-grid">
           <label>First name<input name="first_name" autocomplete="given-name" maxlength="100" required></label>
           <label>Last name<input name="last_name" autocomplete="family-name" maxlength="100" required></label>
-          <label>Sign-in email<input id="account-email" type="email" autocomplete="email" disabled></label>
+          <label>Sign-in email<input id="account-email" type="email" autocomplete="email" disabled><small>Your email is verified and cannot be changed here.</small></label>
           <label>Job title <span class="optional">Optional</span><input name="job_title" autocomplete="organization-title" maxlength="200"></label>
           <label>Company or team <span class="optional">Optional</span><input name="company" autocomplete="organization" maxlength="200"></label>
           <label>Time zone <span class="optional">Optional</span><input name="time_zone" maxlength="100" placeholder="Asia/Kolkata"></label>
         </div>
+        <label>About you <span class="optional">Optional</span><textarea name="description" maxlength="1000" rows="5" placeholder="Share the experience and topics people should know you for."></textarea></label>
+        <fieldset class="account-link-fields"><legend>Profile links <span class="optional">Optional</span></legend><div class="form-grid">
+          <label>Website<input name="website_url" type="url" inputmode="url" autocomplete="url" maxlength="500" placeholder="https://example.com"></label>
+          <label>LinkedIn<input name="linkedin_url" type="url" inputmode="url" maxlength="500" placeholder="https://linkedin.com/in/username"></label>
+          <label>X<input name="x_url" type="url" inputmode="url" maxlength="500" placeholder="https://x.com/username"></label>
+        </div></fieldset>
         <fieldset class="account-password-fields">
           <legend id="password-legend">Create a password <span class="optional">Optional</span></legend>
-          <p id="password-help">Add a password to sign in without waiting for an email link. Use at least 15 characters.</p>
+          <p id="password-help">Add a password to sign in without waiting for an email link. Use at least 15 characters. Changing it signs you out on every device.</p>
           <div class="form-grid">
             <label>New password<input name="password" type="password" autocomplete="new-password" minlength="15" maxlength="128" aria-describedby="password-help"></label>
             <label>Confirm new password<input name="password_confirmation" type="password" autocomplete="new-password" minlength="15" maxlength="128" aria-describedby="password-help"></label>
           </div>
         </fieldset>
-        <div class="account-form-footer"><p class="help">Your email is verified and cannot be changed here. Changing your password signs you out on every device.</p><button id="save-profile" type="submit" disabled>Save profile</button></div>
+        <div class="account-form-footer"><button id="save-profile" type="submit" disabled>Save profile</button></div>
       </form>
     </section>
     <section id="organization-settings" class="directory-section organizer-section organizer-section--organizations" aria-labelledby="organization-settings-title" hidden>
@@ -45,7 +57,7 @@
       <div id="organization-settings-list" class="entity-grid"></div>
     </section>
     <section class="directory-section organizer-section organizer-section--account-access" aria-labelledby="access-title">
-      <div class="section-heading"><div><h2 id="access-title">Roles and access</h2><p class="section-summary">Your active role controls what you can see and change. Switch roles from the account menu.</p></div><span id="access-count" class="badge">—</span></div>
+      <div class="section-heading"><div><h2 id="access-title">Roles and Access</h2><p class="section-summary">Your active role controls what you can see and change. Switch roles from the account menu.</p></div><span id="access-count" class="badge">—</span></div>
       <div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div>
     </section>
   </main>

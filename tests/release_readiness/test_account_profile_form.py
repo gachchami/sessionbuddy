@@ -11,6 +11,14 @@ def test_profile_form_is_registration_ready_without_editable_roles() -> None:
     assert 'name="password" type="password" autocomplete="new-password"' in markup
     assert 'name="password_confirmation" type="password"' in markup
     assert 'id="profile-roles"' in markup
+    assert 'id="headshot-input" type="file" accept="image/jpeg,image/png,image/webp"' in markup
+    assert 'name="description" maxlength="1000"' in markup
+    assert 'name="website_url" type="url"' in markup
+    assert 'name="linkedin_url" type="url"' in markup
+    assert 'name="x_url" type="url"' in markup
+    assert "Your email is verified and cannot be changed here.</small>" in markup
+    assert "Changing it signs you out on every device." in markup
+    assert '<h2 id="access-title">Roles and Access</h2>' in markup
     assert 'name="role"' not in markup
 
 
@@ -28,4 +36,30 @@ def test_profile_access_summary_includes_account_roles() -> None:
 
     assert "for (const role of session.account_roles || [])" in javascript
     assert 'active ? "Active account role" : "Account role"' in javascript
+    assert 'active ? "Active account role" : "Account role",\n        [],' in javascript
     assert 'role === "organizer" ? "/admin"' in javascript
+
+
+def test_headshot_has_preview_upload_and_remove_controls() -> None:
+    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+
+    assert 'URL.createObjectURL(selectedHeadshot)' in javascript
+    assert 'method: "PUT"' in javascript
+    assert 'method: "DELETE"' in javascript
+    assert '"/api/v1/account/headshot"' in javascript
+
+
+def test_profile_load_is_quiet_and_mobile_layout_is_single_column() -> None:
+    markup = (STATIC / "account.html").read_text(encoding="utf-8")
+    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
+
+    assert 'id="status" class="status status-compact"' in markup
+    assert "Your account is up to date." not in javascript
+    mobile = stylesheet.split("@media (max-width: 42rem)", 1)[1].split(
+        "@media (max-width: 48rem)", 1
+    )[0]
+    assert ".account-headshot { grid-template-columns: 1fr" in mobile
+    assert ".account-link-fields .form-grid { grid-template-columns: 1fr; }" in mobile
+    assert ".account-headshot .actions > .account-headshot__choose" in mobile
+    assert ".account-headshot .actions > button { flex: 0 0 auto; }" in mobile

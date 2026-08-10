@@ -151,6 +151,31 @@ def test_account_role_does_not_require_a_resource_membership(db: sqlite3.Connect
     ).fetchone() == (0,)
 
 
+def test_profile_identity_supports_description_links_and_one_private_headshot(
+    db: sqlite3.Connection,
+) -> None:
+    user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
+    assert {"description", "website_url", "linkedin_url", "x_url"} <= user_columns
+    db.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
+           VALUES('profile','profile@example.test','profile@example.test','active',1,1,1)"""
+    )
+    db.execute(
+        """INSERT INTO user_headshots
+           (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
+           VALUES('profile','private/profile.jpg','image/jpeg',100,?,1)""",
+        (bytes(32),),
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            """INSERT INTO user_headshots
+               (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
+               VALUES('profile','private/second.png','image/png',100,?,2)""",
+            (bytes([1]) * 32,),
+        )
+
+
 def test_session_accepts_exactly_one_active_assigned_role(db: sqlite3.Connection) -> None:
     db.execute(
         """INSERT INTO users

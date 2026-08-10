@@ -43,6 +43,7 @@ _EVENT_LOGO_RULES = {
 }
 _EVENT_LOGO_MAX_BYTES = 2 * 1024 * 1024
 _EVENT_IMAGE_MEDIA_TYPES = frozenset(_EVENT_LOGO_RULES)
+_HEADSHOT_MAX_BYTES = 5 * 1024 * 1024
 _IANA_TIME_ZONE = re.compile(
     r"^(?:UTC|[A-Za-z][A-Za-z0-9._+-]*(?:/[A-Za-z0-9][A-Za-z0-9._+-]*)+)$"
 )
@@ -557,6 +558,11 @@ class AccountProfileView(BaseModel):
     job_title: str | None = None
     company: str | None = None
     time_zone: str | None = None
+    description: str | None = None
+    website_url: str | None = None
+    linkedin_url: str | None = None
+    x_url: str | None = None
+    headshot_url: str | None = None
     profile_complete: bool
     roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(default_factory=list)
     has_password: bool = False
@@ -570,6 +576,10 @@ class AccountProfileUpdate(BaseModel):
     job_title: str | None = Field(default=None, max_length=200)
     company: str | None = Field(default=None, max_length=200)
     time_zone: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    website_url: str | None = Field(default=None, max_length=500)
+    linkedin_url: str | None = Field(default=None, max_length=500)
+    x_url: str | None = Field(default=None, max_length=500)
     password: str | None = Field(default=None, min_length=1, max_length=128)
     password_confirmation: str | None = Field(default=None, min_length=1, max_length=128)
     version: int = Field(ge=1)
@@ -581,6 +591,16 @@ class AccountProfileUpdate(BaseModel):
         if self.password is not None and self.password != self.password_confirmation:
             raise ValueError("password confirmation does not match")
         return self
+
+    @field_validator("website_url", "linkedin_url", "x_url")
+    @classmethod
+    def secure_profile_url(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        parsed = urlparse(value)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("profile URLs must be HTTPS URLs without credentials")
+        return value
 
 
 def _valid_redirect(value: str) -> bool:
@@ -770,11 +790,14 @@ async def account_profile(request: Request) -> AccountProfileView:
         await db
         .prepare(
             """SELECT u.email,u.first_name,u.last_name,u.display_name,u.job_title,u.company,
-                      u.time_zone,u.version,
+                      u.time_zone,u.description,u.website_url,u.linkedin_url,u.x_url,u.version,
                       u.profile_completed_at_ms IS NOT NULL AS profile_complete,
+                      CASE WHEN h.user_id IS NULL THEN NULL
+                           ELSE '/api/v1/account/headshot' END AS headshot_url,
                       EXISTS(SELECT 1 FROM password_credentials c
                              WHERE c.user_id=u.id AND c.status='active') AS has_password
-               FROM users u WHERE u.id=?1 AND u.status='active' LIMIT 1"""
+               FROM users u LEFT JOIN user_headshots h ON h.user_id=u.id
+               WHERE u.id=?1 AND u.status='active' LIMIT 1"""
         )
         .bind(authenticated.actor.user_id)
         .first()
@@ -820,10 +843,11 @@ async def update_account_profile(
     batch.add_statement(
         db.prepare(
             """UPDATE users SET first_name=?1,last_name=?2,display_name=?3,job_title=?4,
-               company=?5,time_zone=?6,profile_completed_at_ms=COALESCE(profile_completed_at_ms,?7),
-               authorization_version=authorization_version+?8,
-               version=version+1,updated_at_ms=?7
-               WHERE id=?9 AND status='active' AND version=?10"""
+               company=?5,time_zone=?6,description=?7,website_url=?8,linkedin_url=?9,x_url=?10,
+               profile_completed_at_ms=COALESCE(profile_completed_at_ms,?11),
+               authorization_version=authorization_version+?12,
+               version=version+1,updated_at_ms=?11
+               WHERE id=?13 AND status='active' AND version=?14"""
         ).bind(
             body.first_name,
             body.last_name,
@@ -831,6 +855,10 @@ async def update_account_profile(
             body.job_title or None,
             body.company or None,
             body.time_zone or None,
+            body.description or None,
+            body.website_url or None,
+            body.linkedin_url or None,
+            body.x_url or None,
             now,
             1 if verifier is not None else 0,
             authenticated.actor.user_id,
@@ -867,6 +895,138 @@ async def update_account_profile(
     )
     await batch.execute()
     return await account_profile(request)
+
+
+async def _read_headshot(request: Request) -> tuple[bytes, str, str]:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    rule = _EVENT_LOGO_RULES.get(content_type)
+    if rule is None:
+        raise HTTPException(status_code=415)
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > _HEADSHOT_MAX_BYTES:
+                raise HTTPException(status_code=413)
+        except ValueError as exc:
+            raise HTTPException(status_code=400) from exc
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > _HEADSHOT_MAX_BYTES:
+            raise HTTPException(status_code=413)
+        chunks.append(chunk)
+    body = b"".join(chunks)
+    extension, signature_matches = rule
+    if not body or not signature_matches(body):
+        raise HTTPException(status_code=415)
+    return body, content_type, extension
+
+
+@access_router.put(
+    "/api/v1/account/headshot",
+    status_code=204,
+    tags=["authentication"],
+)
+async def upload_account_headshot(request: Request) -> Response:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id, _EVENT_IMAGE_MEDIA_TYPES)
+    body, content_type, extension = await _read_headshot(request)
+    environment = request.scope.get("env")
+    checksum = hashlib.sha256(body).digest()
+    if not malware_scan_disabled(environment):
+        asset_id = new_id()
+        try:
+            scan = await SignedScannerAdapter(environment).scan(
+                body,
+                job=ScanJob(
+                    schema_version=1,
+                    organization_id=authenticated.actor.user_id,
+                    event_id=authenticated.actor.user_id,
+                    asset_version_id=asset_id,
+                    generation=1,
+                    checksum_sha256=checksum,
+                    job_id=asset_id,
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503) from exc
+        if scan.verdict != "clean":
+            raise HTTPException(status_code=400)
+    object_key = f"private/user-headshots/{authenticated.actor.user_id}.{extension}"
+    await _event_logo_bucket(request).put(object_key, body)
+    now = utc_now_ms()
+    batch = CommandBatch(database(request))
+    batch.add_statement(
+        database(request).prepare(
+            """INSERT INTO user_headshots
+               (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6)
+               ON CONFLICT(user_id) DO UPDATE SET object_key=excluded.object_key,
+                 content_type=excluded.content_type,byte_size=excluded.byte_size,
+                 checksum_sha256=excluded.checksum_sha256,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(authenticated.actor.user_id, object_key, content_type, len(body), checksum, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="account.headshot.update",
+            target_type="user",
+            target_id=authenticated.actor.user_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"content_type": content_type, "byte_size": len(body)},
+        )
+    )
+    await batch.execute()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+@access_router.get(
+    "/api/v1/account/headshot",
+    response_class=StreamingResponse,
+    tags=["authentication"],
+)
+async def account_headshot(request: Request) -> StreamingResponse:
+    authenticated = await authenticate_request(request)
+    row = row_mapping(
+        await database(request).prepare(
+            "SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1"
+        ).bind(authenticated.actor.user_id).first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    stored = await _event_logo_bucket(request).get(str(row["object_key"]))
+    if stored is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(
+        _stream_event_logo(stored),
+        media_type=str(row["content_type"]),
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@access_router.delete(
+    "/api/v1/account/headshot",
+    status_code=204,
+    tags=["authentication"],
+)
+async def delete_account_headshot(request: Request) -> Response:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    db = database(request)
+    row = row_mapping(
+        await db.prepare("SELECT object_key FROM user_headshots WHERE user_id=?1 LIMIT 1")
+        .bind(authenticated.actor.user_id).first()
+    )
+    if row is not None:
+        await db.prepare("DELETE FROM user_headshots WHERE user_id=?1").bind(
+            authenticated.actor.user_id
+        ).run()
+        await _event_logo_bucket(request).delete(str(row["object_key"]))
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @access_router.get(

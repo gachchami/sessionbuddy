@@ -16,6 +16,18 @@
             ],
             "title": "Company"
           },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "first_name": {
             "maxLength": 100,
             "minLength": 1,
@@ -39,6 +51,18 @@
             "minLength": 1,
             "title": "Last Name",
             "type": "string"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
           },
           "password": {
             "anyOf": [
@@ -82,6 +106,30 @@
             "minimum": 1.0,
             "title": "Version",
             "type": "integer"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
+          },
+          "x_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Url"
           }
         },
         "required": [
@@ -104,6 +152,17 @@
               }
             ],
             "title": "Company"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "display_name": {
             "anyOf": [
@@ -136,6 +195,17 @@
             "title": "Has Password",
             "type": "boolean"
           },
+          "headshot_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headshot Url"
+          },
           "job_title": {
             "anyOf": [
               {
@@ -157,6 +227,17 @@
               }
             ],
             "title": "Last Name"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
           },
           "profile_complete": {
             "title": "Profile Complete",
@@ -188,6 +269,28 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
+          },
+          "x_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Url"
           }
         },
         "required": [
@@ -7379,6 +7482,44 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/account/headshot": {
+      "delete": {
+        "operationId": "delete_account_headshot_api_v1_account_headshot_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Account Headshot",
+        "tags": [
+          "authentication"
+        ]
+      },
+      "get": {
+        "operationId": "account_headshot_api_v1_account_headshot_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Account Headshot",
+        "tags": [
+          "authentication"
+        ]
+      },
+      "put": {
+        "operationId": "upload_account_headshot_api_v1_account_headshot_put",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Upload Account Headshot",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
     "/api/v1/account/profile": {
       "get": {
         "operationId": "getAccountProfile",

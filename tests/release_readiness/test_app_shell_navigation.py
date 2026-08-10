@@ -51,11 +51,19 @@ def test_account_navigation_exposes_one_active_role_and_role_switching() -> None
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert 'const ACTIVE_ROLE_KEY = "sessionbuddy.active-role"' in javascript
-    assert 'active ? "Active role" : "Account"' in javascript
+    assert 'active ? roleLabel(active.role) : "Account"' in javascript
     assert 'make("p", "Switch role", "sb-role-switcher__label")' in javascript
     assert "return new Set(active ? [active.role] : [])" in javascript
     assert ".sb-active-role" in stylesheet
     assert ".sb-role-option" in stylesheet
+
+
+def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert 'mark.src = "/landing/assets/sessionbuddy-favicon.svg"' in javascript
+    assert 'nav.append(navLink("People", "/admin/speakers"' in javascript
+    assert 'globalNav.append(navLink("People", "/admin/speakers"' in javascript
 
 
 def test_landing_uses_one_role_aware_dashboard_entry() -> None:
