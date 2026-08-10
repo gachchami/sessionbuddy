@@ -12,6 +12,10 @@ Set these non-secret values under the target Wrangler environment:
 - `MALWARE_SCAN_MODE`: `disabled` works only in `local` or `development`; staging and production fail closed.
 - `RESEND_FROM_ADDRESS`: the verified sender shown to recipients.
 - `SCANNER_URL`: required when malware scanning is enabled.
+- `SKIP_PROFILE_ONBOARDING`: when `true`, local and development magic links
+  complete immediately and sessions bypass the first-login profile redirect,
+  without changing stored profile data. The setting is ignored in staging and
+  production. Use it only for disposable automated-evaluation environments.
 - `CLOUDFLARE_ACCOUNT_ID` and `R2_BUCKET_NAME`: non-secret identifiers used to
   generate direct-upload URLs.
 

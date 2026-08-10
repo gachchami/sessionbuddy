@@ -13,6 +13,11 @@ branded browser 404/500 recovery pages, request IDs, observability, containerize
 development, editable account profiles, browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
 
+Disposable local and development deployments may explicitly bypass the
+magic-link confirmation and first-login profile redirect for automated
+evaluation. Stored profile completion remains truthful, and staging and
+production ignore the setting.
+
 ## CFP management
 
 Implemented: program creation, browser-managed text, choice, checkbox, phone,

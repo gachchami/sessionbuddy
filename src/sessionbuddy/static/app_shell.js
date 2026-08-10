@@ -128,7 +128,14 @@
           body: "{}"
         });
         location.assign("/");
-      } catch (_) {
+      } catch (error) {
+        // A 401 (session already gone) means the user is, for all practical
+        // purposes, signed out already; retrying can never succeed, so send
+        // them home rather than trapping them in a retry loop.
+        if (error && error.status === 401) {
+          location.assign("/");
+          return;
+        }
         signOut.disabled = false;
         signOut.textContent = "Try sign out again";
       }
@@ -330,7 +337,20 @@
       if (event.target.closest("a")) closeNavigation();
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeNavigation();
+      if (event.key !== "Escape") return;
+      closeNavigation();
+      const openAccount = document.querySelector("details.sb-account[open]");
+      if (openAccount) {
+        openAccount.removeAttribute("open");
+        const summary = openAccount.querySelector("summary");
+        if (summary) summary.focus();
+      }
+    });
+    document.addEventListener("click", (event) => {
+      const openAccount = document.querySelector("details.sb-account[open]");
+      if (openAccount && !openAccount.contains(event.target)) {
+        openAccount.removeAttribute("open");
+      }
     });
 
     shell.className = "sb-app-shell";

@@ -940,7 +940,11 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             json={"email": "reviewer@example.com", "role": "evaluator"},
         )
         assert temporary.status_code == 201
-        assert temporary.json()["accept_url"].startswith("https://test/auth/verify?token=")
+        # The one-time acceptance link is delivered only by email — never in
+        # the API response, where the inviter could use it to sign in as the
+        # invitee.
+        assert "accept_url" not in temporary.json()
+        assert _token(connection, "reviewer@example.com")
         listed = await client.get(f"/api/v1/admin/events/{event_id}/invitations")
         assert listed.json()["data"][0]["id"] == temporary.json()["id"]
         assert "accept_url" not in listed.json()["data"][0]
@@ -950,7 +954,15 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             json={},
         )
         assert resent.status_code == 200
-        assert resent.json()["accept_url"] != temporary.json()["accept_url"]
+        assert "accept_url" not in resent.json()
+        resend_rows = connection.execute(
+            """SELECT html_body FROM communication_messages
+               WHERE recipient_email='reviewer@example.com'"""
+        ).fetchall()
+        resend_tokens = {
+            re.search(r"token=([^\"<]+)", str(row[0])).group(1) for row in resend_rows
+        }
+        assert len(resend_tokens) == 2  # resend minted a fresh link
         revoked = await client.delete(
             f"/api/v1/admin/events/{event_id}/invitations/{temporary.json()['id']}",
             headers=headers,
@@ -963,7 +975,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
         )
         assert invitation.status_code == 201
         accepted = await client.post(
-            invitation.json()["accept_url"],
+            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
             follow_redirects=False,
         )
         assert accepted.status_code == 303

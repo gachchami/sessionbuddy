@@ -9,8 +9,10 @@ and GET-does-not-consume magic links.
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -987,3 +989,53 @@ def test_sbek_helper_completes_the_confirmation_page() -> None:
     assert "sbek_auth_link.mjs" in launcher
     assert 'form[action^="/auth/verify"]' in helper
     assert "storageState" in helper
+
+
+def test_run_sbek_auth_invokes_eval_kit_paste_link(tmp_path: Path) -> None:
+    eval_root = tmp_path / "eval"
+    (eval_root / "src").mkdir(parents=True)
+    (eval_root / "src" / "cli.ts").write_text("", encoding="utf-8")
+    (eval_root / "package.json").write_text("{}", encoding="utf-8")
+
+    capture = tmp_path / "docker-arguments.txt"
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    fake_docker = executable_dir / "docker"
+    fake_docker.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$@" > "$SBEK_TEST_CAPTURE"\n',
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    target = "https://sessionbuddy-development.example.test"
+    environment = {
+        **os.environ,
+        "PATH": f"{executable_dir}:{os.environ['PATH']}",
+        "SBEK_ROOT": str(eval_root),
+        "SBEK_TARGET_URL": target,
+        "SBEK_TEST_CAPTURE": str(capture),
+    }
+
+    completed = subprocess.run(  # noqa: S603 - fixed repository script under test
+        [str(PROJECT_ROOT / "scripts" / "run_sbek.sh"), "auth", "organizer"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    arguments = capture.read_text(encoding="utf-8").splitlines()
+    assert arguments[:3] == ["run", "--rm", "-it"]
+    assert arguments[-10:] == [
+        "./node_modules/.bin/tsx",
+        "src/cli.ts",
+        "auth",
+        "--persona",
+        "organizer",
+        "--url",
+        target,
+        "--at",
+        "/sign-in",
+        "--paste-link",
+    ]

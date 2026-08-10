@@ -1692,39 +1692,16 @@
       "EvaluationAssignmentList": {
         "additionalProperties": false,
         "properties": {
-          "completed_count": {
-            "minimum": 0.0,
-            "title": "Completed Count",
-            "type": "integer"
-          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/EvaluationAssignmentView"
             },
             "title": "Data",
             "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "total": {
-            "minimum": 0.0,
-            "title": "Total",
-            "type": "integer"
           }
         },
         "required": [
-          "data",
-          "total",
-          "completed_count"
+          "data"
         ],
         "title": "EvaluationAssignmentList",
         "type": "object"
@@ -2179,17 +2156,6 @@
             "title": "Event Id",
             "type": "string"
           },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
           "round_id": {
             "title": "Round Id",
             "type": "string"
@@ -2206,11 +2172,6 @@
             ],
             "title": "Status",
             "type": "string"
-          },
-          "submission_count": {
-            "minimum": 0.0,
-            "title": "Submission Count",
-            "type": "integer"
           },
           "submissions": {
             "items": {
@@ -2229,7 +2190,6 @@
           "completed_count",
           "average_rating",
           "submissions",
-          "submission_count",
           "evaluators",
           "conflicts"
         ],
@@ -3753,62 +3713,6 @@
           "role"
         ],
         "title": "InvitationCreate",
-        "type": "object"
-      },
-      "InvitationCreatedView": {
-        "properties": {
-          "accept_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Accept Url"
-          },
-          "email": {
-            "title": "Email",
-            "type": "string"
-          },
-          "event_id": {
-            "title": "Event Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "role": {
-            "enum": [
-              "organization_admin",
-              "event_admin",
-              "evaluator",
-              "speaker"
-            ],
-            "title": "Role",
-            "type": "string"
-          },
-          "status": {
-            "default": "pending",
-            "enum": [
-              "pending",
-              "accepted",
-              "revoked",
-              "expired"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "event_id",
-          "email",
-          "role"
-        ],
-        "title": "InvitationCreatedView",
         "type": "object"
       },
       "InvitationList": {
@@ -7705,32 +7609,6 @@
               "title": "Round Id",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "title": "Limit",
-              "type": "integer"
-            }
           }
         ],
         "responses": {
@@ -9779,7 +9657,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationCreatedView"
+                  "$ref": "#/components/schemas/InvitationView"
                 }
               }
             },
@@ -9874,7 +9752,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationCreatedView"
+                  "$ref": "#/components/schemas/InvitationView"
                 }
               }
             },

@@ -12,6 +12,7 @@ from pathlib import Path
 from tests.security.test_production_identity_flow import (
     _client,
     _deployment_key,
+    _token,
     production_environment,  # noqa: F401 - pytest fixture
 )
 
@@ -28,10 +29,6 @@ EVENT_PAYLOAD = {
 }
 
 
-def _accept_token(accept_url: str) -> str:
-    match = re.search(r"token=([^&]+)", accept_url)
-    assert match is not None, accept_url
-    return match.group(1)
 
 
 async def _bootstrap_admin(client, connection: sqlite3.Connection):
@@ -67,10 +64,15 @@ def _mutation(csrf: str) -> dict[str, str]:
     return {"origin": "https://test", "x-csrf-token": csrf}
 
 
-async def _accept_invitation(client, accept_url: str) -> dict[str, object]:
-    """Accept an invitation in the given fresh browser; return its session."""
+async def _accept_invitation(client, connection, email: str) -> dict[str, object]:
+    """Accept the latest emailed invitation link in a fresh browser.
+
+    The acceptance link is intentionally NOT part of the invitation API
+    response (it would let the inviter sign in as the invitee), so tests
+    read it from the queued invitation email like a real invitee would.
+    """
     confirmed = await client.post(
-        f"/auth/verify?token={_accept_token(accept_url)}", follow_redirects=False
+        f"/auth/verify?token={_token(connection, email)}", follow_redirects=False
     )
     assert confirmed.status_code == 303, confirmed.text
     session = await client.get("/api/v1/auth/session")
@@ -97,10 +99,10 @@ async def test_second_event_admin_can_manage_but_not_escalate(
             json={"email": "helper@example.com", "role": "event_admin"},
         )
         assert invited.status_code == 201, invited.text
-        assert invited.json()["accept_url"]
+        assert "accept_url" not in invited.json()
 
         async with _client(environment) as helper:
-            helper_session = await _accept_invitation(helper, invited.json()["accept_url"])
+            helper_session = await _accept_invitation(helper, connection, "helper@example.com")
             assert helper_session["event_access"] == [
                 {
                     "organization_id": organization_id,
@@ -173,7 +175,7 @@ async def test_organization_admin_is_invitable_and_shares_org_control(
         assert invited.status_code == 201, invited.text
 
         async with _client(environment) as co_owner:
-            session = await _accept_invitation(co_owner, invited.json()["accept_url"])
+            session = await _accept_invitation(co_owner, connection, "co-owner@example.com")
             assert session["organization_access"] == [
                 {"organization_id": organization_id, "roles": ["organization_admin"]}
             ]
@@ -305,8 +307,9 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
             headers=_mutation(csrf),
             json={"email": "former@example.com", "role": "organization_admin"},
         )
+        assert co_owner_invite.status_code == 201, co_owner_invite.text
         async with _client(environment) as former:
-            await _accept_invitation(former, co_owner_invite.json()["accept_url"])
+            await _accept_invitation(former, connection, "former@example.com")
         # Offboard the co-owner (no dedicated endpoint yet: direct revocation).
         connection.execute(
             """UPDATE organization_memberships SET status='revoked',revoked_at_ms=1
@@ -324,8 +327,9 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
             headers=_mutation(csrf),
             json={"email": "helper@example.com", "role": "event_admin"},
         )
+        assert helper_invite.status_code == 201, helper_invite.text
         async with _client(environment) as helper:
-            helper_session = await _accept_invitation(helper, helper_invite.json()["accept_url"])
+            helper_session = await _accept_invitation(helper, connection, "helper@example.com")
             speaker_invite = await helper.post(
                 f"/api/v1/admin/events/{event_id}/invitations",
                 headers=_mutation(helper_session["csrf_token"]),
@@ -337,7 +341,7 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
             )
             assert speaker_invite.status_code == 201, speaker_invite.text
         async with _client(environment) as former:
-            session = await _accept_invitation(former, speaker_invite.json()["accept_url"])
+            session = await _accept_invitation(former, connection, "former@example.com")
             # Reactivated as a speaker only — the admin role did not return.
             assert session["organization_access"] == []
             assert session["event_access"] == [
@@ -374,8 +378,9 @@ async def test_event_admin_cannot_manage_org_admin_invitations(
             headers=_mutation(csrf),
             json={"email": "helper@example.com", "role": "event_admin"},
         )
+        assert helper_invite.status_code == 201, helper_invite.text
         async with _client(environment) as helper:
-            helper_session = await _accept_invitation(helper, helper_invite.json()["accept_url"])
+            helper_session = await _accept_invitation(helper, connection, "helper@example.com")
             helper_headers = _mutation(helper_session["csrf_token"])
             resent = await helper.post(
                 f"/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
@@ -562,8 +567,9 @@ async def test_events_list_filters_event_admins_in_sql(
             headers=_mutation(csrf),
             json={"email": "helper@example.com", "role": "event_admin"},
         )
+        assert invited.status_code == 201, invited.text
         async with _client(environment) as helper:
-            await _accept_invitation(helper, invited.json()["accept_url"])
+            await _accept_invitation(helper, connection, "helper@example.com")
             listed = await helper.get(
                 f"/api/v1/admin/organizations/{organization_id}/events"
             )
@@ -646,8 +652,9 @@ async def test_organization_metrics_are_aggregated_and_role_scoped(
             headers=_mutation(csrf),
             json={"email": "helper@example.com", "role": "event_admin"},
         )
+        assert invited.status_code == 201, invited.text
         async with _client(environment) as helper:
-            await _accept_invitation(helper, invited.json()["accept_url"])
+            await _accept_invitation(helper, connection, "helper@example.com")
             scoped = await helper.get(
                 f"/api/v1/admin/organizations/{organization_id}/metrics"
             )

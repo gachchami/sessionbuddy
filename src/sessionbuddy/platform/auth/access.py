@@ -359,10 +359,6 @@ class InvitationView(BaseModel):
     status: Literal["pending", "accepted", "revoked", "expired"] = "pending"
 
 
-class InvitationCreatedView(InvitationView):
-    accept_url: str | None = None
-
-
 class InvitationList(BaseModel):
     data: list[InvitationView]
 
@@ -1866,13 +1862,13 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
 
 @access_router.post(
     "/api/v1/admin/events/{event_id}/invitations",
-    response_model=InvitationCreatedView,
+    response_model=InvitationView,
     status_code=201,
     tags=["administration"],
 )
 async def create_invitation(
     event_id: str, body: InvitationCreate, request: Request
-) -> InvitationCreatedView:
+) -> InvitationView:
     db = database(request)
     event = row_mapping(
         await db.prepare(
@@ -1955,7 +1951,7 @@ async def create_invitation(
         )
     )
     await audit.execute()
-    accept_url = await _issue_invitation_link(
+    await _issue_invitation_link(
         request,
         invitation_id=str(row["id"]),
         organization_id=str(event["organization_id"]),
@@ -1965,7 +1961,7 @@ async def create_invitation(
         role=body.role,
         now=now,
     )
-    return InvitationCreatedView(**row, accept_url=accept_url)
+    return InvitationView(**row)
 
 
 async def _issue_invitation_link(
@@ -1978,13 +1974,19 @@ async def _issue_invitation_link(
     normalized_email: str,
     role: InvitationRole,
     now: int,
-) -> str | None:
-    """Create a short-lived, one-time acceptance link and queue its delivery."""
+) -> None:
+    """Create a short-lived, one-time acceptance link and queue its delivery.
+
+    The link is delivered ONLY by email to the invitee. It is never returned
+    to the caller: an acceptance link signs the invitee in, so exposing it to
+    the inviting administrator would let them accept the invitation as the
+    invitee.
+    """
     base = str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip("/")
     parsed = urlparse(base)
     is_local = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
     if parsed.scheme != "https" and not is_local:
-        return None
+        return
     destination = {
         "speaker": "/speaker",
         "evaluator": "/reviews",
@@ -2050,7 +2052,6 @@ async def _issue_invitation_link(
     queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
     if queue is not None:
         await queue.send({"schema_version": 1, "message_id": message_id})
-    return accept_url
 
 
 async def _managed_event(request: Request, event_id: str, *, mutation: bool):
@@ -2096,12 +2097,12 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
 
 @access_router.post(
     "/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
-    response_model=InvitationCreatedView,
+    response_model=InvitationView,
     tags=["administration"],
 )
 async def resend_invitation(
     event_id: str, invitation_id: str, request: Request
-) -> InvitationCreatedView:
+) -> InvitationView:
     db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
     now = utc_now_ms()
     row = row_mapping(
@@ -2125,7 +2126,7 @@ async def resend_invitation(
             mutation=True,
         )
     role: InvitationRole = row["role"]
-    accept_url = await _issue_invitation_link(
+    await _issue_invitation_link(
         request,
         invitation_id=invitation_id,
         organization_id=organization_id,
@@ -2152,7 +2153,7 @@ async def resend_invitation(
         )
     )
     await audit.execute()
-    return InvitationCreatedView(**row, accept_url=accept_url)
+    return InvitationView(**row)
 
 
 @access_router.delete(

@@ -14,13 +14,6 @@
     node.append(summary);
     return node;
   }
-  function showInvitationLink(invitation) {
-    const result = byId("invite-result");
-    const input = byId("invite-url");
-    if (!invitation.accept_url) { result.hidden = true; input.value = ""; return; }
-    input.value = invitation.accept_url;
-    result.hidden = false;
-  }
   function destructiveButton(label, confirmLabel, action) {
     // Removing access is destructive: require a second, explicit click and
     // surface failures instead of silently doing nothing.
@@ -79,8 +72,7 @@
         resend.addEventListener("click", async () => {
           resend.disabled = true;
           try {
-            const refreshed = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}/resend`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: "{}" });
-            showInvitationLink(refreshed);
+            await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}/resend`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: "{}" });
             byId("status").textContent = `A new link was sent to ${invitation.email}.`;
           } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); }
           finally { resend.disabled = false; }
@@ -111,8 +103,8 @@
     const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(form));
     try {
-      const invitation = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) }) });
-      form.reset(); showInvitationLink(invitation); byId("status").textContent = "Invitation created and queued for delivery."; await load();
+      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) }) });
+      form.reset(); byId("status").textContent = "Invitation created and emailed to the invitee."; await load();
     } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").focus(); }
   });
   const role = byId("invite-form").elements.role;
@@ -133,11 +125,6 @@
   role.addEventListener("change", () => {
     speakerDetails.hidden = role.value !== "speaker";
     speakerDetails.querySelector('[name="display_name"]').required = role.value === "speaker";
-  });
-  byId("copy-invite").addEventListener("click", async () => {
-    const input = byId("invite-url");
-    try { await navigator.clipboard.writeText(input.value); byId("status").textContent = "Invitation link copied."; }
-    catch (_) { input.focus(); input.select(); byId("status").textContent = "Copy the selected invitation link."; }
   });
   const inviteDialog = byId("invite-dialog");
   byId("open-invite").addEventListener("click", () => inviteDialog.showModal());
