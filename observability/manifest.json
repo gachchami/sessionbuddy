@@ -218,6 +218,19 @@
       ],
       "runbook": "docs/debugging-runbook.md#agenda"
     },
+    "GET /api/v1/admin/events/{event_id}/agenda/tracks": {
+      "owner": "agenda",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-list-agenda-tracks",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#agenda"
+    },
     "PATCH /api/v1/admin/events/{event_id}/agenda/tracks/{track_id}": {
       "owner": "agenda",
       "slo": {
@@ -412,6 +425,19 @@
         "api-explorer"
       ],
       "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/speakers": {
+      "owner": "speaker-onboarding",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-list-organization-speakers",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "PATCH /api/v1/admin/organizations/{organization_id}": {
       "owner": "identity",

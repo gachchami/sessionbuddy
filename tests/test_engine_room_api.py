@@ -29,7 +29,7 @@ async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
     assert "Plan your conference program in one place" in response.text
     assert 'href="/admin"' in response.text
     assert 'href="/speaker"' in response.text
-    assert 'href="/engine-room"' in response.text
+    assert 'href="/engine-room"' not in response.text
 
 
 async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:

@@ -6,7 +6,7 @@ STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 def test_global_navigation_is_separate_from_the_scrollable_event_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    assert '"sb-sidebar__group sb-sidebar__primary"' in javascript
+    assert "`sb-sidebar__group sb-sidebar__primary${organizerWorkspace" in javascript
     assert '"sb-sidebar__group sb-sidebar__event"' in javascript
     assert "sidebar.append(primaryGroup);" in javascript
     assert "sidebar.append(eventNav(currentEventId))" in javascript
@@ -18,6 +18,11 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
         in javascript
     )
     assert "const globalNav" in javascript
+    assert 'if (organizerWorkspace) {' in javascript
+    assert 'Boolean(currentEventId) || section === "events"' in javascript
+    assert "if (!organizerWorkspace || currentEventId) sidebar.append(brand);" in javascript
+    assert 'topbar.classList.add("sb-topbar--event")' in javascript
+    assert 'make("span", undefined, "sb-topbar__brand-space")' in javascript
 
 
 def test_global_pages_use_the_approved_horizontal_navigation() -> None:
@@ -25,10 +30,34 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
 
     assert ".sb-shell-global .sb-sidebar { display: none; }" in stylesheet
     assert ".sb-global-nav" in stylesheet
+    assert ".sb-sidebar__mobile-global { display: none; }" in stylesheet
+    assert ".sb-sidebar__mobile-global { display: block; }" in stylesheet
     primary_rule = stylesheet.split(".sb-sidebar__primary {", 1)[1].split("}", 1)[0]
     assert "border:" in primary_rule
     assert "border-radius:" in primary_rule
     assert "background:" in primary_rule
+
+
+def test_landing_uses_one_role_aware_dashboard_entry() -> None:
+    landing = (STATIC / "landing.html").read_text(encoding="utf-8")
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    primary_navigation = landing.split(
+        '<nav class="primary-nav" aria-label="Primary navigation">', 1
+    )[1].split("</nav>", 1)[0]
+    hero_actions = landing.split('<div class="hero-actions">', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert "Speaker portal" not in primary_navigation
+    assert "Platform status" not in primary_navigation
+    assert "Speaker portal" not in hero_actions
+    assert 'const label = "Open dashboard"' in javascript
+    assert 'return "/admin"' in javascript
+    assert 'return "/speaker"' in javascript
+    assert 'return "/reviews"' in javascript
+    assert 'navLink("Organizer dashboard", "/admin"' in javascript
+    assert 'navLink("Reviewer dashboard", "/reviews"' in javascript
+    assert 'navLink("Speaker dashboard", "/speaker"' in javascript
 
 
 def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:

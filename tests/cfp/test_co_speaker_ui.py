@@ -24,13 +24,13 @@ def test_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> Non
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
-    assert "Co-speakers are optional" in script
+    assert "Co-speakers are optional" in page
     assert 'make("strong", "Co-speakers")' in script
     assert "Name and email for each additional presenter" in script
     assert 'make("span", "Optional")' in script
     assert 'make("span", "Repeatable")' in script
     assert "up to 10 co-speakers" in script
-    assert "admin-programs.js?v=15" in page
+    assert "admin-programs.js?v=19" in page
 
 
 def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:

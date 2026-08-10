@@ -17,7 +17,7 @@
   }
 
   function cardLink(title, href, eyebrow, summary, badge) {
-    const card = make("article", undefined, "entity-card");
+    const card = make("article", undefined, "entity-card organizer-card organizer-speaker-card");
     const top = make("div", undefined, "entity-card__top");
     top.append(make("span", eyebrow, "eyebrow"));
     if (badge) top.append(make("span", badge, "badge"));
@@ -33,11 +33,89 @@
     return card;
   }
 
-  function formatDate(event) {
+  function formatEventDateTime(event) {
     try {
-      return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: event.time_zone })
-        .format(new Date(event.starts_at_ms));
-    } catch (_) { return "Date unavailable"; }
+      const formatter = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: event.time_zone
+      });
+      const start = new Date(event.starts_at_ms);
+      const end = new Date(event.ends_at_ms);
+      return typeof formatter.formatRange === "function"
+        ? formatter.formatRange(start, end)
+        : `${formatter.format(start)} – ${formatter.format(end)}`;
+    } catch (_) { return "Date and time unavailable"; }
+  }
+
+  function deliveryModeLabel(mode) {
+    return { in_person: "In person", virtual: "Virtual", hybrid: "Hybrid" }[mode]
+      || String(mode || "Event").replaceAll("_", " ");
+  }
+
+  function eventInitials(name) {
+    return String(name || "Event")
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase();
+  }
+
+  function eventCard(event) {
+    const href = `/admin/events/${encodeURIComponent(event.id)}`;
+    const card = make("article", undefined, "event-visual-card organizer-card organizer-event-card");
+    if (/^#[0-9a-f]{6}$/i.test(event.accent_color || "")) {
+      card.style.setProperty("--event-accent", event.accent_color);
+    }
+
+    const media = make("div", undefined, "event-visual-card__media");
+    const placeholder = make("span", eventInitials(event.name), "event-visual-card__placeholder");
+    placeholder.setAttribute("aria-hidden", "true");
+    media.append(placeholder);
+    if (event.cover_image_url) {
+      const cover = make("img", undefined, "event-visual-card__cover");
+      cover.src = event.cover_image_url;
+      cover.alt = "";
+      cover.loading = "lazy";
+      cover.decoding = "async";
+      cover.addEventListener("error", () => cover.remove(), { once: true });
+      media.append(cover);
+    }
+    if (event.logo_url) {
+      const logo = make("img", undefined, "event-visual-card__logo");
+      logo.src = event.logo_url;
+      logo.alt = "";
+      logo.loading = "lazy";
+      logo.decoding = "async";
+      logo.addEventListener("error", () => logo.remove(), { once: true });
+      media.append(logo);
+    }
+
+    const body = make("div", undefined, "event-visual-card__body");
+    const top = make("div", undefined, "event-visual-card__top");
+    top.append(make("span", event.organization_name, "eyebrow"));
+    top.append(make("span", event.status, "badge"));
+    const heading = make("h3");
+    const title = make("a", event.name);
+    title.href = href;
+    heading.append(title);
+
+    const details = make("div", undefined, "event-visual-card__details");
+    details.append(
+      make("p", formatEventDateTime(event), "event-visual-card__date"),
+      make("p", [event.location, deliveryModeLabel(event.delivery_mode)].filter(Boolean).join(" · "))
+    );
+    const zone = make("span", event.time_zone, "event-visual-card__zone");
+    details.firstElementChild.append(" ", zone);
+
+    const open = make("a", "Open event →", "event-visual-card__action");
+    open.href = href;
+    open.setAttribute("aria-label", `Open ${event.name}`);
+    body.append(top, heading, details, open);
+    card.append(media, body);
+    return card;
   }
 
   async function loadDashboard() {
@@ -64,13 +142,7 @@
 
     const eventList = byId("event-list");
     if (events.length) {
-      eventList.replaceChildren(...events.map((event) => cardLink(
-        event.name,
-        `/admin/events/${encodeURIComponent(event.id)}`,
-        event.organization_name,
-        `${formatDate(event)} · ${event.time_zone}`,
-        event.status
-      )));
+      eventList.replaceChildren(...events.map(eventCard));
     } else {
       const empty = make("p", "No events yet. Create the first event to begin.", "empty");
       if (state.organizations.length) {
@@ -107,6 +179,8 @@
 
   async function initialize() {
     state.session = await api("/api/v1/auth/session");
+    const name = state.session.display_name || state.session.email?.split("@")[0] || "there";
+    byId("dashboard-greeting").textContent = `Welcome back, ${name}`;
     await loadDashboard();
   }
 

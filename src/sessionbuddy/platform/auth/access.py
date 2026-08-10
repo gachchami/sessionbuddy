@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import re
 from email.headerregistry import Address
 from html import escape
 from typing import Literal
@@ -38,6 +39,16 @@ _EVENT_LOGO_RULES = {
 }
 _EVENT_LOGO_MAX_BYTES = 2 * 1024 * 1024
 _EVENT_IMAGE_MEDIA_TYPES = frozenset(_EVENT_LOGO_RULES)
+_IANA_TIME_ZONE = re.compile(
+    r"^(?:UTC|[A-Za-z][A-Za-z0-9._+-]*(?:/[A-Za-z0-9][A-Za-z0-9._+-]*)+)$"
+)
+
+
+def _validated_time_zone(value: str) -> str:
+    """Require an explicit IANA-style zone, never an ambiguous abbreviation or offset."""
+    if not _IANA_TIME_ZONE.fullmatch(value) or ".." in value:
+        raise ValueError("time_zone must be UTC or an IANA time zone such as Asia/Kolkata")
+    return value
 
 _SETUP_COMPLETED_SQL = """SELECT singleton_key
 FROM instance_setup
@@ -261,6 +272,11 @@ class BootstrapCreate(BaseModel):
     def validate_admin_email(cls, value: str) -> str:
         return _validated_email(value)
 
+    @field_validator("time_zone")
+    @classmethod
+    def validate_event_time_zone(cls, value: str | None) -> str | None:
+        return _validated_time_zone(value) if value is not None else None
+
     @model_validator(mode="after")
     def validate_optional_event(self) -> "BootstrapCreate":
         values = (
@@ -418,6 +434,11 @@ class EventCreate(BaseModel):
     website_url: str | None = Field(default=None, max_length=2000)
     email_sender_name: str | None = Field(default=None, max_length=200)
     email_reply_to: str | None = Field(default=None, max_length=320)
+
+    @field_validator("time_zone")
+    @classmethod
+    def validate_event_time_zone(cls, value: str) -> str:
+        return _validated_time_zone(value)
 
     @field_validator("website_url")
     @classmethod

@@ -4,56 +4,43 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=19">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
-  <script src="/admin/events/assets/events.js?v=12" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
+  <script src="/admin/events/assets/events.js?v=15" defer></script>
 </head>
-<body class="app-body">
+<body class="app-body organizer-page organizer-page--events">
   <a class="skip-link" href="#main">Skip to event management</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading page-heading--compact">
+  <main id="main" class="shell page organizer-main" tabindex="-1">
+    <div class="page-heading page-heading--compact organizer-hero">
       <div>
+        <p class="eyebrow">Events · <span id="organization-title">Loading…</span></p>
         <h1>Events</h1>
         <p class="lede">Create events and keep their details up to date.</p>
       </div>
-      <button id="new-event" type="button">Create event</button>
+      <div class="page-heading__actions">
+        <label id="organization-picker" class="compact-field">Organization<select name="organization_id" id="organization" required></select></label>
+        <button id="new-event" type="button">Create event</button>
+      </div>
     </div>
 
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1">Loading events…</div>
 
-    <section class="context-bar" aria-labelledby="organization-title">
-      <div class="context-bar__identity">
-        <div><span>Organization</span><strong id="organization-title">Loading…</strong></div>
-      </div>
-      <label id="organization-picker" class="compact-field">Switch organization<select name="organization_id" id="organization" required></select></label>
-      <button id="edit-organization" type="button" class="button secondary compact-button">Edit</button>
-    </section>
-
-    <section class="directory-section directory-section--primary" aria-labelledby="event-list-title">
+    <section class="directory-section directory-section--primary organizer-section organizer-section--events" aria-labelledby="event-list-title">
       <div class="section-heading">
         <div><h2 id="event-list-title">All events</h2></div>
         <span id="event-count" class="badge">—</span>
       </div>
-      <div id="event-list" class="entity-grid event-grid"><p class="empty">Loading your events…</p></div>
+      <div class="event-management-toolbar">
+        <div class="event-filter-tabs" role="group" aria-label="Filter events"><button type="button" data-event-filter="all" aria-pressed="true">All</button><button type="button" data-event-filter="active" aria-pressed="false">Active</button><button type="button" data-event-filter="draft" aria-pressed="false">Drafts</button><button type="button" data-event-filter="past" aria-pressed="false">Past</button></div>
+        <label class="event-search"><span class="sr-only">Search events</span><input id="event-search" type="search" placeholder="Search events…" autocomplete="off"></label>
+      </div>
+      <div id="event-list" class="entity-grid event-grid event-management-list"><p class="empty">Loading your events…</p></div>
     </section>
 
-    <dialog id="organization-dialog" class="form-dialog" aria-labelledby="organization-dialog-title">
-      <div class="dialog-heading">
-        <div><h2 id="organization-dialog-title">Edit organization name</h2><p class="result">This name appears across all events.</p></div>
-        <button id="close-organization" type="button" class="icon-button" aria-label="Close organization settings">×</button>
-      </div>
-      <form id="organization-form">
-        <input name="organization_id" type="hidden">
-        <label>Organization name<input name="name" maxlength="200" required></label>
-        <input name="version" type="hidden">
-        <div class="dialog-actions"><button type="button" id="cancel-organization" class="secondary">Cancel</button><button>Save changes</button></div>
-      </form>
-    </dialog>
-
-    <dialog id="event-dialog" class="form-dialog form-dialog--wide" aria-labelledby="event-form-heading">
+    <dialog id="event-dialog" class="form-dialog form-dialog--wide organizer-dialog organizer-dialog--event" aria-labelledby="event-form-heading">
       <div class="dialog-heading">
         <div><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Fields <span class="required-marker-group">marked <span class="required-marker" aria-hidden="true">*</span></span> are required.</p></div>
         <button id="close-event-dialog" type="button" class="icon-button" aria-label="Close event form">×</button>

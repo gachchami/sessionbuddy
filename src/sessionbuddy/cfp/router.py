@@ -34,6 +34,7 @@ from .models import (
     CoSpeakerInvitationView,
     CoSpeakerView,
     FormPublish,
+    FormRoutingRule,
     FormUpdate,
     OwnedSubmissionList,
     PrivateSubmissionView,
@@ -386,21 +387,6 @@ def _validate_cfp_deadline(closes_at_ms: int | None, event_starts_at_ms: int) ->
         )
 
 
-def _validate_cfp_opening(
-    opens_at_ms: int | None, now_ms: int, event_starts_at_ms: int
-) -> None:
-    if opens_at_ms is not None and opens_at_ms < now_ms:
-        raise HTTPException(
-            status_code=422,
-            detail="The Call for Proposals opening time cannot be in the past.",
-        )
-    if opens_at_ms is not None and opens_at_ms >= event_starts_at_ms:
-        raise HTTPException(
-            status_code=422,
-            detail="The Call for Proposals must open before the event starts.",
-        )
-
-
 @cfp_router.post(
     "/api/v1/admin/events/{event_id}/cfp/publish",
     response_model=PublishedFormView,
@@ -434,6 +420,12 @@ async def publish_form(
         mutation=True,
     )
     _validate_cfp_deadline(body.closes_at_ms, int(event["starts_at_ms"]))
+    await _validate_form_routing_tracks(
+        db,
+        organization_id=str(event["organization_id"]),
+        event_id=event_id,
+        routing_rules=body.routing_rules,
+    )
     route_key = "POST /api/v1/admin/events/{event_id}/cfp/publish"
     fingerprint = _fingerprint(body)
     replay = await _find_replay(db, auth.actor.user_id, route_key, key)
@@ -442,7 +434,6 @@ async def publish_form(
             raise HTTPException(status_code=409)
         return await _form_by_id(db, str(replay["response_resource_id"]))
     now = utc_now_ms()
-    _validate_cfp_opening(body.opens_at_ms, now, int(event["starts_at_ms"]))
     form_id = new_id()
     existing_form = await db.prepare(
         """SELECT 1 AS found FROM call_for_speaker_forms
@@ -564,9 +555,14 @@ async def update_published_form(
     if int(current["version"]) != body.version:
         raise HTTPException(status_code=409)
     _validate_cfp_deadline(body.closes_at_ms, int(current["starts_at_ms"]))
+    await _validate_form_routing_tracks(
+        db,
+        organization_id=str(current["organization_id"]),
+        event_id=event_id,
+        routing_rules=body.routing_rules,
+    )
     form_id = str(current["id"])
     now = utc_now_ms()
-    _validate_cfp_opening(body.opens_at_ms, now, int(current["starts_at_ms"]))
     schema_json = json.dumps(
         {
             "fields": [field.model_dump() for field in body.fields],
@@ -1296,6 +1292,12 @@ async def update_submission(
         user_id=authenticated.actor.user_id,
     )
     routing = _route_submission(schema, body.answers)
+    await _validate_routed_track(
+        db,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        routing=routing,
+    )
     await (
         db.prepare(
             """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
@@ -1392,6 +1394,12 @@ async def update_submission_as_organizer(
     schema = json.loads(str(row["schema_json"]))
     _validate_submission_schema(schema, body)
     routing = _route_submission(schema, body.answers)
+    await _validate_routed_track(
+        db,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        routing=routing,
+    )
     now = utc_now_ms()
     updated = (
         await db.prepare(
@@ -1545,6 +1553,12 @@ async def create_submission(
         return await _editable_submission_by_id(db, str(replay["response_resource_id"]))
     submission_id = new_id()
     routing = _route_submission(schema, body.answers)
+    await _validate_routed_track(
+        db,
+        organization_id=str(form["organization_id"]),
+        event_id=str(form["event_id"]),
+        routing=routing,
+    )
     message_id = new_id()
     record = IdempotencyRecord(
         principal_key=principal_key,
@@ -2000,6 +2014,69 @@ def _route_submission(
         if isinstance(value, str) and value.strip():
             routed[destination] = value.strip()[:120]
     return routed
+
+
+async def _active_event_track_names(
+    db, *, organization_id: str, event_id: str
+) -> set[str]:
+    rows = result_rows(
+        await db.prepare(
+            """SELECT name FROM event_tracks
+               WHERE organization_id=?1 AND event_id=?2 AND status='active'"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
+    return {str(row["name"]) for row in rows}
+
+
+async def _validate_form_routing_tracks(
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    routing_rules: tuple[FormRoutingRule, ...],
+) -> None:
+    requested = {rule.track for rule in routing_rules if rule.track is not None}
+    if not requested:
+        return
+    active = await _active_event_track_names(
+        db, organization_id=organization_id, event_id=event_id
+    )
+    missing = sorted(requested - active)
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Choose an active track from this event: {', '.join(missing)}",
+        )
+
+
+async def _validate_routed_track(
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    routing: dict[str, str | None],
+) -> None:
+    track = routing["track"]
+    if track is None:
+        return
+    canonical_name = (
+        await db.prepare(
+            """SELECT name FROM event_tracks
+               WHERE organization_id=?1 AND event_id=?2 AND status='active'
+                 AND lower(name)=lower(?3)
+               LIMIT 1"""
+        )
+        .bind(organization_id, event_id, track)
+        .first("name")
+    )
+    if canonical_name is None:
+        raise HTTPException(
+            status_code=422,
+            detail="The selected track is not available for this event.",
+        )
+    routing["track"] = str(canonical_name)
 
 
 def _upload_references(schema: dict[str, object], answers: dict[str, object]) -> list[str]:

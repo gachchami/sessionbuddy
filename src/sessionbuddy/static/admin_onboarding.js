@@ -83,6 +83,7 @@
 
   function addTableRow(row) {
     const tr = document.createElement("tr");
+    tr.className = "organizer-task-row";
     const speaker = document.createElement("td");
     const link = make("a", row.display_name); link.href = speakerLink(row); speaker.append(link);
     tr.append(speaker);
@@ -100,6 +101,7 @@
 
   function addCard(row) {
     const item = document.createElement("li");
+    item.className = "organizer-task-card";
     const heading = document.createElement("h3");
     const speaker = make("a", row.display_name); speaker.href = speakerLink(row); heading.append(speaker); item.append(heading);
     const list = document.createElement("dl");

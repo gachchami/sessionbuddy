@@ -4,19 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=15">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
-  <script src="/account/assets/account.js?v=3" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
+  <script src="/account/assets/account.js?v=5" defer></script>
 </head>
-<body class="app-body">
+<body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page account-page" tabindex="-1">
-    <div class="page-heading"><div><h1>Account</h1><p class="lede">Profile details and access.</p></div></div>
+  <main id="main" class="shell page account-page organizer-main" tabindex="-1">
+    <div class="page-heading organizer-hero"><div><p class="eyebrow">Personal settings</p><h1>Account</h1><p class="lede">Profile details and access.</p></div></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
-    <section class="card" aria-labelledby="profile-title">
+    <section class="card organizer-panel organizer-panel--profile" aria-labelledby="profile-title">
       <h2 id="profile-title">Profile</h2>
       <form id="profile-form">
         <div class="form-grid">
@@ -30,7 +30,13 @@
         <button id="save-profile" type="submit" disabled>Save profile</button>
       </form>
     </section>
-    <section class="directory-section" aria-labelledby="access-title">
+    <section id="organization-settings" class="directory-section organizer-section organizer-section--organizations" aria-labelledby="organization-settings-title" hidden>
+      <div class="section-heading">
+        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Manage organization details shared by all events.</p></div>
+      </div>
+      <div id="organization-settings-list" class="entity-grid"></div>
+    </section>
+    <section class="directory-section organizer-section organizer-section--account-access" aria-labelledby="access-title">
       <div class="section-heading"><h2 id="access-title">Access</h2><span id="access-count" class="badge">—</span></div>
       <div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div>
     </section>

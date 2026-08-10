@@ -5,7 +5,15 @@
   const byId = (id) => document.getElementById(id);
   let csrf = "";
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
-  function item(text) { const node = document.createElement("li"); node.textContent = text; return node; }
+  function item(text) {
+    const node = document.createElement("li");
+    node.className = "organizer-access-list__item";
+    const summary = document.createElement("span");
+    summary.className = "organizer-access-list__summary";
+    summary.textContent = text;
+    node.append(summary);
+    return node;
+  }
   function showInvitationLink(invitation) {
     const result = byId("invite-result");
     const input = byId("invite-url");

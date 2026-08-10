@@ -62,6 +62,18 @@ class AgendaResourceUpdate(StrictModel):
     version: int = Field(ge=1)
 
 
+class EventTrackView(StrictModel):
+    id: str
+    name: str
+    status: Literal["active", "archived"]
+    version: int = Field(ge=1)
+
+
+class EventTrackList(StrictModel):
+    event_id: str
+    data: list[EventTrackView]
+
+
 class AgendaAutoSchedule(StrictModel):
     start_at_ms: int | None = Field(default=None, ge=0)
     session_minutes: int = Field(default=45, ge=10, le=240)

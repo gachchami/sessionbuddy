@@ -4,13 +4,51 @@
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", taskMutation: null };
+  const state = { csrf: "", timeZone: "", taskMutation: null };
 
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
   }
   const api = (path, options = {}, behavior = {}) => window.SessionBuddyApi.request(path, options, behavior);
+  async function loadEventTimeZone() {
+    const organizations = (await api("/api/v1/admin/organizations")).data;
+    const groups = await Promise.all(organizations.map(async (organization) => (
+      (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events`)).data
+    )));
+    const event = groups.flat().find((item) => item.id === eventId);
+    if (!event?.time_zone) throw new Error("The event time zone could not be loaded.");
+    return event.time_zone;
+  }
+  function partsInTimeZone(value) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: state.timeZone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).formatToParts(new Date(value));
+    return Object.fromEntries(parts
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value: part }) => [type, Number(part)]));
+  }
+  function inputMillis(value) {
+    if (!value) return null;
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) return Number.NaN;
+    const [, year, month, day, hour, minute] = match.map(Number);
+    const intended = Date.UTC(year, month - 1, day, hour, minute);
+    let timestamp = intended;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const actual = partsInTimeZone(timestamp);
+      const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute);
+      const adjustment = intended - actualAsUtc;
+      timestamp += adjustment;
+      if (adjustment === 0) break;
+    }
+    const actual = partsInTimeZone(timestamp);
+    return Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute) === intended
+      ? timestamp
+      : Number.NaN;
+  }
   function slug(value) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80); }
   function mutationHeaders() { return { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }; }
   function approvedEmbed(value) {
@@ -135,9 +173,11 @@
     const speakerIds = data.getAll("event_speaker_id").filter(Boolean);
     const label = event.currentTarget.elements.field_label;
     label.setCustomValidity(values.field_required && !String(values.field_label || "").trim() ? "Enter the required response question." : "");
+    const dueInput = event.currentTarget.elements.due_at;
+    const due = inputMillis(values.due_at);
+    dueInput.setCustomValidity(Number.isNaN(due) ? `Choose a valid local time in ${state.timeZone}.` : "");
     if (!event.currentTarget.reportValidity()) return;
     const fields = values.field_label ? [{ key: "response", label: values.field_label, type: values.field_type, required: Boolean(values.field_required), choices: [] }] : [];
-    const due = values.due_at ? new Date(values.due_at).getTime() : null;
     const payloads = speakerIds.map((eventSpeakerId) => ({ event_speaker_id: eventSpeakerId, submission_id: null, title: values.title, help_text: values.help_text, due_at_ms: due, fields }));
     const fingerprint = JSON.stringify(payloads);
     if (!state.taskMutation || state.taskMutation.fingerprint !== fingerprint) {
@@ -196,6 +236,8 @@
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");
     const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
+    state.timeZone = await loadEventTimeZone();
+    byId("task-time-zone").textContent = state.timeZone;
     try {
       const saved = JSON.parse(localStorage.getItem(`sessionbuddy:embed:${eventId}`) || "null");
       if (saved) { byId("embed-type").value = saved.type || "schedule"; byId("embed-enabled").checked = saved.enabled !== false; byId("embed-title").value = saved.title || "Event schedule"; byId("embed-height").value = saved.height || 640; }

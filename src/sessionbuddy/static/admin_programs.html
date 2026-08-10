@@ -4,27 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Call for Proposals · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=16">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
-  <script src="/product/assets/admin-programs.js?v=15" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
+  <script src="/product/assets/admin-programs.js?v=19" defer></script>
 </head>
-<body class="app-body">
+<body class="app-body cfp-page workflow-page workflow-page--cfp">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading">
+  <main id="main" class="shell page workflow-shell" tabindex="-1">
+    <div class="page-heading workflow-hero">
       <div><h1>Call for Proposals</h1><p class="lede">Publish the proposal form, then share one public link with speakers.</p></div>
       <a id="manage-access" class="button secondary" href="/admin/events" hidden>People & access</a>
     </div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
-    <section class="card cfp-link-card" aria-labelledby="cfp-link-title">
+    <section class="card cfp-link-card workflow-summary-card" aria-labelledby="cfp-link-title">
       <div class="section-heading">
         <div><p class="eyebrow">Public page</p><h2 id="cfp-link-title">Share your CFP</h2></div>
         <span id="cfp-state" class="badge">Not published</span>
       </div>
-      <p id="cfp-link-empty" class="result">Publish the proposal form to get a shareable link.</p>
+      <p id="cfp-link-empty" class="result workflow-empty-state">Publish the proposal form to get a shareable link.</p>
       <div id="cfp-link-live" class="public-link" hidden>
         <label for="cfp-url">Public CFP URL</label>
         <div class="copy-row">
@@ -38,33 +38,46 @@
         </div>
       </div>
     </section>
-    <div class="cfp-builder">
-      <details id="publish-settings" class="card action-disclosure action-disclosure--card" open>
-        <summary><span><span class="eyebrow">Event CFP</span><strong id="publish-title">Proposal form settings</strong></span></summary>
-        <p id="published-note" class="result" hidden>Changes here update the live form immediately. Existing submissions are preserved.</p>
-        <form id="publish-form">
-          <label>Public URL slug<input name="slug" placeholder="conference-2026" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" required><small>3–80 lowercase letters, numbers, and hyphens.</small></label>
-          <label>Welcome message<textarea name="welcome_text" maxlength="1000" placeholder="For example: Tell speakers what kinds of proposals you are looking for." required></textarea></label>
-          <fieldset><legend>Availability</legend><div class="form-grid">
-            <label>Opens <span class="optional">Optional</span><input name="opens_at" type="datetime-local"></label>
-            <label>Closes <span class="optional">Optional</span><input name="closes_at" type="datetime-local"></label>
-          </div><label>Submission limit <span class="optional">Optional</span><input name="submission_limit" type="number" min="1" max="1000000" placeholder="No limit"></label></fieldset>
-          <fieldset><legend>After submission</legend>
-            <label>Success heading<input name="success_title" value="Proposal received" maxlength="200" required></label>
-            <label>Success message<textarea name="success_message" maxlength="2000" required>We sent a confirmation to your email address.</textarea></label>
-            <label class="check-label"><input name="redirect_to_portal" type="checkbox" checked> Offer the speaker portal after submission</label>
-            <label>Confirmation email subject<input name="confirmation_subject" value="We received your proposal" maxlength="200" required></label>
-            <label>Confirmation email message<textarea name="confirmation_body" maxlength="4000" required>Thank you for submitting. Your proposal is now ready for review.</textarea></label>
-          </fieldset>
-          <details class="advanced-settings">
-            <summary>Advanced routing <span class="optional">Optional</span></summary>
-            <div class="advanced-settings__content"><p class="help">Organize incoming proposals automatically based on an answer.</p><div id="routing-rules"></div><button id="add-routing" class="secondary" type="button">Add routing rule</button></div>
-          </details>
-          <button disabled>Publish form</button>
+    <section id="publish-settings" class="cfp-builder workflow-stage" aria-labelledby="cfp-builder-title">
+      <div class="cfp-builder__heading">
+        <div><h2 id="cfp-builder-title">Build your proposal form</h2><p>Set what speakers see and when proposals are accepted.</p></div>
+        <span id="published-note" class="badge success" hidden>Published</span>
+      </div>
+      <div class="cfp-editor-layout">
+        <nav class="cfp-section-nav" aria-label="Proposal form sections">
+          <a href="#cfp-basics">Basics</a><a href="#cfp-availability">Availability</a><a href="#cfp-questions">Questions</a><a href="#cfp-confirmation">Confirmation</a><a href="#cfp-routing">Routing</a>
+        </nav>
+        <form id="publish-form" class="cfp-editor">
+          <section id="cfp-basics" class="cfp-editor-section workflow-step">
+            <div class="cfp-editor-section__heading"><span>1</span><div><h3>Basics</h3><p>Introduce the call and choose its public address.</p></div></div>
+            <label>Welcome message<textarea name="welcome_text" rows="4" maxlength="1000" placeholder="Tell speakers what kinds of proposals you are looking for." required></textarea></label>
+            <label>Public URL<span class="slug-field"><span id="cfp-slug-prefix" class="slug-field__prefix">/cfp/</span><input name="slug" aria-label="Public URL slug" placeholder="conference-2026" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" required></span><small>Only the final part can be changed.</small></label>
+          </section>
+          <section id="cfp-availability" class="cfp-editor-section workflow-step">
+            <div class="cfp-editor-section__heading"><span>2</span><div><h3>Availability</h3><p>Choose when proposals can be submitted.</p></div></div>
+            <p id="cfp-time-zone-context" class="time-zone-note">Time zone: <strong id="cfp-time-zone">Loading…</strong></p>
+            <div class="form-grid"><label>Opens<input name="opens_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional</small></label><label>Closes<input name="closes_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional</small></label></div>
+            <label class="cfp-short-field">Maximum proposals per speaker<input name="submission_limit" type="number" min="1" max="1000000" placeholder="No limit"><small>Optional</small></label>
+          </section>
+          <section id="cfp-questions" class="cfp-editor-section workflow-step">
+            <div class="cfp-editor-section__heading"><span>3</span><div><h3>Questions</h3><p>Collect speaker and proposal information.</p></div></div>
+            <p class="help">Speaker and proposal details are required. Co-speakers are optional.</p><div id="form-fields"></div><button id="add-field" type="button" class="secondary">+ Add question</button>
+          </section>
+          <section id="cfp-confirmation" class="cfp-editor-section workflow-step">
+            <div class="cfp-editor-section__heading"><span>4</span><div><h3>Confirmation</h3><p>Set what speakers see and receive after submitting.</p></div></div>
+            <div class="form-grid"><label>Success heading<input name="success_title" value="Proposal received" maxlength="200" required></label><label>Email subject<input name="confirmation_subject" value="We received your proposal" maxlength="200" required></label></div>
+            <label>On-screen message<textarea name="success_message" rows="3" maxlength="2000" required>We sent a confirmation to your email address.</textarea></label>
+            <label>Email message<textarea name="confirmation_body" rows="4" maxlength="4000" required>Thank you for submitting. Your proposal is now ready for review.</textarea></label>
+            <label class="check-label"><input name="redirect_to_portal" type="checkbox" checked> Show a link to the speaker portal</label>
+          </section>
+          <section id="cfp-routing" class="cfp-editor-section workflow-step">
+            <div class="cfp-editor-section__heading"><span>5</span><div><h3>Routing</h3><p>Optionally sort matching proposals automatically.</p></div></div>
+            <p class="help">Each row is one rule. Matching proposals are sent to the selected destination.</p><div id="routing-rules"></div><datalist id="event-track-options"></datalist><button id="add-routing" class="secondary" type="button">+ Add rule</button>
+          </section>
+          <div class="cfp-editor-actions"><div><strong id="publish-action-label">Ready to publish?</strong><span id="publish-result" class="result">Complete the required fields.</span></div><button disabled>Publish CFP</button></div>
         </form>
-        <div id="publish-result" class="result">Complete the form settings, then publish.</div>
-      </details>
-    </div>
+      </div>
+    </section>
   </main>
 </body>
 </html>

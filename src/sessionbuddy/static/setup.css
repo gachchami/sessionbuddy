@@ -1,18 +1,18 @@
 :root { color-scheme: light; }
-.setup-body { min-height: 100vh; background: #f7f8fa; }
+.setup-body { min-height: 100vh; background: linear-gradient(135deg,#fbf9ff 30%,#eeeaff); }
 .setup-header { min-height: 4rem; display: flex; align-items: center; padding-inline: max(1rem, calc((100vw - 64rem) / 2)); border-bottom: 1px solid #e4e7ec; background: white; }
 .setup-brand { display: inline-flex; align-items: center; gap: .65rem; color: #182230; font-weight: 750; text-decoration: none; }
-.setup-brand span { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: .5rem; background: #2563eb; color: white; font-size: .8rem; }
+.setup-brand span { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: .65rem; background: linear-gradient(135deg,#8b3ff5,#5d8cff); color: white; font-size: .8rem; box-shadow: 0 .35rem .9rem rgba(109,74,255,.2); }
 .setup-shell { width: min(64rem, calc(100% - 2rem)); min-height: calc(100vh - 4rem); display: grid; grid-template-columns: minmax(15rem,.7fr) minmax(28rem,1.3fr); gap: clamp(2rem,6vw,4.5rem); align-items: center; margin-inline: auto; padding-block: 3rem; }
 .setup-intro { color: #182230; }
-.setup-intro h1 { max-width: 12ch; font-size: clamp(2rem,4vw,2.8rem); }
+.setup-intro h1 { max-width: 12ch; font-size: clamp(2.4rem,5vw,3.75rem); letter-spacing: -.055em; }
 .setup-intro > p:not(.eyebrow) { max-width: 28rem; margin: .8rem 0 1.75rem; color: #667085; }
 .setup-intro ol { display: grid; gap: .9rem; margin: 0; padding: 0; list-style: none; }
 .setup-intro li { display: grid; grid-template-columns: 2rem 1fr; gap: .75rem; align-items: start; }
 .setup-intro li > span { width: 1.8rem; height: 1.8rem; display: grid; place-items: center; border: 1px solid #d0d5dd; border-radius: 50%; color: #475467; font-size: .75rem; font-weight: 700; }
 .setup-intro li div { display: grid; gap: .1rem; }
 .setup-intro small { color: #667085; }
-.setup-card { padding: clamp(1.25rem,4vw,2rem); border: 1px solid #e4e7ec; border-radius: .75rem; background: white; box-shadow: 0 8px 24px rgba(16,24,40,.06); }
+.setup-card { padding: clamp(1.25rem,4vw,2.25rem); border: 1px solid #d9cff8; border-radius: 1.25rem; background: rgba(255,255,255,.96); box-shadow: 0 1.75rem 5rem rgba(109,74,255,.12); }
 .setup-card .status { margin-top: 0; }
 .setup-card h2 { font-size: clamp(1.4rem,3vw,1.75rem); }
 .setup-card .field-label { min-height: 1.1rem; }

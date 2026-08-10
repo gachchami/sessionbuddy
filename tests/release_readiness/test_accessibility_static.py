@@ -89,8 +89,9 @@ def test_landing_page_has_semantic_navigation_and_role_entry_points() -> None:
     )
     assert 'class="skip-link" href="#main"' in text
     assert text.count("<h1") == 1
-    for path in ("/admin", "/reviews", "/speaker", "/engine-room"):
+    for path in ("/admin", "/reviews", "/speaker"):
         assert f'href="{path}"' in text
+    assert 'href="/engine-room"' not in text
     assert 'tabindex="1"' not in text and 'tabindex="2"' not in text
 
 

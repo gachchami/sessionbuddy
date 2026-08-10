@@ -6,7 +6,7 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, eventName: "", eventStartsAtMs: null, publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
+  const state = { context: null, csrf: null, eventName: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -52,6 +52,18 @@
     throw new Error("The event could not be loaded.");
   }
 
+  async function loadEventTracks(eventId) {
+    try {
+      const response = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/tracks`);
+      state.eventTracks = (response.data || []).map((track) => track.name);
+    } catch (_) {
+      state.eventTracks = [];
+    }
+    byId("event-track-options").replaceChildren(
+      ...state.eventTracks.map((name) => new Option(name, name))
+    );
+  }
+
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
@@ -78,28 +90,52 @@
     return input;
   }
 
-  function toEpoch(value) {
-    if (!value) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+  function partsInTimeZone(value) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: state.eventTimeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(new Date(value));
+    return Object.fromEntries(parts
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value: part }) => [type, Number(part)]));
   }
 
   function toLocalInput(value) {
     if (!value) return "";
-    const date = new Date(value);
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const parts = partsInTimeZone(value);
+    const pad = (part) => String(part).padStart(2, "0");
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
   }
 
-  function earliestOpeningMs() {
-    return Math.ceil(Date.now() / 60000) * 60000;
+  function toEpoch(value) {
+    if (!value) return null;
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) return Number.NaN;
+    const [, year, month, day, hour, minute] = match.map(Number);
+    const intended = Date.UTC(year, month - 1, day, hour, minute);
+    let timestamp = intended;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const actual = partsInTimeZone(timestamp);
+      const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute);
+      const adjustment = intended - actualAsUtc;
+      timestamp += adjustment;
+      if (adjustment === 0) break;
+    }
+    return toLocalInput(timestamp) === value ? timestamp : Number.NaN;
   }
 
   function syncAvailabilityLimits(form) {
     const opens = form.elements.opens_at;
     const closes = form.elements.closes_at;
-    opens.min = toLocalInput(earliestOpeningMs());
-    opens.max = state.eventStartsAtMs ? toLocalInput(state.eventStartsAtMs - 1) : "";
-    closes.min = opens.value ? toLocalInput(toEpoch(opens.value) + 60000) : "";
+    opens.removeAttribute("min");
+    opens.removeAttribute("max");
+    const opening = toEpoch(opens.value);
+    closes.min = Number.isFinite(opening) ? toLocalInput(opening + 60000) : "";
     closes.max = state.eventStartsAtMs ? toLocalInput(state.eventStartsAtMs - 1) : "";
   }
 
@@ -118,8 +154,8 @@
     const publishForm = byId("publish-form");
     const publishButton = publishForm.querySelector('button[type="submit"], button:not([type])');
     publishButton.disabled = !state.context;
-    publishButton.textContent = published ? "Save changes" : "Publish form";
-    byId("publish-settings").open = !published;
+    publishButton.textContent = published ? "Save changes" : "Publish CFP";
+    byId("publish-action-label").textContent = published ? "Published CFP" : "Ready to publish?";
     byId("published-note").hidden = !published;
     byId("publish-result").textContent = published
       ? "Published. Use the CFP link above, then review proposals as they arrive."
@@ -335,29 +371,48 @@
     list.replaceChildren();
     state.routingRules.forEach((rule, index) => {
       const card = make("fieldset");
+      card.className = "routing-rule";
+      card.append(make("legend", `Routing rule ${index + 1}`));
       const source = document.createElement("select");
       source.name = "routing_source";
+      source.setAttribute("aria-label", "Question");
       source.required = true;
       source.add(new Option("Choose a question", ""));
       state.fields.forEach((field) => source.add(new Option(field.label, field.key)));
       source.value = rule.source_key || "";
       const operator = document.createElement("select");
       operator.name = "routing_operator";
+      operator.setAttribute("aria-label", "Condition");
       [["Equals", "equals"], ["Does not equal", "not_equals"], ["Contains", "contains"]]
         .forEach(([label, value]) => operator.add(new Option(label, value)));
       operator.value = rule.operator || "equals";
+      const value = textInput("routing_value", rule.value || "", true);
+      value.setAttribute("aria-label", "Match value");
+      value.placeholder = "Value";
+      const destinationType = document.createElement("select");
+      destinationType.name = "routing_destination_type";
+      destinationType.setAttribute("aria-label", "Destination type");
+      [["Category", "category"], ["Track", "track"], ["Review queue", "review_queue"]]
+        .forEach(([label, choice]) => destinationType.add(new Option(label, choice)));
+      destinationType.value = rule.track ? "track" : rule.review_queue ? "review_queue" : "category";
+      const destination = textInput("routing_destination", rule[destinationType.value] || "", true);
+      destination.setAttribute("aria-label", "Destination");
+      const configureDestination = () => {
+        const isTrack = destinationType.value === "track";
+        if (isTrack) destination.setAttribute("list", "event-track-options");
+        else destination.removeAttribute("list");
+        destination.placeholder = isTrack ? "Choose a track" : destinationType.selectedOptions[0].text;
+      };
+      destinationType.addEventListener("change", configureDestination);
+      configureDestination();
       card.append(
-        make("legend", `Routing rule ${index + 1}`),
-        inputLabel("When the answer to", source),
-        inputLabel("Match", operator),
-        inputLabel("Value", textInput("routing_value", rule.value || "", true)),
-        inputLabel("Category", textInput("routing_category", rule.category || "")),
-        inputLabel("Track", textInput("routing_track", rule.track || "")),
-        inputLabel("Review queue", textInput("routing_queue", rule.review_queue || ""))
+        make("span", "When", "routing-rule__word"), source, operator, value,
+        make("span", "send to", "routing-rule__word"), destinationType, destination
       );
-      const remove = make("button", "Remove rule");
+      const remove = make("button", "−");
       remove.type = "button";
-      remove.className = "secondary";
+      remove.className = "secondary routing-rule__remove";
+      remove.setAttribute("aria-label", `Remove routing rule ${index + 1}`);
       remove.addEventListener("click", () => {
         readRoutingRules();
         state.routingRules.splice(index, 1);
@@ -369,14 +424,18 @@
   }
 
   function readRoutingRules() {
-    state.routingRules = [...byId("routing-rules").querySelectorAll("fieldset")].map((card) => ({
-      source_key: card.elements.routing_source.value.trim(),
-      operator: card.elements.routing_operator.value,
-      value: card.elements.routing_value.value.trim(),
-      category: card.elements.routing_category.value.trim() || null,
-      track: card.elements.routing_track.value.trim() || null,
-      review_queue: card.elements.routing_queue.value.trim() || null
-    }));
+    state.routingRules = [...byId("routing-rules").querySelectorAll(".routing-rule")].map((card) => {
+      const destinationType = card.elements.routing_destination_type.value;
+      const destination = card.elements.routing_destination.value.trim() || null;
+      return {
+        source_key: card.elements.routing_source.value.trim(),
+        operator: card.elements.routing_operator.value,
+        value: card.elements.routing_value.value.trim(),
+        category: destinationType === "category" ? destination : null,
+        track: destinationType === "track" ? destination : null,
+        review_queue: destinationType === "review_queue" ? destination : null
+      };
+    });
     return state.routingRules;
   }
 
@@ -387,12 +446,12 @@
     syncAvailabilityLimits(form);
     const opensAt = toEpoch(opens.value);
     const closesAt = toEpoch(closes.value);
-    if (opensAt !== null && opensAt < Date.now()) {
-      opens.setCustomValidity("Opening time cannot be in the past.");
-    } else if (opensAt !== null && opensAt >= state.eventStartsAtMs) {
-      opens.setCustomValidity("The Call for Proposals must open before the event starts.");
+    if (Number.isNaN(opensAt)) {
+      opens.setCustomValidity(`Choose a valid local time in ${state.eventTimeZone}.`);
     }
-    if (opensAt !== null && closesAt !== null && closesAt <= opensAt) {
+    if (Number.isNaN(closesAt)) {
+      closes.setCustomValidity(`Choose a valid local time in ${state.eventTimeZone}.`);
+    } else if (opensAt !== null && closesAt !== null && closesAt <= opensAt) {
       closes.setCustomValidity("Closing time must be after opening time.");
     } else if (closesAt !== null && closesAt >= state.eventStartsAtMs) {
       closes.setCustomValidity("The Call for Proposals must close before the event starts.");
@@ -421,11 +480,14 @@
     });
 
     const rules = readRoutingRules();
-    [...byId("routing-rules").querySelectorAll("fieldset")].forEach((card, index) => {
+    [...byId("routing-rules").querySelectorAll(".routing-rule")].forEach((card, index) => {
       const rule = rules[index];
       card.elements.routing_source.setCustomValidity(keys.has(rule.source_key) ? "" : "Use the key of an existing question.");
       const hasDestination = Boolean(rule.category || rule.track || rule.review_queue);
-      card.elements.routing_category.setCustomValidity(hasDestination ? "" : "Enter a category, track, or review queue.");
+      card.elements.routing_destination.setCustomValidity(hasDestination ? "" : "Choose where matching proposals should go.");
+      if (rule.track && !state.eventTracks.includes(rule.track)) {
+        card.elements.routing_destination.setCustomValidity("Choose an active track from this event.");
+      }
     });
     return form.reportValidity();
   }
@@ -434,25 +496,14 @@
     const publish = byId("publish-form");
     publish.addEventListener("input", (event) => event.target.setCustomValidity?.(""));
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
-    const submit = publish.querySelector('button[type="submit"], button:not([type])');
-    const heading = make("h3", "Form questions");
-    const help = make("p", "Speaker and proposal details are required. Co-speakers are optional. Add event-specific questions below.");
-    const fields = make("div");
-    fields.id = "form-fields";
-    const add = make("button", "Add question");
-    add.id = "add-field";
-    add.type = "button";
-    add.className = "secondary";
+    const add = byId("add-field");
     add.addEventListener("click", () => {
       readFields();
       state.fields.push({ key: `question_${state.fields.length - 3}`, type: "text", label: "New question", required: false, choices: [] });
       renderFields();
     });
-    publish.insertBefore(heading, submit);
-    publish.insertBefore(help, submit);
-    publish.insertBefore(fields, submit);
-    publish.insertBefore(add, submit);
     renderFields();
+    byId("add-routing").textContent = "+ Add rule";
     byId("add-routing").addEventListener("click", () => {
       readRoutingRules();
       state.routingRules.push({ source_key: "", operator: "equals", value: "", category: "", track: "", review_queue: "" });
@@ -471,6 +522,13 @@
       state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
       state.eventName = workspace.event_name;
       state.eventStartsAtMs = workspace.event_starts_at_ms;
+      const events = (await api(`/api/v1/admin/organizations/${encodeURIComponent(workspace.organization_id)}/events`)).data;
+      const currentEvent = events.find((item) => item.id === workspace.event_id);
+      if (!currentEvent?.time_zone) throw new Error("The event time zone could not be loaded.");
+      state.eventTimeZone = currentEvent.time_zone;
+      byId("cfp-time-zone").textContent = state.eventTimeZone;
+      byId("cfp-slug-prefix").textContent = `${location.host}/cfp/`;
+      await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
       if (state.publishedForm) loadPublishedSettings(state.publishedForm);
       else {

@@ -14,7 +14,7 @@
   const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
-  const state = { csrf: "", userId: "", submissions: [], evaluators: [] };
+  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [] };
   const prerequisites = document.createElement("p");
   prerequisites.id = "round-prerequisites";
   prerequisites.className = "help";
@@ -116,6 +116,44 @@
       onResponse: (response) => recordTelemetry(started, response)
     });
   }
+  async function loadEventTimeZone() {
+    const organizations = (await api("/api/v1/admin/organizations")).data;
+    const groups = await Promise.all(organizations.map(async (organization) => (
+      (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events`)).data
+    )));
+    const event = groups.flat().find((item) => item.id === eventId);
+    if (!event?.time_zone) throw new Error("The event time zone could not be loaded.");
+    return event.time_zone;
+  }
+  function partsInTimeZone(value) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: state.timeZone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    }).formatToParts(new Date(value));
+    return Object.fromEntries(parts
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value: part }) => [type, Number(part)]));
+  }
+  function inputMillis(value) {
+    if (!value) return null;
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) return Number.NaN;
+    const [, year, month, day, hour, minute] = match.map(Number);
+    const intended = Date.UTC(year, month - 1, day, hour, minute);
+    let timestamp = intended;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const actual = partsInTimeZone(timestamp);
+      const actualAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute);
+      const adjustment = intended - actualAsUtc;
+      timestamp += adjustment;
+      if (adjustment === 0) break;
+    }
+    const actual = partsInTimeZone(timestamp);
+    return Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute) === intended
+      ? timestamp
+      : Number.NaN;
+  }
   function detailRow(label, value) {
     const group = document.createElement("div");
     group.append(document.createElement("dt"), document.createElement("dd"));
@@ -204,6 +242,8 @@
       const session = await api("/api/v1/auth/session");
       state.csrf = session.csrf_token;
       state.userId = session.user_id;
+      state.timeZone = await loadEventTimeZone();
+      byId("round-time-zone").textContent = state.timeZone;
       const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`);
       state.submissions = result.data;
       document.body.dataset.eventId = eventId;
@@ -285,9 +325,14 @@
           ? "Recommendations must be unique."
           : "";
     recommendationInput.setCustomValidity(recommendationError);
-    const opens = form.elements.review_opens_at.value ? new Date(form.elements.review_opens_at.value).getTime() : null;
-    const closes = form.elements.review_closes_at.value ? new Date(form.elements.review_closes_at.value).getTime() : null;
-    form.elements.review_closes_at.setCustomValidity(opens !== null && closes !== null && closes <= opens ? "Review close must be after review open." : "");
+    const opens = inputMillis(form.elements.review_opens_at.value);
+    const closes = inputMillis(form.elements.review_closes_at.value);
+    form.elements.review_opens_at.setCustomValidity(Number.isNaN(opens) ? `Choose a valid local time in ${state.timeZone}.` : "");
+    form.elements.review_closes_at.setCustomValidity(Number.isNaN(closes)
+      ? `Choose a valid local time in ${state.timeZone}.`
+      : opens !== null && closes !== null && closes <= opens
+        ? "Review close must be after review open."
+        : "");
     const weights = [...form.querySelectorAll('input[name="criterion_weight"]')].map((input) => Number(input.value));
     const weightError = weights.reduce((total, value) => total + value, 0) === 100 ? "" : "Criterion weights must total 100.";
     form.querySelector('input[name="criterion_weight"]')?.setCustomValidity(weightError);
@@ -322,8 +367,8 @@
         usedKeys.add(key);
         return { key, label, weight: weights[index] };
       });
-      const reviewOpens = values.get("review_opens_at") ? new Date(String(values.get("review_opens_at"))).getTime() : null;
-      const reviewCloses = values.get("review_closes_at") ? new Date(String(values.get("review_closes_at"))).getTime() : null;
+      const reviewOpens = inputMillis(String(values.get("review_opens_at") || ""));
+      const reviewCloses = inputMillis(String(values.get("review_closes_at") || ""));
       const round = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },

@@ -12,6 +12,7 @@ body {
   display: grid;
   place-items: center;
   padding: 1.5rem;
+  background: radial-gradient(circle at 85% 15%,#e6d9ff 0,transparent 32%),#f8f7fc;
 }
 
 main {
@@ -19,8 +20,8 @@ main {
   padding: clamp(2rem, 7vw, 4rem);
   background: #fff;
   border: 1px solid #dfe3ec;
-  border-radius: 1rem;
-  box-shadow: 0 1.5rem 4rem rgba(23, 32, 51, .08);
+  border-radius: 1.35rem;
+  box-shadow: 0 1.75rem 5rem rgba(109,74,255,.12);
 }
 
 .brand {
@@ -39,12 +40,12 @@ main {
   height: 2.25rem;
   border-radius: .65rem;
   color: #fff;
-  background: #3159d9;
+  background: linear-gradient(135deg,#8b3ff5,#5d8cff);
 }
 
 .code {
   margin: 3rem 0 .5rem;
-  color: #3159d9;
+  color: #6742d7;
   font-size: .78rem;
   font-weight: 800;
   letter-spacing: .12em;

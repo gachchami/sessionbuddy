@@ -828,7 +828,7 @@
           "event_description": {
             "anyOf": [
               {
-                "maxLength": 5000,
+                "maxLength": 2000,
                 "minLength": 1,
                 "type": "string"
               },
@@ -1034,6 +1034,156 @@
           "email"
         ],
         "title": "CoSpeakerInput",
+        "type": "object"
+      },
+      "CoSpeakerInvitationCreated": {
+        "properties": {
+          "co_speaker": {
+            "$ref": "#/components/schemas/CoSpeakerView"
+          },
+          "invitation_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Url"
+          }
+        },
+        "required": [
+          "co_speaker"
+        ],
+        "title": "CoSpeakerInvitationCreated",
+        "type": "object"
+      },
+      "CoSpeakerInvitationView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Ms"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "invitation_status": {
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "removed"
+            ],
+            "title": "Invitation Status",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "role": {
+            "const": "co_speaker",
+            "default": "co_speaker",
+            "title": "Role",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "email",
+          "id",
+          "invitation_status",
+          "submission_id",
+          "proposal_title",
+          "event_name"
+        ],
+        "title": "CoSpeakerInvitationView",
+        "type": "object"
+      },
+      "CoSpeakerView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At Ms"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "invitation_status": {
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "removed"
+            ],
+            "title": "Invitation Status",
+            "type": "string"
+          },
+          "role": {
+            "const": "co_speaker",
+            "default": "co_speaker",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "email",
+          "id",
+          "invitation_status"
+        ],
+        "title": "CoSpeakerView",
         "type": "object"
       },
       "CommunicationStatus": {
@@ -2287,7 +2437,7 @@
             "type": "string"
           },
           "description": {
-            "maxLength": 5000,
+            "maxLength": 2000,
             "minLength": 1,
             "title": "Description",
             "type": "string"
@@ -2468,6 +2618,62 @@
         "title": "EventMemberView",
         "type": "object"
       },
+      "EventTrackList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EventTrackView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "data"
+        ],
+        "title": "EventTrackList",
+        "type": "object"
+      },
+      "EventTrackView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "version"
+        ],
+        "title": "EventTrackView",
+        "type": "object"
+      },
       "EventUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -2506,7 +2712,7 @@
             "type": "string"
           },
           "description": {
-            "maxLength": 5000,
+            "maxLength": 2000,
             "minLength": 1,
             "title": "Description",
             "type": "string"
@@ -3767,6 +3973,142 @@
         "title": "OrganizationList",
         "type": "object"
       },
+      "OrganizationSpeaker": {
+        "properties": {
+          "biography": {
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "job_title": {
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "participations": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSpeakerParticipation"
+            },
+            "title": "Participations",
+            "type": "array"
+          },
+          "person_id": {
+            "title": "Person Id",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "person_id",
+          "user_id",
+          "email",
+          "display_name",
+          "job_title",
+          "company",
+          "biography",
+          "location",
+          "links",
+          "version",
+          "participations"
+        ],
+        "title": "OrganizationSpeaker",
+        "type": "object"
+      },
+      "OrganizationSpeakerList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationSpeaker"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_id",
+          "data"
+        ],
+        "title": "OrganizationSpeakerList",
+        "type": "object"
+      },
+      "OrganizationSpeakerParticipation": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "selection_status": {
+            "enum": [
+              "invited",
+              "submitted",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Selection Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_name",
+          "event_speaker_id",
+          "selection_status",
+          "proposal_title"
+        ],
+        "title": "OrganizationSpeakerParticipation",
+        "type": "object"
+      },
       "OrganizationUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -3873,7 +4215,7 @@
           },
           "co_speakers": {
             "items": {
-              "$ref": "#/components/schemas/CoSpeakerInput"
+              "$ref": "#/components/schemas/CoSpeakerView"
             },
             "maxItems": 10,
             "title": "Co Speakers",
@@ -6146,7 +6488,7 @@
           },
           "co_speakers": {
             "items": {
-              "$ref": "#/components/schemas/CoSpeakerInput"
+              "$ref": "#/components/schemas/CoSpeakerView"
             },
             "maxItems": 10,
             "title": "Co Speakers",
@@ -7704,6 +8046,46 @@
       }
     },
     "/api/v1/admin/events/{event_id}/agenda/tracks": {
+      "get": {
+        "operationId": "list_event_tracks_api_v1_admin_events__event_id__agenda_tracks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTrackList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Tracks",
+        "tags": [
+          "agenda"
+        ]
+      },
       "post": {
         "operationId": "create_agenda_track_api_v1_admin_events__event_id__agenda_tracks_post",
         "parameters": [
@@ -9997,6 +10379,48 @@
         ]
       }
     },
+    "/api/v1/admin/organizations/{organization_id}/speakers": {
+      "get": {
+        "operationId": "list_organization_speakers_api_v1_admin_organizations__organization_id__speakers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSpeakerList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Organization Speakers",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
     "/api/v1/admin/submissions/{submission_id}": {
       "patch": {
         "operationId": "updateEventSubmissionAsOrganizer",
@@ -10286,6 +10710,132 @@
         "summary": "Bootstrap Tenant",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/co-speaker-invitations/{token}": {
+      "get": {
+        "operationId": "get_co_speaker_invitation_api_v1_co_speaker_invitations__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoSpeakerInvitationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Co Speaker Invitation",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/co-speaker-invitations/{token}/accept": {
+      "post": {
+        "operationId": "accept_co_speaker_invitation_api_v1_co_speaker_invitations__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoSpeakerInvitationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Co Speaker Invitation",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/co-speaker-invitations/{token}/decline": {
+      "post": {
+        "operationId": "decline_co_speaker_invitation_api_v1_co_speaker_invitations__token__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoSpeakerInvitationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline Co Speaker Invitation",
+        "tags": [
+          "submissions"
         ]
       }
     },
@@ -10899,6 +11449,135 @@
           }
         },
         "summary": "Update Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}": {
+      "delete": {
+        "operationId": "remove_co_speaker_api_v1_forms__slug__submissions__submission_id__co_speakers__co_speaker_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "co_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Co Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Co Speaker",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}/resend": {
+      "post": {
+        "operationId": "resend_co_speaker_invitation_api_v1_forms__slug__submissions__submission_id__co_speakers__co_speaker_id__resend_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "co_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Co Speaker Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoSpeakerInvitationCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Co Speaker Invitation",
         "tags": [
           "submissions"
         ]

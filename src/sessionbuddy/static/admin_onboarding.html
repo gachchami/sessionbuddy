@@ -6,27 +6,27 @@
   <meta name="color-scheme" content="light">
   <title>Speaker onboarding · SessionBuddy</title>
   <link rel="stylesheet" href="/admin/onboarding/assets/onboarding.css?v=2">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
-  <script src="/admin/onboarding/assets/onboarding.js?v=1" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
+  <script src="/admin/onboarding/assets/onboarding.js?v=2" defer></script>
 </head>
-<body class="app-body">
+<body class="app-body organizer-page organizer-page--onboarding">
   <a class="skip-link" href="#main">Skip to content</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell" tabindex="-1">
-    <section class="hero" aria-labelledby="page-title">
-      <div><h1 id="page-title">Speaker onboarding</h1><p id="event-name">See who is blocked and what they still owe.</p></div>
+  <main id="main" class="shell organizer-main" tabindex="-1">
+    <section class="hero organizer-hero organizer-hero--onboarding" aria-labelledby="page-title">
+      <div><p class="eyebrow">Organizer workflow</p><h1 id="page-title">Speaker onboarding</h1><p id="event-name">See who is blocked and what they still owe.</p></div>
       <div class="connection"><span id="connection-dot" aria-hidden="true"></span><strong id="connection-state">Connecting</strong><span id="last-refreshed">Not refreshed yet</span></div>
     </section>
     <div id="status" class="status" role="status" aria-live="polite">Checking your admin session…</div>
-    <section class="summary-grid" aria-label="Onboarding summary">
+    <section class="summary-grid organizer-metrics" aria-label="Onboarding summary">
       <article><span>Complete</span><strong id="count-complete">—</strong></article>
       <article><span>Incomplete</span><strong id="count-incomplete">—</strong></article>
       <article><span>Overdue</span><strong id="count-overdue">—</strong></article>
       <article><span>Due soon</span><strong id="count-due-soon">—</strong></article>
     </section>
-    <section class="panel" aria-labelledby="filters-title">
+    <section class="panel organizer-panel organizer-panel--filters" aria-labelledby="filters-title">
       <div class="section-heading"><h2 id="filters-title">Filters</h2><button id="refresh" class="secondary" type="button">Refresh</button></div>
       <form id="filters" class="filters">
         <label for="state">Task state<select id="state" name="state"><option value="all">All tasks</option><option value="open">All outstanding</option><option value="completed">Completed</option><option value="overdue">Overdue outstanding</option><option value="due_soon">Due-soon outstanding</option></select></label>
@@ -34,7 +34,7 @@
         <div class="filter-actions"><button type="submit">Apply filters</button><button id="clear-filters" class="secondary" type="button">Clear</button></div>
       </form>
     </section>
-    <section class="panel" aria-labelledby="list-title" aria-busy="true" id="results-panel">
+    <section class="panel organizer-panel organizer-panel--results" aria-labelledby="list-title" aria-busy="true" id="results-panel">
       <div class="section-heading"><h2 id="list-title">Speaker tasks</h2><span id="result-count" class="count">—</span></div>
       <div class="desktop-table"><table><thead><tr><th scope="col">Speaker</th><th scope="col">Session</th><th scope="col">Missing task</th><th scope="col">Due</th><th scope="col">Last activity</th><th scope="col">Action</th></tr></thead><tbody id="onboarding-rows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
       <ul id="onboarding-cards" class="mobile-cards" aria-label="Onboarding results"><li>Loading…</li></ul>

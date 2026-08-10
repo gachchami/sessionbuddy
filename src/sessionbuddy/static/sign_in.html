@@ -4,21 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=15">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/auth/assets/sign-in.js?v=8" defer></script>
 </head>
-<body class="app-body auth-body">
+<body class="app-body auth-body sign-in-page">
   <a class="skip-link" href="#main">Skip to sign in</a>
-  <header class="app-header">
+  <header class="app-header auth-header">
     <div class="shell app-header__inner">
       <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
     </div>
   </header>
-  <main id="main" class="auth-main" tabindex="-1">
-    <section class="auth-card" aria-labelledby="sign-in-title">
+  <main id="main" class="auth-main sign-in-shell" tabindex="-1">
+    <section class="auth-card sign-in-card" aria-labelledby="sign-in-title">
       <div id="sign-in-entry">
-        <h1 id="sign-in-title">Sign in</h1>
+        <p class="eyebrow">Secure access</p><h1 id="sign-in-title">Sign in</h1>
         <p class="auth-intro">Enter your email to receive a secure sign-in link.</p>
         <form id="sign-in-form" class="auth-form">
           <label>Email address

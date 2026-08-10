@@ -3,19 +3,21 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Event schedule · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=15"><link rel="stylesheet" href="/schedule/assets/schedule.css?v=7">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22"><link rel="stylesheet" href="/schedule/assets/schedule.css?v=8">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
   <script src="/schedule/assets/schedule.js?v=8" defer></script>
 </head>
-<body class="public-body">
+<body class="public-body schedule-page">
   <a class="skip-link" href="#main">Skip to schedule</a>
   <header id="site-header" class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a><a id="speakers-link" href="#">Speakers</a></div></header>
-  <main id="main" class="shell page" tabindex="-1">
+  <main id="main" class="shell page schedule-shell" tabindex="-1">
     <img id="event-cover" class="event-cover-image" alt="" hidden>
-    <div class="page-heading"><div><p class="eyebrow">Published program</p><h1 id="title">Event schedule</h1><p id="timezone" class="lede">Loading…</p></div><img id="event-logo" class="event-logo" alt="" hidden></div>
-    <div id="status" class="status" role="status" aria-live="polite">Loading published sessions…</div><p id="results-summary" class="help"></p>
-    <label class="schedule-search" for="schedule-search">Find a session<input id="schedule-search" type="search" placeholder="Search title, speaker, track, or room"></label>
-    <nav class="schedule-filters" aria-label="Schedule views"><button data-view="list" aria-pressed="true">List</button><button data-view="day" class="secondary" aria-pressed="false">Day</button><button data-view="week" class="secondary" aria-pressed="false">Week</button><button data-view="track" class="secondary" aria-pressed="false">Track</button><button data-view="room" class="secondary" aria-pressed="false">Room</button><button data-view="mine" class="secondary" aria-pressed="false">My itinerary <span id="itinerary-count">0</span></button><button id="download-calendar" class="secondary" type="button" disabled>Download itinerary (.ics)</button></nav>
+    <div class="page-heading public-event-hero schedule-hero"><div><p class="eyebrow">Published program</p><h1 id="title">Event schedule</h1><p id="timezone" class="lede">Loading…</p></div><img id="event-logo" class="event-logo" alt="" hidden></div>
+    <section class="schedule-controls" aria-label="Find and filter sessions">
+      <div id="status" class="status" role="status" aria-live="polite">Loading published sessions…</div><p id="results-summary" class="help"></p>
+      <label class="schedule-search" for="schedule-search">Find a session<input id="schedule-search" type="search" placeholder="Search title, speaker, track, or room"></label>
+      <nav class="schedule-filters" aria-label="Schedule views"><button data-view="list" aria-pressed="true">List</button><button data-view="day" class="secondary" aria-pressed="false">Day</button><button data-view="week" class="secondary" aria-pressed="false">Week</button><button data-view="track" class="secondary" aria-pressed="false">Track</button><button data-view="room" class="secondary" aria-pressed="false">Room</button><button data-view="mine" class="secondary" aria-pressed="false">My itinerary <span id="itinerary-count">0</span></button><button id="download-calendar" class="secondary" type="button" disabled>Download itinerary (.ics)</button></nav>
+    </section>
     <div id="schedule" class="schedule"></div><div id="empty" class="empty-state" hidden><strong>No sessions are published yet.</strong></div>
   </main>
 </body>

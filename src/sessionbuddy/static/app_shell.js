@@ -99,10 +99,10 @@
     menuHeader.append(make("strong", displayName(session)), make("span", session.email));
     menu.append(menuHeader, navLink("Account & access", "/account", "account"));
     if (roles.has("organization_admin") || roles.has("event_admin")) {
-      menu.append(navLink("Home", "/admin", "overview"));
+      menu.append(navLink("Organizer dashboard", "/admin", "overview"));
     }
-    if (roles.has("evaluator")) menu.append(navLink("Reviews", "/reviews", "review"));
-    if (roles.has("speaker")) menu.append(navLink("Speaker profile", "/speaker#profile", "mic"));
+    if (roles.has("evaluator")) menu.append(navLink("Reviewer dashboard", "/reviews", "review"));
+    if (roles.has("speaker")) menu.append(navLink("Speaker dashboard", "/speaker", "mic"));
     const signOut = make("button", "Sign out", "sb-account__sign-out");
     signOut.type = "button";
     signOut.addEventListener("click", async () => {
@@ -211,26 +211,26 @@
     const brandText = make("span", undefined, "sb-app-brand__text");
     brandText.append(make("strong", "SessionBuddy"));
     brand.append(mark, brandText);
-    sidebar.append(brand);
+    if (!organizerWorkspace || currentEventId) sidebar.append(brand);
 
     const primaryGroup = make(
       "div",
       undefined,
-      "sb-sidebar__group sb-sidebar__primary"
+      `sb-sidebar__group sb-sidebar__primary${organizerWorkspace ? " sb-sidebar__mobile-global" : ""}`
     );
     primaryGroup.append(make("p", "Main", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
     nav.setAttribute("aria-label", "Main navigation");
     if (organizerWorkspace) {
       nav.append(
-        navLink("Home", "/admin", "home", section === "home"),
-        navLink("Events", "/admin/events", "calendar", section === "events" && !currentEventId),
-        navLink("People", "/admin/speakers", "people", section === "speakers" && !currentEventId)
+        navLink("Home", "/admin", "home", !currentEventId && section === "home"),
+        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events"),
+        navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers")
       );
     }
     primaryGroup.append(nav);
     sidebar.append(primaryGroup);
-    if (organizerWorkspace && (roles.has("evaluator") || roles.has("speaker"))) {
+    if (!organizerWorkspace && (roles.has("evaluator") || roles.has("speaker"))) {
       const utilityGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__utility");
       utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));
       const utilityNav = make("nav", undefined, "sb-sidebar__nav");
@@ -239,7 +239,7 @@
       if (roles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
       utilityGroup.append(utilityNav);
       sidebar.append(utilityGroup);
-    } else {
+    } else if (!organizerWorkspace) {
       if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
       if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
@@ -254,20 +254,25 @@
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
-    if (globalOrganizerWorkspace) {
-      const topbarBrand = link("", "/admin");
-      topbarBrand.className = "sb-global-brand";
-      const topbarMark = make("span", "S", "sb-app-brand__mark");
-      topbarMark.setAttribute("aria-hidden", "true");
-      topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
+    if (organizerWorkspace) {
       const globalNav = make("nav", undefined, "sb-global-nav");
       globalNav.setAttribute("aria-label", "Workspace navigation");
       globalNav.append(
-        navLink("Home", "/admin", "home", section === "home"),
-        navLink("Events", "/admin/events", "calendar", section === "events"),
-        navLink("People", "/admin/speakers", "people", section === "speakers")
+        navLink("Home", "/admin", "home", !currentEventId && section === "home"),
+        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events"),
+        navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers")
       );
-      topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
+      if (currentEventId) {
+        topbar.classList.add("sb-topbar--event");
+        topbar.append(menuButton, make("span", undefined, "sb-topbar__brand-space"), globalNav, accountMenu(session, roles));
+      } else {
+        const topbarBrand = link("", "/admin");
+        topbarBrand.className = "sb-global-brand";
+        const topbarMark = make("span", "S", "sb-app-brand__mark");
+        topbarMark.setAttribute("aria-hidden", "true");
+        topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
+        topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
+      }
     } else {
       topbar.append(menuButton, crumb, accountMenu(session, roles));
     }
@@ -302,14 +307,19 @@
     if (shell && window.SessionBuddyShellSession) renderShell(window.SessionBuddyShellSession);
   });
 
+  function dashboardDestination(session) {
+    const roles = roleSet(session);
+    if (roles.has("organization_admin") || roles.has("event_admin")) return "/admin";
+    if (roles.has("speaker")) return "/speaker";
+    if (roles.has("evaluator")) return "/reviews";
+    return "/account";
+  }
+
   function renderLandingAccount(session) {
     const roles = roleSet(session);
     const wrapper = make("span", undefined, "sb-landing-account");
-    let label = "View account";
-    let href = "/account";
-    if (roles.has("organization_admin") || roles.has("event_admin")) [label, href] = ["Open app", "/admin"];
-    else if (roles.has("speaker")) [label, href] = ["Open portal", "/speaker"];
-    else if (roles.has("evaluator")) [label, href] = ["Open reviews", "/reviews"];
+    const href = dashboardDestination(session);
+    const label = "Open dashboard";
     wrapper.append(link(label, href));
     wrapper.append(accountMenu(session, roles));
     landingAccount.replaceChildren(wrapper);

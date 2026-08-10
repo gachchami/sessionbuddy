@@ -106,9 +106,10 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     assert "Program name" not in page
     assert "Create program" not in page
     assert 'id="program-result"' not in page
-    assert 'placeholder="For example: Tell speakers' in page
-    assert "Advanced routing" in page
-    assert "Add question" in script
+    assert 'placeholder="Tell speakers what kinds of proposals' in page
+    assert 'id="cfp-routing"' in page
+    assert 'id="add-field"' in page
+    assert 'const add = byId("add-field")' in script
     assert "state.program" not in script
     assert "toLocalInput(state.eventStartsAtMs - 1)" in script
     assert "The Call for Proposals must close before the event starts." in script
@@ -459,8 +460,9 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "secure sign-in link" in sign_in.text
     assert "People and invitations" in access.text
     assert "Create events and keep their details up to date" in events.text
-    assert "Edit organization name" in events.text
-    assert "Save changes" in events.text
+    assert "Edit organization name" not in events.text
+    assert "Organization settings" in account.text
+    assert "Create event" in events.text
     assert "data-auth-shell" in events.text
     assert "Call for Proposals" in admin.text
     assert "Share your CFP" in admin.text
@@ -472,7 +474,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         assert "innerHTML" not in javascript
         assert "__sessionbuddyTelemetryDraft" in javascript
     assert 'page_template: "/admin/events/{event_id}/cfp"' in admin_js.text
-    assert 'fields.id = "form-fields"' in admin_js.text
+    assert 'const list = byId("form-fields")' in admin_js.text
     assert "conditions" in admin_js.text
     assert "/admin/events/${encodeURIComponent(event.id)}" in events_js.text
     assert 'button("Edit"' in events_js.text

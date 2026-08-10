@@ -211,6 +211,9 @@
     byId("revision-card").hidden = false;
     byId("event-title").textContent = model.event.name;
     byId("timezone").textContent = `Draft agenda · ${model.event.time_zone}`;
+    document.querySelectorAll("[data-event-time-zone]").forEach((node) => {
+      node.textContent = model.event.time_zone;
+    });
     byId("revision").textContent = model.published_revision
       ? `Draft v${model.revision.version} · latest published revision ${model.published_revision.revision_number}`
       : `v${model.revision.version} · ${model.revision.state}`;

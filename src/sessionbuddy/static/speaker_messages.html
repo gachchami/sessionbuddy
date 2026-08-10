@@ -4,25 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speaker messages · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=15">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
   <script src="/admin/speakers/assets/messages.js?v=2" defer></script>
 </head>
-<body class="app-body">
+<body class="app-body workflow-page workflow-page--messages">
   <a class="skip-link" href="#main">Skip to speaker messages</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading"><div><p class="eyebrow">Communication</p><h1>Speaker messages</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" href="#">View speakers</a></div>
+  <main id="main" class="shell page workflow-shell" tabindex="-1">
+    <div class="page-heading workflow-hero"><div><p class="eyebrow">Communication</p><h1>Speaker messages</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" href="#">View speakers</a></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading speakers…</div>
     <div class="message-workspace">
-      <section class="card" aria-labelledby="recipients-title">
+      <section class="card workflow-stage workflow-stage--recipients" aria-labelledby="recipients-title">
         <div class="section-heading"><div><h2 id="recipients-title">Recipients</h2><p class="section-summary">Only active speaker records can receive messages.</p></div><span id="recipient-count" class="badge">0 selected</span></div>
         <div class="filter-bar"><label>Search recipients<input id="recipient-search" type="search" placeholder="Name, email, company, or session"></label><button id="select-visible" class="secondary" type="button">Select visible</button></div>
-        <div id="recipient-list" class="recipient-list"><p class="empty">Loading recipients…</p></div>
+        <div id="recipient-list" class="recipient-list" aria-live="polite"><p class="empty workflow-empty-state">Loading recipients…</p></div>
       </section>
-      <section class="card" aria-labelledby="compose-title">
+      <section class="card workflow-stage workflow-stage--compose" aria-labelledby="compose-title">
         <div class="section-heading"><div><h2 id="compose-title">Compose</h2><p class="section-summary">Merge fields are personalized in the preview.</p></div></div>
         <form id="message-form">
           <label>Template<select id="message-template"><option value="">Write from scratch</option><option value="welcome">Speaker welcome</option><option value="deadline">Deadline reminder</option></select></label>
@@ -34,8 +34,8 @@
         </form>
       </section>
     </div>
-    <section id="message-preview" class="card" hidden aria-labelledby="preview-title"><h2 id="preview-title">Preview</h2><div id="message-preview-content" class="public-link"></div></section>
-    <section class="directory-section" aria-labelledby="history-title"><div class="section-heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Recent delivery activity for this event.</p></div></div><div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Updated</th></tr></thead><tbody id="message-history"><tr><td colspan="4">Loading messages…</td></tr></tbody></table></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
+    <section id="message-preview" class="card workflow-stage workflow-stage--preview" hidden aria-labelledby="preview-title"><h2 id="preview-title">Message preview</h2><div id="message-preview-content" class="public-link" aria-live="polite"></div></section>
+    <section class="directory-section workflow-stage workflow-stage--history" aria-labelledby="history-title"><div class="section-heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Recent delivery activity for this event.</p></div></div><div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Updated</th></tr></thead><tbody id="message-history" aria-live="polite"><tr><td class="workflow-empty-state" colspan="4">Loading messages…</td></tr></tbody></table></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
   </main>
 </body>
 </html>

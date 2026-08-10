@@ -4,31 +4,31 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=15">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8">
+  <link rel="stylesheet" href="/product/assets/product.css?v=22">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
   <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=9" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=5" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=6" defer></script>
 </head>
-<body class="app-body">
+<body class="app-body organizer-page organizer-page--event-overview">
   <a class="skip-link" href="#main">Skip to event overview</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell page" tabindex="-1">
-    <div class="page-heading event-overview-heading">
+  <main id="main" class="shell page organizer-main" tabindex="-1">
+    <div class="page-heading event-overview-heading organizer-hero organizer-hero--event">
       <div><p id="organization-name" class="eyebrow"></p><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div>
       <div id="event-actions" class="actions" hidden><a id="public-schedule" class="button secondary" href="#">View public page</a></div>
     </div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading event…</div>
-    <section class="metric-strip" aria-label="Event summary">
+    <section class="metric-strip organizer-metrics" aria-label="Event summary">
       <article><span>Status</span><strong id="event-status">—</strong></article>
       <article><span>Speakers</span><strong id="speaker-count">—</strong></article>
       <article><span>Time zone</span><strong id="event-time-zone">—</strong></article>
     </section>
-    <section id="next-step" class="next-step-card" aria-labelledby="next-step-title">
+    <section id="next-step" class="next-step-card organizer-callout" aria-labelledby="next-step-title">
       <div><p class="eyebrow">Recommended next step</p><h2 id="next-step-title">Finish your Call for Proposals</h2><p id="next-step-summary" class="result">Publish the form so speakers can start submitting proposals.</p></div>
       <a id="next-step-action" class="button" href="#">Open Call for Proposals</a>
     </section>
-    <section aria-labelledby="workflow-title" class="directory-section workflow-section">
+    <section aria-labelledby="workflow-title" class="directory-section workflow-section organizer-section organizer-section--workflow">
       <div class="section-heading"><div><p class="eyebrow">Event workflow</p><h2 id="workflow-title">Run your program</h2><p class="section-summary">Work from left to right. Each area contains the details only when you need them.</p></div></div>
       <div id="event-tools" class="workflow-grid"></div>
     </section>

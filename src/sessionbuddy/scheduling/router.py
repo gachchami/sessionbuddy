@@ -32,6 +32,7 @@ from .models import (
     AgendaResourceCreate,
     AgendaResourceUpdate,
     AgendaSetup,
+    EventTrackList,
 )
 
 scheduling_router = APIRouter()
@@ -545,6 +546,28 @@ async def create_agenda_track(
     return await _create_agenda_resource(event_id, request, body, resource="track")
 
 
+@scheduling_router.get(
+    "/api/v1/admin/events/{event_id}/agenda/tracks",
+    response_model=EventTrackList,
+    tags=["agenda"],
+)
+async def list_event_tracks(event_id: str, request: Request) -> EventTrackList:
+    event, _ = await _event_scope(
+        request, event_id, Permission.FORM_MANAGE, mutation=False
+    )
+    tracks = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT id,name,status,version FROM event_tracks
+               WHERE organization_id=?1 AND event_id=?2 AND status='active'
+               ORDER BY lower(name),id"""
+        )
+        .bind(str(event["organization_id"]), event_id)
+        .all()
+    )
+    return EventTrackList(event_id=event_id, data=tracks)
+
+
 @scheduling_router.patch(
     "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}", tags=["agenda"]
 )
@@ -773,8 +796,8 @@ async def _slot(request: Request, event, revision, body: AgendaCandidate) -> Age
     )
     if not speaker_ids:
         raise HTTPException(status_code=400)
-    event_date = body.event_date or datetime.fromtimestamp(body.start_at_ms / 1000, UTC).strftime(
-        "%Y-%m-%d"
+    event_date = body.event_date or _agenda_date(
+        body.start_at_ms, str(event["time_zone"])
     )
     return AgendaSlot(
         organization_id=str(event["organization_id"]),

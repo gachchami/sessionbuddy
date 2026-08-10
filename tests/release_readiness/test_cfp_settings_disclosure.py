@@ -5,22 +5,24 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_cfp_settings_summary_has_one_coherent_label_and_indicator() -> None:
+def test_cfp_settings_use_a_compact_sectioned_editor() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
-    summary = page.split('<details id="publish-settings"', 1)[1].split(
-        "</summary>", 1
-    )[0]
 
-    assert '<span class="eyebrow">Event CFP</span>' in summary
-    assert '<strong id="publish-title">Proposal form settings</strong>' in summary
-    assert "Configure" not in summary
-    assert "disclosure-action" not in summary
+    assert '<section id="publish-settings" class="cfp-builder workflow-stage"' in page
+    assert '<nav class="cfp-section-nav"' in page
+    for section in ("basics", "availability", "questions", "confirmation", "routing"):
+        assert f'id="cfp-{section}"' in page
+    assert "Proposal form settings" not in page
+    assert ".cfp-editor-layout" in stylesheet
+    assert ".cfp-editor-actions { position: sticky;" in stylesheet
 
-    summary_rule = stylesheet.split(".action-disclosure > summary {", 1)[1].split(
-        "}", 1
-    )[0]
-    assert "display: flex" in summary_rule
-    assert "justify-content: space-between" in summary_rule
-    assert '.action-disclosure > summary::after { content: "+"' in stylesheet
-    assert '.action-disclosure[open] > summary::after { content: "−"' in stylesheet
+
+def test_cfp_url_keeps_the_application_route_fixed() -> None:
+    page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
+    script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
+
+    assert 'id="cfp-slug-prefix"' in page
+    assert 'name="slug" aria-label="Public URL slug"' in page
+    assert 'byId("cfp-slug-prefix").textContent = `${location.host}/cfp/`' in script
+    assert 'name="slug" type="url"' not in page

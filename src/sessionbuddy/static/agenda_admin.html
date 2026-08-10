@@ -5,21 +5,21 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Agenda editor · SessionBuddy</title>
-    <link rel="stylesheet" href="/product/assets/product.css?v=15" type="text/css">
+    <link rel="stylesheet" href="/product/assets/product.css?v=22" type="text/css">
     <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=2" type="text/css">
-    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=8" type="text/css">
+    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11" type="text/css">
     <script src="/app-shell/assets/api-client.js?v=1" defer type="text/javascript">
 </script>
-    <script src="/app-shell/assets/app-shell.js?v=9" defer type="text/javascript">
+    <script src="/app-shell/assets/app-shell.js?v=12" defer type="text/javascript">
 </script>
-    <script src="/admin/agenda/assets/agenda.js?v=2" defer type="text/javascript">
+    <script src="/admin/agenda/assets/agenda.js?v=3" defer type="text/javascript">
 </script>
   </head>
-  <body class="app-body">
+  <body class="app-body workflow-page workflow-page--agenda">
     <a class="skip-link" href="#main">Skip to content</a>
     <header data-auth-shell></header>
-    <main id="main" class="shell" tabindex="-1">
-      <section class="agenda-hero">
+    <main id="main" class="shell workflow-shell" tabindex="-1">
+      <section class="agenda-hero workflow-hero">
         <div>
           <h1 id="event-title">
             Agenda
@@ -33,7 +33,7 @@
       <div id="status" class="status" role="status" aria-live="polite">
         Checking your session…
       </div>
-      <section id="agenda-setup" class="panel setup-panel" aria-labelledby="agenda-setup-title" hidden>
+      <section id="agenda-setup" class="panel setup-panel workflow-stage" aria-labelledby="agenda-setup-title" hidden>
         <p class="eyebrow">
           First step
         </p>
@@ -48,7 +48,7 @@
         </form>
       </section>
       <div id="agenda-workspace" hidden="">
-        <section class="agenda-toolbar" aria-labelledby="view-title">
+        <section class="agenda-toolbar workflow-toolbar" aria-labelledby="view-title">
           <div>
             <h2 id="view-title">
               View
@@ -61,14 +61,15 @@
             </div>
           </fieldset><button id="refresh" class="secondary" type="button">Refresh</button><a id="published-link" class="button secondary" href="#" target="_blank" rel="noopener">Open public schedule</a><button id="publish" type="button">Publish agenda</button>
         </section>
-        <details class="panel agenda-tools">
+        <details class="panel agenda-tools workflow-action">
           <summary>Schedule tools</summary>
           <div class="tool-grid">
             <section aria-labelledby="auto-title">
               <h2 id="auto-title">Build a first draft</h2>
               <p class="help">Place unscheduled sessions into available rooms without room or speaker conflicts. Review everything before publishing.</p>
               <form id="auto-schedule-form">
-                <label>Start time<input name="start_at" type="datetime-local" required></label>
+                <p id="auto-schedule-time-zone" class="help">Start time uses the event time zone: <strong data-event-time-zone>Loading…</strong>.</p>
+                <label>Start time<input name="start_at" type="datetime-local" required aria-describedby="auto-schedule-time-zone"></label>
                 <div class="form-grid">
                   <label>Session length<input name="session_minutes" type="number" min="10" max="240" value="45" required><small>Minutes</small></label>
                   <label>Break<input name="gap_minutes" type="number" min="0" max="120" value="15" required><small>Minutes</small></label>
@@ -95,19 +96,19 @@
           </div>
         </details>
         <div class="agenda-layout">
-          <aside class="panel" aria-labelledby="unscheduled-title">
+          <aside class="panel workflow-stage workflow-stage--backlog" aria-labelledby="unscheduled-title">
             <h2 id="unscheduled-title">
               Unscheduled sessions
             </h2>
             <p class="help">
               Drag a session into a group, or select Edit to schedule it with the keyboard form.
             </p>
-            <ul id="unscheduled" class="session-list">
-              <li>Loading&hellip;
+            <ul id="unscheduled" class="session-list" aria-live="polite">
+              <li class="workflow-empty-state">Loading sessions&hellip;
               </li>
             </ul>
           </aside>
-          <section id="agenda" class="panel board-panel" aria-labelledby="agenda-title" aria-busy="true">
+          <section id="agenda" class="panel board-panel workflow-stage workflow-stage--schedule" aria-labelledby="agenda-title" aria-busy="true">
             <div class="section-heading">
               <h2 id="agenda-title">
                 Draft schedule
@@ -118,7 +119,7 @@
               <ul></ul>
             </div>
             <div id="board" class="agenda-board"></div>
-            <div id="empty" class="empty" hidden="">
+            <div id="empty" class="empty workflow-empty-state" role="status" hidden="">
               <strong>No sessions are scheduled.</strong>
               <p>
                 Add an accepted session from the unscheduled list.
@@ -146,8 +147,9 @@
           <label>Session title<input name="title" maxlength="200" required></label>
           <label>Abstract<textarea name="abstract" rows="5" maxlength="5000" required></textarea></label>
           <label>Public content status<select name="content_status"><option value="draft">Draft — hidden from the public schedule</option><option value="approved">Approved — visible after agenda publication</option></select></label>
+          <p id="editor-time-zone" class="help">Start and end times use the event time zone: <strong data-event-time-zone>Loading…</strong>.</p>
           <div class="form-grid">
-            <label>Starts<input name="start_at" type="datetime-local" required=""></label><label>Ends<input name="end_at" type="datetime-local" required=""></label><label>Room<select name="room_id" required="">
+            <label>Starts<input name="start_at" type="datetime-local" required="" aria-describedby="editor-time-zone"></label><label>Ends<input name="end_at" type="datetime-local" required="" aria-describedby="editor-time-zone"></label><label>Room<select name="room_id" required="">
               </select></label><label>Track<select name="track_id">
               <option value="">
                 No track

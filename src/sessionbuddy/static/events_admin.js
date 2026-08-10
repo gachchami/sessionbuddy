@@ -2,7 +2,7 @@
   "use strict";
 
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map() };
+  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventSearch: "" };
   const logoRules = { "image/jpeg": 2 * 1024 * 1024, "image/png": 2 * 1024 * 1024, "image/webp": 2 * 1024 * 1024 };
   const timeZoneAliases = new Map([
     ["Asia/Calcutta", "Asia/Kolkata"],
@@ -275,12 +275,25 @@
 
   function eventItem(event) {
     const item = document.createElement("article");
-    item.className = "entity-card";
+    item.className = "entity-card organizer-card organizer-event-list-card event-management-card";
+    const timeZone = normalizeTimeZone(event.time_zone);
+    const eventDate = eventLocalDateTime(event.starts_at_ms, timeZone).date;
+    const [year, month, day] = eventDate.split("-").map(Number);
+    const monthLabel = new Intl.DateTimeFormat(undefined, { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)));
+    const dateTile = document.createElement("div");
+    dateTile.className = "event-date-tile";
+    for (const [tag, value] of [["span", monthLabel], ["strong", String(day)], ["small", String(year)]]) {
+      const node = document.createElement(tag);
+      node.textContent = value;
+      dateTile.append(node);
+    }
+    const content = document.createElement("div");
+    content.className = "event-management-card__content";
     const top = document.createElement("div");
     top.className = "entity-card__top";
     const kind = document.createElement("span");
     kind.className = "eyebrow";
-    kind.textContent = "Event";
+    kind.textContent = state.organizations.get(state.organizationId)?.name || "Event";
     const badge = document.createElement("span");
     badge.className = "badge";
     badge.textContent = event.status;
@@ -292,25 +305,46 @@
     heading.append(overview);
     const details = document.createElement("p");
     details.className = "result";
-    const timeZone = normalizeTimeZone(event.time_zone);
-    details.textContent = `${formatEventDateTime(event.starts_at_ms, timeZone)} · ${timeZone}`;
+    details.textContent = [formatEventDateTime(event.starts_at_ms, timeZone), event.location, timeZone].filter(Boolean).join(" · ");
     const actions = document.createElement("div");
     actions.className = "actions entity-card__action";
     actions.append(
       link("Open", `/admin/events/${encodeURIComponent(event.id)}`),
       button("Edit", () => editEvent(event))
     );
-    item.append(top, heading, details, actions);
+    content.append(top, heading, details);
+    item.append(dateTile, content, actions);
     return item;
+  }
+
+  function visibleEvents() {
+    const now = Date.now();
+    const query = state.eventSearch.toLocaleLowerCase();
+    return [...state.events.values()].filter((event) => {
+      if (query && !`${event.name} ${event.location || ""}`.toLocaleLowerCase().includes(query)) return false;
+      if (state.eventFilter === "draft") return event.status === "draft";
+      if (state.eventFilter === "past") return event.ends_at_ms < now || event.status === "archived";
+      if (state.eventFilter === "active") return event.status === "active" && event.ends_at_ms >= now;
+      return true;
+    });
+  }
+
+  function renderEventList() {
+    const events = visibleEvents();
+    const list = byId("event-list");
+    list.replaceChildren(...events.map(eventItem));
+    byId("event-count").textContent = String(events.length);
+    if (!events.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = state.events.size ? "No events match this view." : "No events yet. Create your first event.";
+      list.append(empty);
+    }
   }
 
   function showOrganization() {
     const organization = state.organizations.get(state.organizationId);
-    const form = byId("organization-form");
     byId("organization-title").textContent = organization?.name || "Organization";
-    form.elements.organization_id.value = organization?.id || "";
-    form.elements.name.value = organization?.name || "";
-    form.elements.version.value = organization ? String(organization.version) : "";
   }
 
   async function loadEvents(organizationId) {
@@ -319,16 +353,7 @@
     resetEventForm();
     const result = await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/events`);
     state.events = new Map(result.data.map((event) => [event.id, event]));
-    const list = byId("event-list");
-    list.replaceChildren();
-    for (const event of result.data) list.append(eventItem(event));
-    byId("event-count").textContent = String(result.data.length);
-    if (!result.data.length) {
-      const empty = document.createElement("p");
-      empty.className = "empty";
-      empty.textContent = "No events yet. Create your first event.";
-      list.append(empty);
-    }
+    renderEventList();
   }
 
   async function initialize() {
@@ -345,7 +370,7 @@
     else if (session.organization_id && state.organizations.has(session.organization_id)) select.value = session.organization_id;
     byId("organization-picker").hidden = result.data.length === 1;
     await loadEvents(select.value);
-    setStatus("Events are up to date.");
+    setStatus("");
     if (location.hash === "#event-form") {
       resetEventForm();
       openEventDialog();
@@ -358,44 +383,19 @@
     byId("event-form").elements.name.focus();
   });
 
-  byId("edit-organization").addEventListener("click", () => {
-    showOrganization();
-    byId("organization-dialog").showModal();
-    byId("organization-form").elements.name.focus();
-  });
-
-  const closeOrganizationDialog = () => {
-    if (byId("organization-dialog").open) byId("organization-dialog").close();
-  };
-  byId("close-organization").addEventListener("click", closeOrganizationDialog);
-  byId("cancel-organization").addEventListener("click", closeOrganizationDialog);
-
   byId("organization").addEventListener("change", (event) => {
     loadEvents(event.currentTarget.value)
-      .then(() => setStatus("Organization selected."))
+      .then(() => setStatus(""))
       .catch((error) => setStatus(error.message, true));
   });
-
-  byId("organization-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const values = Object.fromEntries(new FormData(event.currentTarget));
-    try {
-      const organization = await api(
-        `/api/v1/admin/organizations/${encodeURIComponent(values.organization_id)}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
-          body: JSON.stringify({ name: values.name, version: Number(values.version) })
-        }
-      );
-      state.organizations.set(organization.id, organization);
-      byId("organization").selectedOptions[0].textContent = organization.name;
-      showOrganization();
-      closeOrganizationDialog();
-      setStatus("Organization updated.");
-    } catch (error) {
-      setStatus(error.status === 409 ? "The organization changed elsewhere. Reload and try again." : error.message, true);
-    }
+  document.querySelectorAll("[data-event-filter]").forEach((button) => button.addEventListener("click", () => {
+    state.eventFilter = button.dataset.eventFilter;
+    document.querySelectorAll("[data-event-filter]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+    renderEventList();
+  }));
+  byId("event-search").addEventListener("input", (event) => {
+    state.eventSearch = event.currentTarget.value.trim();
+    renderEventList();
   });
 
   byId("event-form").addEventListener("input", (event) => {

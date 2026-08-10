@@ -31,7 +31,7 @@
 
   function accessCard(title, subtitle, roles, href) {
     const card = document.createElement("article");
-    card.className = "entity-card";
+    card.className = "entity-card organizer-card organizer-access-card";
     const eyebrow = document.createElement("p");
     eyebrow.className = "eyebrow";
     eyebrow.textContent = subtitle;
@@ -49,8 +49,47 @@
     return card;
   }
 
+  function organizationForm(organization) {
+    const card = document.createElement("article");
+    card.className = "card organizer-panel organizer-organization-card";
+    const form = document.createElement("form");
+    form.dataset.organizationId = organization.id;
+    form.dataset.version = String(organization.version);
+    const heading = document.createElement("h3");
+    heading.textContent = organization.name;
+    const label = document.createElement("label");
+    label.textContent = "Organization name";
+    const input = document.createElement("input");
+    input.name = "name";
+    input.maxLength = 200;
+    input.required = true;
+    input.value = organization.name;
+    const save = document.createElement("button");
+    save.type = "submit";
+    save.textContent = "Save organization";
+    label.append(input);
+    form.append(heading, label, save);
+    card.append(form);
+    return card;
+  }
+
+  async function loadOrganizationSettings() {
+    const manageable = new Set(
+      (session.organization_access || [])
+        .filter((item) => (item.roles || []).includes("organization_admin"))
+        .map((item) => item.organization_id)
+    );
+    if (!manageable.size) return;
+    const organizations = (await api("/api/v1/admin/organizations")).data
+      .filter((organization) => manageable.has(organization.id));
+    if (!organizations.length) return;
+    byId("organization-settings-list").replaceChildren(...organizations.map(organizationForm));
+    byId("organization-settings").hidden = false;
+  }
+
   async function initialize() {
     [session] = await Promise.all([api("/api/v1/auth/session"), api("/api/v1/account/profile").then(setProfile)]);
+    await loadOrganizationSettings();
     const access = [];
     for (const item of session.organization_access || []) {
       access.push(accessCard("Organization", "Organization access", item.roles, "/admin"));
@@ -69,6 +108,34 @@
   }
 
   byId("profile-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("organization-settings-list").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target.closest("form[data-organization-id]");
+    if (!form || !form.reportValidity()) return;
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const organization = await api(
+        `/api/v1/admin/organizations/${encodeURIComponent(form.dataset.organizationId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+          body: JSON.stringify({ name: form.elements.name.value.trim(), version: Number(form.dataset.version) })
+        }
+      );
+      form.dataset.version = String(organization.version);
+      form.querySelector("h3").textContent = organization.name;
+      form.elements.name.value = organization.name;
+      byId("status").className = "status success";
+      byId("status").textContent = "Organization saved.";
+    } catch (error) {
+      byId("status").className = "status error";
+      byId("status").textContent = error.status === 409
+        ? "The organization changed elsewhere. Reload and try again."
+        : window.SessionBuddyApi.message(error);
+      byId("status").focus();
+    } finally { button.disabled = false; }
+  });
   byId("profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const timeZone = event.currentTarget.elements.time_zone;

@@ -9,7 +9,7 @@
 
   function tool(number, title, description, href, state = "Open") {
     const card = document.createElement("article");
-    card.className = "workflow-card";
+    card.className = "workflow-card organizer-card organizer-workflow-card";
     const meta = document.createElement("div");
     meta.className = "workflow-card__meta";
     const step = document.createElement("span"); step.textContent = String(number).padStart(2, "0");
