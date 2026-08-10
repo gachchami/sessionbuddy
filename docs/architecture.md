@@ -1,5 +1,14 @@
 # Sessionbuddy application architecture
 
+> **Implementation status (2026-08-13).** This document records design intent;
+> two aspects shipped differently. The console is dependency-free same-origin
+> HTML/JS/CSS with a single React/Vite island (the evaluator workspace at
+> `/reviews`) — not the React/Vite single-page application described below.
+> The EventHub Durable Object was never built; live dashboards use bounded
+> D1 polling instead of WebSocket fan-out. Treat the SPA and Durable Object
+> sections as unadopted design options, not current behavior.
+
+
 Status: platform foundation decision record
 Last verified: 2026-08-08  
 Scope: runtime, deployment, module, and operational architecture. Domain schema, API semantics, and authorization policy are specified separately.

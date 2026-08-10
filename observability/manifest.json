@@ -1758,7 +1758,505 @@
         "page-performance"
       ],
       "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/": {
+      "owner": "platform-operations",
+      "classification": "public",
+      "journeys": [
+        "discover-product"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/account": {
+      "owner": "identity",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-own-account"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin": {
+      "owner": "platform-operations",
+      "classification": "authenticated",
+      "journeys": [
+        "organizer-dashboard"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events": {
+      "owner": "identity",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-events"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}": {
+      "owner": "identity",
+      "classification": "authenticated",
+      "journeys": [
+        "event-overview"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/access": {
+      "owner": "identity",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-event-access"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/cfp": {
+      "owner": "program-management",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-call-for-proposals"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/messages": {
+      "owner": "communications",
+      "classification": "authenticated",
+      "journeys": [
+        "review-speaker-messages"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/speakers": {
+      "owner": "speaker-onboarding",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-event-speakers"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/speakers/{event_speaker_id}": {
+      "owner": "speaker-onboarding",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-speaker-profile"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/workspace": {
+      "owner": "platform",
+      "classification": "authenticated",
+      "journeys": [
+        "publish-event-surfaces"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/speakers": {
+      "owner": "speaker-onboarding",
+      "classification": "authenticated",
+      "journeys": [
+        "browse-organization-people"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/co-speaker-invitations/{token}": {
+      "owner": "program-management",
+      "classification": "public",
+      "journeys": [
+        "co-speaker-respond"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/embeds/events/{event_id}/gallery": {
+      "owner": "platform",
+      "classification": "public",
+      "journeys": [
+        "embedded-speaker-gallery"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/embeds/events/{event_id}/schedule": {
+      "owner": "agenda",
+      "classification": "public",
+      "journeys": [
+        "embedded-schedule"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/embeds/events/{event_id}/sessions": {
+      "owner": "agenda",
+      "classification": "public",
+      "journeys": [
+        "embedded-session-feed"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/embeds/events/{event_id}/speakers": {
+      "owner": "speaker-onboarding",
+      "classification": "public",
+      "journeys": [
+        "embedded-speaker-gallery"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/events/{event_id}/gallery": {
+      "owner": "platform",
+      "classification": "public",
+      "journeys": [
+        "public-speaker-gallery"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/events/{event_id}/sessions": {
+      "owner": "agenda",
+      "classification": "public",
+      "journeys": [
+        "public-session-feed"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/events/{event_id}/speakers": {
+      "owner": "speaker-onboarding",
+      "classification": "public",
+      "journeys": [
+        "public-speaker-gallery"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/setup": {
+      "owner": "platform-operations",
+      "classification": "public",
+      "journeys": [
+        "first-run-bootstrap"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/sign-in": {
+      "owner": "identity",
+      "classification": "public",
+      "journeys": [
+        "sign-in"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/speakers/{person_id}": {
+      "owner": "speaker-onboarding",
+      "classification": "authenticated",
+      "journeys": [
+        "view-person-profile"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
     }
   },
-  "async_handlers": {}
+  "async_handlers": {
+    "cron:scheduled:communication-recovery": {
+      "owner": "communications",
+      "kind": "cron",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)",
+      "handler": "src/entry.py::Default.scheduled -> dispatch_stuck_deliveries",
+      "success_signal": "structured log event communication_delivery_dispatch, level info",
+      "alert_condition": "communication_delivery_dispatch at level error (publish failures, exhausted retry budgets, or oldest pending message older than 30 minutes)",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "cron:scheduled:cfp-staged-purge": {
+      "owner": "cfp-intake",
+      "kind": "cron",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)",
+      "handler": "src/entry.py::Default.scheduled -> purge_expired_staged_assets",
+      "success_signal": "structured log event cfp_staged_upload_purge, level info",
+      "alert_condition": "cfp_staged_upload_purge at level error (R2 delete failures)",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "queue:asset-scan": {
+      "owner": "speaker-onboarding",
+      "kind": "queue",
+      "trigger": "queue sessionbuddy-asset-scans (binding ASSET_SCAN_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-asset-scans-dlq",
+      "handler": "src/entry.py::Default.queue -> consume_scan_job",
+      "success_signal": "none (KNOWN GAP: the consumer acks/retries without structured logs; track via speaker_asset_versions scan_state transitions and DLQ depth)",
+      "alert_condition": "sessionbuddy-asset-scans-dlq depth greater than zero",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "queue:communication-delivery": {
+      "owner": "communications",
+      "kind": "queue",
+      "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq",
+      "handler": "src/entry.py::Default.queue -> consume_delivery",
+      "success_signal": "none (KNOWN GAP: exceptions are swallowed into retries; track via communication_messages status transitions and the cron recovery log)",
+      "alert_condition": "sessionbuddy-communications-dlq depth greater than zero",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "queue:communication-reminder": {
+      "owner": "communications",
+      "kind": "queue",
+      "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq",
+      "handler": "src/entry.py::Default.queue -> consume_reminder",
+      "success_signal": "none (KNOWN GAP: reminder consumption acks silently; track reminder_schedules rows)",
+      "alert_condition": "sessionbuddy-communications-dlq depth greater than zero",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "workflow:ReminderWorkflow": {
+      "owner": "communications",
+      "kind": "workflow",
+      "trigger": "workflow binding REMINDER_WORKFLOW (wrangler.jsonc workflows, class ReminderWorkflow)",
+      "handler": "src/sessionbuddy/communications/runtime.py::ReminderWorkflow (exported via src/entry.py)",
+      "success_signal": "workflow instance completes; reminder rows advance in reminder_schedules",
+      "alert_condition": "workflow instances failing or stuck in the Cloudflare workflows dashboard",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    }
+  },
+  "excluded_routes": {
+    "/api/v1/cfp/uploads/{staged_id}/content": {
+      "reason": "Local-development-only staged upload sink (APP_ENV=local); never deployed behind production traffic."
+    },
+    "/api/v1/uploads/{intent_id}/content": {
+      "reason": "Local-development-only upload sink (APP_ENV=local); never deployed behind production traffic."
+    },
+    "/auth/verify": {
+      "reason": "Magic-link confirmation and consumption flow; observed through the identity API entries and auth structured logs, not page web-vitals."
+    }
+  }
 }

@@ -1,16 +1,38 @@
-# Sessionbuddy
+# SessionBuddy
 
-Sessionbuddy is a performance-first event program-management application. The backend is Python/FastAPI on Cloudflare Python Workers; D1 is the transactional source of truth.
+## Description and goals
 
-The Worker uses Smart Placement so database-backed handlers can execute near
-the D1 primary. Keep client, `app`, and `db` timings separate when evaluating
-the result; placement may need traffic and up to 15 minutes before it decides.
+SessionBuddy is an open-source, performance-first replacement for the subset of
+Sessionboard used to run speaker-driven events. It covers the full path from a
+public call-for-speakers through review, acceptance, speaker onboarding,
+scheduling, and event operations. The backend is Python/FastAPI compiled to a
+Cloudflare Python Worker; Cloudflare D1 is the transactional source of truth,
+R2 stores private assets, and Queues/Workflows run asynchronous effects. The
+console is dependency-free same-origin HTML/JS/CSS with one React/Vite island
+(the evaluator workspace).
 
-## Engine Room and local development
+The product exists so an event team can, without spreadsheet re-entry:
 
-The supported development and compatibility environment is Docker. It pins
-Node.js 24, Wrangler, uv, Python, and the Debian base rather than depending on
-host-installed runtimes.
+1. Publish a routed call-for-speakers form.
+2. Collect a complete speaker and proposal record.
+3. Review and score submissions.
+4. Accept speakers, collect outstanding assets through tasks, and communicate
+   automatically.
+5. Build a conflict-free agenda quickly.
+6. See onboarding progress in real time.
+
+Trade-offs follow a fixed priority order: correctness, authorization, and no
+cross-event data leakage first; perceived and measured speed second; completion
+of the six journeys third; accessibility and operational reliability fourth;
+additional features and polish last. The full implementation and
+acceptance-testing contract is `docs/requirements.md`.
+
+## How to install
+
+### Local development (recommended: Docker)
+
+The supported environment is Docker. It pins Node.js 24, Wrangler, uv, Python,
+and the Debian base rather than depending on host-installed runtimes.
 
 Run the complete foundation gate in an isolated container:
 
@@ -28,99 +50,53 @@ For an interactive development server:
 docker compose up --build worker
 ```
 
-Review the product-shaped CFP management flow at these local URLs:
+A fresh instance opens `http://localhost:8787/setup` and contains no
+organizations, events, speakers, or synthetic identities. The one-time setup
+creates the first organization and named administrator through the guarded
+bootstrap API; passwordless email links handle every subsequent sign-in.
 
-- `http://localhost:8787/admin/programs` — administrator sign-in, program creation,
-  and configurable public-form publication.
-- `http://localhost:8787/cfp/{published-slug}` — public proposal submission; use
-  the exact link shown after publishing.
-- `http://localhost:8787/admin/programs/{program-id}/submissions` — authorized
-  submission review; use the link shown after publishing.
+Key local URLs once set up:
 
-Fresh instances open `/setup` and contain no organizations, events, speakers, or
-synthetic identities. The one-time setup creates the first organization and named
-administrator through the guarded bootstrap API. Passwordless email challenges
-handle subsequent sign-in. Invitations provision event administrators,
-evaluators, or speakers only after email verification; public-form registration
-provisions only the owning speaker. Every authenticated mutation uses the same
-opaque HTTP-only session, live D1 membership, origin, and session-bound CSRF checks.
+- `http://localhost:8787/admin` — organizer dashboard.
+- `http://localhost:8787/admin/events` — create and manage events.
+- `http://localhost:8787/admin/events/{event-id}/cfp` — build and publish the
+  event's Call for Proposals.
+- `http://localhost:8787/cfp/{published-slug}` — the public proposal form; use
+  the exact link shown after publishing. First-time submitters verify their
+  email at submission time; file answers are staged before any speaker record
+  exists and attached atomically when the submission succeeds.
+- `http://localhost:8787/admin/events/{event-id}/submissions` — submission
+  review and evaluation rounds.
+- `http://localhost:8787/reviews` — the evaluator workspace (assignment-scoped
+  reads, resumable drafts, rubric validation, immutable finalization).
+- `http://localhost:8787/speaker` — the speaker portal (tasks, profile,
+  quarantined asset uploads with malware scanning).
+- `http://localhost:8787/admin/events/{event-id}/onboarding` — live onboarding
+  progress for organizers.
+- `http://localhost:8787/admin/events/{event-id}/agenda` and
+  `http://localhost:8787/events/{event-id}/schedule` — agenda editor and the
+  published schedule.
 
-Evaluation workflow starts from a program's submission-review page. Open the
-initial round there, then use `http://localhost:8787/reviews` for the React/Vite
-evaluator workspace. The current vertical slice supports assignment-scoped
-reads, resumable drafts, rubric validation, and immutable finalization. Evaluator
-access in deployed environments is granted through an administrator invitation.
-
-After a round is opened, its submission page links to
-`/admin/evaluation-rounds/{round-id}`. That admin dashboard shows completion and
-the documented arithmetic mean of finalized ratings. Decisions require all
-assignments for that submission to be final, are audited independently, and do
-not enqueue or send communication. Once recorded, a decision is permanently
-locked by both the API and UI; the product has no decision-change workflow.
-
-Round setup supports a configurable numeric range, recommendation choices,
-evaluator guidance, multiple active event evaluators, and two deterministic
-assignment strategies: `balanced` distributes submissions round-robin, while
-`all` assigns every selected submission to every selected evaluator. The
-server validates evaluator membership and submission scope before creating the
-atomic assignment batch.
-
-Speaker operations starts at `http://localhost:8787/speaker`. A speaker signs in
-after an administrator invitation or after
-registering through a published proposal form. The portal is derived from the
-verified user's explicit ownership records, never from a browser-supplied email.
-
-Scheduling is available after an administrator has accepted sessions and created
-the agenda from the event workspace:
-
-- Admin editor: `http://localhost:8787/admin/events/{event-id}/agenda`
-- Staff/speaker schedule: `http://localhost:8787/events/{event-id}/schedule`
-
-The editor includes list/day/week/track/room views, Firefox-compatible drag/drop,
-a keyboard scheduling form, transactional conflict rejection, visible stale-write
-rollback, publication, and per-speaker calendar update planning.
-
-See `docs/product-status.md` for the implemented boundary and remaining provider
-activation work.
-
-Release readiness provides the complete local release-hardening gate. The shell
-launcher runs on the host only to orchestrate Docker Compose; Node, Python,
-Pywrangler, Wrangler, tests, builds, and benchmarks execute in containers:
+Focused development commands inside the container:
 
 ```bash
-./scripts/release_gate.sh
+cp .dev.vars.example .dev.vars
+npm ci
+uv sync
+uv run ruff check .
+uv run pytest
+uv run python scripts/generate_openapi.py
+npm run worker:sync      # Pyodide dependency compatibility gate; commit pylock.toml
+npm run worker:migrate   # apply local D1 migrations
+npm run worker:dev
 ```
 
-It runs the full suite, large isolated test seed, query-plan checks,
-backup/restore rehearsal, desktop/mobile Axe checks, local API
-benchmarks, Lighthouse, and a Wrangler dry run entirely through containers. See
-`docs/product-status.md` for accepted local evidence and the remaining
-Cloudflare staging promotion gates.
+`pywrangler sync` resolves against the Pyodide index selected by
+`compatibility_date` and installs generated Worker packages into ignored local
+directories. Commit `pylock.toml`; do not commit `python_modules/` or
+`.venv-workers/`.
 
-The admin operational view for an event is available at
-`http://localhost:8787/admin/events/{event-id}/onboarding`.
-It refreshes a bounded D1 snapshot every five seconds, pauses while hidden, and
-shows completion, overdue/due-soon speakers, submission states, evaluation
-progress, and filterable task rows. The explicit event path is lookup input;
-the server independently resolves its organization and enforces dashboard RBAC.
-
-The speaker portal supports private asset upload at `http://localhost:8787/speaker`.
-Headshots, slides, and supporting documents use
-kind-specific MIME/size limits, browser SHA-256, a signed upload intent, the
-local R2 binding, and an explicit completion step.
-
-The local Worker streams quarantined bytes from R2 to the authenticated ClamAV
-container through a fixed-length body; it does not copy a full 50 MiB object into
-Worker memory. Only the scanner's signed clean result promotes the exact
-generation. Deployed environments issue a direct R2 SigV4 PUT and publish a
-versioned Queue job for the replay-safe scanner consumer, which uses the same
-streaming adapter.
-
-Evaluators may declare a conflict before finalization; the assignment is revoked
-and exposed for admin reassignment. A round closes only after every selected
-submission remains covered and every active assignment is final. The accepted
-calculation, tie, immutability, and lifecycle rules are recorded in
-`docs/product-status.md`.
+### Deploying the isolated Cloudflare development environment
 
 Authenticate Wrangler without exposing host credentials to the container:
 
@@ -128,10 +104,7 @@ Authenticate Wrangler without exposing host credentials to the container:
 docker compose run --rm --no-deps worker npx wrangler login --device --browser=false
 ```
 
-The OAuth credentials are stored in the Docker-managed `wrangler-config`
-volume, not in the repository or host configuration directory.
-
-Apply migrations and deploy the isolated Cloudflare development environment:
+Then migrate, deploy, and verify:
 
 ```bash
 docker compose run --rm --no-deps worker npm run worker:migrate:dev
@@ -141,8 +114,8 @@ docker compose run --rm --no-deps worker npm run worker:preflight:dev
 
 The deployment preflight is read-only. The stricter
 `worker:activation:preflight:dev` command remains non-zero until email, direct
-R2 upload credentials, and initial bootstrap are complete. Perform the one-time
-bootstrap without exposing or retaining its token:
+R2 upload credentials, and the initial bootstrap are complete. Perform the
+one-time bootstrap without exposing or retaining its token:
 
 ```bash
 docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
@@ -150,65 +123,81 @@ docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
   --admin-email "admin@example.com"
 ```
 
-This creates a valid organization with no events. The administrator creates the
-first event from `/admin/events`. Event name, start, end, and time zone can
-still be supplied together to the bootstrap command when desired.
+This creates a valid organization with no events; the administrator creates the
+first event from `/admin/events`. See
+[deployment configuration](docs/deployment-configuration.md) for Cloudflare
+variables, secrets, bindings (D1, R2, Queues/DLQs, Workflow, rate limiters),
+and the development malware-scan bypass (`MALWARE_SCAN_MODE`), which staging
+and production reject.
 
-The commands below are available inside the container for focused development:
+### Release rehearsal
 
-```bash
-cp .dev.vars.example .dev.vars
-npm ci
-uv sync
-uv run ruff check .
-uv run pytest
-uv run python scripts/generate_openapi.py
-npm run worker:sync
-npm run worker:dev
-```
-
-See [deployment configuration](docs/deployment-configuration.md) for Cloudflare variables, secrets, the one-time administrator bootstrap, and the development malware-scan bypass.
-See [the nine-area delivery audit](docs/delivery-completion-audit.md) for current
-local/live evidence and the exact remaining authenticated rehearsal.
-
-`pywrangler sync` is the dependency compatibility gate. It resolves against the
-Pyodide index selected by `compatibility_date`, writes the reviewed `pylock.toml`,
-and installs generated Worker packages into ignored local directories. Commit
-`pylock.toml`; do not commit `python_modules/` or `.venv-workers/`.
-
-Apply the local D1 migration after Pywrangler is available:
+The complete local release-hardening gate runs entirely through containers:
 
 ```bash
-npm run worker:migrate
+./scripts/release_gate.sh
 ```
 
-Run the fast ASGI benchmark inside the worker container:
+It runs the full suite, a large isolated test seed, query-plan checks,
+backup/restore rehearsal, desktop/mobile Axe checks, local API benchmarks,
+Lighthouse, and a Wrangler dry run. No remote deployment is performed.
 
-```bash
-docker compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
-  --output .local/benchmarks/engine-room.json
-```
+## Results
 
-With the local Worker running, exercise Pyodide, Workerd, and the HTTP boundary:
+### Verification status (2026-08-13)
 
-```bash
-docker compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
-  --base-url http://worker:8787 \
-  --output .local/benchmarks/engine-room-worker.json
-```
+- Full Python suite: **535 tests passing** (HTTP-level journeys for identity,
+  multi-organizer administration, staged CFP uploads, evaluation, scheduling,
+  and release readiness), with `ruff` clean and migration-ledger/baseline
+  parity enforced (`scripts/build_baseline_migration.py --check`).
+- Browser/Axe: 44 checks across desktop Chrome and Pixel 7 profiles, including
+  authenticated admin, access, evaluator, speaker, onboarding, and agenda pages.
+- Large-database release smoke: 10,000 submissions, 2,000 speakers, 50,000
+  tasks, and 2,000 agenda items with integrity, foreign-key, schema-hash,
+  query-plan, backup, and restore checks.
+- Cloudflare development rehearsal: 23/23 activation preflight checks; live
+  passwordless sign-in, invitation acceptance/revocation, conditional
+  draft/submission, speaker ownership, and a direct R2 upload promoted clean.
+  Worker bundle approximately 8.9 MiB (2.28 MiB gzip); dry-run deploy passes.
+- Observability: every API route (122), document route (32 pages + 3 documented
+  exclusions), and asynchronous handler (cron, queue consumers, workflow) is
+  registered in `observability/manifest.json` with an owner, budget/SLO, and
+  runbook — enforced by tests so new surfaces cannot ship unregistered.
 
-Any API route can use the same benchmark contract. For example, benchmark the
-deployed D1 probe from inside the container:
+Point-in-time acceptance evidence lives in
+[the nine-area delivery audit](docs/delivery-completion-audit.md); the current
+capability boundary is summarized in [product status](docs/product-status.md).
 
-```bash
-uv run python scripts/benchmark_api.py \
-  --base-url https://sessionbuddy-development.shiny-cloud-dd47.workers.dev \
-  --route /api/v1/engine-room/database \
-  --output .local/benchmarks/engine-room-d1-cloudflare-dev.json
-```
+### What is implemented
 
-This host benchmark catches application-level regressions quickly. Release measurements must also run against `pywrangler dev` and an isolated deployed preview because only those environments exercise Pyodide, `workerd`, and real Cloudflare bindings.
+Routed CFP forms with conditional questions and staged pre-submission file
+uploads; versioned drafts; idempotent submissions; evaluation rounds with
+balanced or full assignment, blind review, conflict handling, and immutable
+audited decisions; speaker onboarding tasks, quarantined asset pipeline with
+fixed-length R2-to-scanner streaming, communications with a self-recovering
+dispatch queue; conflict-checked agenda building and published schedules with
+embeds and calendar invitations; multi-organizer administration (invitable
+organization administrators and per-event administrators); and a fail-closed
+security model — opaque sessions, live D1 membership checks, CSRF/origin
+guards, per-(organization, event) authorization, and 404-style denials.
 
-Architecture and delivery requirements are documented under `docs/`. The
-accepted platform gate and the contracts every feature must reuse are summarized
-in `docs/product-status.md`.
+### Known gaps
+
+Tracked openly rather than hidden: evaluation-round surfaces cap at 100 rows
+and compute completion from the capped page (top of the current backlog);
+several admin lists truncate silently (25–5,000 row caps); expired operational
+records (sessions, challenges, idempotency rows) have no scheduled purge yet;
+queue consumers emit no structured logs (recorded as a known gap in the
+observability manifest); browser-local CFP drafts have no TTL; and there is no
+staging/production environment split in `wrangler.jsonc` yet. Benchmarks:
+`scripts/benchmark_api.py` measures any route against local ASGI, Workerd, or
+a deployed environment (see `docs/debugging-runbook.md`).
+
+## Documentation map
+
+Architecture and delivery requirements live under `docs/`: start with
+`requirements.md` (the contract), `architecture.md` (design intent; see its
+implementation-status note), `product-status.md` (capability boundary),
+`delivery-completion-audit.md` (evidence), `deployment-configuration.md`,
+`api-security.md`, `data-architecture.md`, and `debugging-runbook.md`
+(incident response, including the async-handler section).

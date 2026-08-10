@@ -20,7 +20,7 @@ equate development activation with approval for production promotion.
 
 ## Current verification evidence
 
-- Full Python suite: 293 passed.
+- Full Python suite: 293 passed (at this 2026-08-09 audit; see the update below for the current count).
 - Ruff: all checks passed.
 - TypeScript check and Vite production build: passed.
 - Browser/Axe: 44 passed across desktop Chrome and Pixel 7 profiles, including
@@ -62,3 +62,22 @@ recipients, a production scanner endpoint/secret, approved retention and consent
 wording, actual launch capacity estimates, and a production-like concurrency
 baseline. Those are named external promotion inputs, not hidden application
 defaults.
+
+
+## Update — 2026-08-13
+
+This audit is a point-in-time record; the sections above describe the
+2026-08-09 rehearsal and its fixture as they were. Since then the suite has
+grown to **535 passing tests** and the following shipped (all locally verified,
+none yet part of a live rehearsal): staged CFP uploads that remove
+pre-submission speaker provisioning entirely (with scan gating, per-user
+quotas/rate limits, and a 24-hour expiry purge in the scheduled handler); a
+CSP-safe packaged magic-link confirmation page with consume-on-success token
+semantics; invitable organization administrators (migration 0045) with
+escalation guards and a reactivation rule that never restores a revoked admin
+role; a single-event read endpoint, organization metrics aggregate, and
+paginated/filterable events listing with signed cursors; archive-status and
+archive-timestamp preservation on event updates; and full observability
+manifest coverage (pages and asynchronous handlers, CI-enforced). Current
+verification is whatever `scripts/release_gate.sh` reports — prefer running the
+gate over trusting any count written in a document.

@@ -39,9 +39,7 @@ Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
 records. Acceptance creates the accepted session and default onboarding tasks;
 rejection waives outstanding onboarding; either decision can queue a speaker
-email with organizer-controlled copy. Reviewer assignments and organizer result
-lists use signed keyset pagination, while completion totals are calculated over
-the complete round rather than only the visible page.
+email with organizer-controlled copy.
 
 ## Speaker operations
 
@@ -82,12 +80,6 @@ migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
 health checks, browser-route checks, desktop/mobile API-failure recovery checks,
 and the anonymous identity boundary.
 
-The local release rehearsal runs in an isolated Compose project with disposable
-D1 persistence, so it is repeatable without modifying or depending on a
-developer's ordinary local database. Anonymous CFP browser handoff drafts expire
-after 30 minutes and are restored only after the matching proposal email is
-verified.
-
 The isolated Cloudflare development rehearsal is complete with 23 passing
 preflight checks. Resend and direct-R2 credentials are configured, the
 organization and first administrator were bootstrapped for the previous rehearsal.
@@ -105,3 +97,32 @@ are immutable.
 
 The requirement-by-requirement evidence and the remaining authenticated
 development rehearsal are tracked in `delivery-completion-audit.md`.
+
+
+## Updates — 2026-08-13
+
+CFP intake: first-time submitters stage file answers before any speaker record
+exists (`cfp_staged_assets`); the speaker/person/membership graph is created
+only when a submission succeeds, atomically with the file attachment, and a
+revoked membership is never reactivated by submitting or accepting event-level
+invitations (reactivation returns as a plain member). Staged uploads carry
+per-user active quotas, an hourly creation quota, and dedicated rate-limiter
+bindings; abandoned files expire after 24 hours via the scheduled handler.
+Magic-link sign-in shows a packaged CSP-safe confirmation page on GET, consumes
+the token only on POST, and restores the token if provisioning fails after
+consumption.
+
+Administration: organization administrators are now invitable (with
+organization-level permission required to create, resend, or revoke such
+invitations); events have a direct read endpoint, a paginated and
+server-filtered listing (signed keyset cursors; view and search bound into the
+cursor), an aggregate metrics endpoint with recent speakers, and archive
+semantics that preserve status and the original archive timestamp across
+ordinary edits. Console entry points ("People", "Create event", event
+navigation, organization-admin invitations) render only with the exact backing
+permission for the selected organization or event.
+
+Observability: `observability/manifest.json` now registers every API route,
+document route, and asynchronous handler (cron steps, queue consumers,
+workflow) with owners, budgets, and runbooks, enforced by tests; queue
+consumers' missing structured logs are recorded there as a known gap.
