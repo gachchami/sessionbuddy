@@ -450,7 +450,7 @@
   }
   async function restoreContent(item, historyVersion, button) {
     button.disabled = true;
-    status("Publishing agenda…");
+    status("Restoring session content…");
     try {
       const content = await api(
         `/api/v1/admin/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(item.session_id)}/content/restore`,
@@ -625,6 +625,7 @@
     byId("agenda-workspace").hidden = true;
     byId("revision-card").hidden = true;
     byId("agenda").setAttribute("aria-busy", "false");
+    byId("timezone").textContent = "No agenda yet";
     status("Add rooms to create this event’s first agenda.");
   }
   async function updateResource(kind, resource) {
@@ -770,7 +771,15 @@
   byId("publish").addEventListener("click", async () => {
     const button = byId("publish");
     const hiddenDrafts = state.model.items.filter((item) => item.content_status !== "approved").length;
+    const scheduled = state.model.items.length;
+    if (
+      !window.confirm(
+        `Publish this agenda? ${scheduled} session${scheduled === 1 ? "" : "s"} become${scheduled === 1 ? "s" : ""} publicly visible and calendar updates are emailed to speakers.`,
+      )
+    )
+      return;
     button.disabled = true;
+    status("Publishing agenda…");
     try {
       await api(
         `/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/publish`,

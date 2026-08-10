@@ -36,6 +36,9 @@ button { min-height: 2.75rem; padding: .65rem .95rem; border: 0; border-radius: 
 button.secondary { border: 1px solid #d0d5dd; background: white; color: #344054; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .65rem; margin-top: 1.1rem; }
+.answers dl { margin: .75rem 0 0; display: grid; gap: .65rem; }
+.answers dt { color: #52637d; font-size: .72rem; font-weight: 820; letter-spacing: .1em; text-transform: uppercase; }
+.answers dd { margin: .15rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 :where(a,button,input,select,textarea,summary):focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
 @media (max-width: 42rem) { .toolbar { align-items: stretch; flex-direction: column; } .toolbar .actions button { flex: 1; } main { width: min(100% - 1rem, 76rem); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }

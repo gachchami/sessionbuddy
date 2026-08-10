@@ -286,6 +286,10 @@
       required.name = "field_required";
       required.checked = field.required;
       required.disabled = core;
+      const blindVisible = document.createElement("input");
+      blindVisible.type = "checkbox";
+      blindVisible.name = "field_blind_visible";
+      blindVisible.checked = Boolean(field.blind_visible);
       const choices = textInput("field_choices", (field.choices || []).join(", "));
       choices.placeholder = "Choice one, Choice two";
       const conditionSource = textInput("condition_source", field.condition?.source_key || "");
@@ -313,6 +317,7 @@
           inputLabel("Label", textInput("field_label", field.label, true)),
           inputLabel("Type", type),
           inputLabel("Required", required),
+          inputLabel("Show to reviewers in blind rounds", blindVisible),
           inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
           inputLabel("Help text", textInput("field_help", field.help_text || "")),
           inputLabel("Choices (comma separated)", choices)
@@ -386,7 +391,8 @@
         required: index < coreFields.length || card.elements.field_required.checked,
         help_text: card.elements.field_help.value.trim(),
         placeholder: card.elements.field_placeholder.value.trim(),
-        choices: ["select", "multiselect"].includes(type) ? choices : []
+        choices: ["select", "multiselect"].includes(type) ? choices : [],
+        blind_visible: Boolean(card.elements.field_blind_visible?.checked)
       };
       const source = card.elements.condition_source?.value.trim();
       const value = card.elements.condition_value?.value.trim();

@@ -21,6 +21,8 @@ type Assignment = {
   criterion_scores: Record<string, number>;
   blind_review: boolean;
   review_closes_at_ms: number | null;
+  answers: { label: string; value: string }[];
+  hidden_answer_count: number;
 };
 type SubmissionResult = {
   submission_id: string;
@@ -121,18 +123,60 @@ function mutationHeaders(csrf: string) {
   };
 }
 
+function computePreview(
+  form: HTMLFormElement,
+  assignment: Assignment,
+): number | null {
+  const values = Object.fromEntries(new FormData(form));
+  if (!assignment.criteria.length) {
+    const raw = String(values.rating ?? "").trim();
+    return raw === "" ? null : Number(raw);
+  }
+  let total = 0;
+  for (const criterion of assignment.criteria) {
+    const raw = String(values[`criterion_${criterion.key}`] ?? "").trim();
+    if (raw === "") return null;
+    total += Number(raw) * criterion.weight;
+  }
+  return Math.round(total / 100);
+}
+
 function ReviewWorkspace() {
   const [csrf, setCsrf] = useState("");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [status, setStatus] = useState("Loading your assigned reviews…");
+  const [cardStatus, setCardStatus] = useState<Record<string, string>>({});
+  const [previews, setPreviews] = useState<Record<string, number | null>>({});
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const [hideFinalized, setHideFinalized] = useState(false);
+
+  const dirtyCount = Object.values(dirty).filter(Boolean).length;
+  useEffect(() => {
+    if (!dirtyCount) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [dirtyCount]);
+
+  function setCard(assignmentId: string, message: string) {
+    setCardStatus((current) => ({ ...current, [assignmentId]: message }));
+  }
 
   async function loadAssignments() {
     const body = await api<{ data: Assignment[] }>(
       "/api/v1/evaluator/assignments",
     );
     setAssignments(body.data);
+    const finalized = body.data.filter(
+      (assignment) => assignment.evaluation_state === "final",
+    ).length;
     setStatus(
-      `${body.data.length} assigned review${body.data.length === 1 ? "" : "s"}.`,
+      body.data.length === 0
+        ? "No open review assignments right now. When an organizer assigns you proposals, they appear here and you receive an email."
+        : `${finalized} of ${body.data.length} review${body.data.length === 1 ? "" : "s"} finalized.`,
     );
   }
   async function signIn() {
@@ -154,9 +198,30 @@ function ReviewWorkspace() {
     assignment: Assignment,
     state: "draft" | "final",
   ) {
-    if (!form.reportValidity()) {
-      setStatus("Choose a valid rating and recommendation before saving.");
-      return;
+    if (state === "final") {
+      if (!form.reportValidity()) {
+        setCard(
+          assignment.id,
+          "Choose a valid rating and recommendation before finalizing.",
+        );
+        return;
+      }
+    } else {
+      // Drafts save whatever is filled in — but filled values must be valid.
+      const filledInvalid = Array.from(form.elements).find(
+        (element): element is HTMLInputElement =>
+          element instanceof HTMLInputElement &&
+          element.value.trim() !== "" &&
+          !element.checkValidity(),
+      );
+      if (filledInvalid) {
+        filledInvalid.reportValidity();
+        setCard(
+          assignment.id,
+          "Fix the out-of-range score before saving your draft.",
+        );
+        return;
+      }
     }
     const values = Object.fromEntries(new FormData(form));
     if (
@@ -164,37 +229,55 @@ function ReviewWorkspace() {
       assignment.comment_required &&
       !String(values.internal_comment || "").trim()
     ) {
-      setStatus("Add the required reviewer comment before finalizing.");
+      setCard(assignment.id, "Add the required reviewer comment before finalizing.");
       return;
     }
     const criterionScores = Object.fromEntries(
-      assignment.criteria.map((criterion) => [
-        criterion.key,
-        Number(values[`criterion_${criterion.key}`]),
-      ]),
-    );
-    const rating = assignment.criteria.length
-      ? Math.round(
-          assignment.criteria.reduce(
-            (total, criterion) =>
-              total + criterionScores[criterion.key] * criterion.weight,
-            0,
-          ) / 100,
+      assignment.criteria
+        .filter(
+          (criterion) =>
+            String(values[`criterion_${criterion.key}`] ?? "").trim() !== "",
         )
-      : Number(values.rating);
+        .map((criterion) => [
+          criterion.key,
+          Number(values[`criterion_${criterion.key}`]),
+        ]),
+    );
+    const allScored =
+      assignment.criteria.length > 0 &&
+      Object.keys(criterionScores).length === assignment.criteria.length;
+    const directRating = String(values.rating ?? "").trim();
+    const rating = assignment.criteria.length
+      ? allScored
+        ? Math.round(
+            assignment.criteria.reduce(
+              (total, criterion) =>
+                total + criterionScores[criterion.key] * criterion.weight,
+              0,
+            ) / 100,
+          )
+        : null
+      : directRating === ""
+        ? null
+        : Number(directRating);
+    const recommendation = String(values.recommendation ?? "").trim() || null;
     await api(`/api/v1/evaluator/assignments/${assignment.id}/evaluation`, {
       method: "PUT",
       headers: mutationHeaders(csrf),
       body: JSON.stringify({
         rating,
         criterion_scores: criterionScores,
-        recommendation: values.recommendation,
+        recommendation,
         internal_comment: values.internal_comment,
         state,
       }),
     });
+    setDirty((current) => ({ ...current, [assignment.id]: false }));
     await loadAssignments();
-    setStatus(state === "final" ? "Evaluation finalized." : "Draft saved.");
+    setCard(
+      assignment.id,
+      state === "final" ? "Evaluation finalized." : "Draft saved.",
+    );
   }
   async function declareConflict(assignment: Assignment) {
     const conflictType = (
@@ -210,20 +293,42 @@ function ReviewWorkspace() {
       explanation ? "" : "Explain the conflict before removing the assignment.",
     );
     if (!explanationInput.reportValidity()) return;
+    if (
+      !window.confirm(
+        `Remove your assignment for “${assignment.proposal_title}”? An organizer will need to reassign it, and you cannot undo this yourself.`,
+      )
+    )
+      return;
     await api(`/api/v1/evaluator/assignments/${assignment.id}/conflict`, {
       method: "POST",
       headers: mutationHeaders(csrf),
       body: JSON.stringify({ conflict_type: conflictType, explanation }),
     });
+    setDirty((current) => ({ ...current, [assignment.id]: false }));
     await loadAssignments();
     setStatus("Conflict declared. The assignment is ready for reassignment.");
   }
   function finalize(event: FormEvent<HTMLFormElement>, assignment: Assignment) {
     event.preventDefault();
     save(event.currentTarget, assignment, "final").catch((error) =>
-      setStatus(errorMessage(error)),
+      setCard(assignment.id, errorMessage(error)),
     );
   }
+  function handleFormInput(form: HTMLFormElement, assignment: Assignment) {
+    setDirty((current) =>
+      current[assignment.id] ? current : { ...current, [assignment.id]: true },
+    );
+    setPreviews((current) => ({
+      ...current,
+      [assignment.id]: computePreview(form, assignment),
+    }));
+  }
+
+  const visibleAssignments = hideFinalized
+    ? assignments.filter(
+        (assignment) => assignment.evaluation_state !== "final",
+      )
+    : assignments;
 
   return (
     <main>
@@ -233,17 +338,27 @@ function ReviewWorkspace() {
       </section>
       <div className="toolbar">
         <p role="status">{status}</p>
-        <button
-          className="secondary"
-          onClick={() =>
-            signIn().catch((error) => setStatus(errorMessage(error)))
-          }
-        >
-          Refresh
-        </button>
+        <div className="actions">
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={hideFinalized}
+              onChange={(event) => setHideFinalized(event.target.checked)}
+            />{" "}
+            Hide finalized
+          </label>
+          <button
+            className="secondary"
+            onClick={() =>
+              signIn().catch((error) => setStatus(errorMessage(error)))
+            }
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       <section className="grid" aria-label="Assigned proposals">
-        {assignments.map((assignment) => (
+        {visibleAssignments.map((assignment) => (
           <article key={assignment.id}>
             <div className="meta">
               <span>{assignment.round_name}</span>
@@ -255,15 +370,44 @@ function ReviewWorkspace() {
               <p className="help">Speaker identity is hidden for this round.</p>
             )}
             <p>{assignment.proposal_abstract}</p>
+            {assignment.answers.length > 0 && (
+              <details className="answers" open>
+                <summary>
+                  Full submission ({assignment.answers.length} answer
+                  {assignment.answers.length === 1 ? "" : "s"})
+                </summary>
+                <dl>
+                  {assignment.answers.map((answer, index) => (
+                    <div key={index}>
+                      <dt>{answer.label}</dt>
+                      <dd>{answer.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
+            )}
+            {assignment.hidden_answer_count > 0 && (
+              <p className="help">
+                {assignment.hidden_answer_count} answer
+                {assignment.hidden_answer_count === 1 ? " is" : "s are"} hidden
+                to protect blind review.
+              </p>
+            )}
             {assignment.review_closes_at_ms && (
               <p className="help">
-                Due {new Date(assignment.review_closes_at_ms).toLocaleString()}
+                Due {new Date(assignment.review_closes_at_ms).toLocaleString()}{" "}
+                (your local time)
               </p>
             )}
             {assignment.evaluator_guidance && (
               <aside>{assignment.evaluator_guidance}</aside>
             )}
-            <form onSubmit={(event) => finalize(event, assignment)}>
+            <form
+              onSubmit={(event) => finalize(event, assignment)}
+              onInput={(event) =>
+                handleFormInput(event.currentTarget, assignment)
+              }
+            >
               {assignment.criteria.length ? (
                 <fieldset>
                   <legend>Scorecard</legend>
@@ -323,6 +467,21 @@ function ReviewWorkspace() {
                   disabled={assignment.evaluation_state === "final"}
                 />
               </label>
+              {assignment.criteria.length > 0 &&
+                assignment.evaluation_state !== "final" && (
+                  <p className="help">
+                    Overall rating preview:{" "}
+                    <strong>
+                      {(previews[assignment.id] ?? assignment.rating) ?? "—"}
+                    </strong>{" "}
+                    (weighted mean, submitted on finalize)
+                  </p>
+                )}
+              {cardStatus[assignment.id] && (
+                <p className="help" role="status">
+                  {cardStatus[assignment.id]}
+                </p>
+              )}
               <div className="actions">
                 <button
                   type="button"
@@ -330,7 +489,7 @@ function ReviewWorkspace() {
                   disabled={assignment.evaluation_state === "final"}
                   onClick={(event) =>
                     save(event.currentTarget.form!, assignment, "draft").catch(
-                      (error) => setStatus(errorMessage(error)),
+                      (error) => setCard(assignment.id, errorMessage(error)),
                     )
                   }
                 >
@@ -421,11 +580,17 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     submission: SubmissionResult,
     decision: "accepted" | "rejected",
   ) {
-    const reason = (
-      document.getElementById(
-        `reason-${submission.submission_id}`,
-      ) as HTMLTextAreaElement
-    ).value;
+    const reasonInput = document.getElementById(
+      `reason-${submission.submission_id}`,
+    ) as HTMLTextAreaElement;
+    const reason = reasonInput.value.trim();
+    const override = submission.completed_count < submission.assigned_count;
+    reasonInput.setCustomValidity(
+      override && !reason
+        ? "An internal reason is required when overriding incomplete reviews."
+        : "",
+    );
+    if (!reasonInput.reportValidity()) return;
     const body = await api<{ communication_queued: boolean }>(
       `/api/v1/admin/evaluation-rounds/${roundId}/submissions/${submission.submission_id}/decision`,
       {

@@ -24,6 +24,7 @@ class FormFieldDefinition(BaseModel):
     placeholder: str = Field(default="", max_length=300)
     required: bool = False
     choices: tuple[str, ...] = Field(default=(), max_length=100)
+    blind_visible: bool = False
 
     @model_validator(mode="after")
     def validate_choices(self) -> "FormFieldDefinition":
@@ -290,6 +291,8 @@ class SubmissionList(BaseModel):
     organization_id: str
     event_id: str
     data: list[SubmissionView]
+    total: int = 0
+    next_cursor: str | None = None
 
 
 class OwnedSubmissionList(BaseModel):

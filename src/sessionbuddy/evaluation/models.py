@@ -87,6 +87,13 @@ class EvaluatorList(BaseModel):
     data: list[EvaluatorView]
 
 
+class SubmissionAnswerView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    value: str
+
+
 class EvaluationAssignmentView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -110,6 +117,8 @@ class EvaluationAssignmentView(BaseModel):
     rating: int | None = None
     recommendation: str | None = None
     internal_comment: str = ""
+    answers: list[SubmissionAnswerView] = Field(default_factory=list)
+    hidden_answer_count: int = 0
 
 
 class ConflictDeclaration(BaseModel):
@@ -224,11 +233,20 @@ class EvaluationAssignmentList(BaseModel):
 class EvaluationSave(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    rating: int = Field(ge=0, le=10)
-    recommendation: str = Field(min_length=1, max_length=80)
+    rating: int | None = Field(default=None, ge=0, le=10)
+    recommendation: str | None = Field(default=None, min_length=1, max_length=80)
     internal_comment: str = Field(default="", max_length=5000)
     criterion_scores: dict[str, int] = Field(default_factory=dict, max_length=8)
     state: Literal["draft", "final"]
+
+    @model_validator(mode="after")
+    def validate_final_completeness(self) -> "EvaluationSave":
+        if self.state == "final":
+            if self.rating is None and not self.criterion_scores:
+                raise ValueError("final evaluations require a rating")
+            if self.recommendation is None:
+                raise ValueError("final evaluations require a recommendation")
+        return self
 
 
 class EvaluationView(EvaluationSave):

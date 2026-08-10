@@ -152,3 +152,65 @@ async def test_review_workspace_deploys_but_api_requires_identity() -> None:
     assert page.status_code == 200
     assert admin.status_code == 200
     assert assignments.status_code == 401
+
+
+def test_blind_rounds_hide_unmarked_answers_fail_closed() -> None:
+    from sessionbuddy.evaluation.router import _reviewer_answers
+
+    answers = (
+        '{"company": "Acme Corp", "bio": "I am Jane",'
+        ' "topic_area": "MLOps", "q_unknown": "text"}'
+    )
+    schema = (
+        '{"fields": ['
+        '{"key": "company", "type": "text", "label": "Company"},'
+        '{"key": "bio", "type": "textarea", "label": "Bio"},'
+        '{"key": "topic_area", "type": "select", "label": "Topic area", "blind_visible": true}'
+        "]}"
+    )
+
+    visible, hidden = _reviewer_answers(answers, schema, blind_review=True)
+    assert [(view.label, view.value) for view in visible] == [("Topic area", "MLOps")]
+    # company, bio, and the schemaless q_unknown are all withheld.
+    assert hidden == 3
+
+    visible, hidden = _reviewer_answers(answers, schema, blind_review=False)
+    assert {view.label for view in visible} == {"Company", "Bio", "Topic area", "q unknown"}
+    assert hidden == 0
+
+
+def test_core_identity_fields_never_reach_reviewers() -> None:
+    from sessionbuddy.evaluation.router import _reviewer_answers
+
+    answers = '{"speaker_name": "Jane", "speaker_email": "j@x.io", "topic_area": "MLOps"}'
+    schema = (
+        '{"fields": ['
+        '{"key": "speaker_name", "type": "text", "label": "Speaker name", "blind_visible": true},'
+        '{"key": "speaker_email", "type": "email", "label": "Email", "blind_visible": true},'
+        '{"key": "topic_area", "type": "text", "label": "Topic area", "blind_visible": true}'
+        "]}"
+    )
+    for blind in (True, False):
+        visible, _ = _reviewer_answers(answers, schema, blind_review=blind)
+        labels = {view.label for view in visible}
+        assert "Speaker name" not in labels and "Email" not in labels
+        assert "Topic area" in labels
+
+
+def test_draft_evaluations_permit_partial_input() -> None:
+    from pydantic import ValidationError
+
+    from sessionbuddy.evaluation.models import EvaluationSave
+
+    draft = EvaluationSave(state="draft")
+    assert draft.rating is None and draft.recommendation is None
+
+    partial = EvaluationSave(state="draft", criterion_scores={"depth": 4})
+    assert partial.criterion_scores == {"depth": 4}
+
+    with pytest.raises(ValidationError):
+        EvaluationSave(state="final")
+    with pytest.raises(ValidationError):
+        EvaluationSave(state="final", rating=5)
+    complete = EvaluationSave(state="final", rating=5, recommendation="accept")
+    assert complete.rating == 5

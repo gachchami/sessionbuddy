@@ -14,7 +14,7 @@
   const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
-  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [] };
+  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], nextCursor: null };
   const prerequisites = document.createElement("p");
   prerequisites.id = "round-prerequisites";
   prerequisites.className = "help";
@@ -263,6 +263,7 @@
         label.append(input, evaluator.display_name);
         evaluatorChoices.append(label);
       });
+      state.nextCursor = result.next_cursor || null;
       const body = byId("submissions");
       body.replaceChildren();
       if (!result.data.length) {
@@ -273,7 +274,21 @@
         row.append(cell);
         body.append(row);
       }
-      result.data.forEach((item) => {
+      appendSubmissionRows(result.data);
+      renderLoadMore(Number(result.total ?? result.data.length));
+      updatePrerequisites();
+      const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
+      renderRoundHistory(history.data);
+      const currentRound = history.data.find((round) => round.status === "open") || null;
+      if (currentRound) showRound(currentRound);
+    } catch (error) {
+      byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to the event and try again.");
+      byId("status").classList.add("error");
+    }
+  }
+  function appendSubmissionRows(items) {
+    const body = byId("submissions");
+    items.forEach((item) => {
         const row = document.createElement("tr");
         const selectionCell = document.createElement("td");
         const selection = document.createElement("input");
@@ -300,15 +315,39 @@
         row.append(detailCell);
         body.append(row);
       });
-      byId("status").textContent = `${result.data.length} submission${result.data.length === 1 ? "" : "s"}.`;
+  }
+  function renderLoadMore(total) {
+    const shown = state.submissions.length;
+    byId("status").textContent = state.nextCursor
+      ? `Showing ${shown} of ${total} submissions.`
+      : `${total} submission${total === 1 ? "" : "s"}.`;
+    let button = byId("load-more-submissions");
+    if (!state.nextCursor) { if (button) button.remove(); return; }
+    if (!button) {
+      button = document.createElement("button");
+      button.id = "load-more-submissions";
+      button.type = "button";
+      button.className = "secondary";
+      byId("submissions").closest("table").after(button);
+      button.addEventListener("click", () => loadMoreSubmissions(button));
+    }
+    button.textContent = `Load ${Math.min(100, total - shown)} more`;
+    button.disabled = false;
+  }
+  async function loadMoreSubmissions(button) {
+    button.disabled = true;
+    button.textContent = "Loading…";
+    try {
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions?cursor=${encodeURIComponent(state.nextCursor)}`);
+      state.submissions = state.submissions.concat(result.data);
+      state.nextCursor = result.next_cursor || null;
+      appendSubmissionRows(result.data);
+      renderLoadMore(Number(result.total ?? state.submissions.length));
       updatePrerequisites();
-      const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
-      renderRoundHistory(history.data);
-      const currentRound = history.data.find((round) => round.status === "open") || null;
-      if (currentRound) showRound(currentRound);
     } catch (error) {
-      byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to the event and try again.");
-      byId("status").classList.add("error");
+      byId("status").textContent = window.SessionBuddyApi.message(error, "More submissions could not be loaded. Try again.");
+      button.disabled = false;
+      button.textContent = "Load more";
     }
   }
   function validateRound(form) {

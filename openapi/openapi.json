@@ -1709,6 +1709,13 @@
       "EvaluationAssignmentView": {
         "additionalProperties": false,
         "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionAnswerView"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
           "blind_review": {
             "default": false,
             "title": "Blind Review",
@@ -1746,6 +1753,11 @@
             "default": "",
             "title": "Evaluator Guidance",
             "type": "string"
+          },
+          "hidden_answer_count": {
+            "default": 0,
+            "title": "Hidden Answer Count",
+            "type": "integer"
           },
           "id": {
             "title": "Id",
@@ -2246,16 +2258,30 @@
             "type": "string"
           },
           "rating": {
-            "maximum": 10.0,
-            "minimum": 0.0,
-            "title": "Rating",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
           },
           "recommendation": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Recommendation",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
           },
           "state": {
             "enum": [
@@ -2267,8 +2293,6 @@
           }
         },
         "required": [
-          "rating",
-          "recommendation",
           "state"
         ],
         "title": "EvaluationSave",
@@ -2300,16 +2324,30 @@
             "type": "string"
           },
           "rating": {
-            "maximum": 10.0,
-            "minimum": 0.0,
-            "title": "Rating",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
           },
           "recommendation": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Recommendation",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
           },
           "state": {
             "enum": [
@@ -2325,8 +2363,6 @@
           }
         },
         "required": [
-          "rating",
-          "recommendation",
           "state",
           "id",
           "assignment_id",
@@ -3068,6 +3104,11 @@
       "FormFieldDefinition": {
         "additionalProperties": false,
         "properties": {
+          "blind_visible": {
+            "default": false,
+            "title": "Blind Visible",
+            "type": "boolean"
+          },
           "choices": {
             "default": [],
             "items": {
@@ -3173,6 +3214,7 @@
           "fields": {
             "default": [
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "speaker_name",
@@ -3182,6 +3224,7 @@
                 "type": "text"
               },
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "speaker_email",
@@ -3191,6 +3234,7 @@
                 "type": "email"
               },
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "proposal_title",
@@ -3200,6 +3244,7 @@
                 "type": "text"
               },
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "proposal_abstract",
@@ -3389,6 +3434,7 @@
           "fields": {
             "default": [
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "speaker_name",
@@ -3398,6 +3444,7 @@
                 "type": "text"
               },
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "speaker_email",
@@ -3407,6 +3454,7 @@
                 "type": "email"
               },
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "proposal_title",
@@ -3416,6 +3464,7 @@
                 "type": "text"
               },
               {
+                "blind_visible": false,
                 "choices": [],
                 "help_text": "",
                 "key": "proposal_abstract",
@@ -6146,6 +6195,25 @@
         "title": "SpeakerTaskView",
         "type": "object"
       },
+      "SubmissionAnswerView": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "SubmissionAnswerView",
+        "type": "object"
+      },
       "SubmissionCreate": {
         "additionalProperties": false,
         "properties": {
@@ -6518,9 +6586,25 @@
             "title": "Event Id",
             "type": "string"
           },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
           "organization_id": {
             "title": "Organization Id",
             "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
@@ -10287,6 +10371,32 @@
             "schema": {
               "title": "Event Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],

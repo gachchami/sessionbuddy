@@ -1,6 +1,8 @@
 import hashlib
+import hmac
 import json
 import re
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from email.headerregistry import Address
 from html import escape
 from time import perf_counter
@@ -17,7 +19,7 @@ from sessionbuddy.platform.auth import (
     hash_token,
     normalize_email,
 )
-from sessionbuddy.platform.auth.http import require_permission
+from sessionbuddy.platform.auth.http import require_permission, secret
 from sessionbuddy.platform.authorization import Permission, ResourceContext
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
@@ -1828,6 +1830,71 @@ async def create_submission(
     return await _editable_submission_by_id(db, submission_id)
 
 
+SUBMISSIONS_PAGE_LIMIT = 100
+_SUBMISSIONS_CURSOR_TTL_MS = 15 * 60 * 1000
+
+
+def _submissions_cursor(
+    request: Request, value: str | None, *, event_id: str
+) -> tuple[int, str] | None:
+    """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
+    if value is None:
+        return None
+    try:
+        encoded_payload, encoded_signature = value.split(".", 1)
+        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
+        signature = urlsafe_b64decode(
+            encoded_signature + "=" * (-len(encoded_signature) % 4)
+        )
+        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError
+        decoded = json.loads(payload.decode())
+        if not isinstance(decoded, dict) or decoded != {
+            "event": event_id,
+            "exp": decoded.get("exp"),
+            "id": decoded.get("id"),
+            "sub": decoded.get("sub"),
+            "v": 1,
+        }:
+            raise ValueError
+        submitted_at, row_id, expires = decoded["sub"], decoded["id"], decoded["exp"]
+        if (
+            not isinstance(submitted_at, int)
+            or not isinstance(row_id, str)
+            or len(row_id) > 100
+            or not isinstance(expires, int)
+            or expires < utc_now_ms()
+        ):
+            raise ValueError
+        return submitted_at, row_id
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, KeyError) as exc:
+        raise HTTPException(status_code=400) from exc
+
+
+def _submissions_next_cursor(
+    request: Request, *, event_id: str, submitted_at_ms: int, row_id: str
+) -> str:
+    payload = json.dumps(
+        {
+            "event": event_id,
+            "exp": utc_now_ms() + _SUBMISSIONS_CURSOR_TTL_MS,
+            "id": row_id,
+            "sub": submitted_at_ms,
+            "v": 1,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
+    return ".".join(
+        (
+            urlsafe_b64encode(payload).decode().rstrip("="),
+            urlsafe_b64encode(signature).decode().rstrip("="),
+        )
+    )
+
+
 @cfp_router.get(
     "/api/v1/admin/events/{event_id}/submissions",
     response_model=SubmissionList,
@@ -1837,7 +1904,11 @@ async def create_submission(
 async def list_submissions(
     event_id: str,
     request: Request,
+    cursor: str | None = None,
+    limit: int = SUBMISSIONS_PAGE_LIMIT,
 ) -> SubmissionList:
+    if not 1 <= limit <= SUBMISSIONS_PAGE_LIMIT:
+        raise HTTPException(status_code=422)
     event = row_mapping(
         await _db(request)
         .prepare(
@@ -1855,22 +1926,39 @@ async def list_submissions(
         ResourceContext(str(event["organization_id"]), event_id),
         mutation=False,
     )
-    result = (
-        await _db(request)
-        .prepare(
-            """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
+    window = _submissions_cursor(request, cursor, event_id=event_id)
+    columns = """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                   s.proposal_abstract,s.answers_json,
                   COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                   s.routed_category,s.routed_track,s.routed_review_queue
                FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
-               WHERE s.organization_id=?1 AND s.event_id=?2
-               ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 100"""
+               WHERE s.organization_id=?1 AND s.event_id=?2"""
+    if window is None:
+        statement = (
+            _db(request)
+            .prepare(
+                columns
+                + """
+               ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT ?3"""  # noqa: S608
+            )
+            .bind(event["organization_id"], event_id, limit + 1)
         )
-        .bind(event["organization_id"], event_id)
-        .all()
-    )
+    else:
+        statement = (
+            _db(request)
+            .prepare(
+                columns
+                + """
+                 AND (s.submitted_at_ms<?3 OR (s.submitted_at_ms=?3 AND s.id<?4))
+               ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT ?5"""  # noqa: S608
+            )
+            .bind(event["organization_id"], event_id, window[0], window[1], limit + 1)
+        )
+    rows = result_rows(await statement.all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
     data = []
-    for row in result_rows(result):
+    for row in rows:
         answers = json.loads(str(row.pop("answers_json")))
         contributors = result_rows(
             await _db(request)
@@ -1886,10 +1974,31 @@ async def list_submissions(
         data.append(
             SubmissionView.model_validate({**row, "answers": answers, "co_speakers": contributors})
         )
+    total_row = (
+        await _db(request)
+        .prepare(
+            """SELECT COUNT(*) AS total FROM submissions
+               WHERE organization_id=?1 AND event_id=?2"""
+        )
+        .bind(event["organization_id"], event_id)
+        .first("total")
+    )
+    next_cursor = (
+        _submissions_next_cursor(
+            request,
+            event_id=event_id,
+            submitted_at_ms=int(rows[-1]["submitted_at_ms"]),
+            row_id=str(rows[-1]["id"]),
+        )
+        if has_more and rows
+        else None
+    )
     return SubmissionList(
         organization_id=str(event["organization_id"]),
         event_id=event_id,
         data=data,
+        total=int(total_row or 0),
+        next_cursor=next_cursor,
     )
 
 

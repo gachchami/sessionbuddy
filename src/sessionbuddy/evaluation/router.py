@@ -1,6 +1,7 @@
 import hashlib
 import json
 from csv import writer
+from datetime import UTC, datetime
 from html import escape
 from io import StringIO
 from time import perf_counter
@@ -42,6 +43,7 @@ from .models import (
     RoundEvaluatorChange,
     RoundSubmissionAdd,
     RoundSubmissionChange,
+    SubmissionAnswerView,
     SubmissionDecisionCreate,
     SubmissionDecisionView,
     SubmissionEvaluationResult,
@@ -123,6 +125,93 @@ def _weighted_mean(values: list[tuple[float, int]]) -> float | None:
     if count == 0:
         return None
     return round(sum(value * weight for value, weight in values) / count, 2)
+
+
+async def _evaluator_emails(db, user_ids: list[str]) -> dict[str, str]:
+    if not user_ids:
+        return {}
+    placeholders = ",".join(f"?{index + 1}" for index in range(len(user_ids)))
+    rows = result_rows(
+        await db.prepare(
+            f"SELECT id,email FROM users WHERE id IN ({placeholders})"  # noqa: S608
+        )
+        .bind(*user_ids)
+        .all()
+    )
+    return {str(row["id"]): str(row["email"]) for row in rows}
+
+
+def _queue_assignment_notifications(
+    batch: CommandBatch,
+    db,
+    *,
+    emails_by_user: dict[str, str],
+    assignment_counts: dict[str, int],
+    organization_id: str,
+    event_id: str,
+    round_id: str,
+    round_name: str,
+    review_closes_at_ms: int | None,
+    base_url: str,
+    now_ms: int,
+    dedup_suffix: str,
+) -> list[str]:
+    """Queue one assignment-notification email per evaluator, atomically with
+    the assignments themselves. Returns queued message ids for best-effort
+    publish after commit; the scheduled dispatcher recovers anything missed."""
+    message_ids: list[str] = []
+    deadline = ""
+    if review_closes_at_ms is not None:
+        closes = datetime.fromtimestamp(review_closes_at_ms / 1000, UTC)
+        deadline = f"<p>Reviews close {closes.strftime('%B %d, %Y at %H:%M UTC')}.</p>"
+    link = (
+        f'<p><a href="{escape(base_url.rstrip("/"))}/reviews">Open your reviews</a></p>'
+        if base_url
+        else "<p>Open SessionBuddy and visit Reviews to get started.</p>"
+    )
+    for evaluator_id in sorted(assignment_counts):
+        count = assignment_counts[evaluator_id]
+        email = emails_by_user.get(evaluator_id, "")
+        if not email or count <= 0:
+            continue
+        message_id = new_id()
+        message_ids.append(message_id)
+        html_body = (
+            f"<p>You have been assigned {count} proposal"
+            f"{'s' if count != 1 else ''} to review in "
+            f"{escape(round_name)}.</p>{deadline}{link}"
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO communication_messages
+                   (id,organization_id,event_id,recipient_user_id,recipient_email,subject,
+                    html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)"""
+            ).bind(
+                message_id,
+                organization_id,
+                event_id,
+                evaluator_id,
+                email,
+                f"New review assignments: {round_name}",
+                html_body,
+                f"evaluation-assignment:{round_id}:{evaluator_id}:{dedup_suffix}",
+                now_ms,
+            )
+        )
+    return message_ids
+
+
+async def _publish_queued_messages(request: Request, message_ids: list[str]) -> None:
+    queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
+    if queue is None:
+        return
+    for message_id in message_ids:
+        try:
+            await queue.send({"schema_version": 1, "message_id": message_id})
+        except Exception:
+            # Durable rows stay 'queued'; the scheduled dispatcher republishes.
+            record_timing(request, "domain", 0)
 
 
 async def _event_organization_id(db, event_id: str) -> str:
@@ -286,6 +375,23 @@ async def create_evaluation_round(
             },
         )
     )
+    assignment_counts: dict[str, int] = {}
+    for _, evaluator_id in assignment_pairs:
+        assignment_counts[evaluator_id] = assignment_counts.get(evaluator_id, 0) + 1
+    notification_ids = _queue_assignment_notifications(
+        batch,
+        db,
+        emails_by_user=await _evaluator_emails(db, body.evaluator_user_ids),
+        assignment_counts=assignment_counts,
+        organization_id=organization_id,
+        event_id=event_id,
+        round_id=round_id,
+        round_name=body.name,
+        review_closes_at_ms=body.review_closes_at_ms,
+        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+        now_ms=now,
+        dedup_suffix=str(now),
+    )
     batch.complete_idempotency(
         record,
         status=201,
@@ -294,6 +400,7 @@ async def create_evaluation_round(
         completed_at_ms=now,
     )
     await _execute(request, batch)
+    await _publish_queued_messages(request, notification_ids)
     return EvaluationRoundView(
         id=round_id,
         event_id=event_id,
@@ -529,22 +636,37 @@ async def add_round_evaluator(
             .all()
         )
     ]
-    existing_ids = {
-        str(row["submission_id"])
-        for row in result_rows(
-            await db.prepare(
-                """SELECT submission_id FROM evaluation_assignments
-                   WHERE round_id=?1 AND evaluator_user_id=?2"""
-            )
-            .bind(round_id, body.evaluator_user_id)
-            .all()
+    existing_rows = result_rows(
+        await db.prepare(
+            """SELECT a.id, a.submission_id, a.status,
+                      EXISTS(SELECT 1 FROM evaluation_conflicts c
+                             WHERE c.assignment_id=a.id) AS has_conflict
+               FROM evaluation_assignments a
+               WHERE a.round_id=?1 AND a.evaluator_user_id=?2"""
         )
-    }
+        .bind(round_id, body.evaluator_user_id)
+        .all()
+    )
+    existing_ids = {str(row["submission_id"]) for row in existing_rows}
+    # Revoked assignments are revived rather than re-inserted (UNIQUE constraint),
+    # except conflict-declared ones: a recorded conflict of interest stays removed.
+    revive_ids = [
+        str(row["id"])
+        for row in existing_rows
+        if row["status"] == "revoked" and not row["has_conflict"]
+    ]
     missing_ids = [
         submission_id for submission_id in submission_ids if submission_id not in existing_ids
     ]
     now = utc_now_ms()
     batch = CommandBatch(db)
+    for assignment_row_id in revive_ids:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE evaluation_assignments SET status='assigned', updated_at_ms=?2
+                   WHERE id=?1 AND status='revoked'"""
+            ).bind(assignment_row_id, now)
+        )
     for submission_id in missing_ids:
         batch.add_statement(
             db.prepare(
@@ -566,14 +688,40 @@ async def add_round_evaluator(
             event_id=str(round_row["event_id"]),
             metadata={
                 "evaluator_user_id": body.evaluator_user_id,
-                "assignment_count": len(missing_ids),
+                "assignment_count": len(missing_ids) + len(revive_ids),
             },
         )
     )
+    round_detail = row_mapping(
+        await db.prepare(
+            "SELECT name,review_closes_at_ms FROM evaluation_rounds WHERE id=?1 LIMIT 1"
+        )
+        .bind(round_id)
+        .first()
+    )
+    notification_ids = _queue_assignment_notifications(
+        batch,
+        db,
+        emails_by_user=await _evaluator_emails(db, [body.evaluator_user_id]),
+        assignment_counts={body.evaluator_user_id: len(missing_ids) + len(revive_ids)},
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        round_id=round_id,
+        round_name=str(round_detail["name"]) if round_detail else "",
+        review_closes_at_ms=(
+            int(round_detail["review_closes_at_ms"])
+            if round_detail and round_detail["review_closes_at_ms"] is not None
+            else None
+        ),
+        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+        now_ms=now,
+        dedup_suffix=str(now),
+    )
     await batch.execute()
+    await _publish_queued_messages(request, notification_ids)
     return RoundEvaluatorChange(
         round_id=round_id, evaluator_user_id=body.evaluator_user_id,
-        assignment_count=len(missing_ids),
+        assignment_count=len(missing_ids) + len(revive_ids),
     )
 
 
@@ -591,7 +739,7 @@ async def add_round_submissions(
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT organization_id,event_id,rubric_json,status
+            """SELECT organization_id,event_id,rubric_json,status,name,review_closes_at_ms
                FROM evaluation_rounds WHERE id=?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -697,7 +845,32 @@ async def add_round_submissions(
             },
         )
     )
+    assignment_counts: dict[str, int] = {}
+    for _, evaluator_id in assignment_pairs:
+        assignment_counts[evaluator_id] = assignment_counts.get(evaluator_id, 0) + 1
+    added_digest = hashlib.sha256(
+        ":".join(sorted(new_submission_ids)).encode()
+    ).hexdigest()[:16]
+    notification_ids = _queue_assignment_notifications(
+        batch,
+        db,
+        emails_by_user=await _evaluator_emails(db, list(assignment_counts)),
+        assignment_counts=assignment_counts,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        round_id=round_id,
+        round_name=str(round_row["name"]),
+        review_closes_at_ms=(
+            int(round_row["review_closes_at_ms"])
+            if round_row["review_closes_at_ms"] is not None
+            else None
+        ),
+        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+        now_ms=now,
+        dedup_suffix=f"{added_digest}:{now}",
+    )
     await batch.execute()
+    await _publish_queued_messages(request, notification_ids)
     return RoundSubmissionChange(
         round_id=round_id,
         submission_count=len(new_submission_ids),
@@ -766,9 +939,9 @@ async def remove_round_evaluator(
     batch = CommandBatch(db)
     batch.add_statement(
         db.prepare(
-            """DELETE FROM evaluation_assignments
+            """UPDATE evaluation_assignments SET status='revoked', updated_at_ms=?3
                WHERE round_id=?1 AND evaluator_user_id=?2 AND status!='revoked'"""
-        ).bind(round_id, evaluator_user_id)
+        ).bind(round_id, evaluator_user_id, now)
     )
     batch.audit(
         AuditEvent(
@@ -857,6 +1030,76 @@ async def remind_round_evaluator(
     return EvaluatorReminderQueued(message_id=message_id)
 
 
+_ANSWER_EXCLUDED_KEYS = frozenset(
+    {"speaker_name", "speaker_email", "proposal_title", "proposal_abstract"}
+)
+
+
+def _answer_text(value: object, field_type: str) -> str:
+    if field_type in {"file", "image"}:
+        return "(uploaded file)" if value else ""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if str(item).strip())
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _reviewer_answers(
+    answers_json: str, schema_json: str, *, blind_review: bool
+) -> tuple[list[SubmissionAnswerView], int]:
+    """Project custom CFP answers for reviewers, in form order with labels.
+
+    Core identity and proposal fields are always excluded: title and abstract
+    render separately and speaker identity is masked upstream. Blind rounds
+    fail closed: only fields the organizer explicitly marked ``blind_visible``
+    are returned, and everything withheld is counted so the reviewer UI can
+    say how many answers were hidden. Returns ``(answers, hidden_count)``.
+    """
+    try:
+        answers = json.loads(answers_json)
+        schema = json.loads(schema_json)
+    except ValueError:
+        return [], 0
+    if not isinstance(answers, dict):
+        return [], 0
+    fields = schema.get("fields", []) if isinstance(schema, dict) else []
+    views: list[SubmissionAnswerView] = []
+    hidden = 0
+    seen: set[str] = set()
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        key = str(field.get("key", ""))
+        if not key or key in _ANSWER_EXCLUDED_KEYS or key in seen:
+            continue
+        seen.add(key)
+        if key not in answers:
+            continue
+        value = _answer_text(answers[key], str(field.get("type", "")))
+        if not value:
+            continue
+        if blind_review and field.get("blind_visible") is not True:
+            hidden += 1
+            continue
+        label = str(field.get("label", "")) or key.replace("_", " ")
+        views.append(SubmissionAnswerView(label=label, value=value))
+    for key in sorted(answers):
+        if key in seen or key in _ANSWER_EXCLUDED_KEYS:
+            continue
+        value = _answer_text(answers[key], "")
+        if not value:
+            continue
+        if blind_review:
+            # Answers with no schema definition have no blind_visible opt-in.
+            hidden += 1
+            continue
+        views.append(SubmissionAnswerView(label=key.replace("_", " "), value=value))
+    return views[:100], hidden
+
+
 @evaluation_router.get(
     "/api/v1/evaluator/assignments",
     response_model=EvaluationAssignmentList,
@@ -879,10 +1122,13 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                       COALESCE(e.state, 'not_started') AS evaluation_state,
                       e.rating, e.recommendation,
                       COALESCE(e.internal_comment, '') AS internal_comment,
-                      COALESCE(e.criterion_scores_json, '{}') AS criterion_scores_json
+                      COALESCE(e.criterion_scores_json, '{}') AS criterion_scores_json,
+                      COALESCE(s.answers_json, '{}') AS answers_json,
+                      COALESCE(f.schema_json, '{}') AS form_schema_json
                FROM evaluation_assignments a
                JOIN evaluation_rounds r ON r.id = a.round_id AND r.status = 'open'
                JOIN submissions s ON s.id = a.submission_id
+               LEFT JOIN call_for_speaker_forms f ON f.id = s.form_id
                LEFT JOIN evaluations e ON e.assignment_id = a.id
                WHERE a.evaluator_user_id = ?1 AND a.status != 'revoked'
                  AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
@@ -906,6 +1152,11 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
             mutation=False,
         )
         rubric = json.loads(str(row["rubric_json"]))
+        answer_views, hidden_count = _reviewer_answers(
+            str(row["answers_json"]),
+            str(row["form_schema_json"]),
+            blind_review=bool(rubric.get("blind_review", False)),
+        )
         data.append(
             EvaluationAssignmentView(
                 id=str(row["id"]),
@@ -936,6 +1187,8 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                     str(row["recommendation"]) if row["recommendation"] is not None else None
                 ),
                 internal_comment=str(row["internal_comment"]),
+                answers=answer_views,
+                hidden_answer_count=hidden_count,
             )
         )
     return EvaluationAssignmentList(data=data)
@@ -1015,9 +1268,16 @@ async def save_evaluation(
                 if str(criterion["key"]) in body.criterion_scores
             )
         )
-    if not rating_min <= rating <= rating_max:
+    if body.state == "final" and rating is None:
         raise HTTPException(status_code=422)
-    if body.recommendation not in rubric["recommendation"]["choices"]:
+    if rating is not None and not rating_min <= rating <= rating_max:
+        raise HTTPException(status_code=422)
+    if (
+        body.recommendation is not None
+        and body.recommendation not in rubric["recommendation"]["choices"]
+    ):
+        raise HTTPException(status_code=422)
+    if body.state == "final" and body.recommendation is None:
         raise HTTPException(status_code=422)
     if (
         body.state == "final"
