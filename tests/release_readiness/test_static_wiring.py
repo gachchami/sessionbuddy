@@ -278,17 +278,18 @@ def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> Non
     assert "overflow: hidden" in preview_rule
 
 
-def test_cfp_workspace_retries_only_transient_not_found_responses() -> None:
+def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
+    # The 404-retry loop papered over the missing single-event read endpoint;
+    # both are gone now, so the workspace loads in one call.
     script = (STATIC / "admin_programs.js").read_text()
     loader = script.split("async function loadWorkspace(eventId) {", 1)[1].split(
         "\n  }", 1
     )[0]
-    assert "[0, 150, 350]" in loader
-    assert "error.status !== 404" in loader
-    assert "delay === 350" in loader
-    assert "return await api(path)" in loader
+    assert "setTimeout" not in loader
+    assert "return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)" in loader
     restore = script.split("async function restoreSession() {", 1)[1]
     assert "const workspace = await loadWorkspace(eventId);" in restore
+    assert "/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}" in restore
 
 
 def test_public_event_pages_render_cover_images() -> None:

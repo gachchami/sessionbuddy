@@ -8,6 +8,7 @@ const session = {
   user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   email: "admin@example.com",
   display_name: "Admin User",
+  profile_complete: true,
   csrf_token: "browser-test-csrf",
   organization_id: organizationId,
   event_id: eventId,
@@ -37,7 +38,7 @@ test.describe("safe API and page failures", () => {
         data: [{ id: organizationId, name: "Example Events", status: "active", version: 1 }],
       }),
     }));
-    await page.route(`**/api/v1/admin/organizations/${organizationId}/events`, (route) => route.fulfill({
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/events*`, (route) => route.fulfill({
       status: 500,
       contentType: "text/plain",
       headers: { "x-request-id": "event-load-reference" },
@@ -45,7 +46,7 @@ test.describe("safe API and page failures", () => {
     }));
 
     await page.goto("/admin/events");
-    const status = page.getByRole("status").first();
+    const status = page.locator("#status");
     await expect(status).toContainText("Something went wrong on our side. Try again.");
     await expect(status).toContainText("event-load-reference");
     await expect(status).not.toContainText("Unexpected token");
@@ -87,7 +88,7 @@ test.describe("safe API and page failures", () => {
     }));
 
     await page.goto("/reviews");
-    const status = page.getByRole("status").first();
+    const status = page.locator("#root main [role=status]").first();
     await expect(status).toContainText("Something went wrong on our side. Try again.");
     await expect(status).toContainText("review-load-reference");
     await expect(status).not.toContainText("Unexpected token");

@@ -88,6 +88,8 @@ test.describe("public smoke checks", () => {
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: null,
           csrf_token: "browser-test-csrf",
+          authenticated: true,
+          profile_complete: true,
           email: "admin@example.com",
           display_name: "Admin User",
           organization_access: [{
@@ -101,17 +103,22 @@ test.describe("public smoke checks", () => {
 
     await page.goto("/");
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Open app", exact: true })).toHaveCount(3);
+    await expect(page.getByRole("link", { name: "Open dashboard", exact: true })).toHaveCount(3);
     await expect(page.locator("[data-auth-entry]")).toHaveCount(2);
-    await expect(page.locator("[data-auth-entry]")).toHaveText(["Open app", "Open app"]);
+    await expect(page.locator("[data-auth-entry]")).toHaveText(["Open dashboard", "Open dashboard"]);
     await expect(page.locator("[data-auth-entry]").first()).toHaveAttribute("href", "/admin");
     await expect(page.locator("[data-auth-entry]").last()).toHaveAttribute("href", "/admin");
   });
 
   test("an expired magic link offers browser recovery instead of JSON", async ({ page }) => {
     const expiredToken = "expired-link".padEnd(32, "x");
-    const response = await page.goto(`/auth/verify?token=${expiredToken}`);
-    expect(response?.status()).toBe(404);
+    await page.goto(`/auth/verify?token=${expiredToken}`);
+    const responsePromise = page.waitForResponse((response) =>
+      response.url().includes("/auth/verify?") && response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Continue" }).click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(404);
     await expect(page).toHaveTitle(/Sign-in link unavailable/);
     await expect(page.getByRole("heading", {
       level: 1,
@@ -145,7 +152,7 @@ test.describe("public smoke checks", () => {
     await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
   });
 
-  test("CFP sign-in also locks the submitted email and supports correction", async ({ page }) => {
+  test("CFP does not request sign-in before the proposal is complete", async ({ page }) => {
     const slug = "speaker-login";
     let requestCount = 0;
     await page.addInitScript(() => {
@@ -171,16 +178,10 @@ test.describe("public smoke checks", () => {
     });
 
     await page.goto(`/cfp/${slug}`);
-    const email = page.getByRole("textbox", { name: "Email address" });
-    await email.fill("speaker@example.com");
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(email).toBeHidden();
-    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
-    expect(requestCount).toBe(1);
-
-    await page.getByRole("button", { name: "Change email" }).click();
-    await expect(email).toBeEnabled();
-    await expect(email).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Conference" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Email address" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+    expect(requestCount).toBe(0);
   });
 
   test("an empty instance starts with secured administrator onboarding", async ({ page }) => {
@@ -245,6 +246,8 @@ test.describe("administration empty states", () => {
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: null,
           csrf_token: "browser-test-csrf",
+          authenticated: true,
+          profile_complete: true,
           email: "admin@example.com",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -267,7 +270,7 @@ test.describe("administration empty states", () => {
         }),
       });
     });
-    await page.route("**/api/v1/admin/organizations/*/events", async (route) => {
+    await page.route("**/api/v1/admin/organizations/*/events*", async (route) => {
       if (route.request().method() === "POST") {
         createdEvent = route.request().postDataJSON();
         await route.fulfill({ status: 201, contentType: "application/json", body: "{}" });
@@ -302,10 +305,10 @@ test.describe("administration empty states", () => {
       "end_time",
     ]) {
       const field = eventDialog.locator(`[name="${fieldName}"]`);
-      const marker = eventDialog.locator(`label:has([name="${fieldName}"]) > .required-marker`);
+      const marker = eventDialog.locator(`label:has([name="${fieldName}"]) .required-marker`);
       await expect(field).toHaveAttribute("required", "");
       await expect(marker).toBeVisible();
-      await expect(marker).toHaveText("Required");
+      await expect(marker).toHaveText("*");
       await expect(marker).toHaveCSS("color", "rgb(180, 35, 24)");
     }
     await expect(page.getByRole("combobox", { name: "Attendance format" })).toHaveValue("");
@@ -322,6 +325,8 @@ test.describe("administration empty states", () => {
     await expect(eventDialog.getByRole("button", { name: "Create event" })).toBeEnabled();
     await timeZone.fill("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
+    await page.getByRole("textbox", { name: "Location" }).fill("Bengaluru, India");
+    await page.getByRole("textbox", { name: /Description/ }).fill("A focused rehearsal event for validating the organizer workflow.");
     await page.getByRole("textbox", { name: "Sender name" }).fill("Program Team");
     await page.getByRole("textbox", { name: "Reply-to email" }).fill("program@example.test");
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
@@ -331,7 +336,7 @@ test.describe("administration empty states", () => {
     expect(createdEvent).toBeNull();
     await page.getByRole("textbox", { name: "Event website" }).fill("https://example.test");
     await eventDialog.getByRole("button", { name: "Create event" }).click();
-    await expect(page.getByRole("status").first()).toHaveText("Event created.");
+    await expect(page.locator("#status")).toHaveText("Event created.");
     expect(createdEvent).toMatchObject({
       name: "Timezone Rehearsal",
       starts_at_ms: Date.UTC(2026, 8, 12, 3, 30),
@@ -359,6 +364,8 @@ test.describe("administration empty states", () => {
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: eventId,
           csrf_token: "browser-test-csrf",
+          authenticated: true,
+          profile_complete: true,
           email: "admin@example.com",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -415,6 +422,8 @@ test.describe("administration empty states", () => {
         organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         event_id: eventId,
         csrf_token: "browser-test-csrf",
+        authenticated: true,
+        profile_complete: true,
         email: "admin@example.com",
         display_name: "Admin User",
         organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", roles: ["organization_admin"] }],
@@ -441,11 +450,12 @@ test.describe("administration empty states", () => {
       contentType: "application/json",
       body: JSON.stringify({
         user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId,
-        csrf_token: "browser-test-csrf", email: "admin@example.com", display_name: "Admin User",
+        csrf_token: "browser-test-csrf", authenticated: true, profile_complete: true, email: "admin@example.com", display_name: "Admin User",
         organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", roles: ["organization_admin"] }], event_access: [],
       }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, data: [] }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: eventId, name: "Conference", time_zone: "UTC" }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/evaluators`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds**`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
 
@@ -465,6 +475,8 @@ test.describe("administration empty states", () => {
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: eventId,
           csrf_token: "browser-test-csrf",
+          authenticated: true,
+          profile_complete: true,
           email: "admin@example.com",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -486,6 +498,14 @@ test.describe("administration empty states", () => {
         }),
       });
     });
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ id: eventId, name: "World Fair 2026", time_zone: "Asia/Kolkata", starts_at_ms: Date.UTC(2026, 10, 12, 3, 30) }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/agenda/tracks`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    }));
 
     await page.goto(`/admin/events/${eventId}/cfp`);
     await expect(page.getByRole("status").first()).toHaveText(
@@ -690,7 +710,7 @@ test.describe("dynamic form drafts", () => {
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({ csrf_token: "browser-test-csrf" }),
+        body: JSON.stringify({ csrf_token: "browser-test-csrf", email: "speaker@example.com", profile_complete: true }),
       });
     });
     await page.route(`**/api/v1/forms/${slug}/access`, async (route) => {

@@ -1,0 +1,23 @@
+services:
+  worker:
+    ports: !reset []
+    environment:
+      RELEASE_GATE_STATE: ${RELEASE_GATE_STATE:?set by scripts/release_gate.sh}
+    command:
+      - npm
+      - run
+      - worker:dev
+      - --
+      - --ip
+      - 0.0.0.0
+      - --port
+      - "8787"
+      - --persist-to
+      - /workspace/${RELEASE_GATE_STATE:?set by scripts/release_gate.sh}
+
+volumes:
+  # Reuse only Wrangler's authenticated CLI configuration. Application state
+  # remains isolated in RELEASE_GATE_STATE and no deployment is performed.
+  wrangler-config:
+    external: true
+    name: sessionbuddy_wrangler-config

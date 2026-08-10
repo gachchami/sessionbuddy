@@ -40,16 +40,7 @@
   }
 
   async function loadWorkspace(eventId) {
-    const path = `/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`;
-    for (const delay of [0, 150, 350]) {
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      try {
-        return await api(path);
-      } catch (error) {
-        if (error.status !== 404 || delay === 350) throw error;
-      }
-    }
-    throw new Error("The event could not be loaded.");
+    return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`);
   }
 
   async function loadEventTracks(eventId) {
@@ -568,8 +559,7 @@
       state.context = { organization_id: workspace.organization_id, event_id: workspace.event_id };
       state.eventName = workspace.event_name;
       state.eventStartsAtMs = workspace.event_starts_at_ms;
-      const events = (await api(`/api/v1/admin/organizations/${encodeURIComponent(workspace.organization_id)}/events`)).data;
-      const currentEvent = events.find((item) => item.id === workspace.event_id);
+      const currentEvent = await api(`/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}`);
       if (!currentEvent?.time_zone) throw new Error("The event time zone could not be loaded.");
       state.eventTimeZone = currentEvent.time_zone;
       byId("cfp-time-zone").textContent = state.eventTimeZone;

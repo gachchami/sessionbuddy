@@ -74,6 +74,20 @@
     return roles;
   }
 
+  function canManageOrganization(session) {
+    return (session.organization_access || []).some((item) =>
+      (item.roles || []).includes("organization_admin"));
+  }
+
+  function administersEventDirectly(session, eventId) {
+    // A direct event_admin membership names the event, so this check is
+    // exact. Organization admins are resolved separately (and org-scoped)
+    // with a permission probe against the event itself.
+    if (!eventId) return false;
+    return (session.event_access || []).some((item) =>
+      item.event_id === eventId && (item.roles || []).includes("event_admin"));
+  }
+
   function displayName(session) {
     return session.display_name || String(session.email || "Account").split("@", 1)[0];
   }
@@ -227,9 +241,13 @@
     if (organizerWorkspace) {
       nav.append(
         navLink("Home", "/admin", "home", !currentEventId && section === "home"),
-        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events"),
-        navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers")
+        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
       );
+      // The People directory API requires organization-wide management, so
+      // only render its entry point for accounts that can actually open it.
+      if (canManageOrganization(session)) {
+        nav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
+      }
     }
     primaryGroup.append(nav);
     sidebar.append(primaryGroup);
@@ -246,7 +264,18 @@
       if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
       if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
-    if (organizerWorkspace && currentEventId) sidebar.append(eventNav(currentEventId));
+    if (organizerWorkspace && currentEventId) {
+      if (administersEventDirectly(session, currentEventId)) {
+        sidebar.append(eventNav(currentEventId));
+      } else if (canManageOrganization(session)) {
+        // Being an admin of SOME organization is not enough: confirm against
+        // the API (which enforces the real event permission) before showing
+        // this event's navigation.
+        window.SessionBuddyApi.request(`/api/v1/admin/events/${encodeURIComponent(currentEventId)}`)
+          .then(() => sidebar.append(eventNav(currentEventId)))
+          .catch(() => { /* not an administrator of this event's organization */ });
+      }
+    }
 
     const topbar = make("div", undefined, "sb-topbar");
     const menuButton = make("button", undefined, "sb-menu-button");
@@ -262,9 +291,11 @@
       globalNav.setAttribute("aria-label", "Workspace navigation");
       globalNav.append(
         navLink("Home", "/admin", "home", !currentEventId && section === "home"),
-        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events"),
-        navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers")
+        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
       );
+      if (canManageOrganization(session)) {
+        globalNav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
+      }
       if (currentEventId) {
         topbar.classList.add("sb-topbar--event");
         topbar.append(menuButton, make("span", undefined, "sb-topbar__brand-space"), globalNav, accountMenu(session, roles));

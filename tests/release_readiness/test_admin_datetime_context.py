@@ -10,7 +10,7 @@ def test_cfp_availability_displays_and_uses_the_event_time_zone() -> None:
     assert 'id="cfp-time-zone-context"' in page
     assert 'id="cfp-time-zone"' in page
     assert page.count('aria-describedby="cfp-time-zone-context"') == 2
-    assert "/organizations/${encodeURIComponent(workspace.organization_id)}/events" in script
+    assert "/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}" in script
     assert "state.eventTimeZone = currentEvent.time_zone" in script
     assert 'byId("cfp-time-zone").textContent = state.eventTimeZone' in script
     assert 'timeZone: state.eventTimeZone' in script

@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
@@ -14,7 +15,13 @@ from sessionbuddy.evaluation.models import (
     RoundSubmissionAdd,
     SubmissionDecisionCreate,
 )
-from sessionbuddy.evaluation.router import _assignment_pairs, _weighted_mean
+from sessionbuddy.evaluation.router import (
+    EVALUATION_PAGE_LIMIT,
+    _assignment_pairs,
+    _evaluation_cursor,
+    _evaluation_next_cursor,
+    _weighted_mean,
+)
 
 
 def test_evaluation_contracts_are_strict_and_bounded() -> None:
@@ -101,6 +108,48 @@ def test_evaluation_rounds_are_owned_by_events() -> None:
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:
     assert _weighted_mean([(4.0, 1), (2.0, 3)]) == 2.5
     assert _weighted_mean([]) is None
+
+
+def test_evaluation_lists_use_scoped_signed_pagination() -> None:
+    request = SimpleNamespace(
+        scope={"env": SimpleNamespace(CSRF_HMAC_KEY="c" * 32)}
+    )
+    cursor = _evaluation_next_cursor(
+        request,
+        kind="round-results",
+        scope_id="round-1",
+        timestamp=1234,
+        row_id="submission-1",
+    )
+    assert _evaluation_cursor(
+        request, cursor, kind="round-results", scope_id="round-1"
+    ) == (1234, "submission-1")
+    with pytest.raises(HTTPException, match="400"):
+        _evaluation_cursor(
+            request, cursor, kind="round-results", scope_id="another-round"
+        )
+
+
+def test_evaluation_workspaces_expose_pages_beyond_the_first_100_records() -> None:
+    root = Path(__file__).parents[2]
+    router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
+    models = (root / "src/sessionbuddy/evaluation/models.py").read_text()
+    reviews = (root / "frontend/src/main.tsx").read_text()
+
+    assignments = router.split("async def list_my_assignments", 1)[1].split(
+        "@evaluation_router.put", 1
+    )[0]
+    results = router.split("async def get_round_results", 1)[1].split(
+        "@evaluation_router.get", 1
+    )[0]
+    submission_results = results.split("evaluator_rows =", 1)[0]
+    assert EVALUATION_PAGE_LIMIT == 50
+    assert "LIMIT 100" not in assignments
+    assert "LIMIT 100" not in submission_results
+    assert "next_cursor" in assignments and "next_cursor" in results
+    assert "next_cursor" in models and "submission_count" in models
+    assert "Load more reviews" in reviews
+    assert "Load more results" in reviews
 
 
 async def test_review_workspace_is_local_only_and_bundled() -> None:

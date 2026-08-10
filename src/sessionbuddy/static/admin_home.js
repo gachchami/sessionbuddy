@@ -11,6 +11,7 @@
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
+
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
@@ -129,12 +130,27 @@
     state.organizations = organizations.filter((organization) => manageableIds.has(organization.id));
     byId("new-event").hidden = state.organizations.length === 0;
 
-    const eventGroups = await Promise.all(organizations.map(async (organization) => ({
-      organization,
-      events: (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events`)).data
-    })));
-    const events = eventGroups.flatMap(({ organization, events: items }) =>
-      items.map((event) => ({ ...event, organization_name: organization.name }))
+    // The dashboard is an overview: only the most recent few events per
+    // organization are fetched, and totals come from the aggregate metrics
+    // endpoint rather than from paging the whole history.
+    const [eventGroups, metricGroups] = await Promise.all([
+      Promise.all(organizations.map(async (organization) => ({
+        organization,
+        page: await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events?limit=12`)
+      }))),
+      Promise.all(organizations.map((organization) =>
+        api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/metrics`)
+      ))
+    ]);
+    const totals = metricGroups.reduce(
+      (sum, metrics) => ({
+        events: sum.events + metrics.event_count,
+        speakers: sum.speakers + metrics.speaker_count
+      }),
+      { events: 0, speakers: 0 }
+    );
+    const events = eventGroups.flatMap(({ organization, page }) =>
+      page.data.map((event) => ({ ...event, organization_name: organization.name }))
     );
     byId("metric-workspace").textContent = organizations.length === 1
       ? organizations[0].name
@@ -153,34 +169,26 @@
       eventList.replaceChildren(empty);
     }
 
-    const speakerGroups = await Promise.all(events.map(async (event) => ({
-      event,
-      speakers: (await api(`/api/v1/admin/events/${encodeURIComponent(event.id)}/speaker-targets`)).data
-    })));
-    const speakers = speakerGroups.flatMap(({ event, speakers: items }) =>
-      items
-        .filter((speaker) => (
-          speaker.person_id
-          && speaker.proposal_title
-          && speaker.proposal_title !== "No proposal"
-        ))
-        .map((speaker) => ({ ...speaker, event }))
-    );
-    byId("metric-events").textContent = String(events.length);
-    byId("metric-speakers").textContent = String(speakers.length);
+    // Recent speakers come straight from the aggregate endpoint — no
+    // per-event fan-out at all.
+    const speakers = metricGroups
+      .flatMap((metrics) => metrics.recent_speakers || [])
+      .filter((speaker) => speaker.person_id && speaker.proposal_title !== "No proposal");
+    byId("metric-events").textContent = String(totals.events);
+    byId("metric-speakers").textContent = String(totals.speakers);
     const speakerList = byId("speaker-list");
     if (speakers.length) {
       speakerList.replaceChildren(...speakers.slice(0, 6).map((speaker) => cardLink(
         speaker.display_name,
         `/speakers/${encodeURIComponent(speaker.person_id)}`,
-        speaker.event.name,
+        speaker.event_name,
         speaker.proposal_title,
         speaker.selection_status
       )));
     } else {
       speakerList.replaceChildren(make("p", "Speakers appear here after proposals are submitted.", "empty"));
     }
-    setStatus(`${organizations.length} organization${organizations.length === 1 ? "" : "s"}, ${events.length} event${events.length === 1 ? "" : "s"}, and ${speakers.length} speaker${speakers.length === 1 ? "" : "s"}.`);
+    setStatus(`${organizations.length} organization${organizations.length === 1 ? "" : "s"}, ${totals.events} event${totals.events === 1 ? "" : "s"}, and ${totals.speakers} speaker${totals.speakers === 1 ? "" : "s"} with proposals.`);
   }
 
   async function initialize() {

@@ -17,7 +17,8 @@ def test_public_cfp_collects_repeatable_distinct_co_speaker_contacts() -> None:
     assert "rows.length <= 10" in script
     assert "A co-speaker must use a different email" in script
     assert "Each co-speaker must use a different email" in script
-    assert "queueMicrotask(() => byId(\"proposal-form\").requestSubmit())" in script
+    assert "showReview(Boolean(restored.readyToSubmit) && !needsFiles)" in script
+    assert "queueMicrotask(() => byId(\"proposal-form\").requestSubmit())" not in script
     assert "validateCoSpeakers(form)" in script
 
 
@@ -31,7 +32,7 @@ def test_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> Non
     assert 'make("span", "Optional")' in script
     assert 'make("span", "Repeatable")' in script
     assert "up to 10 co-speakers" in script
-    assert "admin-programs.js?v=22" in page
+    assert "admin-programs.js?v=23" in page
 
 
 def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:

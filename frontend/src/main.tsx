@@ -66,6 +66,8 @@ type RoundResults = {
   completed_count: number;
   average_rating: number | null;
   submissions: SubmissionResult[];
+  submission_count: number;
+  next_cursor: string | null;
   evaluators: EvaluatorProgress[];
   available_evaluators: Evaluator[];
   conflicts: ConflictProgress[];
@@ -149,6 +151,7 @@ function ReviewWorkspace() {
   const [previews, setPreviews] = useState<Record<string, number | null>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [hideFinalized, setHideFinalized] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const dirtyCount = Object.values(dirty).filter(Boolean).length;
   useEffect(() => {
@@ -165,18 +168,26 @@ function ReviewWorkspace() {
     setCardStatus((current) => ({ ...current, [assignmentId]: message }));
   }
 
-  async function loadAssignments() {
-    const body = await api<{ data: Assignment[] }>(
-      "/api/v1/evaluator/assignments",
+  async function loadAssignments(cursor: string | null = null) {
+    const body = await api<{
+      data: Assignment[];
+      next_cursor: string | null;
+      total: number;
+      completed_count: number;
+    }>(
+      `/api/v1/evaluator/assignments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
     );
-    setAssignments(body.data);
-    const finalized = body.data.filter(
-      (assignment) => assignment.evaluation_state === "final",
-    ).length;
+    const assignments = body.data.map((assignment) => ({
+      ...assignment,
+      answers: assignment.answers ?? [],
+      hidden_answer_count: assignment.hidden_answer_count ?? 0,
+    }));
+    setAssignments((current) => (cursor ? [...current, ...assignments] : assignments));
+    setNextCursor(body.next_cursor);
     setStatus(
-      body.data.length === 0
+      body.total === 0
         ? "No open review assignments right now. When an organizer assigns you proposals, they appear here and you receive an email."
-        : `${finalized} of ${body.data.length} review${body.data.length === 1 ? "" : "s"} finalized.`,
+        : `${body.completed_count} of ${body.total} review${body.total === 1 ? "" : "s"} finalized.`,
     );
   }
   async function signIn() {
@@ -207,7 +218,15 @@ function ReviewWorkspace() {
         return;
       }
     } else {
-      // Drafts save whatever is filled in — but filled values must be valid.
+      // A review draft must still contain the core score and recommendation;
+      // "draft" means editable, not an empty placeholder write.
+      if (!form.reportValidity()) {
+        setCard(
+          assignment.id,
+          "Choose a valid rating and recommendation before saving your draft.",
+        );
+        return;
+      }
       const filledInvalid = Array.from(form.elements).find(
         (element): element is HTMLInputElement =>
           element instanceof HTMLInputElement &&
@@ -541,6 +560,20 @@ function ReviewWorkspace() {
           </article>
         ))}
       </section>
+      {nextCursor && (
+        <div className="actions">
+          <button
+            className="secondary"
+            onClick={() =>
+              loadAssignments(nextCursor).catch((error) =>
+                setStatus(errorMessage(error)),
+              )
+            }
+          >
+            Load more reviews
+          </button>
+        </div>
+      )}
     </main>
   );
 }
@@ -558,11 +591,15 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [sendEmail, setSendEmail] = useState(true);
   const [speakerMessage, setSpeakerMessage] = useState("");
 
-  async function load() {
+  async function load(cursor: string | null = null) {
     const body = await api<RoundResults>(
-      `/api/v1/admin/evaluation-rounds/${roundId}/results`,
+      `/api/v1/admin/evaluation-rounds/${roundId}/results${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
     );
-    setResults(body);
+    setResults((current) =>
+      cursor && current
+        ? { ...body, submissions: [...current.submissions, ...body.submissions] }
+        : body,
+    );
     setStatus(
       `${body.completed_count} of ${body.assigned_count} evaluations finalized.`,
     );
@@ -1105,6 +1142,20 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               );
             })}
           </section>
+          {results.next_cursor && (
+            <div className="actions">
+              <button
+                className="secondary"
+                onClick={() =>
+                  load(results.next_cursor).catch((error) =>
+                    setStatus(errorMessage(error)),
+                  )
+                }
+              >
+                Load more results
+              </button>
+            </div>
+          )}
         </>
       )}
     </main>

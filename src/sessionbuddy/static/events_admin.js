@@ -318,22 +318,17 @@
   }
 
   function visibleEvents() {
-    const now = Date.now();
-    const query = state.eventSearch.toLocaleLowerCase();
-    return [...state.events.values()].filter((event) => {
-      if (query && !`${event.name} ${event.location || ""}`.toLocaleLowerCase().includes(query)) return false;
-      if (state.eventFilter === "draft") return event.status === "draft";
-      if (state.eventFilter === "past") return event.ends_at_ms < now || event.status === "archived";
-      if (state.eventFilter === "active") return event.status === "active" && event.ends_at_ms >= now;
-      return true;
-    });
+    // The loaded set already reflects the server-side view filter and search
+    // query; re-filtering locally could only hide rows the server returned.
+    return [...state.events.values()];
   }
 
   function renderEventList() {
     const events = visibleEvents();
     const list = byId("event-list");
     list.replaceChildren(...events.map(eventItem));
-    byId("event-count").textContent = String(events.length);
+    byId("event-count").textContent = `${events.length}${state.nextCursor ? "+" : ""}`;
+    byId("load-more-events").hidden = !state.nextCursor;
     if (!events.length) {
       const empty = document.createElement("p");
       empty.className = "empty";
@@ -347,18 +342,54 @@
     byId("organization-title").textContent = organization?.name || "Organization";
   }
 
+  function fetchEventsPage(organizationId, cursor) {
+    // Filters and search run on the SERVER so older events beyond the loaded
+    // pages can never look "missing" from a filtered view.
+    const params = new URLSearchParams();
+    params.set("view", state.eventFilter);
+    if (state.eventSearch) params.set("q", state.eventSearch);
+    if (cursor) params.set("cursor", cursor);
+    return api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/events?${params}`);
+  }
+
   async function loadEvents(organizationId) {
     state.organizationId = organizationId;
     showOrganization();
     resetEventForm();
-    const result = await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/events`);
+    // One page at a time: the server paginates and the user asks for more.
+    const result = await fetchEventsPage(organizationId, null);
     state.events = new Map(result.data.map((event) => [event.id, event]));
+    state.nextCursor = result.next_cursor;
     renderEventList();
+  }
+
+  async function loadMoreEvents() {
+    if (!state.nextCursor) return;
+    const button = byId("load-more-events");
+    button.disabled = true;
+    try {
+      const result = await fetchEventsPage(state.organizationId, state.nextCursor);
+      for (const event of result.data) state.events.set(event.id, event);
+      state.nextCursor = result.next_cursor;
+      renderEventList();
+    } catch (error) {
+      setStatus(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function initialize() {
     const session = await api("/api/v1/auth/session");
     state.csrf = session.csrf_token;
+    // Creating events needs organization-wide management OF THE SELECTED
+    // organization; a user can be organization admin of one org and only an
+    // event admin of another, so track the exact ids.
+    state.adminOrganizationIds = new Set(
+      (session.organization_access || [])
+        .filter((item) => (item.roles || []).includes("organization_admin"))
+        .map((item) => item.organization_id)
+    );
     const result = await api("/api/v1/admin/organizations");
     state.organizations = new Map(result.data.map((organization) => [organization.id, organization]));
     const select = byId("organization");
@@ -369,9 +400,10 @@
     if (requestedOrganization && state.organizations.has(requestedOrganization)) select.value = requestedOrganization;
     else if (session.organization_id && state.organizations.has(session.organization_id)) select.value = session.organization_id;
     byId("organization-picker").hidden = result.data.length === 1;
+    updateCreateAccess(select.value);
     await loadEvents(select.value);
     setStatus("");
-    if (location.hash === "#event-form") {
+    if (location.hash === "#event-form" && !byId("new-event").hidden) {
       resetEventForm();
       openEventDialog();
     }
@@ -383,19 +415,33 @@
     byId("event-form").elements.name.focus();
   });
 
+  function updateCreateAccess(organizationId) {
+    byId("new-event").hidden = !state.adminOrganizationIds?.has(organizationId);
+  }
+
+  byId("load-more-events").addEventListener("click", () => { loadMoreEvents(); });
+
   byId("organization").addEventListener("change", (event) => {
+    updateCreateAccess(event.currentTarget.value);
     loadEvents(event.currentTarget.value)
       .then(() => setStatus(""))
       .catch((error) => setStatus(error.message, true));
   });
+  function requeryEvents() {
+    loadEvents(state.organizationId)
+      .then(() => setStatus(""))
+      .catch((error) => setStatus(error.message, true));
+  }
   document.querySelectorAll("[data-event-filter]").forEach((button) => button.addEventListener("click", () => {
     state.eventFilter = button.dataset.eventFilter;
     document.querySelectorAll("[data-event-filter]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-    renderEventList();
+    requeryEvents();
   }));
+  let searchDebounce = 0;
   byId("event-search").addEventListener("input", (event) => {
     state.eventSearch = event.currentTarget.value.trim();
-    renderEventList();
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(requeryEvents, 250);
   });
 
   byId("event-form").addEventListener("input", (event) => {

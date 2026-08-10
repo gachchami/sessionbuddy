@@ -34,8 +34,13 @@ test.describe("MVP experience accessibility", () => {
 
   test("expired-link recovery has no automatically detectable serious violations", async ({ page }) => {
     const expiredToken = "expired-link".padEnd(32, "x");
-    const response = await page.goto(`/auth/verify?token=${expiredToken}`);
-    expect(response?.status()).toBe(404);
+    await page.goto(`/auth/verify?token=${expiredToken}`);
+    const responsePromise = page.waitForResponse((response) =>
+      response.url().includes("/auth/verify?") && response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "Continue" }).click();
+    const response = await responsePromise;
+    expect(response.status()).toBe(404);
     await expect(page.locator("main")).toBeVisible();
 
     const results = await new AxeBuilder({ page })

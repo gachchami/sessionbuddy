@@ -2,14 +2,27 @@
   "use strict";
   const byId = (id) => document.getElementById(id);
   const slug = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+  const browserSessionId = () => {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const value = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
+  };
   const state = {
-    csrf: "", form: null, draftVersion: 0, publicSession: crypto.randomUUID(),
+    csrf: "", form: null, draftVersion: 0, publicSession: browserSessionId(),
     files: new Map(), uploaded: new Map(), existingFiles: new Map(),
     applyConditions: () => {},
     sessionEmail: "", authenticated: false, editingSubmission: null,
     viewingSubmission: null, submissions: []
   };
   const browserDraftKey = `sessionbuddy:cfp:${slug}:draft`;
+  const BROWSER_DRAFT_TTL_MS = 30 * 60 * 1000;
+
+  function normalizedEmail(value) {
+    return String(value || "").trim().toLowerCase();
+  }
 
   function setStatus(message, kind = "") {
     const node = byId("status");
@@ -245,7 +258,7 @@
           resend.disabled = true;
           try {
             await api(`${invitationEndpoint(submission, invitation)}/resend`, {
-              method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
+              method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}` }, body: "{}"
             });
             await reloadSubmissions(submission.id);
             setStatus(`A new invitation was sent to ${invitation.email}.`, "success");
@@ -325,7 +338,12 @@
   function browserDraft() {
     try {
       const saved = JSON.parse(localStorage.getItem(browserDraftKey) || "null");
-      return saved && saved.schemaVersion === 1 ? saved : null;
+      if (!saved || saved.schemaVersion !== 1) return null;
+      if (!Number.isSafeInteger(saved.savedAt) || Date.now() - saved.savedAt > BROWSER_DRAFT_TTL_MS || saved.savedAt > Date.now() + 60_000) {
+        localStorage.removeItem(browserDraftKey);
+        return null;
+      }
+      return saved;
     } catch (_) { return null; }
   }
 
@@ -337,6 +355,7 @@
       coSpeakers: coSpeakers(),
       fileNames: [...state.files.values()].map((file) => file.name),
       readyToSubmit,
+      ownerEmail: normalizedEmail(answers({ includeUploads: false }).speaker_email),
       savedAt: Date.now()
     };
     try { localStorage.setItem(browserDraftKey, JSON.stringify(value)); }
@@ -344,9 +363,10 @@
     return value;
   }
 
-  function restoreBrowserDraft() {
+  function restoreBrowserDraft(expectedEmail) {
     const saved = browserDraft();
     if (!saved || saved.formVersion !== state.form.version) return null;
+    if (!saved.ownerEmail || saved.ownerEmail !== normalizedEmail(expectedEmail)) return null;
     restoreValues(saved.answers || {});
     byId("co-speaker-rows").replaceChildren();
     (saved.coSpeakers || []).forEach(addCoSpeakerRow);
@@ -497,7 +517,7 @@
     // record is created when the submission itself succeeds.
     const authorization = await api(`/api/v1/cfp/forms/${encodeURIComponent(state.form.id)}/upload-authorizations`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+      headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}` },
       body: JSON.stringify({ kind, filename: file.name, content_type: file.type, byte_size: file.size, checksum_sha256: await checksum(file) })
     });
     const uploadUrl = safeUploadUrl(authorization.upload_url);
@@ -511,13 +531,13 @@
     if (!upload.ok) throw new Error("The file could not be uploaded. Try again.");
     const completionPath = `/api/v1/cfp/forms/${encodeURIComponent(state.form.id)}/upload-authorizations/${encodeURIComponent(authorization.staged_id)}/complete`;
     let completion = await api(completionPath, {
-      method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
+      method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}` }, body: "{}"
     });
     for (let attempt = 0; ["uploaded", "scanning"].includes(completion.state) && attempt < 60; attempt += 1) {
       setStatus(`Checking ${field.label} for safety…`);
       await new Promise((resolve) => setTimeout(resolve, 1000));
       completion = await api(completionPath, {
-        method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
+        method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}` }, body: "{}"
       });
     }
     if (completion.state === "rejected") throw new Error(`${field.label} did not pass the safety check.`);
@@ -555,12 +575,13 @@
         return;
       }
       byId("proposal-card").hidden = false;
-      const saved = restoreBrowserDraft();
+      const saved = browserDraft();
       try {
         const session = await api("/api/v1/auth/session");
         state.authenticated = true;
         state.csrf = session.csrf_token;
         state.sessionEmail = session.email || "";
+        const restored = restoreBrowserDraft(state.sessionEmail);
         lockSignedInEmail();
         try {
           const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
@@ -573,18 +594,18 @@
         const requested = new URLSearchParams(location.search).get("submission_id");
         const selected = state.submissions.find((submission) => submission.id === requested);
         if (selected) chooseSubmission(selected);
-        else if (saved) {
+        else if (restored) {
           lockSignedInEmail();
-          const needsFiles = (saved.fileNames || []).length > 0;
-          showReview(Boolean(saved.readyToSubmit) && !needsFiles);
+          const needsFiles = (restored.fileNames || []).length > 0;
+          showReview(Boolean(restored.readyToSubmit) && !needsFiles);
           setStatus(needsFiles
             ? "Email verified. Your answers were restored; reattach the selected files before continuing."
-            : saved.readyToSubmit
+            : restored.readyToSubmit
               ? "Email verified. Submitting your proposal now…"
             : "Your proposal was restored from this browser.", "success");
-          if (saved.readyToSubmit && !needsFiles) {
-            queueMicrotask(() => byId("proposal-form").requestSubmit());
-          }
+          // Keep the restored proposal on the review step. Email verification
+          // proves identity, but the speaker still explicitly confirms the
+          // final submission.
         }
         else {
           setStatus(state.submissions.length ? "Choose an existing proposal to edit, or start another one." : "Start your first proposal below.");
@@ -593,7 +614,9 @@
       } catch (error) {
         if (error.status !== 401) throw error;
         state.authenticated = false;
-        setStatus(saved ? "Your proposal was restored from this browser." : "Complete the proposal. We will verify your email only when you submit.");
+        setStatus(saved
+          ? "A recent draft is saved in this browser. Verify its proposal email to restore it."
+          : "Complete the proposal. We will verify your email only when you submit.");
       }
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   }
@@ -644,7 +667,7 @@
         const values = { ...state.editingSubmission.answers, ...answers({ includeUploads: false }) };
         const submission = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(state.editingSubmission.id)}`, {
           method: "PATCH",
-          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}` },
           body: JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values, co_speakers: coSpeakers(), version: state.editingSubmission.version })
         });
         state.editingSubmission = submission;
@@ -711,7 +734,7 @@
         : `/api/v1/forms/${encodeURIComponent(slug)}/submissions`;
       const submission = await api(target, {
         method: state.editingSubmission ? "PATCH" : "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`, "x-public-session-id": state.publicSession },
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}`, "x-public-session-id": state.publicSession },
         body: JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values, co_speakers: coSpeakers(), ...(state.editingSubmission ? { version: state.editingSubmission.version } : {}) })
       });
       setStep("done");

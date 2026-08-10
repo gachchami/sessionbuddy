@@ -3,30 +3,53 @@ set -eu
 
 # Container-first release rehearsal. Artifacts are written only beneath ignored
 # .local directories; this command does not deploy or touch remote resources.
-docker compose up --build --detach worker
-docker compose run --rm --no-deps worker npm run worker:migrations:baseline:check
-docker compose run --rm --no-deps worker npm run worker:migrate
-docker compose run --rm --no-deps worker npm run frontend:check
-docker compose run --rm --no-deps worker npm run frontend:build
-docker compose run --rm --no-deps worker uv run python scripts/embed_console_assets.py --check
-docker compose run --rm --no-deps worker uv run ruff check .
-docker compose run --rm --no-deps worker uv run pytest -q
-docker compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
+mkdir -p .local
+RELEASE_GATE_STATE=$(mktemp -d .local/release-gate.XXXXXX)
+export RELEASE_GATE_STATE
 
-docker compose run --rm e2e
+release_compose() {
+  docker compose -p sessionbuddy-release-gate -f compose.yaml -f compose.release.yaml "$@"
+}
 
-docker compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
+cleanup() {
+  release_compose down --remove-orphans >/dev/null 2>&1 || true
+  rm -rf -- "$RELEASE_GATE_STATE"
+}
+trap cleanup EXIT INT TERM
+
+release_compose build worker
+release_compose run --rm --no-deps worker npm run worker:migrations:baseline:check
+release_compose run --rm --no-deps worker npm run worker:migrate -- \
+  --persist-to "/workspace/$RELEASE_GATE_STATE"
+# Prove the ledger is repeatable against the same persistent D1 before the
+# browser phase changes the instance from fresh-install to configured state.
+release_compose run --rm --no-deps worker npm run worker:migrate -- \
+  --persist-to "/workspace/$RELEASE_GATE_STATE"
+release_compose run --rm --no-deps worker uv run pywrangler d1 execute DB \
+  --local --persist-to "/workspace/$RELEASE_GATE_STATE" \
+  --command "INSERT INTO instance_setup (singleton_key,completed_at_ms) VALUES ('primary',unixepoch() * 1000); DELETE FROM instance_setup_credentials WHERE singleton_key='primary';"
+release_compose up --detach worker
+release_compose run --rm --no-deps worker npm run frontend:check
+release_compose run --rm --no-deps worker npm run frontend:build
+release_compose run --rm --no-deps worker uv run python scripts/embed_console_assets.py --check
+release_compose run --rm --no-deps worker uv run ruff check .
+release_compose run --rm --no-deps worker uv run pytest -q
+release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
+
+release_compose run --rm e2e
+
+release_compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
   --base-url http://worker:8787 --route /api/v1/engine-room/status \
   --requests 100 --warmup 20 --concurrency 4 --timeout-seconds 30 \
   --output .local/benchmarks/release-engine-room-worker.json
-docker compose run --rm e2e sh -lc \
+release_compose run --rm e2e sh -lc \
   "mkdir -p .local/lighthouse && \
    CHROME_PATH=/ms-playwright/chromium-1234/chrome-linux/chrome \
    npx --yes lighthouse@13.4.1 http://worker:8787/engine-room \
    --only-categories=performance,accessibility --output=json \
    --output-path=.local/lighthouse/engine-room-mobile.json \
    --chrome-flags='--headless --no-sandbox --disable-dev-shm-usage' --quiet"
-docker compose run --rm --no-deps worker uv run pywrangler deploy \
+release_compose run --rm --no-deps worker uv run pywrangler deploy \
   --env dev --dry-run --outdir /tmp/sessionbuddy-release-dry-run
 
 echo "Release readiness local release gate passed. No remote deployment was performed."

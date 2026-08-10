@@ -1692,16 +1692,39 @@
       "EvaluationAssignmentList": {
         "additionalProperties": false,
         "properties": {
+          "completed_count": {
+            "minimum": 0.0,
+            "title": "Completed Count",
+            "type": "integer"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/EvaluationAssignmentView"
             },
             "title": "Data",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
-          "data"
+          "data",
+          "total",
+          "completed_count"
         ],
         "title": "EvaluationAssignmentList",
         "type": "object"
@@ -2156,6 +2179,17 @@
             "title": "Event Id",
             "type": "string"
           },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
           "round_id": {
             "title": "Round Id",
             "type": "string"
@@ -2172,6 +2206,11 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "submission_count": {
+            "minimum": 0.0,
+            "title": "Submission Count",
+            "type": "integer"
           },
           "submissions": {
             "items": {
@@ -2190,6 +2229,7 @@
           "completed_count",
           "average_rating",
           "submissions",
+          "submission_count",
           "evaluators",
           "conflicts"
         ],
@@ -2641,6 +2681,17 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "required": [
@@ -2878,14 +2929,20 @@
             "type": "integer"
           },
           "status": {
-            "default": "active",
-            "enum": [
-              "draft",
-              "active",
-              "archived"
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "active",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Status",
-            "type": "string"
+            "title": "Status"
           },
           "time_zone": {
             "maxLength": 100,
@@ -3682,6 +3739,7 @@
           },
           "role": {
             "enum": [
+              "organization_admin",
               "event_admin",
               "evaluator",
               "speaker"
@@ -3724,6 +3782,7 @@
           },
           "role": {
             "enum": [
+              "organization_admin",
               "event_admin",
               "evaluator",
               "speaker"
@@ -3784,6 +3843,7 @@
           },
           "role": {
             "enum": [
+              "organization_admin",
               "event_admin",
               "evaluator",
               "speaker"
@@ -4086,6 +4146,37 @@
           "data"
         ],
         "title": "OrganizationList",
+        "type": "object"
+      },
+      "OrganizationMetricsView": {
+        "properties": {
+          "event_count": {
+            "title": "Event Count",
+            "type": "integer"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "recent_speakers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RecentSpeakerView"
+            },
+            "title": "Recent Speakers",
+            "type": "array"
+          },
+          "speaker_count": {
+            "title": "Speaker Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "organization_id",
+          "event_count",
+          "speaker_count"
+        ],
+        "title": "OrganizationMetricsView",
         "type": "object"
       },
       "OrganizationSpeaker": {
@@ -4803,6 +4894,44 @@
           "evaluator_user_id"
         ],
         "title": "ReassignmentView",
+        "type": "object"
+      },
+      "RecentSpeakerView": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "person_id": {
+            "title": "Person Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "selection_status": {
+            "title": "Selection Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "person_id",
+          "display_name",
+          "event_id",
+          "event_name",
+          "proposal_title",
+          "selection_status"
+        ],
+        "title": "RecentSpeakerView",
         "type": "object"
       },
       "RecipientPreview": {
@@ -7576,6 +7705,32 @@
               "title": "Round Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
           }
         ],
         "responses": {
@@ -7736,6 +7891,47 @@
       }
     },
     "/api/v1/admin/events/{event_id}": {
+      "get": {
+        "description": "Read one event directly. Archived events stay readable so admin pages\ncan render context instead of going dark.",
+        "operationId": "get_event_api_v1_admin_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Event",
+        "tags": [
+          "administration"
+        ]
+      },
       "patch": {
         "operationId": "update_event_api_v1_admin_events__event_id__patch",
         "parameters": [
@@ -10678,6 +10874,52 @@
               "title": "Organization Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Q",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10753,6 +10995,49 @@
           }
         },
         "summary": "Create Event",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations/{organization_id}/metrics": {
+      "get": {
+        "description": "Lightweight aggregate counts for dashboards: two COUNT queries instead\nof paging every event and fanning out per-event speaker requests.\n\nOrganization admins see organization-wide counts; event administrators see\ncounts over the events they administer.",
+        "operationId": "organization_metrics_api_v1_admin_organizations__organization_id__metrics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationMetricsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Organization Metrics",
         "tags": [
           "administration"
         ]

@@ -21,9 +21,52 @@
     input.value = invitation.accept_url;
     result.hidden = false;
   }
+  function destructiveButton(label, confirmLabel, action) {
+    // Removing access is destructive: require a second, explicit click and
+    // surface failures instead of silently doing nothing.
+    const button = document.createElement("button");
+    button.className = "secondary";
+    button.textContent = label;
+    button.addEventListener("click", async () => {
+      if (button.dataset.confirming !== "true") {
+        button.dataset.confirming = "true";
+        button.textContent = confirmLabel;
+        return;
+      }
+      button.disabled = true;
+      try {
+        await action();
+        await load();
+      } catch (error) {
+        byId("status").textContent = window.SessionBuddyApi.message(error);
+        byId("status").focus();
+        button.disabled = false;
+        button.dataset.confirming = "false";
+        button.textContent = label;
+      }
+    });
+    button.addEventListener("blur", () => {
+      button.dataset.confirming = "false";
+      button.textContent = label;
+    });
+    return button;
+  }
   async function load() {
     const session = await api("/api/v1/auth/session");
     csrf = session.csrf_token;
+    // Offering the organization-admin role requires administering THIS
+    // event's organization, not just any organization the account belongs to.
+    const adminOrganizationIds = new Set((session.organization_access || [])
+      .filter((entry) => (entry.roles || []).includes("organization_admin"))
+      .map((entry) => entry.organization_id));
+    let canInviteOrganizationAdmin = false;
+    try {
+      const event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+      byId("access-event-name").textContent = event.name;
+      canInviteOrganizationAdmin = adminOrganizationIds.has(event.organization_id);
+    } catch (_) { /* the heading simply stays generic */ }
+    byId("invite-form").elements.role.querySelector('option[value="organization_admin"]')
+      ?.toggleAttribute("hidden", !canInviteOrganizationAdmin);
     const [invitations, members] = await Promise.all([
       api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`),
       api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/members`)
@@ -42,8 +85,8 @@
           } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); }
           finally { resend.disabled = false; }
         });
-        const button = document.createElement("button"); button.className = "secondary"; button.textContent = "Revoke";
-        button.addEventListener("click", async () => { await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}`, { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf } }); await load(); });
+        const button = destructiveButton("Revoke", "Select again to revoke", () =>
+          api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}`, { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf } }));
         node.append(" ", resend, " ", button);
       }
       invitationList.append(node);
@@ -54,8 +97,8 @@
     for (const member of members.data) {
       const node = item(`${member.email} · ${member.role.replaceAll("_", " ")} · ${member.status}`);
       if (member.status === "active" && member.user_id !== session.user_id) {
-        const button = document.createElement("button"); button.className = "secondary"; button.textContent = "Revoke role";
-        button.addEventListener("click", async () => { await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/members/${encodeURIComponent(member.user_id)}/roles/${encodeURIComponent(member.role)}`, { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf } }); await load(); });
+        const button = destructiveButton("Revoke role", "Select again to revoke", () =>
+          api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/members/${encodeURIComponent(member.user_id)}/roles/${encodeURIComponent(member.role)}`, { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf } }));
         node.append(" ", button);
       }
       memberList.append(node);

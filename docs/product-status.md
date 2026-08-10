@@ -39,7 +39,9 @@ Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
 records. Acceptance creates the accepted session and default onboarding tasks;
 rejection waives outstanding onboarding; either decision can queue a speaker
-email with organizer-controlled copy.
+email with organizer-controlled copy. Reviewer assignments and organizer result
+lists use signed keyset pagination, while completion totals are calculated over
+the complete round rather than only the visible page.
 
 ## Speaker operations
 
@@ -79,6 +81,12 @@ Lighthouse audits, Cloudflare packaging, remote D1
 migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
 health checks, browser-route checks, desktop/mobile API-failure recovery checks,
 and the anonymous identity boundary.
+
+The local release rehearsal runs in an isolated Compose project with disposable
+D1 persistence, so it is repeatable without modifying or depending on a
+developer's ordinary local database. Anonymous CFP browser handoff drafts expire
+after 30 minutes and are restored only after the matching proposal email is
+verified.
 
 The isolated Cloudflare development rehearsal is complete with 23 passing
 preflight checks. Resend and direct-R2 credentials are configured, the

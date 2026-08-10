@@ -168,15 +168,15 @@
   }
 
   async function loadEventScopedDirectory(organizations) {
-    const eventGroups = await Promise.all(organizations.map(async (organization) => ({
-      organization,
-      events: (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events`)).data,
-    })));
-    const matching = eventGroups.flatMap(({ organization, events }) => events
-      .filter((event) => event.id === selectedEventId)
-      .map((event) => ({ organization, event })));
-    if (!matching.length) throw new Error("This event is not available to your account.");
-    const { organization, event } = matching[0];
+    let event;
+    try {
+      event = await api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}`);
+    } catch (error) {
+      if (error.status === 404) throw new Error("This event is not available to your account.");
+      throw error;
+    }
+    const organization = organizations.find((item) => item.id === event.organization_id);
+    if (!organization) throw new Error("This event is not available to your account.");
     const targets = (await api(`/api/v1/admin/events/${encodeURIComponent(event.id)}/speaker-targets`)).data;
     allEvents = [{
       event_id: event.id,

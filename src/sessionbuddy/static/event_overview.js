@@ -41,15 +41,16 @@
   async function initialize() {
     if (!eventId) throw new Error("This event link is invalid.");
     await api("/api/v1/auth/session");
-    const organizations = (await api("/api/v1/admin/organizations")).data;
-    let selected = null;
-    let organization = null;
-    for (const item of organizations) {
-      const events = (await api(`/api/v1/admin/organizations/${encodeURIComponent(item.id)}/events`)).data;
-      selected = events.find((event) => event.id === eventId) || null;
-      if (selected) { organization = item; break; }
+    let selected;
+    try {
+      selected = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    } catch (error) {
+      if (error.status === 404) throw new Error("This event is not available to your account.");
+      throw error;
     }
-    if (!selected || !organization) throw new Error("This event is not available to your account.");
+    const organizations = (await api("/api/v1/admin/organizations")).data;
+    const organization = organizations.find((item) => item.id === selected.organization_id);
+    if (!organization) throw new Error("This event is not available to your account.");
     const settle = (promise) => promise
       .then((value) => ({ ok: true, value }))
       .catch((error) => ({ ok: false, status: Number(error && error.status) || 0 }));

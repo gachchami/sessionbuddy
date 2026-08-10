@@ -1567,6 +1567,32 @@
         "api-explorer"
       ],
       "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/admin/events/{event_id}": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-event-read",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/metrics": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-organization-metrics",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
     }
   },
   "pages": {

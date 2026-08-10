@@ -1,8 +1,11 @@
 """Production passwordless access and one-time tenant bootstrap."""
 
+import binascii
 import hashlib
 import hmac
+import json
 import re
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from email.headerregistry import Address
 from html import escape
 from typing import Literal
@@ -330,10 +333,13 @@ class GenericAccepted(BaseModel):
     accepted: bool = True
 
 
+InvitationRole = Literal["organization_admin", "event_admin", "evaluator", "speaker"]
+
+
 class InvitationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     email: str = Field(min_length=3, max_length=320)
-    role: Literal["event_admin", "evaluator", "speaker"]
+    role: InvitationRole
     expires_in_days: int = Field(default=14, ge=1, le=30)
     display_name: str = Field(default="", max_length=200)
     job_title: str = Field(default="", max_length=200)
@@ -349,7 +355,7 @@ class InvitationView(BaseModel):
     id: str
     event_id: str
     email: str
-    role: Literal["event_admin", "evaluator", "speaker"]
+    role: InvitationRole
     status: Literal["pending", "accepted", "revoked", "expired"] = "pending"
 
 
@@ -411,6 +417,7 @@ class EventView(BaseModel):
 
 class EventList(BaseModel):
     data: list[EventView]
+    next_cursor: str | None = None
 
 
 class EventLogoView(BaseModel):
@@ -497,7 +504,9 @@ class EventCreate(BaseModel):
 
 class EventUpdate(EventCreate):
     version: int = Field(ge=1)
-    status: Literal["draft", "active", "archived"] = "active"
+    # None keeps the stored status: a client that omits it must never silently
+    # resurrect an archived event.
+    status: Literal["draft", "active", "archived"] | None = None
 
 
 class SessionCreated(BaseModel):
@@ -817,14 +826,18 @@ async def list_organizations(request: Request) -> OrganizationList:
         for (organization_id, _event_id), roles in authenticated.actor.event_roles.items()
         if Role.EVENT_ADMIN in roles
     )
-    for organization_id in organization_ids:
-        row = row_mapping(
-            await db.prepare("SELECT id,name,status,version FROM organizations WHERE id=?1 LIMIT 1")
-            .bind(organization_id)
-            .first()
+    if organization_ids:
+        ordered_ids = sorted(organization_ids)
+        placeholders = ",".join(f"?{index + 1}" for index in range(len(ordered_ids)))
+        result = await (
+            db.prepare(
+                # Placeholder-only interpolation; every value is bound.
+                f"SELECT id,name,status,version FROM organizations WHERE id IN ({placeholders})"  # noqa: S608, E501
+            )
+            .bind(*ordered_ids)
+            .all()
         )
-        if row is not None:
-            organizations.append(OrganizationView(**row))
+        organizations = [OrganizationView(**row) for row in result_rows(result)]
     organizations.sort(key=lambda item: (item.name.casefold(), item.id))
     return OrganizationList(data=organizations)
 
@@ -873,36 +886,335 @@ async def update_organization(
     return OrganizationView(**row)
 
 
+EVENTS_PAGE_LIMIT = 50
+EVENT_LIST_VIEWS = frozenset({"all", "active", "draft", "past"})
+_EVENTS_CURSOR_TTL_MS = 15 * 60 * 1000
+
+
 @access_router.get(
     "/api/v1/admin/organizations/{organization_id}/events",
     response_model=EventList,
     tags=["administration"],
 )
-async def list_events(organization_id: str, request: Request) -> EventList:
+async def list_events(
+    organization_id: str,
+    request: Request,
+    cursor: str | None = None,
+    limit: int = EVENTS_PAGE_LIMIT,
+    view: str = "all",
+    q: str = "",
+) -> EventList:
     authenticated = await authenticate_request(request)
     organization_roles = authenticated.actor.organization_roles.get(organization_id, frozenset())
-    manageable_event_ids = {
-        event_id
-        for (scope_organization_id, event_id), roles in authenticated.actor.event_roles.items()
-        if scope_organization_id == organization_id and Role.EVENT_ADMIN in roles
-    }
-    if Role.ORGANIZATION_ADMIN not in organization_roles and not manageable_event_ids:
+    is_organization_admin = Role.ORGANIZATION_ADMIN in organization_roles
+    manages_any_event = any(
+        scope_organization_id == organization_id and Role.EVENT_ADMIN in roles
+        for (scope_organization_id, _event_id), roles in authenticated.actor.event_roles.items()
+    )
+    if not is_organization_admin and not manages_any_event:
         raise HTTPException(status_code=404)
-    result = await (
-        database(request)
+    if view not in EVENT_LIST_VIEWS:
+        raise HTTPException(status_code=422)
+    search = q.strip()[:100]
+    page_limit = max(1, min(EVENTS_PAGE_LIMIT, limit))
+    now = utc_now_ms()
+    decoded_cursor = _events_cursor(
+        request, cursor, organization_id=organization_id, view=view, search=search
+    )
+    after_starts_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
+
+    # The SQL below is assembled ONLY from the fixed fragments in this
+    # function; every user-influenced value is bound as a parameter.
+    conditions = ["e.organization_id=?"]
+    binds: list[object] = [organization_id]
+    membership_join = ""
+    if not is_organization_admin:
+        # Event administrators see only the events they hold an active
+        # event_admin membership for — filtered in SQL, not after the fetch.
+        membership_join = (
+            " JOIN event_memberships em ON em.organization_id=e.organization_id"
+            " AND em.event_id=e.id AND em.user_id=?"
+            " AND em.role='event_admin' AND em.status='active'"
+        )
+        binds.insert(0, authenticated.actor.user_id)
+    if view == "active":
+        conditions.append("e.status='active' AND e.ends_at_ms>=?")
+        binds.append(now)
+    elif view == "draft":
+        conditions.append("e.status='draft'")
+    elif view == "past":
+        conditions.append("(e.ends_at_ms<? OR e.status='archived')")
+        binds.append(now)
+    if search:
+        escaped = (
+            search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        pattern = f"%{escaped}%"
+        conditions.append(
+            "(e.name LIKE ? ESCAPE '\\' OR COALESCE(e.location,'') LIKE ? ESCAPE '\\')"
+        )
+        binds.extend([pattern, pattern])
+    if after_id is not None:
+        conditions.append("(e.starts_at_ms<? OR (e.starts_at_ms=? AND e.id<?))")
+        binds.extend([after_starts_at_ms, after_starts_at_ms, after_id])
+    binds.append(page_limit + 1)
+    statement = database(request).prepare(
+        "SELECT e.id,e.organization_id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,"  # noqa: S608, E501
+        "e.location,e.delivery_mode,e.description,e.accent_color,e.logo_url,"
+        "e.cover_image_url,e.website_url,e.email_sender_name,e.email_reply_to,"
+        "e.status,e.version FROM events e"
+        f"{membership_join} WHERE {' AND '.join(conditions)} "
+        "ORDER BY e.starts_at_ms DESC,e.id DESC LIMIT ?"
+    ).bind(*binds)
+    rows = result_rows(await statement.all())
+    events = [EventView(**row) for row in rows[:page_limit]]
+    next_cursor = None
+    if len(rows) > page_limit and events:
+        next_cursor = _events_next_cursor(
+            request,
+            organization_id=organization_id,
+            view=view,
+            search=search,
+            starts_at_ms=events[-1].starts_at_ms,
+            row_id=events[-1].id,
+        )
+    return EventList(data=events, next_cursor=next_cursor)
+
+
+def _events_cursor(
+    request: Request, value: str | None, *, organization_id: str, view: str, search: str
+) -> tuple[int, str] | None:
+    """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
+    if value is None:
+        return None
+    try:
+        encoded_payload, encoded_signature = value.split(".", 1)
+        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
+        signature = urlsafe_b64decode(encoded_signature + "=" * (-len(encoded_signature) % 4))
+        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError
+        decoded = json.loads(payload.decode())
+        if not isinstance(decoded, dict) or decoded != {
+            "exp": decoded.get("exp"),
+            "id": decoded.get("id"),
+            "org": organization_id,
+            "q": search,
+            "starts": decoded.get("starts"),
+            "view": view,
+            "v": 1,
+        }:
+            raise ValueError
+        starts_at, row_id, expires = decoded["starts"], decoded["id"], decoded["exp"]
+        if (
+            not isinstance(starts_at, int)
+            or not isinstance(row_id, str)
+            or len(row_id) > 100
+            or not isinstance(expires, int)
+            or expires < utc_now_ms()
+        ):
+            raise ValueError
+        return starts_at, row_id
+    except (
+        ValueError,
+        binascii.Error,  # subclass of ValueError; listed for clarity
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        KeyError,
+    ) as exc:
+        raise HTTPException(status_code=400) from exc
+
+
+class RecentSpeakerView(BaseModel):
+    person_id: str
+    display_name: str
+    event_id: str
+    event_name: str
+    proposal_title: str
+    selection_status: str
+
+
+class OrganizationMetricsView(BaseModel):
+    organization_id: str
+    event_count: int
+    speaker_count: int
+    recent_speakers: list[RecentSpeakerView] = []
+
+
+@access_router.get(
+    "/api/v1/admin/organizations/{organization_id}/metrics",
+    response_model=OrganizationMetricsView,
+    tags=["administration"],
+)
+async def organization_metrics(organization_id: str, request: Request) -> OrganizationMetricsView:
+    """Lightweight aggregate counts for dashboards: two COUNT queries instead
+    of paging every event and fanning out per-event speaker requests.
+
+    Organization admins see organization-wide counts; event administrators see
+    counts over the events they administer."""
+    authenticated = await authenticate_request(request)
+    organization_roles = authenticated.actor.organization_roles.get(organization_id, frozenset())
+    is_organization_admin = Role.ORGANIZATION_ADMIN in organization_roles
+    manages_any_event = any(
+        scope_organization_id == organization_id and Role.EVENT_ADMIN in roles
+        for (scope_organization_id, _event_id), roles in authenticated.actor.event_roles.items()
+    )
+    if not is_organization_admin and not manages_any_event:
+        raise HTTPException(status_code=404)
+    db = database(request)
+    # The proposal-attachment probe correlates on (organization, event,
+    # event_speaker) so it rides idx_submission_speakers_speaker instead of
+    # scanning submission_speakers, and speakers are counted as UNIQUE people
+    # (DISTINCT person_id), not per-event appearances.
+    has_proposal = (
+        "EXISTS (SELECT 1 FROM submission_speakers ss"
+        " WHERE ss.organization_id=es.organization_id"
+        " AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id)"
+    )
+    if is_organization_admin:
+        event_count = await (
+            db.prepare("SELECT COUNT(*) AS total FROM events WHERE organization_id=?1")
+            .bind(organization_id)
+            .first("total")
+        )
+        speaker_count = await (
+            db.prepare(
+                "SELECT COUNT(DISTINCT es.person_id) AS total FROM event_speakers es "  # noqa: S608, E501
+                f"WHERE es.organization_id=?1 AND {has_proposal}"
+            )
+            .bind(organization_id)
+            .first("total")
+        )
+        recent_rows = result_rows(
+            await db.prepare(
+                "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
+                "e.name AS event_name,es.selection_status,"
+                "COALESCE((SELECT s.proposal_title FROM submission_speakers ss"
+                " JOIN submissions s ON s.id=ss.submission_id"
+                " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
+                " AND ss.event_speaker_id=es.id"
+                " ORDER BY s.submitted_at_ms DESC LIMIT 1),'No proposal') AS proposal_title "
+                "FROM event_speakers es "
+                "JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id "
+                "JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id "
+                f"WHERE es.organization_id=?1 AND {has_proposal} "
+                "ORDER BY es.last_activity_at_ms DESC,es.id DESC LIMIT 6"
+            )
+            .bind(organization_id)
+            .all()
+        )
+    else:
+        membership_join = (
+            "JOIN event_memberships em ON em.organization_id=es.organization_id"
+            " AND em.event_id=es.event_id AND em.user_id=?2"
+            " AND em.role='event_admin' AND em.status='active' "
+        )
+        event_count = await (
+            db.prepare(
+                """SELECT COUNT(*) AS total FROM events e
+                   JOIN event_memberships em ON em.organization_id=e.organization_id
+                    AND em.event_id=e.id AND em.user_id=?2
+                    AND em.role='event_admin' AND em.status='active'
+                   WHERE e.organization_id=?1"""
+            )
+            .bind(organization_id, authenticated.actor.user_id)
+            .first("total")
+        )
+        speaker_count = await (
+            db.prepare(
+                "SELECT COUNT(DISTINCT es.person_id) AS total FROM event_speakers es "  # noqa: S608, E501
+                f"{membership_join}"
+                f"WHERE es.organization_id=?1 AND {has_proposal}"
+            )
+            .bind(organization_id, authenticated.actor.user_id)
+            .first("total")
+        )
+        recent_rows = result_rows(
+            await db.prepare(
+                "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
+                "e.name AS event_name,es.selection_status,"
+                "COALESCE((SELECT s.proposal_title FROM submission_speakers ss"
+                " JOIN submissions s ON s.id=ss.submission_id"
+                " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
+                " AND ss.event_speaker_id=es.id"
+                " ORDER BY s.submitted_at_ms DESC LIMIT 1),'No proposal') AS proposal_title "
+                "FROM event_speakers es "
+                f"{membership_join}"
+                "JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id "
+                "JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id "
+                f"WHERE es.organization_id=?1 AND {has_proposal} "
+                "ORDER BY es.last_activity_at_ms DESC,es.id DESC LIMIT 6"
+            )
+            .bind(organization_id, authenticated.actor.user_id)
+            .all()
+        )
+    return OrganizationMetricsView(
+        organization_id=organization_id,
+        event_count=int(event_count or 0),
+        speaker_count=int(speaker_count or 0),
+        recent_speakers=[RecentSpeakerView(**row) for row in recent_rows],
+    )
+
+
+def _events_next_cursor(
+    request: Request,
+    *,
+    organization_id: str,
+    view: str,
+    search: str,
+    starts_at_ms: int,
+    row_id: str,
+) -> str:
+    payload = json.dumps(
+        {
+            "exp": utc_now_ms() + _EVENTS_CURSOR_TTL_MS,
+            "id": row_id,
+            "org": organization_id,
+            "q": search,
+            "starts": starts_at_ms,
+            "view": view,
+            "v": 1,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
+    return ".".join(
+        (
+            urlsafe_b64encode(payload).decode().rstrip("="),
+            urlsafe_b64encode(signature).decode().rstrip("="),
+        )
+    )
+
+
+@access_router.get(
+    "/api/v1/admin/events/{event_id}",
+    response_model=EventView,
+    tags=["administration"],
+)
+async def get_event(event_id: str, request: Request) -> EventView:
+    """Read one event directly. Archived events stay readable so admin pages
+    can render context instead of going dark."""
+    row = row_mapping(
+        await database(request)
         .prepare(
             """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                       delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                       email_sender_name,email_reply_to,status,version
-               FROM events WHERE organization_id=?1 ORDER BY starts_at_ms DESC,id DESC"""
+               FROM events WHERE id=?1 LIMIT 1"""
         )
-        .bind(organization_id)
-        .all()
+        .bind(event_id)
+        .first()
     )
-    events = [EventView(**row) for row in result_rows(result)]
-    if Role.ORGANIZATION_ADMIN not in organization_roles:
-        events = [event for event in events if event.id in manageable_event_ids]
-    return EventList(data=events)
+    if row is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.EVENT_MANAGE,
+        ResourceContext(str(row["organization_id"]), event_id),
+        mutation=False,
+    )
+    return EventView(**row)
 
 
 def _validate_event_times(starts_at_ms: int, ends_at_ms: int) -> None:
@@ -1447,7 +1759,7 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
     db = database(request)
     event = row_mapping(
         await db.prepare(
-            """SELECT organization_id,logo_url,cover_image_url
+            """SELECT organization_id,logo_url,cover_image_url,status,archived_at_ms
                FROM events WHERE id=?1 LIMIT 1"""
         )
         .bind(event_id)
@@ -1461,6 +1773,7 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         ResourceContext(str(event["organization_id"]), event_id),
         mutation=True,
     )
+    resolved_status = body.status if body.status is not None else str(event["status"])
     current_logo_url = str(event["logo_url"]) if event["logo_url"] is not None else None
     logo_url = body.logo_url if "logo_url" in body.model_fields_set else current_logo_url
     if logo_url != current_logo_url and logo_url is not None:
@@ -1488,7 +1801,14 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             event_id=event_id,
         )
     now = utc_now_ms()
-    archived_at_ms = now if body.status == "archived" else None
+    # Stamp archived_at_ms only on the transition INTO archived; ordinary
+    # edits of an already-archived event keep the original timestamp.
+    if resolved_status != "archived":
+        archived_at_ms = None
+    elif str(event["status"]) == "archived" and event["archived_at_ms"] is not None:
+        archived_at_ms = int(event["archived_at_ms"])
+    else:
+        archived_at_ms = now
     row = row_mapping(
         await db.prepare(
             """UPDATE events SET name=?1,starts_at_ms=?2,ends_at_ms=?3,time_zone=?4,
@@ -1514,7 +1834,7 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             body.website_url,
             body.email_sender_name,
             body.email_reply_to,
-            body.status,
+            resolved_status,
             archived_at_ms,
             now,
             event_id,
@@ -1537,7 +1857,7 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             occurred_at_ms=now,
             organization_id=str(event["organization_id"]),
             event_id=event_id,
-            metadata={"status": body.status},
+            metadata={"status": resolved_status},
         )
     )
     await audit.execute()
@@ -1569,6 +1889,15 @@ async def create_invitation(
         ResourceContext(str(event["organization_id"]), event_id),
         mutation=True,
     )
+    if body.role == "organization_admin":
+        # An event_admin must not be able to escalate anyone (including
+        # themselves) to organization-wide administration.
+        await require_permission(
+            request,
+            Permission.ORGANIZATION_MANAGE,
+            ResourceContext(str(event["organization_id"])),
+            mutation=True,
+        )
     email, normalized = _email(body.email)
     now, invitation_id = utc_now_ms(), new_id()
     await (
@@ -1647,7 +1976,7 @@ async def _issue_invitation_link(
     event_id: str,
     email: str,
     normalized_email: str,
-    role: Literal["event_admin", "evaluator", "speaker"],
+    role: InvitationRole,
     now: int,
 ) -> str | None:
     """Create a short-lived, one-time acceptance link and queue its delivery."""
@@ -1660,11 +1989,23 @@ async def _issue_invitation_link(
         "speaker": "/speaker",
         "evaluator": "/reviews",
         "event_admin": "/admin",
+        "organization_admin": "/admin",
     }[role]
     db = database(request)
+    # Bind the challenge to a user id only when that user currently holds an
+    # ACTIVE membership in this organization: the challenge-scope integrity
+    # trigger requires it, and re-inviting an offboarded (revoked) person must
+    # work — their identity is re-established by email at acceptance time.
     user_id = await (
-        db.prepare("SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1")
-        .bind(normalized_email)
+        db.prepare(
+            """SELECT u.id FROM users u
+               WHERE u.normalized_email=?1 AND u.status='active'
+                 AND EXISTS (
+                   SELECT 1 FROM organization_memberships m
+                   WHERE m.organization_id=?2 AND m.user_id=u.id AND m.status='active'
+                 ) LIMIT 1"""
+        )
+        .bind(normalized_email, organization_id)
         .first("id")
     )
     raw_token, challenge_id, message_id = generate_token(), new_id(), new_id()
@@ -1775,7 +2116,15 @@ async def resend_invitation(
     )
     if row is None:
         raise HTTPException(status_code=404)
-    role: Literal["event_admin", "evaluator", "speaker"] = row["role"]
+    if str(row["role"]) == "organization_admin":
+        # Only organization admins may keep an org-admin invitation alive.
+        await require_permission(
+            request,
+            Permission.ORGANIZATION_MANAGE,
+            ResourceContext(organization_id),
+            mutation=True,
+        )
+    role: InvitationRole = row["role"]
     accept_url = await _issue_invitation_link(
         request,
         invitation_id=invitation_id,
@@ -1814,6 +2163,23 @@ async def resend_invitation(
 async def revoke_invitation(event_id: str, invitation_id: str, request: Request) -> Response:
     db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
     now = utc_now_ms()
+    pending_role = await (
+        db.prepare(
+            """SELECT role FROM identity_invitations
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3 AND status='pending' LIMIT 1"""
+        )
+        .bind(invitation_id, organization_id, event_id)
+        .first("role")
+    )
+    if pending_role is not None and str(pending_role) == "organization_admin":
+        # Symmetric with create/resend: org-admin invitations are managed
+        # only by organization admins.
+        await require_permission(
+            request,
+            Permission.ORGANIZATION_MANAGE,
+            ResourceContext(organization_id),
+            mutation=True,
+        )
     changed = row_mapping(
         await db.prepare(
             """UPDATE identity_invitations SET status='revoked',revoked_at_ms=?1,updated_at_ms=?1
@@ -2118,31 +2484,61 @@ async def _finish_magic_link_sign_in(
                    VALUES(?1,?2,?3,'active',?4,?4,?4)"""
                 ).bind(user_id, invitation["email"], invitation["normalized_email"], now)
             )
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'member','active',?4,?4)
-               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-            ).bind(new_id(), invitation["organization_id"], user_id, now)
-        )
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,'active',?6,?6)
-               ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-            ).bind(
-                new_id(),
-                invitation["organization_id"],
-                invitation["event_id"],
-                user_id,
-                invitation["role"],
-                now,
+        if invitation["role"] == "organization_admin":
+            # Grants (or upgrades to) organization-wide administration; no
+            # event membership row is written because organization roles are
+            # organization-scoped. Existing sessions are invalidated so every
+            # surface re-reads the new role set.
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO organization_memberships
+                   (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,'organization_admin','active',?4,?4)
+                   ON CONFLICT(organization_id,user_id) DO UPDATE SET
+                     role='organization_admin',status='active',revoked_at_ms=NULL,
+                     version=version+1,updated_at_ms=excluded.updated_at_ms"""
+                ).bind(new_id(), invitation["organization_id"], user_id, now)
             )
-        )
+            if existing_user is not None:
+                batch.add_statement(
+                    db.prepare(
+                        """UPDATE users SET authorization_version=authorization_version+1,
+                           updated_at_ms=?1 WHERE id=?2"""
+                    ).bind(now, user_id)
+                )
+        else:
+            # Reactivating a revoked membership through an event-level
+            # invitation must never restore a previously revoked admin role:
+            # the row comes back as a plain member. An ACTIVE admin accepting
+            # an event invitation keeps their role untouched.
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO organization_memberships
+                   (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,'member','active',?4,?4)
+                   ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
+                     revoked_at_ms=NULL,
+                     role=CASE WHEN organization_memberships.status='revoked'
+                          THEN 'member' ELSE organization_memberships.role END,
+                     version=version+1,updated_at_ms=excluded.updated_at_ms"""
+                ).bind(new_id(), invitation["organization_id"], user_id, now)
+            )
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO event_memberships
+                   (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,'active',?6,?6)
+                   ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
+                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+                ).bind(
+                    new_id(),
+                    invitation["organization_id"],
+                    invitation["event_id"],
+                    user_id,
+                    invitation["role"],
+                    now,
+                )
+            )
         if invitation["role"] == "speaker":
             await _add_speaker_profile(
                 batch,

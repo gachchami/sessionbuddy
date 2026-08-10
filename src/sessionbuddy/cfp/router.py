@@ -958,7 +958,10 @@ async def _respond_to_co_speaker_invitation(
                    (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
                    VALUES(?1,?2,?3,'member','active',?4,?4)
                    ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+                     revoked_at_ms=NULL,
+                     role=CASE WHEN organization_memberships.status='revoked'
+                          THEN 'member' ELSE organization_memberships.role END,
+                     version=version+1,updated_at_ms=excluded.updated_at_ms"""
             ).bind(new_id(), row["organization_id"], user_id, now)
         )
         batch.add_statement(

@@ -1,5 +1,8 @@
+import binascii
 import hashlib
+import hmac
 import json
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from csv import writer
 from datetime import UTC, datetime
 from html import escape
@@ -11,7 +14,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
-from sessionbuddy.platform.auth.http import authenticate_request, require_permission
+from sessionbuddy.platform.auth.http import authenticate_request, require_permission, secret
 from sessionbuddy.platform.authorization import Permission, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
@@ -52,6 +55,84 @@ from .models import (
 evaluation_router = APIRouter()
 
 AI_TRIAGE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
+EVALUATION_PAGE_LIMIT = 50
+_EVALUATION_CURSOR_TTL_MS = 15 * 60 * 1000
+
+
+def _evaluation_cursor(
+    request: Request,
+    value: str | None,
+    *,
+    kind: str,
+    scope_id: str,
+) -> tuple[int, str] | None:
+    """Decode a signed keyset cursor scoped to one list and identity."""
+    if value is None:
+        return None
+    try:
+        encoded_payload, encoded_signature = value.split(".", 1)
+        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
+        signature = urlsafe_b64decode(encoded_signature + "=" * (-len(encoded_signature) % 4))
+        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError
+        decoded = json.loads(payload.decode())
+        if not isinstance(decoded, dict) or decoded != {
+            "exp": decoded.get("exp"),
+            "id": decoded.get("id"),
+            "kind": kind,
+            "scope": scope_id,
+            "ts": decoded.get("ts"),
+            "v": 1,
+        }:
+            raise ValueError
+        timestamp, row_id, expires = decoded["ts"], decoded["id"], decoded["exp"]
+        if (
+            not isinstance(timestamp, int)
+            or not isinstance(row_id, str)
+            or not 1 <= len(row_id) <= 100
+            or not isinstance(expires, int)
+            or expires < utc_now_ms()
+        ):
+            raise ValueError
+        return timestamp, row_id
+    except (
+        ValueError,
+        binascii.Error,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        KeyError,
+    ) as exc:
+        raise HTTPException(status_code=400) from exc
+
+
+def _evaluation_next_cursor(
+    request: Request,
+    *,
+    kind: str,
+    scope_id: str,
+    timestamp: int,
+    row_id: str,
+) -> str:
+    payload = json.dumps(
+        {
+            "exp": utc_now_ms() + _EVALUATION_CURSOR_TTL_MS,
+            "id": row_id,
+            "kind": kind,
+            "scope": scope_id,
+            "ts": timestamp,
+            "v": 1,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
+    return ".".join(
+        (
+            urlsafe_b64encode(payload).decode().rstrip("="),
+            urlsafe_b64encode(signature).decode().rstrip("="),
+        )
+    )
 
 
 def _asset(name: str) -> str:
@@ -1109,37 +1190,58 @@ def _reviewer_answers(
 async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
     authenticated = await authenticate_request(request)
     now = utc_now_ms()
+    cursor = request.query_params.get("cursor")
+    try:
+        requested_limit = int(request.query_params.get("limit", EVALUATION_PAGE_LIMIT))
+    except ValueError as exc:
+        raise HTTPException(status_code=422) from exc
+    page_limit = max(1, min(EVALUATION_PAGE_LIMIT, requested_limit))
+    decoded_cursor = _evaluation_cursor(
+        request,
+        cursor,
+        kind="reviewer-assignments",
+        scope_id=authenticated.actor.user_id,
+    )
+    after_created_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
+    assignment_query = """SELECT a.id, a.round_id, r.name AS round_name, a.submission_id,
+                  s.proposal_title, s.proposal_abstract,
+                  CASE WHEN COALESCE(json_extract(r.rubric_json,'$.blind_review'),0)=1
+                       THEN 'Hidden for blind review' ELSE s.speaker_name END AS speaker_name,
+                  r.organization_id, r.event_id, r.rubric_json,r.review_closes_at_ms,
+                  COALESCE(e.state, 'not_started') AS evaluation_state,
+                  e.rating, e.recommendation,
+                  COALESCE(e.internal_comment, '') AS internal_comment,
+                  COALESCE(e.criterion_scores_json, '{}') AS criterion_scores_json,
+                  COALESCE(s.answers_json, '{}') AS answers_json,
+                  COALESCE(f.schema_json, '{}') AS form_schema_json,
+                  a.created_at_ms
+           FROM evaluation_assignments a
+           JOIN evaluation_rounds r ON r.id = a.round_id AND r.status = 'open'
+           JOIN submissions s ON s.id = a.submission_id
+           LEFT JOIN call_for_speaker_forms f ON f.id = s.form_id
+           LEFT JOIN evaluations e ON e.assignment_id = a.id
+           WHERE a.evaluator_user_id = ?1 AND a.status != 'revoked'
+             AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
+             AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2)
+             AND (?3 IS NULL OR a.created_at_ms<?3 OR (a.created_at_ms=?3 AND a.id<?4))
+           ORDER BY a.created_at_ms DESC, a.id DESC LIMIT ?5"""
     rows = result_rows(
         await _timed_all(
             request,
             _db(request)
-            .prepare(
-                """SELECT a.id, a.round_id, r.name AS round_name, a.submission_id,
-                      s.proposal_title, s.proposal_abstract,
-                      CASE WHEN COALESCE(json_extract(r.rubric_json,'$.blind_review'),0)=1
-                           THEN 'Hidden for blind review' ELSE s.speaker_name END AS speaker_name,
-                      r.organization_id, r.event_id, r.rubric_json,r.review_closes_at_ms,
-                      COALESCE(e.state, 'not_started') AS evaluation_state,
-                      e.rating, e.recommendation,
-                      COALESCE(e.internal_comment, '') AS internal_comment,
-                      COALESCE(e.criterion_scores_json, '{}') AS criterion_scores_json,
-                      COALESCE(s.answers_json, '{}') AS answers_json,
-                      COALESCE(f.schema_json, '{}') AS form_schema_json
-               FROM evaluation_assignments a
-               JOIN evaluation_rounds r ON r.id = a.round_id AND r.status = 'open'
-               JOIN submissions s ON s.id = a.submission_id
-               LEFT JOIN call_for_speaker_forms f ON f.id = s.form_id
-               LEFT JOIN evaluations e ON e.assignment_id = a.id
-               WHERE a.evaluator_user_id = ?1 AND a.status != 'revoked'
-                 AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
-                 AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2)
-               ORDER BY a.created_at_ms DESC, a.id DESC LIMIT 100"""
-            )
-            .bind(authenticated.actor.user_id, now),
+            .prepare(assignment_query)
+            .bind(
+                authenticated.actor.user_id,
+                now,
+                after_created_at_ms,
+                after_id,
+                page_limit + 1,
+            ),
         )
     )
+    page_rows = rows[:page_limit]
     data: list[EvaluationAssignmentView] = []
-    for row in rows:
+    for row in page_rows:
         await require_permission(
             request,
             Permission.SUBMISSION_READ_FOR_EVALUATION,
@@ -1191,7 +1293,39 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                 hidden_answer_count=hidden_count,
             )
         )
-    return EvaluationAssignmentList(data=data)
+    counts = row_mapping(
+        await _timed_first(
+            request,
+            _db(request)
+            .prepare(
+                """SELECT COUNT(a.id) AS total,
+                          SUM(CASE WHEN e.state='final' THEN 1 ELSE 0 END) AS completed_count
+                   FROM evaluation_assignments a
+                   JOIN evaluation_rounds r ON r.id=a.round_id AND r.status='open'
+                   LEFT JOIN evaluations e ON e.assignment_id=a.id
+                   WHERE a.evaluator_user_id=?1 AND a.status!='revoked'
+                     AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
+                     AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2)"""
+            )
+            .bind(authenticated.actor.user_id, now),
+        )
+    ) or {"total": 0, "completed_count": 0}
+    next_cursor = None
+    if len(rows) > page_limit and page_rows:
+        last = page_rows[-1]
+        next_cursor = _evaluation_next_cursor(
+            request,
+            kind="reviewer-assignments",
+            scope_id=authenticated.actor.user_id,
+            timestamp=int(last["created_at_ms"]),
+            row_id=str(last["id"]),
+        )
+    return EvaluationAssignmentList(
+        data=data,
+        next_cursor=next_cursor,
+        total=int(counts["total"] or 0),
+        completed_count=int(counts["completed_count"] or 0),
+    )
 
 
 @evaluation_router.put(
@@ -1627,7 +1761,12 @@ async def reassign_conflict(
     operation_id="getEvaluationRoundResults",
     tags=["evaluations"],
 )
-async def get_round_results(round_id: str, request: Request) -> EvaluationRoundResults:
+async def get_round_results(
+    round_id: str,
+    request: Request,
+    cursor: str | None = None,
+    limit: int = EVALUATION_PAGE_LIMIT,
+) -> EvaluationRoundResults:
     db = _db(request)
     round_row = row_mapping(
         await _timed_first(
@@ -1646,40 +1785,50 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=False,
     )
-    rows = result_rows(
+    page_limit = max(1, min(EVALUATION_PAGE_LIMIT, limit))
+    decoded_cursor = _evaluation_cursor(request, cursor, kind="round-results", scope_id=round_id)
+    after_submitted_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
+    results_query = """SELECT s.id AS submission_id, s.speaker_name, s.proposal_title,
+              s.submitted_at_ms,
+              COUNT(a.id) AS assigned_count,
+              SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
+              AVG(CASE WHEN e.state = 'final' THEN e.rating END) AS average_rating,
+              d.decision,d.internal_reason
+       FROM evaluation_assignments a
+       JOIN submissions s ON s.id = a.submission_id
+       LEFT JOIN evaluations e ON e.assignment_id = a.id
+       LEFT JOIN submission_decisions d
+         ON d.round_id = a.round_id AND d.submission_id = a.submission_id
+       WHERE a.round_id = ?1 AND a.status != 'revoked'
+         AND (?2 IS NULL OR s.submitted_at_ms<?2 OR (s.submitted_at_ms=?2 AND s.id<?3))
+       GROUP BY s.id, s.speaker_name, s.proposal_title, d.decision,d.internal_reason
+       ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT ?4"""
+    fetched_rows = result_rows(
         await _timed_all(
             request,
-            db.prepare(
-                """SELECT s.id AS submission_id, s.speaker_name, s.proposal_title,
-                  COUNT(a.id) AS assigned_count,
-                  SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
-                  AVG(CASE WHEN e.state = 'final' THEN e.rating END) AS average_rating,
-                  d.decision,d.internal_reason
-           FROM evaluation_assignments a
-           JOIN submissions s ON s.id = a.submission_id
-           LEFT JOIN evaluations e ON e.assignment_id = a.id
-           LEFT JOIN submission_decisions d
-             ON d.round_id = a.round_id AND d.submission_id = a.submission_id
-           WHERE a.round_id = ?1 AND a.status != 'revoked'
-           GROUP BY s.id, s.speaker_name, s.proposal_title, d.decision,d.internal_reason
-           ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 100"""
-            ).bind(round_id),
+            db.prepare(results_query).bind(
+                round_id, after_submitted_at_ms, after_id, page_limit + 1
+            ),
         )
     )
-    review_rows = result_rows(
-        await _timed_all(
-            request,
-            db.prepare(
-                """SELECT a.submission_id,COALESCE(u.display_name,u.email) AS evaluator_name,
-                          COALESCE(e.state,'not_started') AS state,e.rating,e.recommendation,
-                          COALESCE(e.internal_comment,'') AS internal_comment
-                   FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
-                   LEFT JOIN evaluations e ON e.assignment_id=a.id
-                   WHERE a.round_id=?1 AND a.status!='revoked'
-                   ORDER BY a.submission_id,u.normalized_email,a.id"""
-            ).bind(round_id),
+    rows = fetched_rows[:page_limit]
+    submission_ids = [str(row["submission_id"]) for row in rows]
+    review_rows: list[dict] = []
+    if submission_ids:
+        review_query = """SELECT a.submission_id,COALESCE(u.display_name,u.email) AS evaluator_name,
+                      COALESCE(e.state,'not_started') AS state,e.rating,e.recommendation,
+                      COALESCE(e.internal_comment,'') AS internal_comment
+               FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
+               LEFT JOIN evaluations e ON e.assignment_id=a.id
+               WHERE a.round_id=?1 AND a.status!='revoked'
+                 AND a.submission_id IN (SELECT value FROM json_each(?2))
+               ORDER BY a.submission_id,u.normalized_email,a.id"""
+        review_rows = result_rows(
+            await _timed_all(
+                request,
+                db.prepare(review_query).bind(round_id, json.dumps(submission_ids)),
+            )
         )
-    )
     reviews_by_submission: dict[str, list[EvaluationDetail]] = {}
     for review in review_rows:
         reviews_by_submission.setdefault(str(review["submission_id"]), []).append(
@@ -1713,8 +1862,25 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         )
         for row in rows
     ]
-    assigned_count = sum(item.assigned_count for item in submissions)
-    completed_count = sum(item.completed_count for item in submissions)
+    aggregate = row_mapping(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT COUNT(a.id) AS assigned_count,
+                          SUM(CASE WHEN e.state='final' THEN 1 ELSE 0 END) AS completed_count,
+                          AVG(CASE WHEN e.state='final' THEN e.rating END) AS average_rating,
+                          COUNT(DISTINCT a.submission_id) AS submission_count
+                   FROM evaluation_assignments a
+                   LEFT JOIN evaluations e ON e.assignment_id=a.id
+                   WHERE a.round_id=?1 AND a.status!='revoked'"""
+            ).bind(round_id),
+        )
+    ) or {
+        "assigned_count": 0,
+        "completed_count": 0,
+        "average_rating": None,
+        "submission_count": 0,
+    }
     evaluator_rows = result_rows(
         await _timed_all(
             request,
@@ -1779,20 +1945,31 @@ async def get_round_results(round_id: str, request: Request) -> EvaluationRoundR
         )
     )
     conflicts = [ConflictProgress.model_validate(row) for row in conflict_rows]
-    weighted_ratings = [
-        (item.average_rating, item.completed_count)
-        for item in submissions
-        if item.average_rating is not None
-    ]
+    next_cursor = None
+    if len(fetched_rows) > page_limit and rows:
+        last = rows[-1]
+        next_cursor = _evaluation_next_cursor(
+            request,
+            kind="round-results",
+            scope_id=round_id,
+            timestamp=int(last["submitted_at_ms"]),
+            row_id=str(last["submission_id"]),
+        )
     return EvaluationRoundResults(
         round_id=round_id,
         event_id=str(round_row["event_id"]),
         round_name=str(round_row["name"]),
         status=str(round_row["status"]),
-        assigned_count=assigned_count,
-        completed_count=completed_count,
-        average_rating=_weighted_mean(weighted_ratings),
+        assigned_count=int(aggregate["assigned_count"] or 0),
+        completed_count=int(aggregate["completed_count"] or 0),
+        average_rating=(
+            round(float(aggregate["average_rating"]), 2)
+            if aggregate["average_rating"] is not None
+            else None
+        ),
         submissions=submissions,
+        submission_count=int(aggregate["submission_count"] or 0),
+        next_cursor=next_cursor,
         evaluators=evaluator_progress,
         available_evaluators=available_evaluators,
         conflicts=conflicts,

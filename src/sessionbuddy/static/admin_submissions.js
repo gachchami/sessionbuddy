@@ -117,11 +117,7 @@
     });
   }
   async function loadEventTimeZone() {
-    const organizations = (await api("/api/v1/admin/organizations")).data;
-    const groups = await Promise.all(organizations.map(async (organization) => (
-      (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events`)).data
-    )));
-    const event = groups.flat().find((item) => item.id === eventId);
+    const event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
     if (!event?.time_zone) throw new Error("The event time zone could not be loaded.");
     return event.time_zone;
   }

@@ -228,6 +228,9 @@ class EvaluationAssignmentList(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: list[EvaluationAssignmentView]
+    next_cursor: str | None = None
+    total: int = Field(ge=0)
+    completed_count: int = Field(ge=0)
 
 
 class EvaluationSave(BaseModel):
@@ -314,6 +317,8 @@ class EvaluationRoundResults(BaseModel):
     completed_count: int
     average_rating: float | None
     submissions: list[SubmissionEvaluationResult]
+    submission_count: int = Field(ge=0)
+    next_cursor: str | None = None
     evaluators: list[EvaluatorProgress]
     available_evaluators: list[EvaluatorView] = Field(default_factory=list)
     conflicts: list[ConflictProgress]
