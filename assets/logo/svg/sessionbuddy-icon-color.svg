@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">SessionBuddy</title>
+  <desc id="desc">An agenda row folding into an S with a forward cue.</desc>
+  <rect width="64" height="64" rx="15" fill="#4B5FCA"/>
+  <path d="M17 18h28v9H26c-5 0-9 4-9 9s4 9 9 9h21" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 41l7 4-7 4" fill="none" stroke="#C5CEFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
