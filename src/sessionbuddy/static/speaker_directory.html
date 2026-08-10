@@ -6,9 +6,9 @@
   <title>Speakers · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=22">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
-  <script src="/app-shell/assets/api-client.js?v=1" defer></script>
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
-  <script src="/admin/speakers/assets/speakers.js?v=4" defer></script>
+  <script src="/admin/speakers/assets/speakers.js?v=5" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
   <a class="skip-link" href="#main">Skip to speakers</a>
@@ -24,10 +24,17 @@
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section id="speaker-detail" class="card speaker-profile-editor" hidden aria-labelledby="speaker-name">
       <p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p>
+      <div id="speaker-profile-view" class="speaker-profile-view" hidden>
+        <p id="speaker-role" class="lede"></p>
+        <p id="speaker-location" class="muted"></p>
+        <div><h3>About</h3><p id="speaker-biography"></p></div>
+        <div><h3>Links</h3><div id="speaker-links" class="actions"></div></div>
+        <div><h3>Events and proposals</h3><ul id="speaker-events" class="speaker-participations"></ul></div>
+      </div>
       <form id="speaker-form"><input name="version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">One per line</span><textarea name="links" rows="3"></textarea></label></div><label>Biography<textarea name="biography" rows="6" maxlength="5000"></textarea></label><button>Save speaker details</button></form>
-      <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="#">Back to event speakers</a></div>
+      <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="/admin/speakers">Back to speakers</a></div>
     </section>
-    <section class="directory-section speaker-directory-results" aria-labelledby="directory-title">
+    <section id="speaker-directory-results" class="directory-section speaker-directory-results" aria-labelledby="directory-title">
       <div class="section-heading"><h2 id="directory-title">Speaker profiles</h2><span id="speaker-count" class="badge">—</span></div>
       <form id="speaker-filters" class="filter-bar" role="search">
         <label>Search<input id="speaker-search" type="search" placeholder="Name, email, company, or session"></label>

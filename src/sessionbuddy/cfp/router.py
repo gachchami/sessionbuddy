@@ -553,7 +553,23 @@ async def update_published_form(
         mutation=True,
     )
     if int(current["version"]) != body.version:
-        raise HTTPException(status_code=409)
+        raise HTTPException(
+            status_code=409,
+            headers={"X-Conflict-Type": "stale"},
+        )
+    slug_owner = await (
+        db.prepare(
+            """SELECT id FROM call_for_speaker_forms
+               WHERE slug=?1 AND id!=?2 LIMIT 1"""
+        )
+        .bind(body.slug, current["id"])
+        .first("id")
+    )
+    if slug_owner is not None:
+        raise HTTPException(
+            status_code=409,
+            headers={"X-Conflict-Type": "slug"},
+        )
     _validate_cfp_deadline(body.closes_at_ms, int(current["starts_at_ms"]))
     await _validate_form_routing_tracks(
         db,
@@ -1503,16 +1519,6 @@ async def create_submission(
     )
     if form is None:
         raise HTTPException(status_code=404)
-    await require_permission(
-        request,
-        Permission.SUBMISSION_READ_OWN,
-        ResourceContext(
-            str(form["organization_id"]),
-            str(form["event_id"]),
-            resource_owner_user_id=authenticated.actor.user_id,
-        ),
-        mutation=True,
-    )
     now = utc_now_ms()
     submissions_received = int(
         await db.prepare(
@@ -1674,6 +1680,26 @@ async def create_submission(
     batch.add_statement(
         db.prepare("DELETE FROM submission_drafts WHERE form_id=?1 AND user_id=?2").bind(
             form["id"], submitter_user_id
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,'member','active',?4,?4)
+               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
+                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(new_id(), form["organization_id"], submitter_user_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
+               ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
+                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(
+            new_id(), form["organization_id"], form["event_id"], submitter_user_id, now
         )
     )
     person = row_mapping(

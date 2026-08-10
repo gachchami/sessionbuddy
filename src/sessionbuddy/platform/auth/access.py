@@ -190,6 +190,15 @@ async def speaker_directory_page(
     )
 
 
+@access_router.get("/speakers/{person_id}", include_in_schema=False)
+async def speaker_profile_page(person_id: str) -> Response:
+    return Response(
+        _asset("speaker_directory.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @access_router.get("/admin/events/{event_id}/messages", include_in_schema=False)
 async def speaker_messages_page(event_id: str) -> Response:
     return Response(
@@ -514,6 +523,7 @@ class CurrentSession(BaseModel):
     user_id: str
     email: str
     display_name: str | None = None
+    profile_complete: bool = False
     csrf_token: str
     organization_id: str | None = None
     event_id: str | None = None
@@ -527,6 +537,7 @@ class AccountProfileView(BaseModel):
     job_title: str | None = None
     company: str | None = None
     time_zone: str | None = None
+    profile_complete: bool
     version: int
 
 
@@ -724,7 +735,8 @@ async def account_profile(request: Request) -> AccountProfileView:
     row = row_mapping(
         await database(request)
         .prepare(
-            """SELECT email,display_name,job_title,company,time_zone,version
+            """SELECT email,display_name,job_title,company,time_zone,version,
+                      profile_completed_at_ms IS NOT NULL AS profile_complete
                FROM users WHERE id=?1 AND status='active' LIMIT 1"""
         )
         .bind(authenticated.actor.user_id)
@@ -750,9 +762,11 @@ async def update_account_profile(
     row = row_mapping(
         await db.prepare(
             """UPDATE users SET display_name=?1,job_title=?2,company=?3,time_zone=?4,
+               profile_completed_at_ms=COALESCE(profile_completed_at_ms,?5),
                version=version+1,updated_at_ms=?5
                WHERE id=?6 AND status='active' AND version=?7
-               RETURNING email,display_name,job_title,company,time_zone,version"""
+               RETURNING email,display_name,job_title,company,time_zone,version,
+                         profile_completed_at_ms IS NOT NULL AS profile_complete"""
         )
         .bind(
             body.display_name,
@@ -1830,85 +1844,6 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
     return Response(status_code=204)
 
 
-@access_router.post(
-    "/api/v1/forms/{slug}/access",
-    response_model=GenericAccepted,
-    tags=["authentication"],
-)
-async def ensure_cfp_speaker_access(slug: str, request: Request) -> GenericAccepted:
-    """Enroll an authenticated user into an open public CFP without another sign-in."""
-    authenticated = await authenticate_request(request)
-    guard_mutation(request, authenticated.session_id)
-    db, now = database(request), utc_now_ms()
-    form = row_mapping(
-        await db.prepare(
-            """SELECT organization_id,event_id FROM call_for_speaker_forms
-               WHERE slug=?1 AND status='published' LIMIT 1"""
-        )
-        .bind(slug)
-        .first()
-    )
-    if form is None:
-        raise HTTPException(status_code=404)
-    email = await (
-        db.prepare("SELECT email FROM users WHERE id=?1 AND status='active' LIMIT 1")
-        .bind(authenticated.actor.user_id)
-        .first("email")
-    )
-    if email is None:
-        raise HTTPException(status_code=404)
-    batch = CommandBatch(db)
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'member','active',?4,?4)
-               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), form["organization_id"], authenticated.actor.user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
-               ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(
-            new_id(),
-            form["organization_id"],
-            form["event_id"],
-            authenticated.actor.user_id,
-            now,
-        )
-    )
-    await _add_speaker_profile(
-        batch,
-        db,
-        organization_id=str(form["organization_id"]),
-        event_id=str(form["event_id"]),
-        user_id=authenticated.actor.user_id,
-        email=str(email),
-        now=now,
-    )
-    batch.audit(
-        AuditEvent(
-            actor_type="user",
-            actor_user_id=authenticated.actor.user_id,
-            action="cfp.speaker_access.ensure",
-            target_type="event",
-            target_id=str(form["event_id"]),
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            organization_id=str(form["organization_id"]),
-            event_id=str(form["event_id"]),
-        )
-    )
-    await batch.execute()
-    return GenericAccepted()
-
-
 @access_router.get(
     "/api/v1/admin/events/{event_id}/members",
     response_model=EventMemberList,
@@ -2236,34 +2171,7 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
                        VALUES(?1,?2,?2,'active',?3,?3,?3)"""
                 ).bind(user_id, challenge["normalized_email"], now)
             )
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO organization_memberships
-                   (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,'member','active',?4,?4)
-                   ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-            ).bind(new_id(), challenge["organization_id"], user_id, now)
-        )
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO event_memberships
-                   (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,'speaker','active',?5,?5)
-                   ON CONFLICT(organization_id,event_id,user_id,role) DO UPDATE SET status='active',
-                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-            ).bind(new_id(), challenge["organization_id"], challenge["event_id"], user_id, now)
-        )
-        await _add_speaker_profile(
-            batch,
-            db,
-            organization_id=str(challenge["organization_id"]),
-            event_id=str(challenge["event_id"]),
-            user_id=str(user_id),
-            email=str(challenge["normalized_email"]),
-            now=now,
-        )
-        await batch.execute()
+            await batch.execute()
     if user_id is None:
         raise HTTPException(status_code=404)
     session_id, session_token = new_id(), generate_token()
@@ -2386,7 +2294,11 @@ async def current_session(request: Request) -> CurrentSession:
     authenticated = await authenticate_request(request)
     user = row_mapping(
         await database(request)
-        .prepare("SELECT email,display_name FROM users WHERE id=?1 LIMIT 1")
+        .prepare(
+            """SELECT email,display_name,
+                      profile_completed_at_ms IS NOT NULL AS profile_complete
+               FROM users WHERE id=?1 LIMIT 1"""
+        )
         .bind(authenticated.actor.user_id)
         .first()
     )
@@ -2417,6 +2329,7 @@ async def current_session(request: Request) -> CurrentSession:
         user_id=authenticated.actor.user_id,
         email=str(user["email"]),
         display_name=str(user["display_name"]) if user["display_name"] is not None else None,
+        profile_complete=bool(user["profile_complete"]),
         csrf_token=issue_csrf_token(authenticated.session_id, secret(request, "CSRF_HMAC_KEY")),
         organization_id=organization_id,
         event_id=event_scope[1] if event_scope is not None else None,

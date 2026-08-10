@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Call for Proposals · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=22">
+  <link rel="stylesheet" href="/product/assets/product.css?v=23">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=11">
-  <script src="/app-shell/assets/api-client.js?v=1" defer></script>
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=12" defer></script>
-  <script src="/product/assets/admin-programs.js?v=19" defer></script>
+  <script src="/product/assets/admin-programs.js?v=21" defer></script>
 </head>
 <body class="app-body cfp-page workflow-page workflow-page--cfp">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
@@ -22,7 +22,11 @@
     <section class="card cfp-link-card workflow-summary-card" aria-labelledby="cfp-link-title">
       <div class="section-heading">
         <div><p class="eyebrow">Public page</p><h2 id="cfp-link-title">Share your CFP</h2></div>
-        <span id="cfp-state" class="badge">Not published</span>
+        <div class="cfp-summary-actions">
+          <span id="cfp-saved-state" class="save-state" role="status" aria-live="polite" hidden></span>
+          <span id="cfp-state" class="badge">Not published</span>
+          <button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button>
+        </div>
       </div>
       <p id="cfp-link-empty" class="result workflow-empty-state">Publish the proposal form to get a shareable link.</p>
       <div id="cfp-link-live" class="public-link" hidden>
@@ -36,11 +40,19 @@
           <a id="review-submissions" href="#">Review submissions</a>
           <span id="copy-result" class="help" role="status" aria-live="polite"></span>
         </div>
+        <div class="cfp-summary-grid" aria-label="Published CFP details">
+          <div class="cfp-summary-item cfp-summary-item--wide"><span>Welcome message</span><strong id="cfp-summary-welcome"></strong></div>
+          <div class="cfp-summary-item"><span>Opens</span><strong id="cfp-summary-opens"></strong></div>
+          <div class="cfp-summary-item"><span>Closes</span><strong id="cfp-summary-closes"></strong></div>
+          <div class="cfp-summary-item"><span>Submission limit</span><strong id="cfp-summary-limit"></strong></div>
+          <div class="cfp-summary-item"><span>Questions</span><strong id="cfp-summary-questions"></strong></div>
+          <div class="cfp-summary-item cfp-summary-item--wide"><span>Form fields</span><strong id="cfp-summary-fields"></strong></div>
+        </div>
       </div>
     </section>
     <section id="publish-settings" class="cfp-builder workflow-stage" aria-labelledby="cfp-builder-title">
       <div class="cfp-builder__heading">
-        <div><h2 id="cfp-builder-title">Build your proposal form</h2><p>Set what speakers see and when proposals are accepted.</p></div>
+        <div><h2 id="cfp-builder-title" tabindex="-1">Build your proposal form</h2><p>Set what speakers see and when proposals are accepted.</p></div>
         <span id="published-note" class="badge success" hidden>Published</span>
       </div>
       <div class="cfp-editor-layout">
@@ -74,7 +86,7 @@
             <div class="cfp-editor-section__heading"><span>5</span><div><h3>Routing</h3><p>Optionally sort matching proposals automatically.</p></div></div>
             <p class="help">Each row is one rule. Matching proposals are sent to the selected destination.</p><div id="routing-rules"></div><datalist id="event-track-options"></datalist><button id="add-routing" class="secondary" type="button">+ Add rule</button>
           </section>
-          <div class="cfp-editor-actions"><div><strong id="publish-action-label">Ready to publish?</strong><span id="publish-result" class="result">Complete the required fields.</span></div><button disabled>Publish CFP</button></div>
+          <div class="cfp-editor-actions"><div><strong id="publish-action-label">Ready to publish?</strong><span id="publish-result" class="result">Complete the required fields.</span></div><div class="actions"><button id="cancel-cfp-edit" type="button" class="secondary" hidden>Cancel</button><button type="submit" disabled>Publish CFP</button></div></div>
         </form>
       </div>
     </section>

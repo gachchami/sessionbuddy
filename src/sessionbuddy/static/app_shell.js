@@ -204,7 +204,10 @@
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
-    const brand = link("", organizerWorkspace ? "/admin" : section === "speaker" ? "/speaker" : "/reviews");
+    const brand = link(
+      "",
+      organizerWorkspace ? "/admin" : roles.has("speaker") ? "/speaker" : "/reviews"
+    );
     brand.className = "sb-app-brand";
     const mark = make("span", "S", "sb-app-brand__mark");
     mark.setAttribute("aria-hidden", "true");
@@ -410,6 +413,11 @@
       return;
     }
     window.SessionBuddyShellSession = session;
+    if (!session.profile_complete && location.pathname !== "/account") {
+      const next = `${location.pathname}${location.search}${location.hash}`;
+      location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);
+      return;
+    }
     if (shell) renderShell(session);
     if (landingAccount) renderLandingAccount(session);
     window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));

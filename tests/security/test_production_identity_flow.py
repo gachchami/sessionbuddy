@@ -248,6 +248,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         ).status_code == 303
         session = (await client.get("/api/v1/auth/session")).json()
         assert session["display_name"] == "Asha Rao"
+        assert session["profile_complete"] is False
         profile = (await client.get("/api/v1/account/profile")).json()
         assert profile["email"] == "asha@example.com"
         assert profile["version"] == 1
@@ -268,7 +269,9 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         )
         assert updated.status_code == 200
         assert updated.json()["display_name"] == "Asha R. Rao"
+        assert updated.json()["profile_complete"] is True
         assert updated.json()["version"] == 2
+        assert (await client.get("/api/v1/auth/session")).json()["profile_complete"] is True
         assert connection.execute(
             "SELECT COUNT(*) FROM audit_events WHERE action='account.profile.update'"
         ).fetchone()[0] == 1
@@ -572,6 +575,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             json=update_payload,
         )
         assert stale_form.status_code == 409
+        assert stale_form.headers["x-conflict-type"] == "stale"
 
     async with _client(environment) as speaker:
         requested = await speaker.post(
@@ -626,6 +630,14 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert (await speaker.get("/api/v1/forms/speaker-summit/draft")).json() is None
         portal = await speaker.get("/api/v1/speaker/portal")
         assert [item["id"] for item in portal.json()["submissions"]] == [submission.json()["id"]]
+        person_id = connection.execute(
+            "SELECT id FROM people WHERE user_id=?",
+            (speaker_session["user_id"],),
+        ).fetchone()["id"]
+        own_profile = await speaker.get(f"/api/v1/speaker-profiles/{person_id}")
+        assert own_profile.status_code == 200
+        assert own_profile.json()["can_edit"] is True
+        assert own_profile.json()["email"] == "speaker@example.com"
 
     async with _client(environment) as admin_again:
         await admin_again.post(
@@ -642,6 +654,12 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "origin": "https://test",
             "x-csrf-token": session["csrf_token"],
         }
+        managed_profile = await admin_again.get(
+            f"/api/v1/speaker-profiles/{person_id}"
+        )
+        assert managed_profile.status_code == 200
+        assert managed_profile.json()["can_edit"] is False
+        assert managed_profile.json()["email"] == ""
         connection.execute(
             """INSERT INTO evaluation_rounds
                (id,organization_id,event_id,name,rubric_json,status,
@@ -823,18 +841,12 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             )
         ).status_code == 303
         returning_session = (await returning_speaker.get("/api/v1/auth/session")).json()
-        assert returning_session["event_access"] == [
-            {
-                "organization_id": organization_id,
-                "event_id": second_event_id,
-                "roles": ["speaker"],
-            }
-        ]
+        assert returning_session["event_access"] == []
         assert connection.execute(
             """SELECT status FROM organization_memberships
                WHERE organization_id=? AND user_id=?""",
             (organization_id, speaker_member["user_id"]),
-        ).fetchone()["status"] == "active"
+        ).fetchone()["status"] == "revoked"
 
 
 async def test_existing_user_accepts_a_new_role_invitation(production_environment) -> None:
@@ -984,7 +996,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
     }
 
 
-async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
+async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
     production_environment,
 ) -> None:
     connection, _queue, environment = production_environment
@@ -1028,31 +1040,37 @@ async def test_existing_admin_signing_in_from_cfp_gets_speaker_access(
         assert published.status_code == 201
         assert (await client.get("/api/v1/speaker/portal")).status_code == 404
 
-        enrolled = await client.post(
-            "/api/v1/forms/admin-speaker/access",
-            headers={**headers, "content-type": "application/json"},
-            json={},
-        )
-        assert enrolled.status_code == 200
+        assert (await client.get("/cfp/admin-speaker")).status_code == 200
         cfp_session = (await client.get("/api/v1/auth/session")).json()
         event_access = next(
             access for access in cfp_session["event_access"] if access["event_id"] == event_id
         )
-        assert event_access["roles"] == ["event_admin", "speaker"]
-        cfp_headers = {
-            "origin": "https://test",
-            "x-csrf-token": cfp_session["csrf_token"],
-        }
+        assert event_access["roles"] == ["event_admin"]
+        cfp_headers = {"origin": "https://test", "x-csrf-token": cfp_session["csrf_token"]}
         draft = await client.put(
             "/api/v1/forms/admin-speaker/draft",
             headers=cfp_headers,
             json={"answers": {"proposal_title": "Admin on stage"}, "version": 0},
         )
-        assert draft.status_code == 200
-        assert draft.json()["version"] == 1
-        portal = await client.get("/api/v1/speaker/portal")
-        assert portal.status_code == 200
-        assert portal.json()["event"]["id"] == event_id
-        assert connection.execute(
-            "SELECT COUNT(*) FROM audit_events WHERE action='cfp.speaker_access.ensure'"
-        ).fetchone()[0] == 1
+        assert draft.status_code == 403
+        submitted = await client.post(
+            "/api/v1/forms/admin-speaker/submissions",
+            headers={
+                **cfp_headers,
+                "idempotency-key": "admin-speaker-submission",
+                "x-public-session-id": "admin-speaker-browser-session",
+            },
+            json={
+                "speaker_name": "Admin Speaker",
+                "speaker_email": "admin@example.com",
+                "proposal_title": "Admin on stage",
+                "proposal_abstract": "A real proposal creates the speaker identity.",
+            },
+        )
+        assert submitted.status_code == 201
+        cfp_session = (await client.get("/api/v1/auth/session")).json()
+        event_access = next(
+            access for access in cfp_session["event_access"] if access["event_id"] == event_id
+        )
+        assert event_access["roles"] == ["event_admin", "speaker"]
+        assert (await client.get("/api/v1/speaker/portal")).status_code == 200

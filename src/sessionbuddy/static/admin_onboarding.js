@@ -117,7 +117,9 @@
   }
 
   function speakerLink(row) {
-    return `/admin/events/${encodeURIComponent(eventId)}/speakers/${encodeURIComponent(row.event_speaker_id)}`;
+    return row.person_id
+      ? `/speakers/${encodeURIComponent(row.person_id)}`
+      : `/admin/events/${encodeURIComponent(eventId)}/speakers`;
   }
 
   async function sendReminder(row, button) {

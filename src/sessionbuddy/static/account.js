@@ -10,6 +10,9 @@
 
   let session;
   let version;
+  const query = new URLSearchParams(location.search);
+  const onboarding = query.get("onboarding") === "1";
+  const nextPath = query.get("next") || "";
 
   function validTimeZone(value) {
     if (!value) return true;
@@ -104,7 +107,14 @@
     byId("access-list").replaceChildren(...access);
     byId("access-count").textContent = String(access.length);
     byId("save-profile").disabled = false;
-    byId("status").textContent = "Your account is up to date.";
+    if (onboarding && !session.profile_complete) {
+      byId("account-title").textContent = "Complete your profile";
+      byId("account-summary").textContent = "Add your details before continuing.";
+      byId("status").textContent = "Complete the required field, then save your profile.";
+      byId("profile-form").elements.display_name.focus();
+    } else {
+      byId("status").textContent = "Your account is up to date.";
+    }
   }
 
   byId("profile-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
@@ -162,6 +172,12 @@
       byId("status").className = "status success";
       byId("status").textContent = "Profile saved.";
       window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
+      if (onboarding) {
+        const safeNext = nextPath.startsWith("/") && !nextPath.startsWith("//") && !nextPath.includes("\\")
+          ? nextPath
+          : "/";
+        location.replace(safeNext);
+      }
     } catch (error) {
       byId("status").className = "status error";
       byId("status").textContent = error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : window.SessionBuddyApi.message(error);

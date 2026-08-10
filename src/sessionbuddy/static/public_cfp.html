@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Submit a proposal · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=22">
-  <script src="/app-shell/assets/api-client.js?v=1" defer></script>
-  <script src="/product/assets/public-cfp.js?v=13" defer></script>
+  <link rel="stylesheet" href="/product/assets/product.css?v=23">
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
+  <script src="/product/assets/public-cfp.js?v=15" defer></script>
 </head>
 <body class="public-body cfp-public-page">
   <a class="skip-link" href="#main">Skip to proposal form</a>
@@ -18,7 +18,7 @@
     <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div>
     <section id="call-details" class="card flow-context-card" hidden aria-labelledby="call-details-title"><h2 id="call-details-title">Before you start</h2><p id="call-deadline"></p><p>The form asks for:</p><ul id="call-fields"></ul><p id="call-conditional-note" class="help" hidden>Additional questions may appear based on your answers.</p></section>
     <section id="closed-card" class="card" hidden><h2>Submissions are not open</h2><p id="availability"></p></section>
-    <section id="sign-in-card" class="card flow-auth-card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><h2 id="sign-in-title">Verify your email to submit</h2><p>Your proposal is safely stored in this browser. Enter the proposal email to request a secure one-time link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Send verification link</button></form></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Open the link in this browser. Your completed proposal will be restored for final submission. The link expires in 15 minutes.</p><button id="change-cfp-email" class="secondary" type="button">Use a different email</button></div></section>
+    <section id="sign-in-card" class="card flow-auth-card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><h2 id="sign-in-title">Verify your email to submit</h2><p>Your proposal is safely stored in this browser. Enter the proposal email to request a secure one-time link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Send verification link</button></form></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Open the link in this browser. Your completed proposal will be restored for final submission. The link expires in 15 minutes.</p></div></section>
     <section id="proposal-card" class="card flow-form-card" hidden aria-labelledby="title">
       <form id="proposal-form">
         <div id="dynamic-fields"></div>
@@ -26,7 +26,7 @@
         <section id="review-panel" class="review-panel" hidden aria-labelledby="review-title"><h2 id="review-title">Review your proposal</h2><p>Confirm these details before submitting.</p><dl id="review-list" class="review-list"></dl></section>
         <div class="actions"><button id="save-draft" class="secondary" type="button">Save draft</button><button id="back-to-form" class="secondary" type="button" hidden>Back</button><button id="review-proposal" type="button">Review proposal</button><button id="submit-proposal" type="submit" hidden>Confirm submission</button></div>
       </form>
-      <section id="receipt" class="result" role="status" aria-live="polite"></section>
+      <section id="receipt" class="result" role="status" aria-live="polite" tabindex="-1"></section>
     </section>
   </main>
 </body>

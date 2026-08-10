@@ -2,7 +2,10 @@
   "use strict";
   const byId = (id) => document.getElementById(id);
   const pathMatch = location.pathname.match(/^\/admin\/events\/([^/]+)\/speakers(?:\/([^/]+))?$/);
+  const profileMatch = location.pathname.match(/^\/speakers\/([^/]+)$/);
   const eventScoped = Boolean(pathMatch);
+  const profileScoped = Boolean(profileMatch);
+  let selectedPersonId = "";
   let selectedEventId = "";
   let selectedSpeakerId = "";
   try {
@@ -10,9 +13,11 @@
       ? decodeURIComponent(pathMatch[1])
       : new URLSearchParams(location.search).get("event_id") || "";
     selectedSpeakerId = pathMatch?.[2] ? decodeURIComponent(pathMatch[2]) : "";
+    selectedPersonId = profileMatch?.[1] ? decodeURIComponent(profileMatch[1]) : "";
   } catch (_) {
     selectedEventId = "";
     selectedSpeakerId = "";
+    selectedPersonId = "";
   }
 
   let csrf = "";
@@ -54,7 +59,14 @@
     top.append(organization, count);
 
     const heading = document.createElement("h3");
-    heading.textContent = item.display_name;
+    if (item.person_id) {
+      const profileLink = document.createElement("a");
+      profileLink.href = `/speakers/${encodeURIComponent(item.person_id)}`;
+      profileLink.textContent = item.display_name;
+      heading.append(profileLink);
+    } else {
+      heading.textContent = item.display_name;
+    }
     const identity = document.createElement("p");
     identity.className = "muted";
     identity.textContent = [item.job_title, item.company].filter(Boolean).join(" · ") || item.email;
@@ -242,9 +254,68 @@
     document.title = `${person.display_name} · SessionBuddy`;
   }
 
+  function showProfile(profile) {
+    selectedSpeaker = profile;
+    byId("speaker-detail").hidden = false;
+    byId("speaker-directory-results").hidden = true;
+    byId("page-title").textContent = profile.display_name;
+    byId("page-summary").textContent = "Speaker profile";
+    byId("invite-speaker").hidden = true;
+    byId("speaker-event").textContent = "Speaker profile";
+    byId("speaker-name").textContent = profile.display_name;
+    byId("speaker-proposal").hidden = true;
+    byId("speaker-profile-view").hidden = false;
+    byId("speaker-role").textContent = [profile.job_title, profile.company].filter(Boolean).join(" · ") || "Speaker";
+    byId("speaker-location").textContent = profile.location || "";
+    byId("speaker-biography").textContent = profile.biography || "Biography not added yet.";
+    const links = (profile.links || []).map((url) => {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      anchor.textContent = new URL(url).hostname;
+      return anchor;
+    });
+    byId("speaker-links").replaceChildren(...links);
+    byId("speaker-links").parentElement.hidden = links.length === 0;
+    const participationNodes = profile.participations.map((participation) => {
+      const item = document.createElement("li");
+      const eventLink = document.createElement("a");
+      eventLink.href = `/admin/events/${encodeURIComponent(participation.event_id)}`;
+      eventLink.textContent = participation.event_name;
+      const detail = document.createElement("span");
+      detail.textContent = `${participation.selection_status} · ${participation.proposal_title}`;
+      item.append(eventLink, detail);
+      return item;
+    });
+    byId("speaker-events").replaceChildren(...participationNodes);
+    const form = byId("speaker-form");
+    form.hidden = !profile.can_edit;
+    byId("speaker-onboarding").hidden = true;
+    byId("speaker-directory").hidden = !sessionHasOrganizerAccess;
+    if (profile.can_edit) {
+      ["display_name", "email", "job_title", "company", "location", "biography", "version"].forEach((name) => {
+        form.elements[name].value = profile[name] ?? "";
+      });
+      form.elements.links.value = (profile.links || []).join("\n");
+      window.SessionBuddyApi.refreshCharacterCounters(form);
+    }
+    byId("status").textContent = profile.can_edit ? "This is your profile. You can edit it below." : "Speaker profile";
+    document.title = `${profile.display_name} · SessionBuddy`;
+  }
+
+  let sessionHasOrganizerAccess = false;
+
   async function initialize() {
     const session = await api("/api/v1/auth/session");
     csrf = session.csrf_token;
+    sessionHasOrganizerAccess = (session.organization_access || []).some((item) => item.roles.includes("organization_admin"))
+      || (session.event_access || []).some((item) => item.roles.includes("event_admin"));
+    if (profileScoped) {
+      const profile = await api(`/api/v1/speaker-profiles/${encodeURIComponent(selectedPersonId)}`);
+      showProfile(profile);
+      return;
+    }
     const organizations = (await api("/api/v1/admin/organizations")).data;
     let activeEvent = null;
     if (eventScoped) {
@@ -263,6 +334,10 @@
     if (selectedSpeakerId) {
       const selection = findEventSpeaker(selectedSpeakerId);
       if (!selection) throw new Error("This speaker is not available in the selected event.");
+      if (selection.person.person_id) {
+        location.replace(`/speakers/${encodeURIComponent(selection.person.person_id)}`);
+        return;
+      }
       showSpeakerDetail(selection.person, selection.participation);
     }
     renderDirectory();
@@ -286,7 +361,10 @@
     const values = Object.fromEntries(new FormData(form));
     const links = String(values.links || "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     try {
-      const updated = await api(`/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}`, {
+      const profileEndpoint = profileScoped
+        ? `/api/v1/speaker-profiles/${encodeURIComponent(selectedSpeaker.person_id)}`
+        : `/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}`;
+      const updated = await api(profileEndpoint, {
         method: "PATCH",
         headers: { "content-type": "application/json", "x-csrf-token": csrf },
         body: JSON.stringify({
@@ -302,6 +380,7 @@
       selectedSpeaker = { ...selectedSpeaker, ...updated };
       form.elements.version.value = updated.version;
       byId("speaker-name").textContent = updated.display_name;
+      if (profileScoped) showProfile(selectedSpeaker);
       byId("status").textContent = "Speaker details saved.";
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);

@@ -73,6 +73,7 @@ class TaskFormField(BaseModel):
 
 class SpeakerTarget(BaseModel):
     event_speaker_id: str
+    person_id: str | None
     user_id: str | None
     email: str
     display_name: str
@@ -115,6 +116,10 @@ class OrganizationSpeaker(BaseModel):
 class OrganizationSpeakerList(BaseModel):
     organization_id: str
     data: list[OrganizationSpeaker]
+
+
+class SpeakerProfilePageView(OrganizationSpeaker):
+    can_edit: bool
 
 
 class AdminSpeakerUpdate(BaseModel):

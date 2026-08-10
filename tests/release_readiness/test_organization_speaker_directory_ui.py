@@ -41,3 +41,19 @@ def test_each_reusable_profile_exposes_all_matching_event_participations() -> No
     assert "eventLink.textContent = participation.event_name" in script
     assert "`${participation.selection_status} · ${participation.proposal_title}`" in script
     assert "known.has(part.event_speaker_id)" in script
+
+
+def test_speaker_cards_share_one_person_profile_route() -> None:
+    page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
+    script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
+
+    assert 'id="speaker-profile-view"' in page
+    assert "const profileMatch = location.pathname.match" in script
+    assert "`/speakers/${encodeURIComponent(item.person_id)}`" in script
+    assert "`/api/v1/speaker-profiles/${encodeURIComponent(selectedPersonId)}`" in script
+    assert 'form.hidden = !profile.can_edit;' in script
+    legacy_redirect = (
+        "location.replace(`/speakers/"
+        "${encodeURIComponent(selection.person.person_id)}`)"
+    )
+    assert legacy_redirect in script

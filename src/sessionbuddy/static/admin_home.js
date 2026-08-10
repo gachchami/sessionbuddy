@@ -158,7 +158,13 @@
       speakers: (await api(`/api/v1/admin/events/${encodeURIComponent(event.id)}/speaker-targets`)).data
     })));
     const speakers = speakerGroups.flatMap(({ event, speakers: items }) =>
-      items.map((speaker) => ({ ...speaker, event }))
+      items
+        .filter((speaker) => (
+          speaker.person_id
+          && speaker.proposal_title
+          && speaker.proposal_title !== "No proposal"
+        ))
+        .map((speaker) => ({ ...speaker, event }))
     );
     byId("metric-events").textContent = String(events.length);
     byId("metric-speakers").textContent = String(speakers.length);
@@ -166,7 +172,7 @@
     if (speakers.length) {
       speakerList.replaceChildren(...speakers.slice(0, 6).map((speaker) => cardLink(
         speaker.display_name,
-        `/admin/events/${encodeURIComponent(speaker.event.id)}/speakers/${encodeURIComponent(speaker.event_speaker_id)}`,
+        `/speakers/${encodeURIComponent(speaker.person_id)}`,
         speaker.event.name,
         speaker.proposal_title,
         speaker.selection_status

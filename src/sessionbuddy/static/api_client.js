@@ -64,9 +64,12 @@
 
     if (!response.ok) {
       const bodyRequestId = typeof body?.request_id === "string" ? body.request_id : requestId;
+      const conflictType = response.headers.get("x-conflict-type");
       throw new ApiError(safeMessage(response.status, body, fallback, bodyRequestId), {
         status: response.status,
-        code: typeof body?.error?.code === "string" ? body.error.code : "request_failed",
+        code: conflictType
+          ? `${conflictType}_conflict`
+          : typeof body?.error?.code === "string" ? body.error.code : "request_failed",
         requestId: bodyRequestId,
         retryable: response.status === 408 || response.status === 429 || response.status >= 500,
         details: Array.isArray(body?.error?.details) ? body.error.details : []

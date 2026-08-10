@@ -6,7 +6,7 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, eventName: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, fields: structuredClone(coreFields), routingRules: [] };
+  const state = { context: null, csrf: null, eventName: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -64,9 +64,11 @@
     );
   }
 
-  function setStatus(message, error = false) {
+  function setStatus(message, kind = "") {
+    const variant = kind === true ? "error" : kind;
     byId("status").textContent = message;
-    byId("status").classList.toggle("error", error);
+    byId("status").classList.toggle("error", variant === "error");
+    byId("status").classList.toggle("success", variant === "success");
   }
 
   function make(tag, text) {
@@ -129,6 +131,22 @@
     return toLocalInput(timestamp) === value ? timestamp : Number.NaN;
   }
 
+  function formatCfpDate(value, fallback) {
+    if (!value) return fallback;
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: state.eventTimeZone,
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(new Date(value));
+  }
+
+  function cfpAvailability(form) {
+    const now = Date.now();
+    if (form.opens_at_ms && now < form.opens_at_ms) return "Scheduled";
+    if (form.closes_at_ms && now > form.closes_at_ms) return "Closed";
+    return "Live";
+  }
+
   function syncAvailabilityLimits(form) {
     const opens = form.elements.opens_at;
     const closes = form.elements.closes_at;
@@ -157,6 +175,12 @@
     publishButton.textContent = published ? "Save changes" : "Publish CFP";
     byId("publish-action-label").textContent = published ? "Published CFP" : "Ready to publish?";
     byId("published-note").hidden = !published;
+    byId("publish-settings").hidden = Boolean(published) && !state.editing;
+    byId("edit-cfp").hidden = !published || state.editing;
+    byId("cancel-cfp-edit").hidden = !published;
+    const savedState = byId("cfp-saved-state");
+    savedState.hidden = !published || state.editing;
+    if (published && !savedState.textContent) savedState.textContent = "Saved";
     byId("publish-result").textContent = published
       ? "Published. Use the CFP link above, then review proposals as they arrive."
       : "Complete the form settings below, then publish.";
@@ -167,7 +191,7 @@
     live.hidden = !published;
     empty.hidden = Boolean(published);
     badge.className = `badge${published ? " success" : ""}`;
-    badge.textContent = published ? "Live" : "Not published";
+    badge.textContent = published ? cfpAvailability(published) : "Not published";
     if (!published) {
       empty.textContent = "Configure and publish the proposal form below to get a shareable link.";
       return;
@@ -176,6 +200,14 @@
     byId("cfp-url").value = publicUrl;
     byId("open-cfp-url").href = publicUrl;
     byId("review-submissions").href = `/admin/events/${encodeURIComponent(state.context.event_id)}/submissions`;
+    byId("cfp-summary-welcome").textContent = published.welcome_text || "No welcome message";
+    byId("cfp-summary-opens").textContent = formatCfpDate(published.opens_at_ms, "Open immediately");
+    byId("cfp-summary-closes").textContent = formatCfpDate(published.closes_at_ms, "No closing date");
+    byId("cfp-summary-limit").textContent = published.submission_limit || "No limit";
+    const fields = published.fields || [];
+    const required = fields.filter((field) => field.required).length;
+    byId("cfp-summary-questions").textContent = `${fields.length} total · ${required} required`;
+    byId("cfp-summary-fields").textContent = fields.map((field) => field.label).join(" · ") || "No questions configured";
   }
 
   function loadPublishedSettings(form) {
@@ -193,6 +225,8 @@
     editor.elements.submission_limit.value = form.submission_limit || "";
     if (form.success_title) editor.elements.success_title.value = form.success_title;
     if (form.success_message) editor.elements.success_message.value = form.success_message;
+    if (form.confirmation_subject) editor.elements.confirmation_subject.value = form.confirmation_subject;
+    if (form.confirmation_body) editor.elements.confirmation_body.value = form.confirmation_body;
     window.SessionBuddyApi.refreshCharacterCounters(editor);
     if (typeof form.redirect_to_portal === "boolean") {
       editor.elements.redirect_to_portal.checked = form.redirect_to_portal;
@@ -494,7 +528,13 @@
 
   function installBuilder() {
     const publish = byId("publish-form");
-    publish.addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+    publish.addEventListener("input", (event) => {
+      event.target.setCustomValidity?.("");
+      if (state.publishedForm) {
+        byId("publish-action-label").textContent = "Unsaved changes";
+        byId("publish-result").textContent = "Save when you are ready.";
+      }
+    });
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
     const add = byId("add-field");
     add.addEventListener("click", () => {
@@ -530,6 +570,7 @@
       byId("cfp-slug-prefix").textContent = `${location.host}/cfp/`;
       await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
+      state.editing = !state.publishedForm;
       if (state.publishedForm) loadPublishedSettings(state.publishedForm);
       else {
         const slug = byId("publish-form").elements.slug;
@@ -554,9 +595,20 @@
 
   byId("publish-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const formElement = event.currentTarget;
+    const submitButton = formElement.querySelector('button[type="submit"], button:not([type])');
+    if (formElement.getAttribute("aria-busy") === "true") return;
+    const updating = Boolean(state.publishedForm);
+    const idleLabel = updating ? "Save changes" : "Publish CFP";
+    let completed = false;
     try {
-      if (!validatePublishForm(event.currentTarget)) return;
-      const values = Object.fromEntries(new FormData(event.currentTarget));
+      if (!validatePublishForm(formElement)) return;
+      formElement.setAttribute("aria-busy", "true");
+      submitButton.disabled = true;
+      submitButton.textContent = updating ? "Saving…" : "Publishing…";
+      byId("publish-action-label").textContent = updating ? "Saving changes" : "Publishing CFP";
+      byId("publish-result").textContent = "Please wait while the form is updated.";
+      const values = Object.fromEntries(new FormData(formElement));
       const schema = readFields();
       const routingRules = readRoutingRules();
       const payload = {
@@ -569,9 +621,8 @@
         submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
         success_title: values.success_title,
         success_message: values.success_message,
-        redirect_to_portal: event.currentTarget.elements.redirect_to_portal.checked
+        redirect_to_portal: formElement.elements.redirect_to_portal.checked
       };
-      const updating = Boolean(state.publishedForm);
       if (updating) payload.version = state.publishedForm.version;
       else {
         payload.confirmation_subject = values.confirmation_subject;
@@ -588,11 +639,46 @@
         }
       );
       state.publishedForm = form;
+      state.editing = false;
       renderWorkspace();
-      setStatus(updating ? "Published form updated." : "Form published successfully.");
+      completed = true;
+      submitButton.textContent = updating ? "Saved ✓" : "Published ✓";
+      byId("publish-action-label").textContent = updating ? "Changes saved" : "CFP published";
+      byId("publish-result").textContent = "Your form is up to date.";
+      byId("cfp-saved-state").textContent = "Saved just now";
+      byId("cfp-saved-state").hidden = false;
+      setStatus(updating ? "Your CFP changes were saved." : "Your CFP was published successfully.", "success");
     } catch (error) {
-      setStatus(error.status === 409 ? "That public slug is already in use. Choose another." : window.SessionBuddyApi.message(error), true);
+      const message = error.code === "slug_conflict"
+        ? "That public slug is already in use. Choose another."
+        : error.code === "stale_conflict"
+          ? "This CFP changed while you were editing it. Reload the page, review the latest version, and try again."
+          : window.SessionBuddyApi.message(error);
+      setStatus(message, true);
+    } finally {
+      formElement.setAttribute("aria-busy", "false");
+      submitButton.disabled = !state.context;
+      if (!completed) submitButton.textContent = idleLabel;
+      else window.setTimeout(() => {
+        if (formElement.getAttribute("aria-busy") !== "true") submitButton.textContent = "Save changes";
+      }, 1800);
     }
+  });
+
+  byId("edit-cfp").addEventListener("click", () => {
+    state.editing = true;
+    renderWorkspace();
+    byId("cfp-builder-title").focus?.();
+    byId("publish-settings").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  byId("cancel-cfp-edit").addEventListener("click", () => {
+    if (!state.publishedForm) return;
+    loadPublishedSettings(state.publishedForm);
+    state.editing = false;
+    renderWorkspace();
+    setStatus("No changes were made.");
+    byId("cfp-link-title").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
   byId("copy-cfp-url").addEventListener("click", async () => {

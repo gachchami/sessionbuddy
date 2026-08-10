@@ -115,6 +115,14 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-link-card { margin-top: 1.25rem; }
 .cfp-link-card .section-heading { align-items: center; }
 .cfp-link-card label { margin: 0; }
+.cfp-summary-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .55rem; }
+.save-state { display: inline-flex; align-items: center; gap: .35rem; color: var(--success); font-size: .78rem; font-weight: 750; }
+.save-state::before { content: "✓"; display: grid; width: 1.15rem; height: 1.15rem; place-items: center; border-radius: 50%; background: #ddf4e8; font-size: .7rem; }
+.cfp-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .65rem; margin-top: .35rem; }
+.cfp-summary-item { min-width: 0; display: grid; align-content: start; gap: .25rem; padding: .75rem; border: 1px solid var(--line); border-radius: .55rem; background: white; }
+.cfp-summary-item--wide { grid-column: 1 / -1; }
+.cfp-summary-item span { color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.cfp-summary-item strong { overflow-wrap: anywhere; color: var(--ink); font-size: .84rem; font-weight: 650; line-height: 1.45; }
 .cfp-builder { display: grid; gap: 1rem; margin-top: 1rem; }
 .cfp-page main.shell { width: min(68rem, calc(100% - 2rem)); }
 .cfp-page .page-heading h1 { font-size: clamp(1.65rem, 2.5vw, 2rem); }
@@ -145,6 +153,7 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-short-field { max-width: 20rem; }
 .cfp-editor-actions { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1.5rem; border-top: 1px solid var(--line); background: rgba(255,255,255,.96); backdrop-filter: blur(8px); }
 .cfp-editor-actions > div { display: grid; gap: .1rem; }
+.cfp-editor-actions > .actions { display: flex; }
 .cfp-editor-actions strong { font-size: .85rem; }
 .cfp-editor-actions .result { margin: 0; font-size: .76rem; }
 .copy-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .65rem; }
@@ -442,6 +451,9 @@ form.validation-attempted :is(input, textarea, select):invalid { border-color: v
   .slug-field { display: grid; }
   .slug-field__prefix { max-width: 100%; min-height: 2.3rem; border-right: 0; border-bottom: 1px solid var(--line); }
   .cfp-editor-actions { padding: .8rem 1.1rem; }
+  .cfp-summary-grid { grid-template-columns: 1fr; }
+  .cfp-summary-item--wide { grid-column: auto; }
+  .cfp-summary-actions { justify-content: flex-start; }
   .routing-rule { grid-template-columns: 1fr; }
   .routing-rule__word { margin-top: .25rem; }
   .routing-rule__remove { width: 100%; }

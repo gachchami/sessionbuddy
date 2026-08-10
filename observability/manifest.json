@@ -49,18 +49,31 @@
       ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
-    "POST /api/v1/forms/{slug}/access": {
-      "owner": "identity",
+    "GET /api/v1/speaker-profiles/{person_id}": {
+      "owner": "speaker-operations",
       "slo": {
         "p95_ms": 500,
         "error_rate_max": 0.001
       },
-      "benchmark": "cfp-speaker-access",
+      "benchmark": "speaker-profile-detail",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "PATCH /api/v1/speaker-profiles/{person_id}": {
+      "owner": "speaker-operations",
+      "slo": {
+        "p95_ms": 800,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "speaker-profile-update",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
     },
     "POST /api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend": {
       "owner": "identity",

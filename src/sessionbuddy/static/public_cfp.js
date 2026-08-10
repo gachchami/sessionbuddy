@@ -517,17 +517,12 @@
         state.authenticated = true;
         state.csrf = session.csrf_token;
         state.sessionEmail = session.email || "";
-        await api(`/api/v1/forms/${encodeURIComponent(slug)}/access`, {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
-          body: "{}"
-        });
         lockSignedInEmail();
         try {
           const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
           state.submissions = mine.data || [];
         } catch (error) {
-          if (![401, 404].includes(error.status)) throw error;
+          if (![401, 403, 404].includes(error.status)) throw error;
           state.submissions = [];
         }
         renderExistingSubmissions();
@@ -541,8 +536,11 @@
           setStatus(needsFiles
             ? "Email verified. Your answers were restored; reattach the selected files before continuing."
             : saved.readyToSubmit
-              ? "Email verified. Review the restored proposal, then confirm submission."
+              ? "Email verified. Submitting your proposal now…"
             : "Your proposal was restored from this browser.", "success");
+          if (saved.readyToSubmit && !needsFiles) {
+            queueMicrotask(() => byId("proposal-form").requestSubmit());
+          }
         }
         else {
           setStatus(state.submissions.length ? "Choose an existing proposal to edit, or start another one." : "Start your first proposal below.");
@@ -584,19 +582,6 @@
   byId("add-co-speaker").addEventListener("click", () => {
     if (byId("co-speaker-rows").children.length < 10) addCoSpeakerRow({}, true);
     validateCoSpeakers(byId("proposal-form"));
-  });
-
-  byId("change-cfp-email").addEventListener("click", () => {
-    const form = byId("sign-in-form");
-    const button = form.querySelector("button");
-    byId("cfp-sign-in-sent").hidden = true;
-    byId("cfp-sign-in-entry").hidden = false;
-    form.elements.email.disabled = false;
-    button.disabled = false;
-    button.textContent = "Send verification link";
-    form.elements.email.focus();
-    form.elements.email.select();
-    setStatus("Update the proposal email, then request another verification link.");
   });
 
   byId("save-draft").addEventListener("click", async () => {
@@ -648,14 +633,17 @@
     event.preventDefault();
     const form = event.currentTarget;
     const button = byId("submit-proposal");
+    if (form.getAttribute("aria-busy") === "true") return;
+    const idleLabel = state.editingSubmission ? "Save changes" : "Confirm submission";
+    form.setAttribute("aria-busy", "true");
     button.disabled = true;
-    button.textContent = "Submitting…";
+    button.textContent = state.editingSubmission ? "Saving…" : "Submitting…";
+    setStatus(state.editingSubmission ? "Saving your proposal changes…" : "Submitting your proposal…");
+    let completed = false;
     try {
       validateCoSpeakers(form);
       if (!form.reportValidity()) {
         setStatus("Check each co-speaker name and email before continuing.", "error");
-        button.disabled = false;
-        button.textContent = "Confirm submission";
         return;
       }
       if (!state.authenticated) {
@@ -667,8 +655,6 @@
         byId("sign-in-card").scrollIntoView({ behavior: "smooth", block: "start" });
         setStatus("Your completed proposal is saved. Verify the proposal email to submit it.");
         signIn.requestSubmit();
-        button.disabled = false;
-        button.textContent = "Confirm submission";
         return;
       }
       await uploadFiles();
@@ -686,9 +672,12 @@
       });
       setStep("done");
       form.hidden = true;
+      byId("call-details").hidden = true;
+      byId("sign-in-card").hidden = true;
+      byId("proposal-card").querySelector(".existing-submissions")?.remove();
       const receipt = byId("receipt");
       receipt.className = "empty-state";
-      receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : state.form.success_title), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
+      receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
       const proposalLink = make("a", "View your proposal", "button");
       proposalLink.href = `/cfp/${encodeURIComponent(slug)}?submission_id=${encodeURIComponent(submission.id)}`;
       receipt.append(proposalLink);
@@ -698,12 +687,20 @@
         receipt.append(link);
       }
       setStatus(state.editingSubmission ? "Proposal updated successfully." : "Proposal submitted successfully.", "success");
+      completed = true;
+      button.textContent = state.editingSubmission ? "Saved ✓" : "Submitted ✓";
+      receipt.scrollIntoView({ behavior: "smooth", block: "center" });
+      receipt.focus({ preventScroll: true });
       clearBrowserDraft();
     } catch (error) {
       setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : window.SessionBuddyApi.message(error), "error");
       byId("status").focus();
-      button.disabled = false;
-      button.textContent = "Confirm submission";
+    } finally {
+      form.setAttribute("aria-busy", "false");
+      if (!completed) {
+        button.disabled = false;
+        button.textContent = idleLabel;
+      }
     }
   });
 

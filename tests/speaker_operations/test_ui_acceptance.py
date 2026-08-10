@@ -25,7 +25,7 @@ def test_dashboard_has_actor_scoped_links_and_graceful_reminder_action() -> None
     javascript = source("admin_onboarding.js")
     html = source("admin_onboarding.html")
     assert "/speaker-tasks/${encodeURIComponent(row.task_id)}/reminders" in javascript
-    assert "/speakers/${encodeURIComponent(row.event_speaker_id)}" in javascript
+    assert "`/speakers/${encodeURIComponent(row.person_id)}`" in javascript
     assert "Reminder delivery is not connected in this environment yet" in javascript
     assert 'scope="col">Action' in html
     assert 'id="status"' in html and 'aria-live="polite"' in html

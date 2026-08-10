@@ -33,6 +33,7 @@ from .models import (
     ResourceList,
     ResourceView,
     SessionContentVersionView,
+    SpeakerProfilePageView,
     SpeakerTarget,
     SpeakerTargetList,
     SpeakerTaskCreate,
@@ -354,7 +355,8 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
         await _db(request)
         .prepare(
             """WITH targets AS (
-                 SELECT es.id AS event_speaker_id,p.user_id,COALESCE(u.email,'') AS email,
+                 SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
+                        COALESCE(u.email,'') AS email,
                         p.display_name,COALESCE(p.job_title,'') AS job_title,
                         COALESCE(p.company,'') AS company,
                         COALESCE(p.biography,'') AS biography,
@@ -370,7 +372,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                  LEFT JOIN users u ON u.id=p.user_id
                  WHERE es.organization_id=?1 AND es.event_id=?2
                  UNION ALL
-                 SELECT i.id,NULL,i.email,
+                 SELECT i.id,NULL,NULL,i.email,
                         COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
                         '','','[]',1,'invited','Invitation pending'
                  FROM identity_invitations i
@@ -460,6 +462,7 @@ async def list_organization_speakers(
 def _speaker_target(row) -> SpeakerTarget:
     return SpeakerTarget(
         event_speaker_id=str(row["event_speaker_id"]),
+        person_id=str(row["person_id"]) if row["person_id"] is not None else None,
         user_id=str(row["user_id"]) if row["user_id"] is not None else None,
         email=str(row["email"]),
         display_name=str(row["display_name"]),
@@ -472,6 +475,156 @@ def _speaker_target(row) -> SpeakerTarget:
         selection_status=str(row["selection_status"]),
         proposal_title=str(row["proposal_title"]),
     )
+
+
+async def _speaker_profile_page(
+    person_id: str, request: Request, *, mutation: bool
+) -> tuple[SpeakerProfilePageView, object]:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    person = row_mapping(
+        await db.prepare(
+            """SELECT p.id AS person_id,p.organization_id,p.user_id,
+                      COALESCE(u.email,'') AS email,p.display_name,
+                      COALESCE(p.job_title,'') AS job_title,
+                      COALESCE(p.company,'') AS company,
+                      COALESCE(p.biography,'') AS biography,
+                      COALESCE(p.location,'') AS location,p.links_json,p.version
+               FROM people p LEFT JOIN users u ON u.id=p.user_id
+               WHERE p.id=?1 AND p.archived_at_ms IS NULL"""
+        )
+        .bind(person_id)
+        .first()
+    )
+    if person is None:
+        raise HTTPException(status_code=404)
+    participation_rows = result_rows(
+        await db.prepare(
+            """SELECT es.event_id,e.name AS event_name,es.id AS event_speaker_id,
+                      es.selection_status,
+                      COALESCE((SELECT s.proposal_title FROM submission_speakers ss
+                        JOIN submissions s ON s.id=ss.submission_id
+                        WHERE ss.event_speaker_id=es.id
+                        ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 1),
+                        'No proposal') AS proposal_title
+               FROM event_speakers es JOIN events e
+                 ON e.organization_id=es.organization_id AND e.id=es.event_id
+               WHERE es.organization_id=?1 AND es.person_id=?2
+                 AND es.status!='withdrawn' AND e.status!='archived'
+               ORDER BY e.starts_at_ms DESC,e.id"""
+        )
+        .bind(person["organization_id"], person_id)
+        .all()
+    )
+    if not participation_rows:
+        raise HTTPException(status_code=404)
+    owner = str(person["user_id"] or "") == authenticated.actor.user_id
+    candidate = None
+    if owner:
+        candidate = next(
+            (
+                row
+                for row in participation_rows
+                if authenticated.actor.event_roles.get(
+                    (str(person["organization_id"]), str(row["event_id"])), frozenset()
+                )
+            ),
+            None,
+        )
+        permission = (
+            Permission.SPEAKER_PROFILE_EDIT_OWN
+            if mutation
+            else Permission.SPEAKER_PROFILE_READ_OWN
+        )
+    else:
+        candidate = next(
+            (
+                row
+                for row in participation_rows
+                if authenticated.actor.organization_roles.get(
+                    str(person["organization_id"]), frozenset()
+                )
+                or authenticated.actor.event_roles.get(
+                    (str(person["organization_id"]), str(row["event_id"])), frozenset()
+                )
+            ),
+            None,
+        )
+        permission = Permission.SPEAKER_MANAGE
+    if candidate is None or (mutation and not owner):
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        permission,
+        ResourceContext(
+            str(person["organization_id"]),
+            str(candidate["event_id"]),
+            resource_owner_user_id=str(person["user_id"] or ""),
+        ),
+        mutation=mutation,
+    )
+    participations = [
+        OrganizationSpeakerParticipation(
+            event_id=str(row["event_id"]),
+            event_name=str(row["event_name"]),
+            event_speaker_id=str(row["event_speaker_id"]),
+            selection_status=str(row["selection_status"]),
+            proposal_title=str(row["proposal_title"]),
+        )
+        for row in participation_rows
+    ]
+    view = SpeakerProfilePageView(
+        person_id=person_id,
+        user_id=str(person["user_id"]) if person["user_id"] is not None else None,
+        email=str(person["email"]) if owner else "",
+        display_name=str(person["display_name"]),
+        job_title=str(person["job_title"]),
+        company=str(person["company"]),
+        biography=str(person["biography"]),
+        location=str(person["location"]),
+        links=json.loads(str(person["links_json"])),
+        version=int(person["version"]),
+        participations=participations,
+        can_edit=owner,
+    )
+    return view, authenticated
+
+
+@competition_router.get(
+    "/api/v1/speaker-profiles/{person_id}",
+    response_model=SpeakerProfilePageView,
+    tags=["speaker-onboarding"],
+)
+async def get_speaker_profile_page(person_id: str, request: Request) -> SpeakerProfilePageView:
+    profile, _ = await _speaker_profile_page(person_id, request, mutation=False)
+    return profile
+
+
+@competition_router.patch(
+    "/api/v1/speaker-profiles/{person_id}",
+    response_model=SpeakerProfilePageView,
+    tags=["speaker-onboarding"],
+)
+async def update_own_speaker_profile_page(
+    person_id: str, body: AdminSpeakerUpdate, request: Request
+) -> SpeakerProfilePageView:
+    profile, authenticated = await _speaker_profile_page(person_id, request, mutation=True)
+    changed = row_mapping(
+        await _db(request).prepare(
+            """UPDATE people SET display_name=?1,job_title=?2,company=?3,biography=?4,
+                      location=?5,links_json=?6,version=version+1,updated_at_ms=?7
+               WHERE id=?8 AND user_id=?9 AND version=?10 RETURNING id"""
+        ).bind(
+            body.display_name, body.job_title or None, body.company or None,
+            body.biography or None, body.location or None,
+            json.dumps(body.links, separators=(",", ":")), utc_now_ms(), person_id,
+            authenticated.actor.user_id, body.version,
+        ).first()
+    )
+    if changed is None:
+        raise HTTPException(status_code=409)
+    updated, _ = await _speaker_profile_page(person_id, request, mutation=False)
+    return updated
 
 
 @competition_router.patch(
@@ -536,7 +689,8 @@ async def update_admin_speaker(
     await audit.execute()
     row = row_mapping(
         await db.prepare(
-            """SELECT es.id AS event_speaker_id,p.user_id,COALESCE(u.email,'') AS email,
+            """SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
+                      COALESCE(u.email,'') AS email,
                       p.display_name,COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
