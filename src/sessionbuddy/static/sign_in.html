@@ -4,36 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=23">
+  <link rel="stylesheet" href="/product/assets/product.css?v=24">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/auth/assets/sign-in.js?v=8" defer></script>
+  <script src="/auth/assets/sign-in.js?v=9" defer></script>
 </head>
 <body class="app-body auth-body sign-in-page">
   <a class="skip-link" href="#main">Skip to sign in</a>
   <header class="app-header auth-header">
     <div class="shell app-header__inner">
-      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>SessionBuddy</span></a>
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">SB</span><span>SessionBuddy</span></a>
+      <a class="auth-header__back" href="/">Back to home</a>
     </div>
   </header>
   <main id="main" class="auth-main sign-in-shell" tabindex="-1">
+    <aside class="sign-in-story" aria-labelledby="sign-in-story-title">
+      <p class="eyebrow">Your conference workspace</p>
+      <h2 id="sign-in-story-title">One sign-in.<br>Every role in reach.</h2>
+      <p>Open the right workspace for the program you are helping to run, review, or speak at.</p>
+      <div class="program-pass" aria-label="SessionBuddy access pass">
+        <div class="program-pass__topline"><span>SessionBuddy</span><span>Program access</span></div>
+        <div class="program-pass__mark" aria-hidden="true">SB</div>
+        <div><strong>Your workspace</strong><span>Organizer · Reviewer · Speaker</span></div>
+        <span class="program-pass__status"><i aria-hidden="true"></i>Passwordless access</span>
+      </div>
+    </aside>
     <section class="auth-card sign-in-card" aria-labelledby="sign-in-title">
       <div id="sign-in-entry">
-        <p class="eyebrow">Secure access</p><h1 id="sign-in-title">Sign in</h1>
-        <p class="auth-intro">Enter your email to receive a secure sign-in link.</p>
+        <p class="eyebrow">Welcome back</p><h1 id="sign-in-title">Sign in to SessionBuddy</h1>
+        <p class="auth-intro">Use your email and password, or ask us for a secure one-time link.</p>
         <form id="sign-in-form" class="auth-form">
           <label>Email address
             <input name="email" type="email" autocomplete="email" maxlength="320" placeholder="you@example.com" autofocus required>
           </label>
-          <button id="send-sign-in-link">Sign in</button>
+          <label>Password
+            <input name="password" type="password" autocomplete="current-password" maxlength="128" required>
+          </label>
+          <button id="password-sign-in">Sign in</button>
+          <div class="auth-choice" aria-hidden="true"><span>or</span></div>
+          <button id="send-sign-in-link" class="secondary" type="button">Email me a sign-in link</button>
         </form>
-        <p class="auth-note">No password required.</p>
+        <p class="auth-note"><span aria-hidden="true">◇</span>Email links expire after 15 minutes and work only once.</p>
       </div>
       <div id="sign-in-sent" class="auth-confirmation" tabindex="-1" hidden>
         <div class="auth-confirmation__icon" aria-hidden="true">✓</div>
         <h1>Check your email</h1>
         <p id="sent-message"></p>
-        <p>Link expires in 15 minutes.</p>
-        <button id="change-sign-in-email" class="secondary" type="button">Change email</button>
+        <p>Open the link in this browser. It expires in 15 minutes and can only be used once.</p>
+        <button id="change-sign-in-email" class="secondary" type="button">Use a different email</button>
       </div>
       <p id="status" class="auth-message" role="status" aria-live="polite" tabindex="-1" hidden></p>
     </section>

@@ -16,10 +16,10 @@
             ],
             "title": "Company"
           },
-          "display_name": {
-            "maxLength": 200,
+          "first_name": {
+            "maxLength": 100,
             "minLength": 1,
-            "title": "Display Name",
+            "title": "First Name",
             "type": "string"
           },
           "job_title": {
@@ -33,6 +33,38 @@
               }
             ],
             "title": "Job Title"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "password_confirmation": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password Confirmation"
           },
           "time_zone": {
             "anyOf": [
@@ -53,7 +85,8 @@
           }
         },
         "required": [
-          "display_name",
+          "first_name",
+          "last_name",
           "version"
         ],
         "title": "AccountProfileUpdate",
@@ -87,6 +120,22 @@
             "title": "Email",
             "type": "string"
           },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "has_password": {
+            "default": false,
+            "title": "Has Password",
+            "type": "boolean"
+          },
           "job_title": {
             "anyOf": [
               {
@@ -98,9 +147,32 @@
             ],
             "title": "Job Title"
           },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
           "profile_complete": {
             "title": "Profile Complete",
             "type": "boolean"
+          },
+          "roles": {
+            "items": {
+              "enum": [
+                "organizer",
+                "reviewer",
+                "speaker"
+              ],
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
           },
           "time_zone": {
             "anyOf": [
@@ -1483,6 +1555,34 @@
       },
       "CurrentSession": {
         "properties": {
+          "account_roles": {
+            "items": {
+              "enum": [
+                "organizer",
+                "reviewer",
+                "speaker"
+              ],
+              "type": "string"
+            },
+            "title": "Account Roles",
+            "type": "array"
+          },
+          "active_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "organizer",
+                  "reviewer",
+                  "speaker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Role"
+          },
           "authenticated": {
             "default": true,
             "title": "Authenticated",
@@ -4328,6 +4428,34 @@
           "data"
         ],
         "title": "OwnedSubmissionList",
+        "type": "object"
+      },
+      "PasswordSignIn": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "redirect_path": {
+            "default": "/",
+            "title": "Redirect Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "PasswordSignIn",
         "type": "object"
       },
       "PrivateSubmissionView": {
@@ -11194,6 +11322,47 @@
           }
         },
         "summary": "Request Magic Link",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/auth/password/sign-in": {
+      "post": {
+        "operationId": "password_sign_in_api_v1_auth_password_sign_in_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Password Sign In",
         "tags": [
           "authentication"
         ]

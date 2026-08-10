@@ -1,6 +1,7 @@
 # Copy to .dev.vars for local-only secrets. Never commit .dev.vars.
 SESSION_HMAC_KEY=replace-with-at-least-32-random-bytes
 CSRF_HMAC_KEY=replace-with-a-different-at-least-32-random-bytes
+PASSWORD_PEPPER=replace-with-an-independent-at-least-32-random-byte-secret
 RATE_LIMIT_HMAC_KEY=replace-with-a-third-at-least-32-random-bytes
 UPLOAD_HMAC_KEY=replace-with-an-upload-specific-at-least-32-random-bytes
 SCANNER_HMAC_KEY=replace-with-a-scanner-specific-at-least-32-random-bytes

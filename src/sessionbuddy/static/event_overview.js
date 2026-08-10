@@ -7,9 +7,9 @@
 
   const api = (path) => window.SessionBuddyApi.request(path);
 
-  function tool(number, title, description, href, state = "Open") {
+  function tool(number, title, description, href, state = "Open", phase = "upcoming") {
     const card = document.createElement("article");
-    card.className = "workflow-card organizer-card organizer-workflow-card";
+    card.className = `workflow-card organizer-card organizer-workflow-card organizer-workflow-card--${phase}`;
     const meta = document.createElement("div");
     meta.className = "workflow-card__meta";
     const step = document.createElement("span"); step.textContent = String(number).padStart(2, "0");
@@ -26,7 +26,7 @@
     const open = document.createElement("a");
     open.href = href;
     open.className = "entity-card__action";
-    open.textContent = "Open →";
+    open.textContent = phase === "current" ? `Continue ${title} →` : `View ${title} →`;
     card.append(meta, heading, summary, open);
     return card;
   }
@@ -110,19 +110,23 @@
       : "Create the public form that speakers will use to send proposals.";
     byId("next-step-action").href = nextHref;
     byId("next-step-action").textContent = cfpLive ? "Open submissions" : "Set up the form";
+    const currentStep = !cfpLive ? 1 : !roundState.ok || !roundState.value ? 2 : speakers.length === 0 ? 3 : agendaMissing || (agenda && agendaItems === 0) ? 4 : 5;
+    const phase = (step) => step < currentStep ? "complete" : step === currentStep ? "current" : "upcoming";
     byId("event-tools").replaceChildren(
-      tool(1, "Call for Proposals", "Manage the form and its public link.", `${prefix}/cfp`, cfpLive ? "Live" : "Not published"),
-      tool(2, "Review & decide", "Evaluate submissions and choose the program.", reviewPath, reviewBadge),
-      tool(3, "Prepare speakers", "Invite people and track onboarding work.", `${prefix}/onboarding`, plural(speakers.length, "speaker")),
-      tool(4, "Build the agenda", "Place accepted sessions and resolve conflicts.", `${prefix}/agenda`, agendaBadge),
-      tool(5, "Publish", "Share the schedule, speaker pages, and embeds.", `${prefix}/workspace`, agendaFailed ? "Unavailable" : agendaPublished ? "Live" : "Waiting")
+      tool(1, "Call for Proposals", "Manage the form and its public link.", `${prefix}/cfp`, cfpLive ? "Live" : "Not published", phase(1)),
+      tool(2, "Review & decide", "Evaluate submissions and choose the program.", reviewPath, reviewBadge, phase(2)),
+      tool(3, "Prepare speakers", "Invite people and track onboarding work.", `${prefix}/onboarding`, plural(speakers.length, "speaker"), phase(3)),
+      tool(4, "Build the agenda", "Place accepted sessions and resolve conflicts.", `${prefix}/agenda`, agendaBadge, phase(4)),
+      tool(5, "Publish", "Share the schedule, speaker pages, and embeds.", `${prefix}/workspace`, agendaFailed ? "Unavailable" : agendaPublished ? "Live" : "Waiting", phase(5))
     );
+    document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
       ? `${selected.name} loaded, but some live counts are unavailable right now. Refresh to retry.`
       : `${selected.name} is ready.`;
   }
 
   initialize().catch((error) => {
+    document.body.classList.remove("is-loading");
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
     byId("status").textContent = window.SessionBuddyApi.message(
       error,

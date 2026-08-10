@@ -490,7 +490,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'formElement.getAttribute("aria-busy") === "true"' in cfp_source
     assert 'error.code === "slug_conflict"' in cfp_source
     assert 'error.code === "stale_conflict"' in cfp_source
-    assert "View details" in submissions_js.text
+    assert "Read proposal" in submissions_js.text
     assert "item.answers" in submissions_js.text
     assert 'location.pathname.startsWith("/admin") && !organizer' in app_shell_js.text
     assert 'location.replace("/speaker")' in app_shell_js.text

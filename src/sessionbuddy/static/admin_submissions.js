@@ -271,6 +271,8 @@
         body.append(row);
       }
       appendSubmissionRows(result.data);
+      document.body.classList.remove("is-loading");
+      byId("submissions").closest("section").setAttribute("aria-busy", "false");
       renderLoadMore(Number(result.total ?? result.data.length));
       updatePrerequisites();
       const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
@@ -278,6 +280,8 @@
       const currentRound = history.data.find((round) => round.status === "open") || null;
       if (currentRound) showRound(currentRound);
     } catch (error) {
+      document.body.classList.remove("is-loading");
+      byId("submissions").closest("section").setAttribute("aria-busy", "false");
       byId("status").textContent = window.SessionBuddyApi.message(error, "Submissions could not be loaded. Return to the event and try again.");
       byId("status").classList.add("error");
     }
@@ -294,18 +298,24 @@
         selection.checked = item.status === "submitted";
         selection.disabled = item.status !== "submitted";
         selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
+        selectionCell.dataset.label = "Include";
         selectionCell.append(selection);
         row.append(selectionCell);
-        [item.speaker_name, item.proposal_title, item.proposal_abstract, item.status].forEach((value) => {
+        [["Speaker", item.speaker_name], ["Proposal", item.proposal_title], ["Abstract", item.proposal_abstract], ["Status", item.status]].forEach(([label, value]) => {
           const cell = document.createElement("td");
+          cell.dataset.label = label;
+          if (label === "Proposal") cell.className = "proposal-inbox__title";
+          if (label === "Abstract") cell.className = "proposal-inbox__abstract";
+          if (label === "Status") cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
           cell.textContent = value;
           row.append(cell);
         });
         const detailCell = document.createElement("td");
+        detailCell.dataset.label = "Details";
         const detailButton = document.createElement("button");
         detailButton.type = "button";
         detailButton.className = "secondary";
-        detailButton.textContent = "View details";
+        detailButton.textContent = "Read proposal";
         detailButton.addEventListener("click", () => showSubmission(item, detailButton));
         detailCell.append(detailButton);
         row.append(detailCell);

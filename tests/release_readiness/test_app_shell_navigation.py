@@ -42,8 +42,20 @@ def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert "if (organizerWorkspace) sidebar.append(primaryGroup);" in javascript
-    assert 'if (roles.has("evaluator")) utilityNav.append' in javascript
+    assert 'if (roles.has("reviewer")) utilityNav.append' in javascript
     assert 'navLink("My reviews", "/reviews"' in javascript
+
+
+def test_account_navigation_exposes_one_active_role_and_role_switching() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    assert 'const ACTIVE_ROLE_KEY = "sessionbuddy.active-role"' in javascript
+    assert 'active ? "Active role" : "Account"' in javascript
+    assert 'make("p", "Switch role", "sb-role-switcher__label")' in javascript
+    assert "return new Set(active ? [active.role] : [])" in javascript
+    assert ".sb-active-role" in stylesheet
+    assert ".sb-role-option" in stylesheet
 
 
 def test_landing_uses_one_role_aware_dashboard_entry() -> None:
@@ -63,9 +75,9 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert 'return "/admin"' in javascript
     assert 'return "/speaker"' in javascript
     assert 'return "/reviews"' in javascript
-    assert 'navLink("Organizer dashboard", "/admin"' in javascript
-    assert 'navLink("Reviewer dashboard", "/reviews"' in javascript
-    assert 'navLink("Speaker dashboard", "/speaker"' in javascript
+    assert 'choice.role === "organization_admin"' in javascript
+    assert 'choice.role === "evaluator"' in javascript
+    assert 'choice.role === "speaker"' in javascript
 
 
 def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:

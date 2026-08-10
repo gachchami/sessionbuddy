@@ -177,7 +177,7 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/submissions`);
-    await page.getByRole("button", { name: "View details" }).click();
+    await page.getByRole("button", { name: "Read proposal" }).click();
     const detail = page.getByRole("dialog", { name: "Submission details" });
     await expect(detail).toContainText("speaker@example.com");
     await expect(detail).toContainText("Platform");

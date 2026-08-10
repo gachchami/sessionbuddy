@@ -28,6 +28,7 @@ from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
 from .http import authenticate_request, database, guard_mutation, require_permission, secret
+from .passwords import PasswordPolicyError, hash_password, verify_password
 from .tokens import generate_token, hash_token, normalize_email
 
 access_router = APIRouter()
@@ -512,6 +513,14 @@ class SessionCreated(BaseModel):
     redirect_path: str
 
 
+class PasswordSignIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=128)
+    redirect_path: str = "/"
+
+
 class SessionOrganizationAccess(BaseModel):
     organization_id: str
     roles: list[Literal["organization_admin"]]
@@ -530,6 +539,10 @@ class CurrentSession(BaseModel):
     display_name: str | None = None
     profile_complete: bool = False
     csrf_token: str
+    account_roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(
+        default_factory=list
+    )
+    active_role: Literal["organizer", "reviewer", "speaker"] | None = None
     organization_id: str | None = None
     event_id: str | None = None
     organization_access: list[SessionOrganizationAccess] = Field(default_factory=list)
@@ -538,21 +551,36 @@ class CurrentSession(BaseModel):
 
 class AccountProfileView(BaseModel):
     email: str
+    first_name: str | None = None
+    last_name: str | None = None
     display_name: str | None = None
     job_title: str | None = None
     company: str | None = None
     time_zone: str | None = None
     profile_complete: bool
+    roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(default_factory=list)
+    has_password: bool = False
     version: int
 
 
 class AccountProfileUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    display_name: str = Field(min_length=1, max_length=200)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
     job_title: str | None = Field(default=None, max_length=200)
     company: str | None = Field(default=None, max_length=200)
     time_zone: str | None = Field(default=None, max_length=100)
+    password: str | None = Field(default=None, min_length=1, max_length=128)
+    password_confirmation: str | None = Field(default=None, min_length=1, max_length=128)
     version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def matching_optional_password(self) -> "AccountProfileUpdate":
+        if (self.password is None) != (self.password_confirmation is None):
+            raise ValueError("password and password_confirmation must be provided together")
+        if self.password is not None and self.password != self.password_confirmation:
+            raise ValueError("password confirmation does not match")
+        return self
 
 
 def _valid_redirect(value: str) -> bool:
@@ -737,19 +765,29 @@ async def bootstrap_tenant(
 )
 async def account_profile(request: Request) -> AccountProfileView:
     authenticated = await authenticate_request(request)
+    db = database(request)
     row = row_mapping(
-        await database(request)
+        await db
         .prepare(
-            """SELECT email,display_name,job_title,company,time_zone,version,
-                      profile_completed_at_ms IS NOT NULL AS profile_complete
-               FROM users WHERE id=?1 AND status='active' LIMIT 1"""
+            """SELECT u.email,u.first_name,u.last_name,u.display_name,u.job_title,u.company,
+                      u.time_zone,u.version,
+                      u.profile_completed_at_ms IS NOT NULL AS profile_complete,
+                      EXISTS(SELECT 1 FROM password_credentials c
+                             WHERE c.user_id=u.id AND c.status='active') AS has_password
+               FROM users u WHERE u.id=?1 AND u.status='active' LIMIT 1"""
         )
         .bind(authenticated.actor.user_id)
         .first()
     )
     if row is None:
         raise HTTPException(status_code=401)
-    return AccountProfileView(**row)
+    roles = result_rows(
+        await db.prepare(
+            """SELECT role FROM user_roles
+               WHERE user_id=?1 AND status='active' ORDER BY role"""
+        ).bind(authenticated.actor.user_id).all()
+    )
+    return AccountProfileView(**row, roles=[str(item["role"]) for item in roles])
 
 
 @access_router.patch(
@@ -764,34 +802,62 @@ async def update_account_profile(
     authenticated = await authenticate_request(request)
     guard_mutation(request, authenticated.session_id)
     db, now = database(request), utc_now_ms()
-    row = row_mapping(
+    current = row_mapping(
         await db.prepare(
-            """UPDATE users SET display_name=?1,job_title=?2,company=?3,time_zone=?4,
-               profile_completed_at_ms=COALESCE(profile_completed_at_ms,?5),
-               version=version+1,updated_at_ms=?5
-               WHERE id=?6 AND status='active' AND version=?7
-               RETURNING email,display_name,job_title,company,time_zone,version,
-                         profile_completed_at_ms IS NOT NULL AS profile_complete"""
-        )
-        .bind(
-            body.display_name,
+            "SELECT version FROM users WHERE id=?1 AND status='active' LIMIT 1"
+        ).bind(authenticated.actor.user_id).first()
+    )
+    if current is None or int(current["version"]) != body.version:
+        raise HTTPException(status_code=409)
+    verifier = None
+    if body.password is not None:
+        try:
+            verifier = hash_password(body.password, secret(request, "PASSWORD_PEPPER"))
+        except PasswordPolicyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    display_name = f"{body.first_name} {body.last_name}".strip()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE users SET first_name=?1,last_name=?2,display_name=?3,job_title=?4,
+               company=?5,time_zone=?6,profile_completed_at_ms=COALESCE(profile_completed_at_ms,?7),
+               authorization_version=authorization_version+?8,
+               version=version+1,updated_at_ms=?7
+               WHERE id=?9 AND status='active' AND version=?10"""
+        ).bind(
+            body.first_name,
+            body.last_name,
+            display_name,
             body.job_title or None,
             body.company or None,
             body.time_zone or None,
             now,
+            1 if verifier is not None else 0,
             authenticated.actor.user_id,
             body.version,
         )
-        .first()
     )
-    if row is None:
-        raise HTTPException(status_code=409)
-    audit = CommandBatch(db)
-    audit.audit(
+    if verifier is not None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO password_credentials
+                   (user_id,verifier_phc,pepper_version,status,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,1,'active',?3,?3)
+                   ON CONFLICT(user_id) DO UPDATE SET verifier_phc=excluded.verifier_phc,
+                     pepper_version=1,status='active',updated_at_ms=?3"""
+            ).bind(authenticated.actor.user_id, verifier, now)
+        )
+        batch.add_statement(
+            db.prepare(
+                """UPDATE sessions SET revoked_at_ms=?1,revoke_reason='password_changed'
+                   WHERE user_id=?2 AND revoked_at_ms IS NULL"""
+            ).bind(now, authenticated.actor.user_id)
+        )
+    batch.audit(
         AuditEvent(
             actor_type="user",
             actor_user_id=authenticated.actor.user_id,
-            action="account.profile.update",
+            action="account.profile_and_password.update" if verifier else "account.profile.update",
             target_type="user",
             target_id=authenticated.actor.user_id,
             result="succeeded",
@@ -799,8 +865,8 @@ async def update_account_profile(
             occurred_at_ms=now,
         )
     )
-    await audit.execute()
-    return AccountProfileView(**row)
+    await batch.execute()
+    return await account_profile(request)
 
 
 @access_router.get(
@@ -2429,6 +2495,149 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
     return GenericAccepted()
 
 
+def _request_source(request: Request) -> str:
+    return request.headers.get("cf-connecting-ip") or (
+        request.client.host if request.client is not None else "unknown"
+    )
+
+
+@access_router.post(
+    "/api/v1/auth/password/sign-in",
+    response_model=SessionCreated,
+    tags=["authentication"],
+)
+async def password_sign_in(
+    body: PasswordSignIn, request: Request, response: Response
+) -> SessionCreated:
+    if not _valid_redirect(body.redirect_path):
+        raise HTTPException(status_code=422)
+    _email(body.email)
+    normalized = normalize_email(body.email)
+    await enforce_rate_limit(
+        request,
+        binding_name="AUTH_RATE_LIMITER",
+        policy=RateLimitPolicy("auth.password", limit=10, window_seconds=60),
+        subject=f"{normalized}:{_request_source(request)}",
+    )
+    db, now = database(request), utc_now_ms()
+    credential = row_mapping(
+        await db.prepare(
+            """SELECT u.id,u.authorization_version,c.verifier_phc,c.pepper_version,c.status,
+                      COALESCE(s.consecutive_failures,0) AS consecutive_failures,
+                      s.blocked_until_ms
+               FROM users u JOIN password_credentials c ON c.user_id=u.id
+               LEFT JOIN password_authentication_state s ON s.user_id=u.id
+               WHERE u.normalized_email=?1 AND u.status='active' LIMIT 1"""
+        )
+        .bind(normalized)
+        .first()
+    )
+    # Always perform an expensive verification, including for unknown users,
+    # so response time does not become a reliable account-existence oracle.
+    pepper = secret(request, "PASSWORD_PEPPER")
+    fake = (
+        "$pbkdf2-sha256$i=600000$MDAwMDAwMDAwMDAwMDAwMA$"
+        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA"
+    )
+    verifier = str(credential["verifier_phc"]) if credential is not None else fake
+    valid = verify_password(body.password, verifier, pepper)
+    blocked = credential is not None and credential["blocked_until_ms"] is not None and int(
+        credential["blocked_until_ms"]
+    ) > now
+    active = credential is not None and str(credential["status"]) == "active"
+    if not valid or blocked or not active:
+        if credential is not None:
+            failures = min(int(credential["consecutive_failures"]) + 1, 100)
+            delay_seconds = min(2 ** min(failures, 10), 3600) if failures >= 5 else 0
+            await db.prepare(
+                """INSERT INTO password_authentication_state
+                   (user_id,consecutive_failures,first_failure_at_ms,last_failure_at_ms,
+                    blocked_until_ms,updated_at_ms)
+                   VALUES(?1,1,?2,?2,NULL,?2)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                     consecutive_failures=?3,
+                     first_failure_at_ms=COALESCE(first_failure_at_ms,?2),
+                     last_failure_at_ms=?2,blocked_until_ms=?4,updated_at_ms=?2"""
+            ).bind(
+                credential["id"],
+                now,
+                failures,
+                now + delay_seconds * 1000 if delay_seconds else None,
+            ).run()
+        raise HTTPException(status_code=401)
+
+    session_id, session_token = new_id(), generate_token()
+    csrf = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO sessions
+               (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,
+                last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?6,?7,?8)"""
+        ).bind(
+            session_id,
+            credential["id"],
+            hash_token(session_token),
+            hash_token(csrf),
+            credential["authorization_version"],
+            now,
+            now + 12 * 60 * 60 * 1000,
+            now + 30 * 24 * 60 * 60 * 1000,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO password_authentication_state
+               (user_id,consecutive_failures,last_success_at_ms,updated_at_ms)
+               VALUES(?1,0,?2,?2)
+               ON CONFLICT(user_id) DO UPDATE SET consecutive_failures=0,
+                 first_failure_at_ms=NULL,last_failure_at_ms=NULL,blocked_until_ms=NULL,
+                 last_success_at_ms=?2,updated_at_ms=?2"""
+        ).bind(credential["id"], now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+               SELECT ?1,user_id,role,?2 FROM user_roles
+               WHERE user_id=?3 AND status='active'
+               ORDER BY CASE role WHEN 'organizer' THEN 1 WHEN 'reviewer' THEN 2 ELSE 3 END
+               LIMIT 1"""
+        ).bind(session_id, now, credential["id"])
+    )
+    batch.add_statement(
+        db.prepare(
+            "UPDATE password_credentials SET last_verified_at_ms=?1 WHERE user_id=?2"
+        ).bind(now, credential["id"])
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=str(credential["id"]),
+            action="session.password_sign_in",
+            target_type="session",
+            target_id=session_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+        )
+    )
+    await batch.execute()
+    deployed = getattr(request.scope.get("env"), "APP_ENV", "production") != "local"
+    response.set_cookie(
+        "__Host-session" if deployed else "sessionbuddy-local",
+        sign_session_cookie(session_token, secret(request, "SESSION_HMAC_KEY")),
+        max_age=30 * 24 * 60 * 60,
+        httponly=True,
+        secure=deployed,
+        samesite="lax",
+        path="/",
+    )
+    return SessionCreated(
+        user_id=str(credential["id"]), csrf_token=csrf, redirect_path=body.redirect_path
+    )
+
+
 @access_router.get("/api/v1/auth/verify", response_model=SessionCreated, tags=["authentication"])
 async def verify_magic_link(token: str, request: Request, response: Response) -> SessionCreated:
     if len(token) < 32:
@@ -2753,8 +2962,9 @@ async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> 
 @access_router.get("/api/v1/auth/session", response_model=CurrentSession, tags=["authentication"])
 async def current_session(request: Request) -> CurrentSession:
     authenticated = await authenticate_request(request)
+    db = database(request)
     user = row_mapping(
-        await database(request)
+        await db
         .prepare(
             """SELECT email,display_name,
                       profile_completed_at_ms IS NOT NULL AS profile_complete
@@ -2765,6 +2975,19 @@ async def current_session(request: Request) -> CurrentSession:
     )
     if user is None:
         raise HTTPException(status_code=401)
+    account_role_rows = result_rows(
+        await db.prepare(
+            """SELECT role FROM user_roles
+               WHERE user_id=?1 AND status='active' ORDER BY role"""
+        ).bind(authenticated.actor.user_id).all()
+    )
+    active_role_row = row_mapping(
+        await db.prepare(
+            """SELECT role FROM session_active_roles
+               WHERE session_id=?1 AND user_id=?2 LIMIT 1"""
+        ).bind(authenticated.session_id, authenticated.actor.user_id).first()
+    )
+    account_roles = [str(item["role"]) for item in account_role_rows]
     organization_id = next(iter(authenticated.actor.organization_roles), None)
     event_scope = next(iter(authenticated.actor.event_roles), None)
     if organization_id is None and event_scope is not None:
@@ -2792,6 +3015,12 @@ async def current_session(request: Request) -> CurrentSession:
         display_name=str(user["display_name"]) if user["display_name"] is not None else None,
         profile_complete=bool(user["profile_complete"]),
         csrf_token=issue_csrf_token(authenticated.session_id, secret(request, "CSRF_HMAC_KEY")),
+        account_roles=account_roles,
+        active_role=(
+            str(active_role_row["role"])
+            if active_role_row is not None
+            else (account_roles[0] if account_roles else None)
+        ),
         organization_id=organization_id,
         event_id=event_scope[1] if event_scope is not None else None,
         organization_access=organization_access,

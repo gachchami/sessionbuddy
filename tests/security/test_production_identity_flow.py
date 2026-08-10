@@ -113,6 +113,7 @@ def production_environment():
         DB=SQLiteD1(connection),
         SESSION_HMAC_KEY="s" * 32,
         CSRF_HMAC_KEY="c" * 32,
+        PASSWORD_PEPPER="p" * 32,
         RATE_LIMIT_HMAC_KEY="r" * 32,
         AUTH_RATE_LIMITER=AllowingRateLimiter(),
         PUBLIC_RATE_LIMITER=AllowingRateLimiter(),
@@ -254,10 +255,13 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         assert profile["version"] == 1
 
         body = {
-            "display_name": "Asha R. Rao",
+            "first_name": "Asha R.",
+            "last_name": "Rao",
             "job_title": "Program director",
             "company": "Example Events",
             "time_zone": "Asia/Kolkata",
+            "password": None,
+            "password_confirmation": None,
             "version": profile["version"],
         }
         denied = await client.patch("/api/v1/account/profile", json=body)
@@ -275,6 +279,73 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         assert connection.execute(
             "SELECT COUNT(*) FROM audit_events WHERE action='account.profile.update'"
         ).fetchone()[0] == 1
+
+
+async def test_profile_can_create_password_and_password_sign_in_keeps_magic_links(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        bootstrap = await client.post(
+            "/api/v1/bootstrap",
+            headers={"X-Bootstrap-Token": _deployment_key(connection)},
+            json={
+                "organization_name": "Password Events",
+                "admin_name": "Password Owner",
+                "admin_email": "password@example.com",
+            },
+        )
+        assert bootstrap.status_code == 200
+        await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "password@example.com", "redirect_path": "/account"},
+        )
+        assert (
+            await client.post(
+                f"/auth/verify?token={_token(connection, 'password@example.com')}",
+                follow_redirects=False,
+            )
+        ).status_code == 303
+        session = (await client.get("/api/v1/auth/session")).json()
+        profile = (await client.get("/api/v1/account/profile")).json()
+        updated = await client.patch(
+            "/api/v1/account/profile",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={
+                "first_name": "Password",
+                "last_name": "Owner",
+                "job_title": None,
+                "company": None,
+                "time_zone": "UTC",
+                "password": "a private local passphrase",
+                "password_confirmation": "a private local passphrase",
+                "version": profile["version"],
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["has_password"] is True
+        assert "password" not in updated.json()
+        assert (await client.get("/api/v1/auth/session")).status_code == 401
+
+    async with _client(environment) as password_client:
+        signed_in = await password_client.post(
+            "/api/v1/auth/password/sign-in",
+            json={
+                "email": "password@example.com",
+                "password": "a private local passphrase",
+                "redirect_path": "/account",
+            },
+        )
+        assert signed_in.status_code == 200
+        assert signed_in.json()["redirect_path"] == "/account"
+        assert (await password_client.get("/api/v1/auth/session")).status_code == 200
+        # Password support is additive; requesting another email link still works.
+        assert (
+            await password_client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "password@example.com", "redirect_path": "/account"},
+            )
+        ).status_code == 202
 
 
 async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(

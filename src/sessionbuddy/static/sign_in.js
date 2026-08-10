@@ -6,7 +6,9 @@
   const status = document.getElementById("status");
   const sentMessage = document.getElementById("sent-message");
   const email = form.elements.email;
-  const button = document.getElementById("send-sign-in-link");
+  const password = form.elements.password;
+  const passwordButton = document.getElementById("password-sign-in");
+  const linkButton = document.getElementById("send-sign-in-link");
   const changeEmail = document.getElementById("change-sign-in-email");
   const requested = new URLSearchParams(location.search).get("redirect") || "/";
   const redirect = requested.startsWith("/") && !requested.startsWith("//") && !requested.includes("\\") ? requested : "/";
@@ -17,20 +19,27 @@
     status.hidden = !message;
   }
 
-  function setSending(sending) {
+  function setSending(sending, mode = "password") {
     form.setAttribute("aria-busy", String(sending));
     email.disabled = sending;
-    button.disabled = sending;
-    button.textContent = sending ? "Sending…" : "Sign in";
+    password.disabled = sending;
+    passwordButton.disabled = sending;
+    linkButton.disabled = sending;
+    passwordButton.textContent = sending && mode === "password" ? "Signing in…" : "Sign in";
+    linkButton.textContent = sending && mode === "link" ? "Sending your link…" : "Email me a sign-in link";
   }
 
   changeEmail.addEventListener("click", () => {
     confirmation.hidden = true;
     entry.hidden = false;
     email.disabled = false;
-    button.disabled = false;
-    button.textContent = "Sign in";
+    password.disabled = false;
+    passwordButton.disabled = false;
+    linkButton.disabled = false;
+    passwordButton.textContent = "Sign in";
+    linkButton.textContent = "Email me a sign-in link";
     showStatus("");
+    password.value = "";
     email.focus();
     email.select();
   });
@@ -38,7 +47,28 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const address = email.value;
-    setSending(true);
+    setSending(true, "password");
+    showStatus("");
+    try {
+      const session = await window.SessionBuddyApi.request("/api/v1/auth/password/sign-in", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: address, password: password.value, redirect_path: redirect })
+      });
+      location.assign(session.redirect_path || redirect);
+    } catch (error) {
+      showStatus(error.status === 401
+        ? "Email or password is incorrect. Try again or request a sign-in link."
+        : window.SessionBuddyApi.message(error, "We could not sign you in. Try again."), true);
+      status.focus();
+      setSending(false);
+    }
+  });
+
+  linkButton.addEventListener("click", async () => {
+    if (!email.reportValidity()) return;
+    const address = email.value;
+    setSending(true, "link");
     showStatus("");
     try {
       await window.SessionBuddyApi.request("/api/v1/auth/magic-links", {

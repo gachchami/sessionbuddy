@@ -19,7 +19,7 @@ def test_overview_has_one_primary_cfp_next_step() -> None:
 def test_cfp_workflow_card_is_status_and_navigation_not_a_setup_cta() -> None:
     script = (STATIC / "event_overview.js").read_text(encoding="utf-8")
 
-    assert 'open.textContent = "Open →"' in script
+    assert 'phase === "current" ? `Continue ${title} →` : `View ${title} →`' in script
     assert 'tool(1, "Call for Proposals", "Manage the form and its public link."' in script
     assert 'cfpLive ? "Live" : "Not published"' in script
     assert 'cfpLive ? "Live" : "Set up"' not in script

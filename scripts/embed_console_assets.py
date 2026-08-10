@@ -11,6 +11,7 @@ OUTPUT = ROOT / "src" / "sessionbuddy" / "console" / "embedded_assets.py"
 ASSETS = {
     "landing.html": "LANDING_HTML",
     "landing.css": "LANDING_CSS",
+    "sessionbuddy-favicon.svg": "SESSIONBUDDY_FAVICON_SVG",
     "engine_room.html": "ENGINE_ROOM_HTML",
     "console.css": "CONSOLE_CSS",
     "console.js": "CONSOLE_JS",
@@ -69,6 +70,10 @@ ASSETS = {
     "speaker_gallery.html": "SPEAKER_GALLERY_HTML",
     "speaker_gallery.js": "SPEAKER_GALLERY_JS",
 }
+BINARY_ASSETS = {
+    "aie-new-york-2026.jpg": "AIE_NEW_YORK_2026_JPG",
+    "aie-code-sf-2026.jpg": "AIE_CODE_SF_2026_JPG",
+}
 
 
 def render() -> str:
@@ -79,6 +84,9 @@ def render() -> str:
     ]
     for filename, constant in ASSETS.items():
         content = (STATIC / filename).read_text(encoding="utf-8")
+        lines.extend((f"{constant} = {content!r}", ""))
+    for filename, constant in BINARY_ASSETS.items():
+        content = (STATIC / filename).read_bytes()
         lines.extend((f"{constant} = {content!r}", ""))
     lines.append(f"ASSETS = {dict(zip(ASSETS, ASSETS.values(), strict=True))!r}")
     lines.append("")

@@ -4,6 +4,7 @@
   const shell = document.querySelector("[data-auth-shell]");
   const landingAccount = document.querySelector("[data-landing-account]");
   const publicEvents = document.querySelector("[data-public-events]");
+  const ACTIVE_ROLE_KEY = "sessionbuddy.active-role";
   if (!shell && !landingAccount && !publicEvents) return;
 
   const make = (tag, text, className) => {
@@ -63,15 +64,68 @@
     return new URLSearchParams(location.search).get("event_id") || document.body.dataset.eventId || "";
   }
 
-  function roleSet(session) {
-    const roles = new Set();
+  function roleChoices(session) {
+    if ((session.account_roles || []).length) {
+      return session.account_roles.map((role) => ({ role, organizationId: "", eventId: "" }));
+    }
+    const choices = [];
     for (const item of session.organization_access || []) {
-      for (const role of item.roles || []) roles.add(role);
+      for (const role of item.roles || []) {
+        choices.push({ role, organizationId: item.organization_id, eventId: "" });
+      }
     }
     for (const item of session.event_access || []) {
-      for (const role of item.roles || []) roles.add(role);
+      for (const role of item.roles || []) {
+        choices.push({ role, organizationId: item.organization_id, eventId: item.event_id });
+      }
     }
-    return roles;
+    return choices;
+  }
+
+  const roleLabel = (role) => ({
+    organizer: "Organizer",
+    reviewer: "Reviewer",
+    organization_admin: "Organization administrator",
+    event_admin: "Event administrator",
+    evaluator: "Reviewer",
+    speaker: "Speaker"
+  }[role] || role);
+
+  const roleDestination = (choice) => {
+    if (!choice) return "/account";
+    if (choice.role === "organizer") return "/admin";
+    if (choice.role === "reviewer") return "/reviews";
+    if (choice.role === "organization_admin") return "/admin";
+    if (choice.role === "event_admin") return choice.eventId ? `/admin/events/${encodeURIComponent(choice.eventId)}` : "/admin";
+    if (choice.role === "evaluator") return "/reviews";
+    if (choice.role === "speaker") return "/speaker";
+    return "/account";
+  };
+
+  function sameRole(a, b) {
+    return Boolean(a && b && a.role === b.role && a.organizationId === b.organizationId && a.eventId === b.eventId);
+  }
+
+  function activeRole(session) {
+    const choices = roleChoices(session);
+    const serverActive = choices.find((choice) => choice.role === session.active_role);
+    let stored;
+    try { stored = JSON.parse(localStorage.getItem(ACTIVE_ROLE_KEY) || "null"); } catch (_) { stored = null; }
+    const valid = choices.find((choice) => sameRole(choice, stored)) || serverActive;
+    if (valid) return valid;
+    const section = currentSection();
+    const preferred = choices.find((choice) =>
+      (section === "speaker" && choice.role === "speaker") ||
+      (section === "reviews" && choice.role === "reviewer") ||
+      (["home", "events", "speakers"].includes(section) && choice.role === "organizer")
+    ) || choices[0] || null;
+    if (preferred) localStorage.setItem(ACTIVE_ROLE_KEY, JSON.stringify(preferred));
+    return preferred;
+  }
+
+  function roleSet(session) {
+    const active = activeRole(session);
+    return new Set(active ? [active.role] : []);
   }
 
   function canManageOrganization(session) {
@@ -91,10 +145,8 @@
   function displayName(session) {
     const configured = String(session.display_name || "").trim();
     if (configured) return configured;
-    const roles = roleSet(session);
-    if (roles.has("organization_admin") || roles.has("event_admin")) return "Organizer";
-    if (roles.has("evaluator") && !roles.has("speaker")) return "Reviewer";
-    if (roles.has("speaker") && !roles.has("evaluator")) return "Speaker";
+    const active = activeRole(session);
+    if (active) return roleLabel(active.role);
     return "Account";
   }
 
@@ -105,24 +157,44 @@
   }
 
   function accountMenu(session, roles) {
+    const active = activeRole(session);
+    const choices = roleChoices(session);
     const details = make("details", undefined, "sb-account");
     const summary = make("summary");
     summary.setAttribute("aria-label", `Profile and account for ${session.email}`);
     const avatar = make("span", initials(session), "sb-account__avatar");
     avatar.setAttribute("aria-hidden", "true");
     const identity = make("span", undefined, "sb-account__identity");
-    identity.append(make("strong", displayName(session)), make("span", "Account"));
+    identity.append(make("strong", displayName(session)), make("span", active ? "Active role" : "Account"));
     summary.append(avatar, identity);
 
     const menu = make("div", undefined, "sb-account__menu");
     const menuHeader = make("div", undefined, "sb-account__menu-header");
     menuHeader.append(make("strong", displayName(session)), make("span", session.email));
-    menu.append(menuHeader, navLink("Account & access", "/account", "account"));
-    if (roles.has("organization_admin") || roles.has("event_admin")) {
-      menu.append(navLink("Organizer dashboard", "/admin", "overview"));
+    if (active) {
+      const workingAs = make("div", undefined, "sb-active-role");
+      workingAs.append(make("span", "Working as"), make("strong", roleLabel(active.role)));
+      menu.append(menuHeader, workingAs);
+    } else menu.append(menuHeader);
+    if (choices.length > 1) {
+      const switcher = make("div", undefined, "sb-role-switcher");
+      switcher.append(make("p", "Switch role", "sb-role-switcher__label"));
+      for (const choice of choices) {
+        const button = make("button", undefined, "sb-role-option");
+        button.type = "button";
+        button.disabled = sameRole(choice, active);
+        const scope = choice.eventId ? `Event · ${choice.eventId}` : `Organization · ${choice.organizationId}`;
+        button.append(make("span", roleLabel(choice.role)), make("small", scope));
+        if (button.disabled) button.append(make("b", "Active"));
+        button.addEventListener("click", () => {
+          localStorage.setItem(ACTIVE_ROLE_KEY, JSON.stringify(choice));
+          location.assign(roleDestination(choice));
+        });
+        switcher.append(button);
+      }
+      menu.append(switcher);
     }
-    if (roles.has("evaluator")) menu.append(navLink("Reviewer dashboard", "/reviews", "review"));
-    if (roles.has("speaker")) menu.append(navLink("Speaker dashboard", "/speaker", "mic"));
+    menu.append(navLink("Account & access", "/account", "account"));
     const signOut = make("button", "Sign out", "sb-account__sign-out");
     signOut.type = "button";
     signOut.addEventListener("click", async () => {
@@ -215,10 +287,10 @@
 
   function renderShell(session) {
     const roles = roleSet(session);
-    const organizer = roles.has("organization_admin") || roles.has("event_admin");
+    const organizer = roles.has("organizer");
     const section = currentSection();
     if (location.pathname.startsWith("/admin") && !organizer) {
-      if (roles.has("evaluator")) location.replace("/reviews");
+      if (roles.has("reviewer")) location.replace("/reviews");
       else if (roles.has("speaker")) location.replace("/speaker");
       else location.replace("/account");
       return;
@@ -264,12 +336,12 @@
     }
     primaryGroup.append(nav);
     if (organizerWorkspace) sidebar.append(primaryGroup);
-    if (!organizerWorkspace && (roles.has("evaluator") || roles.has("speaker"))) {
+    if (!organizerWorkspace && (roles.has("reviewer") || roles.has("speaker"))) {
       const utilityGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__utility");
       utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));
       const utilityNav = make("nav", undefined, "sb-sidebar__nav");
       utilityNav.setAttribute("aria-label", "Your portals");
-      if (roles.has("evaluator")) utilityNav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
+      if (roles.has("reviewer")) utilityNav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
       if (roles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
       utilityGroup.append(utilityNav);
       sidebar.append(utilityGroup);
@@ -369,9 +441,9 @@
 
   function dashboardDestination(session) {
     const roles = roleSet(session);
-    if (roles.has("organization_admin") || roles.has("event_admin")) return "/admin";
+    if (roles.has("organizer")) return "/admin";
     if (roles.has("speaker")) return "/speaker";
-    if (roles.has("evaluator")) return "/reviews";
+    if (roles.has("reviewer")) return "/reviews";
     return "/account";
   }
 

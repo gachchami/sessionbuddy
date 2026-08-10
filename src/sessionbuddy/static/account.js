@@ -2,6 +2,8 @@
   "use strict";
   const byId = (id) => document.getElementById(id);
   const labels = {
+    organizer: "Organizer",
+    reviewer: "Reviewer",
     organization_admin: "Organization administrator",
     event_admin: "Event administrator",
     evaluator: "Reviewer",
@@ -25,10 +27,22 @@
   function setProfile(profile) {
     const form = byId("profile-form");
     byId("account-email").value = profile.email;
-    form.elements.display_name.value = profile.display_name || "";
+    form.elements.first_name.value = profile.first_name || "";
+    form.elements.last_name.value = profile.last_name || "";
     form.elements.job_title.value = profile.job_title || "";
     form.elements.company.value = profile.company || "";
     form.elements.time_zone.value = profile.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    const roleNodes = (profile.roles || []).map((role) => {
+      const item = document.createElement("span");
+      item.className = "account-role-chip";
+      item.textContent = labels[role] || role;
+      return item;
+    });
+    byId("profile-roles").replaceChildren(...roleNodes);
+    byId("password-legend").childNodes[0].textContent = profile.has_password ? "Change password " : "Create a password ";
+    byId("password-help").textContent = profile.has_password
+      ? "Leave both fields blank to keep your current password. Use at least 15 characters to change it."
+      : "Add a password to sign in without waiting for an email link. Use at least 15 characters.";
     version = profile.version;
   }
 
@@ -94,6 +108,17 @@
     [session] = await Promise.all([api("/api/v1/auth/session"), api("/api/v1/account/profile").then(setProfile)]);
     await loadOrganizationSettings();
     const access = [];
+    for (const role of session.account_roles || []) {
+      const active = role === session.active_role;
+      const destination = role === "organizer" ? "/admin"
+        : role === "reviewer" ? "/reviews" : "/speaker";
+      access.push(accessCard(
+        labels[role] || role,
+        active ? "Active account role" : "Account role",
+        [role],
+        destination
+      ));
+    }
     for (const item of session.organization_access || []) {
       access.push(accessCard("Organization", "Organization access", item.roles, "/admin"));
     }
@@ -111,7 +136,7 @@
       byId("account-title").textContent = "Complete your profile";
       byId("account-summary").textContent = "Add your details before continuing.";
       byId("status").textContent = "Complete the required field, then save your profile.";
-      byId("profile-form").elements.display_name.focus();
+      byId("profile-form").elements.first_name.focus();
     } else {
       byId("status").textContent = "Your account is up to date.";
     }
@@ -150,6 +175,9 @@
     event.preventDefault();
     const timeZone = event.currentTarget.elements.time_zone;
     timeZone.setCustomValidity(validTimeZone(timeZone.value.trim()) ? "" : "Enter a valid IANA time zone, such as Asia/Kolkata.");
+    const password = event.currentTarget.elements.password;
+    const confirmation = event.currentTarget.elements.password_confirmation;
+    confirmation.setCustomValidity(password.value === confirmation.value ? "" : "Passwords must match.");
     if (!event.currentTarget.reportValidity()) return;
     const button = byId("save-profile");
     button.disabled = true;
@@ -161,16 +189,23 @@
         method: "PATCH",
         headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
         body: JSON.stringify({
-          display_name: values.display_name,
+          first_name: values.first_name,
+          last_name: values.last_name,
           job_title: values.job_title || null,
           company: values.company || null,
           time_zone: values.time_zone || null,
+          password: values.password || null,
+          password_confirmation: values.password_confirmation || null,
           version
         })
       });
       setProfile(profile);
       byId("status").className = "status success";
-      byId("status").textContent = "Profile saved.";
+      byId("status").textContent = values.password
+        ? "Profile and password saved. Sign in again to continue."
+        : "Profile saved.";
+      event.currentTarget.elements.password.value = "";
+      event.currentTarget.elements.password_confirmation.value = "";
       window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
       if (onboarding) {
         const safeNext = nextPath.startsWith("/") && !nextPath.startsWith("//") && !nextPath.includes("\\")

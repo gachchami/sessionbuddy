@@ -72,6 +72,37 @@ async def landing_css() -> Response:
 
 
 @app.get(
+    "/landing/assets/sessionbuddy-favicon.svg",
+    response_class=Response,
+    include_in_schema=False,
+)
+async def sessionbuddy_favicon() -> Response:
+    return Response(
+        embedded_assets.SESSIONBUDDY_FAVICON_SVG,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/landing/assets/aie-new-york-2026.jpg", response_class=Response, include_in_schema=False)
+async def ai_engineer_new_york_artwork() -> Response:
+    return Response(
+        embedded_assets.AIE_NEW_YORK_2026_JPG,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/landing/assets/aie-code-sf-2026.jpg", response_class=Response, include_in_schema=False)
+async def ai_engineer_code_artwork() -> Response:
+    return Response(
+        embedded_assets.AIE_CODE_SF_2026_JPG,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get(
     "/health",
     tags=["operations"],
     operation_id="getHealth",

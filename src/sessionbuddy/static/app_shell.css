@@ -161,6 +161,41 @@
 .sb-account__menu-header { display: grid; gap: .15rem; padding: .6rem .7rem .75rem; border-bottom: 1px solid #e5e9f0; }
 .sb-account__menu-header strong { overflow-wrap: anywhere; color: #172033; font-size: .82rem; }
 .sb-account__menu-header span { color: #5e6879; font-size: .7rem; }
+.sb-active-role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin: .15rem .15rem .35rem;
+  padding: .7rem .75rem;
+  border: 1px solid #dcd4ff;
+  border-radius: .65rem;
+  background: linear-gradient(135deg, #f5f1ff, #eef5ff);
+}
+.sb-active-role span { color: #667085; font-size: .66rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.sb-active-role strong { color: #5934cb; font-size: .78rem; text-align: right; }
+.sb-role-switcher { display: grid; gap: .18rem; margin: 0 .15rem .35rem; padding-bottom: .45rem; border-bottom: 1px solid #e5e9f0; }
+.sb-role-switcher__label { margin: .35rem .55rem .2rem; color: #667085; font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.sb-role-option {
+  position: relative;
+  min-height: 3.15rem;
+  display: grid;
+  gap: .12rem;
+  width: 100%;
+  padding: .6rem 4rem .6rem .7rem;
+  border: 0;
+  border-radius: .5rem;
+  background: transparent;
+  color: #26334a;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sb-role-option:hover { background: #edf1f7; }
+.sb-role-option:disabled { background: #f7f5ff; color: #5934cb; cursor: default; }
+.sb-role-option span { font-size: .8rem; font-weight: 700; }
+.sb-role-option small { overflow: hidden; color: #667085; font-size: .67rem; text-overflow: ellipsis; white-space: nowrap; }
+.sb-role-option b { position: absolute; top: 50%; right: .7rem; transform: translateY(-50%); color: #6941c6; font-size: .65rem; }
 .sb-account__menu a,
 .sb-account__sign-out {
   min-height: 2.65rem;
