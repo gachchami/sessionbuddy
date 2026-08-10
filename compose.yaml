@@ -48,6 +48,12 @@ services:
       scanner:
         condition: service_healthy
     command: ["npm", "run", "worker:dev", "--", "--ip", "0.0.0.0", "--port", "8787"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
 
   e2e:
     image: mcr.microsoft.com/playwright:v1.62.1-noble
@@ -60,7 +66,7 @@ services:
       CI: "1"
     depends_on:
       worker:
-        condition: service_started
+        condition: service_healthy
     command: ["sh", "-lc", "npm ci && npx playwright test"]
 
 volumes:

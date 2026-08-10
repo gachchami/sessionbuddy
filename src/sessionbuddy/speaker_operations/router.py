@@ -316,34 +316,36 @@ async def get_admin_onboarding_dashboard(
     )
     now = decoded_cursor[2] if decoded_cursor is not None else utc_now_ms()
     due_soon_at = now + 7 * 86_400_000
+    # The tiles must describe the SAME population the table lists: TASK rows
+    # (all speakers), scoped by BOTH filters — task type AND state — exactly
+    # like the rows query. The original version counted accepted SPEAKERS,
+    # and an interim fix honoured only the type filter; either way the
+    # headline numbers could contradict the visible rows.
+    summary_state_sql = {
+        "all": "t.state IN ('open', 'completed', 'waived')",
+        "open": "t.state = 'open'",
+        "completed": "t.state = 'completed'",
+        "overdue": "t.state = 'open' AND t.due_at_ms < ?3",
+        "due_soon": "t.state = 'open' AND t.due_at_ms >= ?3 AND t.due_at_ms <= ?4",
+    }[state]
     summary = (
         row_mapping(
             await _timed_first(
                 request,
                 db.prepare(
-                    """SELECT
-                     SUM(CASE WHEN NOT EXISTS (
-                       SELECT 1 FROM speaker_tasks t WHERE t.organization_id = es.organization_id
-                         AND t.event_id = es.event_id AND t.event_speaker_id = es.id
-                         AND t.state = 'open') THEN 1 ELSE 0 END) AS complete,
-                     SUM(CASE WHEN EXISTS (
-                       SELECT 1 FROM speaker_tasks t WHERE t.organization_id = es.organization_id
-                         AND t.event_id = es.event_id AND t.event_speaker_id = es.id
-                         AND t.state = 'open') THEN 1 ELSE 0 END) AS incomplete,
-                     SUM(CASE WHEN EXISTS (
-                       SELECT 1 FROM speaker_tasks t WHERE t.organization_id = es.organization_id
-                         AND t.event_id = es.event_id AND t.event_speaker_id = es.id
-                         AND t.state = 'open' AND t.due_at_ms < ?3) THEN 1 ELSE 0 END) AS overdue,
-                     SUM(CASE WHEN EXISTS (
-                       SELECT 1 FROM speaker_tasks t WHERE t.organization_id = es.organization_id
-                         AND t.event_id = es.event_id AND t.event_speaker_id = es.id
-                         AND t.state = 'open' AND t.due_at_ms >= ?3
-                         AND t.due_at_ms <= ?4) THEN 1 ELSE 0 END) AS due_soon
-                   FROM event_speakers es
-                   WHERE es.organization_id = ?1 AND es.event_id = ?2
-                     AND es.status IN ('onboarding', 'complete')
-                     AND es.selection_status='accepted'"""
-                ).bind(event["organization_id"], event["id"], now, due_soon_at),
+                    f"""SELECT
+                     SUM(CASE WHEN t.state IN ('completed','waived')
+                         THEN 1 ELSE 0 END) AS complete,
+                     SUM(CASE WHEN t.state = 'open' THEN 1 ELSE 0 END) AS incomplete,
+                     SUM(CASE WHEN t.state = 'open' AND t.due_at_ms < ?3
+                         THEN 1 ELSE 0 END) AS overdue,
+                     SUM(CASE WHEN t.state = 'open' AND t.due_at_ms >= ?3
+                         AND t.due_at_ms <= ?4 THEN 1 ELSE 0 END) AS due_soon
+                   FROM speaker_tasks t
+                   WHERE t.organization_id = ?1 AND t.event_id = ?2
+                     AND (?5 IS NULL OR t.task_type = ?5)
+                     AND {summary_state_sql}"""  # noqa: S608 - fixed fragment map
+                ).bind(event["organization_id"], event["id"], now, due_soon_at, task_type),
             )
         )
         or {}

@@ -13,6 +13,12 @@
   let mergeTarget = null;
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
+  function idempotencyKey() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
@@ -138,7 +144,7 @@
     try {
       const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/communications/speakers/preview`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify(body) });
       previewedMessage = body;
-      messageMutation = { fingerprint: JSON.stringify(body), key: `${crypto.randomUUID()}-${crypto.randomUUID()}` };
+      messageMutation = { fingerprint: JSON.stringify(body), key: idempotencyKey() };
       const preview = byId("message-preview-content"); preview.replaceChildren();
       result.recipients.forEach((recipient) => {
         const card = document.createElement("article");
@@ -156,12 +162,16 @@
   byId("message-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!previewedMessage) return;
+    // Capture the form NOW: event.currentTarget is null after any await, and
+    // touching it then throws — which used to convert a SUCCESSFUL send into
+    // a red failure banner (the eval run's false-negative feedback bug).
+    const form = event.currentTarget;
     const button = byId("send-message"); button.disabled = true;
     try {
       const fingerprint = JSON.stringify(previewedMessage);
-      if (!messageMutation || messageMutation.fingerprint !== fingerprint) messageMutation = { fingerprint, key: `${crypto.randomUUID()}-${crypto.randomUUID()}` };
+      if (!messageMutation || messageMutation.fingerprint !== fingerprint) messageMutation = { fingerprint, key: idempotencyKey() };
       const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/communications/speakers/send`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf, "idempotency-key": messageMutation.key }, body: JSON.stringify({ ...previewedMessage, confirmed: true }) });
-      event.currentTarget.reset();
+      form.reset();
       document.querySelectorAll('input[name="speaker_recipient"]').forEach((input) => { input.checked = false; });
       invalidatePreview();
       await loadMessageHistory();
@@ -173,7 +183,7 @@
         const expectedEmails = new Set(speakers.filter((speaker) => selected.has(speaker.event_speaker_id)).map((speaker) => speaker.email));
         const delivered = history.filter((message) => message.subject === previewedMessage.subject && expectedEmails.has(message.recipient_email));
         if (expectedEmails.size && new Set(delivered.map((message) => message.recipient_email)).size === expectedEmails.size) {
-          event.currentTarget.reset();
+          form.reset();
           document.querySelectorAll('input[name="speaker_recipient"]').forEach((input) => { input.checked = false; });
           invalidatePreview();
           setStatus(`${expectedEmails.size} message${expectedEmails.size === 1 ? "" : "s"} queued. Delivery was confirmed from message history.`);
@@ -185,8 +195,9 @@
     }
   });
   byId("load-older-messages").addEventListener("click", async (event) => {
-    event.currentTarget.disabled = true;
-    try { await loadMessageHistory(true); } finally { event.currentTarget.disabled = false; }
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await loadMessageHistory(true); } finally { button.disabled = false; }
   });
 
   async function initialize() {
@@ -196,7 +207,11 @@
     speakers = (await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)).data.filter((speaker) => speaker.selection_status !== "invited");
     renderRecipients();
     await loadMessageHistory();
-    setStatus(`${speakers.length} available recipient${speakers.length === 1 ? "" : "s"}.`);
+    if (byId("status").textContent === "Loading speakers\u2026") {
+      // Same guard as the workspace: initialization must not overwrite a
+      // faster user action's feedback.
+      setStatus(`${speakers.length} available recipient${speakers.length === 1 ? "" : "s"}.`);
+    }
   }
 
   initialize().catch((error) => {

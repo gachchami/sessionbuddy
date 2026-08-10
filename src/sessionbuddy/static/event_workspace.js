@@ -6,6 +6,12 @@
   const byId = (id) => document.getElementById(id);
   const state = { csrf: "", timeZone: "", taskMutation: null };
 
+  function idempotencyKey() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
@@ -46,7 +52,7 @@
       : Number.NaN;
   }
   function slug(value) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80); }
-  function mutationHeaders() { return { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }; }
+  function mutationHeaders() { return { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() }; }
   function approvedEmbed(value) {
     if (!value) return true;
     try {
@@ -153,36 +159,42 @@
   byId("resource-form").elements.slug.addEventListener("input", (event) => { event.currentTarget.dataset.edited = "true"; });
   byId("resource-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("resource-form").addEventListener("submit", async (event) => {
-    event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget));
-    const embed = event.currentTarget.elements.embed_url;
+    // event.currentTarget is null after any await; capture the form up front.
+    event.preventDefault(); const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form));
+    const embed = form.elements.embed_url;
     embed.setCustomValidity(approvedEmbed(values.embed_url) ? "" : "Use an approved HTTPS Google, YouTube, or Vimeo URL.");
-    if (!event.currentTarget.reportValidity()) return;
+    if (!form.reportValidity()) return;
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/resources`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ title: values.title, slug: values.slug, summary: values.summary, body_text: values.body_text, embed_url: values.embed_url || null, status: values.status, sort_order: Number(values.sort_order) }) });
-      event.currentTarget.reset(); delete event.currentTarget.elements.slug.dataset.edited; event.currentTarget.elements.sort_order.value = "0"; setStatus("Resource published to the speaker portal."); await loadResources();
+      form.reset(); delete form.elements.slug.dataset.edited; form.elements.sort_order.value = "0"; setStatus("Resource published to the speaker portal."); await loadResources();
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
   byId("task-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    // event.currentTarget is null after any await; capture the form up front.
+    // Using it after the awaited task creation threw and turned a SUCCESSFUL
+    // assignment into a failure banner (the eval run's SPK-15 sighting).
+    const form = event.currentTarget;
+    const data = new FormData(form);
     const values = Object.fromEntries(data);
     const speakerIds = data.getAll("event_speaker_id").filter(Boolean);
-    const label = event.currentTarget.elements.field_label;
+    const label = form.elements.field_label;
     label.setCustomValidity(values.field_required && !String(values.field_label || "").trim() ? "Enter the required response question." : "");
-    const dueInput = event.currentTarget.elements.due_at;
+    const dueInput = form.elements.due_at;
     const due = inputMillis(values.due_at);
     dueInput.setCustomValidity(Number.isNaN(due) ? `Choose a valid local time in ${state.timeZone}.` : "");
-    if (!event.currentTarget.reportValidity()) return;
+    if (!form.reportValidity()) return;
     const fields = values.field_label ? [{ key: "response", label: values.field_label, type: values.field_type, required: Boolean(values.field_required), choices: [] }] : [];
     const payloads = speakerIds.map((eventSpeakerId) => ({ event_speaker_id: eventSpeakerId, submission_id: null, title: values.title, help_text: values.help_text, due_at_ms: due, fields }));
     const fingerprint = JSON.stringify(payloads);
     if (!state.taskMutation || state.taskMutation.fingerprint !== fingerprint) {
       state.taskMutation = {
         fingerprint,
-        keys: new Map(speakerIds.map((eventSpeakerId) => [eventSpeakerId, `${crypto.randomUUID()}-${crypto.randomUUID()}`]))
+        keys: new Map(speakerIds.map((eventSpeakerId) => [eventSpeakerId, idempotencyKey()]))
       };
     }
-    const button = event.currentTarget.querySelector('button[type="submit"], button:not([type])');
+    const button = form.querySelector('button[type="submit"], button:not([type])');
     button.disabled = true;
     try {
       await Promise.all(payloads.map((payload) =>
@@ -192,7 +204,7 @@
           body: JSON.stringify(payload)
         })
       ));
-      event.currentTarget.reset();
+      form.reset();
       state.taskMutation = null;
       setStatus(`Task assigned to ${speakerIds.length} speaker${speakerIds.length === 1 ? "" : "s"}.`);
     } catch (error) {
@@ -201,10 +213,11 @@
   });
   byId("task-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
   byId("token-form").addEventListener("submit", async (event) => {
-    event.preventDefault(); const label = new FormData(event.currentTarget).get("label");
+    event.preventDefault(); const form = event.currentTarget;
+    const label = new FormData(form).get("label");
     try {
       const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/integrations/accelevents/tokens`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ label }) });
-      byId("token-value").textContent = body.token; byId("token-result").hidden = false; event.currentTarget.reset(); setStatus("Read-only integration token generated.");
+      byId("token-value").textContent = body.token; byId("token-result").hidden = false; form.reset(); setStatus("Read-only integration token generated.");
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
   function renderEmbed() {
@@ -244,7 +257,11 @@
     const results = await Promise.allSettled([loadResources(), loadTargets(), loadAssets()]);
     if (results.some((result) => result.status === "rejected")) {
       setStatus("Some workspace information could not be loaded. Refresh to try again.", true);
-    } else setStatus("Workspace ready.");
+    } else if (byId("status").textContent === "Loading\u2026") {
+      // Only claim readiness if nothing else spoke meanwhile: a fast user's
+      // action feedback must not be stomped by slow initialization.
+      setStatus("Workspace ready.");
+    }
   }
   initialize().catch((error) => { if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true); });
 })();
