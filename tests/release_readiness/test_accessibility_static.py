@@ -193,10 +193,15 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
 
 def test_evaluation_shell_and_runtime_admin_table_have_keyboard_repairs() -> None:
     reviews = (STATIC / "app/index.html").read_text()
+    reviews_css = (STATIC / "app/assets/reviews.css").read_text()
     submissions_js = (STATIC / "admin_submissions.js").read_text()
     assert 'class="review-skip"' in reviews and 'href="#root"' in reviews
-    assert ":focus-visible" in reviews
-    assert "prefers-reduced-motion" in reviews
+    # The keyboard repairs live in the island stylesheet, which must be a real
+    # head <link> (not injected by the bundle) so they apply before hydration.
+    assert '<link rel="stylesheet" crossorigin href="/app/assets/reviews.css">' in reviews
+    assert ".review-skip" in reviews_css
+    assert ":focus-visible" in reviews_css
+    assert "prefers-reduced-motion" in reviews_css
     assert 'heading.setAttribute("scope", "col")' in submissions_js
     assert 'skip.href = "#main"' in submissions_js
 

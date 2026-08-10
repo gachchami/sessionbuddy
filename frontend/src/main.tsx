@@ -152,6 +152,9 @@ function ReviewWorkspace() {
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [hideFinalized, setHideFinalized] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
 
   const dirtyCount = Object.values(dirty).filter(Boolean).length;
   useEffect(() => {
@@ -177,16 +180,22 @@ function ReviewWorkspace() {
     }>(
       `/api/v1/evaluator/assignments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
     );
+    // Default every field the renderer maps or indexes so one missing key
+    // in a payload can never take down the whole workspace.
     const assignments = body.data.map((assignment) => ({
       ...assignment,
       answers: assignment.answers ?? [],
       hidden_answer_count: assignment.hidden_answer_count ?? 0,
+      criteria: assignment.criteria ?? [],
+      recommendations: assignment.recommendations ?? [],
+      criterion_scores: assignment.criterion_scores ?? {},
     }));
     setAssignments((current) => (cursor ? [...current, ...assignments] : assignments));
     setNextCursor(body.next_cursor);
+    setLoadState("ready");
     setStatus(
       body.total === 0
-        ? "No open review assignments right now. When an organizer assigns you proposals, they appear here and you receive an email."
+        ? "New assignments will appear here, and we’ll notify you by email."
         : `${body.completed_count} of ${body.total} review${body.total === 1 ? "" : "s"} finalized.`,
     );
   }
@@ -201,8 +210,20 @@ function ReviewWorkspace() {
   }
   useEffect(() => {
     telemetry("/reviews");
-    signIn().catch((error) => setStatus(window.SessionBuddyApi.message(error)));
+    signIn().catch((error) => {
+      setLoadState("error");
+      setStatus(window.SessionBuddyApi.message(error));
+    });
   }, []);
+
+  function refreshAssignments() {
+    setLoadState("loading");
+    setStatus("Refreshing your reviews…");
+    signIn().catch((error) => {
+      setLoadState("error");
+      setStatus(errorMessage(error));
+    });
+  }
 
   async function save(
     form: HTMLFormElement,
@@ -355,27 +376,48 @@ function ReviewWorkspace() {
         <h1>Reviews</h1>
         <p>Score assigned proposals and finalize when ready.</p>
       </section>
-      <div className="toolbar">
-        <p role="status">{status}</p>
-        <div className="actions">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={hideFinalized}
-              onChange={(event) => setHideFinalized(event.target.checked)}
-            />{" "}
-            Hide finalized
-          </label>
-          <button
-            className="secondary"
-            onClick={() =>
-              signIn().catch((error) => setStatus(errorMessage(error)))
-            }
-          >
-            Refresh
-          </button>
+      {loadState === "loading" && assignments.length === 0 ? (
+        <section className="review-state" aria-busy="true" aria-live="polite">
+          <span className="review-state__icon" aria-hidden="true">…</span>
+          <h2>Loading your reviews</h2>
+          <p role="status">{status}</p>
+        </section>
+      ) : loadState === "error" ? (
+        <section className="review-state review-state--error" aria-live="polite">
+          <span className="review-state__icon" aria-hidden="true">!</span>
+          <h2>Reviews could not be loaded</h2>
+          <p role="status">{status}</p>
+          <button className="secondary" onClick={refreshAssignments}>Try again</button>
+        </section>
+      ) : loadState === "ready" && assignments.length === 0 ? (
+        <section className="review-state" aria-live="polite">
+          <span className="review-state__icon" aria-hidden="true">✓</span>
+          <h2>No reviews assigned</h2>
+          <p role="status">{status}</p>
+          <button className="secondary" onClick={refreshAssignments}>Refresh</button>
+        </section>
+      ) : (
+        <div className="toolbar">
+          <p role="status">{status}</p>
+          <div className="actions">
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={hideFinalized}
+                onChange={(event) => setHideFinalized(event.target.checked)}
+              />{" "}
+              Hide finalized
+            </label>
+            <button
+              className="secondary"
+              disabled={loadState === "loading"}
+              onClick={refreshAssignments}
+            >
+              {loadState === "loading" ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
       <section className="grid" aria-label="Assigned proposals">
         {visibleAssignments.map((assignment) => (
           <article key={assignment.id}>

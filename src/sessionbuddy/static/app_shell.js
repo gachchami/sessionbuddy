@@ -89,7 +89,13 @@
   }
 
   function displayName(session) {
-    return session.display_name || String(session.email || "Account").split("@", 1)[0];
+    const configured = String(session.display_name || "").trim();
+    if (configured) return configured;
+    const roles = roleSet(session);
+    if (roles.has("organization_admin") || roles.has("event_admin")) return "Organizer";
+    if (roles.has("evaluator") && !roles.has("speaker")) return "Reviewer";
+    if (roles.has("speaker") && !roles.has("evaluator")) return "Speaker";
+    return "Account";
   }
 
   function initials(session) {
@@ -257,7 +263,7 @@
       }
     }
     primaryGroup.append(nav);
-    sidebar.append(primaryGroup);
+    if (organizerWorkspace) sidebar.append(primaryGroup);
     if (!organizerWorkspace && (roles.has("evaluator") || roles.has("speaker"))) {
       const utilityGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__utility");
       utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));

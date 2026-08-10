@@ -3,6 +3,8 @@
 body { max-width: 100%; margin: 0; overflow-x: hidden; }
 html { scroll-padding-top: 5rem; }
 :where(button, a, input, select, textarea, summary) { scroll-margin-top: 5rem; }
+.review-skip { position: fixed; top: .6rem; left: .6rem; z-index: 120; width: 1px; height: 1px; display: block; padding: 0; overflow: hidden; border: 0; clip-path: inset(50%); white-space: nowrap; }
+.review-skip:focus { width: auto; height: auto; padding: .7rem 1rem; overflow: visible; border: 1px solid #d0d5dd; border-radius: .55rem; clip-path: none; background: white; box-shadow: 0 .5rem 1.25rem rgba(16,24,40,.14); color: #1d4ed8; font-weight: 700; text-decoration: none; }
 main { width: min(72rem, calc(100% - 2rem)); margin: auto; padding: clamp(1.75rem, 4vw, 3.25rem) 0; }
 .hero { max-width: 52rem; }
 .hero > p:last-child { color: var(--muted); font-size: 1.05rem; line-height: 1.65; }
@@ -11,6 +13,12 @@ h1 { margin: .3rem 0 .75rem; font-size: clamp(1.9rem, 4vw, 2.6rem); line-height:
 h2 { margin-top: 2rem; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1.5rem 0; padding: .9rem 1rem; border: 1px solid #bfdbfe; border-radius: .6rem; background: #eff6ff; }
 .toolbar p { margin: 0; }
+.review-state { max-width: 42rem; display: grid; justify-items: center; gap: .55rem; margin: 2rem auto 0; padding: clamp(2.5rem, 7vw, 4.5rem) 2rem; border: 1px solid var(--line); border-radius: 1rem; background: white; box-shadow: 0 .75rem 2rem rgba(16,24,40,.05); text-align: center; }
+.review-state__icon { width: 3rem; height: 3rem; display: grid; place-items: center; margin-bottom: .35rem; border-radius: .85rem; background: linear-gradient(135deg, #8b3ff5, #5d8cff); color: white; font-size: 1.05rem; font-weight: 800; box-shadow: 0 .45rem 1rem rgba(109,74,255,.2); }
+.review-state--error .review-state__icon { background: #b42318; box-shadow: 0 .45rem 1rem rgba(180,35,24,.16); }
+.review-state h2 { margin: .2rem 0 0; font-size: clamp(1.35rem, 3vw, 1.7rem); }
+.review-state p { max-width: 34rem; margin: 0; color: var(--muted); line-height: 1.6; }
+.review-state button { margin-top: .65rem; }
 .grid, .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
 .metrics { margin-bottom: 1.25rem; }
 article { min-width: 0; padding: 1.2rem; border: 1px solid var(--line); border-radius: .7rem; background: white; box-shadow: 0 1px 2px rgba(16,24,40,.04); }

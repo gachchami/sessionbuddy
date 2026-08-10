@@ -38,6 +38,14 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
     assert "background:" in primary_rule
 
 
+def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert "if (organizerWorkspace) sidebar.append(primaryGroup);" in javascript
+    assert 'if (roles.has("evaluator")) utilityNav.append' in javascript
+    assert 'navLink("My reviews", "/reviews"' in javascript
+
+
 def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     landing = (STATIC / "landing.html").read_text(encoding="utf-8")
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
