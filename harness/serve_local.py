@@ -70,10 +70,48 @@ def build_environment(public_base_url: str) -> SimpleNamespace:
     )
 
 
+def _bootstrap(application, connection) -> None:
+    """Complete first-run setup so pages serve instead of redirecting to /setup.
+
+    Uses the real guarded bootstrap API (with the migration-generated
+    deployment key) rather than raw inserts, so the instance state matches a
+    genuinely configured deployment.
+    """
+    import asyncio
+
+    import httpx
+
+    key = connection.execute(
+        """SELECT deployment_key FROM instance_setup_credentials
+           WHERE singleton_key='primary'"""
+    ).fetchone()[0]
+
+    async def run() -> None:
+        transport = httpx.ASGITransport(app=application)
+        async with httpx.AsyncClient(transport=transport, base_url="http://serve-local") as client:
+            response = await client.post(
+                "/api/v1/bootstrap",
+                headers={"x-bootstrap-token": str(key)},
+                json={
+                    "organization_name": "Harness Local",
+                    "admin_name": "Harness Admin",
+                    "admin_email": "harness-admin@example.com",
+                },
+            )
+            assert response.status_code == 200, response.text
+
+    asyncio.run(run())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=3000)
+    parser.add_argument(
+        "--no-bootstrap",
+        action="store_true",
+        help="Leave the instance unconfigured (serves /setup) for setup-flow tests.",
+    )
     args = parser.parse_args()
 
     environment = build_environment(f"http://{args.host}:{args.port}")
@@ -81,6 +119,9 @@ def main() -> None:
     async def application(scope, receive, send):
         scope["env"] = environment
         await app(scope, receive, send)
+
+    if not args.no_bootstrap:
+        _bootstrap(application, environment.DB.connection)
 
     uvicorn.run(application, host=args.host, port=args.port, log_level="warning")
 

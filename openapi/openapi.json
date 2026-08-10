@@ -1692,16 +1692,39 @@
       "EvaluationAssignmentList": {
         "additionalProperties": false,
         "properties": {
+          "completed_count": {
+            "minimum": 0.0,
+            "title": "Completed Count",
+            "type": "integer"
+          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/EvaluationAssignmentView"
             },
             "title": "Data",
             "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
-          "data"
+          "data",
+          "total",
+          "completed_count"
         ],
         "title": "EvaluationAssignmentList",
         "type": "object"
@@ -2156,6 +2179,17 @@
             "title": "Event Id",
             "type": "string"
           },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
           "round_id": {
             "title": "Round Id",
             "type": "string"
@@ -2172,6 +2206,11 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "submission_count": {
+            "minimum": 0.0,
+            "title": "Submission Count",
+            "type": "integer"
           },
           "submissions": {
             "items": {
@@ -2190,6 +2229,7 @@
           "completed_count",
           "average_rating",
           "submissions",
+          "submission_count",
           "evaluators",
           "conflicts"
         ],
@@ -7608,6 +7648,32 @@
             "schema": {
               "title": "Round Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],

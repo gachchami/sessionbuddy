@@ -13,6 +13,7 @@ const sessionBody = JSON.stringify({
   csrf_token: "browser-test-csrf",
   email: "admin@example.com",
   display_name: "Admin User",
+  profile_complete: true,
   organization_access: [{
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     roles: ["organization_admin"],
@@ -21,6 +22,8 @@ const sessionBody = JSON.stringify({
 });
 
 async function serveSignedInEventsPage(page: import("@playwright/test").Page) {
+  await page.route("**/api/v1/setup/status", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: true }) }));
   await page.route("**/api/v1/auth/session", (route) =>
     route.fulfill({ contentType: "application/json", body: sessionBody }));
   await page.route("**/api/v1/admin/organizations", (route) =>
@@ -68,6 +71,30 @@ test.describe("account sign-out", () => {
     expect(logoutMethod).toBe("POST");
     expect(logoutCsrf).toBe("browser-test-csrf");
     expect(logoutContentType).toBe("application/json");
+  });
+
+  test("an already-dead session still signs out cleanly", async ({ page }) => {
+    // A 401 from logout means the session is already gone server-side.
+    // Retrying can never succeed, so the shell must treat it as a completed
+    // sign-out and go home instead of trapping the user in a retry loop.
+    await serveSignedInEventsPage(page);
+    let logoutAttempts = 0;
+    await page.route("**/api/v1/session/logout", async (route) => {
+      logoutAttempts += 1;
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "authentication_required", message: "Authentication required" } }),
+      });
+    });
+
+    await page.goto("/admin/events");
+    await page.locator("summary[aria-label='Profile and account for admin@example.com']").click();
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    await expect(page).toHaveURL(/\/$/);
+    expect(logoutAttempts).toBe(1);
+    await expect(page.getByRole("button", { name: "Try sign out again" })).toHaveCount(0);
   });
 
   test("a failed sign-out recovers instead of stranding the user", async ({ page }) => {
