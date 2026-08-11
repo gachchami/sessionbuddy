@@ -158,7 +158,7 @@ async function servePortal(page: Page, options: ComposerOptions = {}): Promise<C
       ? options.refreshCall
       : options.call;
     return route.fulfill({
-    status: portalLoads > 1 ? options.portalRefreshStatus ?? 200 : 200,
+    status: portalLoads > 2 ? options.portalRefreshStatus ?? 200 : 200,
     contentType: "application/json",
     body: JSON.stringify(portalPayload(
       { ...(options.portal ?? {}), ...(call === undefined ? {} : { open_call: call }) },
