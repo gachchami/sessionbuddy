@@ -22,6 +22,7 @@ from .models import (
     AdminSpeakerUpdate,
     IntegrationTokenCreate,
     IntegrationTokenView,
+    OrganizationPersonEventAssociation,
     OrganizationSpeaker,
     OrganizationSpeakerList,
     OrganizationSpeakerParticipation,
@@ -416,9 +417,9 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
 
 
 @competition_router.get(
-    "/api/v1/admin/organizations/{organization_id}/speakers",
+    "/api/v1/admin/organizations/{organization_id}/people",
     response_model=OrganizationSpeakerList,
-    tags=["speaker-onboarding"],
+    tags=["administration"],
 )
 async def list_organization_speakers(
     organization_id: str, request: Request
@@ -485,6 +486,7 @@ async def list_organization_speakers(
                 location=str(row["location"]),
                 links=json.loads(str(row["links_json"])),
                 version=int(row["version"]),
+                organization_roles=["Speaker"], event_associations=[],
                 participations=[],
             )
             people[person_id] = person
@@ -497,6 +499,62 @@ async def list_organization_speakers(
                 proposal_title=str(row["proposal_title"]),
             )
         )
+        person.event_associations.append(OrganizationPersonEventAssociation(
+            event_id=str(row["event_id"]), event_name=str(row["event_name"]),
+            role="Speaker", status=str(row["selection_status"]),
+        ))
+    organizer_rows = result_rows(await _db(request).prepare(
+        """SELECT DISTINCT u.id AS user_id,u.email,
+                  COALESCE(NULLIF(u.display_name,''),u.email) AS display_name
+           FROM users u WHERE u.status='active' AND (
+             EXISTS(SELECT 1 FROM owned_resources o WHERE o.id=?1
+               AND o.resource_type='organization' AND o.status='active' AND o.owner_user_id=u.id)
+             OR EXISTS(SELECT 1 FROM resource_access_grants g
+               JOIN owned_resources r ON r.id=g.resource_id AND r.resource_type='organization'
+                AND r.status='active' WHERE g.resource_id=?1 AND g.user_id=u.id
+                AND g.status='active' AND g.permission='manage'))
+           ORDER BY display_name,u.id LIMIT 500"""
+    ).bind(organization_id).all())
+    by_user = {p.user_id: p for p in people.values() if p.user_id}
+    for row in organizer_rows:
+        user_id = str(row["user_id"])
+        if user_id in by_user:
+            if "Organizer" not in by_user[user_id].organization_roles:
+                by_user[user_id].organization_roles.insert(0, "Organizer")
+        else:
+            people[f"organizer:{user_id}"] = OrganizationSpeaker(
+                person_id="", user_id=user_id, email=str(row["email"]),
+                display_name=str(row["display_name"]), job_title="", company="",
+                biography="", location="", links=[], version=1,
+                organization_roles=["Organizer"], event_associations=[], participations=[])
+    invitations = result_rows(await _db(request).prepare(
+        """SELECT i.normalized_email,i.email,i.display_name,i.role,i.status,i.event_id,
+                  e.name AS event_name,u.id AS user_id FROM identity_invitations i
+           JOIN events e ON e.id=i.event_id AND e.organization_id=i.organization_id
+           LEFT JOIN users u ON u.normalized_email=i.normalized_email AND u.status='active'
+           WHERE i.organization_id=?1 AND i.role IN ('speaker','evaluator')
+             AND i.status IN ('pending','accepted') AND e.status!='archived'
+           ORDER BY i.normalized_email,e.name,i.id LIMIT 1000"""
+    ).bind(organization_id).all())
+    by_email = {p.email.casefold(): p for p in people.values()}
+    for row in invitations:
+        email, role = str(row["email"]), ("Reviewer" if row["role"] == "evaluator" else "Speaker")
+        person = by_email.get(email.casefold())
+        if person is None:
+            person = OrganizationSpeaker(
+                person_id="", user_id=(str(row["user_id"]) if row["user_id"] else None),
+                email=email, display_name=str(row["display_name"] or email), job_title="",
+                company="", biography="", location="", links=[], version=1,
+                organization_roles=[role], event_associations=[], participations=[])
+            people[f"invite:{row['normalized_email']}"] = person
+            by_email[email.casefold()] = person
+        elif role not in person.organization_roles:
+            person.organization_roles.append(role)
+        association = OrganizationPersonEventAssociation(
+            event_id=str(row["event_id"]), event_name=str(row["event_name"]),
+            role=role, status=str(row["status"]))
+        if association not in person.event_associations:
+            person.event_associations.append(association)
     return OrganizationSpeakerList(organization_id=organization_id, data=list(people.values()))
 
 

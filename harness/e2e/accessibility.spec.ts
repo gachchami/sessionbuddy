@@ -105,7 +105,7 @@ test.describe("MVP experience accessibility", () => {
       path: "/admin/events/22222222-2222-4222-8222-222222222222",
       sessionRole: "organizer",
     },
-    { path: "/admin/speakers", sessionRole: "organizer" },
+    { path: "/admin/people", sessionRole: "organizer" },
     { path: "/account", sessionRole: "organizer" },
     { path: `/admin/events/${eventId}/cfp`, sessionRole: "organizer" },
     { path: "/reviews", sessionRole: "organizer" },

@@ -59,6 +59,22 @@ def refresh_database(*, active_role: str | None) -> tuple[sqlite3.Connection, SQ
           result TEXT, reason_code TEXT, correlation_id TEXT,
           metadata_json TEXT, occurred_at_ms INTEGER
         );
+        CREATE TABLE activity_entities (
+          public_id TEXT PRIMARY KEY, entity_type TEXT, internal_id TEXT,
+          UNIQUE(entity_type,internal_id)
+        );
+        CREATE TABLE activities (
+          id TEXT PRIMARY KEY, actor_type TEXT, actor_id TEXT, operation TEXT,
+          resource_type TEXT, resource_id TEXT, occurred_at_ms INTEGER
+        );
+        CREATE TABLE activity_status (
+          activity_id TEXT PRIMARY KEY, status TEXT, claim_token TEXT,
+          claimed_at_ms INTEGER, queued_at_ms INTEGER, processed_at_ms INTEGER,
+          attempt_count INTEGER DEFAULT 0, last_error_code TEXT, updated_at_ms INTEGER
+        );
+        CREATE TABLE activity_routing (
+          activity_id TEXT PRIMARY KEY, organization_id TEXT, event_id TEXT
+        );
         INSERT INTO users VALUES('user-a','active');
         INSERT INTO user_roles VALUES('user-a','organizer','active',1);
         INSERT INTO user_roles VALUES('user-a','speaker','active',0);
@@ -135,7 +151,7 @@ async def test_refresh_copies_the_narrowed_active_role_in_the_rotation_batch(mon
                    WHERE session_id='new-session'"""
             ).fetchone()
         ) == ("user-a", "speaker", 1234)
-        assert database.prepare_count == 5
+        assert database.prepare_count == 10
     finally:
         connection.close()
 

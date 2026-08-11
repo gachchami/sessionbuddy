@@ -68,6 +68,8 @@ for (const viewport of [
     await page.locator('.cfp-outline-item[data-selection="proposal"]').click();
     const formatCard = page.locator('fieldset.question-card[data-index]').filter({ hasText: "Session format" });
     await formatCard.locator("summary").click();
+    await expect(formatCard.getByLabel("Session format label")).toHaveValue("Session format");
+    await expect(formatCard.getByLabel("Question label")).toHaveCount(0);
     const formats = formatCard.locator('input[name="field_choices"][aria-label="Session format choices"]');
     await expect(formats).toHaveValue(/Workshop \(120 min\)/);
 
@@ -78,6 +80,10 @@ for (const viewport of [
     await custom.getByLabel("Answer format").selectOption("textarea");
     await custom.getByText("Display rules (optional)").click();
     const source = custom.getByLabel("Question or event field");
+    const stableAnswer = custom.locator('select[name="condition_value"]');
+    const answerHandle = await stableAnswer.elementHandle();
+    expect(answerHandle).not.toBeNull();
+    await expect(stableAnswer).toBeDisabled();
     // Match the evaluator's native-select contract: it supplies the visible
     // option text as the value rather than using Playwright's label matcher.
     await source.selectOption("Session format");
@@ -85,6 +91,8 @@ for (const viewport of [
 
     const answer = custom.locator('select[name="condition_value"]');
     await expect(answer).toHaveCount(1);
+    expect(await answer.evaluate((element, original) => element === original, answerHandle)).toBe(true);
+    await expect(answer).toBeFocused();
     await expect(answer.locator("option")).toHaveText([
       "Choose an answer",
       "Keynote (45 min)",
@@ -134,6 +142,14 @@ for (const viewport of [
       "Audience level",
       "Key takeaway",
     ]);
+    const previewToggle = page.locator("#preview-cfp");
+    await previewToggle.click();
+    await expect(previewToggle).toHaveText("Back to editing");
+    await expect(previewToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Back to editing" })).toHaveCount(1);
+    await previewToggle.click();
+    await expect(previewToggle).toHaveText("Preview form");
+    await expect(previewToggle).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }

@@ -127,16 +127,29 @@ async def test_command_batch_has_required_atomic_shape_and_redacts_provider_erro
         record, status=201, resource_type="thing", resource_id="domain-id", completed_at_ms=1000
     )
     await batch.execute()
-    assert len(db.batch_statements) == 4
+    assert len(db.batch_statements) == 9
     assert [
         "idempotency_records",
         "domain",
         "audit_events",
+        "activity_entities",
+        "activity_entities",
+        "activities",
+        "activity_status",
+        "activity_routing",
         "idempotency_records",
     ] == [
         next(
             name
-            for name in ("idempotency_records", "domain", "audit_events")
+            for name in (
+                "idempotency_records",
+                "domain",
+                "audit_events",
+                "activity_entities",
+                "activities",
+                "activity_status",
+                "activity_routing",
+            )
             if name in statement.sql
         )
         for statement in db.batch_statements

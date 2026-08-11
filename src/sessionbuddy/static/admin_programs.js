@@ -510,7 +510,10 @@
           required,
           blindVisible,
           choices,
-          inputLabel("Question label", textInput("field_label", field.label, true)),
+          inputLabel(
+            field.key === "session_type" ? "Session format label" : "Field label",
+            textInput("field_label", field.label, true)
+          ),
           inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
           inputLabel("Help text", textInput("field_help", field.help_text || ""))
         );
@@ -602,27 +605,61 @@
         const advancedSummary = make("summary", "Display rules (optional)");
         const advancedBody = make("div");
         const answerHost = make("div");
+        const answerLabel = make("label", "Answer");
+        const answerControls = make("span");
+        const choiceConditionValue = document.createElement("select");
+        choiceConditionValue.name = "condition_value";
+        choiceConditionValue.disabled = true;
+        choiceConditionValue.add(new Option("Choose a question first", ""));
+        conditionValue.hidden = true;
+        conditionValue.disabled = true;
+        conditionValue.removeAttribute("name");
+        answerControls.append(choiceConditionValue, conditionValue);
+        answerLabel.append(answerControls);
+        answerHost.append(answerLabel);
         const conditionWarning = make("p");
         conditionWarning.className = "condition-warning";
         conditionWarning.setAttribute("role", "alert");
         const selectedSourceKey = () => conditionQuestion.selectedOptions[0]?.dataset.sourceKey || "";
         const renderConditionAnswer = () => {
           const source = state.fields.find((candidate) => candidate.key === selectedSourceKey());
-          const existing = answerHost.querySelector('[name="condition_value"]')?.value || conditionValue.value;
-          let control = conditionValue;
+          const activeControl = answerHost.querySelector('[name="condition_value"]');
+          const existing = activeControl?.value || conditionValue.value || choiceConditionValue.value;
+          let control;
           if (source?.choices?.length) {
-            control = document.createElement("select");
-            control.name = "condition_value";
-            control.add(new Option("Choose an answer", ""));
-            source.choices.forEach((choice) => control.add(new Option(choice, choice)));
+            choiceConditionValue.replaceChildren(new Option("Choose an answer", ""));
+            source.choices.forEach((choice) => choiceConditionValue.add(new Option(choice, choice)));
             if (existing && !source.choices.includes(existing)) {
               const unresolvedChoice = new Option(`Unavailable answer (${existing}) — repair or clear`, existing);
               unresolvedChoice.dataset.unresolved = "true";
-              control.add(unresolvedChoice, 1);
+              choiceConditionValue.add(unresolvedChoice, 1);
             }
-            control.value = existing;
+            choiceConditionValue.value = existing;
+            choiceConditionValue.name = "condition_value";
+            choiceConditionValue.disabled = false;
+            choiceConditionValue.hidden = false;
+            conditionValue.removeAttribute("name");
+            conditionValue.disabled = true;
+            conditionValue.hidden = true;
+            control = choiceConditionValue;
+          } else if (source || selectedSourceKey()) {
+            conditionValue.value = existing;
+            conditionValue.name = "condition_value";
+            conditionValue.disabled = false;
+            conditionValue.hidden = false;
+            choiceConditionValue.removeAttribute("name");
+            choiceConditionValue.disabled = true;
+            choiceConditionValue.hidden = true;
+            control = conditionValue;
           } else {
-            control.value = existing;
+            choiceConditionValue.replaceChildren(new Option("Choose a question first", ""));
+            choiceConditionValue.name = "condition_value";
+            choiceConditionValue.disabled = true;
+            choiceConditionValue.hidden = false;
+            conditionValue.removeAttribute("name");
+            conditionValue.disabled = true;
+            conditionValue.hidden = true;
+            control = choiceConditionValue;
           }
           const unresolved = conditionQuestion.selectedOptions[0]?.dataset.unresolved === "true"
             || control.selectedOptions?.[0]?.dataset.unresolved === "true";
@@ -630,14 +667,15 @@
             ? "This saved display rule is no longer valid. Choose an available question and answer, or clear the question selection to remove the rule."
             : "";
           conditionWarning.hidden = !unresolved;
-          answerHost.replaceChildren(inputLabel("Answer", control));
         };
         conditionQuestion.addEventListener("change", () => {
           if (!selectedSourceKey()) {
             conditionValue.value = "";
-            answerHost.querySelector('[name="condition_value"]')?.replaceWith(conditionValue);
+            choiceConditionValue.value = "";
           }
           renderConditionAnswer();
+          const answer = answerHost.querySelector('[name="condition_value"]');
+          if (answer && !answer.disabled) answer.focus();
         });
         advancedBody.append(
           make("p", "Show this question only when a speaker gives a particular answer to an earlier question or event field."),
@@ -1412,21 +1450,18 @@
   }
 
   byId("preview-cfp").addEventListener("click", () => {
-    renderPreview();
+    const preview = byId("cfp-selection-preview");
+    const opening = preview.hidden;
+    if (opening) renderPreview();
     document.querySelectorAll(".cfp-editor-section").forEach((section) => { section.hidden = true; });
-    byId("cfp-form-outline").hidden = true;
-    byId("cfp-selection-heading").hidden = true;
-    byId("cfp-editor-actions").hidden = true;
-    byId("cfp-notification-settings").hidden = true;
-    byId("cfp-selection-preview").hidden = false;
-    byId("close-cfp-preview").focus();
-  });
-  byId("close-cfp-preview").addEventListener("click", () => {
-    byId("cfp-form-outline").hidden = false;
-    byId("cfp-selection-heading").hidden = false;
-    byId("cfp-editor-actions").hidden = false;
-    byId("cfp-notification-settings").hidden = false;
-    selectOutline(state.selectedOutline, false);
+    byId("cfp-form-outline").hidden = opening;
+    byId("cfp-selection-heading").hidden = opening;
+    byId("cfp-editor-actions").hidden = opening;
+    byId("cfp-notification-settings").hidden = opening;
+    preview.hidden = !opening;
+    byId("preview-cfp").textContent = opening ? "Back to editing" : "Preview form";
+    byId("preview-cfp").setAttribute("aria-pressed", String(opening));
+    if (!opening) selectOutline(state.selectedOutline, false);
     byId("preview-cfp").focus();
   });
   window.addEventListener("beforeunload", (event) => {

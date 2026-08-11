@@ -68,6 +68,35 @@ def allowed_origins(request: Request) -> frozenset[str]:
     return frozenset(configured)
 
 
+def browser_request_origin(request: Request) -> str | None:
+    """Return the browser origin, falling back to an allow-listable Referer.
+
+    Some HTTPS reverse proxies omit ``Origin`` on ordinary form posts.  A
+    present Origin remains authoritative; the Referer fallback is used only
+    when Origin is absent and is reduced to its scheme and authority.
+    """
+    origin = request.headers.get("origin")
+    if origin is not None:
+        return origin
+    referer = request.headers.get("referer")
+    if not referer:
+        return None
+    parts = urlsplit(referer)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def browser_request_is_same_origin(request: Request) -> bool:
+    """Validate browser provenance across direct and HTTPS-proxied requests."""
+    candidate = browser_request_origin(request)
+    if candidate is not None:
+        return candidate in allowed_origins(request)
+    # Fetch Metadata headers cannot be set by browser JavaScript. Cloudflare
+    # quick tunnels may remove Origin and Referer, but preserve this signal.
+    return request.headers.get("sec-fetch-site", "").strip().lower() == "same-origin"
+
+
 def session_cookie_value(request: Request) -> str | None:
     """Read only the cookie name valid for this runtime environment."""
     app_env = str(getattr(environment(request), "APP_ENV", "production")).strip().lower()

@@ -279,7 +279,7 @@
 
   function currentSection() {
     if (location.pathname === "/admin") return "home";
-    if (location.pathname.startsWith("/admin/speakers") || /\/speakers(?:\/|$)/.test(location.pathname)) return "speakers";
+    if (location.pathname.startsWith("/admin/people") || /\/speakers(?:\/|$)/.test(location.pathname)) return "speakers";
     if (location.pathname.startsWith("/reviews") || location.pathname.includes("evaluation-rounds")) return "reviews";
     if (location.pathname.startsWith("/speaker")) return "speaker";
     if (location.pathname.startsWith("/admin")) return "events";
@@ -293,7 +293,7 @@
       if (location.pathname.includes("/speaker-content")) return "Speakers";
       if (location.pathname.includes("/messages")) return "Speakers";
       if (location.pathname.includes("/onboarding")) return "Speakers";
-      if (location.pathname.includes("/access")) return "Team & access";
+      if (location.pathname.includes("/reviewers") || location.pathname.includes("/access")) return "Reviewers";
       if (location.pathname.includes("/workspace")) return "Share & integrations";
       if (location.pathname.includes("/agenda")) return "Agenda";
       if (location.pathname.endsWith("/cfp")) return "Call for Proposals";
@@ -304,8 +304,7 @@
   }
 
   function eventNav(eventId, canAdministerAccess = true) {
-    const group = make("div", undefined, "sb-sidebar__group sb-sidebar__event");
-    const nav = make("nav", undefined, "sb-sidebar__nav");
+    const nav = make("nav", undefined, "sb-event-nav");
     nav.setAttribute("aria-label", "Event navigation");
     const encoded = encodeURIComponent(eventId);
     const prefix = `/admin/events/${encoded}`;
@@ -313,7 +312,7 @@
     // canonical name, used identically in the page heading and the topbar.
     const items = [
       ["Overview", prefix, "overview", [prefix]],
-      ["Call for Proposals", `${prefix}/cfp`, "form", [`${prefix}/cfp`]],
+      ["CFP", `${prefix}/cfp`, "form", [`${prefix}/cfp`]],
       ["Proposals", `${prefix}/submissions`, "review", [`${prefix}/submissions`]],
       ["Speakers", `${prefix}/speakers`, "mic", [
         `${prefix}/speakers`,
@@ -321,14 +320,14 @@
         `${prefix}/speaker-content`,
         `${prefix}/messages`
       ]],
-      ["Agenda & publish", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
-      ["Share & integrations", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
+      ["Agenda", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
+      ["Share", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
     ];
     // Access administration needs owner/manage on this exact event. An `edit`
     // grantee reaches every page above and is refused this one, so offering it
     // would be a link straight to a 404.
     if (canAdministerAccess) {
-      items.push(["Team & access", `${prefix}/access`, "access", [`${prefix}/access`]]);
+      items.splice(3, 0, ["Reviewers", `${prefix}/reviewers`, "people", [`${prefix}/reviewers`, `${prefix}/access`]]);
     }
     for (const [label, href, iconName, matches] of items) {
       const current = matches.some((path) => (
@@ -336,8 +335,7 @@
       ));
       nav.append(navLink(label, href, iconName, current));
     }
-    group.append(nav);
-    return group;
+    return nav;
   }
 
   function speakerHubTabs(eventId) {
@@ -394,9 +392,10 @@
         return;
       }
     }
-    const globalOrganizerWorkspace = organizationWorkspace && !currentEventId;
+    const globalOrganizerWorkspace = organizerWorkspace || section === "account";
     document.body.classList.add("sb-shell-authenticated");
     document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace);
+    document.body.classList.toggle("sb-shell-event", Boolean(organizerWorkspace && currentEventId));
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
@@ -422,16 +421,8 @@
     // but an organizer still needs a way out of it.
     const organizationNavigation = organizer && canManageOrganization(session);
     if (organizationNavigation) {
-      nav.append(
-        navLink("Home", "/admin", "home", organizerWorkspace && !currentEventId && section === "home"),
-        navLink(
-          "Events",
-          "/admin/events",
-          "calendar",
-          organizerWorkspace && (Boolean(currentEventId) || section === "events")
-        )
-      );
-      nav.append(navLink("People", "/admin/speakers", "people", organizerWorkspace && !currentEventId && section === "speakers"));
+      nav.append(navLink("Home", "/admin", "home", organizerWorkspace && !currentEventId && section === "home"));
+      nav.append(navLink("People", "/admin/people", "people", organizerWorkspace && !currentEventId && section === "speakers"));
     }
     // Portals are offered for every role on the account, not just the active
     // one. Reading only the active role left an organizer who is also a speaker
@@ -477,23 +468,8 @@
       sidebar.append(utilityGroup);
     }
     speakerHubTabs(organizerWorkspace ? currentEventId : "");
-    if (organizerWorkspace && currentEventId) {
-      if (worksInEventDirectly(session, currentEventId)) {
-        sidebar.append(eventNav(currentEventId, administersEventDirectly(session, currentEventId)));
-      } else if (canManageOrganization(session)) {
-        // Being an admin of SOME organization is not enough: confirm against
-        // the API (which enforces the real event permission) before showing
-        // this event's navigation.
-        window.SessionBuddyApi.request(`/api/v1/admin/events/${encodeURIComponent(currentEventId)}`)
-          // The probe proves the server grants EVENT_MANAGE, which an `edit`
-          // grant also satisfies — it does not prove access administration, so
-          // that entry stays hidden on this path.
-          .then(() => sidebar.append(eventNav(currentEventId, false)))
-          .catch(() => { /* not an administrator of this event's organization */ });
-      }
-    }
     const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));
-    const topbarOnlyWorkspace = singleSpeakerWorkspace || !hasSidebarNavigation;
+    const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace || !hasSidebarNavigation;
     document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace);
 
     const topbar = make("div", undefined, "sb-topbar");
@@ -505,29 +481,25 @@
     menuButton.append(make("span"), make("span"), make("span"));
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
-    if (organizerWorkspace) {
-      let globalNav = null;
-      if (organizationWorkspace) {
-        globalNav = make("nav", undefined, "sb-global-nav");
-        globalNav.setAttribute("aria-label", "Workspace navigation");
-        globalNav.append(
-          navLink("Home", "/admin", "home", !currentEventId && section === "home"),
-          navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
-        );
-        globalNav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
+    if (globalOrganizerWorkspace) {
+      const globalNav = make("nav", undefined, "sb-global-nav");
+      globalNav.setAttribute("aria-label", "Workspace navigation");
+      if (organizationNavigation) {
+        globalNav.append(navLink("Home", "/admin", "home", !currentEventId && section === "home"));
+        globalNav.append(navLink("People", "/admin/people", "people", !currentEventId && section === "speakers"));
       }
       if (currentEventId) {
         topbar.classList.add("sb-topbar--event");
-        topbar.append(menuButton, make("span", undefined, "sb-topbar__brand-space"));
-        if (globalNav) topbar.append(globalNav);
-        else topbar.append(crumb);
-        topbar.append(accountMenu(session, roles));
+        const topbarBrand = link("", organizationNavigation ? "/admin" : activeDestination);
+        topbarBrand.className = "sb-global-brand";
+        topbarBrand.append(brandMark(), make("strong", "SessionBuddy"));
+        topbar.append(topbarBrand, globalNav, accountMenu(session, roles));
       } else {
         const topbarBrand = link("", "/admin");
         topbarBrand.className = "sb-global-brand";
         const topbarMark = brandMark();
         topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
-        topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
+        topbar.append(topbarBrand, globalNav, accountMenu(session, roles));
       }
     } else if (singleSpeakerWorkspace) {
       const speakerBrand = link("", "/speaker");
@@ -543,9 +515,12 @@
       topbar.append(menuButton, crumb, accountMenu(session, roles));
     }
 
+    const horizontalEventNav = organizerWorkspace && currentEventId && (worksInEventDirectly(session, currentEventId) || organizationNavigation)
+      ? eventNav(currentEventId, administersEventDirectly(session, currentEventId))
+      : null;
     if (topbarOnlyWorkspace) {
       shell.className = "sb-app-shell sb-app-shell--single";
-      shell.replaceChildren(topbar);
+      shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));
       return;
     }
 

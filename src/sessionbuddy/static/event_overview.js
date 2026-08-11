@@ -7,28 +7,17 @@
 
   const api = (path) => window.SessionBuddyApi.request(path);
 
-  function tool(title, href, state = "Open", phase = "upcoming") {
-    const card = document.createElement("li");
-    card.className = `event-stage event-stage--${phase}${state === "Unavailable" ? " event-stage--unavailable" : ""}`;
-    const step = document.createElement("span");
-    step.className = "event-stage__marker";
-    step.setAttribute("aria-hidden", "true");
-    const heading = document.createElement("h3");
-    const anchor = document.createElement("a");
-    anchor.href = href;
-    anchor.textContent = title;
-    heading.append(anchor);
-    const badge = document.createElement("span");
-    badge.className = "event-stage__state";
-    badge.textContent = state;
-    card.append(step, heading, badge);
-    return card;
-  }
-
   function formatRange(event) {
     try {
-      const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: event.time_zone });
-      return `${formatter.format(new Date(event.starts_at_ms))} – ${formatter.format(new Date(event.ends_at_ms))}`;
+      const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: event.time_zone });
+      const time = new Intl.DateTimeFormat(undefined, { timeStyle: "short", timeZone: event.time_zone });
+      const start = new Date(event.starts_at_ms);
+      const end = new Date(event.ends_at_ms);
+      const startDate = date.format(start);
+      const endDate = date.format(end);
+      return startDate === endDate
+        ? `${startDate} · ${time.format(start)}–${time.format(end)}`
+        : `${startDate}, ${time.format(start)} – ${endDate}, ${time.format(end)}`;
     } catch (_) { return "Event dates unavailable"; }
   }
 
@@ -42,8 +31,6 @@
       if (error.status === 404) throw new Error("This event is not available to your account.");
       throw error;
     }
-    const organizations = (await api("/api/v1/admin/organizations")).data;
-    const organization = organizations.find((item) => item.id === selected.organization_id);
     const settle = (promise) => promise
       .then((value) => ({ ok: true, value }))
       .catch((error) => ({ ok: false, status: Number(error && error.status) || 0 }));
@@ -55,75 +42,55 @@
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda`))
     ]);
     const speakers = speakersResult.data;
-    const reviewPath = `/admin/events/${encodeURIComponent(eventId)}/submissions`;
     const cfpLive = Boolean(cfp.published_form);
-    const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+    const bannerUrl = cfp.published_form?.cover_image_url || "";
+    const logoUrl = cfp.published_form?.logo_url || "";
+    const accentColor = cfp.published_form?.accent_color || "#3159d9";
     const submissionCount = submissionsState.ok
       ? Number(submissionsState.value.total ?? submissionsState.value.data.length)
       : 0;
-    const reviewBadge = roundState.ok && roundState.value
-      ? "Round open"
-      : !submissionsState.ok || !roundState.ok
-        ? "Unavailable"
-        : submissionCount > 0
-          ? plural(submissionCount, "submission")
-          : cfpLive
-            ? "No submissions yet"
-            : "Waiting";
     // A missing agenda is a real state (404); any other failure is not knowledge.
     const agendaMissing = !agendaState.ok && agendaState.status === 404;
     const agendaFailed = !agendaState.ok && agendaState.status !== 404;
     const agenda = agendaState.ok ? agendaState.value : null;
     const agendaItems = agenda && Array.isArray(agenda.items) ? agenda.items.length : 0;
     const agendaPublished = Boolean(agenda && agenda.revision && agenda.revision.status === "published");
-    const agendaBadge = agendaFailed
-      ? "Unavailable"
-      : agendaMissing
-        ? "Not started"
-        : agendaPublished
-          ? "Published"
-          : agendaItems > 0
-            ? `Draft · ${plural(agendaItems, "session")}`
-            : "Draft · no sessions yet";
     const degraded = !submissionsState.ok || !roundState.ok || agendaFailed;
     document.title = `${selected.name} · SessionBuddy`;
-    byId("organization-name").textContent = organization?.name || "Event workspace";
     byId("event-name").textContent = selected.name;
-    byId("event-summary").textContent = `${formatRange(selected)} · ${selected.delivery_mode.replace("_", " ")}${selected.location ? ` · ${selected.location}` : ""}`;
-    byId("event-status").textContent = selected.status === "active" ? "Active event" : `${selected.status} event`;
-    byId("speaker-count").textContent = String(speakers.length);
-    byId("event-time-zone").textContent = selected.time_zone;
+    byId("event-monogram").textContent = selected.name.slice(0, 2).toUpperCase();
+    byId("event-public-header").style.setProperty("--event-preview-accent", accentColor);
+    if (bannerUrl) {
+      byId("event-banner").src = bannerUrl;
+      byId("event-banner").alt = `${selected.name} banner`;
+      byId("event-banner").hidden = false;
+      byId("event-cover-empty").hidden = true;
+    }
+    if (logoUrl) {
+      byId("event-logo").src = logoUrl;
+      byId("event-logo").alt = `${selected.name} logo`;
+      byId("event-logo").hidden = false;
+    }
+    const mode = selected.delivery_mode.replace("_", " ");
+    byId("event-summary").textContent = `${formatRange(selected)} · ${mode}${selected.location ? ` · ${selected.location}` : ""}`;
+    byId("cfp-action").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
     byId("public-schedule").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
-    const nextHref = !cfpLive || submissionCount === 0 ? `${prefix}/cfp` : reviewPath;
+    byId("proposals-link").href = `${prefix}/submissions`;
+    byId("speakers-link").href = `${prefix}/speakers`;
+    byId("agenda-link").href = `${prefix}/agenda`;
+    byId("cfp-link").href = `${prefix}/cfp`;
     byId("event-actions").hidden = false;
-    byId("next-step-title").textContent = !cfpLive
-      ? "Publish your Call for Proposals"
-      : submissionCount === 0
-        ? "Bring in the first proposal"
-        : "Review incoming proposals";
-    byId("next-step-summary").textContent = !cfpLive
-      ? "Finish the public form so speakers can start submitting."
-      : submissionCount === 0
-        ? "Your call is live and ready to share. No proposals have arrived yet."
-        : `${plural(submissionCount, "proposal")} ${submissionCount === 1 ? "is" : "are"} ready for review and evaluation.`;
-    byId("next-step-action").href = nextHref;
-    byId("next-step-action").textContent = !cfpLive ? "Set up the form" : submissionCount === 0 ? "Open Call for Proposals" : "Open submissions";
-    byId("proposal-count").textContent = submissionsState.ok ? String(submissionCount) : "—";
-    byId("proposal-note").textContent = submissionsState.ok ? (cfpLive ? "Call is live" : "Call not published") : "Unavailable";
-    byId("agenda-count").textContent = agendaFailed ? "—" : String(agendaItems);
+    byId("next-step").hidden = cfpLive;
+    byId("next-step-action").href = `${prefix}/cfp`;
+    byId("proposal-count").textContent = submissionsState.ok ? `${submissionCount} submitted` : "Unavailable";
+    byId("proposal-note").textContent = submissionsState.ok ? `${submissionCount} total proposal${submissionCount === 1 ? "" : "s"}` : "Refresh to try again";
+    byId("speaker-count").textContent = `${speakers.length} confirmed`;
+    byId("speaker-note").textContent = `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} in this event`;
+    byId("agenda-count").textContent = agendaFailed ? "Unavailable" : `${agendaItems} session${agendaItems === 1 ? "" : "s"}`;
     byId("agenda-note").textContent = agendaFailed ? "Unavailable" : agendaPublished ? "Published" : agendaMissing ? "Not started" : "Draft";
-    const currentStep = !cfpLive || submissionCount === 0 ? 1 : !roundState.ok || !roundState.value ? 2 : speakers.length === 0 ? 3 : agendaMissing || (agenda && agendaItems === 0) ? 4 : 5;
-    const phase = (step) => step < currentStep ? "complete" : step === currentStep ? "current" : "upcoming";
-    // The stage list mirrors the event sidebar: same five program pages, same
-    // canonical names, same order.
-    byId("event-tools").replaceChildren(
-      tool("Call for Proposals", `${prefix}/cfp`, cfpLive ? "Live" : "Not published", phase(1)),
-      tool("Submissions", reviewPath, reviewBadge, phase(2)),
-      tool("Speakers", `${prefix}/speakers`, plural(speakers.length, "speaker"), phase(3)),
-      tool("Agenda", `${prefix}/agenda`, agendaBadge, phase(4)),
-      tool("Publish", `${prefix}/workspace`, agendaFailed ? "Unavailable" : agendaPublished ? "Live" : "Waiting", phase(5))
-    );
+    byId("cfp-state").textContent = cfpLive ? "Open" : "Draft";
+    byId("cfp-note").textContent = cfpLive ? "Accepting proposals" : "Publish before sharing";
     document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
       ? "Some program information is unavailable. Refresh to try again."

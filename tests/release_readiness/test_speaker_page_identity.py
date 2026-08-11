@@ -5,7 +5,7 @@ STATIC = Path("src/sessionbuddy/static")
 
 def test_organizer_speaker_pages_have_distinct_titles_and_headings() -> None:
     expected = {
-        "speaker_directory.html": ("Speaker directory", "Speaker directory"),
+        "speaker_directory.html": ("People", "People"),
         "admin_onboarding.html": ("Speaker onboarding", "Speaker onboarding"),
         "speaker_content.html": ("Speaker tasks and files", "Speaker tasks and files"),
         "speaker_messages.html": ("Speaker messages", "Speaker messages"),

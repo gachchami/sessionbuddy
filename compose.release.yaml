@@ -20,6 +20,20 @@ services:
       - --persist-to
       - /workspace/${RELEASE_GATE_STATE:?set by scripts/release_gate.sh}
 
+  activity-worker:
+    ports: !reset []
+    command:
+      - npm
+      - run
+      - activity:dev
+      - --
+      - --ip
+      - 0.0.0.0
+      - --port
+      - "8788"
+      - --persist-to
+      - /workspace/${RELEASE_GATE_STATE:?set by scripts/release_gate.sh}
+
 volumes:
   # Reuse only Wrangler's authenticated CLI configuration. Application state
   # remains isolated in RELEASE_GATE_STATE and no deployment is performed.

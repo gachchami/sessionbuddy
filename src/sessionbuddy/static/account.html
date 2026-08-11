@@ -14,9 +14,9 @@
   <a class="skip-link" href="#main">Skip to account</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page account-page organizer-main" tabindex="-1">
-    <div class="page-heading organizer-hero"><div><p class="eyebrow">Personal settings</p><h1 id="account-title">Account</h1><p id="account-summary" class="lede">Profile details and access.</p></div></div>
+    <div id="account-context-heading" class="page-heading page-heading--compact account-context-heading" hidden><div><p class="eyebrow">Personal settings</p><h1 id="account-title">Account</h1><p id="account-summary" class="lede">Profile details and access.</p></div></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
-    <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title">
+    <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title" hidden>
       <div class="account-profile-heading"><div><p class="eyebrow">Your identity</p><h2 id="profile-title">Profile</h2><p>Used across every SessionBuddy workspace you can access.</p></div><div id="profile-roles" class="account-role-list"></div></div>
       <section class="account-headshot" aria-labelledby="headshot-title">
         <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
@@ -53,17 +53,21 @@
     </section>
     <section id="organization-settings" class="directory-section organizer-section organizer-section--organizations" aria-labelledby="organization-settings-title" hidden>
       <div class="section-heading">
-        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Manage organization details and exact organization access. Event access remains separate.</p></div>
+        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Manage organization details and organizers whose authority applies across every event.</p></div>
       </div>
       <div id="organization-settings-list" class="entity-grid"></div>
     </section>
-    <section class="directory-section organizer-section organizer-section--account-access" aria-labelledby="access-title">
+    <section id="organization-activity" class="directory-section organizer-section" aria-labelledby="organization-activity-title" hidden>
+      <div class="section-heading"><div><h2 id="organization-activity-title">Organization activity</h2><p class="section-summary">Recent audited changes across organizers, events, speakers, reviewers, and proposals.</p></div></div>
+      <ol id="organization-activity-list" class="item-list organization-activity-list" aria-live="polite"><li class="help">Loading activity…</li></ol>
+    </section>
+    <section class="directory-section organizer-section organizer-section--account-access" aria-labelledby="access-title" hidden>
       <div class="section-heading"><div><h2 id="access-title">Roles and Access</h2><p class="section-summary">Choose what opens when you sign in. Switch your active role any time from the account menu.</p></div><span id="access-count" class="badge">—</span></div>
       <form id="default-role-form" class="default-role-picker">
         <fieldset><legend>Default role</legend><p class="help">Your default role becomes active when you start a new session.</p><div id="default-role-list" class="default-role-list"></div></fieldset>
         <button id="save-default-role" type="submit" disabled>Save default role</button>
       </form>
-      <div class="account-resource-access"><h3>Resource access</h3><p class="help">Organizations and events available to your account.</p><div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div></div>
+      <div class="account-resource-access"><h3>Assigned work</h3><p class="help">Organizations you help organize, reviewer assignments, and speaker participation available to your account.</p><div id="access-list" class="entity-grid"><p class="empty">Loading assignments…</p></div></div>
     </section>
   </main>
 </body>

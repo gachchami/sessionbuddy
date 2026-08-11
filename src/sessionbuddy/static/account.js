@@ -17,6 +17,11 @@
   let previewObjectUrl;
   let inferredNameDraft = false;
   const query = new URLSearchParams(location.search);
+  const organizationMode = location.pathname === "/admin/organization";
+  if (!organizationMode) {
+    document.querySelector(".account-profile-panel").hidden = false;
+    document.querySelector(".organizer-section--account-access").hidden = false;
+  }
   const onboarding = query.get("onboarding") === "1";
   const nextPath = query.get("next") || "";
 
@@ -158,10 +163,10 @@
     accessHeading.className = "section-heading";
     const accessCopy = document.createElement("div");
     const accessTitle = document.createElement("h4");
-    accessTitle.textContent = "Organization access";
+    accessTitle.textContent = "Organizers";
     const accessSummary = document.createElement("p");
     accessSummary.className = "help";
-    accessSummary.textContent = "These permissions apply only to this organization. They do not grant, revoke, or change access to any event.";
+    accessSummary.textContent = "The owner and admins can manage every event in this organization.";
     accessCopy.append(accessTitle, accessSummary);
     accessHeading.append(accessCopy);
     const create = document.createElement("form");
@@ -176,30 +181,49 @@
     email.maxLength = 320;
     email.required = true;
     emailLabel.append(email);
-    const permissionLabel = document.createElement("label");
-    permissionLabel.textContent = "Permission";
-    const permission = document.createElement("select");
+    const permission = document.createElement("input");
+    permission.type = "hidden";
     permission.name = "permission";
-    permission.setAttribute("aria-label", "Organization permission to grant");
-    for (const [value, text] of [["view", "Can view"], ["edit", "Can edit"], ["manage", "Can manage access"]]) {
-      permission.append(new Option(text, value));
-    }
-    permissionLabel.append(permission);
+    permission.value = "manage";
     const grant = document.createElement("button");
     grant.type = "submit";
-    grant.textContent = "Grant organization access";
-    create.append(emailLabel, permissionLabel, grant);
+    grant.textContent = "Add admin";
+    create.append(emailLabel, permission, grant);
     const accessStatus = document.createElement("p");
     accessStatus.className = "help organization-access-status";
     accessStatus.setAttribute("role", "status");
     accessStatus.setAttribute("aria-live", "polite");
     const list = document.createElement("ul");
-    list.className = "item-list organizer-access-list organization-grant-list";
+    list.className = "item-list organizer-access-list organization-grant-list organization-admin-grid";
     list.append(document.createElement("li"));
     list.firstElementChild.textContent = "Loading organization access…";
     access.append(accessHeading, create, accessStatus, list);
     card.append(form, access);
-    if (canRecoverEventOwnership) {
+    if (organizationMode && canRecoverEventOwnership) {
+      const transfer = document.createElement("form");
+      transfer.className = "organization-owner-transfer-form";
+      transfer.dataset.organizationOwnerTransfer = organization.id;
+      const transferTitle = document.createElement("h4");
+      transferTitle.textContent = "Transfer ownership";
+      const transferHelp = document.createElement("p");
+      transferHelp.className = "help";
+      transferHelp.textContent = "Only the current owner can transfer ownership, and only to an existing Admin. You will remain an Admin.";
+      const transferLabel = document.createElement("label");
+      transferLabel.textContent = "New owner’s admin email";
+      const transferEmail = document.createElement("input");
+      transferEmail.name = "email";
+      transferEmail.type = "email";
+      transferEmail.autocomplete = "email";
+      transferEmail.required = true;
+      transferLabel.append(transferEmail);
+      const transferButton = document.createElement("button");
+      transferButton.type = "submit";
+      transferButton.className = "danger";
+      transferButton.textContent = "Review ownership transfer";
+      transfer.append(transferTitle, transferHelp, transferLabel, transferButton);
+      card.append(transfer);
+    }
+    if (canRecoverEventOwnership && !organizationMode) {
       const recovery = document.createElement("section");
       recovery.className = "organization-ownership-recovery";
       recovery.dataset.ownershipRecoveryId = organization.id;
@@ -412,7 +436,7 @@
     const email = document.createElement("strong");
     email.textContent = grant.email;
     const current = document.createElement("span");
-    current.textContent = grant.permission === "owner" ? "Owner" : labels[grant.permission] || grant.permission;
+    current.textContent = grant.permission === "owner" ? "Owner" : "Admin";
     summary.append(email, " · ", current);
     row.append(summary);
     if (grant.permission === "owner") {
@@ -423,34 +447,6 @@
     }
     const actions = document.createElement("span");
     actions.className = "actions";
-    const permission = document.createElement("select");
-    permission.setAttribute("aria-label", `Organization permission for ${grant.email}`);
-    for (const [value, text] of [["view", "Can view"], ["edit", "Can edit"], ["manage", "Can manage access"]]) {
-      permission.append(new Option(text, value));
-    }
-    permission.value = grant.permission;
-    const save = document.createElement("button");
-    save.type = "button";
-    save.className = "secondary";
-    save.textContent = "Save access";
-    save.disabled = true;
-    permission.addEventListener("change", () => { save.disabled = permission.value === grant.permission; });
-    save.addEventListener("click", async () => {
-      save.disabled = true;
-      try {
-        await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/access-grants/${encodeURIComponent(grant.user_id)}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
-          body: JSON.stringify({ permission: permission.value })
-        });
-        await loadOrganizationGrantList(organizationId);
-        showStatus(`Organization access updated for ${grant.email}.`, "success");
-      } catch (error) {
-        showStatus(organizationAccessMessage(error, "Organization access could not be updated."), "error", true);
-        permission.disabled = false;
-        save.disabled = false;
-      }
-    });
     const revoke = document.createElement("button");
     revoke.type = "button";
     revoke.className = "secondary";
@@ -477,14 +473,14 @@
           headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token }
         });
         await loadOrganizationGrantList(organizationId);
-        showStatus(`Organization access revoked for ${grant.email}. Event access was not changed.`, "success");
+        showStatus(`Organization organizer access revoked for ${grant.email}.`, "success");
       } catch (error) {
         showStatus(organizationAccessMessage(error, "Organization access could not be revoked."), "error", true);
         revoke.disabled = false;
         resetRevoke();
       }
     });
-    actions.append(permission, save, revoke);
+    actions.append(revoke);
     row.append(actions);
     return row;
   }
@@ -496,13 +492,14 @@
     const status = section.querySelector(".organization-access-status");
     try {
       const grants = await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/access-grants`);
-      list.replaceChildren(...grants.data.map((grant) => organizationGrantRow(organizationId, grant)));
-      if (!grants.data.length) {
+      const organizers = grants.data.filter((grant) => ["owner", "manage"].includes(grant.permission));
+      list.replaceChildren(...organizers.map((grant) => organizationGrantRow(organizationId, grant)));
+      if (!organizers.length) {
         const empty = document.createElement("li");
         empty.textContent = "No organization access entries.";
         list.append(empty);
       }
-      status.textContent = `${grants.data.length} active organization access ${grants.data.length === 1 ? "entry" : "entries"}.`;
+      status.textContent = `${organizers.length} active ${organizers.length === 1 ? "organizer" : "organizers"}.`;
     } catch (error) {
       section.hidden = true;
       if (error.status !== 404) showStatus(window.SessionBuddyApi.message(error), "error", true);
@@ -528,18 +525,78 @@
       .filter((organization) => manageable.has(organization.id));
     if (!organizations.length) return;
     byId("organization-settings-list").replaceChildren(
-      ...organizations.map((organization) => organizationForm(organization, owned.has(organization.id)))
+      ...organizations.map((organization) => organizationForm(
+        organization,
+        owned.has(organization.id)
+      ))
     );
     byId("organization-settings").hidden = false;
     await Promise.all(organizations.flatMap((organization) => [
       loadOrganizationGrantList(organization.id),
-      ...(owned.has(organization.id) ? [loadOwnershipRecoveryEvents(organization.id, true)] : [])
+      ...(organizationMode ? [loadOrganizationActivity(organization.id)] : []),
+      ...(!organizationMode && owned.has(organization.id) ? [loadOwnershipRecoveryEvents(organization.id, true)] : [])
     ]));
+  }
+
+  function activityLabel(resourceType, operation) {
+    const action = `${resourceType}.${operation}`;
+    const labels = {
+      "resource_access_grant.upsert": "Admin access added or updated",
+      "resource_access_grant.create": "Admin access added",
+      "resource_access_grant.revoke": "Admin access revoked",
+      "resource_ownership.transfer": "Ownership transferred",
+      "event.create": "Event created",
+      "event.update": "Event updated",
+      "form.publish": "Call for proposals published",
+      "submission.create": "Proposal submitted",
+      "evaluation.submit": "Review finalized",
+      "decision.finalize": "Proposal decision finalized",
+      "agenda.publish": "Schedule published"
+    };
+    return labels[action] || action.split(/[._]/).filter(Boolean).map((part) => `${part[0].toUpperCase()}${part.slice(1)}`).join(" ");
+  }
+
+  async function loadOrganizationActivity(organizationId) {
+    const section = byId("organization-activity");
+    const list = byId("organization-activity-list");
+    try {
+      const activities = (await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/activities`)).data;
+      const rows = activities.map((activity) => {
+        const row = document.createElement("li");
+        row.className = "organization-activity-item";
+        const title = document.createElement("strong");
+        title.textContent = activityLabel(activity.resource_type, activity.operation);
+        const detail = document.createElement("span");
+        const time = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(activity.occurred_at_ms));
+        detail.textContent = `${activity.actor_name} · ${time}`;
+        row.append(title, detail);
+        return row;
+      });
+      if (!rows.length) {
+        const empty = document.createElement("li");
+        empty.className = "help";
+        empty.textContent = "No organization activity has been projected yet.";
+        rows.push(empty);
+      }
+      list.replaceChildren(...rows);
+      section.hidden = false;
+    } catch (error) {
+      section.hidden = true;
+      if (error.status !== 404) showStatus(window.SessionBuddyApi.message(error), "error", true);
+    }
   }
 
   async function initialize() {
     [session] = await Promise.all([api("/api/v1/auth/session"), api("/api/v1/account/profile").then(setProfile)]);
-    await loadOrganizationSettings();
+    if (organizationMode) {
+      byId("account-context-heading").hidden = false;
+      document.title = "Organization settings · SessionBuddy";
+      document.querySelector(".skip-link").textContent = "Skip to organization settings";
+      document.querySelector(".account-context-heading .eyebrow").textContent = "Organization administration";
+      byId("account-title").textContent = "Organization settings";
+      byId("account-summary").textContent = "Manage organization details and organizers whose authority applies across every event.";
+    }
+    if (organizationMode) await loadOrganizationSettings();
     const access = [];
     renderDefaultRoles();
     for (const item of session.organization_access || []) {
@@ -568,6 +625,7 @@
     byId("access-count").textContent = String((session.account_roles || []).length);
     byId("save-profile").disabled = false;
     if (onboarding && !session.profile_complete) {
+      byId("account-context-heading").hidden = false;
       byId("account-title").textContent = "Complete your profile";
       byId("account-summary").textContent = "Add your details before continuing.";
       showStatus(inferredNameDraft
@@ -673,6 +731,38 @@
     } finally { button.disabled = false; }
   });
   byId("organization-settings-list").addEventListener("submit", async (event) => {
+    const form = event.target.closest("form[data-organization-owner-transfer]");
+    if (!form) return;
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const button = form.querySelector('button[type="submit"]');
+    const email = form.elements.email.value.trim();
+    if (button.dataset.confirming !== "true") {
+      button.dataset.confirming = "true";
+      button.textContent = `Confirm transfer to ${email}`;
+      form.elements.email.readOnly = true;
+      return;
+    }
+    button.disabled = true;
+    try {
+      await api(`/api/v1/admin/organizations/${encodeURIComponent(form.dataset.organizationOwnerTransfer)}/ownership-transfers`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+        body: JSON.stringify({ email })
+      });
+      showStatus(`Organization ownership transferred to ${email}. You remain an Admin.`, "success", true);
+      await loadOrganizationSettings();
+    } catch (error) {
+      showStatus(error.status === 404
+        ? "That account is not an Admin of this organization. Add them as an Admin first."
+        : window.SessionBuddyApi.message(error), "error", true);
+      button.disabled = false;
+      button.dataset.confirming = "false";
+      button.textContent = "Review ownership transfer";
+      form.elements.email.readOnly = false;
+    }
+  });
+  byId("organization-settings-list").addEventListener("submit", async (event) => {
     const form = event.target.closest("form[data-organization-grant-create]");
     if (!form) return;
     event.preventDefault();
@@ -689,7 +779,7 @@
       const email = values.email;
       form.reset();
       await loadOrganizationGrantList(form.dataset.organizationGrantCreate);
-      showStatus(`Organization access granted to ${email}. Event access was not changed.`, "success");
+      showStatus(`Organization organizer access granted to ${email}.`, "success");
     } catch (error) {
       showStatus(organizationAccessMessage(error, "Organization access could not be granted."), "error", true);
     } finally {

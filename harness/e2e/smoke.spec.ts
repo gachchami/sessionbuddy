@@ -642,7 +642,6 @@ test.describe("administration empty states", () => {
 
   test("an invitation form survives its asynchronous request and resets", async ({ page }) => {
     const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-    let invitations: Array<Record<string, unknown>> = [];
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -673,47 +672,36 @@ test.describe("administration empty states", () => {
     });
     await page.route(`**/api/v1/admin/events/${eventId}/invitations`, async (route) => {
       if (route.request().method() === "POST") {
-        invitations = [{
-          id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-          email: "speaker@example.com",
-          role: "speaker",
-          status: "pending",
-        }];
         await route.fulfill({ status: 201, contentType: "application/json", body: "{}" });
         return;
       }
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ data: invitations }),
-      });
-    });
-    await page.route(`**/api/v1/admin/events/${eventId}/members`, async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
     });
-    await page.route(`**/api/v1/admin/events/${eventId}/access-grants`, async (route) => {
+    await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Example Organization" }] }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ id: eventId, organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Example Event" }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/speaker-targets`, async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
     });
 
-    const response = await page.goto(`/admin/events/${eventId}/access`);
+    const response = await page.goto(`/admin/events/${eventId}/speakers`);
     expect(response?.ok()).toBeTruthy();
-    await page.getByRole("button", { name: "Invite someone" }).click();
-    await page.getByRole("dialog", { name: "Invite someone" }).getByRole("textbox", { name: "Email address" }).fill("speaker@example.com");
+    await page.getByRole("button", { name: "Invite speaker" }).click();
+    await page.getByRole("dialog", { name: "Invite speaker" }).getByRole("textbox", { name: "Email address" }).fill("speaker@example.com");
     await page.getByRole("textbox", { name: "Name", exact: true }).fill("Example Speaker");
     await page.getByRole("button", { name: "Send invitation" }).click();
 
     // The success feedback must survive the list refresh (load() writes its
     // own generic status; the outcome message is set after it).
-    await expect(page.getByRole("status")).toHaveText("Invitation created and emailed to the invitee.");
-    // A successful send closes the dialog and the invitation appears in the
-    // list; reopening presents a fresh, reset form.
-    await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
-    const invitationRow = page.locator("#invitation-list li").filter({
-      has: page.getByText("speaker@example.com", { exact: true }),
-    });
-    await expect(invitationRow).toContainText("Speaker assignment");
-    await expect(invitationRow).toContainText("pending");
-    await page.getByRole("button", { name: "Invite someone" }).click();
-    await expect(page.getByRole("dialog", { name: "Invite someone" }).getByRole("textbox", { name: "Email address" })).toHaveValue("");
+    await expect(page.getByRole("status")).toHaveText("Speaker invitation created and emailed.");
+    await expect(page.locator("#invite-speaker-dialog")).not.toHaveAttribute("open", "");
+    await page.getByRole("button", { name: "Invite speaker" }).click();
+    await expect(page.getByRole("dialog", { name: "Invite speaker" }).getByRole("textbox", { name: "Email address" })).toHaveValue("");
     await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("");
   });
 
@@ -738,15 +726,28 @@ test.describe("administration empty states", () => {
     }));
     await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Open Source Summit", status: "active", version: 1 }] }) }));
     await page.route("**/api/v1/admin/organizations/*/events**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: eventId, organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Open Source Summit 2026", status: "active", starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), ends_at_ms: Date.UTC(2026, 10, 14, 11, 30), time_zone: "Asia/Kolkata", delivery_mode: "hybrid", location: "Bengaluru" }] }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: eventId, organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Open Source Summit 2026", status: "active", starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), ends_at_ms: Date.UTC(2026, 10, 14, 11, 30), time_zone: "Asia/Kolkata", delivery_mode: "hybrid", location: "Bengaluru", version: 1 }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/speaker-targets`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
-    await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", event_starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), published_form: { slug: "open-source-summit" } }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [], total: 0 }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "round-a" }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/agenda`, (route) => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not started" }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", event_starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), published_form: { slug: "open-source-summit", cover_image_url: "/landing/assets/sessionbuddy-favicon.svg", logo_url: "/landing/assets/sessionbuddy-favicon.svg" } }) }));
 
     await page.goto(`/admin/events/${eventId}`);
-    await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
-    await page.getByRole("button", { name: "Open navigation" }).click();
+    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
-    await expect(page.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
+    await expect(page.getByRole("heading", { name: "Open Source Summit 2026" })).toBeVisible();
+    await expect(page.locator("#event-branding")).toBeVisible();
+    await expect(page.locator("#event-logo")).toHaveAttribute("alt", "Open Source Summit 2026 logo");
+    const eventStatus = page.locator(".event-signal-list");
+    await expect(eventStatus).toBeVisible();
+    await expect(eventStatus.getByText("0 submitted", { exact: true })).toBeVisible();
+    await expect(eventStatus.getByText("0 confirmed", { exact: true })).toBeVisible();
+    await expect(eventStatus.getByText("0 sessions", { exact: true })).toBeVisible();
+    await expect(eventStatus.getByRole("link", { name: "Call for Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/cfp`);
+    const eventNavigation = page.getByRole("navigation", { name: "Event navigation" });
+    await expect(eventNavigation.getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
+    await expect(eventNavigation.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 

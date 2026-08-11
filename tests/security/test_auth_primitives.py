@@ -6,7 +6,12 @@ from starlette.requests import Request
 
 from sessionbuddy.platform.auth.cookies import sign_session_cookie, verify_session_cookie
 from sessionbuddy.platform.auth.csrf import issue_csrf_token, verify_csrf_token
-from sessionbuddy.platform.auth.http import allowed_origins, session_cookie_value
+from sessionbuddy.platform.auth.http import (
+    allowed_origins,
+    browser_request_origin,
+    browser_request_is_same_origin,
+    session_cookie_value,
+)
 from sessionbuddy.platform.auth.models import CookiePolicy, SessionPolicy
 from sessionbuddy.platform.auth.redirects import is_allowed_redirect
 from sessionbuddy.platform.auth.request_guard import guard_cookie_mutation
@@ -31,6 +36,49 @@ def test_public_base_url_is_always_an_allowed_mutation_origin() -> None:
     assert allowed_origins(request) == frozenset(
         {"https://console.example.test", "https://preview.example.test"}
     )
+
+
+def test_browser_request_origin_uses_referer_only_when_origin_is_absent() -> None:
+    def request_for(headers: list[tuple[bytes, bytes]]) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/auth/verify",
+                "headers": headers,
+            }
+        )
+
+    assert browser_request_origin(
+        request_for([(b"referer", b"https://preview.example.test/auth/verify")])
+    ) == "https://preview.example.test"
+    assert browser_request_origin(
+        request_for(
+            [
+                (b"origin", b"https://attacker.example"),
+                (b"referer", b"https://preview.example.test/auth/verify"),
+            ]
+        )
+    ) == "https://attacker.example"
+    assert browser_request_origin(request_for([])) is None
+    assert browser_request_origin(request_for([(b"referer", b"file:///tmp/link")])) is None
+
+
+def test_browser_request_accepts_same_origin_fetch_metadata_without_origin_headers() -> None:
+    def request_for(site: bytes) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/auth/verify",
+                "headers": [(b"sec-fetch-site", site)],
+                "env": SimpleNamespace(ALLOWED_ORIGINS="", PUBLIC_BASE_URL=""),
+            }
+        )
+
+    assert browser_request_is_same_origin(request_for(b"same-origin"))
+    assert not browser_request_is_same_origin(request_for(b"cross-site"))
+    assert not browser_request_is_same_origin(request_for(b"none"))
 
 
 def test_only_local_runtime_accepts_the_non_host_session_cookie() -> None:

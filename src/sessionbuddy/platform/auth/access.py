@@ -36,6 +36,7 @@ from .csrf import issue_csrf_token
 from .http import (
     allowed_origins,
     authenticate_request,
+    browser_request_is_same_origin,
     database,
     environment,
     guard_mutation,
@@ -206,7 +207,7 @@ async def event_overview_javascript() -> Response:
     return Response(_asset("event_overview.js"), media_type="text/javascript")
 
 
-@access_router.get("/admin/speakers", include_in_schema=False)
+@access_router.get("/admin/people", include_in_schema=False)
 @access_router.get("/admin/events/{event_id}/speakers", include_in_schema=False)
 @access_router.get(
     "/admin/events/{event_id}/speakers/{event_speaker_id}", include_in_schema=False
@@ -242,9 +243,14 @@ async def speaker_messages_page(event_id: str, request: Request) -> Response:
     )
 
 
-@access_router.get("/admin/speakers/assets/speakers.js", include_in_schema=False)
+@access_router.get("/admin/people/assets/people.js", include_in_schema=False)
 async def speaker_directory_javascript() -> Response:
     return Response(_asset("speaker_directory.js"), media_type="text/javascript")
+
+
+@access_router.get("/admin/people/assets/search.js", include_in_schema=False)
+async def people_search_javascript() -> Response:
+    return Response(_asset("people_search.js"), media_type="text/javascript")
 
 
 @access_router.get("/admin/speakers/assets/messages.js", include_in_schema=False)
@@ -261,12 +267,28 @@ async def account_page() -> Response:
     )
 
 
+@access_router.get("/admin/organization", include_in_schema=False)
+async def organization_settings_page(request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
+    return Response(
+        _asset("organization_admin.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @access_router.get("/account/assets/account.js", include_in_schema=False)
 async def account_javascript() -> Response:
     return Response(_asset("account.js"), media_type="text/javascript")
 
 
+@access_router.get("/admin/organization/assets/organization.js", include_in_schema=False)
+async def organization_admin_javascript() -> Response:
+    return Response(_asset("organization_admin.js"), media_type="text/javascript")
+
+
 @access_router.get("/admin/events/{event_id}/access", include_in_schema=False)
+@access_router.get("/admin/events/{event_id}/reviewers", include_in_schema=False)
 async def event_access_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
     return Response(
@@ -394,6 +416,9 @@ class InvitationView(BaseModel):
     email: str
     role: InvitationRole
     status: Literal["pending", "accepted", "revoked", "expired"] = "pending"
+    display_name: str = ""
+    job_title: str = ""
+    company: str = ""
 
 
 class InvitationList(BaseModel):
@@ -451,6 +476,7 @@ class EventView(BaseModel):
     schedule_status: Literal[
         "not_started", "draft", "ready", "published", "updates_pending"
     ] = "not_started"
+    cfp_status: Literal["not_started", "draft", "published", "closed"] = "not_started"
 
 
 class EventList(BaseModel):
@@ -646,6 +672,22 @@ class ResourceGrantList(BaseModel):
     data: list[ResourceGrantView]
 
 
+class OrganizationActivityView(BaseModel):
+    activity_id: str
+    actor_id: str | None = None
+    actor_name: str
+    operation: Literal["create", "read", "update", "delete"]
+    resource_type: str
+    resource_id: str
+    subject_name: str | None = None
+    event_id: str | None = None
+    occurred_at_ms: int
+
+
+class OrganizationActivityList(BaseModel):
+    data: list[OrganizationActivityView]
+
+
 class EventOwnershipTransferCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -660,6 +702,21 @@ class EventOwnershipTransferView(BaseModel):
     previous_owner_user_id: str
     new_owner_user_id: str
     previous_owner_permission: Literal["manage"] | None = None
+    transferred_at_ms: int
+
+
+class OrganizationOwnershipTransferCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    email: str = Field(min_length=3, max_length=320)
+
+
+class OrganizationOwnershipTransferView(BaseModel):
+    transfer_id: str
+    organization_id: str
+    previous_owner_user_id: str
+    new_owner_user_id: str
+    previous_owner_permission: Literal["manage"] = "manage"
     transferred_at_ms: int
 
 
@@ -1557,7 +1614,10 @@ async def list_events(
         "AND sr.status='draft')) THEN 'ready' "
         "WHEN EXISTS(SELECT 1 FROM schedule_revisions sr "
         "WHERE sr.organization_id=e.organization_id AND sr.event_id=e.id "
-        "AND sr.status='draft') THEN 'draft' ELSE 'not_started' END AS schedule_status "
+        "AND sr.status='draft') THEN 'draft' ELSE 'not_started' END AS schedule_status,"
+        "COALESCE((SELECT f.status FROM call_for_speaker_forms f "
+        "WHERE f.organization_id=e.organization_id AND f.event_id=e.id "
+        "ORDER BY f.version DESC,f.updated_at_ms DESC LIMIT 1),'not_started') AS cfp_status "
         "FROM events e"
         f"{access_join} WHERE {' AND '.join(conditions)} "
         f"ORDER BY e.starts_at_ms {'ASC' if order == 'upcoming' else 'DESC'},"
@@ -3263,6 +3323,17 @@ async def create_invitation(
         )
     email, normalized = _email(body.email)
     now, invitation_id = utc_now_ms(), new_id()
+    accepted_id = await (
+        db.prepare(
+            """SELECT id FROM identity_invitations
+               WHERE organization_id=?1 AND event_id=?2 AND normalized_email=?3
+                 AND role=?4 AND status='accepted' LIMIT 1"""
+        )
+        .bind(event["organization_id"], event_id, normalized, body.role)
+        .first("id")
+    )
+    if accepted_id is not None:
+        raise HTTPException(status_code=409, detail="This invitation has already been accepted")
     await (
         db.prepare(
             """INSERT INTO identity_invitations
@@ -3457,7 +3528,7 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
     db, organization_id, _ = await _managed_event(request, event_id, mutation=False)
     result = await (
         db.prepare(
-            """SELECT id,event_id,email,role,
+            """SELECT id,event_id,email,role,display_name,job_title,company,
                       CASE WHEN status='pending' AND expires_at_ms<=?3
                            THEN 'expired' ELSE status END AS status
                FROM identity_invitations WHERE organization_id=?1 AND event_id=?2
@@ -3538,15 +3609,21 @@ async def resend_invitation(
 async def revoke_invitation(event_id: str, invitation_id: str, request: Request) -> Response:
     db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
     now = utc_now_ms()
-    pending_role = await (
+    invitation = row_mapping(await (
         db.prepare(
-            """SELECT role FROM identity_invitations
-               WHERE id=?1 AND organization_id=?2 AND event_id=?3 AND status='pending' LIMIT 1"""
+            """SELECT role,status,normalized_email FROM identity_invitations
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3
+                 AND status IN ('pending','accepted') LIMIT 1"""
         )
         .bind(invitation_id, organization_id, event_id)
-        .first("role")
-    )
-    if pending_role is not None and str(pending_role) == "organization_admin":
+        .first()
+    ))
+    if invitation is None:
+        raise HTTPException(status_code=404)
+    role, status = str(invitation["role"]), str(invitation["status"])
+    if status == "accepted" and role != "evaluator":
+        raise HTTPException(status_code=404)
+    if role == "organization_admin":
         # Symmetric with create/resend: org-admin invitations are managed
         # only by organization admins.
         await require_permission(
@@ -3555,10 +3632,35 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
             ResourceContext(organization_id),
             mutation=True,
         )
+    reviewer_user_id = None
+    if status == "accepted" and role == "evaluator":
+        reviewer_user_id = await (
+            db.prepare("SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1")
+            .bind(invitation["normalized_email"])
+            .first("id")
+        )
+        if reviewer_user_id is not None:
+            active_assignment = await (
+                db.prepare(
+                    """SELECT a.id FROM evaluation_assignments a
+                       JOIN evaluation_rounds r ON r.id=a.round_id
+                       WHERE r.organization_id=?1 AND r.event_id=?2
+                         AND a.evaluator_user_id=?3 AND a.status!='revoked' LIMIT 1"""
+                )
+                .bind(organization_id, event_id, reviewer_user_id)
+                .first("id")
+            )
+            if active_assignment is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Remove this reviewer from active evaluation assignments first",
+                )
     changed = row_mapping(
         await db.prepare(
-            """UPDATE identity_invitations SET status='revoked',revoked_at_ms=?1,updated_at_ms=?1
-               WHERE id=?2 AND organization_id=?3 AND event_id=?4 AND status='pending'
+            """UPDATE identity_invitations SET status='revoked',accepted_at_ms=NULL,
+                 revoked_at_ms=?1,updated_at_ms=?1
+               WHERE id=?2 AND organization_id=?3 AND event_id=?4
+                 AND status IN ('pending','accepted')
                RETURNING id"""
         )
         .bind(now, invitation_id, organization_id, event_id)
@@ -3571,7 +3673,8 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
         AuditEvent(
             actor_type="user",
             actor_user_id=authenticated.actor.user_id,
-            action="identity.invitation.revoke",
+            action=("evaluator.eligibility.revoke" if status == "accepted"
+                    else "identity.invitation.revoke"),
             target_type="identity_invitation",
             target_id=invitation_id,
             result="succeeded",
@@ -3579,6 +3682,8 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
             occurred_at_ms=now,
             organization_id=organization_id,
             event_id=event_id,
+            metadata={"role": role, "previous_status": status,
+                      "reviewer_user_id": reviewer_user_id},
         )
     )
     await audit.execute()
@@ -3725,6 +3830,217 @@ async def list_organization_access_grants(
         .all()
     )
     return ResourceGrantList(data=[ResourceGrantView(**row) for row in result_rows(result)])
+
+
+@access_router.get(
+    "/api/v1/admin/organizations/{organization_id}/activities",
+    response_model=OrganizationActivityList,
+    tags=["administration"],
+)
+async def list_organization_activity(
+    organization_id: str, request: Request
+) -> OrganizationActivityList:
+    db, _owner_user_id, _authenticated = await _organization_access_control_context(
+        request, organization_id, mutation=False
+    )
+    result = await db.prepare(
+        """SELECT a.id AS activity_id,
+                  CASE
+                    WHEN a.actor_type='system' THEN 'SessionBuddy'
+                    WHEN u.id IS NULL THEN 'Unknown account'
+                    ELSE COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name),''),
+                                  NULLIF(u.display_name,''),'Account user')
+                  END AS actor_name,
+                  a.actor_id,a.operation,a.resource_type,a.resource_id,
+                  r.event_id,a.occurred_at_ms,
+                  CASE resource_entity.entity_type
+                    WHEN 'organization' THEN (
+                      SELECT o.name FROM organizations o
+                      WHERE o.id=resource_entity.internal_id AND o.id=?1 LIMIT 1)
+                    WHEN 'event' THEN (
+                      SELECT e.name FROM events e WHERE e.id=resource_entity.internal_id
+                      AND e.organization_id=?1 LIMIT 1)
+                    WHEN 'proposal' THEN (
+                      SELECT s.proposal_title FROM submissions s
+                      WHERE s.id=resource_entity.internal_id
+                      AND s.organization_id=?1 LIMIT 1)
+                    WHEN 'invitation' THEN (
+                      SELECT COALESCE(NULLIF(i.display_name,''),
+                                      REPLACE(i.role,'_',' ') || ' invitation')
+                      FROM identity_invitations i WHERE i.id=resource_entity.internal_id
+                      AND i.organization_id=?1 LIMIT 1)
+                    WHEN 'call_for_speaker_form' THEN (
+                      SELECT 'CFP for ' || e.name FROM call_for_speaker_forms f
+                      JOIN events e ON e.id=f.event_id AND e.organization_id=f.organization_id
+                      WHERE f.id=resource_entity.internal_id
+                      AND f.organization_id=?1 LIMIT 1)
+                    WHEN 'evaluation_round' THEN (
+                      SELECT er.name FROM evaluation_rounds er
+                      WHERE er.id=resource_entity.internal_id
+                      AND er.organization_id=?1 LIMIT 1)
+                    WHEN 'event_speaker' THEN (
+                      SELECT pe.display_name FROM event_speakers es
+                      JOIN people pe ON pe.id=es.person_id
+                        AND pe.organization_id=es.organization_id
+                      WHERE es.id=resource_entity.internal_id
+                      AND es.organization_id=?1 LIMIT 1)
+                    WHEN 'accepted_session' THEN (
+                      SELECT s.proposal_title FROM accepted_sessions ac
+                      JOIN submissions s ON s.id=ac.submission_id
+                        AND s.organization_id=ac.organization_id
+                        AND s.event_id=ac.event_id
+                      WHERE ac.id=resource_entity.internal_id
+                      AND ac.organization_id=?1 LIMIT 1)
+                    WHEN 'speaker_task' THEN (
+                      SELECT st.title FROM speaker_tasks st
+                      WHERE st.id=resource_entity.internal_id
+                      AND st.organization_id=?1 LIMIT 1)
+                    ELSE NULL
+                  END AS subject_name
+           FROM organization_activity p
+           JOIN activities a ON a.id=p.activity_id
+           LEFT JOIN activity_routing r ON r.activity_id=a.id
+           LEFT JOIN activity_entities actor_entity
+             ON actor_entity.public_id=a.actor_id
+           LEFT JOIN users u ON u.id=actor_entity.internal_id
+           LEFT JOIN activity_entities resource_entity
+             ON resource_entity.public_id=a.resource_id
+           WHERE p.organization_id=?1
+           ORDER BY p.occurred_at_ms DESC,p.activity_id DESC LIMIT 30"""
+    ).bind(organization_id).all()
+    return OrganizationActivityList(
+        data=[OrganizationActivityView(**row) for row in result_rows(result)]
+    )
+
+
+@access_router.post(
+    "/api/v1/admin/organizations/{organization_id}/ownership-transfers",
+    response_model=OrganizationOwnershipTransferView,
+    status_code=201,
+    tags=["administration"],
+)
+async def transfer_organization_ownership(
+    organization_id: str,
+    body: OrganizationOwnershipTransferCreate,
+    request: Request,
+) -> OrganizationOwnershipTransferView:
+    db = database(request)
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    if authenticated.actor.active_persona is not Persona.ORGANIZER:
+        raise HTTPException(status_code=403)
+    owned = row_mapping(
+        await db.prepare(
+            """SELECT owner_user_id,version FROM owned_resources
+               WHERE id=?1 AND resource_type='organization' AND status='active'
+               LIMIT 1"""
+        ).bind(organization_id).first()
+    )
+    if owned is None or str(owned["owner_user_id"]) != authenticated.actor.user_id:
+        raise HTTPException(status_code=404)
+    _email_value, normalized = _email(body.email)
+    target = row_mapping(
+        await db.prepare(
+            """SELECT u.id FROM users u
+               JOIN resource_access_grants g ON g.user_id=u.id
+                AND g.resource_id=?1 AND g.permission='manage' AND g.status='active'
+               WHERE u.normalized_email=?2 AND u.status='active' LIMIT 1"""
+        ).bind(organization_id, normalized).first()
+    )
+    if target is None:
+        raise HTTPException(status_code=404)
+    previous_owner_user_id = authenticated.actor.user_id
+    new_owner_user_id = str(target["id"])
+    now, transfer_id = utc_now_ms(), new_id()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
+                 revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
+               WHERE resource_id=?3 AND user_id=?4 AND status='active'"""
+        ).bind(now, previous_owner_user_id, organization_id, new_owner_user_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE owned_resources SET
+                 owner_user_id=CASE
+                   WHEN owner_user_id=?1 AND version=?2 AND status='active' THEN ?3
+                   ELSE NULL
+                 END,
+                 version=version+1,updated_at_ms=?4
+               WHERE id=?5 AND resource_type='organization'"""
+        ).bind(
+            previous_owner_user_id,
+            int(owned["version"]),
+            new_owner_user_id,
+            now,
+            organization_id,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO resource_access_grants
+               (id,resource_id,user_id,permission,status,granted_by_user_id,
+                created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,'manage','active',?4,?5,?5)
+               ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET
+                 status='active',granted_by_user_id=excluded.granted_by_user_id,
+                 revoked_at_ms=NULL,revoked_by_user_id=NULL,version=version+1,
+                 updated_at_ms=excluded.updated_at_ms"""
+        ).bind(new_id(), organization_id, previous_owner_user_id, previous_owner_user_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO resource_ownership_transfers
+               (id,resource_id,from_user_id,to_user_id,transferred_by_user_id,
+                reason,transferred_at_ms)
+               VALUES(?1,?2,?3,?4,?3,NULL,?5)"""
+        ).bind(
+            transfer_id,
+            organization_id,
+            previous_owner_user_id,
+            new_owner_user_id,
+            now,
+        )
+    )
+    for changed_user_id in (previous_owner_user_id, new_owner_user_id):
+        batch.add_statement(
+            db.prepare(
+                """UPDATE users SET authorization_version=authorization_version+1,
+                   updated_at_ms=?1 WHERE id=?2"""
+            ).bind(now, changed_user_id)
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=previous_owner_user_id,
+            action="resource_ownership.transfer",
+            target_type="organization",
+            target_id=organization_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            metadata={
+                "previous_owner_user_id": previous_owner_user_id,
+                "new_owner_user_id": new_owner_user_id,
+                "previous_owner_permission": "manage",
+            },
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=409, detail="Organization ownership changed; reload"
+        ) from exc
+    return OrganizationOwnershipTransferView(
+        transfer_id=transfer_id,
+        organization_id=organization_id,
+        previous_owner_user_id=previous_owner_user_id,
+        new_owner_user_id=new_owner_user_id,
+        transferred_at_ms=now,
+    )
 
 
 async def _upsert_organization_access_grant(
@@ -5087,8 +5403,7 @@ async def magic_link_interstitial() -> Response:
 
 @access_router.post("/auth/verify", include_in_schema=False)
 async def verify_magic_link_in_browser(*, request: Request) -> Response:
-    origin = request.headers.get("origin")
-    if origin is None or origin not in allowed_origins(request):
+    if not browser_request_is_same_origin(request):
         raise HTTPException(status_code=403)
     body = await request.body()
     if len(body) > 4096:

@@ -37,7 +37,7 @@ release_compose run --rm --no-deps worker uv run ruff check .
 release_compose run --rm --no-deps worker uv run pytest -q
 release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
 
-release_compose run --rm e2e
+release_compose run --rm e2e sh -lc "npm ci && npx playwright test --workers=4"
 
 release_compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
   --base-url http://worker:8787 --route /api/v1/engine-room/status \
@@ -51,8 +51,8 @@ release_compose run --rm e2e sh -lc \
    --output-path=.local/lighthouse/engine-room-mobile.json \
    --chrome-flags='--headless --no-sandbox --disable-dev-shm-usage' --quiet"
 release_compose run --rm --no-deps worker uv run pywrangler deploy \
-  --env dev --dry-run --outdir /tmp/sessionbuddy-release-dry-run
+  --env dev --dry-run --outdir "/workspace/$RELEASE_GATE_STATE/package-dry-run"
 release_compose run --rm --no-deps worker uv run python \
-  scripts/validate_worker_package.py /tmp/sessionbuddy-release-dry-run
+  scripts/validate_worker_package.py "/workspace/$RELEASE_GATE_STATE/package-dry-run"
 
 echo "Release readiness local release gate passed. No remote deployment was performed."

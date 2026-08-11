@@ -1,8 +1,6 @@
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from scripts.validate_baseline_migration import validate
 from tests.schema import BASELINE
 
@@ -14,18 +12,17 @@ def apply_baseline(path: Path = BASELINE) -> sqlite3.Connection:
     return connection
 
 
-def test_canonical_baseline_is_the_only_active_migration() -> None:
-    assert sorted(BASELINE.parent.glob("*.sql")) == [BASELINE]
+def test_canonical_baseline_remains_immutable_and_first() -> None:
+    assert sorted(BASELINE.parent.glob("*.sql"))[0] == BASELINE
     validate(BASELINE)
 
 
-def test_validator_rejects_an_additional_active_migration(tmp_path: Path) -> None:
+def test_validator_accepts_an_additive_migration_ledger(tmp_path: Path) -> None:
     baseline = tmp_path / BASELINE.name
     baseline.write_bytes(BASELINE.read_bytes())
     (tmp_path / "0002_unwanted.sql").write_text("SELECT 1;\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="must contain only"):
-        validate(baseline)
+    validate(baseline)
 
 
 def test_baseline_creates_only_one_setup_credential_and_no_business_data() -> None:

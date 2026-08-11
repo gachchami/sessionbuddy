@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // The invitation dialog must never surface the one-time acceptance link.
 // That link signs the invitee in, so showing it to the inviting
@@ -6,6 +8,8 @@ import { expect, test } from "@playwright/test";
 // link travels only in the invitee's email; the dialog reports delivery.
 
 const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
+const source = (name: string) => readFileSync(resolve(staticRoot, name), "utf8");
 const sessionBody = JSON.stringify({
   user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -34,6 +38,21 @@ const sessionBody = JSON.stringify({
 test.describe("invitation dialog", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
+  test.beforeEach(async ({ page }) => {
+    await page.route(new RegExp(`/admin/events/${eventId}/reviewers(?:\\?.*)?$`), (route) =>
+      route.fulfill({ contentType: "text/html", body: source("access_admin.html") }));
+    for (const [pattern, file, contentType] of [
+      ["**/product/assets/product.css*", "product.css", "text/css"],
+      ["**/app-shell/assets/app-shell.css*", "app_shell.css", "text/css"],
+      ["**/app-shell/assets/api-client.js*", "api_client.js", "text/javascript"],
+      ["**/app-shell/assets/app-shell.js*", "app_shell.js", "text/javascript"],
+      ["**/admin/access/assets/access.js*", "access_admin.js", "text/javascript"],
+    ] as const) {
+      await page.route(pattern, (route) =>
+        route.fulfill({ contentType, body: source(file) }));
+    }
+  });
+
   test("no acceptance link is rendered, even if a server returns one", async ({ page }) => {
     let invitations: Array<Record<string, unknown>> = [];
     await page.route("**/api/v1/auth/session", (route) =>
@@ -58,8 +77,8 @@ test.describe("invitation dialog", () => {
         invitations = [{
           id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
           event_id: eventId,
-          email: "speaker@example.com",
-          role: "speaker",
+          email: "reviewer@example.com",
+          role: "evaluator",
           status: "pending",
         }];
         // A hostile/stale server response containing accept_url must still
@@ -77,16 +96,15 @@ test.describe("invitation dialog", () => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: invitations }) });
     });
 
-    await page.goto(`/admin/events/${eventId}/access`);
-    await page.getByRole("button", { name: "Invite someone" }).click();
-    await page.getByRole("dialog", { name: "Invite someone" }).getByRole("textbox", { name: "Email address" }).fill("speaker@example.com");
-    await page.getByRole("textbox", { name: "Name", exact: true }).fill("Example Speaker");
+    await page.goto(`/admin/events/${eventId}/reviewers`);
+    await page.getByRole("button", { name: "Invite reviewer" }).click();
+    await page.getByRole("dialog", { name: "Invite reviewer" }).getByRole("textbox", { name: "Email address" }).fill("reviewer@example.com");
     await page.getByRole("button", { name: "Send invitation" }).click();
 
-    const invitationRow = page.locator("#invitation-list li").filter({
-      has: page.getByText("speaker@example.com", { exact: true }),
+    const invitationRow = page.locator("#reviewer-list [role=row]").filter({
+      has: page.getByText("reviewer@example.com", { exact: true }),
     });
-    await expect(invitationRow).toContainText("Speaker assignment");
+    await expect(invitationRow).toContainText("Reviewer");
     await expect(invitationRow).toContainText("pending");
     // A successful send closes the dialog; the sender lands on the updated list.
     await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
@@ -99,18 +117,10 @@ test.describe("invitation dialog", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("SHOULD-NEVER-RENDER");
 
-    // Reopening presents a consistent form: role back to Speaker with the
-    // speaker-details fields visible (they must track the role through
-    // reset/close/reopen, not just explicit role changes).
-    await page.getByRole("button", { name: "Invite someone" }).click();
-    await expect(page.getByRole("combobox", { name: "Access" })).toHaveValue("speaker");
-    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeVisible();
-    await page.getByRole("combobox", { name: "Access" }).selectOption("evaluator");
-    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeHidden();
+    // Reopening remains reviewer-only; no legacy role selector is exposed.
+    await page.getByRole("button", { name: "Invite reviewer" }).click();
+    await expect(page.getByRole("combobox", { name: "Access" })).toHaveCount(0);
     await page.getByRole("button", { name: "Cancel" }).click();
-    await page.getByRole("button", { name: "Invite someone" }).click();
-    await expect(page.getByRole("textbox", { name: "Name", exact: true })).toBeHidden();
-    await expect(page.getByRole("combobox", { name: "Access" })).toHaveValue("evaluator");
   });
 
   test("resending an invitation reports delivery without exposing a link", async ({ page }) => {
@@ -138,8 +148,8 @@ test.describe("invitation dialog", () => {
         body: JSON.stringify({
           id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
           event_id: eventId,
-          email: "speaker@example.com",
-          role: "speaker",
+          email: "reviewer@example.com",
+          role: "evaluator",
           status: "pending",
           accept_url: "https://example.test/auth/verify?token=SHOULD-NEVER-RENDER",
         }),
@@ -151,57 +161,34 @@ test.describe("invitation dialog", () => {
           data: [{
             id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             event_id: eventId,
-            email: "speaker@example.com",
-            role: "speaker",
+            email: "reviewer@example.com",
+            role: "evaluator",
             status: "pending",
           }],
         }),
       }));
 
-    await page.goto(`/admin/events/${eventId}/access`);
+    await page.goto(`/admin/events/${eventId}/reviewers`);
     await page.getByRole("button", { name: "Send again" }).click();
 
-    await expect(page.getByRole("status")).toHaveText("A new link was sent to speaker@example.com.");
+    await expect(page.locator("#status")).toHaveText("A new invitation was sent to reviewer@example.com.");
     await expect(page.getByText("Acceptance link")).toHaveCount(0);
     expect(await page.content()).not.toContain("SHOULD-NEVER-RENDER");
   });
 
-  test("exact event access can be granted, changed, and revoked", async ({ page }) => {
-    let grants = [{ user_id: "owner-user", email: "admin@example.com", permission: "owner", status: "active" }];
+  test("reviewer page does not expose legacy event access grants", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: sessionBody }));
     await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ id: eventId, organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Linkless Conf", status: "active", version: 1 }),
     }));
-    await page.route(`**/api/v1/admin/events/${eventId}/members`, (route) =>
-      route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/invitations`, (route) =>
       route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
-    await page.route(`**/api/v1/admin/events/${eventId}/access-grants`, async (route) => {
-      if (route.request().method() === "POST") {
-        grants.push({ user_id: "grantee-user", email: "grantee@example.com", permission: "view", status: "active" });
-        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(grants[1]) }); return;
-      }
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: grants }) });
-    });
-    await page.route(`**/api/v1/admin/events/${eventId}/access-grants/grantee-user`, async (route) => {
-      if (route.request().method() === "PATCH") grants[1].permission = "edit";
-      if (route.request().method() === "DELETE") grants = grants.slice(0, 1);
-      await route.fulfill({ status: route.request().method() === "DELETE" ? 204 : 200, contentType: "application/json", body: route.request().method() === "DELETE" ? "" : JSON.stringify(grants[1]) });
-    });
-
-    await page.goto(`/admin/events/${eventId}/access`);
-    await page.getByRole("textbox", { name: "Email address" }).fill("grantee@example.com");
-    await page.getByRole("button", { name: "Grant access" }).click();
-    const grantRow = page.locator("#grant-list li").filter({
-      has: page.getByText("grantee@example.com", { exact: true }),
-    });
-    await expect(grantRow).toContainText("Can view");
-    await page.getByRole("combobox", { name: "Permission for grantee@example.com" }).selectOption("edit");
-    await expect(grantRow).toContainText("Can edit");
-    await page.getByRole("button", { name: "Revoke access" }).click();
-    await page.getByRole("button", { name: "Select again to revoke" }).click();
-    await expect(page.getByText(/grantee@example.com/)).toHaveCount(0);
+    await page.goto(`/admin/events/${eventId}/reviewers`);
+    await expect(page.getByRole("heading", { name: "Reviewers", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Grant access" })).toHaveCount(0);
+    await expect(page.locator("#grant-list")).toHaveCount(0);
+    await expect(page.getByText("Can view", { exact: true })).toHaveCount(0);
   });
 });

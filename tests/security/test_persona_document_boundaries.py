@@ -174,7 +174,7 @@ ADMIN_DOCUMENT_PATHS = (
     "/admin/events/event-1/speakers",
     "/admin/events/event-1/speakers/speaker-1",
     "/admin/events/event-1/messages",
-    "/admin/speakers",
+    "/admin/people",
     "/admin/evaluation-rounds/round-1",
 )
 

@@ -183,9 +183,8 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
         '"Proposals"',
         '"Speakers"',
         '"Agenda"',
-        '"Agenda & publish"',
-        '"Share & integrations"',
-        '"Team & access"',
+        '"Share"',
+        '"Reviewers"',
     ):
         assert label in shell
     assert '"Account settings"' in shell

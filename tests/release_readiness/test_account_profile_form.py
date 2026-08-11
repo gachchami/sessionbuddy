@@ -19,6 +19,9 @@ def test_profile_form_is_registration_ready_without_editable_roles() -> None:
     assert "Your email is verified and cannot be changed here.</small>" in markup
     assert "Changing it signs you out on every device." in markup
     assert '<h2 id="access-title">Roles and Access</h2>' in markup
+    assert 'account-profile-panel" aria-labelledby="profile-title" hidden' in markup
+    assert 'organizer-section--account-access" aria-labelledby="access-title" hidden' in markup
+    assert '<script>if (location.pathname' not in markup
     assert 'name="role"' not in markup
 
 

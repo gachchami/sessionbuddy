@@ -24,12 +24,13 @@
   let selectedSpeaker = null;
   let allSpeakers = [];
   let allEvents = [];
+  let inviteEventId = "";
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function participationLink(participation) {
     if (participation.selection_status === "invited") {
-      return `/admin/events/${encodeURIComponent(participation.event_id)}/access`;
+      return `/admin/events/${encodeURIComponent(participation.event_id)}/speakers`;
     }
     return `/admin/events/${encodeURIComponent(participation.event_id)}/speakers/${encodeURIComponent(participation.event_speaker_id)}`;
   }
@@ -42,23 +43,33 @@
       && (!selectionStatus || participation.selection_status === selectionStatus)
     ));
   }
+  function relevantAssociations(item) {
+    const eventId = byId("speaker-event-filter").value;
+    return (item.event_associations || []).filter((item) => !eventId || item.event_id === eventId);
+  }
+
+  function eventCount(item) {
+    return new Set([
+      ...(item.event_associations || []).map((association) => association.event_id),
+      ...item.participations.map((participation) => participation.event_id),
+    ]).size;
+  }
 
   function speakerCard(item) {
     const participations = relevantParticipations(item);
-    const card = document.createElement("article");
-    card.className = "entity-card speaker-profile-card";
+    const row = document.createElement("div");
+    row.className = "people-table-row";
+    row.setAttribute("role", "row");
 
-    const top = document.createElement("div");
-    top.className = "entity-card__top";
-    const organization = document.createElement("span");
-    organization.className = "eyebrow";
-    organization.textContent = item.organization_name;
-    const count = document.createElement("span");
-    count.className = "badge";
-    count.textContent = `${participations.length} event${participations.length === 1 ? "" : "s"}`;
-    top.append(organization, count);
-
-    const heading = document.createElement("h3");
+    const person = document.createElement("div");
+    person.className = "people-person-cell";
+    person.setAttribute("role", "cell");
+    const initials = document.createElement("span");
+    initials.className = "people-monogram";
+    initials.setAttribute("aria-hidden", "true");
+    initials.textContent = item.display_name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
+    const identity = document.createElement("span");
+    const heading = document.createElement("strong");
     if (item.person_id) {
       const profileLink = document.createElement("a");
       profileLink.href = `/speakers/${encodeURIComponent(item.person_id)}`;
@@ -67,49 +78,47 @@
     } else {
       heading.textContent = item.display_name;
     }
-    const identity = document.createElement("p");
-    identity.className = "muted";
-    identity.textContent = [item.job_title, item.company].filter(Boolean).join(" · ") || item.email;
+    const detail = document.createElement("small");
+    detail.textContent = [item.job_title, item.company].filter(Boolean).join(" · ") || "Profile details not added";
+    identity.append(heading, detail);
+    person.append(initials, identity);
 
-    const participationList = document.createElement("ul");
-    participationList.className = "speaker-participations";
-    participationList.setAttribute("aria-label", `Event participation for ${item.display_name}`);
-    for (const participation of participations) {
-      const row = document.createElement("li");
-      const eventLink = document.createElement("a");
-      eventLink.href = participationLink(participation);
-      eventLink.textContent = participation.event_name;
-      const details = document.createElement("span");
-      details.textContent = `${participation.selection_status} · ${participation.proposal_title}`;
-      row.append(eventLink, details);
-      participationList.append(row);
+    const cell = (text, className = "") => {
+      const node = document.createElement("span");
+      node.className = className;
+      node.setAttribute("role", "cell");
+      node.textContent = text || "—";
+      return node;
+    };
+    const roles = document.createElement("span");
+    roles.className = "people-role-list";
+    roles.setAttribute("role", "cell");
+    for (const role of item.organization_roles || ["Speaker"]) {
+      const chip = document.createElement("span");
+      chip.className = `people-role people-role--${role.toLowerCase()}`;
+      chip.textContent = role;
+      roles.append(chip);
     }
-
-    const primary = participations[0];
-    if (item.user_id && primary) {
-      const image = document.createElement("img");
-      image.className = "speaker-profile-card__headshot";
-      image.alt = "";
-      image.loading = "lazy";
-      image.src = `/api/v1/admin/events/${encodeURIComponent(primary.event_id)}/speakers/${encodeURIComponent(primary.event_speaker_id)}/headshot`;
-      image.addEventListener("error", () => image.remove());
-      card.append(image);
-    }
-    card.append(top, heading, identity, participationList);
-    return card;
+    const count = eventScoped ? participations.length : eventCount(item);
+    row.append(person, cell(item.email, "people-email"), cell(item.organization_name), roles,
+      cell(`${count} event${count === 1 ? "" : "s"}`, "people-event-count"));
+    return row;
   }
 
   function renderDirectory() {
-    const query = byId("speaker-search").value.trim().toLowerCase();
+    const query = byId("speaker-search").value;
+    const searchField = byId("people-search-field").value;
+    const organizationId = byId("people-organization-filter").value;
+    const role = byId("people-role-filter").value;
     const speakers = allSpeakers.filter((speaker) => {
-      const searchable = [
-        speaker.display_name,
-        speaker.email,
-        speaker.job_title,
-        speaker.company,
-        ...speaker.participations.flatMap((item) => [item.event_name, item.proposal_title]),
-      ].join(" ").toLowerCase();
-      return (!query || searchable.includes(query)) && relevantParticipations(speaker).length > 0;
+      const eventId = byId("speaker-event-filter").value;
+      const organizationOnly = (speaker.organization_roles || []).includes("Organizer")
+        && !speaker.participations.length && !(speaker.event_associations || []).length;
+      return window.SessionBuddyPeopleSearch.matches(speaker, query, searchField)
+        && (!organizationId || speaker.organization_id === organizationId)
+        && (!role || (speaker.organization_roles || []).includes(role))
+        && (relevantParticipations(speaker).length > 0
+        || relevantAssociations(speaker).length > 0 || (!eventId && organizationOnly));
     });
 
     const list = byId("speaker-list");
@@ -120,27 +129,45 @@
       const empty = document.createElement("p");
       empty.className = "empty";
       empty.textContent = allSpeakers.length
-        ? "No speaker profiles match these filters."
-        : "No speaker profiles yet. Invite someone to an event or publish a Call for Proposals.";
+        ? "No people match this search. Try another term or clear a filter."
+        : "No people yet. People appear here when they join an organization or event.";
       list.append(empty);
     }
     byId("speaker-count").textContent = String(speakers.length);
+    byId("speaker-count").setAttribute("aria-label", `${speakers.length} of ${allSpeakers.length} people shown`);
     byId("status").classList.remove("error");
-    byId("status").textContent = `${speakers.length} of ${allSpeakers.length} speaker profile${allSpeakers.length === 1 ? "" : "s"} shown.`;
+    byId("status").textContent = "";
   }
 
   function uniquePeople(items) {
     const people = new Map();
     for (const item of items) {
-      const identity = `${item.organization_id}:${item.person_id || item.user_id || item.email.toLowerCase()}`;
+      const identity = `${item.organization_id}:${item.user_id || item.email?.toLowerCase() || item.person_id}`;
       const existing = people.get(identity);
       if (!existing) {
-        people.set(identity, { ...item, participations: [...item.participations] });
+        people.set(identity, {
+          ...item,
+          organization_roles: [...new Set(item.organization_roles || [])],
+          event_associations: [...(item.event_associations || [])],
+          participations: [...(item.participations || [])],
+        });
         continue;
       }
+      existing.organization_roles = [...new Set([
+        ...(existing.organization_roles || []),
+        ...(item.organization_roles || []),
+      ])];
+      const knownAssociations = new Set((existing.event_associations || []).map((association) => (
+        `${association.event_id}:${association.role}`
+      )));
+      existing.event_associations.push(
+        ...(item.event_associations || []).filter((association) => (
+          !knownAssociations.has(`${association.event_id}:${association.role}`)
+        )),
+      );
       const known = new Set(existing.participations.map((part) => part.event_speaker_id));
       existing.participations.push(
-        ...item.participations.filter((part) => !known.has(part.event_speaker_id)),
+        ...(item.participations || []).filter((part) => !known.has(part.event_speaker_id)),
       );
     }
     return [...people.values()];
@@ -161,6 +188,17 @@
     if (allEvents.some((event) => event.event_id === current)) filter.value = current;
   }
 
+  function populateOrganizationFilter(organizations) {
+    const filter = byId("people-organization-filter");
+    for (const organization of organizations) {
+      const option = document.createElement("option");
+      option.value = organization.id;
+      option.textContent = organization.name;
+      filter.append(option);
+    }
+    byId("organization-filter-field").hidden = organizations.length < 2;
+  }
+
   function targetAsPerson(target, organization, event) {
     return {
       ...target,
@@ -177,17 +215,21 @@
     };
   }
 
-  async function loadEventScopedDirectory(organizations) {
-    let event;
+  async function loadEventScopedDirectory(organizationsPromise) {
+    let event, organizations, targetsResponse;
     try {
-      event = await api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}`);
+      [organizations, event, targetsResponse] = await Promise.all([
+        organizationsPromise,
+        api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}`),
+        api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speaker-targets`),
+      ]);
     } catch (error) {
       if (error.status === 404) throw new Error("This event is not available to your account.");
       throw error;
     }
     const organization = organizations.find((item) => item.id === event.organization_id);
     if (!organization) throw new Error("This event is not available to your account.");
-    const targets = (await api(`/api/v1/admin/events/${encodeURIComponent(event.id)}/speaker-targets`)).data;
+    const targets = targetsResponse.data;
     allEvents = [{
       event_id: event.id,
       event_name: event.name,
@@ -201,7 +243,7 @@
   async function loadOrganizationDirectory(organizations) {
     const directories = await Promise.all(organizations.map(async (organization) => ({
       organization,
-      speakers: (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/speakers`)).data,
+      speakers: (await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/people`)).data,
     })));
     const people = directories.flatMap(({ organization, speakers }) => speakers.map((speaker) => ({
       ...speaker,
@@ -212,7 +254,7 @@
     allSpeakers = uniquePeople(people);
     const eventMap = new Map();
     for (const person of allSpeakers) {
-      for (const participation of person.participations) {
+      for (const participation of person.event_associations || person.participations) {
         if (!eventMap.has(participation.event_id)) {
           eventMap.set(participation.event_id, {
             ...participation,
@@ -336,11 +378,13 @@
       showProfile(profile);
       return;
     }
-    const organizations = (await api("/api/v1/admin/organizations")).data;
+    const organizationsPromise = api("/api/v1/admin/organizations").then((response) => response.data);
     let activeEvent = null;
     if (eventScoped) {
-      activeEvent = await loadEventScopedDirectory(organizations);
+      activeEvent = await loadEventScopedDirectory(organizationsPromise);
     } else {
+      const organizations = await organizationsPromise;
+      populateOrganizationFilter(organizations);
       await loadOrganizationDirectory(organizations);
     }
     populateEventFilter();
@@ -348,12 +392,17 @@
     if (eventScoped && activeEvent) {
       byId("page-title").textContent = "Speakers";
       byId("page-summary").textContent = `Speaker participation in ${activeEvent.name}.`;
-      byId("invite-speaker").textContent = "Invite speakers";
-      byId("invite-speaker").href = `/admin/events/${encodeURIComponent(activeEvent.id)}/access`;
+      inviteEventId = activeEvent.id;
+      byId("invite-speaker").hidden = false;
       byId("event-filter-field").hidden = true;
+      byId("status-filter-field").hidden = false;
+      byId("organization-filter-field").hidden = true;
+      byId("role-filter-field").hidden = true;
+      byId("directory-title").textContent = "Speaker results";
       document.title = "Speakers · SessionBuddy";
     } else {
       byId("page-title").textContent = "People";
+      byId("page-summary").textContent = "Find people across the organizations you manage.";
       document.title = "People · SessionBuddy";
     }
     if (selectedSpeakerId) {
@@ -369,13 +418,33 @@
   }
 
   byId("speaker-filters").addEventListener("input", () => {
-    const eventId = byId("speaker-event-filter").value;
-    if (!eventScoped) {
-      byId("invite-speaker").href = eventId
-        ? `/admin/events/${encodeURIComponent(eventId)}/access`
-        : "/admin/events";
-    }
     renderDirectory();
+  });
+
+  const inviteDialog = byId("invite-speaker-dialog");
+  byId("invite-speaker").addEventListener("click", () => inviteDialog.showModal());
+  byId("close-speaker-invite").addEventListener("click", () => inviteDialog.close());
+  byId("cancel-speaker-invite").addEventListener("click", () => inviteDialog.close());
+  byId("invite-speaker-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!inviteEventId || !form.reportValidity()) return;
+    const button = form.querySelector('button[type="submit"]');
+    const values = Object.fromEntries(new FormData(form));
+    button.disabled = true;
+    try {
+      await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/invitations`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf },
+        body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) })
+      });
+      form.reset();
+      inviteDialog.close();
+      byId("status").textContent = "Speaker invitation created and emailed.";
+    } catch (error) {
+      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").focus();
+    } finally { button.disabled = false; }
   });
 
   byId("speaker-form").addEventListener("submit", async (event) => {

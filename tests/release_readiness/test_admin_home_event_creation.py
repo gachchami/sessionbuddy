@@ -10,7 +10,7 @@ def test_home_links_to_the_canonical_full_event_form() -> None:
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
     assert 'id="new-event" class="button" href="/admin/events#event-form"' in page
-    assert 'create.href = "/admin/events#event-form"' in script
+    assert 'href="/admin/events"' in page
     assert 'id="event-dialog"' not in page
     assert 'id="event-form"' not in page
     assert "openEventDialog" not in script

@@ -3475,6 +3475,13 @@
             "title": "Name",
             "type": "string"
           },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/RoundProposalView"
+            },
+            "title": "Proposals",
+            "type": "array"
+          },
           "status": {
             "enum": [
               "draft",
@@ -4579,6 +4586,17 @@
             ],
             "title": "Accent Color"
           },
+          "cfp_status": {
+            "default": "not_started",
+            "enum": [
+              "not_started",
+              "draft",
+              "published",
+              "closed"
+            ],
+            "title": "Cfp Status",
+            "type": "string"
+          },
           "cover_image_url": {
             "anyOf": [
               {
@@ -5474,6 +5492,16 @@
       },
       "InvitationView": {
         "properties": {
+          "company": {
+            "default": "",
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -5484,6 +5512,11 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "job_title": {
+            "default": "",
+            "title": "Job Title",
             "type": "string"
           },
           "role": {
@@ -5777,6 +5810,99 @@
         "title": "OnboardingSummary",
         "type": "object"
       },
+      "OrganizationActivityList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationActivityView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "OrganizationActivityList",
+        "type": "object"
+      },
+      "OrganizationActivityView": {
+        "properties": {
+          "activity_id": {
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_name": {
+            "title": "Actor Name",
+            "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "occurred_at_ms": {
+            "title": "Occurred At Ms",
+            "type": "integer"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "read",
+              "update",
+              "delete"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "subject_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name"
+          }
+        },
+        "required": [
+          "activity_id",
+          "actor_name",
+          "operation",
+          "resource_type",
+          "resource_id",
+          "occurred_at_ms"
+        ],
+        "title": "OrganizationActivityView",
+        "type": "object"
+      },
       "OrganizationList": {
         "properties": {
           "data": {
@@ -5839,6 +5965,93 @@
         "title": "OrganizationMetricsView",
         "type": "object"
       },
+      "OrganizationOwnershipTransferCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "OrganizationOwnershipTransferCreate",
+        "type": "object"
+      },
+      "OrganizationOwnershipTransferView": {
+        "properties": {
+          "new_owner_user_id": {
+            "title": "New Owner User Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "previous_owner_permission": {
+            "const": "manage",
+            "default": "manage",
+            "title": "Previous Owner Permission",
+            "type": "string"
+          },
+          "previous_owner_user_id": {
+            "title": "Previous Owner User Id",
+            "type": "string"
+          },
+          "transfer_id": {
+            "title": "Transfer Id",
+            "type": "string"
+          },
+          "transferred_at_ms": {
+            "title": "Transferred At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transfer_id",
+          "organization_id",
+          "previous_owner_user_id",
+          "new_owner_user_id",
+          "transferred_at_ms"
+        ],
+        "title": "OrganizationOwnershipTransferView",
+        "type": "object"
+      },
+      "OrganizationPersonEventAssociation": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "Reviewer",
+              "Speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_name",
+          "role",
+          "status"
+        ],
+        "title": "OrganizationPersonEventAssociation",
+        "type": "object"
+      },
       "OrganizationSpeaker": {
         "properties": {
           "biography": {
@@ -5857,6 +6070,13 @@
             "title": "Email",
             "type": "string"
           },
+          "event_associations": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationPersonEventAssociation"
+            },
+            "title": "Event Associations",
+            "type": "array"
+          },
           "job_title": {
             "title": "Job Title",
             "type": "string"
@@ -5871,6 +6091,18 @@
           "location": {
             "title": "Location",
             "type": "string"
+          },
+          "organization_roles": {
+            "items": {
+              "enum": [
+                "Organizer",
+                "Reviewer",
+                "Speaker"
+              ],
+              "type": "string"
+            },
+            "title": "Organization Roles",
+            "type": "array"
           },
           "participations": {
             "items": {
@@ -7389,6 +7621,25 @@
         "title": "RoundEvaluatorChange",
         "type": "object"
       },
+      "RoundProposalView": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "proposal_title"
+        ],
+        "title": "RoundProposalView",
+        "type": "object"
+      },
       "RoundSubmissionAdd": {
         "additionalProperties": false,
         "properties": {
@@ -8367,6 +8618,13 @@
             "title": "Email",
             "type": "string"
           },
+          "event_associations": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationPersonEventAssociation"
+            },
+            "title": "Event Associations",
+            "type": "array"
+          },
           "job_title": {
             "title": "Job Title",
             "type": "string"
@@ -8381,6 +8639,18 @@
           "location": {
             "title": "Location",
             "type": "string"
+          },
+          "organization_roles": {
+            "items": {
+              "enum": [
+                "Organizer",
+                "Reviewer",
+                "Speaker"
+              ],
+              "type": "string"
+            },
+            "title": "Organization Roles",
+            "type": "array"
           },
           "participations": {
             "items": {
@@ -14348,6 +14618,48 @@
         ]
       }
     },
+    "/api/v1/admin/organizations/{organization_id}/activities": {
+      "get": {
+        "operationId": "list_organization_activity_api_v1_admin_organizations__organization_id__activities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationActivityList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Organization Activity",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/organizations/{organization_id}/event-assets/{kind}": {
       "post": {
         "operationId": "upload_organization_event_asset_api_v1_admin_organizations__organization_id__event_assets__kind__post",
@@ -14682,9 +14994,61 @@
         ]
       }
     },
-    "/api/v1/admin/organizations/{organization_id}/speakers": {
+    "/api/v1/admin/organizations/{organization_id}/ownership-transfers": {
+      "post": {
+        "operationId": "transfer_organization_ownership_api_v1_admin_organizations__organization_id__ownership_transfers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationOwnershipTransferCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationOwnershipTransferView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transfer Organization Ownership",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations/{organization_id}/people": {
       "get": {
-        "operationId": "list_organization_speakers_api_v1_admin_organizations__organization_id__speakers_get",
+        "operationId": "list_organization_speakers_api_v1_admin_organizations__organization_id__people_get",
         "parameters": [
           {
             "in": "path",
@@ -14720,7 +15084,7 @@
         },
         "summary": "List Organization Speakers",
         "tags": [
-          "speaker-onboarding"
+          "administration"
         ]
       }
     },

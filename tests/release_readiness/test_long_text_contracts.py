@@ -45,7 +45,6 @@ class TextareaParser(HTMLParser):
 
 
 STATIC_LONG_TEXT_LIMITS = {
-    ("access_admin.html", "reason"): 1000,
     ("account.html", "description"): 1000,
     ("admin_programs.html", "description_html"): 10000,
     ("admin_programs.html", "success_message"): 2000,

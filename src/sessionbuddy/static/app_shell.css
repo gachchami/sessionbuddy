@@ -268,6 +268,51 @@
 .sb-topbar__brand-space { width: 7.75rem; flex: 0 0 auto; }
 .sb-sidebar__mobile-global { display: none; }
 
+.sb-event-nav {
+  position: fixed;
+  z-index: 89;
+  top: 4.5rem;
+  right: 0;
+  left: 0;
+  min-height: 3.45rem;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: .2rem;
+  padding: .42rem clamp(1.25rem, 3vw, 3rem);
+  flex-wrap: wrap;
+  align-content: center;
+  overflow: hidden;
+  border-bottom: 1px solid #e5e7ee;
+  background: rgba(249,250,252,.97);
+}
+.sb-event-nav a {
+  position: relative;
+  min-height: 2.55rem;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .5rem;
+  padding: .55rem .72rem;
+  border-radius: .55rem;
+  color: #566174;
+  font-size: .82rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sb-event-nav a:hover { background: #f0eef9; color: #4233a3; }
+.sb-event-nav a[aria-current="page"] { background: #ebe7fb; color: #4e39bf; }
+.sb-event-nav .sb-nav-icon { width: 1rem; height: 1rem; }
+
+@media (max-width: 60rem) {
+  .sb-event-nav { min-height: 6.35rem; justify-content: flex-start; padding-block: .38rem; }
+  .sb-event-nav a { min-height: 2.35rem; padding: .42rem .58rem; font-size: .76rem; }
+  .app-body.sb-shell-authenticated.sb-shell-event > main.shell { padding-top: 12.35rem; }
+  .app-body.sb-shell-authenticated.sb-shell-event { scroll-padding-top: 12rem; }
+  .app-body.sb-shell-authenticated.sb-shell-event :where(button, a, input, select, textarea, summary) { scroll-margin-top: 12rem; }
+}
+
 .sb-shell-global .sb-sidebar { display: none; }
 .sb-shell-global .sb-topbar { left: 0; min-height: 4.5rem; padding: 0 clamp(1.25rem, 3vw, 3rem); border-color: #e9e5f2; background: rgba(255,255,255,.96); }
 .sb-shell-global .sb-topbar .sb-global-brand { font-size: 1rem; font-weight: 800; }
@@ -280,6 +325,9 @@
   width: min(90rem, 100%);
   margin-inline: auto;
 }
+.app-body.sb-shell-authenticated.sb-shell-event > main.shell { padding-top: 9.5rem; }
+.app-body.sb-shell-authenticated.sb-shell-event { scroll-padding-top: 9rem; }
+.app-body.sb-shell-authenticated.sb-shell-event :where(button, a, input, select, textarea, summary) { scroll-margin-top: 9rem; }
 .app-body.sb-shell-authenticated.sb-shell-global > #root {
   width: min(90rem, 100%);
   margin-inline: auto;
@@ -335,6 +383,7 @@
   .sb-nav-backdrop { position: fixed; inset: 0; z-index: 95; border: 0; background: rgba(8, 16, 30, .48); backdrop-filter: blur(2px); }
   .sb-navigation-open .sb-nav-backdrop { display: block; }
   .app-body.sb-shell-authenticated > main.shell { margin-left: 0; padding-top: 5.5rem; }
+  .app-body.sb-shell-authenticated.sb-shell-event > main.shell { padding-top: 12.1rem; }
   .app-body.sb-shell-authenticated > #root { margin-left: 0; }
 }
 @media (max-width: 34rem) {

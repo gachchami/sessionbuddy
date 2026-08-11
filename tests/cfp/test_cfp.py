@@ -256,7 +256,8 @@ def test_cfp_builder_uses_configurable_formats_for_display_rules() -> None:
     assert 'conditionWarning.setAttribute("role", "alert")' in script
     assert 'renderConditionAnswer();' in script
     assert 'state.fields[index].choices = choices.value' in script
-    assert 'control.name = "condition_value"' in script
+    assert 'choiceConditionValue.name = "condition_value"' in script
+    assert 'choiceConditionValue.disabled = true' in script
     assert 'const option = new Option(candidate.label, candidate.label)' in script
     assert 'option.dataset.sourceKey = candidate.key' in script
     assert 'sourceControl?.selectedOptions[0]?.dataset.sourceKey' in script
@@ -818,7 +819,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         events_js = await client.get("/admin/events/assets/events.js")
         admin_home = await client.get("/admin")
         event_overview = await client.get("/admin/events/22222222-2222-4222-8222-222222222222")
-        speaker_directory = await client.get("/admin/speakers")
+        speaker_directory = await client.get("/admin/people")
         account = await client.get("/account")
         app_shell_js = await client.get("/app-shell/assets/app-shell.js")
         css = await client.get("/product/assets/product.css")
@@ -842,7 +843,8 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         app_shell_js.status_code,
     } == {200}
     assert "Email me a sign-in link" in sign_in.text
-    assert "People and invitations" in access.text
+    assert "Evaluation team" in access.text
+    assert "Reviewers" in access.text
     assert "All events" in events.text
     assert "Edit organization name" not in events.text
     assert "Organization settings" in account.text

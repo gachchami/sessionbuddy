@@ -7,22 +7,31 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert "`sb-sidebar__group sb-sidebar__primary${organizerWorkspace" in javascript
-    assert '"sb-sidebar__group sb-sidebar__event"' in javascript
+    assert '"sb-event-nav"' in javascript
     assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
-    assert "sidebar.append(eventNav(currentEventId" in javascript
-    assert javascript.index("sidebar.append(primaryGroup);") < javascript.index(
-        "sidebar.append(eventNav(currentEventId"
-    )
+    assert "sidebar.append(eventNav(currentEventId" not in javascript
+    assert "horizontalEventNav" in javascript
     assert (
         'document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace)'
         in javascript
     )
-    assert "let globalNav = null" in javascript
-    assert 'if (organizationWorkspace) {' in javascript
-    assert 'Boolean(currentEventId) || section === "events"' in javascript
+    assert 'const globalNav = make("nav", undefined, "sb-global-nav")' in javascript
+    assert 'if (organizationNavigation) {' in javascript
+    assert 'navLink("People", "/admin/people"' in javascript
+    assert 'navLink("Events", "/admin/events"' not in javascript
     assert "if (!organizerWorkspace || currentEventId) sidebar.append(brand);" in javascript
     assert 'topbar.classList.add("sb-topbar--event")' in javascript
-    assert 'make("span", undefined, "sb-topbar__brand-space")' in javascript
+    assert '["Overview", prefix, "overview"' in javascript
+
+
+def test_event_navigation_is_centered_on_desktop_and_left_aligned_when_wrapped() -> None:
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    event_nav_rule = stylesheet.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
+    assert "justify-content: center;" in event_nav_rule
+    compact_rule = stylesheet.split("@media (max-width: 60rem)", 1)[1]
+    compact_event_nav = compact_rule.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
+    assert "justify-content: flex-start;" in compact_event_nav
 
 
 def test_global_pages_use_the_approved_horizontal_navigation() -> None:
@@ -80,7 +89,7 @@ def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
         in javascript
     )
     assert (
-        "const topbarOnlyWorkspace = singleSpeakerWorkspace || !hasSidebarNavigation"
+        "const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace || !hasSidebarNavigation"
         in javascript
     )
     assert "} else if (!hasSidebarNavigation) {" in javascript
@@ -105,7 +114,7 @@ def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert 'const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker")' in javascript
-    assert 'shell.replaceChildren(topbar);' in javascript
+    assert 'shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));' in javascript
     assert 'speakerBrand = link("", "/speaker")' in javascript
     assert 'document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace)' in javascript
     assert ".sb-shell-single .sb-topbar {" in stylesheet
@@ -119,6 +128,18 @@ def test_account_navigation_exposes_one_active_role_and_role_switching() -> None
     assert '"/api/v1/session/active-role"' in javascript
     assert "localStorage" not in javascript
     assert '` · ${roleLabel(active.role)}`' in javascript
+
+
+def test_account_settings_uses_the_global_shell_without_polluting_primary_navigation() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    assert 'const globalOrganizerWorkspace = organizerWorkspace || section === "account"' in javascript
+    assert 'if (globalOrganizerWorkspace) {' in javascript
+    assert 'globalNav.append(navLink("Account settings", "/account", "account", true))' not in javascript
+    assert 'globalNav.append(navLink("Speaker portal", "/speaker", "mic"' not in javascript
+    assert 'globalNav.append(navLink("My reviews", "/reviews", "review"' not in javascript
+    assert 'topbar.append(topbarBrand, globalNav, accountMenu(session, roles));' in javascript
     assert 'make("p", "Switch role", "sb-role-switcher__label")' in javascript
     assert 'make("p", "Account", "sb-account__menu-title")' in javascript
     assert 'switcher.setAttribute("role", "group")' in javascript
@@ -140,8 +161,9 @@ def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert 'mark.src = "/landing/assets/sessionbuddy-favicon.svg"' in javascript
-    assert 'nav.append(navLink("People", "/admin/speakers"' in javascript
-    assert 'globalNav.append(navLink("People", "/admin/speakers"' in javascript
+    assert 'nav.append(navLink("People", "/admin/people"' in javascript
+    assert 'globalNav.append(navLink("People", "/admin/people"' in javascript
+    assert 'navLink("Events", "/admin/events", "calendar"' not in javascript
 
 
 def test_single_speaker_shell_has_no_redundant_page_heading() -> None:
@@ -231,7 +253,7 @@ def test_exact_event_only_organizers_land_in_their_event_workspace() -> None:
     assert "function organizerDestination(session)" in shell
     assert "session.event_access || []" in shell
     assert "if (organizerWorkspace && !organizationWorkspace && !currentEventId)" in shell
-    assert 'organization?.name || "Event workspace"' in overview
+    assert 'api("/api/v1/admin/organizations")' not in overview
     assert 'if (!organization) throw new Error("This event is not available' not in overview
 
 
@@ -318,7 +340,7 @@ def test_event_navigation_matches_the_server_authority_split() -> None:
 
     # Content authority opens the event navigation.
     assert "function worksInEventDirectly(session, eventId)" in javascript
-    assert "if (worksInEventDirectly(session, currentEventId)) {" in javascript
+    assert "worksInEventDirectly(session, currentEventId) || organizationNavigation" in javascript
 
     # Access administration is a separate, narrower test.
     assert "function administersEventDirectly(session, eventId)" in javascript

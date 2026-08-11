@@ -8,6 +8,18 @@ def source(name: str) -> str:
     return (STATIC / name).read_text(encoding="utf-8")
 
 
+def test_speaker_directory_has_no_preload_fallback_action_flash() -> None:
+    html = source("speaker_directory.html")
+    javascript = source("speaker_directory.js")
+    assert 'id="invite-speaker" type="button" hidden' in html
+    assert "Choose event to invite" not in html
+    assert "Choose event to invite" not in javascript
+    assert 'byId("invite-speaker").hidden = false' in javascript
+    assert 'byId("role-filter-field").hidden = true' in javascript
+    assert "/invitations`" in javascript
+    assert 'role" type="hidden" value="speaker"' in html
+
+
 def test_dashboard_reconciles_within_five_seconds_and_after_reconnect() -> None:
     javascript = source("admin_onboarding.js")
     assert "const REFRESH_MS = 5000" in javascript

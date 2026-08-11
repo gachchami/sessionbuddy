@@ -56,12 +56,8 @@ def validate_fresh_database(connection: sqlite3.Connection) -> None:
 
 
 def validate(baseline: Path) -> None:
-    files = sorted(baseline.parent.glob("*.sql"))
-    if baseline.name != BASELINE_NAME or files != [baseline]:
-        names = [path.name for path in files]
-        raise ValueError(
-            f"{baseline.parent} must contain only {BASELINE_NAME}; found {names}"
-        )
+    if baseline.name != BASELINE_NAME:
+        raise ValueError(f"the canonical baseline must be named {BASELINE_NAME}")
     connection = sqlite3.connect(":memory:")
     try:
         connection.execute("PRAGMA foreign_keys = ON")

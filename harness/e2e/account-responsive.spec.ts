@@ -5,21 +5,24 @@ import { resolve } from "node:path";
 const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
 const accountHtml = readFileSync(resolve(staticRoot, "account.html"), "utf8");
 const accountJavaScript = readFileSync(resolve(staticRoot, "account.js"), "utf8");
+const organizationHtml = readFileSync(resolve(staticRoot, "organization_admin.html"), "utf8");
+const organizationJavaScript = readFileSync(resolve(staticRoot, "organization_admin.js"), "utf8");
 const apiClientJavaScript = readFileSync(resolve(staticRoot, "api_client.js"), "utf8");
 const appShellCss = readFileSync(resolve(staticRoot, "app_shell.css"), "utf8");
 const appShellJavaScript = readFileSync(resolve(staticRoot, "app_shell.js"), "utf8");
 const productCss = readFileSync(resolve(staticRoot, "product.css"), "utf8");
 
 async function serveAccountPage(page: import("@playwright/test").Page) {
-  await page.route(/^https?:\/\/[^/]+\/account(?:\?.*)?$/, (route) => route.fulfill({
+  await page.route(/^https?:\/\/[^/]+\/(?:account|admin\/organization)(?:\?.*)?$/, (route) => route.fulfill({
     contentType: "text/html",
-    body: accountHtml,
+    body: new URL(route.request().url()).pathname === "/admin/organization" ? organizationHtml : accountHtml,
   }));
   await page.route("**/product/assets/product.css*", (route) => route.fulfill({ contentType: "text/css", body: productCss }));
   await page.route("**/app-shell/assets/app-shell.css*", (route) => route.fulfill({ contentType: "text/css", body: appShellCss }));
   await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({ contentType: "text/javascript", body: apiClientJavaScript }));
   await page.route("**/app-shell/assets/app-shell.js*", (route) => route.fulfill({ contentType: "text/javascript", body: appShellJavaScript }));
   await page.route("**/account/assets/account.js*", (route) => route.fulfill({ contentType: "text/javascript", body: accountJavaScript }));
+  await page.route("**/admin/organization/assets/organization.js*", (route) => route.fulfill({ contentType: "text/javascript", body: organizationJavaScript }));
 }
 
 test.describe("account profile responsive design", () => {
@@ -90,11 +93,12 @@ test.describe("account profile responsive design", () => {
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await expect(page.locator("#workspace-navigation")).toHaveCount(1);
-    await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "SessionBuddy" })).toBeVisible();
+    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Speaker portal" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "My reviews" })).toHaveCount(0);
     await expect(page.getByText("Your account is up to date.")).toHaveCount(0);
     await expect(page.getByText("Nothing changes until you save your profile.")).toBeHidden();
-    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Workspace navigation" })).toBeHidden();
     await expect(page.getByRole("radio", { name: /Organizer/ })).toBeChecked();
     await expect(page.getByRole("button", { name: "Save default role" })).toBeDisabled();
 
@@ -195,8 +199,15 @@ test.describe("account profile responsive design", () => {
     await page.goto("/account?onboarding=1&next=%2Fadmin");
 
     await expect(page.locator("#workspace-navigation")).toHaveCount(1);
-    await expect(page.getByRole("link", { name: "SessionBuddy" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" })).toBeVisible();
+    const workspaceNavigation = page.getByRole("navigation", { name: "Workspace navigation" });
+    if ((page.viewportSize()?.width || 0) <= 760) {
+      await expect(workspaceNavigation).toBeHidden();
+    } else {
+      await expect(workspaceNavigation).toBeVisible();
+    }
+    await expect(page.getByRole("link", { name: "Speaker portal" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "My reviews" })).toHaveCount(0);
     await expect(page.getByLabel("First name")).toHaveValue("Devang");
     await expect(page.getByLabel("Last name")).toHaveValue("Hanushali");
     await expect(page.locator("#status")).toContainText(
@@ -318,7 +329,7 @@ test.describe("account profile responsive design", () => {
     });
   });
 
-  test("organization owner can manage exact access and recover event ownership", async ({ page }) => {
+  test("organization owner manages the owner and admin grid on its dedicated page", async ({ page }) => {
     await serveAccountPage(page);
     const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const session = {
@@ -361,20 +372,6 @@ test.describe("account profile responsive design", () => {
       { user_id: "manager-user", email: "manager@example.test", permission: "manage", status: "active" },
     ];
     const mutations: { method: string; path: string; body: Record<string, unknown> | null }[] = [];
-    const recoveryEvents = [{
-      event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      name: "Agent Platforms in Production",
-      status: "active",
-      current_owner_user_id: "departed-owner",
-      current_owner_email: "departed@example.test",
-    }, {
-      event_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      name: "Historic AI Engineering Summit",
-      status: "archived",
-      current_owner_user_id: "historic-owner",
-      current_owner_email: "historic@example.test",
-    }];
-    let recoveryRequests = 0;
     let transferBody: Record<string, unknown> | null = null;
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({
       contentType: "application/json",
@@ -413,104 +410,70 @@ test.describe("account profile responsive design", () => {
       grants = grants.filter((grant) => grant.user_id !== "manager-user");
       return route.fulfill({ status: 204, body: "" });
     });
-    await page.route(`**/api/v1/admin/organizations/${organizationId}/ownership-recovery/events**`, (route) => {
-      recoveryRequests += 1;
-      const cursor = new URL(route.request().url()).searchParams.get("cursor");
-      return route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify(cursor === "second-page"
-          ? { data: [recoveryEvents[1]], next_cursor: null }
-          : { data: [recoveryEvents[0]], next_cursor: "second-page" }),
-      });
-    });
-    await page.route(`**/api/v1/admin/events/${recoveryEvents[0].event_id}/ownership-transfers`, (route) => {
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/ownership-transfers`, (route) => {
       transferBody = route.request().postDataJSON() as Record<string, unknown>;
-      recoveryEvents[0] = {
-        ...recoveryEvents[0],
-        current_owner_user_id: "new-owner",
-        current_owner_email: String(transferBody.email),
-      };
       return route.fulfill({
         status: 201,
         contentType: "application/json",
         body: JSON.stringify({
           transfer_id: "transfer-id",
-          event_id: recoveryEvents[0].event_id,
-          previous_owner_user_id: "departed-owner",
-          new_owner_user_id: "new-owner",
+          organization_id: organizationId,
+          previous_owner_user_id: session.user_id,
+          new_owner_user_id: "manager-user",
           previous_owner_permission: "manage",
           transferred_at_ms: 1,
         }),
       });
     });
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/activities`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [{
+        activity_id: "A101",
+        actor_id: "U789",
+        actor_name: "Organization Owner",
+        operation: "create",
+        resource_type: "resource_access_grant",
+        resource_id: "X456",
+        event_id: null,
+        occurred_at_ms: Date.UTC(2026, 7, 16, 10, 0),
+      }] }),
+    }));
 
-    await page.goto("/account");
+    await page.goto("/admin/organization");
 
-    await expect(page.getByRole("heading", { name: "Organization access" })).toBeVisible();
-    await expect(page.getByText("They do not grant, revoke, or change access to any event.")).toBeVisible();
+    await expect(page).toHaveTitle("Organization settings · SessionBuddy");
+    await expect(page.getByRole("heading", { name: "Organization settings", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Profile" })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Roles and Access" })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Organizers" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Organization activity" })).toBeVisible();
+    await expect(page.getByText("Admin access added", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Organization Owner · Aug 16, 2026/)).toBeVisible();
     const ownerRow = page.locator("li", { hasText: "owner@example.test" });
     await expect(ownerRow).toContainText("Owner");
     await expect(ownerRow.locator("select")).toHaveCount(0);
+    await expect(page.locator("li", { hasText: "manager@example.test" })).toContainText("Admin");
 
     await page.getByLabel("Account email").fill("new@example.test");
-    await page.getByLabel("Organization permission to grant").selectOption("view");
-    await page.getByRole("button", { name: "Grant organization access" }).click();
+    await page.getByRole("button", { name: "Add admin" }).click();
     await expect(page.getByText("new@example.test", { exact: true })).toBeVisible();
     expect(mutations[0]).toMatchObject({
       method: "POST",
-      body: { email: "new@example.test", permission: "view" },
+      body: { email: "new@example.test", permission: "manage" },
     });
 
-    const managerRow = page.locator("li", { hasText: "manager@example.test" });
-    await managerRow.getByLabel("Organization permission for manager@example.test").selectOption("edit");
-    await managerRow.getByRole("button", { name: "Save access" }).click();
-    expect(mutations[1]).toMatchObject({ method: "PATCH", body: { permission: "edit" } });
-
-    await page.getByRole("button", { name: "Revoke organization access for manager@example.test" }).click();
-    expect(mutations.filter((mutation) => mutation.method === "DELETE")).toHaveLength(0);
-    await page.getByRole("button", { name: "Confirm revoke organization access for manager@example.test" }).click();
-    await expect(page.getByText("Organization access revoked for manager@example.test. Event access was not changed.")).toBeVisible();
-    expect(mutations.filter((mutation) => mutation.method === "DELETE")).toHaveLength(1);
-
-    await expect(page.getByRole("heading", { name: "Event ownership recovery" })).toBeVisible();
-    await expect(page.getByText(/does not grant you access to the event or its content/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       await page.evaluate(() => window.innerWidth),
     );
-    const recoveryRow = page.locator("li", { hasText: "Agent Platforms in Production" });
-    await expect(recoveryRow).toContainText("active · Current owner: departed@example.test");
-    await expect(recoveryRow).toContainText(`Event ${recoveryEvents[0].event_id} · Owner account departed-owner`);
-    await expect(recoveryRow.getByRole("link")).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Load more recovery events" }).click();
-    await expect(page.getByText("Historic AI Engineering Summit", { exact: true })).toBeVisible();
-    await recoveryRow.getByLabel("New owner email for Agent Platforms in Production").fill("new-owner@example.test");
-    await recoveryRow.getByLabel("Ownership transfer reason for Agent Platforms in Production").fill("The event owner left the team.");
-    await recoveryRow.getByLabel("Keep departed@example.test as Can manage after transfer").check();
-    await recoveryRow.getByRole("button", { name: "Review ownership transfer" }).click();
-
+    await page.getByLabel("New owner’s admin email").fill("manager@example.test");
+    await page.getByRole("button", { name: "Review ownership transfer" }).click();
     expect(transferBody).toBeNull();
-    const confirmation = recoveryRow.getByRole("alert");
-    await expect(confirmation).toBeFocused();
-    await expect(confirmation).toContainText("new-owner@example.test will own Agent Platforms in Production");
-    await recoveryRow.getByRole("button", { name: "Confirm transfer" }).click();
-
+    await page.getByRole("button", { name: "Confirm transfer to manager@example.test" }).click();
     await expect(page.getByRole("status").first()).toHaveText(
-      "Event ownership transferred to new-owner@example.test. Event content and other access were not changed.",
+      "Organization ownership transferred to manager@example.test. You remain an Admin.",
     );
-    expect(transferBody).toEqual({
-      email: "new-owner@example.test",
-      reason: "The event owner left the team.",
-      grant_previous_owner_manage: true,
-    });
-    await expect(page.getByText(/Current owner: new-owner@example.test/)).toBeVisible();
-
-    const requestsBeforeManageReload = recoveryRequests;
-    session.organization_access[0].permissions = ["manage"];
-    await page.reload();
-    await expect(page.getByRole("heading", { name: "Organization access" })).toBeVisible();
+    expect(transferBody).toEqual({ email: "manager@example.test" });
     await expect(page.getByRole("heading", { name: "Event ownership recovery" })).toHaveCount(0);
-    expect(recoveryRequests).toBe(requestsBeforeManageReload);
   });
 
   test("organization edit permission does not reveal access administration", async ({ page }) => {

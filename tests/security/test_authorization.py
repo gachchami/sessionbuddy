@@ -144,11 +144,19 @@ def test_organization_edit_grant_is_not_organization_management_authority() -> N
     assert manager.allowed
 
 
-def test_organization_ownership_does_not_cascade_to_event() -> None:
+def test_organization_ownership_cascades_to_every_event() -> None:
     subject = organizer(ORG)
     assert authorize(subject, Permission.ORGANIZATION_MANAGE, ResourceContext(ORG)).allowed
     event = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
-    assert (event.allowed, event.reason) == (False, "resource_access_required")
+    assert event.allowed
+
+
+def test_organization_manage_grant_cascades_but_edit_does_not() -> None:
+    context = ResourceContext(ORG, EVENT)
+    manager = organizer(grants={ORG: frozenset({ResourceGrant.MANAGE})})
+    editor = organizer(grants={ORG: frozenset({ResourceGrant.EDIT})})
+    assert authorize(manager, Permission.EVENT_MANAGE, context).allowed
+    assert authorize(editor, Permission.EVENT_MANAGE, context).reason == "resource_access_required"
 
 
 def test_speaker_permissions_require_active_assignment_and_ownership() -> None:

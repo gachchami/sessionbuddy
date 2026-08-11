@@ -59,6 +59,46 @@ evaluation_router = APIRouter()
 
 AI_TRIAGE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 EVALUATION_PAGE_LIMIT = 50
+
+
+def _acceptance_speaker_tasks(speaker: dict[str, object]) -> list[tuple[str, str, str, int]]:
+    """Return only actionable work still missing when a proposal is accepted."""
+    tasks: list[tuple[str, str, str, int]] = []
+    if not str(speaker.get("biography") or "").strip() and not bool(
+        speaker.get("has_profile_task")
+    ):
+        tasks.append(
+            (
+                "profile",
+                "Add your speaker biography",
+                "Your registration is complete; add the missing biography for the program.",
+                7,
+            )
+        )
+    if (
+        not bool(speaker.get("has_account_headshot"))
+        and not bool(speaker.get("has_event_headshot"))
+        and not bool(speaker.get("has_headshot_task"))
+    ):
+        tasks.append(
+            (
+                "headshot",
+                "Upload your headshot",
+                "Add a program-ready profile photo.",
+                10,
+            )
+        )
+    tasks.append(
+        (
+            "slides",
+            "Upload your presentation",
+            "Share the final slide deck with the event team.",
+            21,
+        )
+    )
+    return tasks
+
+
 def _evaluation_cursor(
     request: Request,
     value: str | None,
@@ -519,7 +559,29 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
         .bind(organization_id, event_id)
         .all()
     )
-    return EvaluationRoundList(data=[EvaluationRoundView.model_validate(row) for row in rows])
+    round_ids = [str(row["id"]) for row in rows]
+    proposals_by_round: dict[str, list[dict[str, str]]] = {round_id: [] for round_id in round_ids}
+    if round_ids:
+        placeholders = ",".join(f"?{index + 1}" for index in range(len(round_ids)))
+        proposal_rows = result_rows(
+            await db.prepare(
+                f"""SELECT DISTINCT a.round_id,s.id AS submission_id,s.proposal_title
+                     FROM evaluation_assignments a
+                     JOIN submissions s ON s.id=a.submission_id
+                     WHERE a.round_id IN ({placeholders}) AND a.status!='revoked'
+                     ORDER BY a.round_id,s.proposal_title,s.id"""  # noqa: S608
+            )
+            .bind(*round_ids)
+            .all()
+        )
+        for proposal in proposal_rows:
+            proposals_by_round[str(proposal["round_id"])].append(
+                {"submission_id": str(proposal["submission_id"]), "proposal_title": str(proposal["proposal_title"])}
+            )
+    return EvaluationRoundList(data=[
+        EvaluationRoundView.model_validate({**row, "proposals": proposals_by_round[str(row["id"])]})
+        for row in rows
+    ])
 
 
 @evaluation_router.get(
@@ -2225,11 +2287,41 @@ async def record_submission_decision(
     speaker = row_mapping(
         await db.prepare(
             """SELECT s.speaker_email,s.submitter_user_id,s.proposal_title,e.name AS event_name,
-                      ss.event_speaker_id
+                      ss.event_speaker_id,p.biography,
+                      EXISTS(
+                        SELECT 1 FROM user_headshots uh
+                         WHERE uh.user_id=p.user_id
+                      ) AS has_account_headshot,
+                      EXISTS(
+                        SELECT 1 FROM speaker_assets sa
+                        JOIN asset_versions av ON av.asset_id=sa.id
+                          AND av.is_current=1 AND av.scan_state='clean'
+                         WHERE sa.organization_id=s.organization_id
+                           AND sa.event_id=s.event_id
+                           AND sa.event_speaker_id=ss.event_speaker_id
+                           AND sa.kind='headshot'
+                      ) AS has_event_headshot,
+                      EXISTS(
+                        SELECT 1 FROM speaker_tasks st
+                         WHERE st.organization_id=s.organization_id
+                           AND st.event_id=s.event_id
+                           AND st.event_speaker_id=ss.event_speaker_id
+                           AND st.task_type='profile' AND st.state='open'
+                      ) AS has_profile_task,
+                      EXISTS(
+                        SELECT 1 FROM speaker_tasks st
+                         WHERE st.organization_id=s.organization_id
+                           AND st.event_id=s.event_id
+                           AND st.event_speaker_id=ss.event_speaker_id
+                           AND st.task_type='headshot' AND st.state='open'
+                      ) AS has_headshot_task
                FROM submissions s
                JOIN events e ON e.organization_id=s.organization_id AND e.id=s.event_id
                LEFT JOIN submission_speakers ss ON ss.organization_id=s.organization_id
                  AND ss.event_id=s.event_id AND ss.submission_id=s.id AND ss.role='primary'
+               LEFT JOIN event_speakers es ON es.organization_id=s.organization_id
+                 AND es.event_id=s.event_id AND es.id=ss.event_speaker_id
+               LEFT JOIN people p ON p.organization_id=s.organization_id AND p.id=es.person_id
                WHERE s.id=?1 AND s.organization_id=?2 AND s.event_id=?3 LIMIT 1"""
         )
         .bind(submission_id, context["organization_id"], context["event_id"])
@@ -2328,27 +2420,11 @@ async def record_submission_decision(
                     speaker["event_speaker_id"],
                 )
             )
-            tasks = (
-                (
-                    "profile",
-                    "Complete your speaker profile",
-                    "Add your biography and public details.",
-                    7,
-                ),
-                ("headshot", "Upload your headshot", "Add a program-ready profile photo.", 10),
-                (
-                    "slides",
-                    "Upload your presentation",
-                    "Share the final slide deck with the event team.",
-                    21,
-                ),
-                (
-                    "supporting_document",
-                    "Upload supporting material",
-                    "Share any final handout or supporting PDF.",
-                    21,
-                ),
-            )
+            # Registration has already established the speaker's identity. Acceptance
+            # therefore creates work only for information or assets that are actually
+            # missing; a generic supporting-document request has no actionable meaning
+            # and must be created later as an explicit, contextual request if needed.
+            tasks = _acceptance_speaker_tasks(speaker)
             for task_type, title, help_text, days in tasks:
                 batch.add_statement(
                     db.prepare(

@@ -1,174 +1,90 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
-const accessHtml = readFileSync(resolve(staticRoot, "access_admin.html"), "utf8");
-const accessJavaScript = readFileSync(resolve(staticRoot, "access_admin.js"), "utf8");
-const apiClientJavaScript = readFileSync(resolve(staticRoot, "api_client.js"), "utf8");
-const appShellCss = readFileSync(resolve(staticRoot, "app_shell.css"), "utf8");
-const appShellJavaScript = readFileSync(resolve(staticRoot, "app_shell.js"), "utf8");
-const productCss = readFileSync(resolve(staticRoot, "product.css"), "utf8");
+const source = (name: string) => readFileSync(resolve(staticRoot, name), "utf8");
+const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
-async function serveAccessPage(page: import("@playwright/test").Page, eventId: string) {
-  await page.route(new RegExp(`/admin/events/${eventId}/access(?:\\?.*)?$`), (route) => route.fulfill({
-    contentType: "text/html",
-    body: accessHtml,
+async function serve(page: import("@playwright/test").Page) {
+  let postedRole = "";
+  await page.route(new RegExp(`/admin/events/${eventId}/reviewers(?:\\?.*)?$`), (route) => route.fulfill({
+    contentType: "text/html", body: source("access_admin.html"),
   }));
-  await page.route("**/product/assets/product.css*", (route) => route.fulfill({ contentType: "text/css", body: productCss }));
-  await page.route("**/app-shell/assets/app-shell.css*", (route) => route.fulfill({ contentType: "text/css", body: appShellCss }));
-  await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({ contentType: "text/javascript", body: apiClientJavaScript }));
-  await page.route("**/app-shell/assets/app-shell.js*", (route) => route.fulfill({ contentType: "text/javascript", body: appShellJavaScript }));
-  await page.route("**/admin/access/assets/access.js*", (route) => route.fulfill({ contentType: "text/javascript", body: accessJavaScript }));
-}
-
-function sessionFor(
-  eventId: string,
-  organizationId: string,
-  organizationPermission: "owner" | "manage",
-) {
-  return {
-    authenticated: true,
-    user_id: "current-user",
-    email: "current@example.test",
-    display_name: "Current User",
-    profile_complete: true,
-    csrf_token: "browser-test-csrf",
-    account_roles: ["organizer"],
-    active_role: "organizer",
-    default_role: "organizer",
-    organization_access: [{
-      organization_id: organizationId,
-      organization_name: "Example Events",
-      permissions: [organizationPermission],
-    }],
-    event_access: [{
-      organization_id: organizationId,
-      event_id: eventId,
-      event_name: "Example Conference",
-      permissions: ["manage"],
-      assignments: [],
-    }],
-  };
-}
-
-async function mockAccessData(
-  page: import("@playwright/test").Page,
-  eventId: string,
-  organizationId: string,
-  session: ReturnType<typeof sessionFor>,
-  ownerUserId = "previous-owner",
-) {
-  let owner = { user_id: ownerUserId, email: "previous-owner@example.test", permission: "owner", status: "active" };
-  let transferBody: Record<string, unknown> | null = null;
-  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify(session),
-  }));
+  for (const [pattern, file, type] of [
+    ["**/product/assets/product.css*", "product.css", "text/css"],
+    ["**/app-shell/assets/app-shell.css*", "app_shell.css", "text/css"],
+    ["**/app-shell/assets/api-client.js*", "api_client.js", "text/javascript"],
+    ["**/app-shell/assets/app-shell.js*", "app_shell.js", "text/javascript"],
+    ["**/admin/access/assets/access.js*", "access_admin.js", "text/javascript"],
+  ] as const) {
+    await page.route(pattern, (route) => route.fulfill({ contentType: type, body: source(file) }));
+  }
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: {
+    authenticated: true, user_id: "owner", email: "owner@example.test", display_name: "Owner",
+    profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
+    default_role: "organizer", organization_access: [{ organization_id: "org", organization_name: "Org", permissions: ["owner"] }],
+    event_access: [],
+  } }));
   await page.route(new RegExp(`/api/v1/admin/events/${eventId}$`), (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ id: eventId, organization_id: organizationId, name: "Example Conference" }),
+    json: { id: eventId, organization_id: "org", name: "Example Conference" },
   }));
-  await page.route(`**/api/v1/admin/events/${eventId}/invitations`, (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [] }),
-  }));
-  await page.route(`**/api/v1/admin/events/${eventId}/members`, (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [] }),
-  }));
-  await page.route(`**/api/v1/admin/events/${eventId}/access-grants`, (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [owner] }),
-  }));
-  await page.route(`**/api/v1/admin/events/${eventId}/ownership-transfers`, (route) => {
-    transferBody = route.request().postDataJSON() as Record<string, unknown>;
-    owner = {
-      user_id: "new-owner",
-      email: String(transferBody.email),
-      permission: "owner",
-      status: "active",
-    };
-    return route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({
-        transfer_id: "transfer-id",
-        event_id: eventId,
-        previous_owner_user_id: ownerUserId,
-        new_owner_user_id: "new-owner",
-        previous_owner_permission: transferBody.grant_previous_owner_manage ? "manage" : null,
-        transferred_at_ms: 1,
-      }),
-    });
+  await page.route(`**/api/v1/admin/events/${eventId}/evaluators?email=*`, (route) => {
+    const email = new URL(route.request().url()).searchParams.get("email");
+    return route.fulfill({ json: { data: email === "reviewer@example.test"
+      ? [{ user_id: "reviewer", display_name: "Existing Reviewer" }] : [] } });
   });
-  return { transferBody: () => transferBody };
+  await page.route(`**/api/v1/admin/events/${eventId}/invitations`, async (route) => {
+    if (route.request().method() === "POST") {
+      postedRole = String(route.request().postDataJSON().role);
+      return route.fulfill({ status: 201, json: { id: "new", event_id: eventId, email: "new@example.test", role: postedRole, status: "pending" } });
+    }
+    return route.fulfill({ json: { data: [
+      { id: "accepted", event_id: eventId, email: "reviewer@example.test", display_name: "Rina Reviewer", job_title: "Engineering Director", company: "Review Labs", role: "evaluator", status: "accepted" },
+      { id: "pending", event_id: eventId, email: "pending@example.test", display_name: "Pat Pending", role: "evaluator", status: "pending" },
+      { id: "speaker", event_id: eventId, email: "speaker@example.test", role: "speaker", status: "pending" },
+      { id: "legacy", event_id: eventId, email: "legacy@example.test", role: "event_admin", status: "accepted" },
+    ] } });
+  });
+  return { postedRole: () => postedRole };
 }
 
-test.describe("event ownership recovery", () => {
+test.describe("event invitation RBAC", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
-  test("organization owner reviews scope before explicitly confirming transfer", async ({ page }) => {
-    const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-    const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const session = sessionFor(eventId, organizationId, "owner");
-    await serveAccessPage(page, eventId);
-    const transfer = await mockAccessData(page, eventId, organizationId, session);
-
-    await page.goto(`/admin/events/${eventId}/access`);
-
-    await expect(page.getByRole("heading", { name: "Event ownership" })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Event ownership" })
-      .getByText("previous-owner@example.test", { exact: true })).toBeVisible();
-    await expect(page.getByText(/does not delete, move, archive, or rewrite sessions/)).toBeVisible();
-    await page.getByLabel("New owner’s account email").fill("new-owner@example.test");
-    await page.getByLabel("Reason").fill("The former owner left the events team.");
-    await page.getByLabel("Keep the previous owner as Can manage after transfer").check();
-    await page.getByRole("button", { name: "Review ownership transfer" }).click();
-
-    expect(transfer.transferBody()).toBeNull();
-    const confirmation = page.getByRole("alert");
-    await expect(confirmation).toBeFocused();
-    await expect(confirmation).toContainText("new-owner@example.test will own this event");
-    await expect(confirmation).toContainText("previous-owner@example.test will keep Can manage access");
-
-    await page.getByRole("button", { name: "Confirm transfer" }).click();
-
-    await expect(page.getByRole("status").first()).toHaveText(
-      "Event ownership transferred to new-owner@example.test. Event content was not changed.",
-    );
-    expect(transfer.transferBody()).toEqual({
-      email: "new-owner@example.test",
-      reason: "The former owner left the events team.",
-      grant_previous_owner_manage: true,
-    });
+  test("shows participant eligibility without legacy event administration", async ({ page }) => {
+    await serve(page);
+    await page.goto(`/admin/events/${eventId}/reviewers`);
+    await expect(page.getByRole("heading", { name: "Reviewers", exact: true })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Event reviewers" })).toBeVisible();
+    await expect(page.getByText("Rina Reviewer", { exact: true })).toBeVisible();
+    await expect(page.getByText("Engineering Director · Review Labs", { exact: true })).toBeVisible();
+    await expect(page.getByText("Eligible", { exact: true })).toBeVisible();
+    await expect(page.getByText("Invitation pending", { exact: true })).toBeVisible();
+    await expect(page.getByText("reviewer@example.test")).toBeVisible();
+    await expect(page.getByText("pending@example.test")).toBeVisible();
+    await expect(page.getByText("speaker@example.test")).toHaveCount(0);
+    await expect(page.getByText("legacy@example.test")).toHaveCount(0);
+    await expect(page.getByText("Resource access")).toHaveCount(0);
+    await expect(page.getByText("Event ownership")).toHaveCount(0);
+    expect((await new AxeBuilder({ page }).include("#main").analyze()).violations).toEqual([]);
   });
 
-  test("organization manage grant alone cannot see ownership recovery", async ({ page }) => {
-    const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-    const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const session = sessionFor(eventId, organizationId, "manage");
-    await serveAccessPage(page, eventId);
-    await mockAccessData(page, eventId, organizationId, session);
-
-    await page.goto(`/admin/events/${eventId}/access`);
-
-    await expect(page.getByRole("heading", { name: "Event ownership" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Review ownership transfer" })).toBeHidden();
-  });
-
-  test("exact event owner can see transfer even without organization ownership", async ({ page }) => {
-    const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-    const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-    const session = sessionFor(eventId, organizationId, "manage");
-    await serveAccessPage(page, eventId);
-    await mockAccessData(page, eventId, organizationId, session, session.user_id);
-
-    await page.goto(`/admin/events/${eventId}/access`);
-
-    await expect(page.getByRole("heading", { name: "Event ownership" })).toBeVisible();
-    await expect(page.getByRole("region", { name: "Event ownership" })
-      .getByText("previous-owner@example.test", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Review ownership transfer" })).toBeVisible();
+  test("searches exact-event reviewers and offers an email invitation when absent", async ({ page }) => {
+    const state = await serve(page);
+    await page.setViewportSize({ width: 320, height: 740 });
+    await page.goto(`/admin/events/${eventId}/reviewers`);
+    await page.getByLabel("Find an eligible reviewer by email").fill("reviewer@example.test");
+    await page.getByRole("button", { name: "Search" }).click();
+    await expect(page.getByText(/Existing Reviewer is eligible/)).toBeVisible();
+    await page.getByLabel("Find an eligible reviewer by email").fill("new@example.test");
+    await page.getByRole("button", { name: "Search" }).click();
+    await page.getByRole("button", { name: "Invite new@example.test" }).click();
+    await expect(page.getByRole("dialog", { name: "Invite reviewer" })).toBeVisible();
+    await expect(page.getByRole("dialog").getByLabel("Email address")).toHaveValue("new@example.test");
+    await page.getByRole("button", { name: "Send invitation" }).click();
+    await expect.poll(state.postedRole).toBe("evaluator");
+    await expect(page.locator("html")).toHaveJSProperty("scrollWidth", 320);
   });
 });

@@ -62,6 +62,17 @@ def _resource_authority(
     if resource_id in actor.owned_resource_ids:
         return True
     grants = actor.resource_grants.get(resource_id, frozenset())
+    # Organizer authority is organization-scoped. Owners and managers of an
+    # organization administer every event in that organization; events do not
+    # carry a second, parallel administrator role or generic access grant.
+    if context.event_id is not None:
+        if context.organization_id in actor.owned_resource_ids:
+            return True
+        organization_grants = actor.resource_grants.get(
+            context.organization_id, frozenset()
+        )
+        if ResourceGrant.MANAGE in organization_grants:
+            return True
     if permission in {
         Permission.RESOURCE_ACCESS_MANAGE,
         Permission.ORGANIZATION_MANAGE,

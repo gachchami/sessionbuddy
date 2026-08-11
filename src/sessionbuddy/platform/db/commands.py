@@ -42,6 +42,21 @@ class AuditEvent:
     id: str = field(default_factory=new_id)
 
 
+@dataclass(frozen=True, slots=True)
+class ActivityRecord:
+    """A successful CRUD fact recorded in the domain transaction."""
+
+    actor_type: Literal["user", "system", "anonymous"]
+    operation: Literal["create", "read", "update", "delete"]
+    resource_type: str
+    resource_id: str
+    occurred_at_ms: int
+    actor_id: str | None = None
+    organization_id: str | None = None
+    event_id: str | None = None
+    id: str = field(default_factory=lambda: _public_reference("activity", new_id()))
+
+
 class CommandBatch:
     """Creates, then executes, one ordered D1 transaction consistency unit."""
 
@@ -97,6 +112,67 @@ class CommandBatch:
                 event.occurred_at_ms,
             )
         )
+        if event.result == "succeeded" and event.target_id:
+            self.activity(
+                ActivityRecord(
+                    actor_type=event.actor_type,
+                    actor_id=event.actor_user_id,
+                    operation=_crud_operation(event.action),
+                    resource_type=event.target_type,
+                    resource_id=event.target_id,
+                    organization_id=event.organization_id,
+                    event_id=event.event_id,
+                    occurred_at_ms=event.occurred_at_ms,
+                )
+            )
+
+    def activity(self, activity: ActivityRecord) -> None:
+        """Append the activity and UNPROCESSED marker to this atomic batch."""
+        resource_type = _activity_entity_type(activity.resource_type)
+        resource_public_id = _public_reference(resource_type, activity.resource_id)
+        actor_public_id = (
+            _public_reference("user", activity.actor_id) if activity.actor_id else None
+        )
+        if activity.actor_id and actor_public_id:
+            self.__statements.append(
+                self.__db.prepare(
+                    """INSERT OR IGNORE INTO activity_entities
+                       (public_id,entity_type,internal_id) VALUES(?1,'user',?2)"""
+                ).bind(actor_public_id, activity.actor_id)
+            )
+        self.__statements.append(
+            self.__db.prepare(
+                """INSERT OR IGNORE INTO activity_entities
+                   (public_id,entity_type,internal_id) VALUES(?1,?2,?3)"""
+            ).bind(resource_public_id, resource_type, activity.resource_id)
+        )
+        self.__statements.extend(
+            [
+                self.__db.prepare(
+                    """INSERT INTO activities
+                       (id,actor_type,actor_id,operation,resource_type,resource_id,
+                        occurred_at_ms)
+                       VALUES(?1,?2,?3,?4,?5,?6,?7)"""
+                ).bind(
+                    activity.id,
+                    activity.actor_type,
+                    actor_public_id,
+                    activity.operation,
+                    resource_type,
+                    resource_public_id,
+                    activity.occurred_at_ms,
+                ),
+                self.__db.prepare(
+                    """INSERT INTO activity_status
+                       (activity_id,status,updated_at_ms)
+                       VALUES(?1,'UNPROCESSED',?2)"""
+                ).bind(activity.id, activity.occurred_at_ms),
+                self.__db.prepare(
+                    """INSERT INTO activity_routing
+                       (activity_id,organization_id,event_id) VALUES(?1,?2,?3)"""
+                ).bind(activity.id, activity.organization_id, activity.event_id),
+            ]
+        )
 
     def complete_idempotency(
         self,
@@ -141,3 +217,35 @@ def _safe_metadata(metadata: dict[str, object]) -> dict[str, object]:
 
 def _canonical_json(value: dict[str, object]) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def _crud_operation(action: str) -> Literal["create", "read", "update", "delete"]:
+    final = action.rsplit(".", 1)[-1]
+    if final in {
+        "create", "created", "bootstrap", "invite", "authorize", "upload",
+    }:
+        return "create"
+    if final in {"remove", "revoke", "delete", "unschedule", "withdraw"}:
+        return "delete"
+    return "update"
+
+
+def _activity_entity_type(value: str) -> str:
+    return {"submission": "proposal", "identity_invitation": "invitation"}.get(
+        value, value
+    )
+
+
+def _public_reference(entity_type: str, internal_id: str) -> str:
+    prefix = {
+        "activity": "A",
+        "user": "U",
+        "proposal": "P",
+        "event": "E",
+        "invitation": "I",
+        "review": "R",
+        "evaluation": "R",
+        "session": "S",
+    }.get(entity_type, "X")
+    number = int.from_bytes(sha256(internal_id.encode()).digest()[:8], "big")
+    return f"{prefix}{number}"

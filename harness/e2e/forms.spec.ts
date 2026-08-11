@@ -77,7 +77,7 @@ test.describe("form validation and workflow wiring", () => {
       }
       await route.fulfill({ contentType: "application/json", body: JSON.stringify(profile) });
     });
-    await page.goto("/account");
+    await page.goto("/admin/organization");
     const organizationForm = page.locator("#organization-settings form").first();
     await organizationForm.getByLabel("Organization name").fill("");
     await organizationForm.getByRole("button", { name: "Save organization" }).click();
@@ -86,6 +86,7 @@ test.describe("form validation and workflow wiring", () => {
     await organizationForm.getByRole("button", { name: "Save organization" }).click();
     await expect.poll(() => organizationWrites).toBe(1);
 
+    await page.goto("/account");
     await page.getByLabel(/Time zone/).fill("Mars/Phobos");
     await page.getByRole("button", { name: "Save profile" }).click();
     expect(profileWrites).toBe(0);
@@ -296,6 +297,18 @@ test.describe("form validation and workflow wiring", () => {
           routed_track: "Platform",
           routed_review_queue: "Technical",
           answers: { audience_level: "Intermediate" },
+        }, {
+          id: "22222222-2222-4222-8222-222222222222",
+          speaker_name: "Decided speaker",
+          speaker_email: "decided@example.com",
+          proposal_title: "An accepted proposal",
+          proposal_abstract: "Decision completed",
+          status: "accepted",
+          submitted_at_ms: 1_900_000_000_000,
+          routed_category: null,
+          routed_track: null,
+          routed_review_queue: null,
+          answers: {},
         }],
       }),
     }));
@@ -316,7 +329,15 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/submissions`);
-    await page.getByRole("button", { name: "Read proposal" }).click();
+    const expandProposal = page.locator(`button[aria-controls="proposal-detail-${assignmentId}"]`);
+    await expandProposal.click();
+    await expect(expandProposal).toHaveAttribute("aria-expanded", "true");
+    const inlineDetail = page.getByRole("region", { name: "A proposal details" });
+    await expect(inlineDetail).toContainText("speaker@example.com");
+    await expect(inlineDetail).toContainText("Platform");
+    await expect(inlineDetail).toContainText("Audience level");
+    await expect(inlineDetail).toContainText("Intermediate");
+    await inlineDetail.getByRole("button", { name: "Open proposal actions" }).click();
     const detail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(detail).toContainText("speaker@example.com");
     await expect(detail).toContainText("Platform");
@@ -324,9 +345,12 @@ test.describe("form validation and workflow wiring", () => {
     await expect(detail).toContainText("Intermediate");
     await detail.getByRole("button", { name: "Close" }).click();
     await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Select eligible" }).click();
+    await expect(page.getByText("Already decided", { exact: true })).toBeVisible();
+    await expect(page.locator('input[name="submission_ids"]')).toHaveCount(1);
+    await page.getByRole("button", { name: "Select submitted" }).click();
     await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
-    await page.getByText("Open a new evaluation round", { exact: true }).click();
+    await page.getByRole("button", { name: "Configure evaluation round" }).click();
+    await expect(page.locator("#round-disclosure")).toHaveAttribute("open", "");
     await expect(page.getByText("Accounts are never searchable or listed.")).toBeVisible();
     await page.getByLabel("Reviewer email").fill("reviewer@example.com");
     await page.getByRole("button", { name: "Add reviewer" }).click();

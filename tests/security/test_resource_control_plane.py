@@ -159,6 +159,61 @@ async def test_organization_grant_lifecycle_is_exact_revocable_and_owner_immutab
     ).fetchone()[0] == 5
 
 
+async def test_only_exact_owner_can_transfer_organization_to_an_existing_admin(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as owner:
+        owner_csrf, organization_id = await _bootstrap_admin(owner, connection)
+        previous_owner = connection.execute(
+            "SELECT owner_user_id FROM owned_resources WHERE id=?", (organization_id,)
+        ).fetchone()[0]
+        _insert_user(connection, user_id="next-owner", email="next-owner@example.com")
+        granted = await owner.post(
+            f"/api/v1/admin/organizations/{organization_id}/access-grants",
+            headers=_mutation(owner_csrf),
+            json={"email": "next-owner@example.com", "permission": "manage"},
+        )
+        assert granted.status_code == 201, granted.text
+
+        async with _client(environment) as admin:
+            admin_session = await _sign_in(admin, connection, "next-owner@example.com")
+            denied = await admin.post(
+                f"/api/v1/admin/organizations/{organization_id}/ownership-transfers",
+                headers=_mutation(str(admin_session["csrf_token"])),
+                json={"email": "next-owner@example.com"},
+            )
+            assert denied.status_code == 404
+
+        transferred = await owner.post(
+            f"/api/v1/admin/organizations/{organization_id}/ownership-transfers",
+            headers=_mutation(owner_csrf),
+            json={"email": "next-owner@example.com"},
+        )
+        assert transferred.status_code == 201, transferred.text
+        assert transferred.json()["previous_owner_user_id"] == previous_owner
+        assert transferred.json()["new_owner_user_id"] == "next-owner"
+
+    assert connection.execute(
+        "SELECT owner_user_id FROM owned_resources WHERE id=?", (organization_id,)
+    ).fetchone()[0] == "next-owner"
+    assert connection.execute(
+        """SELECT permission FROM resource_access_grants
+           WHERE resource_id=? AND user_id=? AND status='active'""",
+        (organization_id, previous_owner),
+    ).fetchone()[0] == "manage"
+    assert connection.execute(
+        """SELECT COUNT(*) FROM resource_access_grants
+           WHERE resource_id=? AND user_id='next-owner' AND status='active'""",
+        (organization_id,),
+    ).fetchone()[0] == 0
+    assert connection.execute(
+        """SELECT COUNT(*) FROM audit_events WHERE organization_id=?
+           AND action='resource_ownership.transfer' AND target_type='organization'""",
+        (organization_id,),
+    ).fetchone()[0] == 1
+
+
 async def test_event_ownership_recovery_transfer_and_optional_previous_owner_access(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
@@ -199,11 +254,10 @@ async def test_event_ownership_recovery_transfer_and_optional_previous_owner_acc
             )
             assert archived.status_code == 200, archived.text
 
-            # Organization ownership is a recovery control plane, not an
-            # implicit event-content grant.
+            # Organization ownership cascades to every event in the organization.
             assert (
                 await organization_owner.get(f"/api/v1/admin/events/{event_id}")
-            ).status_code == 404
+            ).status_code == 200
 
             recovered = await organization_owner.post(
                 f"/api/v1/admin/events/{event_id}/ownership-transfers",
@@ -215,13 +269,13 @@ async def test_event_ownership_recovery_transfer_and_optional_previous_owner_acc
             assert recovered.json()["new_owner_user_id"] == "recovery-target"
             assert recovered.json()["previous_owner_permission"] is None
 
-            # The former owner still has organization management, but has no
-            # residual authority over this exact event after reauthentication.
+            # The former event owner retains organization-level management,
+            # which intentionally cascades to every event after reauthentication.
             assert (await event_maker.get("/api/v1/auth/session")).status_code == 401
             await _sign_in(event_maker, connection, "event-maker@example.com")
             assert (
                 await event_maker.get(f"/api/v1/admin/events/{event_id}")
-            ).status_code == 404
+            ).status_code == 200
 
         assert connection.execute(
             "SELECT owner_user_id FROM owned_resources WHERE id=?", (event_id,)
@@ -418,10 +472,10 @@ async def test_only_exact_organization_owner_can_discover_minimal_recovery_event
             assert manager_denied.status_code == 404
 
         for event_id in created_event_ids:
-            # Recovery discovery does not broaden the ordinary event read path.
+            # Organization ownership cascades to the ordinary event read path.
             assert (
                 await organization_owner.get(f"/api/v1/admin/events/{event_id}")
-            ).status_code == 404
+            ).status_code == 200
 
         first_page = await organization_owner.get(
             f"/api/v1/admin/organizations/{organization_id}/"

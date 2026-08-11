@@ -148,8 +148,10 @@ async def test_communication_history_rejects_tampered_and_cross_event_cursors() 
     first = await service.statuses("event-a", limit=1)
     assert first.next_cursor is not None
 
+    replacement = "A" if first.next_cursor[0] != "A" else "B"
+    tampered_cursor = replacement + first.next_cursor[1:]
     with pytest.raises(Exception) as tampered:
-        await service.statuses("event-a", cursor=first.next_cursor[:-1] + "A", limit=1)
+        await service.statuses("event-a", cursor=tampered_cursor, limit=1)
     assert getattr(tampered.value, "status_code", None) == 400
 
     with pytest.raises(Exception) as cross_event:

@@ -99,6 +99,13 @@ class OrganizationSpeakerParticipation(BaseModel):
     proposal_title: str
 
 
+class OrganizationPersonEventAssociation(BaseModel):
+    event_id: str
+    event_name: str
+    role: Literal["Reviewer", "Speaker"]
+    status: str
+
+
 class OrganizationSpeaker(BaseModel):
     person_id: str
     user_id: str | None
@@ -110,6 +117,10 @@ class OrganizationSpeaker(BaseModel):
     location: str
     links: list[str]
     version: int
+    organization_roles: list[Literal["Organizer", "Reviewer", "Speaker"]] = Field(
+        default_factory=list
+    )
+    event_associations: list[OrganizationPersonEventAssociation] = Field(default_factory=list)
     participations: list[OrganizationSpeakerParticipation]
 
 

@@ -578,7 +578,7 @@ def test_console_gates_privileged_entry_points_by_real_permission() -> None:
 
     # People directory requires organization management; nav renders only then.
     assert "function canManageOrganization(session)" in shell
-    assert shell.count('navLink("People", "/admin/speakers"') == 2
+    assert shell.count('navLink("People", "/admin/people"') == 2
     # Event sub-nav uses exact event authority, or an API permission probe for
     # the selected event — never authority over some unrelated resource.
     assert "administersEventDirectly(session, currentEventId)" in shell
@@ -586,16 +586,14 @@ def test_console_gates_privileged_entry_points_by_real_permission() -> None:
     # Create event tracks the selected organization's exact manage permission.
     assert "state.adminOrganizationIds" in events
     assert "updateCreateAccess(event.currentTarget.value)" in events
-    # Organization management invitations are presented as exact resource
-    # permissions and offered only for this event's own organization.
-    assert "manageableOrganizationIds.has(selectedEvent.organization_id)" in access
-    assert '["owner", "manage"].includes(permission)' in access
-    assert 'event_admin: "Can manage this event"' in access
-    assert 'organization_admin: "Can manage this organization"' in access
-    # Destructive access changes require an explicit second click and surface
-    # failures.
-    assert "destructiveButton(" in access
-    assert "Select again to revoke" in access
+    # Event participation invitations never manufacture an event administrator
+    # or generic event grant; organizers are managed at organization scope.
+    assert 'invitation.role === "evaluator"' in access
+    assert "/evaluators?email=" in access
+    assert "event_admin" not in access
+    assert "organization_admin" not in access
+    assert "access-grants" not in access
+    assert "ownership-transfers" not in access
     # The single-event endpoint replaced the all-orgs scans.
     for name in (
         "event_overview.js",
@@ -741,6 +739,67 @@ async def test_event_admin_cannot_manage_org_admin_invitations(
     assert connection.execute(
         "SELECT status FROM identity_invitations WHERE id=?", (invitation_id,)
     ).fetchone()[0] == "revoked"
+
+
+async def test_accepted_reviewer_is_not_reinvited_and_can_be_revoked_safely(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        csrf, _organization_id = await _bootstrap_admin(root, connection)
+        event = await root.post(
+            f"/api/v1/admin/organizations/{_organization_id}/events",
+            headers=_mutation(csrf), json=EVENT_PAYLOAD,
+        )
+        event_id = event.json()["id"]
+        invited = await root.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=_mutation(csrf),
+            json={"email": "reviewer@example.com", "role": "evaluator"},
+        )
+        async with _client(environment) as reviewer:
+            await _accept_invitation(reviewer, connection, "reviewer@example.com")
+
+        reinvite = await root.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=_mutation(csrf),
+            json={"email": "reviewer@example.com", "role": "evaluator"},
+        )
+        assert reinvite.status_code == 409
+        stored = connection.execute(
+            "SELECT status,accepted_at_ms FROM identity_invitations WHERE id=?",
+            (invited.json()["id"],),
+        ).fetchone()
+        assert stored[0] == "accepted" and stored[1] is not None
+
+        await root.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "root@example.com", "redirect_path": "/admin"},
+        )
+        await root.post(
+            "/auth/verify", data={"token": _token(connection, "root@example.com")},
+            follow_redirects=False,
+        )
+        csrf = (await root.get("/api/v1/auth/session")).json()["csrf_token"]
+
+        revoked = await root.delete(
+            f"/api/v1/admin/events/{event_id}/invitations/{invited.json()['id']}",
+            headers={**_mutation(csrf), "content-type": "application/json"},
+        )
+        assert revoked.status_code == 204, revoked.text
+        assert connection.execute(
+            "SELECT status FROM identity_invitations WHERE id=?", (invited.json()["id"],)
+        ).fetchone()[0] == "revoked"
+        assert connection.execute(
+            """SELECT COUNT(*) FROM audit_events
+               WHERE action='evaluator.eligibility.revoke' AND event_id=?""", (event_id,)
+        ).fetchone()[0] == 1
+
+
+def test_reviewer_eligibility_revoke_fails_closed_with_active_assignments() -> None:
+    source = (PROJECT_ROOT / "src/sessionbuddy/platform/auth/access.py").read_text()
+    assert "Remove this reviewer from active evaluation assignments first" in source
+    assert "a.evaluator_user_id=?3 AND a.status!='revoked'" in source
 
 
 def test_reactivation_never_restores_revoked_roles_in_sql() -> None:
@@ -910,8 +969,7 @@ async def test_events_list_filters_event_admins_in_sql(
 
 def test_clients_respect_events_pagination() -> None:
     """No client may auto-follow every page: Events paginates interactively,
-    Home reads one overview page with bounded fan-out and honest counts, and
-    the directory resolves its single event directly."""
+    Home stays organization-level, and the directory resolves its event directly."""
     static = PROJECT_ROOT / "src" / "sessionbuddy" / "static"
     home = (static / "admin_home.js").read_text(encoding="utf-8")
     events = (static / "events_admin.js").read_text(encoding="utf-8")
@@ -930,12 +988,11 @@ def test_clients_respect_events_pagination() -> None:
     assert 'id="load-more-events"' in events_page
     assert '${events.length}${state.nextCursor ? "+" : ""}' in events
 
-    # Home: the nearest three active events, aggregate metrics endpoint, and
-    # NO per-event speaker fan-out at all.
-    assert "/events?view=active&order=upcoming&limit=3" in home
-    assert "/metrics" in home
-    assert "metrics.event_count" in home and "metrics.speaker_count" in home
-    assert "recent_speakers" in home
+    # Home: organization-level destinations only. Event operations are loaded
+    # after an organizer enters the Events workspace.
+    assert "/events?view=" not in home
+    assert "/metrics" not in home
+    assert "recent_speakers" not in home
     assert "speaker-targets" not in home
     assert "listAllEvents" not in home
 

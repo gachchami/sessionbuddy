@@ -326,6 +326,7 @@ async def test_event_branding_matrix_is_consistent_across_public_views(
     assert event_view.logo_url == expected["logo"]
     assert event_view.cover_image_url == expected["cover"]
     assert event_view.website_url == website_url
+    assert event_view.cfp_status == "not_started"
 
     slug = f"branding-{int(include_logo)}-{int(include_cover)}"
     schema_json = json.dumps(
@@ -349,6 +350,11 @@ async def test_event_branding_matrix_is_consistent_across_public_views(
             now,
         ),
     )
+    refreshed_events = await access.list_events(
+        "org-a", branding_request(database, bucket, b"")
+    )
+    refreshed_event = next(item for item in refreshed_events.data if item.id == created.id)
+    assert refreshed_event.cfp_status == "published"
     published_form = await get_form(slug, branding_request(database, bucket, b""))
     assert published_form.logo_url == expected["logo"]
     assert published_form.cover_image_url == expected["cover"]

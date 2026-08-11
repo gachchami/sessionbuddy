@@ -78,7 +78,9 @@
     return body;
   }
 
-  async function request(path, options = {}, behavior = {}) {
+  let inFlightSessionRequest = null;
+
+  async function performRequest(path, options = {}, behavior = {}) {
     const headers = new Headers(options.headers || {});
     if (!headers.has("accept")) headers.set("accept", "application/json");
     let response;
@@ -93,6 +95,18 @@
     }
     if (typeof behavior.onResponse === "function") behavior.onResponse(response);
     return parseResponse(response, behavior);
+  }
+
+  function request(path, options = {}, behavior = {}) {
+    const method = String(options.method || "GET").toUpperCase();
+    if (path === "/api/v1/auth/session" && method === "GET") {
+      if (!inFlightSessionRequest) {
+        inFlightSessionRequest = performRequest(path, options, behavior)
+          .finally(() => { inFlightSessionRequest = null; });
+      }
+      return inFlightSessionRequest;
+    }
+    return performRequest(path, options, behavior);
   }
 
   function signInPath() {

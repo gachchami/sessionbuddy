@@ -57,6 +57,13 @@ class EvaluationRoundCreate(BaseModel):
         return self
 
 
+class RoundProposalView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    submission_id: str
+    proposal_title: str
+
+
 class EvaluationRoundView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -66,6 +73,7 @@ class EvaluationRoundView(BaseModel):
     status: Literal["draft", "open", "closed"]
     assignment_count: int
     evaluator_count: int
+    proposals: list[RoundProposalView] = Field(default_factory=list)
 
 
 class EvaluationRoundList(BaseModel):

@@ -113,9 +113,9 @@
   "vars": {
     "APP_ENV": "local",
     "APP_VERSION": "development",
-    "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787,http://worker:8787,https://localhost:8443,https://perceived-dark-helena-hours.trycloudflare.com",
+    "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787,http://worker:8787,https://localhost:8443,https://peterson-apnic-associated-recognized.trycloudflare.com",
     "MALWARE_SCAN_MODE": "required",
-    "PUBLIC_BASE_URL": "https://perceived-dark-helena-hours.trycloudflare.com",
+    "PUBLIC_BASE_URL": "https://peterson-apnic-associated-recognized.trycloudflare.com",
     "MAILPIT_API_URL": "http://mailpit:8025",
     "RESEND_FROM_ADDRESS": "SessionBuddy Local <events@example.test>",
     "SCANNER_URL": "http://scanner:8080"
@@ -133,7 +133,7 @@
         {
           "binding": "DB",
           "database_name": "sessionbuddy-development-clean",
-          "database_id": "367e2a09-c440-4db1-a265-e41e26acbe3e",
+          "database_id": "fed606c1-8508-42e0-a7a1-74683ed7075e",
           "migrations_dir": "migrations_baseline"
         }
       ],

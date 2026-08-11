@@ -17,11 +17,51 @@ from sessionbuddy.evaluation.models import (
 )
 from sessionbuddy.evaluation.router import (
     EVALUATION_PAGE_LIMIT,
+    _acceptance_speaker_tasks,
     _assignment_pairs,
     _evaluation_cursor,
     _evaluation_next_cursor,
     _weighted_mean,
 )
+
+
+def test_acceptance_creates_only_missing_speaker_onboarding_tasks() -> None:
+    missing = _acceptance_speaker_tasks(
+        {
+            "biography": "",
+            "has_account_headshot": 0,
+            "has_event_headshot": 0,
+            "has_profile_task": 0,
+            "has_headshot_task": 0,
+        }
+    )
+    assert [task[0] for task in missing] == ["profile", "headshot", "slides"]
+    assert missing[0][1] == "Add your speaker biography"
+    assert all(task[0] != "supporting_document" for task in missing)
+
+    complete_registration = _acceptance_speaker_tasks(
+        {
+            "biography": "Already supplied",
+            "has_account_headshot": 1,
+            "has_event_headshot": 0,
+            "has_profile_task": 0,
+            "has_headshot_task": 0,
+        }
+    )
+    assert [task[0] for task in complete_registration] == ["slides"]
+
+
+def test_acceptance_does_not_duplicate_existing_profile_or_headshot_tasks() -> None:
+    tasks = _acceptance_speaker_tasks(
+        {
+            "biography": "",
+            "has_account_headshot": 0,
+            "has_event_headshot": 0,
+            "has_profile_task": 1,
+            "has_headshot_task": 1,
+        }
+    )
+    assert [task[0] for task in tasks] == ["slides"]
 
 
 def test_evaluation_contracts_are_strict_and_bounded() -> None:

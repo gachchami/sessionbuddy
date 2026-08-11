@@ -1,6 +1,32 @@
 {
   "schema_version": 1,
   "api_routes": {
+    "GET /api/v1/admin/organizations/{organization_id}/activities": {
+      "owner": "platform",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "organization-activity",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/ownership-transfers": {
+      "owner": "platform",
+      "slo": {
+        "p95_ms": 800,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "organization-ownership-transfer",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "GET /api/v1/co-speaker-invitations/{token}": {
       "owner": "program-management",
       "slo": {
@@ -535,13 +561,13 @@
       ],
       "runbook": "docs/debugging-runbook.md#identity"
     },
-    "GET /api/v1/admin/organizations/{organization_id}/speakers": {
-      "owner": "speaker-onboarding",
+    "GET /api/v1/admin/organizations/{organization_id}/people": {
+      "owner": "platform",
       "slo": {
         "p95_ms": 500,
         "error_rate_max": 0.001
       },
-      "benchmark": "admin-list-organization-speakers",
+      "benchmark": "admin-list-organization-people",
       "dashboards": [
         "release-health",
         "api-explorer"
@@ -2136,6 +2162,24 @@
       ],
       "runbook": "docs/debugging-runbook.md#page-regression"
     },
+    "/admin/organization": {
+      "owner": "platform",
+      "classification": "authenticated",
+      "journeys": [
+        "organization-settings"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
     "/admin/events": {
       "owner": "identity",
       "classification": "authenticated",
@@ -2177,6 +2221,24 @@
       "classification": "authenticated",
       "journeys": [
         "manage-event-access"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/reviewers": {
+      "owner": "evaluation",
+      "classification": "authenticated",
+      "journeys": [
+        "manage-event-reviewers"
       ],
       "web_vitals": {
         "lcp_p75_ms": 2500,
@@ -2280,8 +2342,8 @@
       ],
       "runbook": "docs/debugging-runbook.md#page-regression"
     },
-    "/admin/speakers": {
-      "owner": "speaker-onboarding",
+    "/admin/people": {
+      "owner": "platform",
       "classification": "authenticated",
       "journeys": [
         "browse-organization-people"
@@ -2583,6 +2645,30 @@
       "handler": "src/entry.py::Default.queue -> consume_reminder",
       "success_signal": "none (KNOWN GAP: reminder consumption acks silently; track reminder_schedules rows)",
       "alert_condition": "sessionbuddy-communications-dlq depth greater than zero",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "cron:activity-dispatch": {
+      "owner": "platform",
+      "kind": "cron",
+      "trigger": "cron * * * * * (wrangler.activity.jsonc triggers.crons)",
+      "handler": "src/activity_entry.py::Default.scheduled -> dispatch_pending_activities",
+      "success_signal": "structured log event activity_dispatch, level info",
+      "alert_condition": "activity_dispatch at level error or oldest unprocessed activity age above five minutes",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
+    "queue:activity-distribution": {
+      "owner": "platform",
+      "kind": "queue",
+      "trigger": "queue sessionbuddy-activity-development, max_retries 5, dead_letter_queue sessionbuddy-activity-development-dlq",
+      "handler": "src/activity_entry.py::Default.queue -> distribute_activity",
+      "success_signal": "activity_status.status=PROCESSED and idempotent distribution rows",
+      "alert_condition": "activity_distribution at level error or activity DLQ depth greater than zero",
       "dashboards": [
         "release-health"
       ],

@@ -3,23 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Speaker directory · SessionBuddy</title>
+  <title>People · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=59">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
-  <script src="/admin/speakers/assets/speakers.js?v=8" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
+  <script src="/admin/people/assets/search.js?v=1" defer></script>
+  <script src="/admin/people/assets/people.js?v=1" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
-  <a class="skip-link" href="#main">Skip to speakers</a>
+  <a class="skip-link" href="#main">Skip to people</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page speaker-directory-shell" tabindex="-1">
-    <div class="page-heading directory-hero">
+    <div class="page-heading directory-hero directory-hero--minimal">
       <div>
-        <h1 id="page-title">Speaker directory</h1>
-        <p id="page-summary" class="lede">One profile per person, with their participation across your events.</p>
+        <h1 id="page-title">People</h1>
+        <p id="page-summary" class="lede">Find people across the organizations you manage.</p>
       </div>
-      <a id="invite-speaker" class="button" href="/admin/events">Choose event to invite</a>
+      <button id="invite-speaker" type="button" hidden>Invite speaker</button>
     </div>
     <div data-speaker-hub-tabs></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
@@ -37,17 +38,26 @@
         <div class="account-headshot__preview"><img id="speaker-headshot-preview" alt="" hidden><span id="speaker-headshot-fallback" aria-hidden="true">SP</span></div>
         <div><h3>Headshot</h3><p class="help">Upload a JPG, PNG, or WebP for this speaker. Maximum 5 MB; it is scanned before use.</p><div class="actions"><label class="button secondary account-headshot__choose">Choose image<input name="headshot" type="file" accept="image/jpeg,image/png,image/webp" required></label><button type="submit">Save headshot</button></div><p id="speaker-headshot-status" class="status status-compact" role="status"></p></div>
       </form>
-      <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="/admin/speakers">Back to speakers</a></div>
+      <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="/admin/people">Back to people</a></div>
     </section>
-    <section id="speaker-directory-results" class="directory-section speaker-directory-results" aria-labelledby="directory-title">
-      <div class="section-heading"><h2 id="directory-title">Speaker profiles</h2><span id="speaker-count" class="badge">—</span></div>
-      <form id="speaker-filters" class="filter-bar" role="search">
-        <label>Search<input id="speaker-search" type="search" placeholder="Name, email, company, or session"></label>
-        <label id="event-filter-field">Event<select id="speaker-event-filter"><option value="">All events</option></select></label>
-        <label>Status<select id="speaker-status"><option value="">All statuses</option><option value="invited">Invited</option><option value="submitted">Submitted</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label>
+    <section id="speaker-directory-results" class="directory-section directory-section--primary speaker-directory-results" aria-labelledby="directory-title">
+      <div class="section-heading people-results-heading"><h2 id="directory-title">Directory</h2><span id="speaker-count" class="badge" aria-live="polite">—</span></div>
+      <form id="speaker-filters" class="people-toolbar" role="search">
+        <label class="people-search-field"><span>Search people</span><span class="people-search-control"><select id="people-search-field" aria-label="Search field"><option value="all">All fields</option><option value="first_name">First name</option><option value="last_name">Last name</option><option value="name">Full name</option><option value="email">Email</option><option value="company">Company</option></select><input id="speaker-search" type="search" placeholder="Search people…" autocomplete="off"></span></label>
+        <label id="organization-filter-field">Organization<select id="people-organization-filter"><option value="">All organizations</option></select></label>
+        <label id="role-filter-field">Role<select id="people-role-filter"><option value="">All roles</option><option value="Organizer">Organizer</option><option value="Reviewer">Reviewer</option><option value="Speaker">Speaker</option></select></label>
+        <label id="event-filter-field" hidden>Event<select id="speaker-event-filter"><option value="">All events</option></select></label>
+        <label id="status-filter-field" hidden>Status<select id="speaker-status"><option value="">All statuses</option><option value="invited">Invited</option><option value="submitted">Submitted</option><option value="accepted">Accepted</option><option value="rejected">Rejected</option></select></label>
       </form>
-      <div id="speaker-list" class="entity-grid"><p class="empty">Loading speaker directory…</p></div>
+      <div class="people-table-frame" role="table" aria-label="People">
+        <div class="people-table-header" role="row"><span role="columnheader">Person</span><span role="columnheader">Email</span><span role="columnheader">Organization</span><span role="columnheader">Roles</span><span role="columnheader">Events</span></div>
+        <div id="speaker-list" class="people-table-body" role="rowgroup"><p class="empty">Loading people…</p></div>
+      </div>
     </section>
+    <dialog id="invite-speaker-dialog" class="form-dialog organizer-dialog" aria-labelledby="invite-speaker-title">
+      <div class="dialog-heading"><div><h2 id="invite-speaker-title">Invite speaker</h2><p class="result">Invite someone to participate as a speaker in this event.</p></div><button id="close-speaker-invite" class="icon-button" type="button" aria-label="Close speaker invitation">×</button></div>
+      <form id="invite-speaker-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Name<input name="display_name" maxlength="200" required></label><div class="form-grid"><label>Job title <span class="optional">Optional</span><input name="job_title" maxlength="200"></label><label>Company <span class="optional">Optional</span><input name="company" maxlength="200"></label></div><input name="role" type="hidden" value="speaker"><input name="expires_in_days" type="hidden" value="14"><div class="dialog-actions"><button id="cancel-speaker-invite" class="secondary" type="button">Cancel</button><button type="submit">Send invitation</button></div></form>
+    </dialog>
   </main>
 </body>
 </html>

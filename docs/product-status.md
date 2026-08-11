@@ -13,6 +13,12 @@ development, registration-ready account profiles with private headshots and publ
 account-level roles with one active session role, browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
 
+The platform People directory is organization-authority scoped and presents each
+person once in a table across the organizations the operator may manage. Search
+has an explicit, tested field contract for name, email, and company; organization
+and role remain categorical filters, while speaker and reviewer states stay in
+their event-specific workflows.
+
 Fresh D1 databases now install from one canonical `0001_baseline.sql`. Runtime,
 test fixtures, release scripts, and baseline validation do not depend on the
 historical migration directory; rebasing intentionally requires every existing
@@ -57,16 +63,23 @@ Implemented: organization rename, event create/edit/archive, an authenticated
 application shell with a profile/sign-out menu, organization and event hubs,
 safe duplicate-as-draft confirmation with event-owned branding copies,
 clickable event overviews and speaker directories, event-scoped navigation,
-administrator/evaluator/speaker invitations, invitation revocation, membership
-listing and role revocation, and verified invitation acceptance.
+organization-wide organizer management, event-specific reviewer and speaker
+invitations, invitation revocation, and verified invitation acceptance. The
+event UI does not expose a separate event-administrator role or generic
+view/edit/manage grants; organization owners and managers administer every
+event in that organization.
 
 ## Evaluation
 
 Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
-records. Acceptance creates the accepted session and default onboarding tasks;
-rejection waives outstanding onboarding; either decision can queue a speaker
-email with organizer-controlled copy.
+records. Acceptance creates the accepted session and only the onboarding work
+that remains actionable: a biography task when the registered speaker has not
+provided one, a headshot task when no clean headshot exists, and the required
+presentation task. It does not generate a generic supporting-material task;
+additional documents must be requested later with explicit context. Rejection
+waives outstanding onboarding; either decision can queue a speaker email with
+organizer-controlled copy.
 
 ## Speaker operations
 
@@ -229,7 +242,8 @@ requires exact source-event management before private branding references are
 read or copied.
 
 The resource control plane now includes exact organization `view`, `edit`, and
-`manage` grant CRUD, immutable owner rows, audited event ownership transfer, and
+`manage` grant CRUD, authoritative owner rows, exact-owner-only audited
+organization ownership transfer to an existing organization admin, audited event ownership transfer, and
 an organization-owner-only paginated recovery inventory for colleague-owned
 events, including archived events. Transfer is explicit and non-cascading: it
 does not move, delete, archive, or rewrite event content and does not silently
@@ -261,19 +275,18 @@ removed administrative-role response field.
 
 Resource authorization now separates account personas from administrative
 authority. Organizer, Reviewer, and Speaker remain the only switchable
-personas. Organizations and events record an immutable creator and an owner;
-another organizer receives an explicit `view`, `edit`, or `manage` grant on the
-exact resource. Organization access does not automatically cascade to its
-events. The shared API policy requires both the appropriate active session
-persona and exact ownership/delegation, so an event owner using the Speaker
-persona cannot call organizer APIs.
+personas. Organizations and events record an immutable creator and an owner.
+Organizer authority is organization-scoped: an organization owner or manager
+administers every event in that organization. The shared API policy still
+requires the Organizer persona, so an organization owner using the Speaker
+persona cannot call organizer APIs. Reviewer authority remains assignment-
+scoped and speaker authority remains participation/ownership-scoped.
 
 New event creation and duplication record the authenticated user as owner and
-no longer create `event_admin` memberships. Administrative invitation
-acceptance provisions an Organizer persona plus a resource grant; speaker and
-reviewer participation remains assignment-based. The account page and role
-switcher display these concepts separately, with named resources and
-owner/manage facts outside the persona switcher. The rebased fresh-install
+do not create `event_admin` memberships. Speaker and reviewer participation
+remains assignment-based. The account page and role switcher display these
+concepts separately, with organization organizers outside the persona switcher.
+The rebased fresh-install
 baseline creates this ownership, grant, persona, and label schema directly;
 the development deployment does not carry or apply a legacy upgrade ledger.
 
@@ -321,6 +334,20 @@ Observability: `observability/manifest.json` now registers every API route,
 document route, and asynchronous handler (cron steps, queue consumers,
 workflow) with owners, budgets, and runbooks, enforced by tests; queue
 consumers' missing structured logs are recorded there as a known gap.
+
+Organization activity is backed by a minimal append-only ledger of successful
+CRUD facts. The same domain transaction writes each fact and its `UNPROCESSED`
+marker. An independently deployed activity Worker publishes pending identifiers
+through a dedicated Queue; its single distributor invokes every applicable pure
+projection builder and atomically commits all organization, event, organizer,
+reviewer, and speaker rows together with the `PROCESSED` marker. Local Compose
+runs the same Worker with a one-second development-only dispatcher loop;
+Cloudflare uses a Cron trigger plus Queue consumer. The organization settings
+page exposes only safe projected fields to exact organization owners and admins;
+credentials, content, and cross-organization activity are never returned.
+Activity, user, and proposal references use stable typed public identifiers
+(`A…`, `U…`, and `P…`); internal resource identifiers remain in the private
+resolver table used by the distributor.
 ## Event labels
 
 - Organizers can create color-coded labels for an exact event from Schedule tools.

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Organization settings · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
+  <script src="/admin/organization/assets/organization.js?v=1" defer></script>
+</head>
+<body class="app-body organizer-page organizer-page--organization">
+  <a class="skip-link" href="#main">Skip to organization settings</a>
+  <header data-auth-shell></header>
+  <main id="main" class="shell page organizer-main" tabindex="-1">
+    <div class="page-heading page-heading--compact account-context-heading"><div><p class="eyebrow">Organization administration</p><h1>Organization settings</h1><p class="lede">Manage organization details and organizers whose authority applies across every event.</p></div></div>
+    <p id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1"></p>
+    <section id="organization-settings" class="organizer-section" aria-labelledby="organization-settings-title" hidden>
+      <div class="section-heading"><div><h2 id="organization-settings-title">Organization</h2><p class="section-summary">Organization identity, ownership, and administrators.</p></div></div>
+      <div id="organization-settings-list" class="entity-grid"></div>
+    </section>
+    <section id="organization-activity" class="directory-section organizer-section" aria-labelledby="organization-activity-title" hidden>
+      <div class="section-heading"><div><h2 id="organization-activity-title">Organization activity</h2><p class="section-summary">Successful API activity across organizers, events, speakers, reviewers, and proposals.</p></div></div>
+      <ol id="organization-activity-list" class="item-list organization-activity-list" aria-live="polite"><li class="help">Loading activity…</li></ol>
+    </section>
+  </main>
+</body>
+</html>

@@ -17,7 +17,7 @@ def request_for(database: AsyncSqlite) -> Request:
         {
             "type": "http",
             "method": "GET",
-            "path": "/api/v1/admin/organizations/org/speakers",
+            "path": "/api/v1/admin/organizations/org/people",
             "headers": [],
             "env": SimpleNamespace(DB=database),
         }
@@ -115,8 +115,8 @@ async def test_organization_directory_deduplicates_people_and_nests_events(
     result = await router.list_organization_speakers("org", request_for(database))
 
     assert result.organization_id == "org"
-    assert len(result.data) == 1
-    speaker = result.data[0]
+    assert len(result.data) == 2
+    speaker = next(item for item in result.data if item.person_id == "person")
     assert speaker.person_id == "person"
     assert speaker.email == "speaker@example.test"
     assert speaker.links == ["https://example.test"]
@@ -130,6 +130,8 @@ async def test_organization_directory_deduplicates_people_and_nests_events(
         "submitted",
     ]
     assert all(item.proposal_title == "No proposal" for item in speaker.participations)
+    owner = next(item for item in result.data if item.user_id == "admin")
+    assert owner.organization_roles == ["Organizer"]
 
 
 async def test_organization_directory_http_filters_people_and_participations_to_exact_events(
@@ -174,22 +176,59 @@ async def test_organization_directory_http_filters_people_and_participations_to_
     async with AsyncClient(
         transport=ASGITransport(app=inject_environment), base_url="https://test"
     ) as client:
-        organization_only = await client.get("/api/v1/admin/organizations/org/speakers")
+        organization_only = await client.get("/api/v1/admin/organizations/org/people")
         assert organization_only.status_code == 200
-        assert organization_only.json() == {"organization_id": "org", "data": []}
+        assert [item["email"] for item in organization_only.json()["data"]] == [
+            "admin@example.test"
+        ]
 
         connection.execute(
             "UPDATE owned_resources SET owner_user_id='admin' WHERE id='event-a'"
         )
         connection.commit()
-        event_a_only = await client.get("/api/v1/admin/organizations/org/speakers")
+        event_a_only = await client.get("/api/v1/admin/organizations/org/people")
 
     assert event_a_only.status_code == 200
     payload = event_a_only.json()
-    assert [person["person_id"] for person in payload["data"]] == ["person"]
-    assert [item["event_id"] for item in payload["data"][0]["participations"]] == [
+    speaker = next(item for item in payload["data"] if item["person_id"] == "person")
+    assert [item["event_id"] for item in speaker["participations"]] == [
         "event-a"
     ]
     assert "event-b" not in event_a_only.text
     assert "private-person@example.test" not in event_a_only.text
     assert "Event B private biography" not in event_a_only.text
+
+
+async def test_people_adds_only_exact_org_invited_reviewers(
+    directory_database, allow_organization_admin
+) -> None:
+    connection, database = directory_database
+    connection.execute(
+        """INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms)
+           VALUES('reviewer','reviewer@example.test','reviewer@example.test','active',1,1),
+                 ('global','global@example.test','global@example.test','active',1,1)"""
+    )
+    connection.execute(
+        """INSERT INTO user_roles
+           (user_id,role,status,is_default,created_at_ms,updated_at_ms)
+           VALUES('global','reviewer','active',1,1,1)"""
+    )
+    connection.execute(
+        """INSERT INTO organization_memberships
+           (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES('admin-membership','org','admin','organization_admin','active',1,1)"""
+    )
+    connection.execute(
+        """INSERT INTO identity_invitations
+           (id,organization_id,event_id,normalized_email,email,role,status,
+            invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms)
+           VALUES('review-invite','org','event-a','reviewer@example.test',
+                  'reviewer@example.test','evaluator','pending','admin',999999,1,1)"""
+    )
+    connection.commit()
+
+    result = await router.list_organization_speakers("org", request_for(database))
+    by_email = {item.email: item for item in result.data}
+    assert by_email["reviewer@example.test"].organization_roles == ["Reviewer"]
+    assert by_email["reviewer@example.test"].event_associations[0].event_id == "event-a"
+    assert "global@example.test" not in by_email

@@ -1,0 +1,73 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sessionbuddy-activity",
+  "main": "src/activity_entry.py",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["python_workers"],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "triggers": {"crons": ["* * * * *"]},
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sessionbuddy-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations_baseline"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {"binding": "ACTIVITY_QUEUE", "queue": "sessionbuddy-activity"}
+    ],
+    "consumers": [
+      {
+        "queue": "sessionbuddy-activity",
+        "max_batch_size": 25,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "sessionbuddy-activity-dlq"
+      }
+    ]
+  },
+  "vars": {"APP_ENV": "local"},
+  "env": {
+    "dev": {
+      "name": "sessionbuddy-activity-development",
+      "triggers": {"crons": ["* * * * *"]},
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sessionbuddy-development-clean",
+          "database_id": "fed606c1-8508-42e0-a7a1-74683ed7075e",
+          "migrations_dir": "migrations_baseline"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {"binding": "ACTIVITY_QUEUE", "queue": "sessionbuddy-activity-development"}
+        ],
+        "consumers": [
+          {
+            "queue": "sessionbuddy-activity-development",
+            "max_batch_size": 25,
+            "max_batch_timeout": 5,
+            "max_retries": 5,
+            "dead_letter_queue": "sessionbuddy-activity-development-dlq"
+          }
+        ]
+      },
+      "limits": {"cpu_ms": 5000},
+      "vars": {"APP_ENV": "development"}
+    }
+  }
+}

@@ -13,7 +13,11 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     assert 'id="preview-cfp"' in page
     assert 'id="cfp-selection-preview"' in page
     assert "Preview form" in page
-    assert "Back to editing" in page
+    preview_toggle = (
+        'byId("preview-cfp").textContent = opening ? '
+        '"Back to editing" : "Preview form";'
+    )
+    assert preview_toggle in script
     visible_fields = (
         'const visibleFields = fields.filter((field) => '
         '!["speaker_name", "speaker_email"].includes(field.key));'

@@ -257,6 +257,44 @@ async def test_magic_link_redemption_rejects_cross_site_and_missing_origins(
             (hashlib.sha256(token.encode()).digest(),),
         ).fetchone()[0] is None
 
+        async with _client(environment, origin=None) as metadata_client:
+            metadata_confirmed = await metadata_client.post(
+                "/auth/verify",
+                data={"token": token},
+                headers={"sec-fetch-site": "same-origin"},
+                follow_redirects=False,
+            )
+        assert metadata_confirmed.status_code == 303
+        assert "set-cookie" in metadata_confirmed.headers
+
+        assert (
+            await client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "admin@example.com", "redirect_path": "/admin"},
+            )
+        ).status_code == 202
+        token = _token(connection, "admin@example.com")
+
+        async with _client(environment, origin=None) as referer_client:
+            referer_confirmed = await referer_client.post(
+                "/auth/verify",
+                data={"token": token},
+                headers={"referer": "https://test/auth/verify"},
+                follow_redirects=False,
+            )
+        assert referer_confirmed.status_code == 303
+        assert "set-cookie" in referer_confirmed.headers
+
+        # Issue a fresh challenge because the Referer-backed confirmation above
+        # consumed the original one.
+        assert (
+            await client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "admin@example.com", "redirect_path": "/admin"},
+            )
+        ).status_code == 202
+        token = _token(connection, "admin@example.com")
+
         confirmed = await client.post(
             "/auth/verify", data={"token": token}, follow_redirects=False
         )
@@ -768,6 +806,19 @@ async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
         assert created.status_code == 200
 
         connection.execute("DELETE FROM audit_events")
+        for table in (
+            "organization_activity",
+            "event_activity",
+            "organizer_activity",
+            "reviewer_activity",
+            "speaker_activity",
+            "activity_distribution_guards",
+            "activity_status",
+            "activity_routing",
+            "activities",
+            "activity_entities",
+        ):
+            connection.execute(f'DELETE FROM "{table}"')  # noqa: S608
         connection.execute("DELETE FROM resource_access_grants")
         connection.execute("DELETE FROM resource_ownership_transfers")
         connection.execute("DELETE FROM owned_resources")
@@ -2022,7 +2073,7 @@ async def test_accepted_reviewer_can_sign_in_before_a_round_without_event_access
         assert (await returning_reviewer.get("/api/v1/admin/organizations")).status_code == 403
         assert (
             await returning_reviewer.get(
-                f"/api/v1/admin/organizations/{organization_id}/speakers"
+                f"/api/v1/admin/organizations/{organization_id}/people"
             )
         ).status_code == 403
         assert (await returning_reviewer.get("/api/v1/speaker/portal")).status_code == 404

@@ -7,45 +7,25 @@
   <link rel="stylesheet" href="/product/assets/product.css?v=58">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
-  <script src="/admin/home/assets/home.js?v=12" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
+  <script src="/admin/home/assets/home.js?v=13" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--home">
   <a class="skip-link" href="#main">Skip to content</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <section class="organizer-home-identity" aria-labelledby="organization-name">
-      <span class="organizer-home-orgmark" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M5 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M3 21h18M9 7h4M9 11h4M9 15h4M9 21v-3h4v3"/></svg>
-      </span>
-      <div><h1 id="organization-name">Loading organization…</h1><p id="dashboard-greeting">Organizer dashboard</p></div>
-      <a id="new-event" class="button" href="/admin/events#event-form" hidden>Create event</a>
+    <section class="organizer-home-identity organizer-home-identity--minimal" aria-labelledby="organization-name">
+      <div><h1 id="organization-name">Loading organization…</h1></div>
+      <div class="actions organizer-home-actions"><a class="button secondary" href="/admin/organization">Settings</a><a id="new-event" class="button" href="/admin/events#event-form" hidden>Create event</a></div>
     </section>
     <div id="status" class="status status-compact organizer-home-status" role="status" aria-live="polite">Loading your workspace…</div>
 
-    <section class="organizer-home-overview" aria-labelledby="overview-title">
-      <div class="organizer-home-overview__heading"><h2 id="overview-title">Your program at a glance</h2><p>Overview of your event activity and progress.</p></div>
-      <div class="organizer-home-metrics" aria-label="Organization summary">
-        <a href="/admin/events" class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">E</span><span><strong id="metric-events">—</strong><small>Events</small><em id="metric-events-detail">Loading…</em></span></a>
-        <a href="/admin/speakers" class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">P</span><span><strong id="metric-speakers">—</strong><small>People</small><em id="metric-speakers-detail">Loading…</em></span></a>
-        <div class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">S</span><span><strong id="metric-sessions">—</strong><small>Sessions</small><em>Accepted sessions</em></span></div>
-        <div class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">R</span><span><strong id="metric-proposals">—</strong><small>Proposals</small><em id="metric-proposals-detail">Loading…</em></span></div>
-      </div>
+    <section class="organizer-home-event-index" aria-labelledby="workspace-title">
+      <h2 id="workspace-title" class="sr-only">Events</h2>
+      <span id="event-count" class="sr-only" aria-live="polite">—</span>
+      <div class="organizer-home-event-list" aria-label="Events"><p id="event-list-empty" class="empty">Loading events…</p></div>
+      <div class="organizer-home-pagination"><button id="load-more-events" class="secondary" type="button" hidden>Load more</button></div>
     </section>
-
-    <div class="organizer-home-lower">
-      <section class="organizer-home-panel" aria-labelledby="events-title">
-        <div class="organizer-home-panel__heading"><h2 id="events-title">Upcoming events</h2></div>
-        <div class="organizer-home-event-head" aria-hidden="true"><span>Event</span><span>Date</span><span>Status</span><span></span></div>
-        <div id="event-list" class="organizer-home-event-list"><p class="empty">Loading events…</p></div>
-        <a id="all-events-link" class="organizer-home-panel__link" href="/admin/events">View all events <span aria-hidden="true">→</span></a>
-      </section>
-      <section class="organizer-home-panel" aria-labelledby="activity-title">
-        <div class="organizer-home-panel__heading"><h2 id="activity-title">Recent activity</h2></div>
-        <div id="activity-list" class="organizer-home-activity"><p class="empty">Loading activity…</p></div>
-        <a class="organizer-home-panel__link" href="/admin/speakers">View all people <span aria-hidden="true">→</span></a>
-      </section>
-    </div>
   </main>
 </body>
 </html>

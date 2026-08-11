@@ -128,6 +128,7 @@ def test_home_and_events_use_distinct_event_list_surfaces() -> None:
     home = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     events = (STATIC / "events_admin.html").read_text(encoding="utf-8")
 
-    assert 'class="organizer-home-event-list"' in home
+    assert 'aria-label="Organization destinations"' in home
+    assert 'class="organizer-home-event-list"' not in home
     assert 'class="event-table-frame" role="table" aria-label="Events"' in events
     assert 'class="event-management-list" role="rowgroup"' in events

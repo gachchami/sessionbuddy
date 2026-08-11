@@ -100,6 +100,7 @@
   function updateSelectedCount() {
     const count = selectedSubmissionIds().length;
     byId("selected-count").textContent = `${count} selected`;
+    byId("configure-round").disabled = count === 0;
   }
   function setEligibleSelection(selected) {
     document.querySelectorAll('input[name="submission_ids"]:not(:disabled)').forEach((input) => {
@@ -115,6 +116,12 @@
   }
   byId("select-eligible").addEventListener("click", () => setEligibleSelection(true));
   byId("clear-selection").addEventListener("click", () => setEligibleSelection(false));
+  byId("configure-round").addEventListener("click", () => {
+    const disclosure = byId("round-disclosure");
+    disclosure.open = true;
+    disclosure.scrollIntoView({ behavior: "smooth", block: "start" });
+    disclosure.querySelector("input, select, button")?.focus({ preventScroll: true });
+  });
   const prerequisites = document.createElement("p");
   prerequisites.id = "round-prerequisites";
   prerequisites.className = "help";
@@ -122,7 +129,7 @@
   byId("open-round").before(prerequisites);
   function updatePrerequisites() {
     const missing = [];
-    if (!state.submissions.length) missing.push("publish the call and receive at least one proposal");
+    if (!state.submissions.some((submission) => submission.status === "submitted")) missing.push("receive at least one submitted proposal awaiting a decision");
     if (!state.evaluators.length) missing.push("invite at least one reviewer");
     prerequisites.textContent = missing.length
       ? `Before opening a round: ${missing.join("; ")}.`
@@ -341,6 +348,51 @@
     dialog.addEventListener("close", () => trigger.focus(), { once: true });
     dialog.showModal();
   }
+  function inlineSubmissionDetail(item, trigger) {
+    const row = document.createElement("tr");
+    row.id = `proposal-detail-${item.id}`;
+    row.className = "proposal-inline-detail-row";
+    row.hidden = true;
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    const panel = document.createElement("section");
+    panel.className = "proposal-inline-detail";
+    panel.setAttribute("aria-label", `${item.proposal_title} details`);
+    const details = document.createElement("dl");
+    details.className = "proposal-inline-detail__facts";
+    details.append(
+      detailRow("Speaker email", item.speaker_email),
+      detailRow("Full abstract", item.proposal_abstract),
+      detailRow("Submitted", new Date(item.submitted_at_ms).toLocaleString()),
+      detailRow("Category", item.routed_category),
+      detailRow("Track", item.routed_track),
+      detailRow("Review queue", item.routed_review_queue),
+      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(humanize(key), answerText(value)))
+    );
+    if (item.co_speakers?.length) {
+      details.append(detailRow("Co-speakers", item.co_speakers.map((person) => person.display_name).join(", ")));
+    }
+    const actions = document.createElement("div");
+    actions.className = "actions proposal-inline-detail__actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "secondary";
+    open.textContent = "Open proposal actions";
+    open.addEventListener("click", () => showSubmission(item, open));
+    actions.append(open);
+    panel.append(details, actions);
+    cell.append(panel);
+    row.append(cell);
+    trigger.setAttribute("aria-controls", row.id);
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.addEventListener("click", () => {
+      const openState = trigger.getAttribute("aria-expanded") === "true";
+      trigger.setAttribute("aria-expanded", String(!openState));
+      trigger.textContent = openState ? "Expand" : "Collapse";
+      row.hidden = openState;
+    });
+    return row;
+  }
   async function load() {
     try {
       if (!eventId) throw new Error("This event link is invalid.");
@@ -388,16 +440,22 @@
     items.forEach((item) => {
         const row = document.createElement("tr");
         const selectionCell = document.createElement("td");
-        const selection = document.createElement("input");
-        selection.type = "checkbox";
-        selection.name = "submission_ids";
-        selection.value = item.id;
-        selection.checked = false;
-        selection.disabled = item.status !== "submitted";
-        selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
-        selection.addEventListener("change", updateSelectedCount);
         selectionCell.dataset.label = "Include";
-        selectionCell.append(selection);
+        if (item.status === "submitted") {
+          const selection = document.createElement("input");
+          selection.type = "checkbox";
+          selection.name = "submission_ids";
+          selection.value = item.id;
+          selection.checked = false;
+          selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
+          selection.addEventListener("change", updateSelectedCount);
+          selectionCell.append(selection);
+        } else {
+          const decided = document.createElement("span");
+          decided.className = "proposal-selection-unavailable";
+          decided.textContent = "Already decided";
+          selectionCell.append(decided);
+        }
         row.append(selectionCell);
         [["Speaker", item.speaker_name], ["Proposal", item.proposal_title], ["Abstract", item.proposal_abstract], ["Status", item.status]].forEach(([label, value]) => {
           const cell = document.createElement("td");
@@ -413,11 +471,10 @@
         const detailButton = document.createElement("button");
         detailButton.type = "button";
         detailButton.className = "secondary";
-        detailButton.textContent = "Read proposal";
-        detailButton.addEventListener("click", () => showSubmission(item, detailButton));
+        detailButton.textContent = "Expand";
         detailCell.append(detailButton);
         row.append(detailCell);
-        body.append(row);
+        body.append(row, inlineSubmissionDetail(item, detailButton));
       });
     updateSelectedCount();
   }
