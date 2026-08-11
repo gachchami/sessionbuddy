@@ -4,7 +4,6 @@
   const shell = document.querySelector("[data-auth-shell]");
   const landingAccount = document.querySelector("[data-landing-account]");
   const publicEvents = document.querySelector("[data-public-events]");
-  const ACTIVE_ROLE_KEY = "sessionbuddy.active-role";
   if (!shell && !landingAccount && !publicEvents) return;
 
   const make = (tag, text, className) => {
@@ -36,7 +35,10 @@
       resource: ["M4 5h16v14H4z", "M8 9h8", "M8 13h5"],
       agenda: ["M6 3h12v18H6z", "M9 7h6", "M9 11h6", "M9 15h4"],
       external: ["M14 4h6v6", "M20 4 11 13", "M18 13v7H4V6h7"],
-      account: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"]
+      account: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
+      chevron: ["m9 18 6-6-6-6"],
+      check: ["m5 12 4 4L19 6"],
+      logout: ["M10 17l5-5-5-5", "M15 12H3", "M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"]
     };
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 24 24");
@@ -115,19 +117,10 @@
 
   function activeRole(session) {
     const choices = roleChoices(session);
-    const serverActive = choices.find((choice) => choice.role === session.active_role);
-    let stored;
-    try { stored = JSON.parse(localStorage.getItem(ACTIVE_ROLE_KEY) || "null"); } catch (_) { stored = null; }
-    const valid = choices.find((choice) => sameRole(choice, stored)) || serverActive;
-    if (valid) return valid;
-    const section = currentSection();
-    const preferred = choices.find((choice) =>
-      (section === "speaker" && choice.role === "speaker") ||
-      (section === "reviews" && choice.role === "reviewer") ||
-      (["home", "events", "speakers"].includes(section) && choice.role === "organizer")
-    ) || choices[0] || null;
-    if (preferred) localStorage.setItem(ACTIVE_ROLE_KEY, JSON.stringify(preferred));
-    return preferred;
+    return choices.find((choice) => choice.role === session.active_role)
+      || choices.find((choice) => choice.role === session.default_role)
+      || choices[0]
+      || null;
   }
 
   function roleSet(session) {
@@ -172,38 +165,77 @@
     const avatar = make("span", initials(session), "sb-account__avatar");
     avatar.setAttribute("aria-hidden", "true");
     const identity = make("span", undefined, "sb-account__identity");
-    identity.append(make("strong", displayName(session)), make("span", active ? roleLabel(active.role) : "Account"));
-    summary.append(avatar, identity);
+    const triggerLabel = make("strong", displayName(session));
+    if (active) triggerLabel.append(make("span", ` · ${roleLabel(active.role)}`));
+    identity.append(triggerLabel);
+    summary.append(avatar, identity, icon("chevron"));
 
     const menu = make("div", undefined, "sb-account__menu");
+    menu.setAttribute("aria-label", "Account menu");
+    menu.append(make("p", "Account", "sb-account__menu-title"));
     const menuHeader = make("div", undefined, "sb-account__menu-header");
-    menuHeader.append(make("strong", displayName(session)), make("span", session.email));
-    if (active) {
-      const workingAs = make("div", undefined, "sb-active-role");
-      workingAs.append(make("span", "Working as"), make("strong", roleLabel(active.role)));
-      menu.append(menuHeader, workingAs);
-    } else menu.append(menuHeader);
+    const menuAvatar = make("span", initials(session), "sb-account__avatar sb-account__menu-avatar");
+    menuAvatar.setAttribute("aria-hidden", "true");
+    const menuIdentity = make("span", undefined, "sb-account__menu-identity");
+    menuIdentity.append(make("strong", displayName(session)), make("span", session.email));
+    menuHeader.append(menuAvatar, menuIdentity);
+    menu.append(menuHeader);
     if (choices.length > 1) {
       const switcher = make("div", undefined, "sb-role-switcher");
-      switcher.append(make("p", "Switch role", "sb-role-switcher__label"));
+      switcher.setAttribute("role", "group");
+      switcher.setAttribute("aria-labelledby", "sb-role-switcher-label");
+      const switcherLabel = make("p", "Switch role", "sb-role-switcher__label");
+      switcherLabel.id = "sb-role-switcher-label";
+      switcher.append(switcherLabel);
       for (const choice of choices) {
         const button = make("button", undefined, "sb-role-option");
         button.type = "button";
-        button.disabled = sameRole(choice, active);
-        const scope = choice.eventId ? `Event · ${choice.eventId}` : `Organization · ${choice.organizationId}`;
-        button.append(make("span", roleLabel(choice.role)), make("small", scope));
-        if (button.disabled) button.append(make("b", "Active"));
-        button.addEventListener("click", () => {
-          localStorage.setItem(ACTIVE_ROLE_KEY, JSON.stringify(choice));
-          location.assign(roleDestination(choice));
+        const isActive = sameRole(choice, active);
+        button.setAttribute("aria-pressed", String(isActive));
+        if (isActive) button.setAttribute("aria-disabled", "true");
+        const scope = choice.role === "speaker"
+          ? "Speaker portal"
+          : ["reviewer", "evaluator"].includes(choice.role)
+            ? "Assigned reviews"
+            : choice.role === "organizer"
+              ? (session.organization_name || "Organization workspace")
+              : "Account role";
+        const roleIconName = choice.role === "speaker" ? "mic" : ["reviewer", "evaluator"].includes(choice.role) ? "review" : "calendar";
+        const roleCopy = make("span", undefined, "sb-role-option__copy");
+        roleCopy.append(make("strong", roleLabel(choice.role)), make("small", scope));
+        button.append(icon(roleIconName), roleCopy);
+        if (isActive) {
+          const status = make("span", undefined, "sb-role-option__status");
+          const check = make("span", undefined, "sb-role-option__check");
+          check.append(icon("check"));
+          status.append(check, make("span", "Active"));
+          button.append(status);
+        }
+        button.addEventListener("click", async () => {
+          if (isActive) return;
+          button.disabled = true;
+          button.querySelector("small").textContent = "Switching…";
+          try {
+            await window.SessionBuddyApi.request("/api/v1/session/active-role", {
+              method: "PUT",
+              headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+              body: JSON.stringify({ role: choice.role })
+            });
+            location.assign(roleDestination(choice));
+          } catch (error) {
+            button.disabled = false;
+            button.querySelector("small").textContent = "Could not switch role. Try again.";
+          }
         });
         switcher.append(button);
       }
       menu.append(switcher);
     }
-    menu.append(navLink("Account & access", "/account", "account"));
-    const signOut = make("button", "Sign out", "sb-account__sign-out");
+    const accountSettings = navLink("Account settings", "/account", "account");
+    menu.append(accountSettings);
+    const signOut = make("button", undefined, "sb-account__sign-out");
     signOut.type = "button";
+    signOut.append(icon("logout"), make("span", "Sign out"));
     signOut.addEventListener("click", async () => {
       signOut.disabled = true;
       try {
@@ -222,7 +254,7 @@
           return;
         }
         signOut.disabled = false;
-        signOut.textContent = "Try sign out again";
+        signOut.replaceChildren(icon("logout"), make("span", "Try sign out again"));
       }
     });
     menu.append(signOut);
@@ -439,11 +471,8 @@
   });
 
   function dashboardDestination(session) {
-    const roles = roleSet(session);
-    if (roles.has("organizer")) return "/admin";
-    if (roles.has("speaker")) return "/speaker";
-    if (roles.has("reviewer")) return "/reviews";
-    return "/account";
+    const active = activeRole(session);
+    return active ? roleDestination(active) : "/account";
   }
 
   function renderLandingAccount(session) {
@@ -542,6 +571,10 @@
     if (!session.profile_complete && location.pathname !== "/account") {
       const next = `${location.pathname}${location.search}${location.hash}`;
       location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);
+      return;
+    }
+    if (landingAccount && location.pathname === "/") {
+      location.replace(dashboardDestination(session));
       return;
     }
     if (shell) renderShell(session);

@@ -6,7 +6,7 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, eventName: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, fields: structuredClone(coreFields), routingRules: [] };
+  const state = { context: null, csrf: null, eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, fields: structuredClone(coreFields), routingRules: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -162,9 +162,12 @@
     window.dispatchEvent(new Event("sessionbuddy:event-context"));
     const publishForm = byId("publish-form");
     const publishButton = publishForm.querySelector('button[type="submit"], button:not([type])');
-    publishButton.disabled = !state.context;
+    const eventIsActive = state.eventStatus === "active";
+    publishButton.disabled = !state.context || (!published && !eventIsActive);
     publishButton.textContent = published ? "Save changes" : "Publish CFP";
-    byId("publish-action-label").textContent = published ? "Published CFP" : "Ready to publish?";
+    byId("publish-action-label").textContent = !eventIsActive
+      ? "Event draft"
+      : published ? "Published CFP" : "Ready to publish?";
     byId("published-note").hidden = !published;
     byId("publish-settings").hidden = Boolean(published) && !state.editing;
     byId("edit-cfp").hidden = !published || state.editing;
@@ -172,17 +175,23 @@
     const savedState = byId("cfp-saved-state");
     savedState.hidden = !published || state.editing;
     if (published && !savedState.textContent) savedState.textContent = "Saved";
-    byId("publish-result").textContent = published
+    byId("publish-result").textContent = !eventIsActive
+      ? "Activate the event before publishing its CFP."
+      : published
       ? "Published. Use the CFP link above, then review proposals as they arrive."
       : "Complete the form settings below, then publish.";
 
     const live = byId("cfp-link-live");
     const empty = byId("cfp-link-empty");
     const badge = byId("cfp-state");
-    live.hidden = !published;
-    empty.hidden = Boolean(published);
+    live.hidden = !published || !eventIsActive;
+    empty.hidden = Boolean(published) && eventIsActive;
     badge.className = `badge${published ? " success" : ""}`;
-    badge.textContent = published ? cfpAvailability(published) : "Not published";
+    badge.textContent = !eventIsActive ? "Event draft" : published ? cfpAvailability(published) : "Not published";
+    if (!eventIsActive) {
+      empty.textContent = "Activate the event to make its CFP public.";
+      return;
+    }
     if (!published) {
       empty.textContent = "Configure and publish the proposal form below to get a shareable link.";
       return;
@@ -561,6 +570,7 @@
       state.eventStartsAtMs = workspace.event_starts_at_ms;
       const currentEvent = await api(`/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}`);
       if (!currentEvent?.time_zone) throw new Error("The event time zone could not be loaded.");
+      state.eventStatus = currentEvent.status;
       state.eventTimeZone = currentEvent.time_zone;
       byId("cfp-time-zone").textContent = state.eventTimeZone;
       byId("cfp-slug-prefix").textContent = `${location.host}/cfp/`;

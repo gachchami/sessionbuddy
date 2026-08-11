@@ -435,7 +435,7 @@ async def publish_form(
     db = _db(request)
     event = row_mapping(
         await db.prepare(
-            """SELECT organization_id,starts_at_ms FROM events
+            """SELECT organization_id,starts_at_ms,status FROM events
                WHERE id=?1 AND status != 'archived' LIMIT 1"""
         )
         .bind(event_id)
@@ -449,6 +449,11 @@ async def publish_form(
         ResourceContext(str(event["organization_id"]), event_id),
         mutation=True,
     )
+    if str(event["status"]) != "active":
+        raise HTTPException(
+            status_code=409,
+            detail="Activate the event before publishing its CFP.",
+        )
     _validate_cfp_deadline(body.closes_at_ms, int(event["starts_at_ms"]))
     await _validate_form_routing_tracks(
         db,
@@ -686,7 +691,8 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
                LEFT JOIN submissions s ON s.form_id=f.id AND s.status='submitted'
-               WHERE f.slug = ?1 AND f.status = 'published' GROUP BY f.id"""
+               WHERE f.slug = ?1 AND f.status = 'published' AND e.status = 'active'
+               GROUP BY f.id"""
         )
         .bind(slug)
         .first()
@@ -699,10 +705,12 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
 async def _form_context(db, slug: str):
     return row_mapping(
         await db.prepare(
-            """SELECT id,organization_id,event_id,schema_json,version,
-                     opens_at_ms,closes_at_ms,submission_limit,confirmation_subject,
-                     confirmation_body
-           FROM call_for_speaker_forms WHERE slug=?1 AND status='published' LIMIT 1"""
+            """SELECT f.id,f.organization_id,f.event_id,f.schema_json,f.version,
+                     f.opens_at_ms,f.closes_at_ms,f.submission_limit,f.confirmation_subject,
+                     f.confirmation_body
+               FROM call_for_speaker_forms f
+               JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
+               WHERE f.slug=?1 AND f.status='published' AND e.status='active' LIMIT 1"""
         )
         .bind(slug)
         .first()
@@ -1967,11 +1975,12 @@ async def create_submission(
     db = _db(request)
     form = row_mapping(
         await db.prepare(
-            """SELECT id, organization_id, event_id, slug, version, schema_json,
-                      opens_at_ms, closes_at_ms, submission_limit, confirmation_subject,
-                      confirmation_body
-               FROM call_for_speaker_forms
-               WHERE slug = ?1 AND status = 'published'"""
+            """SELECT f.id, f.organization_id, f.event_id, f.slug, f.version, f.schema_json,
+                      f.opens_at_ms, f.closes_at_ms, f.submission_limit,
+                      f.confirmation_subject, f.confirmation_body
+               FROM call_for_speaker_forms f
+               JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
+               WHERE f.slug = ?1 AND f.status = 'published' AND e.status = 'active'"""
         )
         .bind(slug)
         .first()

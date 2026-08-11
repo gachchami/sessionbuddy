@@ -329,7 +329,7 @@ test.describe("administration empty states", () => {
     await page.getByRole("textbox", { name: "Sender name" }).fill("Program Team");
     await page.getByRole("textbox", { name: "Reply-to email" }).fill("program@example.test");
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
-    await page.getByText("Brand and public website", { exact: true }).click();
+    await page.getByText("Branding", { exact: true }).click();
     await page.getByRole("textbox", { name: "Event website" }).fill("http://example.test");
     await eventDialog.getByRole("button", { name: "Create event" }).click();
     expect(createdEvent).toBeNull();

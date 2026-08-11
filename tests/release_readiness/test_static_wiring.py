@@ -111,7 +111,7 @@ def test_event_branding_uses_a_validated_logo_upload() -> None:
     assert "/event-assets/${kind}`" in script
     assert 'uploadSelectedAsset("logo")' in script
     assert 'name="cover_file" type="file"' in page
-    assert "Recommended: 1600 × 900" in page
+    assert "16:9 · 1600 × 900 · 2 MB" in page
     assert 'uploadSelectedAsset("cover")' in script
 
 
@@ -121,10 +121,10 @@ def test_event_images_use_an_explicit_preview_then_upload_flow() -> None:
 
     for kind in ("logo", "cover"):
         section = page.split(
-            f'<section class="image-upload" aria-labelledby="event-{kind}-label">', 1
+            f'aria-labelledby="event-{kind}-label">', 1
         )[1].split("</section>", 1)[0]
         assert 'class="button secondary image-upload__button"' in section
-        assert f'for="event-{kind}-file">Choose file</label>' in section
+        assert f'for="event-{kind}-file">Choose {kind}</label>' in section
         assert f'id="event-{kind}-preview-frame"' in section
         assert f'id="event-{kind}-status"' in section
         assert re.search(
@@ -154,7 +154,11 @@ def test_event_creation_waits_for_selected_image_uploads() -> None:
         "/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events"
     )
     assert guard_at < create_at
-    assert "Upload the selected logo or cover before creating the event." in submit_handler
+    upload_guard_message = (
+        'Upload the selected logo or cover before '
+        '${eventId ? "saving changes" : "creating the event"}.'
+    )
+    assert upload_guard_message in submit_handler
 
     # Uploading as an implicit side effect after event creation recreates the
     # partial-success bug this flow is intended to prevent.
@@ -232,7 +236,7 @@ def test_event_create_button_tracks_pending_branding_uploads() -> None:
     assert re.search(r'<button[^>]*id="save-event"(?![^>]*disabled)[^>]*>', page)
     assert "form.elements.logo_file.files[0]" in availability
     assert "form.elements.cover_file.files[0]" in availability
-    assert 'byId("save-event").disabled = pending;' in availability
+    assert 'byId("save-event").disabled = pending || state.submitting;' in availability
 
     logo_change = script.split(
         'elements.logo_file.addEventListener("change", (event) => {', 1
@@ -260,17 +264,17 @@ def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> Non
 
     for kind in ("logo", "cover"):
         card = page.split(
-            f'<section class="image-upload" aria-labelledby="event-{kind}-label">', 1
+            f'aria-labelledby="event-{kind}-label">', 1
         )[1].split("</section>", 1)[0]
         assert card.index(f'for="event-{kind}-file"') < card.index(
             f'id="event-{kind}-preview-frame"'
         )
-        assert card.index(f'id="event-{kind}-preview-frame"') < card.index(
-            f'id="upload-event-{kind}"'
+        assert card.index(f'id="upload-event-{kind}"') < card.index(
+            f'id="event-{kind}-preview-frame"'
         )
         assert 'class="secondary image-upload__submit"' in card
 
-    upload_card_rule = stylesheet.split(".image-upload {", 1)[1].split("}", 1)[0]
+    upload_card_rule = stylesheet.rsplit(".image-upload {", 1)[1].split("}", 1)[0]
     assert "flex-direction: column" in upload_card_rule
     assert "align-self: start" in upload_card_rule
     preview_rule = stylesheet.split("\n.image-upload__preview {", 1)[1].split("}", 1)[0]

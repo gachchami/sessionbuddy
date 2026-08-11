@@ -23,13 +23,13 @@ def test_sign_in_preserves_passwordless_flow_with_clear_copy() -> None:
     assert 'confirmation.focus()' in javascript
 
 
-def test_sign_in_uses_the_program_pass_identity_and_mobile_layout() -> None:
+def test_sign_in_is_minimal_and_explains_default_role_behavior() -> None:
     markup = source("sign_in.html")
     stylesheet = source("product.css")
 
-    assert 'class="sign-in-story"' in markup
-    assert 'class="program-pass" aria-label="SessionBuddy access pass"' in markup
-    assert "Organizer · Reviewer · Speaker" in markup
-    assert ".program-pass" in stylesheet
+    assert 'class="sign-in-story"' not in markup
+    assert "You’ll open your default workspace." in markup
+    assert 'class="auth-role-note"' not in markup
+    assert "Organizer" not in markup and "Reviewer" not in markup and "Speaker" not in markup
+    assert ".sign-in-card::before" in stylesheet
     assert "@media (max-width: 48rem)" in stylesheet
-    assert ".sign-in-card { grid-row: 1; }" in stylesheet

@@ -24,20 +24,27 @@ def test_organizer_pages_expose_consistent_theme_hooks() -> None:
         assert "organizer-page" in page
         assert modifier in page
         assert "organizer-main" in page
-        assert "organizer-hero" in page
+        hero_hook = (
+            "organizer-home-identity"
+            if name == "admin_home.html"
+            else "events-page-heading"
+            if name == "events_admin.html"
+            else "organizer-hero"
+        )
+        assert hero_hook in page
 
 
 def test_organizer_pages_mark_major_surfaces_and_generated_cards() -> None:
-    assert "organizer-metrics" in source("admin_home.html")
-    assert "organizer-section--events" in source("events_admin.html")
+    assert "organizer-home-metrics" in source("admin_home.html")
+    assert "events-workspace" in source("events_admin.html")
     assert "organizer-callout" in source("event_overview.html")
     assert "organizer-split-layout" in source("access_admin.html")
     assert "organizer-panel--profile" in source("account.html")
     assert "organizer-panel--results" in source("admin_onboarding.html")
 
     scripts_and_hooks = {
-        "admin_home.js": "organizer-event-card",
-        "events_admin.js": "organizer-event-list-card",
+        "admin_home.js": "organizer-home-event-row",
+        "events_admin.js": "event-table-row",
         "event_overview.js": "organizer-workflow-card",
         "access_admin.js": "organizer-access-list__item",
         "account.js": "organizer-access-card",

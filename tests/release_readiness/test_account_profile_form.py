@@ -27,17 +27,22 @@ def test_profile_password_is_optional_matched_and_never_repopulated() -> None:
 
     assert 'password.value === confirmation.value' in javascript
     assert 'password: values.password || null' in javascript
-    assert 'event.currentTarget.elements.password.value = ""' in javascript
+    assert 'const form = event.currentTarget;' in javascript
+    assert 'form.elements.password.value = ""' in javascript
     assert "profile.password" not in javascript
 
 
-def test_profile_access_summary_includes_account_roles() -> None:
+def test_profile_access_section_selects_a_default_account_role() -> None:
+    markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
 
-    assert "for (const role of session.account_roles || [])" in javascript
-    assert 'active ? "Active account role" : "Account role"' in javascript
-    assert 'active ? "Active account role" : "Account role",\n        [],' in javascript
-    assert 'role === "organizer" ? "/admin"' in javascript
+    assert 'id="default-role-form"' in markup
+    assert 'input.name = "default_role"' in javascript
+    assert 'input.checked = role === session.default_role' in javascript
+    assert '"/api/v1/account/default-role"' in javascript
+    assert ".default-role-choice:has(input:checked)" in stylesheet
+    assert ".default-role-list { grid-template-columns: 1fr; }" in stylesheet
 
 
 def test_headshot_has_preview_upload_and_remove_controls() -> None:

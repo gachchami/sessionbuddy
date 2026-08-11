@@ -10,7 +10,7 @@ def test_events_page_only_switches_organization() -> None:
 
     assert 'id="organization-picker"' in page
     assert 'class="context-bar organizer-context-bar"' not in page
-    assert 'Events · <span id="organization-title"' in page
+    assert 'id="organization-title" class="sr-only"' in page
     assert 'id="edit-organization"' not in page
     assert 'id="organization-dialog"' not in page
     assert 'byId("organization").addEventListener("change"' in script

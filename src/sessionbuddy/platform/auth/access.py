@@ -7,6 +7,7 @@ import json
 import re
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from email.headerregistry import Address
+from email.utils import parseaddr
 from html import escape
 from typing import Literal
 from urllib.parse import quote, urlparse
@@ -17,8 +18,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.authorization import Permission, ResourceContext, Role
-from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch
-from sessionbuddy.platform.db.d1 import D1Database, PersistenceError, result_rows, row_mapping
+from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
+from sessionbuddy.platform.db.d1 import (
+    D1Database,
+    PersistenceError,
+    result_rows,
+    row_mapping,
+    to_python,
+)
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 from sessionbuddy.platform.storage import malware_scan_disabled
@@ -27,7 +34,14 @@ from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
-from .http import authenticate_request, database, guard_mutation, require_permission, secret
+from .http import (
+    authenticate_request,
+    database,
+    environment,
+    guard_mutation,
+    require_permission,
+    secret,
+)
 from .passwords import PasswordPolicyError, hash_password, verify_password
 from .tokens import generate_token, hash_token, normalize_email
 
@@ -411,6 +425,11 @@ class EventView(BaseModel):
     email_reply_to: str | None = None
     status: Literal["draft", "active", "archived"]
     version: int
+    proposal_count: int = Field(default=0, ge=0)
+    pending_review_count: int = Field(default=0, ge=0)
+    schedule_status: Literal[
+        "not_started", "draft", "ready", "published", "updates_pending"
+    ] = "not_started"
 
 
 class EventList(BaseModel):
@@ -500,11 +519,30 @@ class EventCreate(BaseModel):
         return self
 
 
+class EventCreateRequest(EventCreate):
+    status: Literal["draft", "active"] = "active"
+
+
 class EventUpdate(EventCreate):
     version: int = Field(ge=1)
     # None keeps the stored status: a client that omits it must never silently
     # resurrect an archived event.
     status: Literal["draft", "active", "archived"] | None = None
+
+
+class EventDuplicateCreate(EventCreate):
+    source_version: int = Field(ge=1)
+    status: Literal["draft", "active"] = "draft"
+    retain_source_logo: bool = False
+    retain_source_cover: bool = False
+
+    @model_validator(mode="after")
+    def validate_duplicate_branding_choice(self) -> "EventDuplicateCreate":
+        if self.retain_source_logo and self.logo_url is not None:
+            raise ValueError("choose either the source logo or a replacement logo")
+        if self.retain_source_cover and self.cover_image_url is not None:
+            raise ValueError("choose either the source cover or a replacement cover")
+        return self
 
 
 class SessionCreated(BaseModel):
@@ -520,6 +558,18 @@ class PasswordSignIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=128)
     redirect_path: str = "/"
+
+
+class ActiveRoleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["organizer", "reviewer", "speaker"]
+
+
+class DefaultRoleUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["organizer", "reviewer", "speaker"]
 
 
 class SessionOrganizationAccess(BaseModel):
@@ -540,14 +590,39 @@ class CurrentSession(BaseModel):
     display_name: str | None = None
     profile_complete: bool = False
     csrf_token: str
+    default_email_sender_name: str
+    default_email_address: str
     account_roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(
         default_factory=list
     )
     active_role: Literal["organizer", "reviewer", "speaker"] | None = None
+    default_role: Literal["organizer", "reviewer", "speaker"] | None = None
     organization_id: str | None = None
+    organization_name: str | None = None
     event_id: str | None = None
     organization_access: list[SessionOrganizationAccess] = Field(default_factory=list)
     event_access: list[SessionEventAccess] = Field(default_factory=list)
+
+
+def _role_destination(role: str | None) -> str:
+    return {
+        "organizer": "/admin",
+        "reviewer": "/reviews",
+        "speaker": "/speaker",
+    }.get(role, "/account")
+
+
+async def _default_account_role(db, user_id: str) -> str | None:
+    row = row_mapping(
+        await db.prepare(
+            """SELECT role FROM user_roles
+               WHERE user_id=?1 AND status='active'
+               ORDER BY is_default DESC,
+                        CASE role WHEN 'organizer' THEN 1 WHEN 'reviewer' THEN 2 ELSE 3 END
+               LIMIT 1"""
+        ).bind(user_id).first()
+    )
+    return str(row["role"]) if row is not None else None
 
 
 class AccountProfileView(BaseModel):
@@ -1110,6 +1185,7 @@ async def update_organization(
 
 EVENTS_PAGE_LIMIT = 50
 EVENT_LIST_VIEWS = frozenset({"all", "active", "draft", "past"})
+EVENT_LIST_ORDERS = frozenset({"recent", "upcoming"})
 _EVENTS_CURSOR_TTL_MS = 15 * 60 * 1000
 
 
@@ -1125,6 +1201,7 @@ async def list_events(
     limit: int = EVENTS_PAGE_LIMIT,
     view: str = "all",
     q: str = "",
+    order: str = "recent",
 ) -> EventList:
     authenticated = await authenticate_request(request)
     organization_roles = authenticated.actor.organization_roles.get(organization_id, frozenset())
@@ -1137,11 +1214,18 @@ async def list_events(
         raise HTTPException(status_code=404)
     if view not in EVENT_LIST_VIEWS:
         raise HTTPException(status_code=422)
+    if order not in EVENT_LIST_ORDERS:
+        raise HTTPException(status_code=422)
     search = q.strip()[:100]
     page_limit = max(1, min(EVENTS_PAGE_LIMIT, limit))
     now = utc_now_ms()
     decoded_cursor = _events_cursor(
-        request, cursor, organization_id=organization_id, view=view, search=search
+        request,
+        cursor,
+        organization_id=organization_id,
+        view=view,
+        search=search,
+        order=order,
     )
     after_starts_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
 
@@ -1177,16 +1261,48 @@ async def list_events(
         )
         binds.extend([pattern, pattern])
     if after_id is not None:
-        conditions.append("(e.starts_at_ms<? OR (e.starts_at_ms=? AND e.id<?))")
+        comparison = ">" if order == "upcoming" else "<"
+        conditions.append(
+            f"(e.starts_at_ms{comparison}? OR "  # noqa: S608 - fixed operator
+            f"(e.starts_at_ms=? AND e.id{comparison}?))"
+        )
         binds.extend([after_starts_at_ms, after_starts_at_ms, after_id])
     binds.append(page_limit + 1)
     statement = database(request).prepare(
         "SELECT e.id,e.organization_id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,"  # noqa: S608, E501
         "e.location,e.delivery_mode,e.description,e.accent_color,e.logo_url,"
         "e.cover_image_url,e.website_url,e.email_sender_name,e.email_reply_to,"
-        "e.status,e.version FROM events e"
+        "e.status,e.version,"
+        "(SELECT COUNT(*) FROM submissions s WHERE s.organization_id=e.organization_id "
+        "AND s.event_id=e.id AND s.status='submitted') AS proposal_count,"
+        "(SELECT COUNT(DISTINCT ea.submission_id) FROM evaluation_rounds er "
+        "JOIN evaluation_assignments ea ON ea.round_id=er.id AND ea.status='assigned' "
+        "JOIN submissions ps ON ps.id=ea.submission_id AND ps.status='submitted' "
+        "WHERE er.organization_id=e.organization_id AND er.event_id=e.id "
+        "AND er.status='open') AS pending_review_count,"
+        "CASE WHEN EXISTS(SELECT 1 FROM schedule_revisions sr "
+        "WHERE sr.organization_id=e.organization_id AND sr.event_id=e.id "
+        "AND sr.status='published') AND EXISTS(SELECT 1 FROM schedule_revisions sr "
+        "WHERE sr.organization_id=e.organization_id AND sr.event_id=e.id "
+        "AND sr.status='draft') THEN 'updates_pending' "
+        "WHEN EXISTS(SELECT 1 FROM schedule_revisions sr "
+        "WHERE sr.organization_id=e.organization_id AND sr.event_id=e.id "
+        "AND sr.status='published') THEN 'published' "
+        "WHEN EXISTS(SELECT 1 FROM accepted_sessions ac "
+        "WHERE ac.organization_id=e.organization_id AND ac.event_id=e.id) "
+        "AND NOT EXISTS(SELECT 1 FROM accepted_sessions ac "
+        "WHERE ac.organization_id=e.organization_id AND ac.event_id=e.id "
+        "AND NOT EXISTS(SELECT 1 FROM schedule_revisions sr "
+        "JOIN agenda_items ai ON ai.revision_id=sr.id AND ai.accepted_session_id=ac.id "
+        "WHERE sr.organization_id=e.organization_id AND sr.event_id=e.id "
+        "AND sr.status='draft')) THEN 'ready' "
+        "WHEN EXISTS(SELECT 1 FROM schedule_revisions sr "
+        "WHERE sr.organization_id=e.organization_id AND sr.event_id=e.id "
+        "AND sr.status='draft') THEN 'draft' ELSE 'not_started' END AS schedule_status "
+        "FROM events e"
         f"{membership_join} WHERE {' AND '.join(conditions)} "
-        "ORDER BY e.starts_at_ms DESC,e.id DESC LIMIT ?"
+        f"ORDER BY e.starts_at_ms {'ASC' if order == 'upcoming' else 'DESC'},"
+        f"e.id {'ASC' if order == 'upcoming' else 'DESC'} LIMIT ?"
     ).bind(*binds)
     rows = result_rows(await statement.all())
     events = [EventView(**row) for row in rows[:page_limit]]
@@ -1197,6 +1313,7 @@ async def list_events(
             organization_id=organization_id,
             view=view,
             search=search,
+            order=order,
             starts_at_ms=events[-1].starts_at_ms,
             row_id=events[-1].id,
         )
@@ -1204,7 +1321,13 @@ async def list_events(
 
 
 def _events_cursor(
-    request: Request, value: str | None, *, organization_id: str, view: str, search: str
+    request: Request,
+    value: str | None,
+    *,
+    organization_id: str,
+    view: str,
+    search: str,
+    order: str,
 ) -> tuple[int, str] | None:
     """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
     if value is None:
@@ -1221,6 +1344,7 @@ def _events_cursor(
             "exp": decoded.get("exp"),
             "id": decoded.get("id"),
             "org": organization_id,
+            "order": order,
             "q": search,
             "starts": decoded.get("starts"),
             "view": view,
@@ -1260,6 +1384,9 @@ class OrganizationMetricsView(BaseModel):
     organization_id: str
     event_count: int
     speaker_count: int
+    session_count: int
+    proposal_count: int
+    pending_review_count: int
     recent_speakers: list[RecentSpeakerView] = []
 
 
@@ -1269,8 +1396,8 @@ class OrganizationMetricsView(BaseModel):
     tags=["administration"],
 )
 async def organization_metrics(organization_id: str, request: Request) -> OrganizationMetricsView:
-    """Lightweight aggregate counts for dashboards: two COUNT queries instead
-    of paging every event and fanning out per-event speaker requests.
+    """Lightweight aggregate counts for dashboards instead of paging every
+    event and fanning out per-event requests.
 
     Organization admins see organization-wide counts; event administrators see
     counts over the events they administer."""
@@ -1303,6 +1430,33 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
             db.prepare(
                 "SELECT COUNT(DISTINCT es.person_id) AS total FROM event_speakers es "  # noqa: S608, E501
                 f"WHERE es.organization_id=?1 AND {has_proposal}"
+            )
+            .bind(organization_id)
+            .first("total")
+        )
+        session_count = await (
+            db.prepare(
+                "SELECT COUNT(*) AS total FROM accepted_sessions "
+                "WHERE organization_id=?1"
+            )
+            .bind(organization_id)
+            .first("total")
+        )
+        proposal_count = await (
+            db.prepare(
+                "SELECT COUNT(*) AS total FROM submissions "
+                "WHERE organization_id=?1 AND status='submitted'"
+            )
+            .bind(organization_id)
+            .first("total")
+        )
+        pending_review_count = await (
+            db.prepare(
+                "SELECT COUNT(DISTINCT ea.submission_id) AS total "
+                "FROM evaluation_rounds er "
+                "JOIN evaluation_assignments ea ON ea.round_id=er.id "
+                "AND ea.status='assigned' "
+                "WHERE er.organization_id=?1"
             )
             .bind(organization_id)
             .first("total")
@@ -1360,6 +1514,42 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
             .bind(organization_id, authenticated.actor.user_id)
             .first("total")
         )
+        session_count = await (
+            db.prepare(
+                "SELECT COUNT(*) AS total FROM accepted_sessions ac "
+                "JOIN event_memberships em ON em.organization_id=ac.organization_id "
+                "AND em.event_id=ac.event_id AND em.user_id=?2 "
+                "AND em.role='event_admin' AND em.status='active' "
+                "WHERE ac.organization_id=?1"
+            )
+            .bind(organization_id, authenticated.actor.user_id)
+            .first("total")
+        )
+        proposal_count = await (
+            db.prepare(
+                "SELECT COUNT(*) AS total FROM submissions s "
+                "JOIN event_memberships em ON em.organization_id=s.organization_id "
+                "AND em.event_id=s.event_id AND em.user_id=?2 "
+                "AND em.role='event_admin' AND em.status='active' "
+                "WHERE s.organization_id=?1 AND s.status='submitted'"
+            )
+            .bind(organization_id, authenticated.actor.user_id)
+            .first("total")
+        )
+        pending_review_count = await (
+            db.prepare(
+                "SELECT COUNT(DISTINCT ea.submission_id) AS total "
+                "FROM evaluation_rounds er "
+                "JOIN evaluation_assignments ea ON ea.round_id=er.id "
+                "AND ea.status='assigned' "
+                "JOIN event_memberships em ON em.organization_id=er.organization_id "
+                "AND em.event_id=er.event_id AND em.user_id=?2 "
+                "AND em.role='event_admin' AND em.status='active' "
+                "WHERE er.organization_id=?1"
+            )
+            .bind(organization_id, authenticated.actor.user_id)
+            .first("total")
+        )
         recent_rows = result_rows(
             await db.prepare(
                 "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
@@ -1392,6 +1582,9 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
         organization_id=organization_id,
         event_count=int(event_count or 0),
         speaker_count=int(speaker_count or 0),
+        session_count=int(session_count or 0),
+        proposal_count=int(proposal_count or 0),
+        pending_review_count=int(pending_review_count or 0),
         recent_speakers=[RecentSpeakerView(**row) for row in recent_rows],
     )
 
@@ -1402,6 +1595,7 @@ def _events_next_cursor(
     organization_id: str,
     view: str,
     search: str,
+    order: str,
     starts_at_ms: int,
     row_id: str,
 ) -> str:
@@ -1410,6 +1604,7 @@ def _events_next_cursor(
             "exp": utc_now_ms() + _EVENTS_CURSOR_TTL_MS,
             "id": row_id,
             "org": organization_id,
+            "order": order,
             "q": search,
             "starts": starts_at_ms,
             "view": view,
@@ -1440,7 +1635,44 @@ async def get_event(event_id: str, request: Request) -> EventView:
         .prepare(
             """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                       delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
-                      email_sender_name,email_reply_to,status,version
+                      email_sender_name,email_reply_to,status,version,
+                      (SELECT COUNT(*) FROM submissions s
+                       WHERE s.organization_id=events.organization_id
+                         AND s.event_id=events.id AND s.status='submitted') AS proposal_count,
+                      (SELECT COUNT(DISTINCT ea.submission_id)
+                       FROM evaluation_rounds er
+                       JOIN evaluation_assignments ea
+                         ON ea.round_id=er.id AND ea.status='assigned'
+                       JOIN submissions ps
+                         ON ps.id=ea.submission_id AND ps.status='submitted'
+                       WHERE er.organization_id=events.organization_id
+                         AND er.event_id=events.id AND er.status='open') AS pending_review_count,
+                      CASE
+                        WHEN EXISTS(SELECT 1 FROM schedule_revisions sr
+                          WHERE sr.organization_id=events.organization_id
+                            AND sr.event_id=events.id AND sr.status='published')
+                         AND EXISTS(SELECT 1 FROM schedule_revisions sr
+                          WHERE sr.organization_id=events.organization_id
+                            AND sr.event_id=events.id AND sr.status='draft') THEN 'updates_pending'
+                        WHEN EXISTS(SELECT 1 FROM schedule_revisions sr
+                          WHERE sr.organization_id=events.organization_id
+                            AND sr.event_id=events.id AND sr.status='published') THEN 'published'
+                        WHEN EXISTS(SELECT 1 FROM accepted_sessions ac
+                          WHERE ac.organization_id=events.organization_id
+                            AND ac.event_id=events.id)
+                         AND NOT EXISTS(SELECT 1 FROM accepted_sessions ac
+                          WHERE ac.organization_id=events.organization_id
+                            AND ac.event_id=events.id
+                            AND NOT EXISTS(SELECT 1 FROM schedule_revisions sr
+                              JOIN agenda_items ai ON ai.revision_id=sr.id
+                                AND ai.accepted_session_id=ac.id
+                              WHERE sr.organization_id=events.organization_id
+                                AND sr.event_id=events.id AND sr.status='draft')) THEN 'ready'
+                        WHEN EXISTS(SELECT 1 FROM schedule_revisions sr
+                          WHERE sr.organization_id=events.organization_id
+                            AND sr.event_id=events.id AND sr.status='draft') THEN 'draft'
+                        ELSE 'not_started'
+                      END AS schedule_status
                FROM events WHERE id=?1 LIMIT 1"""
         )
         .bind(event_id)
@@ -1457,9 +1689,300 @@ async def get_event(event_id: str, request: Request) -> EventView:
     return EventView(**row)
 
 
+@access_router.post(
+    "/api/v1/admin/events/{event_id}/duplicate",
+    response_model=EventView,
+    status_code=201,
+    tags=["administration"],
+)
+async def duplicate_event(
+    event_id: str,
+    body: EventDuplicateCreate,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> EventView:
+    """Copy safe event setup into a new draft; operational records never cross over."""
+    db, now = database(request), utc_now_ms()
+    _validate_event_times(body.starts_at_ms, body.ends_at_ms)
+    if body.status == "active":
+        _validate_event_can_activate(body.ends_at_ms, now)
+    source = row_mapping(
+        await db.prepare(
+            """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                      delivery_mode,description,accent_color,logo_url,cover_image_url,
+                      website_url,email_sender_name,email_reply_to,version
+               FROM events WHERE id=?1 LIMIT 1"""
+        )
+        .bind(event_id)
+        .first()
+    )
+    if source is None:
+        raise HTTPException(status_code=404)
+    organization_id = str(source["organization_id"])
+    authenticated = await require_permission(
+        request,
+        Permission.ORGANIZATION_MANAGE,
+        ResourceContext(organization_id),
+        mutation=True,
+    )
+    if int(source["version"]) != body.source_version:
+        raise HTTPException(
+            status_code=409,
+            detail="The source event changed; reopen the duplicate form and try again",
+        )
+    if not isinstance(idempotency_key, str) or not 16 <= len(idempotency_key) <= 255:
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key must contain between 16 and 255 characters",
+        )
+    route = "POST /api/v1/admin/events/{event_id}/duplicate"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"event_id": event_id, **body.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    key_hash = hashlib.sha256(idempotency_key.encode()).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id
+               FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND state='completed'"""
+        )
+        .bind(authenticated.actor.user_id, route, key_hash)
+        .first()
+    )
+    if replay is not None:
+        stored_fingerprint = to_python(replay["request_fingerprint"])
+        if not isinstance(stored_fingerprint, bytes):
+            stored_fingerprint = bytes(stored_fingerprint)
+        if stored_fingerprint != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key was already used for a different event",
+            )
+        duplicated = row_mapping(
+            await db.prepare(
+                """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,
+                          location,delivery_mode,description,accent_color,logo_url,
+                          cover_image_url,website_url,email_sender_name,email_reply_to,
+                          status,version
+                   FROM events WHERE id=?1 AND organization_id=?2 LIMIT 1"""
+            )
+            .bind(str(replay["response_resource_id"]), organization_id)
+            .first()
+        )
+        if duplicated is None:
+            raise HTTPException(
+                status_code=409,
+                detail="The original duplication result is no longer available",
+            )
+        return EventView(**duplicated)
+
+    if body.logo_url is not None:
+        await _require_event_branding_reference(
+            db, organization_id=organization_id, kind="logo", asset_url=body.logo_url
+        )
+    if body.cover_image_url is not None:
+        await _require_event_branding_reference(
+            db, organization_id=organization_id, kind="cover", asset_url=body.cover_image_url
+        )
+    copied_logo = None
+    if body.retain_source_logo:
+        if source["logo_url"] is None:
+            raise HTTPException(status_code=422, detail="the source event has no logo")
+        copied_logo = await _copy_event_branding_asset(
+            request,
+            organization_id=organization_id,
+            source_event_id=event_id,
+            source_url=str(source["logo_url"]),
+            kind="logo",
+            actor_user_id=authenticated.actor.user_id,
+            now=now,
+        )
+    copied_cover = None
+    if body.retain_source_cover:
+        if source["cover_image_url"] is None:
+            raise HTTPException(status_code=422, detail="the source event has no cover")
+        copied_cover = await _copy_event_branding_asset(
+            request,
+            organization_id=organization_id,
+            source_event_id=event_id,
+            source_url=str(source["cover_image_url"]),
+            kind="cover",
+            actor_user_id=authenticated.actor.user_id,
+            now=now,
+        )
+
+    base_name = body.name
+    existing_names = {
+        str(row["name"])
+        for row in result_rows(
+            await db.prepare(
+                """SELECT name FROM events
+                   WHERE organization_id=?1 AND (name=?2 OR name LIKE ?3 ESCAPE '\\')"""
+            )
+            .bind(organization_id, base_name, f"{base_name} %")
+            .all()
+        )
+    }
+    duplicate_name = base_name
+    suffix = 2
+    while duplicate_name in existing_names:
+        duplicate_name = f"{base_name} {suffix}"
+        suffix += 1
+
+    duplicated_event_id = new_id()
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    for copied_asset in (copied_logo, copied_cover):
+        if copied_asset is None:
+            continue
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO event_branding_assets
+                   (id,organization_id,event_id,kind,object_key,asset_url,content_type,
+                    byte_size,checksum_sha256,status,created_by_user_id,created_at_ms)
+                   VALUES(?1,?2,NULL,?3,?4,?5,?6,?7,?8,'pending',?9,?10)"""
+            ).bind(
+                copied_asset["id"],
+                organization_id,
+                copied_asset["kind"],
+                copied_asset["object_key"],
+                copied_asset["asset_url"],
+                copied_asset["content_type"],
+                copied_asset["byte_size"],
+                copied_asset["checksum_sha256"],
+                authenticated.actor.user_id,
+                now,
+            )
+        )
+    logo_url = str(copied_logo["asset_url"]) if copied_logo else body.logo_url
+    cover_image_url = (
+        str(copied_cover["asset_url"]) if copied_cover else body.cover_image_url
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO events
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
+                email_sender_name,email_reply_to,status,created_at_ms,updated_at_ms)
+               SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
+                      ?17,?16,?16
+               WHERE EXISTS(SELECT 1 FROM events source
+                            WHERE source.id=?18 AND source.organization_id=?2
+                              AND source.version=?19)"""
+        ).bind(
+            duplicated_event_id,
+            organization_id,
+            duplicate_name,
+            body.starts_at_ms,
+            body.ends_at_ms,
+            body.time_zone,
+            body.location,
+            body.delivery_mode,
+            body.description,
+            body.accent_color,
+            logo_url,
+            cover_image_url,
+            body.website_url,
+            body.email_sender_name,
+            body.email_reply_to,
+            now,
+            body.status,
+            event_id,
+            body.source_version,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,'event_admin','active',?5,?5)"""
+        ).bind(new_id(), organization_id, duplicated_event_id, authenticated.actor.user_id, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="event.duplicate",
+            target_type="event",
+            target_id=duplicated_event_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=duplicated_event_id,
+            metadata={"source_event_id": event_id},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="event",
+        resource_id=duplicated_event_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        current_source = row_mapping(
+            await db.prepare("SELECT version FROM events WHERE id=?1 LIMIT 1")
+            .bind(event_id)
+            .first()
+        )
+        if current_source is None or int(current_source["version"]) != body.source_version:
+            raise HTTPException(
+                status_code=409,
+                detail="The source event changed; reopen the duplicate form and try again",
+            ) from exc
+        raise HTTPException(
+            status_code=409,
+            detail="Event duplication is already being processed; retry with the same key",
+        ) from exc
+    return EventView(
+        id=duplicated_event_id,
+        organization_id=organization_id,
+        name=duplicate_name,
+        starts_at_ms=body.starts_at_ms,
+        ends_at_ms=body.ends_at_ms,
+        time_zone=body.time_zone,
+        location=body.location,
+        delivery_mode=body.delivery_mode,
+        description=body.description,
+        accent_color=body.accent_color,
+        logo_url=logo_url,
+        cover_image_url=cover_image_url,
+        website_url=body.website_url,
+        email_sender_name=body.email_sender_name,
+        email_reply_to=body.email_reply_to,
+        status=body.status,
+        version=1,
+    )
+
+
 def _validate_event_times(starts_at_ms: int, ends_at_ms: int) -> None:
     if ends_at_ms <= starts_at_ms:
         raise HTTPException(status_code=422)
+
+
+def _validate_event_can_activate(ends_at_ms: int, now_ms: int) -> None:
+    if ends_at_ms <= now_ms:
+        raise HTTPException(
+            status_code=422,
+            detail="update the event dates before activating",
+        )
 
 
 def _event_logo_bucket(request: Request):
@@ -1515,6 +2038,76 @@ async def _stream_event_logo(stored):
             release = getattr(reader, "releaseLock", None)
             if callable(release):
                 release()
+
+
+async def _copy_event_branding_asset(
+    request: Request,
+    *,
+    organization_id: str,
+    source_event_id: str,
+    source_url: str,
+    kind: Literal["logo", "cover"],
+    actor_user_id: str,
+    now: int,
+) -> dict[str, object]:
+    """Copy an owned source object and describe a fresh pending asset row."""
+    db = database(request)
+    source_asset = row_mapping(
+        await db.prepare(
+            """SELECT object_key,content_type FROM event_branding_assets
+               WHERE organization_id=?1 AND event_id=?2 AND kind=?3 AND asset_url=?4
+                 AND status='attached' LIMIT 1"""
+        )
+        .bind(organization_id, source_event_id, kind, source_url)
+        .first()
+    )
+    if source_asset is not None:
+        object_key = str(source_asset["object_key"])
+        content_type = str(source_asset["content_type"])
+    elif source_url.startswith(f"/api/v1/public/events/{source_event_id}/{kind}/"):
+        asset_name = source_url.rsplit("/", 1)[-1]
+        suffix = asset_name[asset_name.rfind(".") :] if "." in asset_name else ""
+        content_type = {
+            ".jpg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+        }.get(suffix, "")
+        directory = "event-logos" if kind == "logo" else "event-covers"
+        object_key = f"public/{directory}/{organization_id}/{source_event_id}/{asset_name}"
+    else:
+        # Never fetch arbitrary external branding URLs from the Worker: that
+        # would turn this organizer action into an SSRF surface.
+        raise HTTPException(
+            status_code=422,
+            detail=f"the source {kind} cannot be retained; upload a replacement",
+        )
+    if content_type not in _EVENT_IMAGE_MEDIA_TYPES:
+        raise HTTPException(status_code=422, detail=f"invalid source {kind} asset")
+    stored = await _event_logo_bucket(request).get(object_key)
+    if stored is None:
+        raise HTTPException(status_code=409, detail=f"the source {kind} is unavailable")
+    body = b"".join([chunk async for chunk in _stream_event_logo(stored)])
+    if not body or len(body) > _EVENT_LOGO_MAX_BYTES:
+        raise HTTPException(status_code=422, detail=f"invalid source {kind} asset")
+    extension = _EVENT_LOGO_RULES[content_type][0]
+    if not _EVENT_LOGO_RULES[content_type][1](body):
+        raise HTTPException(status_code=422, detail=f"invalid source {kind} asset")
+    asset_id = new_id()
+    copied_object_key = f"public/event-branding/{organization_id}/{asset_id}.{extension}"
+    asset_url = f"/api/v1/public/event-assets/{asset_id}.{extension}"
+    await _event_logo_bucket(request).put(copied_object_key, body)
+    return {
+        "id": asset_id,
+        "organization_id": organization_id,
+        "kind": kind,
+        "object_key": copied_object_key,
+        "asset_url": asset_url,
+        "content_type": content_type,
+        "byte_size": len(body),
+        "checksum_sha256": hashlib.sha256(body).digest(),
+        "created_by_user_id": actor_user_id,
+        "created_at_ms": now,
+    }
 
 
 async def _require_event_branding_reference(
@@ -1909,8 +2502,14 @@ async def public_event_cover(event_id: str, image_name: str, request: Request) -
     status_code=201,
     tags=["administration"],
 )
-async def create_event(organization_id: str, body: EventCreate, request: Request) -> EventView:
+async def create_event(
+    organization_id: str,
+    body: EventCreateRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> EventView:
     _validate_event_times(body.starts_at_ms, body.ends_at_ms)
+    requested_status: Literal["draft", "active"] = getattr(body, "status", "active")
     authenticated = await require_permission(
         request,
         Permission.ORGANIZATION_MANAGE,
@@ -1918,6 +2517,80 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
         mutation=True,
     )
     db, now, event_id = database(request), utc_now_ms(), new_id()
+    route = "POST /api/v1/admin/organizations/{organization_id}/events"
+    request_data = body.model_dump()
+    # Preserve fingerprints produced before create-status was introduced so an
+    # in-flight legacy retry still replays the original active event.
+    if requested_status == "active":
+        request_data.pop("status", None)
+    else:
+        request_data["status"] = requested_status
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"organization_id": organization_id, **request_data},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    record: IdempotencyRecord | None = None
+    # Direct function-level tests call this route without FastAPI resolving the
+    # Header dependency, so only treat an actual string as a supplied key.
+    if not isinstance(idempotency_key, str):
+        idempotency_key = None
+    if idempotency_key is not None:
+        if not 16 <= len(idempotency_key) <= 255:
+            raise HTTPException(
+                status_code=400,
+                detail="Idempotency-Key must contain between 16 and 255 characters",
+            )
+        replay = row_mapping(
+            await db.prepare(
+                """SELECT request_fingerprint,response_resource_id
+                   FROM idempotency_records
+                   WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                     AND state='completed'"""
+            )
+            .bind(
+                authenticated.actor.user_id,
+                route,
+                hashlib.sha256(idempotency_key.encode()).digest(),
+            )
+            .first()
+        )
+        if replay is not None:
+            stored_fingerprint = to_python(replay["request_fingerprint"])
+            if not isinstance(stored_fingerprint, bytes):
+                stored_fingerprint = bytes(stored_fingerprint)
+            if stored_fingerprint != fingerprint:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency-Key was already used with different event data",
+                )
+            row = row_mapping(
+                await db.prepare(
+                    """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,
+                              location,delivery_mode,description,accent_color,logo_url,
+                              cover_image_url,website_url,email_sender_name,email_reply_to,
+                              status,version
+                       FROM events WHERE id=?1 AND organization_id=?2 LIMIT 1"""
+                )
+                .bind(str(replay["response_resource_id"]), organization_id)
+                .first()
+            )
+            if row is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The original event creation result is no longer available",
+                )
+            return EventView(**row)
+        record = IdempotencyRecord(
+            principal_key=authenticated.actor.user_id,
+            organization_id=organization_id,
+            route_key=route,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            expires_at_ms=now + 86_400_000,
+        )
     if body.logo_url is not None:
         await _require_event_branding_reference(
             db, organization_id=organization_id, kind="logo", asset_url=body.logo_url
@@ -1929,16 +2602,18 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
             kind="cover",
             asset_url=body.cover_image_url,
         )
-    if body.starts_at_ms <= now:
-        raise HTTPException(status_code=422, detail="a new event must start in the future")
+    if requested_status == "active":
+        _validate_event_can_activate(body.ends_at_ms, now)
     batch = CommandBatch(db)
+    if record is not None:
+        batch.begin_idempotency(record, now)
     batch.add_statement(
         db.prepare(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                 delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                 email_sender_name,email_reply_to,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'active',?16,?16)"""
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?17)"""
         ).bind(
             event_id,
             organization_id,
@@ -1955,6 +2630,7 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
             body.website_url,
             body.email_sender_name,
             body.email_reply_to,
+            requested_status,
             now,
         )
     )
@@ -1979,13 +2655,29 @@ async def create_event(organization_id: str, body: EventCreate, request: Request
             event_id=event_id,
         )
     )
-    await batch.execute()
+    if record is not None:
+        batch.complete_idempotency(
+            record,
+            status=201,
+            resource_type="event",
+            resource_id=event_id,
+            completed_at_ms=now,
+        )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        if record is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Event creation is already being processed; retry with the same key",
+            ) from exc
+        raise
     return EventView(
         id=event_id,
         organization_id=organization_id,
-        status="active",
+        status=requested_status,
         version=1,
-        **body.model_dump(),
+        **body.model_dump(exclude={"status"}),
     )
 
 
@@ -2014,6 +2706,9 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         mutation=True,
     )
     resolved_status = body.status if body.status is not None else str(event["status"])
+    now = utc_now_ms()
+    if resolved_status == "active" and str(event["status"]) != "active":
+        _validate_event_can_activate(body.ends_at_ms, now)
     current_logo_url = str(event["logo_url"]) if event["logo_url"] is not None else None
     logo_url = body.logo_url if "logo_url" in body.model_fields_set else current_logo_url
     if logo_url != current_logo_url and logo_url is not None:
@@ -2040,7 +2735,6 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             asset_url=cover_image_url,
             event_id=event_id,
         )
-    now = utc_now_ms()
     # Stamp archived_at_ms only on the transition INTO archived; ordinary
     # edits of an already-archived event keep the original timestamp.
     if resolved_status != "archived":
@@ -2761,7 +3455,8 @@ async def password_sign_in(
             """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
                SELECT ?1,user_id,role,?2 FROM user_roles
                WHERE user_id=?3 AND status='active'
-               ORDER BY CASE role WHEN 'organizer' THEN 1 WHEN 'reviewer' THEN 2 ELSE 3 END
+               ORDER BY is_default DESC,
+                        CASE role WHEN 'organizer' THEN 1 WHEN 'reviewer' THEN 2 ELSE 3 END
                LIMIT 1"""
         ).bind(session_id, now, credential["id"])
     )
@@ -2793,8 +3488,13 @@ async def password_sign_in(
         samesite="lax",
         path="/",
     )
+    default_role = await _default_account_role(db, str(credential["id"]))
     return SessionCreated(
-        user_id=str(credential["id"]), csrf_token=csrf, redirect_path=body.redirect_path
+        user_id=str(credential["id"]),
+        csrf_token=csrf,
+        redirect_path=(
+            _role_destination(default_role) if body.redirect_path == "/" else body.redirect_path
+        ),
     )
 
 
@@ -3002,6 +3702,16 @@ async def _finish_magic_link_sign_in(
         )
         .run()
     )
+    default_role = await _default_account_role(db, str(user_id))
+    if default_role is not None:
+        await (
+            db.prepare(
+                """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+                   VALUES(?1,?2,?3,?4)"""
+            )
+            .bind(session_id, user_id, default_role, now)
+            .run()
+        )
     deployed = getattr(request.scope.get("env"), "APP_ENV", "production") != "local"
     response.set_cookie(
         "__Host-session" if deployed else "sessionbuddy-local",
@@ -3015,7 +3725,11 @@ async def _finish_magic_link_sign_in(
     return SessionCreated(
         user_id=str(user_id),
         csrf_token=csrf,
-        redirect_path=str(challenge["redirect_path"]),
+        redirect_path=(
+            _role_destination(default_role)
+            if str(challenge["redirect_path"]) == "/"
+            else str(challenge["redirect_path"])
+        ),
     )
 
 
@@ -3137,8 +3851,9 @@ async def current_session(request: Request) -> CurrentSession:
         raise HTTPException(status_code=401)
     account_role_rows = result_rows(
         await db.prepare(
-            """SELECT role FROM user_roles
-               WHERE user_id=?1 AND status='active' ORDER BY role"""
+            """SELECT role,is_default FROM user_roles
+               WHERE user_id=?1 AND status='active'
+               ORDER BY is_default DESC,role"""
         ).bind(authenticated.actor.user_id).all()
     )
     active_role_row = row_mapping(
@@ -3148,10 +3863,23 @@ async def current_session(request: Request) -> CurrentSession:
         ).bind(authenticated.session_id, authenticated.actor.user_id).first()
     )
     account_roles = [str(item["role"]) for item in account_role_rows]
+    default_role = next(
+        (str(item["role"]) for item in account_role_rows if bool(item["is_default"])),
+        account_roles[0] if account_roles else None,
+    )
     organization_id = next(iter(authenticated.actor.organization_roles), None)
     event_scope = next(iter(authenticated.actor.event_roles), None)
     if organization_id is None and event_scope is not None:
         organization_id = event_scope[0]
+    organization_name = None
+    if organization_id is not None:
+        organization_row = row_mapping(
+            await db.prepare("SELECT name FROM organizations WHERE id=?1 LIMIT 1")
+            .bind(organization_id)
+            .first()
+        )
+        if organization_row is not None:
+            organization_name = str(organization_row["name"])
     organization_access = [
         SessionOrganizationAccess(
             organization_id=scope_organization_id,
@@ -3169,20 +3897,104 @@ async def current_session(request: Request) -> CurrentSession:
             authenticated.actor.event_roles.items()
         )
     ]
+    configured_sender = str(
+        getattr(environment(request), "RESEND_FROM_ADDRESS", "SessionBuddy <events@example.test>")
+    )
+    default_sender_name, default_email_address = parseaddr(configured_sender)
     return CurrentSession(
         user_id=authenticated.actor.user_id,
         email=str(user["email"]),
         display_name=str(user["display_name"]) if user["display_name"] is not None else None,
         profile_complete=bool(user["profile_complete"]),
         csrf_token=issue_csrf_token(authenticated.session_id, secret(request, "CSRF_HMAC_KEY")),
+        default_email_sender_name=default_sender_name or "SessionBuddy",
+        default_email_address=default_email_address or "events@example.test",
         account_roles=account_roles,
         active_role=(
             str(active_role_row["role"])
             if active_role_row is not None
-            else (account_roles[0] if account_roles else None)
+            else default_role
         ),
+        default_role=default_role,
         organization_id=organization_id,
+        organization_name=organization_name,
         event_id=event_scope[1] if event_scope is not None else None,
         organization_access=organization_access,
         event_access=event_access,
     )
+
+
+@access_router.put(
+    "/api/v1/session/active-role",
+    response_model=CurrentSession,
+    tags=["authentication"],
+)
+async def update_active_role(body: ActiveRoleUpdate, request: Request) -> CurrentSession:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    db, now = database(request), utc_now_ms()
+    assigned = row_mapping(
+        await db.prepare(
+            """SELECT role FROM user_roles
+               WHERE user_id=?1 AND role=?2 AND status='active' LIMIT 1"""
+        ).bind(authenticated.actor.user_id, body.role).first()
+    )
+    if assigned is None:
+        raise HTTPException(status_code=403)
+    await (
+        db.prepare(
+            """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+               VALUES(?1,?2,?3,?4)
+               ON CONFLICT(session_id) DO UPDATE SET
+                 user_id=excluded.user_id,role=excluded.role,selected_at_ms=excluded.selected_at_ms"""
+        )
+        .bind(authenticated.session_id, authenticated.actor.user_id, body.role, now)
+        .run()
+    )
+    return await current_session(request)
+
+
+@access_router.put(
+    "/api/v1/account/default-role",
+    response_model=CurrentSession,
+    tags=["authentication"],
+)
+async def update_default_role(body: DefaultRoleUpdate, request: Request) -> CurrentSession:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    db, now = database(request), utc_now_ms()
+    assigned = row_mapping(
+        await db.prepare(
+            """SELECT role FROM user_roles
+               WHERE user_id=?1 AND role=?2 AND status='active' LIMIT 1"""
+        ).bind(authenticated.actor.user_id, body.role).first()
+    )
+    if assigned is None:
+        raise HTTPException(status_code=403)
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            "UPDATE user_roles SET is_default=0,updated_at_ms=?1 WHERE user_id=?2 AND is_default=1"
+        ).bind(now, authenticated.actor.user_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE user_roles SET is_default=1,updated_at_ms=?1
+               WHERE user_id=?2 AND role=?3 AND status='active'"""
+        ).bind(now, authenticated.actor.user_id, body.role)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="account.default_role.update",
+            target_type="user",
+            target_id=authenticated.actor.user_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"role": body.role},
+        )
+    )
+    await batch.execute()
+    return await current_session(request)

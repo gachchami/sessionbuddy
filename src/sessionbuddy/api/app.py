@@ -16,7 +16,13 @@ from sessionbuddy.console import embedded_assets, engine_room_router
 from sessionbuddy.evaluation import evaluation_router
 from sessionbuddy.observability import RequestObservabilityMiddleware
 from sessionbuddy.platform.auth import session_router
-from sessionbuddy.platform.auth.access import access_router, setup_is_configured
+from sessionbuddy.platform.auth.access import (
+    access_router,
+    setup_is_configured,
+)
+from sessionbuddy.platform.auth.access import (
+    current_session as current_access_session,
+)
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
@@ -56,6 +62,29 @@ async def root(request: Request) -> Response:
             status_code=303,
             headers={"Cache-Control": "no-store"},
         )
+    session_cookie = request.cookies.get("__Host-session") or request.cookies.get(
+        "sessionbuddy-local"
+    )
+    if session_cookie:
+        try:
+            session = await current_access_session(request)
+        except HTTPException as error:
+            if error.status_code != 401:
+                raise
+        else:
+            if not session.profile_complete:
+                destination = "/account?onboarding=1&next=%2F"
+            else:
+                destination = {
+                    "organizer": "/admin",
+                    "speaker": "/speaker",
+                    "reviewer": "/reviews",
+                }.get(session.active_role or "", "/account")
+            return RedirectResponse(
+                destination,
+                status_code=303,
+                headers={"Cache-Control": "no-store"},
+            )
     return HTMLResponse(
         embedded_assets.LANDING_HTML,
         headers={"Cache-Control": "no-store"},

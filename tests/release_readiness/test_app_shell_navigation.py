@@ -32,6 +32,17 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
     assert ".sb-global-nav" in stylesheet
     assert ".sb-sidebar__mobile-global { display: none; }" in stylesheet
     assert ".sb-sidebar__mobile-global { display: block; }" in stylesheet
+    global_nav_rule = stylesheet.split(".sb-global-nav {", 1)[1].split("}", 1)[0]
+    active_rule = stylesheet.split(
+        '.sb-global-nav a[aria-current="page"] {', 1
+    )[1].split("}", 1)[0]
+    assert "border:" not in global_nav_rule
+    assert "border-radius:" not in global_nav_rule
+    assert "background:" not in global_nav_rule
+    assert "linear-gradient" not in active_rule
+    assert '.sb-global-nav a[aria-current="page"]::after' in stylesheet
+    account_rule = stylesheet.split(".sb-account summary {", 1)[1].split("}", 1)[0]
+    assert "border: 1px solid" in account_rule
     primary_rule = stylesheet.split(".sb-sidebar__primary {", 1)[1].split("}", 1)[0]
     assert "border:" in primary_rule
     assert "border-radius:" in primary_rule
@@ -50,12 +61,23 @@ def test_account_navigation_exposes_one_active_role_and_role_switching() -> None
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
-    assert 'const ACTIVE_ROLE_KEY = "sessionbuddy.active-role"' in javascript
-    assert 'active ? roleLabel(active.role) : "Account"' in javascript
+    assert '"/api/v1/session/active-role"' in javascript
+    assert "localStorage" not in javascript
+    assert '` · ${roleLabel(active.role)}`' in javascript
     assert 'make("p", "Switch role", "sb-role-switcher__label")' in javascript
+    assert 'make("p", "Account", "sb-account__menu-title")' in javascript
+    assert 'switcher.setAttribute("role", "group")' in javascript
+    assert 'button.setAttribute("aria-pressed", String(isActive))' in javascript
+    assert 'button.setAttribute("aria-disabled", "true")' in javascript
+    assert 'make("span", undefined, "sb-role-option__check")' in javascript
+    assert 'make("span", "Active")' in javascript
+    assert 'navLink("Account settings", "/account", "account")' in javascript
+    assert 'make("span", "Sign out")' in javascript
     assert "return new Set(active ? [active.role] : [])" in javascript
-    assert ".sb-active-role" in stylesheet
     assert ".sb-role-option" in stylesheet
+    assert ".sb-role-option__check" in stylesheet
+    assert ".sb-account__menu-identity" in stylesheet
+    assert ":focus-visible" in stylesheet
 
 
 def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
@@ -86,6 +108,9 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert 'choice.role === "organization_admin"' in javascript
     assert 'choice.role === "evaluator"' in javascript
     assert 'choice.role === "speaker"' in javascript
+    assert 'if (landingAccount && location.pathname === "/")' in javascript
+    assert "location.replace(dashboardDestination(session))" in javascript
+    assert 'return active ? roleDestination(active) : "/account"' in javascript
 
 
 def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
@@ -111,6 +136,6 @@ def test_only_event_navigation_scrolls_inside_the_sidebar_on_all_viewports() -> 
     assert "overflow-y: auto" in event_rule
     assert "overscroll-behavior: contain" in event_rule
 
-    mobile_rules = stylesheet.split("@media (max-width: 60rem)", 1)[1]
+    mobile_rules = stylesheet.split("@media (max-width: 52rem)", 1)[1]
     assert ".sb-sidebar { transform:" in mobile_rules
     assert ".sb-sidebar { overflow" not in mobile_rules

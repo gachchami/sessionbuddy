@@ -146,7 +146,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'value="Asia/Kolkata"' not in text
     assert '<option value="" selected disabled>Select a format</option>' in text
     assert 'aria-describedby="time-zone-help"' in text
-    assert '<legend>Dates and times</legend>' in text
+    assert '<strong>Schedule</strong>' in text
     assert 'name="start_date" type="date"' in text
     assert 'name="start_time" type="time" value="09:00"' in text
     assert 'name="end_date" type="date"' in text
@@ -154,7 +154,8 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'id="date-time-preview"' in text
     assert "showModal()" in javascript
     assert 'form.elements.delivery_mode.value = ""' in javascript
-    assert 'startsAt <= Date.now()' in javascript
+    assert 'createStatus === "active" && endsAt <= Date.now()' in javascript
+    assert "Update the event dates before activating." in javascript
     assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
     assert "zonedDateTimeToMillis" in javascript
 
@@ -187,7 +188,7 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
     assert '"People"' in shell
     for section in ('"Plan"', '"People"', '"Publish"'):
         assert section in shell
-    assert '"Account & access"' in shell
+    assert '"Account settings"' in shell
     assert '"Sign out"' in shell
 
 

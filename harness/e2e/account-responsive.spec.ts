@@ -15,6 +15,8 @@ test.describe("account profile responsive design", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await expect(page.getByText("Your account is up to date.")).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Workspace navigation" })).toBeHidden();
+    await expect(page.getByRole("radio", { name: /Organizer/ })).toBeChecked();
+    await expect(page.getByRole("button", { name: "Save default role" })).toBeDisabled();
 
     const panel = await page.locator(".account-profile-panel").boundingBox();
     const headshot = await page.locator(".account-headshot").boundingBox();

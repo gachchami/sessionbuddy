@@ -222,7 +222,7 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         assert "Set up SessionBuddy" not in closed_setup.text
         configured_home = await client.get("/", follow_redirects=False)
         assert configured_home.status_code == 200
-        assert "Plan your conference program in one place" in configured_home.text
+        assert "From open call to published agenda." in configured_home.text
         assert connection.execute(
             "SELECT COUNT(*) FROM instance_setup WHERE singleton_key='primary'"
         ).fetchone()[0] == 1
@@ -250,6 +250,8 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         session = (await client.get("/api/v1/auth/session")).json()
         assert session["display_name"] == "Asha Rao"
         assert session["profile_complete"] is False
+        assert session["default_email_sender_name"] == "SessionBuddy"
+        assert session["default_email_address"] == "events@example.test"
         profile = (await client.get("/api/v1/account/profile")).json()
         assert profile["email"] == "asha@example.com"
         assert profile["version"] == 1
@@ -346,6 +348,72 @@ async def test_profile_can_create_password_and_password_sign_in_keeps_magic_link
                 json={"email": "password@example.com", "redirect_path": "/account"},
             )
         ).status_code == 202
+
+
+async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        created = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Role Defaults",
+                "admin_name": "Role Owner",
+                "admin_email": "roles@example.com",
+            },
+        )
+        user_id = created.json()["admin_user_id"]
+        connection.executemany(
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES(?,?,'active',1,1,?)""",
+            [(user_id, "organizer", 0), (user_id, "speaker", 1)],
+        )
+        connection.commit()
+
+        assert (
+            await client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "roles@example.com", "redirect_path": "/"},
+            )
+        ).status_code == 202
+        verified = await client.post(
+            f"/auth/verify?token={_token(connection, 'roles@example.com')}",
+            follow_redirects=False,
+        )
+        assert verified.status_code == 303
+        assert verified.headers["location"] == "/speaker"
+
+        session = (await client.get("/api/v1/auth/session")).json()
+        assert session["default_role"] == "speaker"
+        assert session["active_role"] == "speaker"
+        switched = await client.put(
+            "/api/v1/session/active-role",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={"role": "organizer"},
+        )
+        assert switched.status_code == 200
+        assert switched.json()["active_role"] == "organizer"
+        assert switched.json()["default_role"] == "speaker"
+        changed_default = await client.put(
+            "/api/v1/account/default-role",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={"role": "organizer"},
+        )
+        assert changed_default.status_code == 200
+        assert changed_default.json()["active_role"] == "organizer"
+        assert changed_default.json()["default_role"] == "organizer"
+        assert connection.execute(
+            "SELECT role FROM user_roles WHERE user_id=? AND is_default=1", (user_id,)
+        ).fetchone()["role"] == "organizer"
+        denied = await client.put(
+            "/api/v1/session/active-role",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={"role": "reviewer"},
+        )
+        assert denied.status_code == 403
 
 
 async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
@@ -598,10 +666,65 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             for target in invited_roster.json()["data"]
         )
 
+        drafted = await admin.patch(
+            f"/api/v1/admin/events/{event_id}",
+            headers=mutation_headers,
+            json={
+                "name": "Speaker Summit",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+                "location": "Mumbai",
+                "description": "Speaker conference",
+                "email_sender_name": "Speaker Summit",
+                "email_reply_to": "program@example.com",
+                "status": "draft",
+                "version": 1,
+            },
+        )
+        assert drafted.status_code == 200
+
         draft_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
         assert draft_workspace.status_code == 200
         assert draft_workspace.json()["event_name"] == "Speaker Summit"
         assert draft_workspace.json()["published_form"] is None
+        draft_publish = await admin.post(
+            f"/api/v1/admin/events/{event_id}/cfp/publish",
+            headers={**mutation_headers, "idempotency-key": "draft-publish-integration-2026"},
+            json={
+                "slug": "speaker-summit",
+                "welcome_text": "Share your session.",
+                "closes_at_ms": 1_899_913_600_000,
+            },
+        )
+        assert draft_publish.status_code in {409, 422}
+        assert draft_publish.json()["error"]["message"] == (
+            "Activate the event before publishing its CFP."
+        )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM cfp_forms WHERE event_id=?", (event_id,)
+        ).fetchone()[0] == 0
+
+        activated = await admin.patch(
+            f"/api/v1/admin/events/{event_id}",
+            headers=mutation_headers,
+            json={
+                "name": "Speaker Summit",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+                "location": "Mumbai",
+                "description": "Speaker conference",
+                "email_sender_name": "Speaker Summit",
+                "email_reply_to": "program@example.com",
+                "status": "active",
+                "version": 2,
+            },
+        )
+        assert activated.status_code == 200
+
         published = await admin.post(
             f"/api/v1/admin/events/{event_id}/cfp/publish",
             headers={**mutation_headers, "idempotency-key": "publish-integration-2026"},
@@ -857,6 +980,41 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 },
             )
         ).status_code == 201
+
+        archived_event = await admin_again.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=headers,
+            json={
+                "name": "Archived Summit",
+                "starts_at_ms": 1_902_000_000_000,
+                "ends_at_ms": 1_902_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+                "location": "Mumbai",
+                "description": "Archived conference",
+            },
+        )
+        assert archived_event.status_code == 201
+        archived_event_id = archived_event.json()["id"]
+        archived = await admin_again.patch(
+            f"/api/v1/admin/events/{archived_event_id}",
+            headers=headers,
+            json={
+                "name": "Archived Summit",
+                "starts_at_ms": 1_902_000_000_000,
+                "ends_at_ms": 1_902_086_400_000,
+                "time_zone": "Asia/Kolkata",
+                "delivery_mode": "hybrid",
+                "location": "Mumbai",
+                "description": "Archived conference",
+                "status": "archived",
+                "version": 1,
+            },
+        )
+        assert archived.status_code == 200
+        assert (
+            await admin_again.get(f"/api/v1/admin/events/{archived_event_id}/cfp")
+        ).status_code == 404
 
         invitations = await admin_again.get(f"/api/v1/admin/events/{event_id}/invitations")
         assert [(item["role"], item["status"]) for item in invitations.json()["data"]] == [

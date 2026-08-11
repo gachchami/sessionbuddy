@@ -457,9 +457,9 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         account.status_code,
         app_shell_js.status_code,
     } == {200}
-    assert "secure sign-in link" in sign_in.text
+    assert "Email me a sign-in link" in sign_in.text
     assert "People and invitations" in access.text
-    assert "Create events and keep their details up to date" in events.text
+    assert "All events" in events.text
     assert "Edit organization name" not in events.text
     assert "Organization settings" in account.text
     assert "Create event" in events.text

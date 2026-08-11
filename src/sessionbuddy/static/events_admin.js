@@ -2,7 +2,7 @@
   "use strict";
 
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventSearch: "" };
+  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventOrder: "upcoming", eventSearch: "", eventsRequestId: 0, submitting: false, editingDraft: false, submitTargetStatus: "active", createMutation: null, emailDefaults: null };
   const logoRules = { "image/jpeg": 2 * 1024 * 1024, "image/png": 2 * 1024 * 1024, "image/webp": 2 * 1024 * 1024 };
   const timeZoneAliases = new Map([
     ["Asia/Calcutta", "Asia/Kolkata"],
@@ -16,11 +16,79 @@
   ]);
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+  const eventDraftKey = "sessionbuddy:event-form-draft";
+  const mutationToken = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  };
+
+  function preserveEventDraft(form) {
+    const values = {};
+    for (const [name, value] of new FormData(form)) {
+      if (typeof value === "string") values[name] = value;
+    }
+    sessionStorage.setItem(eventDraftKey, JSON.stringify(values));
+  }
+
+  function restoreEventDraft() {
+    const raw = sessionStorage.getItem(eventDraftKey);
+    if (!raw) return false;
+    try {
+      const values = JSON.parse(raw);
+      const form = byId("event-form");
+      for (const [name, value] of Object.entries(values)) {
+        const field = form.elements[name];
+        if (field && typeof value === "string") field.value = value;
+      }
+      byId("event-form-heading").textContent = values.event_id
+        ? "Resume event changes"
+        : values.duplicate_source_event_id ? "Resume event duplication" : "Resume event creation";
+      state.editingDraft = Boolean(values.event_id && values.status === "draft");
+      byId("save-event").textContent = values.event_id
+        ? (state.editingDraft ? "Activate event" : "Save changes")
+        : "Create event";
+      byId("save-event-draft").hidden = Boolean(values.event_id && !state.editingDraft);
+      byId("creation-action-note").hidden = Boolean(values.event_id && !state.editingDraft);
+      byId("event-status-label").hidden = !values.event_id || state.editingDraft;
+      updateDateTimePreview();
+      openEventDialog();
+      setDialogStatus("Your entries were restored after signing in again.");
+      return true;
+    } catch (_) {
+      sessionStorage.removeItem(eventDraftKey);
+      return false;
+    }
+  }
 
   function updateSaveAvailability() {
     const form = byId("event-form");
     const pending = Boolean(form.elements.logo_file.files[0] || form.elements.cover_file.files[0]);
-    byId("save-event").disabled = pending;
+    byId("save-event").disabled = pending || state.submitting;
+    byId("save-event-draft").disabled = pending || state.submitting;
+  }
+
+  function setDialogStatus(message = "", error = false) {
+    const status = byId("event-dialog-status");
+    status.textContent = message;
+    status.classList.toggle("error", error);
+    status.setAttribute("role", error ? "alert" : "status");
+    if (error) status.focus();
+  }
+
+  function setSubmitting(submitting, editing = false) {
+    state.submitting = submitting;
+    byId("event-form").setAttribute("aria-busy", String(submitting));
+    byId("save-event-draft").textContent = submitting && state.submitTargetStatus === "draft" ? "Saving draft…" : "Save draft";
+    byId("save-event").textContent = submitting
+      ? (editing && !state.editingDraft
+          ? "Saving changes…"
+          : state.editingDraft && state.submitTargetStatus === "active"
+            ? "Activating event…"
+            : state.submitTargetStatus === "active" ? "Creating event…" : "Create event")
+      : (editing ? (state.editingDraft ? "Activate event" : "Save changes") : "Create event");
+    byId("cancel-event-edit").disabled = submitting;
+    byId("close-event-dialog").disabled = submitting;
+    updateSaveAvailability();
   }
 
   function setStatus(message, error = false) {
@@ -172,46 +240,104 @@
     }
   }
 
+  function setPublicPreviewImage(kind, source = "") {
+    const image = byId(`public-brand-preview-${kind}`);
+    const empty = byId(`public-brand-preview-${kind}-empty`);
+    if (source) {
+      image.src = source;
+      image.hidden = false;
+      if (empty) empty.hidden = true;
+    } else {
+      image.removeAttribute("src");
+      image.hidden = true;
+      if (empty) empty.hidden = false;
+    }
+  }
+
+  function updatePublicBrandPreview() {
+    const form = byId("event-form");
+    const name = form.elements.name.value.trim();
+    const accent = form.elements.accent_color.value || "#3159d9";
+    const delivery = form.elements.delivery_mode.value.replace("_", " ");
+    const location = form.elements.location.value.trim();
+    const website = form.elements.website_url.value.trim();
+    const card = byId("public-brand-preview-card");
+    card.style.setProperty("--event-preview-accent", accent);
+    byId("public-brand-preview-title").textContent = name || "Your event name";
+    byId("public-brand-preview-monogram").textContent = (name || "AI").slice(0, 2).toUpperCase();
+    const dateText = byId("date-time-preview").textContent;
+    byId("public-brand-preview-date").textContent = dateText.startsWith("Choose")
+      ? "Choose event dates"
+      : dateText;
+    byId("public-brand-preview-location").textContent = [location, delivery].filter(Boolean).join(" · ")
+      || "Add a location or meeting URL";
+    const websitePreview = byId("public-brand-preview-website");
+    try {
+      websitePreview.textContent = website ? new URL(website).hostname : "";
+      websitePreview.hidden = !website;
+    } catch {
+      websitePreview.textContent = website;
+      websitePreview.hidden = !website;
+    }
+  }
+
   function resetEventForm() {
     const form = byId("event-form");
     form.reset();
+    state.submitting = false;
+    state.createMutation = null;
+    state.editingDraft = false;
+    state.submitTargetStatus = "active";
+    setDialogStatus();
     form.classList.remove("validation-attempted");
     for (const field of form.querySelectorAll('[aria-invalid="true"]')) field.removeAttribute("aria-invalid");
     byId("event-form-help").className = "result";
-    byId("event-form-help").innerHTML = 'Fields <span class="required-marker-group">marked <span class="required-marker" aria-hidden="true">*</span></span> are required.';
+    byId("event-form-help").innerHTML = 'Required <span class="required-marker" aria-hidden="true">*</span>';
     form.elements.event_id.value = "";
     form.elements.version.value = "";
+    form.elements.duplicate_source_event_id.value = "";
+    form.elements.duplicate_source_version.value = "";
+    form.elements.retain_source_logo.value = "false";
+    form.elements.retain_source_cover.value = "false";
     form.elements.time_zone.value = browserTimeZone();
     form.elements.start_date.value = "";
     form.elements.start_time.value = "09:00";
     form.elements.end_date.value = "";
     form.elements.end_time.value = "17:00";
-    const minimumDate = eventLocalDateTime(Date.now(), form.elements.time_zone.value).date;
-    form.elements.start_date.min = minimumDate;
-    form.elements.end_date.min = minimumDate;
+    form.elements.start_date.removeAttribute("min");
+    form.elements.end_date.removeAttribute("min");
     form.elements.delivery_mode.value = "";
     form.elements.accent_color.value = "#3159d9";
     form.elements.logo_url.value = "";
     byId("event-logo-preview").removeAttribute("src");
     byId("event-logo-preview-frame").hidden = true;
     byId("event-logo-filename").textContent = "";
-    byId("event-logo-status").textContent = "No file selected.";
+    byId("event-logo-status").textContent = "";
     byId("event-logo-status").className = "image-upload__status";
     byId("upload-event-logo").disabled = true;
     form.elements.cover_image_url.value = "";
     byId("event-cover-preview").removeAttribute("src");
     byId("event-cover-preview-frame").hidden = true;
     byId("event-cover-filename").textContent = "";
-    byId("event-cover-status").textContent = "No file selected.";
+    byId("event-cover-status").textContent = "";
     byId("event-cover-status").className = "image-upload__status";
     byId("upload-event-cover").disabled = true;
     byId("save-event").disabled = false;
+    byId("save-event-draft").disabled = false;
+    byId("cancel-event-edit").disabled = false;
+    byId("close-event-dialog").disabled = false;
     byId("event-form-heading").textContent = "Create an event";
     byId("save-event").textContent = "Create event";
+    byId("save-event-draft").hidden = false;
+    byId("save-event-draft").textContent = "Save draft";
+    byId("creation-action-note").hidden = false;
     byId("event-status-label").hidden = true;
     const advanced = form.querySelector(".advanced-settings");
     if (advanced) advanced.open = false;
     updateDateTimePreview();
+    setPublicPreviewImage("logo");
+    setPublicPreviewImage("cover");
+    updatePublicBrandPreview();
   }
 
   function openEventDialog() {
@@ -220,6 +346,7 @@
   }
 
   function closeEventDialog() {
+    if (state.submitting) return;
     const dialog = byId("event-dialog");
     if (dialog.open) dialog.close();
     resetEventForm();
@@ -265,55 +392,138 @@
     }
     form.elements.website_url.value = event.website_url || "";
     form.elements.status.value = event.status;
+    state.editingDraft = event.status === "draft";
     byId("event-form-heading").textContent = `Edit ${event.name}`;
-    byId("save-event").textContent = "Update event";
-    byId("event-status-label").hidden = false;
+    byId("save-event").textContent = state.editingDraft ? "Activate event" : "Save changes";
+    byId("save-event-draft").hidden = !state.editingDraft;
+    byId("creation-action-note").hidden = !state.editingDraft;
+    byId("event-status-label").hidden = state.editingDraft;
     updateDateTimePreview();
+    setPublicPreviewImage("logo", event.logo_url || "");
+    setPublicPreviewImage("cover", event.cover_image_url || "");
+    updatePublicBrandPreview();
+    openEventDialog();
+    form.elements.name.focus();
+  }
+
+  function duplicateEvent(event) {
+    resetEventForm();
+    const form = byId("event-form");
+    form.elements.duplicate_source_event_id.value = event.id;
+    form.elements.duplicate_source_version.value = String(event.version);
+    form.elements.name.value = `${event.name} copy`;
+    const timeZone = normalizeTimeZone(event.time_zone);
+    const startsAt = eventLocalDateTime(event.starts_at_ms, timeZone);
+    const endsAt = eventLocalDateTime(event.ends_at_ms, timeZone);
+    form.elements.start_date.value = startsAt.date;
+    form.elements.start_time.value = startsAt.time;
+    form.elements.end_date.value = endsAt.date;
+    form.elements.end_time.value = endsAt.time;
+    form.elements.time_zone.value = timeZone;
+    form.elements.delivery_mode.value = event.delivery_mode;
+    form.elements.location.value = event.location || "";
+    form.elements.description.value = event.description || "";
+    form.elements.email_sender_name.value = event.email_sender_name || "";
+    form.elements.email_reply_to.value = event.email_reply_to || "";
+    form.elements.accent_color.value = event.accent_color || "#3159d9";
+    form.elements.website_url.value = event.website_url || "";
+    if (event.logo_url) {
+      form.elements.retain_source_logo.value = "true";
+      byId("event-logo-filename").textContent = "Current logo";
+      byId("event-logo-status").textContent = "Will be copied to the new event.";
+    }
+    if (event.cover_image_url) {
+      form.elements.retain_source_cover.value = "true";
+      byId("event-cover-filename").textContent = "Current cover";
+      byId("event-cover-status").textContent = "Will be copied to the new event.";
+    }
+    window.SessionBuddyApi.refreshCharacterCounters(form);
+    byId("event-form-heading").textContent = `Duplicate ${event.name}`;
+    byId("save-event").textContent = "Create event";
+    byId("save-event-draft").hidden = false;
+    byId("creation-action-note").hidden = false;
+    updateDateTimePreview();
+    setPublicPreviewImage("logo", event.logo_url || "");
+    setPublicPreviewImage("cover", event.cover_image_url || "");
+    updatePublicBrandPreview();
     openEventDialog();
     form.elements.name.focus();
   }
 
   function eventItem(event) {
-    const item = document.createElement("article");
-    item.className = "entity-card organizer-card organizer-event-list-card event-management-card";
+    const item = document.createElement("div");
+    item.className = "event-table-row";
+    item.setAttribute("role", "row");
     const timeZone = normalizeTimeZone(event.time_zone);
     const eventDate = eventLocalDateTime(event.starts_at_ms, timeZone).date;
     const [year, month, day] = eventDate.split("-").map(Number);
     const monthLabel = new Intl.DateTimeFormat(undefined, { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, day)));
-    const dateTile = document.createElement("div");
-    dateTile.className = "event-date-tile";
-    for (const [tag, value] of [["span", monthLabel], ["strong", String(day)], ["small", String(year)]]) {
-      const node = document.createElement(tag);
-      node.textContent = value;
-      dateTile.append(node);
-    }
+    const identity = document.createElement("div");
+    identity.className = "event-table-cell event-table-event";
+    identity.setAttribute("role", "cell");
+    const monogram = document.createElement("span");
+    monogram.className = "event-monogram";
+    monogram.textContent = event.name.trim().slice(0, 2).toUpperCase();
+    monogram.setAttribute("aria-hidden", "true");
     const content = document.createElement("div");
-    content.className = "event-management-card__content";
-    const top = document.createElement("div");
-    top.className = "entity-card__top";
-    const kind = document.createElement("span");
-    kind.className = "eyebrow";
-    kind.textContent = state.organizations.get(state.organizationId)?.name || "Event";
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = event.status;
-    top.append(kind, badge);
     const heading = document.createElement("h3");
     const overview = document.createElement("a");
     overview.textContent = event.name;
     overview.href = `/admin/events/${encodeURIComponent(event.id)}`;
     heading.append(overview);
     const details = document.createElement("p");
-    details.className = "result";
-    details.textContent = [formatEventDateTime(event.starts_at_ms, timeZone), event.location, timeZone].filter(Boolean).join(" · ");
+    details.textContent = [event.location, event.delivery_mode?.replace("_", " ")].filter(Boolean).join(" · ");
+    content.append(heading, details);
+    identity.append(monogram, content);
+    const date = document.createElement("div");
+    date.className = "event-table-cell event-table-date";
+    date.setAttribute("role", "cell");
+    const datePrimary = document.createElement("strong");
+    datePrimary.textContent = `${monthLabel} ${day}, ${year}`;
+    const dateSecondary = document.createElement("small");
+    dateSecondary.textContent = timeZone;
+    date.append(datePrimary, dateSecondary);
+    const statusCell = document.createElement("div");
+    statusCell.className = "event-table-cell event-table-status";
+    statusCell.setAttribute("role", "cell");
+    const badge = document.createElement("span");
+    badge.className = `event-status event-status--${event.status}`;
+    badge.textContent = event.status;
+    statusCell.append(badge);
+    const cfpCell = document.createElement("div");
+    cfpCell.className = "event-table-cell event-table-cfp";
+    cfpCell.setAttribute("role", "cell");
+    const proposalCount = document.createElement("span");
+    const proposals = Number.isInteger(event.proposal_count) ? event.proposal_count : 0;
+    proposalCount.textContent = `${proposals} ${proposals === 1 ? "proposal" : "proposals"}`;
+    const cfp = link("Manage CFP", `/admin/events/${encodeURIComponent(event.id)}/cfp`);
+    cfp.classList.add("event-action--cfp");
+    cfpCell.append(cfp, proposalCount);
     const actions = document.createElement("div");
-    actions.className = "actions entity-card__action";
+    actions.className = "event-table-cell event-table-actions";
+    actions.setAttribute("role", "cell");
+    const duplicate = button("Duplicate", () => duplicateEvent(event));
+    duplicate.setAttribute("aria-label", `Duplicate ${event.name} as a draft`);
+    duplicate.hidden = !state.adminOrganizationIds?.has(event.organization_id);
+    const more = document.createElement("details");
+    more.className = "event-row-more";
+    more.hidden = duplicate.hidden;
+    const moreTrigger = document.createElement("summary");
+    moreTrigger.setAttribute("aria-label", `More actions for ${event.name}`);
+    moreTrigger.textContent = "•••";
+    const moreMenu = document.createElement("div");
+    moreMenu.className = "event-row-more__menu";
+    const edit = button("Edit", () => {
+      more.open = false;
+      editEvent(event);
+    });
+    moreMenu.append(duplicate);
+    more.append(moreTrigger, moreMenu);
     actions.append(
-      link("Open", `/admin/events/${encodeURIComponent(event.id)}`),
-      button("Edit", () => editEvent(event))
+      edit,
+      more
     );
-    content.append(top, heading, details);
-    item.append(dateTile, content, actions);
+    item.append(identity, date, statusCell, cfpCell, actions);
     return item;
   }
 
@@ -326,13 +536,17 @@
   function renderEventList() {
     const events = visibleEvents();
     const list = byId("event-list");
+    const viewLabels = { active: "Active", draft: "Draft", past: "Past", all: "All" };
+    byId("event-list-title").textContent = `${viewLabels[state.eventFilter] || "All"} events`;
     list.replaceChildren(...events.map(eventItem));
     byId("event-count").textContent = `${events.length}${state.nextCursor ? "+" : ""}`;
     byId("load-more-events").hidden = !state.nextCursor;
     if (!events.length) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = state.events.size ? "No events match this view." : "No events yet. Create your first event.";
+      if (state.eventSearch) empty.textContent = `No events match “${state.eventSearch}”. Try another search.`;
+      else if (state.eventFilter !== "all") empty.textContent = `No ${state.eventFilter === "draft" ? "draft" : state.eventFilter} events in this view.`;
+      else empty.textContent = "No events yet. Create your first event.";
       list.append(empty);
     }
   }
@@ -347,28 +561,42 @@
     // pages can never look "missing" from a filtered view.
     const params = new URLSearchParams();
     params.set("view", state.eventFilter);
+    params.set("order", state.eventOrder);
     if (state.eventSearch) params.set("q", state.eventSearch);
     if (cursor) params.set("cursor", cursor);
     return api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/events?${params}`);
   }
 
+
   async function loadEvents(organizationId) {
+    const requestId = ++state.eventsRequestId;
     state.organizationId = organizationId;
     showOrganization();
     resetEventForm();
     // One page at a time: the server paginates and the user asks for more.
-    const result = await fetchEventsPage(organizationId, null);
+    let result;
+    try {
+      result = await fetchEventsPage(organizationId, null);
+    } catch (error) {
+      if (requestId !== state.eventsRequestId) return false;
+      throw error;
+    }
+    if (requestId !== state.eventsRequestId) return false;
     state.events = new Map(result.data.map((event) => [event.id, event]));
     state.nextCursor = result.next_cursor;
     renderEventList();
+    return true;
   }
 
   async function loadMoreEvents() {
     if (!state.nextCursor) return;
+    const requestId = state.eventsRequestId;
+    const cursor = state.nextCursor;
     const button = byId("load-more-events");
     button.disabled = true;
     try {
-      const result = await fetchEventsPage(state.organizationId, state.nextCursor);
+      const result = await fetchEventsPage(state.organizationId, cursor);
+      if (requestId !== state.eventsRequestId) return;
       for (const event of result.data) state.events.set(event.id, event);
       state.nextCursor = result.next_cursor;
       renderEventList();
@@ -382,6 +610,14 @@
   async function initialize() {
     const session = await api("/api/v1/auth/session");
     state.csrf = session.csrf_token;
+    state.emailDefaults = {
+      name: session.default_email_sender_name || "SessionBuddy",
+      address: session.default_email_address || "events@example.test"
+    };
+    const defaultIdentity = `${state.emailDefaults.name} <${state.emailDefaults.address}>`;
+    byId("event-form").elements.email_sender_name.placeholder = state.emailDefaults.name;
+    byId("event-form").elements.email_reply_to.placeholder = state.emailDefaults.address;
+    byId("event-email-default").textContent = `Blank uses ${defaultIdentity}.`;
     // Creating events needs organization-wide management OF THE SELECTED
     // organization; a user can be organization admin of one org and only an
     // event admin of another, so track the exact ids.
@@ -407,6 +643,7 @@
       resetEventForm();
       openEventDialog();
     }
+    restoreEventDraft();
   }
 
   byId("new-event").addEventListener("click", () => {
@@ -429,7 +666,7 @@
   });
   function requeryEvents() {
     loadEvents(state.organizationId)
-      .then(() => setStatus(""))
+      .then((applied) => { if (applied) setStatus(""); })
       .catch((error) => setStatus(error.message, true));
   }
   document.querySelectorAll("[data-event-filter]").forEach((button) => button.addEventListener("click", () => {
@@ -440,14 +677,21 @@
   let searchDebounce = 0;
   byId("event-search").addEventListener("input", (event) => {
     state.eventSearch = event.currentTarget.value.trim();
+    // Invalidate an in-flight response immediately, before the debounce fires.
+    ++state.eventsRequestId;
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(requeryEvents, 250);
+  });
+  byId("event-sort").addEventListener("change", (event) => {
+    state.eventOrder = event.currentTarget.value;
+    requeryEvents();
   });
 
   byId("event-form").addEventListener("input", (event) => {
     event.target.setCustomValidity?.("");
     if (event.target.validity?.valid) event.target.removeAttribute("aria-invalid");
     updateDateTimePreview();
+    updatePublicBrandPreview();
   });
   byId("event-form").addEventListener("invalid", (event) => {
     event.target.setAttribute("aria-invalid", "true");
@@ -458,7 +702,7 @@
     if (form.checkValidity()) return;
     const help = byId("event-form-help");
     help.className = "status error event-form-error";
-    help.textContent = "Complete the highlighted fields before creating the event.";
+    help.textContent = `Complete the highlighted fields before ${form.elements.event_id.value ? "saving changes" : "creating the event"}.`;
     const firstInvalid = form.querySelector(":invalid");
     firstInvalid?.focus();
     firstInvalid?.reportValidity();
@@ -467,16 +711,17 @@
     const form = event.currentTarget.form;
     if (!form.elements.end_date.value) form.elements.end_date.value = event.currentTarget.value;
     updateDateTimePreview();
+    updatePublicBrandPreview();
   });
   byId("event-form").elements.time_zone.addEventListener("change", (event) => {
     event.currentTarget.value = normalizeTimeZone(event.currentTarget.value);
-    if (!event.currentTarget.form.elements.event_id.value) {
-      const minimumDate = eventLocalDateTime(Date.now(), event.currentTarget.value).date;
-      event.currentTarget.form.elements.start_date.min = minimumDate;
-      event.currentTarget.form.elements.end_date.min = minimumDate;
-    }
     updateDateTimePreview();
+    updatePublicBrandPreview();
   });
+
+  for (const kind of ["logo", "cover"]) {
+    byId(`public-brand-preview-${kind}`).addEventListener("error", () => setPublicPreviewImage(kind));
+  }
 
   byId("event-form").elements.logo_file.addEventListener("change", (event) => {
     const input = event.currentTarget;
@@ -489,15 +734,17 @@
     input.setCustomValidity(message);
     byId("upload-event-logo").disabled = !file || Boolean(message);
     event.currentTarget.form.elements.logo_url.value = "";
-    byId("event-logo-status").textContent = message || (file ? "Preview ready. Click Upload to store this logo." : "No file selected.");
+    byId("event-logo-status").textContent = message || (file ? "Ready to upload." : "");
     byId("event-logo-status").className = `image-upload__status${message ? " error" : ""}`;
     updateSaveAvailability();
     if (!file || message) return;
     const reader = new FileReader();
     reader.addEventListener("load", () => {
-      byId("event-logo-preview").src = String(reader.result || "");
+      const source = String(reader.result || "");
+      byId("event-logo-preview").src = source;
       byId("event-logo-preview-frame").hidden = false;
       byId("event-logo-filename").textContent = file.name;
+      setPublicPreviewImage("logo", source);
     }, { once: true });
     reader.readAsDataURL(file);
   });
@@ -513,15 +760,17 @@
     input.setCustomValidity(message);
     byId("upload-event-cover").disabled = !file || Boolean(message);
     event.currentTarget.form.elements.cover_image_url.value = "";
-    byId("event-cover-status").textContent = message || (file ? "Preview ready. Click Upload to store this cover." : "No file selected.");
+    byId("event-cover-status").textContent = message || (file ? "Ready to upload." : "");
     byId("event-cover-status").className = `image-upload__status${message ? " error" : ""}`;
     updateSaveAvailability();
     if (!file || message) return;
     const reader = new FileReader();
     reader.addEventListener("load", () => {
-      byId("event-cover-preview").src = String(reader.result || "");
+      const source = String(reader.result || "");
+      byId("event-cover-preview").src = source;
       byId("event-cover-preview-frame").hidden = false;
       byId("event-cover-filename").textContent = file.name;
+      setPublicPreviewImage("cover", source);
     }, { once: true });
     reader.readAsDataURL(file);
   });
@@ -548,9 +797,10 @@
     try {
       const uploaded = await uploadEventAsset(kind, file);
       form.elements[isLogo ? "logo_url" : "cover_image_url"].value = uploaded.asset_url;
+      form.elements[isLogo ? "retain_source_logo" : "retain_source_cover"].value = "false";
       input.value = "";
       updateSaveAvailability();
-      status.textContent = "Uploaded. This image will be saved with the event.";
+      status.textContent = "Uploaded.";
       status.className = "image-upload__status success";
     } catch (error) {
       button.disabled = false;
@@ -567,6 +817,10 @@
     const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const eventId = values.event_id;
+    const duplicateSourceId = values.duplicate_source_event_id;
+    const createStatus = event.submitter?.value === "draft" ? "draft" : "active";
+    state.submitTargetStatus = createStatus;
+    if (state.submitting) return;
     try {
       for (const name of ["website_url"]) {
         const input = form.elements[name];
@@ -576,16 +830,16 @@
       const timeZone = normalizeTimeZone(values.time_zone);
       const startsAt = zonedDateTimeToMillis(values.start_date, values.start_time, timeZone);
       const endsAt = zonedDateTimeToMillis(values.end_date, values.end_time, timeZone);
-      if (!eventId && startsAt <= Date.now()) {
-        form.elements.start_date.setCustomValidity("A new event must start in the future.");
-        form.elements.start_date.setAttribute("aria-invalid", "true");
-        form.elements.start_date.reportValidity();
-        return;
-      }
       if (endsAt <= startsAt) {
         form.elements.end_date.setCustomValidity("The event must end after it starts.");
         form.elements.end_date.reportValidity();
         updateDateTimePreview();
+        return;
+      }
+      if (createStatus === "active" && endsAt <= Date.now()) {
+        form.elements.end_date.setCustomValidity("Update the event dates before activating.");
+        form.elements.end_date.setAttribute("aria-invalid", "true");
+        form.elements.end_date.reportValidity();
         return;
       }
       const body = {
@@ -603,25 +857,46 @@
         cover_image_url: values.cover_image_url || null,
         website_url: values.website_url || null
       };
+      if (duplicateSourceId) {
+        body.source_version = Number(values.duplicate_source_version);
+        body.retain_source_logo = values.retain_source_logo === "true";
+        body.retain_source_cover = values.retain_source_cover === "true";
+      }
+      if (!eventId) body.status = createStatus;
       if (eventId) {
         body.version = Number(values.version);
-        body.status = values.status;
+        body.status = state.editingDraft ? createStatus : values.status;
       }
       if (form.elements.logo_file.files[0] || form.elements.cover_file.files[0]) {
-        setStatus("Upload the selected logo or cover before creating the event.", true);
+        setDialogStatus(`Upload the selected logo or cover before ${eventId ? "saving changes" : "creating the event"}.`, true);
         return;
       }
+      setDialogStatus(eventId && !state.editingDraft ? "Saving changes…" : createStatus === "draft" ? "Saving draft…" : "Creating event…");
+      setSubmitting(true, Boolean(eventId));
+      const fingerprint = JSON.stringify(body);
+      if (!eventId && (!state.createMutation || state.createMutation.fingerprint !== fingerprint)) {
+        state.createMutation = { fingerprint, key: mutationToken() };
+      }
+      const headers = { "content-type": "application/json", "x-csrf-token": state.csrf };
+      if (!eventId) headers["idempotency-key"] = state.createMutation.key;
       await api(
         eventId
           ? `/api/v1/admin/events/${encodeURIComponent(eventId)}`
+          : duplicateSourceId
+            ? `/api/v1/admin/events/${encodeURIComponent(duplicateSourceId)}/duplicate`
           : `/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events`,
         {
           method: eventId ? "PATCH" : "POST",
-          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+          headers,
           body: JSON.stringify(body)
         }
       );
-      setStatus(eventId ? "Event updated." : "Event created.");
+      sessionStorage.removeItem(eventDraftKey);
+      setStatus(eventId && state.editingDraft && createStatus === "active"
+        ? "Event activated."
+        : eventId && !state.editingDraft
+          ? "Event updated."
+          : createStatus === "draft" ? "Draft saved." : "Event created.");
       await loadEvents(state.organizationId);
       closeEventDialog();
     } catch (error) {
@@ -631,7 +906,23 @@
         updateDateTimePreview();
         return;
       }
-      setStatus(error.status === 409 ? "The event changed elsewhere. Reload and try again." : error.message, true);
+      if (error.status === 401) {
+        preserveEventDraft(form);
+        window.SessionBuddyApi.redirectIfSignedOut(error);
+      } else {
+        const message = error.status === 409
+          ? eventId
+            ? "This event changed elsewhere. Reload the page before saving again so you do not overwrite someone else's work."
+            : duplicateSourceId
+              ? "The source event changed while this form was open. Close it and choose Duplicate again to review the latest details."
+              : "Event creation is still being processed. Try again to safely check the same request."
+          : error.status === 403
+            ? "Your access changed while this form was open. Ask an administrator to restore event management access."
+            : error.message;
+        setDialogStatus(message, true);
+      }
+    } finally {
+      setSubmitting(false, Boolean(eventId));
     }
   });
 

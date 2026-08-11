@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=25">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=13">
+  <link rel="stylesheet" href="/product/assets/product.css?v=26">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=15">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=16" defer></script>
-  <script src="/account/assets/account.js?v=9" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=18" defer></script>
+  <script src="/account/assets/account.js?v=10" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
@@ -57,8 +57,12 @@
       <div id="organization-settings-list" class="entity-grid"></div>
     </section>
     <section class="directory-section organizer-section organizer-section--account-access" aria-labelledby="access-title">
-      <div class="section-heading"><div><h2 id="access-title">Roles and Access</h2><p class="section-summary">Your active role controls what you can see and change. Switch roles from the account menu.</p></div><span id="access-count" class="badge">—</span></div>
-      <div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div>
+      <div class="section-heading"><div><h2 id="access-title">Roles and Access</h2><p class="section-summary">Choose what opens when you sign in. Switch your active role any time from the account menu.</p></div><span id="access-count" class="badge">—</span></div>
+      <form id="default-role-form" class="default-role-picker">
+        <fieldset><legend>Default role</legend><p class="help">Your default role becomes active when you start a new session.</p><div id="default-role-list" class="default-role-list"></div></fieldset>
+        <button id="save-default-role" type="submit" disabled>Save default role</button>
+      </form>
+      <div class="account-resource-access"><h3>Resource access</h3><p class="help">Organizations and events available to your account.</p><div id="access-list" class="entity-grid"><p class="empty">Loading access…</p></div></div>
     </section>
   </main>
 </body>

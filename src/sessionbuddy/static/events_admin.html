@@ -4,21 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=23">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=12">
+  <link rel="stylesheet" href="/product/assets/product.css?v=32">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=15">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=15" defer></script>
-  <script src="/admin/events/assets/events.js?v=16" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=18" defer></script>
+  <script src="/admin/events/assets/events.js?v=30" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--events">
   <a class="skip-link" href="#main">Skip to event management</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <div class="page-heading page-heading--compact organizer-hero">
+    <div class="page-heading page-heading--compact events-page-heading">
       <div>
-        <p class="eyebrow">Events · <span id="organization-title">Loading…</span></p>
         <h1>Events</h1>
-        <p class="lede">Create events and keep their details up to date.</p>
+        <span id="organization-title" class="sr-only">your organization</span>
       </div>
       <div class="page-heading__actions">
         <label id="organization-picker" class="compact-field">Organization<select name="organization_id" id="organization" required></select></label>
@@ -28,84 +27,118 @@
 
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1">Loading events…</div>
 
-    <section class="directory-section directory-section--primary organizer-section organizer-section--events" aria-labelledby="event-list-title">
+    <section class="events-workspace" aria-labelledby="event-list-title">
       <div class="section-heading">
-        <div><h2 id="event-list-title">All events</h2></div>
+        <h2 id="event-list-title">All events</h2>
         <span id="event-count" class="badge">—</span>
       </div>
       <div class="event-management-toolbar">
         <div class="event-filter-tabs" role="group" aria-label="Filter events"><button type="button" data-event-filter="all" aria-pressed="true">All</button><button type="button" data-event-filter="active" aria-pressed="false">Active</button><button type="button" data-event-filter="draft" aria-pressed="false">Drafts</button><button type="button" data-event-filter="past" aria-pressed="false">Past</button></div>
-        <label class="event-search"><span class="sr-only">Search events</span><input id="event-search" type="search" placeholder="Search events…" autocomplete="off"></label>
+        <div class="event-toolbar-controls">
+          <label class="event-sort"><span class="sr-only">Sort events</span><select id="event-sort"><option value="upcoming">Upcoming first</option><option value="recent">Latest first</option></select></label>
+          <label class="event-search"><span class="sr-only">Search events</span><input id="event-search" type="search" placeholder="Search events…" autocomplete="off"></label>
+        </div>
       </div>
-      <div id="event-list" class="entity-grid event-grid event-management-list"><p class="empty">Loading your events…</p></div>
-      <button id="load-more-events" class="secondary" type="button" hidden>Load more events</button>
+      <div class="event-table-frame">
+        <div class="event-table-header" aria-hidden="true"><span>Event</span><span>Date</span><span>Status</span><span>CFP</span><span>Actions</span></div>
+        <div id="event-list" class="event-management-list" role="table" aria-label="Events"><p class="empty">Loading your events…</p></div>
+      </div>
+      <div class="event-list-footer"><button id="load-more-events" class="secondary" type="button" hidden>Load more events</button></div>
     </section>
 
-    <dialog id="event-dialog" class="form-dialog form-dialog--wide organizer-dialog organizer-dialog--event" aria-labelledby="event-form-heading">
+    <dialog id="event-dialog" class="form-dialog form-dialog--wide organizer-dialog organizer-dialog--event" aria-labelledby="event-form-heading" aria-describedby="event-form-help event-dialog-status">
       <div class="dialog-heading">
-        <div><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Fields <span class="required-marker-group">marked <span class="required-marker" aria-hidden="true">*</span></span> are required.</p></div>
+        <div><h2 id="event-form-heading">Create an event</h2><p id="event-form-help" class="result">Required <span class="required-marker" aria-hidden="true">*</span></p></div>
         <button id="close-event-dialog" type="button" class="icon-button" aria-label="Close event form">×</button>
       </div>
       <form id="event-form">
+        <div id="event-dialog-status" class="dialog-status" role="status" aria-live="polite" tabindex="-1"></div>
         <input name="event_id" type="hidden">
         <input name="version" type="hidden">
-        <label><span class="field-label">Event name <span class="required-marker" aria-hidden="true">*</span></span><input name="name" maxlength="200" aria-describedby="event-name-help" required><small id="event-name-help">The name shown to speakers, reviewers, and attendees.</small></label>
-        <div class="form-grid">
-          <label><span class="field-label">Time zone <span class="required-marker" aria-hidden="true">*</span></span><input name="time_zone" list="time-zone-options" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help"><span id="detected-time-zone">Detecting your time zone…</span></small></label>
-          <label><span class="field-label">Attendance format <span class="required-marker" aria-hidden="true">*</span></span><select name="delivery_mode" required><option value="" selected disabled>Select a format</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select></label>
-        </div>
+        <input name="duplicate_source_event_id" type="hidden">
+        <input name="duplicate_source_version" type="hidden">
+        <input name="retain_source_logo" type="hidden" value="false">
+        <input name="retain_source_cover" type="hidden" value="false">
         <datalist id="time-zone-options"></datalist>
-        <fieldset aria-describedby="date-time-help date-time-preview">
-          <legend>Dates and times</legend>
-          <div class="form-grid form-grid--four">
-            <label><span class="field-label">Start date <span class="required-marker" aria-hidden="true">*</span></span><input name="start_date" type="date" required></label>
-            <label><span class="field-label">Start time <span class="required-marker" aria-hidden="true">*</span></span><input name="start_time" type="time" value="09:00" step="900" required></label>
-            <label><span class="field-label">End date <span class="required-marker" aria-hidden="true">*</span></span><input name="end_date" type="date" required></label>
-            <label><span class="field-label">End time <span class="required-marker" aria-hidden="true">*</span></span><input name="end_time" type="time" value="17:00" step="900" required></label>
+        <div class="event-form-layout">
+          <div class="event-form-primary">
+            <section class="event-form-section" aria-labelledby="event-details-title">
+              <div class="event-form-section__heading"><h3 id="event-details-title">Event details</h3></div>
+              <label><span class="field-label">Event name <span class="required-marker" aria-hidden="true">*</span></span><input name="name" maxlength="200" required></label>
+              <div class="form-grid">
+                <label><span class="field-label">Attendance format <span class="required-marker" aria-hidden="true">*</span></span><select name="delivery_mode" required><option value="" selected disabled>Select a format</option><option value="in_person">In person</option><option value="virtual">Virtual</option><option value="hybrid">Hybrid</option></select></label>
+                <label><span class="field-label">Location <span class="required-marker" aria-hidden="true">*</span></span><input name="location" placeholder="Venue, city, or meeting link" maxlength="500" required></label>
+              </div>
+              <label><span class="field-label">Description <span class="required-marker" aria-hidden="true">*</span></span><textarea name="description" rows="4" placeholder="What should participants know?" maxlength="2000" required></textarea></label>
+            </section>
+          </div>
+
+          <aside class="event-form-secondary" aria-label="Optional event settings">
+            <fieldset class="event-form-section event-form-section--quiet">
+              <legend><strong>Email identity</strong></legend>
+              <label><span class="field-label">Sender name <span class="optional">Optional</span></span><input name="email_sender_name" maxlength="200"></label>
+              <label><span class="field-label">Reply-to email <span class="optional">Optional</span></span><input name="email_reply_to" type="email" maxlength="320" autocomplete="email"></label>
+              <p id="event-email-default" class="event-email-default"></p>
+            </fieldset>
+          </aside>
+        </div>
+
+        <fieldset class="event-form-section event-form-schedule" aria-describedby="date-time-help date-time-preview">
+          <legend id="event-schedule-title"><strong>Schedule</strong></legend>
+          <div class="event-schedule-grid">
+            <label><span class="field-label">Time zone <span class="required-marker" aria-hidden="true">*</span></span><input name="time_zone" list="time-zone-options" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="time-zone-help" required><small id="time-zone-help"><span id="detected-time-zone">Detecting your time zone…</span></small></label>
+            <div class="event-date-grid">
+              <div class="event-date-group"><span class="event-date-group__label">Starts</span><label><span class="field-label">Date <span class="required-marker" aria-hidden="true">*</span></span><input name="start_date" type="date" aria-label="Start date" required></label><label><span class="field-label">Time <span class="required-marker" aria-hidden="true">*</span></span><input name="start_time" type="time" value="09:00" step="900" aria-label="Start time" required></label></div>
+              <div class="event-date-group"><span class="event-date-group__label">Ends</span><label><span class="field-label">Date <span class="required-marker" aria-hidden="true">*</span></span><input name="end_date" type="date" aria-label="End date" required></label><label><span class="field-label">Time <span class="required-marker" aria-hidden="true">*</span></span><input name="end_time" type="time" value="17:00" step="900" aria-label="End time" required></label></div>
+            </div>
           </div>
           <p id="date-time-help" class="sr-only">All dates and times use the selected event time zone.</p>
           <p id="date-time-preview" class="date-preview" role="status" aria-live="polite">Choose a start and end date.</p>
         </fieldset>
-        <label><span class="field-label">Location <span class="required-marker" aria-hidden="true">*</span></span><input name="location" placeholder="Venue, city, or meeting URL" maxlength="500" required></label>
-        <label><span class="field-label">Description <span class="required-marker" aria-hidden="true">*</span></span><textarea name="description" rows="4" placeholder="What should speakers and reviewers know about this event?" maxlength="2000" required></textarea></label>
-        <fieldset>
-          <legend>Email identity</legend>
-          <p class="result">Messages still use the site operator's verified sending address. Leave these blank to use the site defaults.</p>
-          <div class="form-grid">
-            <label>Sender name <span class="optional">Optional</span><input name="email_sender_name" maxlength="200" placeholder="Name recipients will see"></label>
-            <label>Reply-to email <span class="optional">Optional</span><input name="email_reply_to" type="email" maxlength="320" autocomplete="email" placeholder="Where replies should go"><small>Recipients' replies are sent to this address.</small></label>
-          </div>
-        </fieldset>
-        <details class="advanced-settings">
-          <summary>Brand and public website</summary>
+
+        <details class="advanced-settings event-branding-section">
+          <summary><span><strong>Branding</strong><small>Optional</small></span></summary>
           <div class="advanced-settings__content">
-            <div class="form-grid branding-fields"><label><span class="field-label">Accent color</span><input name="accent_color" type="color" value="#3159d9"></label><label><span class="field-label">Event website <span class="optional">Optional</span></span><input name="website_url" type="url" placeholder="https://…"></label></div>
+            <div class="branding-fields"><label><span class="field-label">Accent color</span><span class="event-color-control"><input name="accent_color" type="color" value="#3159d9"><span aria-hidden="true">Event accent</span></span></label><label><span class="field-label">Event website <span class="optional">Optional</span></span><input name="website_url" type="url" placeholder="https://…"></label></div>
+            <section class="public-brand-preview" aria-labelledby="public-brand-preview-title">
+              <div class="public-brand-preview__label"><span>Public header preview</span></div>
+              <div id="public-brand-preview-card" class="public-brand-preview__card">
+                <div class="public-brand-preview__header"><b>SessionBuddy</b><span class="public-brand-preview__logo"><img id="public-brand-preview-logo" alt="" hidden><b id="public-brand-preview-monogram">AI</b></span></div>
+                <div class="public-brand-preview__cover"><img id="public-brand-preview-cover" alt="" hidden><span id="public-brand-preview-cover-empty">Event cover</span></div>
+                <div class="public-brand-preview__body">
+                  <h4 id="public-brand-preview-title">Your event name</h4>
+                  <p id="public-brand-preview-date">Choose event dates</p>
+                  <p id="public-brand-preview-location">Add a location or meeting URL</p>
+                  <p id="public-brand-preview-website" hidden></p>
+                </div>
+              </div>
+            </section>
             <input name="logo_url" type="hidden">
             <input name="cover_image_url" type="hidden">
             <div class="image-upload-grid">
-              <section class="image-upload" aria-labelledby="event-logo-label">
-                <div class="image-upload__header"><strong id="event-logo-label">Event logo</strong><span class="optional">Optional</span><small id="event-logo-help">PNG, JPEG, or WebP up to 2 MB.</small></div>
-                <label class="button secondary image-upload__button" for="event-logo-file">Choose file</label>
+              <section class="image-upload image-upload--logo" aria-labelledby="event-logo-label">
+                <div class="image-upload__header"><span class="image-upload__title"><strong id="event-logo-label">Event logo</strong><span class="optional">Optional</span></span><small id="event-logo-help">PNG, JPG or WebP · 2 MB</small></div>
                 <input id="event-logo-file" class="visually-hidden-file" name="logo_file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="event-logo-help event-logo-filename">
+                <div class="image-upload__actions"><label class="button secondary image-upload__button" for="event-logo-file">Choose logo</label><button id="upload-event-logo" class="secondary image-upload__submit" type="button" disabled>Upload</button></div>
                 <div id="event-logo-preview-frame" class="image-upload__preview image-upload__preview--logo" hidden><img id="event-logo-preview" class="event-logo" alt="Selected event logo"><span id="event-logo-filename"></span></div>
-                <button id="upload-event-logo" class="secondary image-upload__submit" type="button" disabled>Upload logo</button>
-                <p id="event-logo-status" class="image-upload__status" aria-live="polite">No file selected.</p>
+                <p id="event-logo-status" class="image-upload__status" aria-live="polite"></p>
               </section>
-              <section class="image-upload" aria-labelledby="event-cover-label">
-                <div class="image-upload__header"><strong id="event-cover-label">Event cover</strong><span class="optional">Optional</span><small id="event-cover-help">Landscape PNG, JPEG, or WebP up to 2 MB. Recommended: 1600 × 900.</small></div>
-                <label class="button secondary image-upload__button" for="event-cover-file">Choose file</label>
+              <section class="image-upload image-upload--cover" aria-labelledby="event-cover-label">
+                <div class="image-upload__header"><span class="image-upload__title"><strong id="event-cover-label">Event cover</strong><span class="optional">Optional</span></span><small id="event-cover-help">16:9 · 1600 × 900 · 2 MB</small></div>
                 <input id="event-cover-file" class="visually-hidden-file" name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="event-cover-help event-cover-filename">
+                <div class="image-upload__actions"><label class="button secondary image-upload__button" for="event-cover-file">Choose cover</label><button id="upload-event-cover" class="secondary image-upload__submit" type="button" disabled>Upload</button></div>
                 <div id="event-cover-preview-frame" class="image-upload__preview image-upload__preview--cover" hidden><img id="event-cover-preview" class="event-cover-image" alt="Selected event cover"><span id="event-cover-filename"></span></div>
-                <button id="upload-event-cover" class="secondary image-upload__submit" type="button" disabled>Upload cover</button>
-                <p id="event-cover-status" class="image-upload__status" aria-live="polite">No file selected.</p>
+                <p id="event-cover-status" class="image-upload__status" aria-live="polite"></p>
               </section>
             </div>
           </div>
         </details>
         <label id="event-status-label" hidden>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
         <div class="dialog-actions">
+          <span id="creation-action-note" class="dialog-actions__note">Drafts stay private until activated.</span>
           <button id="cancel-event-edit" type="button" class="secondary">Cancel</button>
-          <button id="save-event">Create event</button>
+          <button id="save-event-draft" type="submit" class="secondary" value="draft">Save draft</button>
+          <button id="save-event" type="submit" value="active">Create event</button>
         </div>
       </form>
     </dialog>

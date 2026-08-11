@@ -1,6 +1,9 @@
+from types import SimpleNamespace
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import sessionbuddy.api.app as api_app_module
 from sessionbuddy.api.app import app
 
 
@@ -26,10 +29,52 @@ async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert response.headers["cache-control"] == "no-store"
-    assert "Plan your conference program in one place" in response.text
-    assert 'href="/admin"' in response.text
-    assert 'href="/speaker"' in response.text
+    assert "From open call to published agenda." in response.text
+    assert 'href="/sign-in?redirect=%2Fadmin"' in response.text
+    assert "Keep every role aligned" in response.text
     assert 'href="/engine-room"' not in response.text
+
+
+@pytest.mark.parametrize(
+    ("active_role", "destination"),
+    [
+        ("organizer", "/admin"),
+        ("speaker", "/speaker"),
+        ("reviewer", "/reviews"),
+        (None, "/account"),
+    ],
+)
+async def test_authenticated_root_redirects_to_active_role_dashboard(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    active_role: str | None,
+    destination: str,
+) -> None:
+    async def session(_request):
+        return SimpleNamespace(profile_complete=True, active_role=active_role)
+
+    monkeypatch.setattr(api_app_module, "current_access_session", session)
+    client.cookies.set("sessionbuddy-local", "test-session")
+    response = await client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == destination
+    assert response.headers["cache-control"] == "no-store"
+    assert "From open call to published agenda." not in response.text
+
+
+async def test_incomplete_profile_root_redirects_to_account_onboarding(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def session(_request):
+        return SimpleNamespace(profile_complete=False, active_role="organizer")
+
+    monkeypatch.setattr(api_app_module, "current_access_session", session)
+    client.cookies.set("sessionbuddy-local", "test-session")
+    response = await client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/account?onboarding=1&next=%2F"
 
 
 async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:

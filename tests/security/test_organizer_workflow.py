@@ -7,6 +7,7 @@ preservation contract on event updates.
 
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 from tests.security.test_production_identity_flow import (
@@ -62,6 +63,101 @@ async def _bootstrap_admin(client, connection: sqlite3.Connection):
 
 def _mutation(csrf: str) -> dict[str, str]:
     return {"origin": "https://test", "x-csrf-token": csrf}
+
+
+async def test_event_creation_is_idempotent_and_rejects_key_reuse(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        csrf, organization_id = await _bootstrap_admin(root, connection)
+        url = f"/api/v1/admin/organizations/{organization_id}/events"
+        headers = {
+            **_mutation(csrf),
+            "idempotency-key": "event-create-retry-2026-08-14",
+        }
+
+        created = await root.post(url, headers=headers, json=EVENT_PAYLOAD)
+        replayed = await root.post(url, headers=headers, json=EVENT_PAYLOAD)
+
+        assert created.status_code == 201, created.text
+        assert replayed.status_code == 201, replayed.text
+        assert replayed.json() == created.json()
+        event_id = created.json()["id"]
+        assert connection.execute(
+            "SELECT COUNT(*) FROM events WHERE id=?", (event_id,)
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM event_memberships WHERE event_id=?", (event_id,)
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='event.create' AND event_id=?",
+            (event_id,),
+        ).fetchone()[0] == 1
+
+        changed = await root.post(
+            url,
+            headers=headers,
+            json={**EVENT_PAYLOAD, "name": "Different Summit"},
+        )
+        assert changed.status_code == 409
+        assert changed.json()["error"]["code"] == "conflict"
+
+
+async def test_event_creation_rejects_malformed_idempotency_key(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        csrf, organization_id = await _bootstrap_admin(root, connection)
+        response = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers={**_mutation(csrf), "idempotency-key": "too-short"},
+            json=EVENT_PAYLOAD,
+        )
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "invalid_request"
+
+
+async def test_draft_can_store_past_dates_but_active_creation_and_activation_cannot(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    now = int(time.time() * 1000)
+    past_event = {
+        **EVENT_PAYLOAD,
+        "name": "Imported conference archive",
+        "starts_at_ms": now - 172_800_000,
+        "ends_at_ms": now - 86_400_000,
+    }
+    async with _client(environment) as root:
+        csrf, organization_id = await _bootstrap_admin(root, connection)
+        url = f"/api/v1/admin/organizations/{organization_id}/events"
+
+        active = await root.post(url, headers=_mutation(csrf), json=past_event)
+        assert active.status_code == 422, active.text
+        assert active.json()["error"]["code"] == "request_failed"
+
+        draft = await root.post(
+            url,
+            headers=_mutation(csrf),
+            json={**past_event, "status": "draft"},
+        )
+        assert draft.status_code == 201, draft.text
+        assert draft.json()["status"] == "draft"
+
+        activation = await root.patch(
+            f"/api/v1/admin/events/{draft.json()['id']}",
+            headers=_mutation(csrf),
+            json={**past_event, "status": "active", "version": 1},
+        )
+        assert activation.status_code == 422, activation.text
+        assert activation.json()["error"]["code"] == "request_failed"
+
+        stored = connection.execute(
+            "SELECT status,version FROM events WHERE id=?", (draft.json()["id"],)
+        ).fetchone()
+        assert tuple(stored) == ("draft", 1)
 
 
 async def _accept_invitation(client, connection, email: str) -> dict[str, object]:
@@ -549,6 +645,63 @@ async def test_events_list_paginates_with_signed_cursors(
         assert tampered.status_code == 400
 
 
+async def test_active_events_can_be_ordered_nearest_upcoming_first(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        _csrf, organization_id = await _bootstrap_admin(root, connection)
+        _seed_events(connection, 15)
+        # Exercise the deterministic id tie-break at the nearest start time.
+        connection.execute(
+            "UPDATE events SET starts_at_ms=1900000000000,ends_at_ms=1900000000001 "
+            "WHERE id IN ('seed-event-000','seed-event-001')"
+        )
+        connection.execute(
+            "UPDATE events SET status='draft' WHERE id='seed-event-002'"
+        )
+        connection.execute(
+            "UPDATE events SET status='archived',archived_at_ms=2 "
+            "WHERE id='seed-event-003'"
+        )
+        connection.commit()
+
+        first = await root.get(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            params={"view": "active", "order": "upcoming", "limit": 3},
+        )
+        assert first.status_code == 200, first.text
+        body = first.json()
+        assert [event["id"] for event in body["data"]] == [
+            "seed-event-000",
+            "seed-event-001",
+            "seed-event-004",
+        ]
+        assert body["next_cursor"]
+
+        second = await root.get(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            params={
+                "view": "active",
+                "order": "upcoming",
+                "limit": 3,
+                "cursor": body["next_cursor"],
+            },
+        )
+        assert second.status_code == 200, second.text
+        assert [event["id"] for event in second.json()["data"]] == [
+            "seed-event-005",
+            "seed-event-006",
+            "seed-event-007",
+        ]
+
+        crossed = await root.get(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            params={"view": "active", "cursor": body["next_cursor"]},
+        )
+        assert crossed.status_code == 400
+
+
 async def test_events_list_filters_event_admins_in_sql(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
@@ -597,14 +750,15 @@ def test_clients_respect_events_pagination() -> None:
         assert "page < 40" not in script, name
 
     # Events page: explicit user-driven pagination.
-    assert "fetchEventsPage(state.organizationId, state.nextCursor)" in events
+    assert "const cursor = state.nextCursor" in events
+    assert "fetchEventsPage(state.organizationId, cursor)" in events
     assert 'byId("load-more-events").hidden = !state.nextCursor' in events
     assert 'id="load-more-events"' in events_page
     assert '${events.length}${state.nextCursor ? "+" : ""}' in events
 
-    # Home: a few recent events per organization, aggregate metrics endpoint,
-    # and NO per-event speaker fan-out at all.
-    assert "/events?limit=12" in home
+    # Home: the nearest three active events, aggregate metrics endpoint, and
+    # NO per-event speaker fan-out at all.
+    assert "/events?view=active&order=upcoming&limit=3" in home
     assert "/metrics" in home
     assert "metrics.event_count" in home and "metrics.speaker_count" in home
     assert "recent_speakers" in home
@@ -637,6 +791,9 @@ async def test_organization_metrics_are_aggregated_and_role_scoped(
             "organization_id": organization_id,
             "event_count": 56,
             "speaker_count": 0,
+            "session_count": 0,
+            "proposal_count": 0,
+            "pending_review_count": 0,
             "recent_speakers": [],
         }
 
@@ -662,6 +819,9 @@ async def test_organization_metrics_are_aggregated_and_role_scoped(
             # Event admins see counts over the events they administer only.
             assert scoped.json()["event_count"] == 1
             assert scoped.json()["speaker_count"] == 0
+            assert scoped.json()["session_count"] == 0
+            assert scoped.json()["proposal_count"] == 0
+            assert scoped.json()["pending_review_count"] == 0
     async with _client(environment) as anonymous:
         denied = await anonymous.get(
             f"/api/v1/admin/organizations/{organization_id}/metrics"
@@ -745,6 +905,9 @@ async def test_speaker_metric_counts_unique_people_and_ships_recent_speakers(
         assert body["event_count"] == 2
         # One person at two events counts once; the proposal-less person not at all.
         assert body["speaker_count"] == 1
+        assert body["session_count"] == 0
+        assert body["proposal_count"] == 2
+        assert body["pending_review_count"] == 0
         recent = body["recent_speakers"]
         assert [entry["person_id"] for entry in recent] == ["person-1", "person-1"]
         assert {entry["proposal_title"] for entry in recent} == {"Talk A", "Talk B"}

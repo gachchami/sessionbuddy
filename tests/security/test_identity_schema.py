@@ -202,9 +202,23 @@ def test_session_accepts_exactly_one_active_assigned_role(db: sqlite3.Connection
         """UPDATE session_active_roles SET role='speaker',selected_at_ms=2
            WHERE session_id='session'"""
     )
+    db.execute(
+        """INSERT INTO sessions
+           (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,
+            last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms)
+           VALUES('second-session','multi',?, ?,1,1,1,100,200)""",
+        (bytes([7]) * 32, bytes([8]) * 32),
+    )
+    db.execute(
+        """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+           VALUES('second-session','multi','organizer',2)"""
+    )
     assert db.execute(
         "SELECT role FROM session_active_roles WHERE session_id='session'"
     ).fetchone() == ("speaker",)
+    assert db.execute(
+        "SELECT role FROM session_active_roles WHERE session_id='second-session'"
+    ).fetchone() == ("organizer",)
     with pytest.raises(sqlite3.IntegrityError, match="not available"):
         db.execute(
             "UPDATE session_active_roles SET role='reviewer' WHERE session_id='session'"
@@ -237,6 +251,35 @@ def test_revoking_a_role_removes_it_from_live_session_context(db: sqlite3.Connec
            WHERE user_id='user' AND role='organizer'"""
     )
     assert db.execute("SELECT COUNT(*) FROM session_active_roles").fetchone() == (0,)
+
+
+def test_account_has_one_default_role_and_replaces_it_when_revoked(
+    db: sqlite3.Connection,
+) -> None:
+    db.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
+           VALUES('default-user','default@example.test','default@example.test','active',1,1,1)"""
+    )
+    db.executemany(
+        """INSERT INTO user_roles
+           (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+           VALUES('default-user',?,'active',1,1,?)""",
+        [("organizer", 1), ("speaker", 0)],
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            """UPDATE user_roles SET is_default=1
+               WHERE user_id='default-user' AND role='speaker'"""
+        )
+    db.execute(
+        """UPDATE user_roles SET status='revoked',revoked_at_ms=2,updated_at_ms=2
+           WHERE user_id='default-user' AND role='organizer'"""
+    )
+    assert db.execute(
+        """SELECT role FROM user_roles
+           WHERE user_id='default-user' AND is_default=1"""
+    ).fetchone() == ("speaker",)
 
 
 def test_setup_migration_backfills_existing_installations() -> None:

@@ -20,7 +20,11 @@ from sessionbuddy.evaluation.models import (
     EvaluationSave,
     SubmissionDecisionCreate,
 )
-from sessionbuddy.platform.auth.access import BootstrapCreate, EventCreate
+from sessionbuddy.platform.auth.access import (
+    AccountProfileUpdate,
+    BootstrapCreate,
+    EventCreate,
+)
 from sessionbuddy.speaker_operations.models import (
     SpeakerProfileUpdate,
     UploadAuthorizationCreate,
@@ -41,6 +45,7 @@ class TextareaParser(HTMLParser):
 
 
 STATIC_LONG_TEXT_LIMITS = {
+    ("account.html", "description"): 1000,
     ("admin_programs.html", "welcome_text"): 1000,
     ("admin_programs.html", "success_message"): 2000,
     ("admin_programs.html", "confirmation_body"): 4000,
@@ -143,6 +148,7 @@ def test_dynamic_javascript_and_react_textareas_match_api_limits() -> None:
 
 def test_api_long_text_limits_match_the_user_interface_contract() -> None:
     limits = {
+        (AccountProfileUpdate, "description"): 1000,
         (BootstrapCreate, "event_description"): 2000,
         (EventCreate, "description"): 2000,
         (FormSettings, "welcome_text"): 1000,

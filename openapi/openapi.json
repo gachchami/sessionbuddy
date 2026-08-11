@@ -301,6 +301,25 @@
         "title": "AccountProfileView",
         "type": "object"
       },
+      "ActiveRoleUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "organizer",
+              "reviewer",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "ActiveRoleUpdate",
+        "type": "object"
+      },
       "AdminSessionContentRestore": {
         "additionalProperties": false,
         "properties": {
@@ -1695,6 +1714,30 @@
             "title": "Csrf Token",
             "type": "string"
           },
+          "default_email_address": {
+            "title": "Default Email Address",
+            "type": "string"
+          },
+          "default_email_sender_name": {
+            "title": "Default Email Sender Name",
+            "type": "string"
+          },
+          "default_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "organizer",
+                  "reviewer",
+                  "speaker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Role"
+          },
           "display_name": {
             "anyOf": [
               {
@@ -1746,6 +1789,17 @@
             ],
             "title": "Organization Id"
           },
+          "organization_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Name"
+          },
           "profile_complete": {
             "default": false,
             "title": "Profile Complete",
@@ -1759,7 +1813,9 @@
         "required": [
           "user_id",
           "email",
-          "csrf_token"
+          "csrf_token",
+          "default_email_sender_name",
+          "default_email_address"
         ],
         "title": "CurrentSession",
         "type": "object"
@@ -1801,6 +1857,25 @@
           "query_ms"
         ],
         "title": "DatabaseStatus",
+        "type": "object"
+      },
+      "DefaultRoleUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "organizer",
+              "reviewer",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "DefaultRoleUpdate",
         "type": "object"
       },
       "DispatchResponse": {
@@ -2744,7 +2819,7 @@
         "title": "EventCoverView",
         "type": "object"
       },
-      "EventCreate": {
+      "EventCreateRequest": {
         "additionalProperties": false,
         "properties": {
           "accent_color": {
@@ -2845,6 +2920,15 @@
             "title": "Starts At Ms",
             "type": "integer"
           },
+          "status": {
+            "default": "active",
+            "enum": [
+              "draft",
+              "active"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
           "time_zone": {
             "maxLength": 100,
             "minLength": 1,
@@ -2873,7 +2957,164 @@
           "delivery_mode",
           "description"
         ],
-        "title": "EventCreate",
+        "title": "EventCreateRequest",
+        "type": "object"
+      },
+      "EventDuplicateCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "#3159d9",
+            "title": "Accent Color"
+          },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
+          },
+          "delivery_mode": {
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "email_reply_to": {
+            "anyOf": [
+              {
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Reply To"
+          },
+          "email_sender_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Sender Name"
+          },
+          "ends_at_ms": {
+            "minimum": 0.0,
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "location": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Location",
+            "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "retain_source_cover": {
+            "default": false,
+            "title": "Retain Source Cover",
+            "type": "boolean"
+          },
+          "retain_source_logo": {
+            "default": false,
+            "title": "Retain Source Logo",
+            "type": "boolean"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "starts_at_ms": {
+            "minimum": 0.0,
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "status": {
+            "default": "draft",
+            "enum": [
+              "draft",
+              "active"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "time_zone": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
+          }
+        },
+        "required": [
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone",
+          "location",
+          "delivery_mode",
+          "description",
+          "source_version"
+        ],
+        "title": "EventDuplicateCreate",
         "type": "object"
       },
       "EventList": {
@@ -3272,6 +3513,30 @@
           },
           "organization_id": {
             "title": "Organization Id",
+            "type": "string"
+          },
+          "pending_review_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Pending Review Count",
+            "type": "integer"
+          },
+          "proposal_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Proposal Count",
+            "type": "integer"
+          },
+          "schedule_status": {
+            "default": "not_started",
+            "enum": [
+              "not_started",
+              "draft",
+              "ready",
+              "published",
+              "updates_pending"
+            ],
+            "title": "Schedule Status",
             "type": "string"
           },
           "starts_at_ms": {
@@ -4305,6 +4570,14 @@
             "title": "Organization Id",
             "type": "string"
           },
+          "pending_review_count": {
+            "title": "Pending Review Count",
+            "type": "integer"
+          },
+          "proposal_count": {
+            "title": "Proposal Count",
+            "type": "integer"
+          },
           "recent_speakers": {
             "default": [],
             "items": {
@@ -4312,6 +4585,10 @@
             },
             "title": "Recent Speakers",
             "type": "array"
+          },
+          "session_count": {
+            "title": "Session Count",
+            "type": "integer"
           },
           "speaker_count": {
             "title": "Speaker Count",
@@ -4321,7 +4598,10 @@
         "required": [
           "organization_id",
           "event_count",
-          "speaker_count"
+          "speaker_count",
+          "session_count",
+          "proposal_count",
+          "pending_review_count"
         ],
         "title": "OrganizationMetricsView",
         "type": "object"
@@ -7482,6 +7762,47 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/account/default-role": {
+      "put": {
+        "operationId": "update_default_role_api_v1_account_default_role_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultRoleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Default Role",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
     "/api/v1/account/headshot": {
       "delete": {
         "operationId": "delete_account_headshot_api_v1_account_headshot_delete",
@@ -9671,6 +9992,75 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/duplicate": {
+      "post": {
+        "description": "Copy safe event setup into a new draft; operational records never cross over.",
+        "operationId": "duplicate_event_api_v1_admin_events__event_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventDuplicateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Duplicate Event",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/evaluation-rounds": {
       "get": {
         "operationId": "listEvaluationRounds",
@@ -11133,6 +11523,16 @@
               "title": "Q",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "recent",
+              "title": "Order",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -11173,13 +11573,29 @@
               "title": "Organization Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EventCreate"
+                "$ref": "#/components/schemas/EventCreateRequest"
               }
             }
           },
@@ -11215,7 +11631,7 @@
     },
     "/api/v1/admin/organizations/{organization_id}/metrics": {
       "get": {
-        "description": "Lightweight aggregate counts for dashboards: two COUNT queries instead\nof paging every event and fanning out per-event speaker requests.\n\nOrganization admins see organization-wide counts; event administrators see\ncounts over the events they administer.",
+        "description": "Lightweight aggregate counts for dashboards instead of paging every\nevent and fanning out per-event requests.\n\nOrganization admins see organization-wide counts; event administrators see\ncounts over the events they administer.",
         "operationId": "organization_metrics_api_v1_admin_organizations__organization_id__metrics_get",
         "parameters": [
           {
@@ -12946,6 +13362,47 @@
           }
         },
         "summary": "Current Session",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/session/active-role": {
+      "put": {
+        "operationId": "update_active_role_api_v1_session_active_role_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveRoleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Active Role",
         "tags": [
           "authentication"
         ]

@@ -4,37 +4,48 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Home · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=23">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=12">
+  <link rel="stylesheet" href="/product/assets/product.css?v=30">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=15">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=15" defer></script>
-  <script src="/admin/home/assets/home.js?v=8" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=18" defer></script>
+  <script src="/admin/home/assets/home.js?v=12" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--home">
   <a class="skip-link" href="#main">Skip to content</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <div class="dashboard-hero organizer-hero">
-      <div class="dashboard-hero__copy"><p class="eyebrow">Dashboard</p><h1 id="dashboard-greeting">Welcome back</h1><p>Your events, speakers, and access—all in one place.</p></div>
-      <a id="new-event" class="button" href="/admin/events#event-form" hidden>Create a new event</a>
-      <section class="metric-strip dashboard-metrics organizer-metrics" aria-label="Workspace summary">
-        <article><span>Events</span><strong id="metric-events">—</strong></article>
-        <article><span>Speakers</span><strong id="metric-speakers">—</strong></article>
-        <article><span>Workspace</span><strong id="metric-workspace">—</strong></article>
+    <section class="organizer-home-identity" aria-labelledby="organization-name">
+      <span class="organizer-home-orgmark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M3 21h18M9 7h4M9 11h4M9 15h4M9 21v-3h4v3"/></svg>
+      </span>
+      <div><h1 id="organization-name">Loading organization…</h1><p id="dashboard-greeting">Organizer dashboard</p></div>
+      <a id="new-event" class="button" href="/admin/events#event-form" hidden>Create event</a>
+    </section>
+    <div id="status" class="status status-compact organizer-home-status" role="status" aria-live="polite">Loading your workspace…</div>
+
+    <section class="organizer-home-overview" aria-labelledby="overview-title">
+      <div class="organizer-home-overview__heading"><h2 id="overview-title">Your program at a glance</h2><p>Overview of your event activity and progress.</p></div>
+      <div class="organizer-home-metrics" aria-label="Organization summary">
+        <a href="/admin/events" class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">E</span><span><strong id="metric-events">—</strong><small>Events</small><em id="metric-events-detail">Loading…</em></span></a>
+        <a href="/admin/speakers" class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">P</span><span><strong id="metric-speakers">—</strong><small>People</small><em id="metric-speakers-detail">Loading…</em></span></a>
+        <div class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">S</span><span><strong id="metric-sessions">—</strong><small>Sessions</small><em>Accepted sessions</em></span></div>
+        <div class="organizer-home-metric"><span class="organizer-home-metric__icon" aria-hidden="true">R</span><span><strong id="metric-proposals">—</strong><small>Proposals</small><em id="metric-proposals-detail">Loading…</em></span></div>
+      </div>
+    </section>
+
+    <div class="organizer-home-lower">
+      <section class="organizer-home-panel" aria-labelledby="events-title">
+        <div class="organizer-home-panel__heading"><h2 id="events-title">Upcoming events</h2></div>
+        <div class="organizer-home-event-head" aria-hidden="true"><span>Event</span><span>Date</span><span>Status</span><span></span></div>
+        <div id="event-list" class="organizer-home-event-list"><p class="empty">Loading events…</p></div>
+        <a id="all-events-link" class="organizer-home-panel__link" href="/admin/events">View all events <span aria-hidden="true">→</span></a>
+      </section>
+      <section class="organizer-home-panel" aria-labelledby="activity-title">
+        <div class="organizer-home-panel__heading"><h2 id="activity-title">Recent activity</h2></div>
+        <div id="activity-list" class="organizer-home-activity"><p class="empty">Loading activity…</p></div>
+        <a class="organizer-home-panel__link" href="/admin/speakers">View all people <span aria-hidden="true">→</span></a>
       </section>
     </div>
-    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
-
-    <section id="events" class="directory-section directory-section--primary organizer-section organizer-section--events" aria-labelledby="events-title">
-      <div class="section-heading"><div><h2 id="events-title">Events</h2></div><a class="text-link" href="/admin/events">View all</a></div>
-      <div id="event-list" class="home-event-grid"><p class="empty">Loading events…</p></div>
-    </section>
-
-    <section id="speakers" class="directory-section organizer-section organizer-section--speakers" aria-labelledby="speakers-title">
-      <div class="section-heading"><div><h2 id="speakers-title">Recent speakers</h2></div><a class="text-link" href="/admin/speakers">View all</a></div>
-      <div id="speaker-list" class="entity-grid"><p class="empty">Loading speakers…</p></div>
-    </section>
-
   </main>
 </body>
 </html>

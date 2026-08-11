@@ -8,197 +8,108 @@
     if (className) node.className = className;
     return node;
   };
-
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
-
 
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
+    byId("status").classList.toggle("organizer-home-status--ready", !message);
   }
 
-  function cardLink(title, href, eyebrow, summary, badge) {
-    const card = make("article", undefined, "entity-card organizer-card organizer-speaker-card");
-    const top = make("div", undefined, "entity-card__top");
-    top.append(make("span", eyebrow, "eyebrow"));
-    if (badge) top.append(make("span", badge, "badge"));
-    const heading = make("h3");
-    const anchor = make("a", title);
-    anchor.href = href;
-    heading.append(anchor);
-    card.append(top, heading, make("p", summary, "result"));
-    const open = make("a", "Open →", "entity-card__action");
-    open.href = href;
-    open.setAttribute("aria-label", `Open ${title}`);
-    card.append(open);
-    return card;
-  }
-
-  function formatEventDateTime(event) {
+  function formatEventDate(event) {
     try {
-      const formatter = new Intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: event.time_zone
-      });
+      const options = { month: "short", day: "numeric", year: "numeric", timeZone: event.time_zone };
+      const formatter = new Intl.DateTimeFormat(undefined, options);
       const start = new Date(event.starts_at_ms);
       const end = new Date(event.ends_at_ms);
-      return typeof formatter.formatRange === "function"
-        ? formatter.formatRange(start, end)
-        : `${formatter.format(start)} – ${formatter.format(end)}`;
-    } catch (_) { return "Date and time unavailable"; }
-  }
-
-  function deliveryModeLabel(mode) {
-    return { in_person: "In person", virtual: "Virtual", hybrid: "Hybrid" }[mode]
-      || String(mode || "Event").replaceAll("_", " ");
+      return typeof formatter.formatRange === "function" ? formatter.formatRange(start, end) : `${formatter.format(start)} – ${formatter.format(end)}`;
+    } catch (_) { return "Date unavailable"; }
   }
 
   function eventInitials(name) {
-    return String(name || "Event")
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase();
+    return String(name || "Event").trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase();
   }
 
-  function eventCard(event) {
+  function eventRow(event) {
     const href = `/admin/events/${encodeURIComponent(event.id)}`;
-    const card = make("article", undefined, "event-visual-card organizer-card organizer-event-card");
-    if (/^#[0-9a-f]{6}$/i.test(event.accent_color || "")) {
-      card.style.setProperty("--event-accent", event.accent_color);
-    }
-
-    const media = make("div", undefined, "event-visual-card__media");
-    const placeholder = make("span", eventInitials(event.name), "event-visual-card__placeholder");
-    placeholder.setAttribute("aria-hidden", "true");
-    media.append(placeholder);
-    if (event.cover_image_url) {
-      const cover = make("img", undefined, "event-visual-card__cover");
-      cover.src = event.cover_image_url;
-      cover.alt = "";
-      cover.loading = "lazy";
-      cover.decoding = "async";
-      cover.addEventListener("error", () => cover.remove(), { once: true });
-      media.append(cover);
-    }
-    if (event.logo_url) {
-      const logo = make("img", undefined, "event-visual-card__logo");
-      logo.src = event.logo_url;
-      logo.alt = "";
-      logo.loading = "lazy";
-      logo.decoding = "async";
-      logo.addEventListener("error", () => logo.remove(), { once: true });
-      media.append(logo);
-    }
-
-    const body = make("div", undefined, "event-visual-card__body");
-    const top = make("div", undefined, "event-visual-card__top");
-    top.append(make("span", event.organization_name, "eyebrow"));
-    top.append(make("span", event.status, "badge"));
+    const row = make("article", undefined, "organizer-home-event-row");
+    const mark = make("span", eventInitials(event.name), "organizer-home-event-row__mark");
+    mark.setAttribute("aria-hidden", "true");
+    const copy = make("div", undefined, "organizer-home-event-row__copy");
     const heading = make("h3");
     const title = make("a", event.name);
     title.href = href;
     heading.append(title);
-
-    const details = make("div", undefined, "event-visual-card__details");
-    details.append(
-      make("p", formatEventDateTime(event), "event-visual-card__date"),
-      make("p", [event.location, deliveryModeLabel(event.delivery_mode)].filter(Boolean).join(" · "))
-    );
-    const zone = make("span", event.time_zone, "event-visual-card__zone");
-    details.firstElementChild.append(" ", zone);
-
-    const open = make("a", "Open event →", "event-visual-card__action");
+    copy.append(heading, make("p", event.location || ({ virtual: "Online" }[event.delivery_mode] || "Location to be announced")));
+    row.append(mark, copy, make("time", formatEventDate(event), "organizer-home-event-row__date"), make("span", event.status, `badge badge--${event.status}`));
+    const open = make("a", "•••", "organizer-home-event-row__open");
     open.href = href;
     open.setAttribute("aria-label", `Open ${event.name}`);
-    body.append(top, heading, details, open);
-    card.append(media, body);
-    return card;
+    row.append(open);
+    return row;
+  }
+
+  function activityRow(speaker) {
+    const row = make("article", undefined, "organizer-home-activity-row");
+    const icon = make("span", "+", "organizer-home-activity-row__icon");
+    icon.setAttribute("aria-hidden", "true");
+    const copy = make("div");
+    const heading = make("h3", "Speaker activity");
+    const details = [speaker.display_name, speaker.proposal_title].filter(Boolean).join(" · ");
+    copy.append(heading, make("p", details));
+    row.append(icon, copy);
+    if (speaker.selection_status) row.append(make("span", speaker.selection_status, "organizer-home-activity-row__status"));
+    return row;
   }
 
   async function loadDashboard() {
     const organizations = (await api("/api/v1/admin/organizations")).data;
-    if (!organizations.length) throw new Error("This account does not manage an organization or event.");
-    const manageableIds = new Set(
-      (state.session.organization_access || [])
-        .filter((access) => access.roles.includes("organization_admin"))
-        .map((access) => access.organization_id)
-    );
-    state.organizations = organizations.filter((organization) => manageableIds.has(organization.id));
+    if (!organizations.length) throw new Error("Your organization workspace is not available yet. Please try again or contact an administrator.");
+    const organization = organizations[0];
+    const manageableIds = new Set((state.session.organization_access || []).filter((access) => access.roles.includes("organization_admin")).map((access) => access.organization_id));
+    state.organizations = manageableIds.has(organization.id) ? [organization] : [];
     byId("new-event").hidden = state.organizations.length === 0;
+    byId("organization-name").textContent = organization.name;
 
-    // The dashboard is an overview: only the most recent few events per
-    // organization are fetched, and totals come from the aggregate metrics
-    // endpoint rather than from paging the whole history.
-    const [eventGroups, metricGroups] = await Promise.all([
-      Promise.all(organizations.map(async (organization) => ({
-        organization,
-        page: await api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events?limit=12`)
-      }))),
-      Promise.all(organizations.map((organization) =>
-        api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/metrics`)
-      ))
+    const [eventPage, metrics] = await Promise.all([
+      api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/events?view=active&order=upcoming&limit=3`),
+      api(`/api/v1/admin/organizations/${encodeURIComponent(organization.id)}/metrics`)
     ]);
-    const totals = metricGroups.reduce(
-      (sum, metrics) => ({
-        events: sum.events + metrics.event_count,
-        speakers: sum.speakers + metrics.speaker_count
-      }),
-      { events: 0, speakers: 0 }
-    );
-    const events = eventGroups.flatMap(({ organization, page }) =>
-      page.data.map((event) => ({ ...event, organization_name: organization.name }))
-    );
-    byId("metric-workspace").textContent = organizations.length === 1
-      ? organizations[0].name
-      : `${organizations.length} organizations`;
+    const events = eventPage.data.filter((event) => event.status !== "archived" && Number(event.ends_at_ms) >= Date.now()).sort((left, right) => Number(left.starts_at_ms) - Number(right.starts_at_ms));
+    byId("metric-events").textContent = String(metrics.event_count ?? 0);
+    byId("metric-speakers").textContent = String(metrics.speaker_count ?? 0);
+    byId("metric-sessions").textContent = String(metrics.session_count ?? 0);
+    byId("metric-proposals").textContent = String(metrics.proposal_count ?? 0);
+    const upcomingLabel = eventPage.next_cursor ? `${events.length}+ upcoming` : `${events.length} upcoming`;
+    byId("metric-events-detail").textContent = upcomingLabel;
+    byId("metric-speakers-detail").textContent = `${metrics.speaker_count ?? 0} with proposals`;
+    byId("metric-proposals-detail").textContent = `${metrics.pending_review_count ?? 0} pending review`;
 
-    const eventList = byId("event-list");
-    if (events.length) {
-      eventList.replaceChildren(...events.map(eventCard));
-    } else {
-      const empty = make("p", "No events yet. Create the first event to begin.", "empty");
+    const allEventsArrow = make("span", "→");
+    allEventsArrow.setAttribute("aria-hidden", "true");
+    byId("all-events-link").replaceChildren(document.createTextNode("View all events "), allEventsArrow);
+    if (events.length) byId("event-list").replaceChildren(...events.map(eventRow));
+    else {
+      const empty = make("p", "No upcoming events.", "empty");
       if (state.organizations.length) {
-        const create = make("a", "Create a new event", "button");
+        const create = make("a", "Create your first event", "button");
         create.href = "/admin/events#event-form";
         empty.append(document.createElement("br"), create);
       }
-      eventList.replaceChildren(empty);
+      byId("event-list").replaceChildren(empty);
     }
 
-    // Recent speakers come straight from the aggregate endpoint — no
-    // per-event fan-out at all.
-    const speakers = metricGroups
-      .flatMap((metrics) => metrics.recent_speakers || [])
-      .filter((speaker) => speaker.person_id && speaker.proposal_title !== "No proposal");
-    byId("metric-events").textContent = String(totals.events);
-    byId("metric-speakers").textContent = String(totals.speakers);
-    const speakerList = byId("speaker-list");
-    if (speakers.length) {
-      speakerList.replaceChildren(...speakers.slice(0, 6).map((speaker) => cardLink(
-        speaker.display_name,
-        `/speakers/${encodeURIComponent(speaker.person_id)}`,
-        speaker.event_name,
-        speaker.proposal_title,
-        speaker.selection_status
-      )));
-    } else {
-      speakerList.replaceChildren(make("p", "Speakers appear here after proposals are submitted.", "empty"));
-    }
-    setStatus(`${organizations.length} organization${organizations.length === 1 ? "" : "s"}, ${totals.events} event${totals.events === 1 ? "" : "s"}, and ${totals.speakers} speaker${totals.speakers === 1 ? "" : "s"} with proposals.`);
+    const speakers = (metrics.recent_speakers || []).filter((speaker) => speaker.person_id && speaker.proposal_title !== "No proposal");
+    byId("activity-list").replaceChildren(...(speakers.length ? speakers.slice(0, 4).map(activityRow) : [make("p", "No recent activity yet. Speaker and proposal updates will appear here.", "empty organizer-home-activity-empty")]));
+    setStatus("");
   }
 
-  async function initialize() {
-    state.session = await api("/api/v1/auth/session");
-    const name = state.session.display_name || state.session.email?.split("@")[0] || "there";
-    byId("dashboard-greeting").textContent = `Welcome back, ${name}`;
-    await loadDashboard();
-  }
-
+  async function initialize() { state.session = await api("/api/v1/auth/session"); await loadDashboard(); }
   initialize().catch((error) => {
-    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true);
+    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
+      setStatus(`We couldn’t load this workspace. ${window.SessionBuddyApi.message(error)}`, true);
+      byId("event-list").replaceChildren(make("p", "Events are temporarily unavailable. Refresh to try again.", "empty"));
+      byId("activity-list").replaceChildren(make("p", "Activity is temporarily unavailable.", "empty"));
+    }
   });
 })();

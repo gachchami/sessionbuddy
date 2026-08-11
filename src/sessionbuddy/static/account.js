@@ -92,6 +92,32 @@
     return card;
   }
 
+  function accountRoleChoice(role) {
+    const choice = document.createElement("label");
+    choice.className = "default-role-choice";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "default_role";
+    input.value = role;
+    input.checked = role === session.default_role;
+    const copy = document.createElement("span");
+    copy.append(document.createElement("strong"), document.createElement("small"));
+    copy.querySelector("strong").textContent = labels[role] || role;
+    copy.querySelector("small").textContent = role === session.active_role
+      ? "Active now" : "Available role";
+    const marker = document.createElement("b");
+    marker.textContent = input.checked ? "Default" : "";
+    choice.append(input, copy, marker);
+    return choice;
+  }
+
+  function renderDefaultRoles() {
+    byId("default-role-list").replaceChildren(
+      ...(session.account_roles || []).map(accountRoleChoice)
+    );
+    byId("save-default-role").disabled = true;
+  }
+
   function organizationForm(organization) {
     const card = document.createElement("article");
     card.className = "card organizer-panel organizer-organization-card";
@@ -134,17 +160,7 @@
     [session] = await Promise.all([api("/api/v1/auth/session"), api("/api/v1/account/profile").then(setProfile)]);
     await loadOrganizationSettings();
     const access = [];
-    for (const role of session.account_roles || []) {
-      const active = role === session.active_role;
-      const destination = role === "organizer" ? "/admin"
-        : role === "reviewer" ? "/reviews" : "/speaker";
-      access.push(accessCard(
-        labels[role] || role,
-        active ? "Active account role" : "Account role",
-        [],
-        destination
-      ));
-    }
+    renderDefaultRoles();
     for (const item of session.organization_access || []) {
       access.push(accessCard("Organization", "Organization access", item.roles, "/admin"));
     }
@@ -154,9 +170,9 @@
         : roles.includes("speaker") ? "/speaker" : "/reviews";
       access.push(accessCard("Event", `Event ${item.event_id}`, roles, href));
     }
-    if (!access.length) access.push(accessCard("No assigned roles", "Account", [], null));
+    if (!access.length) access.push(accessCard("No resource access yet", "Organizations and events", [], null));
     byId("access-list").replaceChildren(...access);
-    byId("access-count").textContent = String(access.length);
+    byId("access-count").textContent = String((session.account_roles || []).length);
     byId("save-profile").disabled = false;
     if (onboarding && !session.profile_complete) {
       byId("account-title").textContent = "Complete your profile";
@@ -167,6 +183,31 @@
   }
 
   byId("profile-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("default-role-form").addEventListener("change", () => {
+    byId("save-default-role").disabled = false;
+    for (const choice of byId("default-role-list").querySelectorAll(".default-role-choice")) {
+      choice.querySelector("b").textContent = choice.querySelector("input").checked ? "Selected" : "";
+    }
+  });
+  byId("default-role-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const selected = new FormData(event.currentTarget).get("default_role");
+    if (!selected) return;
+    const button = byId("save-default-role");
+    button.disabled = true;
+    try {
+      session = await api("/api/v1/account/default-role", {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+        body: JSON.stringify({ role: selected })
+      });
+      renderDefaultRoles();
+      showStatus(`${labels[selected] || selected} is now your default role.`, "success");
+    } catch (error) {
+      showStatus(window.SessionBuddyApi.message(error), "error", true);
+      button.disabled = false;
+    }
+  });
   byId("headshot-input").addEventListener("change", (event) => {
     selectedHeadshot = event.target.files?.[0];
     if (!selectedHeadshot) return;
@@ -237,16 +278,17 @@
   });
   byId("profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const timeZone = event.currentTarget.elements.time_zone;
+    const form = event.currentTarget;
+    const timeZone = form.elements.time_zone;
     timeZone.setCustomValidity(validTimeZone(timeZone.value.trim()) ? "" : "Enter a valid IANA time zone, such as Asia/Kolkata.");
-    const password = event.currentTarget.elements.password;
-    const confirmation = event.currentTarget.elements.password_confirmation;
+    const password = form.elements.password;
+    const confirmation = form.elements.password_confirmation;
     confirmation.setCustomValidity(password.value === confirmation.value ? "" : "Passwords must match.");
-    if (!event.currentTarget.reportValidity()) return;
+    if (!form.reportValidity()) return;
     const button = byId("save-profile");
     button.disabled = true;
     showStatus("Saving your profile…");
-    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const values = Object.fromEntries(new FormData(form).entries());
     try {
       const profile = await api("/api/v1/account/profile", {
         method: "PATCH",
@@ -270,8 +312,8 @@
       showStatus(values.password
         ? "Profile and password saved. Sign in again to continue."
         : "Profile saved.", "success");
-      event.currentTarget.elements.password.value = "";
-      event.currentTarget.elements.password_confirmation.value = "";
+      form.elements.password.value = "";
+      form.elements.password_confirmation.value = "";
       window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
       if (onboarding) {
         const safeNext = nextPath.startsWith("/") && !nextPath.startsWith("//") && !nextPath.includes("\\")
