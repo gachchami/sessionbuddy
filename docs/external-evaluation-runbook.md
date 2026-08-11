@@ -9,16 +9,21 @@ The launcher remembers these non-secret integration facts:
 - eval checkout discovery: `/private/tmp/sessionbuddy-evals.*/repo`
 - browser image: `mcr.microsoft.com/playwright:v1.62.1-noble`
 - browser location inside that image: `/ms-playwright`
+- model runtime: the host Codex CLI, authenticated with the existing ChatGPT login
 - required saved personas: `organizer`, `speaker`, and `reviewer` in the eval checkout's
   ignored `.auth/` directory
 
-It never reads or prints cookies, OAuth data, or application secrets.
+It never reads or prints cookies, OAuth data, Codex tokens, or application
+secrets. For a live run it starts a short-lived authenticated bridge on the
+host, mounts only a one-run capability file into the browser container, and
+removes both when the command exits. The Codex auth file is never copied or
+mounted into the evaluator.
 
 The public-widget scenarios use anonymous attendee access, so SessionBuddy does
 not need an attendee account. A second speaker email is still useful when the
 agent exercises co-speaker handoffs.
 
-Before a paid run, the launcher makes a safe request with each saved persona,
+Before a live run, the launcher makes a safe request with each saved persona,
 checks the current `account_roles`/`active_role` contract, and stops immediately
 if a session has expired or is using the wrong active persona.
 
@@ -105,7 +110,7 @@ delivers all aliases to the same inbox:
 
 Also give the three starting accounts passwords in the ignored config. Saved
 browser state starts the correct persona, while several judge scenarios later
-sign out and switch to another user. The launcher therefore refuses a paid run
+sign out and switch to another user. The launcher therefore refuses a live run
 unless Organizer, Speaker, and Reviewer each have matching email/password
 credentials. `speaker2` needs only an email because it never starts a scenario.
 Do not add Attendee credentials; the two attendee scenarios intentionally test
@@ -122,31 +127,37 @@ Run the required areas:
 ```sh
 scripts/run_sbek.sh \
   --areas call-for-papers,abstract-management,speaker-management,content-management,ai-agenda,public-widgets \
-  --agent-model claude-sonnet-5 \
-  --judge-model claude-opus-5
+  --agent-model gpt-5.6-sol \
+  --judge-model gpt-5.6-sol
 ```
 
 The current judge contains 18 required scenarios across six required areas.
 Speaker CRM is optional and runs only with `--include-optional`.
 
-The paid run needs `ANTHROPIC_API_KEY`. Put it in the eval checkout's ignored
-`.env` file or export it in the invoking shell; never put it in this repository
-or paste it into a task. Validate the harness without a key first:
+The live run needs the host Codex CLI to be signed in with ChatGPT. Confirm it
+without inspecting or copying its credential file:
+
+```sh
+codex login status
+```
+
+No Anthropic or OpenAI API key is required. Validate the harness without a
+model call first:
 
 ```sh
 scripts/run_sbek.sh list
 scripts/run_sbek.sh smoke
 scripts/run_sbek.sh --dry-run \
-  --agent-model claude-sonnet-5 \
-  --judge-model claude-opus-5
+  --agent-model gpt-5.6-sol \
+  --judge-model gpt-5.6-sol
 ```
 
 Resume an interrupted run without paying for completed scenarios again:
 
 ```sh
 scripts/run_sbek.sh resume runs/<timestamp> \
-  --agent-model claude-sonnet-5 \
-  --judge-model claude-opus-5
+  --agent-model gpt-5.6-sol \
+  --judge-model gpt-5.6-sol
 ```
 
 Override a discovered value only when the local setup changes:
@@ -155,6 +166,16 @@ Override a discovered value only when the local setup changes:
 SBEK_ROOT=/path/to/killmysaas-evals \
 SBEK_TARGET_URL=https://example.workers.dev \
 scripts/run_sbek.sh where
+```
+
+The launcher defaults to the Codex binary bundled with the macOS ChatGPT app.
+If Codex is installed somewhere else, provide its absolute executable path:
+
+```sh
+SBEK_CODEX_BIN=/absolute/path/to/codex \
+scripts/run_sbek.sh --dry-run \
+  --agent-model gpt-5.6-sol \
+  --judge-model gpt-5.6-sol
 ```
 
 The Playwright image and the eval kit's Playwright package must have the same

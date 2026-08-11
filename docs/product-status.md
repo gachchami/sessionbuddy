@@ -27,6 +27,12 @@ magic-link confirmation and first-login profile redirect for automated
 evaluation. Stored profile completion remains truthful, and staging and
 production ignore the setting.
 
+The external SessionBoard evaluation launcher now uses the host Codex CLI with
+its existing ChatGPT-managed login. Playwright remains isolated in the pinned
+Linux container; a short-lived authenticated bridge carries schema-constrained
+model requests without mounting Codex credentials or requiring an Anthropic or
+OpenAI API key. Dry runs remain model-free.
+
 ## CFP management
 
 Implemented: program creation, browser-managed text, choice, checkbox, phone,
