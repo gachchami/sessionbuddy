@@ -42,11 +42,14 @@ try {
     const correctBoundary = accountRoles.has(persona)
       && activeRole === persona
       && (persona !== "organizer" || hasOrganizerResource);
-    const valid = status === 200 && correctBoundary;
+    const profileComplete = body?.profile_complete === true;
+    const valid = status === 200 && correctBoundary && profileComplete;
     const reason = status !== 200
       ? `status ${status || "timeout"}`
-      : correctBoundary
-        ? "active persona boundary confirmed"
+      : !profileComplete
+        ? "profile onboarding is incomplete"
+        : correctBoundary
+          ? "active persona boundary and complete profile confirmed"
         : "authenticated with the wrong active persona or resource boundary";
     console.log(`${persona}: ${valid ? "valid" : "invalid"} (${reason}, ${elapsedMs} ms)`);
     failed ||= !valid;

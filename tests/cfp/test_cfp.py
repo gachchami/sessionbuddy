@@ -16,15 +16,33 @@ from sessionbuddy.cfp.models import (
     SubmissionCreate,
 )
 from sessionbuddy.cfp.router import (
+    _condition_matches,
     _form_availability,
     _published_form_view,
     _timed_first,
     _validate_cfp_deadline,
     _validate_draft_schema,
     _validate_submission_schema,
+    _validate_upload_answers,
     create_submission,
 )
 from sessionbuddy.console.models import BrowserTelemetryPayload
+
+
+@pytest.mark.parametrize(
+    ("operator", "actual", "expected", "result"),
+    [
+        ("equals", True, "true", True),
+        ("equals", False, "true", False),
+        ("not_equals", False, "true", True),
+        ("equals", ["beginner", "advanced"], "advanced", True),
+        ("not_equals", ["beginner", "advanced"], "advanced", False),
+    ],
+)
+def test_submission_conditions_match_browser_checkbox_and_multiselect_semantics(
+    operator: str, actual: object, expected: str, result: bool
+) -> None:
+    assert _condition_matches(operator, actual, expected) is result
 
 
 def test_cfp_description_sanitizes_rich_text_and_keeps_important_dates() -> None:
@@ -75,6 +93,60 @@ class AllowingRateLimiter:
     async def limit(self, options: dict[str, str]) -> dict[str, bool]:
         assert options["key"]
         return {"success": True}
+
+
+class UploadValidationDatabase:
+    def prepare(self, _query: str):
+        raise AssertionError("inactive or missing upload validation must not query storage")
+
+
+async def test_hidden_required_upload_is_not_validated() -> None:
+    schema = {
+        "fields": [
+            {"key": "format", "type": "select", "required": True},
+            {"key": "deck", "type": "file", "required": True},
+        ],
+        "conditions": [
+            {
+                "source_key": "format",
+                "operator": "equals",
+                "value": "Workshop",
+                "target_key": "deck",
+            }
+        ],
+    }
+
+    await _validate_upload_answers(
+        UploadValidationDatabase(),
+        schema,
+        {"format": "Talk", "deck": ""},
+        form_id="form-a",
+        event_id="event-a",
+        user_id="user-a",
+    )
+
+
+async def test_visible_required_upload_error_names_the_field() -> None:
+    schema = {
+        "fields": [{"key": "deck", "type": "file", "required": True}],
+        "conditions": [],
+    }
+
+    with pytest.raises(HTTPException) as raised:
+        await _validate_upload_answers(
+            UploadValidationDatabase(),
+            schema,
+            {"deck": ""},
+            form_id="form-a",
+            event_id="event-a",
+            user_id="user-a",
+        )
+
+    assert raised.value.status_code == 422
+    assert raised.value.detail == {
+        "field": "deck",
+        "message": "Upload this file before submitting.",
+    }
 
 
 async def test_timed_first_omits_the_column_argument_for_full_rows() -> None:
@@ -150,12 +222,125 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     assert 'placeholder="Tell speakers what kinds of proposals' in page
     assert 'id="cfp-routing"' in page
     assert 'id="add-field"' in page
+    assert page.index('id="add-field"') < page.index('id="form-fields"')
+    assert ".cfp-editor-section--single-question > #add-field" not in (
+        static / "product.css"
+    ).read_text()
     assert 'const add = byId("add-field")' in script
+    assert 'make("button", "Done editing question")' in script
+    assert 'selectOutline("custom", false)' in script
+    assert 'byId("add-field").focus()' in script
     assert "state.program" not in script
     assert "toLocalInput(state.eventStartsAtMs - 1)" in script
     assert "The Call for Proposals must close before the event starts." in script
     assert 'summaryIdentity.append(make("strong", field.label))' in script
     assert 'if (!system) summaryIdentity.append(make("small", field.key))' in script
+
+
+def test_cfp_builder_uses_configurable_formats_for_display_rules() -> None:
+    script = (
+        Path(__file__).parents[2] / "src/sessionbuddy/static/admin_programs.js"
+    ).read_text()
+
+    for session_format in (
+        "Keynote (45 min)",
+        "Talk (30 min)",
+        "Lightning Talk (10 min)",
+        "Workshop (120 min)",
+        "Panel (45 min)",
+    ):
+        assert session_format in script
+    assert 'label: "Session format"' in script
+    assert '"Session formats",' in script
+    assert 'conditionQuestion.addEventListener("change", () => {' in script
+    assert 'conditionWarning.setAttribute("role", "alert")' in script
+    assert 'renderConditionAnswer();' in script
+    assert 'state.fields[index].choices = choices.value' in script
+    assert 'control.name = "condition_value"' in script
+    assert 'const option = new Option(candidate.label, candidate.label)' in script
+    assert 'option.dataset.sourceKey = candidate.key' in script
+    assert 'sourceControl?.selectedOptions[0]?.dataset.sourceKey' in script
+    assert 'eventFields.label = "Event proposal fields"' in script
+    assert 'customFields.label = "Custom questions"' in script
+
+
+def test_form_conditions_accept_configured_format_and_reject_unknown_choice() -> None:
+    fields = [
+        {"key": "speaker_name", "type": "text", "label": "Name", "required": True},
+        {"key": "speaker_email", "type": "email", "label": "Email", "required": True},
+        {"key": "proposal_title", "type": "text", "label": "Title", "required": True},
+        {
+            "key": "proposal_abstract",
+            "type": "textarea",
+            "label": "Abstract",
+            "required": True,
+        },
+        {
+            "key": "session_type",
+            "type": "select",
+            "label": "Session format",
+            "required": True,
+            "choices": ["Talk (30 min)", "Workshop (120 min)"],
+        },
+        {
+            "key": "workshop_prerequisites",
+            "type": "textarea",
+            "label": "Workshop prerequisites",
+        },
+    ]
+    valid = FormPublish(
+        slug="format-rules",
+        welcome_text="Welcome",
+        fields=fields,
+        conditions=[
+            {
+                "source_key": "session_type",
+                "operator": "equals",
+                "value": "Workshop (120 min)",
+                "target_key": "workshop_prerequisites",
+            }
+        ],
+    )
+    assert valid.conditions[0].value == "Workshop (120 min)"
+
+    invalid = valid.model_dump()
+    invalid["conditions"][0]["value"] = "Workshop (90 min)"
+    with pytest.raises(ValidationError, match="configured source choice"):
+        FormPublish.model_validate(invalid)
+
+
+def test_form_conditions_only_reference_earlier_fields() -> None:
+    with pytest.raises(ValidationError, match="earlier field"):
+        FormPublish(
+            slug="forward-rule",
+            welcome_text="Welcome",
+            fields=[
+                {"key": "speaker_name", "type": "text", "label": "Name", "required": True},
+                {"key": "speaker_email", "type": "email", "label": "Email", "required": True},
+                {"key": "proposal_title", "type": "text", "label": "Title", "required": True},
+                {
+                    "key": "proposal_abstract",
+                    "type": "textarea",
+                    "label": "Abstract",
+                    "required": True,
+                },
+                {"key": "dependent", "type": "textarea", "label": "Dependent"},
+                {
+                    "key": "later_source",
+                    "type": "select",
+                    "label": "Later source",
+                    "choices": ["Yes", "No"],
+                },
+            ],
+            conditions=[
+                {
+                    "source_key": "later_source",
+                    "operator": "equals",
+                    "value": "Yes",
+                    "target_key": "dependent",
+                }
+            ],
+        )
 
 
 def test_form_co_speaker_limit_defaults_to_one_and_is_enforced() -> None:
@@ -323,7 +508,8 @@ def test_public_cfp_defers_authentication_until_final_submission() -> None:
     assert '<h2 id="sign-in-title">Sign in</h2>' in page
     assert 'for="cfp-sign-in-email"' in page
     assert 'id="cfp-sign-in-email" name="email"' in page
-    assert 'id="cfp-send-sign-in-link" class="secondary" type="button">Create account' in page
+    assert "Email me a signup link" in page
+    assert 'aria-describedby="cfp-signup-help"' in page
     assert "Sign in to submit" not in page
 
 

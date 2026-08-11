@@ -118,7 +118,8 @@ test.describe("event ownership recovery", () => {
     await page.goto(`/admin/events/${eventId}/access`);
 
     await expect(page.getByRole("heading", { name: "Event ownership" })).toBeVisible();
-    await expect(page.getByText("previous-owner@example.test", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Event ownership" })
+      .getByText("previous-owner@example.test", { exact: true })).toBeVisible();
     await expect(page.getByText(/does not delete, move, archive, or rewrite sessions/)).toBeVisible();
     await page.getByLabel("New owner’s account email").fill("new-owner@example.test");
     await page.getByLabel("Reason").fill("The former owner left the events team.");
@@ -166,7 +167,8 @@ test.describe("event ownership recovery", () => {
     await page.goto(`/admin/events/${eventId}/access`);
 
     await expect(page.getByRole("heading", { name: "Event ownership" })).toBeVisible();
-    await expect(page.getByText("previous-owner@example.test", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Event ownership" })
+      .getByText("previous-owner@example.test", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Review ownership transfer" })).toBeVisible();
   });
 });

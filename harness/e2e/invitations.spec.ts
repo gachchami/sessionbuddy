@@ -83,7 +83,11 @@ test.describe("invitation dialog", () => {
     await page.getByRole("textbox", { name: "Name", exact: true }).fill("Example Speaker");
     await page.getByRole("button", { name: "Send invitation" }).click();
 
-    await expect(page.getByText("speaker@example.com · Speaker assignment · pending")).toBeVisible();
+    const invitationRow = page.locator("#invitation-list li").filter({
+      has: page.getByText("speaker@example.com", { exact: true }),
+    });
+    await expect(invitationRow).toContainText("Speaker assignment");
+    await expect(invitationRow).toContainText("pending");
     // A successful send closes the dialog; the sender lands on the updated list.
     await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
     // The dialog offers no link surface at all.
@@ -190,9 +194,12 @@ test.describe("invitation dialog", () => {
     await page.goto(`/admin/events/${eventId}/access`);
     await page.getByRole("textbox", { name: "Email address" }).fill("grantee@example.com");
     await page.getByRole("button", { name: "Grant access" }).click();
-    await expect(page.getByText("grantee@example.com · Can view")).toBeVisible();
+    const grantRow = page.locator("#grant-list li").filter({
+      has: page.getByText("grantee@example.com", { exact: true }),
+    });
+    await expect(grantRow).toContainText("Can view");
     await page.getByRole("combobox", { name: "Permission for grantee@example.com" }).selectOption("edit");
-    await expect(page.getByText("grantee@example.com · Can edit")).toBeVisible();
+    await expect(grantRow).toContainText("Can edit");
     await page.getByRole("button", { name: "Revoke access" }).click();
     await page.getByRole("button", { name: "Select again to revoke" }).click();
     await expect(page.getByText(/grantee@example.com/)).toHaveCount(0);

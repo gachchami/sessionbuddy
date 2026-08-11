@@ -49,6 +49,21 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
     assert "background:" in primary_rule
 
 
+def test_account_menu_layer_stays_above_workflow_content() -> None:
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    assert "z-index: 100;" in stylesheet.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
+    topbar = stylesheet.split(".sb-topbar {", 1)[1].split("}", 1)[0]
+    assert "z-index: 90;" in topbar
+    assert "isolation: isolate;" in topbar
+    account = stylesheet.split(".sb-account {", 1)[1].split("}", 1)[0]
+    assert "z-index: 1;" in account
+    menu = stylesheet.split(".sb-account__menu {", 1)[1].split("}", 1)[0]
+    assert "z-index: 1;" in menu
+    mobile_backdrop = stylesheet.split(".sb-nav-backdrop { position: fixed;", 1)[1]
+    assert "z-index: 95;" in mobile_backdrop.split("}", 1)[0]
+
+
 def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 

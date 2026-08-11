@@ -153,7 +153,7 @@ class D1AuthorizationFacts:
                 continue
             key = (str(row["organization_id"]), str(row["event_id"]))
             role = Role(str(row["role"]))
-            if role in {Role.EVALUATOR, Role.SPEAKER}:
+            if role is Role.SPEAKER:
                 event_roles.setdefault(key, set()).add(role)
         return Actor(
             user_id=user_id,

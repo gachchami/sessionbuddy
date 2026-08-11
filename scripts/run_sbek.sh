@@ -11,6 +11,7 @@ auth_volume="${SBEK_CLAUDE_AUTH_VOLUME:-sessionbuddy-claude-auth}"
 dependencies_volume="${SBEK_NODE_MODULES_VOLUME:-sessionbuddy-sbek-node-modules-v2}"
 store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"
 playwright_image="${SBEK_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.62.1-noble}"
+provider="${SBEK_PROVIDER:-anthropic-api}"
 
 if [ -z "$eval_root" ]; then
   for candidate in /private/tmp/sessionbuddy-evals.*/repo; do
@@ -144,13 +145,11 @@ if [ "$dry_run" != "1" ]; then
     fi
   done
   if [ -n "$missing_personas" ]; then
-    echo "Missing saved eval persona session(s):$missing_personas" >&2
-    echo "Save each SessionBuddy magic-link session with scripts/run_sbek.sh auth-link." >&2
-    exit 2
+    echo "No saved session for:$missing_personas; using configured password credentials." >&2
   fi
 fi
 
-if [ "$dry_run" != "1" ] && [ "${SBEK_SKIP_SESSION_CHECK:-0}" != "1" ]; then
+if [ "$dry_run" != "1" ] && [ -z "$missing_personas" ] && [ "${SBEK_SKIP_SESSION_CHECK:-0}" != "1" ]; then
   echo "Checking saved persona sessions and role boundaries before starting a paid eval..."
   if ! docker run --rm \
     -v "$eval_root:/eval" \
@@ -184,6 +183,23 @@ if [ "$dry_run" = "1" ]; then
     -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     "$playwright_image" \
     corepack pnpm exec tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+fi
+
+# Claude Max authentication remains in the host keychain. Running the eval kit
+# itself on the host lets its fixed-purpose adapter invoke `claude --print`
+# without copying credentials or mounting the Claude config into a container.
+if [ "$provider" = "claude-cli" ]; then
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "Claude CLI was not found on the host PATH." >&2
+    exit 2
+  fi
+  if [ ! -x "$eval_root/node_modules/.bin/tsx" ]; then
+    echo "Host eval dependencies are missing. From the eval checkout, run: pnpm install" >&2
+    exit 2
+  fi
+  cd "$eval_root"
+  export SBEK_PROVIDER=claude-cli
+  exec node --import tsx src/cli.ts "$command_name" --url "$target_url" "$@"
 fi
 
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then

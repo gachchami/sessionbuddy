@@ -24,7 +24,7 @@ body.speaker-portal-page {
   background: radial-gradient(circle at 85% -4rem, rgba(109, 74, 255, .08), transparent 26rem), #f7f7fc;
 }
 .speaker-portal-shell { width: min(68rem, calc(100% - 2rem)); }
-.speaker-portal-page #status:empty, .speaker-portal-page #status.success { display: none; }
+.speaker-portal-page #status:empty, .speaker-portal-page #status[hidden] { display: none; }
 .speaker-portal-page .sb-topbar { min-height: 3.25rem; }
 .speaker-portal-page .sb-account__trigger { min-height: 2.35rem; padding: .25rem .55rem; box-shadow: none; }
 .speaker-portal-page .sb-account__avatar { width: 1.75rem; height: 1.75rem; }
@@ -188,6 +188,36 @@ body.speaker-portal-page {
 .proposal-editor label { margin: 0; color: #344057; font-size: .75rem; font-weight: 700; }
 .proposal-editor input, .proposal-editor textarea { margin-top: .25rem; background: white; }
 .proposal-editor .actions { margin-top: 0; }
+
+.portal-priority-panel:has(.proposal-composer:not([hidden])) { grid-column: 1 / -1; }
+.proposal-composer { margin: .25rem 0 .8rem; padding: clamp(1rem, 3vw, 1.5rem); border: 1px solid #b9c8ef; border-radius: .75rem; background: #f8faff; }
+.proposal-composer__form { display: grid; gap: 1rem; max-width: 50rem; }
+.proposal-composer__heading { display: grid; gap: .3rem; padding-bottom: .85rem; border-bottom: 1px solid #dbe3f6; }
+.proposal-composer__form h3 { margin: 0; font-size: 1.125rem; }
+.proposal-composer__form h4 { margin: 0 0 .55rem; font-size: .875rem; }
+.proposal-composer__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem 1rem; }
+.proposal-composer__fields > label:has(textarea),
+.proposal-composer__fields > label:has(select[multiple]),
+.proposal-composer__fields > label:has(input[type="file"]) { grid-column: 1 / -1; }
+.proposal-composer label { margin: 0; color: #344057; font-size: .875rem; font-weight: 700; }
+.proposal-composer input, .proposal-composer textarea, .proposal-composer select { margin-top: .25rem; background: white; }
+.proposal-composer .check-label { display: flex; gap: .45rem; align-items: center; }
+.proposal-composer .check-label input { margin-top: 0; }
+.proposal-composer .required-marker { margin-left: .15rem; color: #b3261e; }
+.proposal-composer small { display: block; margin-top: .25rem; color: var(--speaker-muted); font-weight: 400; }
+.proposal-composer .co-speaker-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .65rem; align-items: end; margin-bottom: .65rem; }
+.proposal-composer .actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 0; padding-top: .25rem; }
+.proposal-composer .actions button[type="submit"] { background: #5732c6; }
+.proposal-composer .actions button[type="submit"]:hover { background: #4325ad; }
+.proposal-composer__error { margin: 0; padding: .7rem .8rem; border: 1px solid var(--status-danger-border); border-radius: .5rem; background: var(--status-danger-surface); color: var(--status-danger-text); font-size: .875rem; font-weight: 600; }
+.proposal-composer [aria-invalid="true"] { border-color: var(--speaker-danger); box-shadow: 0 0 0 2px rgba(200, 30, 30, .12); }
+#call-availability { margin: 0 0 .6rem; }
+@media (max-width: 640px) {
+  .proposal-composer { padding: 1rem; }
+  .proposal-composer__fields { grid-template-columns: minmax(0, 1fr); }
+  .proposal-composer__fields > label { grid-column: 1; }
+  .proposal-composer .co-speaker-row { grid-template-columns: minmax(0, 1fr); }
+}
 
 .session-files { margin-top: .45rem; }
 .session-files summary { width: fit-content; padding: .25rem 0; cursor: pointer; color: var(--speaker-blue); font-size: .875rem; font-weight: 700; }

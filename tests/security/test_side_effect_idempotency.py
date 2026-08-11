@@ -121,9 +121,18 @@ async def test_round_submission_replay_creates_one_assignment_and_email(
                 (submission_id, organization_id, event_id, public_id),
             )
         connection.execute(
-            """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES ('idempotency-evaluator',?,?,?,'evaluator','active',1000,1000)""",
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES (?,'reviewer','active',1000,1000,0)
+               ON CONFLICT(user_id,role) DO UPDATE SET status='active'""",
+            (user_id,),
+        )
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('idempotency-reviewer-invite',?,?,'admin@example.com',
+                       'admin@example.com','evaluator','accepted',?,2000,1000,1000,1000)""",
             (organization_id, event_id, user_id),
         )
         connection.execute(

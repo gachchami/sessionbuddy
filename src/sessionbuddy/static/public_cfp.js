@@ -17,8 +17,9 @@
     csrf: "", form: null, draftVersion: 0, publicSession: browserSessionId(),
     files: new Map(), uploaded: new Map(), existingFiles: new Map(),
     applyConditions: () => {},
-    sessionEmail: "", authenticated: false, editingSubmission: null,
-    viewingSubmission: null, submissions: [], draftDirty: false, draftTimer: null
+    sessionEmail: "", sessionDisplayName: "", authenticated: false, editingSubmission: null,
+    viewingSubmission: null, submissions: [], draftDirty: false, draftTimer: null,
+    pendingSubmission: null
   };
   const browserDraftKey = `sessionbuddy:cfp:${slug}:draft`;
   const BROWSER_DRAFT_TTL_MS = 30 * 60 * 1000;
@@ -483,6 +484,16 @@
     help.textContent = `Signed in as ${state.sessionEmail}.`;
   }
 
+  function applySignedInIdentity() {
+    // Account identity wins for a new proposal, including after restoring a
+    // browser or server draft created before the account lookup completed.
+    if (state.editingSubmission || state.viewingSubmission) return;
+    const form = byId("proposal-form");
+    const name = form.elements.namedItem("speaker_name");
+    if (name && state.sessionDisplayName) name.value = state.sessionDisplayName;
+    lockSignedInEmail();
+  }
+
   function chooseSubmission(submission) {
     const editable = submission.editable === true;
     resetProposalFiles();
@@ -629,10 +640,11 @@
         state.authenticated = true;
         state.csrf = session.csrf_token;
         state.sessionEmail = session.email || "";
+        state.sessionDisplayName = session.display_name || "";
         const restored = saved?.submissionId
           ? null
           : restoreBrowserDraft(state.sessionEmail);
-        lockSignedInEmail();
+        applySignedInIdentity();
         try {
           const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
           state.submissions = mine.data || [];
@@ -652,7 +664,7 @@
           }
         }
         else if (restored && !saved?.submissionId) {
-          lockSignedInEmail();
+          applySignedInIdentity();
           const needsFiles = (restored.fileNames || []).length > 0;
           const readyToReview = Boolean(restored.readyToSubmit)
             && !needsFiles
@@ -673,6 +685,7 @@
           }
           setStatus("Start a new proposal below.");
           await loadDraft();
+          applySignedInIdentity();
         }
       } catch (error) {
         if (![401, 403].includes(error.status)) throw error;
@@ -739,7 +752,7 @@
     form.elements.password.disabled = true;
     passwordButton.disabled = true;
     linkButton.disabled = true;
-    linkButton.textContent = "Creating account…";
+    linkButton.textContent = "Sending signup link…";
     try {
       saveBrowserDraft(false);
       await api("/api/v1/auth/magic-links", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, form_slug: slug, redirect_path: location.pathname }) });
@@ -753,7 +766,7 @@
       form.elements.password.disabled = false;
       passwordButton.disabled = false;
       linkButton.disabled = false;
-      linkButton.textContent = "Create account";
+      linkButton.textContent = "Email me a signup link";
       setStatus(window.SessionBuddyApi.message(error, "We could not send the sign-in link. Try again."), "error");
     }
   });
@@ -765,7 +778,7 @@
     form.elements.password.disabled = false;
     byId("cfp-password-sign-in").disabled = false;
     byId("cfp-send-sign-in-link").disabled = false;
-    byId("cfp-send-sign-in-link").textContent = "Create account";
+    byId("cfp-send-sign-in-link").textContent = "Email me a signup link";
     form.elements.password.value = "";
     form.elements.email.focus();
     form.elements.email.select();
@@ -873,11 +886,21 @@
       const target = state.editingSubmission
         ? `/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(state.editingSubmission.id)}`
         : `/api/v1/forms/${encodeURIComponent(slug)}/submissions`;
+      const method = state.editingSubmission ? "PATCH" : "POST";
+      const payload = JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values, co_speakers: coSpeakers(), ...(state.editingSubmission ? { version: state.editingSubmission.version } : {}) });
+      // Held across retries of an unchanged proposal: if a response is lost
+      // after the server stored it, a fresh key on retry would create a second
+      // proposal instead of replaying the first.
+      const attempt = `${method} ${target} ${payload}`;
+      if (state.pendingSubmission?.attempt !== attempt) {
+        state.pendingSubmission = { attempt, key: `${browserSessionId()}-${browserSessionId()}` };
+      }
       const submission = await api(target, {
-        method: state.editingSubmission ? "PATCH" : "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}`, "x-public-session-id": state.publicSession },
-        body: JSON.stringify({ speaker_name: values.speaker_name, speaker_email: values.speaker_email, proposal_title: values.proposal_title, proposal_abstract: values.proposal_abstract, answers: values, co_speakers: coSpeakers(), ...(state.editingSubmission ? { version: state.editingSubmission.version } : {}) })
+        method,
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": state.pendingSubmission.key, "x-public-session-id": state.publicSession },
+        body: payload
       });
+      state.pendingSubmission = null;
       setStep("done");
       form.hidden = true;
       byId("call-details").hidden = true;

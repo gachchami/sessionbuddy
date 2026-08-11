@@ -105,6 +105,21 @@ def test_evaluation_rounds_are_owned_by_events() -> None:
     assert "/admin/events/${encodeURIComponent(results.event_id)}/submissions" in reviews
 
 
+def test_reviewers_use_exact_assignments_not_hidden_event_memberships() -> None:
+    root = Path(__file__).parents[2]
+    router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
+    access = (root / "src/sessionbuddy/platform/auth/access.py").read_text()
+    baseline = (root / "migrations_baseline/0001_baseline.sql").read_text()
+
+    assert "ur.role='reviewer'" in router
+    assert "a.evaluator_user_id=NEW.user_id" in baseline
+    event_membership = baseline.split("CREATE TABLE event_memberships", 1)[1].split(
+        "CREATE TABLE", 1
+    )[0]
+    assert "'evaluator'" not in event_membership
+    assert 'invitation["role"] != "evaluator"' in access
+
+
 def test_withdrawn_submissions_cannot_enter_review_assignments() -> None:
     router = (
         Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"

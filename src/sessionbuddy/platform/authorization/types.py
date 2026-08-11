@@ -5,7 +5,6 @@ from enum import StrEnum
 class Role(StrEnum):
     ORGANIZATION_ADMIN = "organization_admin"
     EVENT_ADMIN = "event_admin"
-    EVALUATOR = "evaluator"
     SPEAKER = "speaker"
 
 
@@ -63,7 +62,11 @@ class ResourceContext:
     organization_id: str
     event_id: str | None = None
     resource_owner_user_id: str | None = None
-    evaluator_assigned: bool = False
+    # These facts must be copied from the selected evaluation_assignments row.
+    # Keeping the assignee identity (instead of accepting a caller-supplied
+    # boolean) lets the policy enforce the actor-to-assignment relationship.
+    evaluator_user_id: str | None = None
+    evaluator_assignment_status: str | None = None
     evaluation_round_open: bool = False
     resource_exists: bool = True
     resource_id: str | None = None

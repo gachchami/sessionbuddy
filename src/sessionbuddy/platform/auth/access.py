@@ -1231,6 +1231,125 @@ async def delete_account_headshot(request: Request) -> Response:
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
+async def _managed_speaker_headshot_target(request: Request, event_id: str, event_speaker_id: str):
+    row = row_mapping(
+        await database(request).prepare(
+            """SELECT es.organization_id,es.event_id,p.user_id
+               FROM event_speakers es JOIN people p
+                 ON p.organization_id=es.organization_id AND p.id=es.person_id
+               WHERE es.id=?1 AND es.event_id=?2 AND p.user_id IS NOT NULL LIMIT 1"""
+        ).bind(event_speaker_id, event_id).first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    authenticated = await require_permission(
+        request,
+        Permission.SPEAKER_MANAGE,
+        ResourceContext(str(row["organization_id"]), event_id),
+        mutation=request.method != "GET",
+        mutation_media_types=_EVENT_IMAGE_MEDIA_TYPES,
+    )
+    return authenticated, row
+
+
+@access_router.get(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot",
+    response_class=StreamingResponse,
+    tags=["speaker-onboarding"],
+)
+async def admin_speaker_headshot(
+    event_id: str, event_speaker_id: str, request: Request
+) -> StreamingResponse:
+    _, target = await _managed_speaker_headshot_target(request, event_id, event_speaker_id)
+    row = row_mapping(
+        await database(request).prepare(
+            "SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1"
+        ).bind(target["user_id"]).first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    stored = await _event_logo_bucket(request).get(str(row["object_key"]))
+    if stored is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(
+        _stream_event_logo(stored),
+        media_type=str(row["content_type"]),
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@access_router.put(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot",
+    status_code=204,
+    tags=["speaker-onboarding"],
+)
+async def upload_admin_speaker_headshot(
+    event_id: str, event_speaker_id: str, request: Request
+) -> Response:
+    authenticated, target = await _managed_speaker_headshot_target(
+        request, event_id, event_speaker_id
+    )
+    await enforce_rate_limit(
+        request,
+        binding_name="HEADSHOT_UPLOAD_RATE_LIMITER",
+        policy=RateLimitPolicy("admin.speaker.headshot.upload", limit=3, window_seconds=60),
+        subject=f"{authenticated.actor.user_id}:{event_id}:{event_speaker_id}",
+    )
+    body, content_type, extension = await _read_headshot(request)
+    checksum = hashlib.sha256(body).digest()
+    asset_id = new_id()
+    environment_value = request.scope.get("env")
+    if not malware_scan_disabled(environment_value):
+        try:
+            scan = await SignedScannerAdapter(environment_value).scan(
+                body,
+                job=ScanJob(
+                    schema_version=1,
+                    organization_id=str(target["organization_id"]),
+                    event_id=event_id,
+                    asset_version_id=asset_id,
+                    generation=1,
+                    checksum_sha256=checksum,
+                    job_id=asset_id,
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=503) from exc
+        if scan.verdict != "clean":
+            raise HTTPException(status_code=400)
+    object_key = f"private/user-headshots/{target['user_id']}.{extension}"
+    await _event_logo_bucket(request).put(object_key, body)
+    now = utc_now_ms()
+    batch = CommandBatch(database(request))
+    batch.add_statement(
+        database(request).prepare(
+            """INSERT INTO user_headshots
+               (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6)
+               ON CONFLICT(user_id) DO UPDATE SET object_key=excluded.object_key,
+                 content_type=excluded.content_type,byte_size=excluded.byte_size,
+                 checksum_sha256=excluded.checksum_sha256,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(target["user_id"], object_key, content_type, len(body), checksum, now)
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(target["organization_id"]),
+            event_id=event_id,
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="speaker.headshot.admin_update",
+            target_type="event_speaker",
+            target_id=event_speaker_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"content_type": content_type, "byte_size": len(body)},
+        )
+    )
+    await batch.execute()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
 @access_router.get(
     "/api/v1/admin/organizations",
     response_model=OrganizationList,
@@ -4140,10 +4259,24 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
     )
     user = row_mapping(
         await db.prepare(
-            """SELECT u.id,om.organization_id,e.id AS event_id FROM users u
-           JOIN organization_memberships om ON om.user_id=u.id AND om.status='active'
-           LEFT JOIN events e ON e.organization_id=om.organization_id AND e.status!='archived'
-           WHERE u.normalized_email=?1 AND u.status='active' LIMIT 1"""
+            """SELECT u.id,context.organization_id,context.event_id FROM users u
+               JOIN (
+                 SELECT om.user_id,om.organization_id,e.id AS event_id,1 AS priority
+                 FROM organization_memberships om
+                 LEFT JOIN events e ON e.organization_id=om.organization_id
+                                   AND e.status!='archived'
+                 WHERE om.status='active'
+                 UNION ALL
+                 SELECT a.evaluator_user_id,a.organization_id,a.event_id,2 AS priority
+                 FROM evaluation_assignments a WHERE a.status!='revoked'
+                 UNION ALL
+                 SELECT invited.id AS user_id,i.organization_id,i.event_id,3 AS priority
+                 FROM identity_invitations i JOIN users invited
+                   ON invited.normalized_email=i.normalized_email
+                 WHERE i.role='evaluator' AND i.status='accepted'
+               ) context ON context.user_id=u.id
+               WHERE u.normalized_email=?1 AND u.status='active'
+               ORDER BY context.priority,context.organization_id,context.event_id LIMIT 1"""
         )
         .bind(normalized)
         .first()
@@ -4532,7 +4665,7 @@ async def _finish_magic_link_sign_in(
                            updated_at_ms=?1 WHERE id=?2"""
                     ).bind(now, user_id)
                 )
-        else:
+        elif invitation["role"] != "evaluator":
             # Reactivating a revoked membership through an event-level
             # invitation must never restore a previously revoked admin role:
             # the row comes back as a plain member. An ACTIVE admin accepting
@@ -5089,13 +5222,20 @@ async def current_session(request: Request) -> CurrentSession:
     assignment_rows = result_rows(
         await db.prepare(
             """SELECT memberships.organization_id,memberships.event_id,events.name AS event_name,
-                      CASE role WHEN 'evaluator' THEN 'reviewer' ELSE role END AS assignment
+                      'speaker' AS assignment
                FROM event_memberships memberships
                JOIN events ON events.id=memberships.event_id
                          AND events.organization_id=memberships.organization_id
                WHERE memberships.user_id=?1 AND memberships.status='active'
-                 AND memberships.role IN ('evaluator','speaker')
-               ORDER BY memberships.organization_id,memberships.event_id,memberships.role"""
+                 AND memberships.role='speaker'
+               UNION
+               SELECT assignments.organization_id,assignments.event_id,events.name AS event_name,
+                      'reviewer' AS assignment
+               FROM evaluation_assignments assignments
+               JOIN events ON events.id=assignments.event_id
+                         AND events.organization_id=assignments.organization_id
+               WHERE assignments.evaluator_user_id=?1 AND assignments.status!='revoked'
+               ORDER BY 1,2,4"""
         ).bind(authenticated.actor.user_id).all()
     )
     organizations_by_id: dict[str, dict[str, object]] = {}

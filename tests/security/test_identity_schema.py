@@ -25,6 +25,111 @@ def test_identity_invitation_schema_supports_guarded_provisioning(db: sqlite3.Co
     assert {"normalized_email", "role", "status", "expires_at_ms"} <= invitation_columns
 
 
+def _seed_reviewer_invitation_scope(db: sqlite3.Connection) -> None:
+    db.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
+           VALUES('admin','admin@example.test','admin@example.test','active',1,1,1),
+                 ('reviewer','reviewer@example.test','reviewer@example.test','active',1,1,1),
+                 ('other','other@example.test','other@example.test','active',1,1,1)"""
+    )
+    db.execute(
+        "INSERT INTO organizations(id,name,status,created_at_ms,updated_at_ms) "
+        "VALUES('org','Org','active',1,1),('other-org','Other','active',1,1)"
+    )
+    db.execute(
+        """INSERT INTO events
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,delivery_mode,
+            description,status,created_at_ms,updated_at_ms)
+           VALUES('event','org','Event',10,20,'UTC','Online','virtual','Review event',
+                  'active',1,1),
+                 ('other-event','other-org','Other',10,20,'UTC','Online','virtual',
+                  'Other event','active',1,1)"""
+    )
+    db.execute(
+        """INSERT INTO organization_memberships
+           (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES('admin-member','org','admin','organization_admin','active',1,1),
+                 ('other-admin-member','other-org','admin','organization_admin','active',1,1)"""
+    )
+
+
+def _insert_auth_challenge(
+    db: sqlite3.Connection,
+    *,
+    challenge_id: str,
+    user_id: str = "reviewer",
+    email: str = "reviewer@example.test",
+    organization_id: str = "org",
+    event_id: str = "event",
+) -> None:
+    db.execute(
+        """INSERT INTO authentication_challenges
+           (id,normalized_email,token_hash,purpose,provisioning_context,redirect_path,
+            expires_at_ms,created_at_ms,user_id,organization_id,event_id)
+           VALUES(?,?,?,'sign_in','existing_user','/reviews',100,1,?,?,?)""",
+        (challenge_id, email, challenge_id.encode().ljust(32, b"x"), user_id,
+         organization_id, event_id),
+    )
+
+
+def test_accepted_evaluator_invitation_allows_only_exact_auth_challenge_scope(
+    db: sqlite3.Connection,
+) -> None:
+    _seed_reviewer_invitation_scope(db)
+    db.execute(
+        """INSERT INTO identity_invitations
+           (id,organization_id,event_id,normalized_email,email,role,status,invited_by_user_id,
+            expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms)
+           VALUES('invite','org','event','reviewer@example.test','reviewer@example.test',
+                  'evaluator','accepted','admin',100,2,1,2)"""
+    )
+    _insert_auth_challenge(db, challenge_id="allowed")
+
+    mismatches = (
+        {"challenge_id": "wrong-user", "user_id": "other"},
+        {"challenge_id": "wrong-email", "email": "other@example.test"},
+        {"challenge_id": "wrong-org", "organization_id": "other-org", "event_id": "other-event"},
+    )
+    for mismatch in mismatches:
+        with pytest.raises(sqlite3.IntegrityError, match="scope mismatch"):
+            _insert_auth_challenge(db, **mismatch)
+    with pytest.raises(sqlite3.IntegrityError, match="scope mismatch"):
+        db.execute(
+            "UPDATE authentication_challenges SET normalized_email='other@example.test' "
+            "WHERE id='allowed'"
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "role", "accepted_at_ms", "revoked_at_ms"),
+    [
+        ("pending", "evaluator", None, None),
+        ("expired", "evaluator", None, None),
+        ("revoked", "evaluator", None, 2),
+        ("accepted", "speaker", 2, None),
+    ],
+)
+def test_nonqualifying_invitation_cannot_authorize_an_auth_challenge(
+    db: sqlite3.Connection,
+    status: str,
+    role: str,
+    accepted_at_ms: int | None,
+    revoked_at_ms: int | None,
+) -> None:
+    _seed_reviewer_invitation_scope(db)
+    db.execute(
+        """INSERT INTO identity_invitations
+           (id,organization_id,event_id,normalized_email,email,role,status,invited_by_user_id,
+            expires_at_ms,accepted_at_ms,revoked_at_ms,created_at_ms,updated_at_ms)
+           VALUES('invite','org','event','reviewer@example.test','reviewer@example.test',
+                  ?,?,'admin',100,?,?,1,2)""",
+        (role, status, accepted_at_ms, revoked_at_ms),
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="scope mismatch"):
+        _insert_auth_challenge(db, challenge_id=f"denied-{status}-{role}")
+
+
 def test_password_authentication_is_optional_and_separated_from_users(
     db: sqlite3.Connection,
 ) -> None:

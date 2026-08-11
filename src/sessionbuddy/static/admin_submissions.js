@@ -18,6 +18,85 @@
   function selectedSubmissionIds() {
     return [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
   }
+  function renderEvaluatorChoices() {
+    const evaluatorChoices = byId("evaluators");
+    evaluatorChoices.replaceChildren();
+    if (!state.evaluators.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No reviewers added yet.";
+      evaluatorChoices.append(empty);
+      updatePrerequisites();
+      return;
+    }
+    state.evaluators.forEach((evaluator) => {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "evaluator_user_ids";
+      input.value = evaluator.user_id;
+      input.checked = true;
+      label.append(input, evaluator.display_name);
+      evaluatorChoices.append(label);
+    });
+    updatePrerequisites();
+  }
+  function installReviewerLookup() {
+    const choices = byId("evaluators");
+    const help = document.createElement("p");
+    help.className = "help";
+    help.textContent = "Add an existing Reviewer account by its exact email address. Accounts are never searchable or listed.";
+    const row = document.createElement("div");
+    row.className = "form-grid";
+    const label = document.createElement("label");
+    label.textContent = "Reviewer email";
+    const input = document.createElement("input");
+    input.id = "reviewer-email";
+    input.type = "email";
+    input.autocomplete = "off";
+    input.maxLength = 320;
+    input.placeholder = "reviewer@example.com";
+    input.required = false;
+    label.append(input);
+    const action = document.createElement("div");
+    action.className = "field-action";
+    const button = document.createElement("button");
+    button.id = "find-reviewer";
+    button.type = "button";
+    button.className = "secondary";
+    button.textContent = "Add reviewer";
+    action.append(button);
+    row.append(label, action);
+    const status = document.createElement("p");
+    status.id = "reviewer-lookup-status";
+    status.className = "status";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    choices.before(help, row, status);
+    button.addEventListener("click", async () => {
+      if (!input.value.trim()) {
+        input.setCustomValidity("Enter the reviewer's exact email address.");
+      } else {
+        input.setCustomValidity("");
+      }
+      if (!input.reportValidity()) return;
+      status.textContent = "Checking that Reviewer account…";
+      try {
+        const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators?email=${encodeURIComponent(input.value.trim())}`);
+        const reviewer = result.data[0];
+        if (!reviewer) {
+          status.textContent = "No active Reviewer account matches that exact email. Invite them as a Reviewer first.";
+          return;
+        }
+        if (!state.evaluators.some((item) => item.user_id === reviewer.user_id)) state.evaluators.push(reviewer);
+        renderEvaluatorChoices();
+        status.textContent = `${reviewer.display_name} added to this round.`;
+        input.value = "";
+      } catch (error) {
+        status.textContent = window.SessionBuddyApi.message(error, "The Reviewer account could not be checked.");
+      }
+    });
+  }
   function updateSelectedCount() {
     const count = selectedSubmissionIds().length;
     byId("selected-count").textContent = `${count} selected`;
@@ -276,20 +355,7 @@
       window.dispatchEvent(new Event("sessionbuddy:event-context"));
       byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
       byId("cfp-workspace-link").hidden = false;
-      const evaluatorResult = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators`);
-      state.evaluators = evaluatorResult.data;
-      const evaluatorChoices = byId("evaluators");
-      evaluatorChoices.replaceChildren();
-      state.evaluators.forEach((evaluator) => {
-        const label = document.createElement("label");
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.name = "evaluator_user_ids";
-        input.value = evaluator.user_id;
-        input.checked = true;
-        label.append(input, evaluator.display_name);
-        evaluatorChoices.append(label);
-      });
+      renderEvaluatorChoices();
       state.nextCursor = result.next_cursor || null;
       const body = byId("submissions");
       body.replaceChildren();
@@ -465,5 +531,6 @@
     const weightLabel = document.createElement("label"); weightLabel.textContent = "Weight"; const weight = document.createElement("input"); weight.name = "criterion_weight"; weight.type = "number"; weight.min = "1"; weight.max = "100"; weight.required = true; weightLabel.append(weight);
     row.append(label, weightLabel); addRemoveButton(row); container.append(row); name.focus();
   });
+  installReviewerLookup();
   load();
 })();

@@ -12,6 +12,7 @@ from urllib.parse import quote, urlparse
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
+from sessionbuddy.cfp.availability import form_availability
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth import hash_token
@@ -57,6 +58,7 @@ from .models import (
     SpeakerAssetView,
     SpeakerEventView,
     SpeakerNotificationView,
+    SpeakerOpenCallView,
     SpeakerPortalView,
     SpeakerProfileUpdate,
     SpeakerProfileView,
@@ -257,10 +259,10 @@ async def admin_onboarding_js(request: Request) -> Response:
     return _product_asset(request, "admin_onboarding.js", "text/javascript")
 
 
-async def _timed_first(request: Request, statement):
+async def _timed_first(request: Request, statement, column: str | None = None):
     started = perf_counter()
     try:
-        return await statement.first()
+        return await (statement.first(column) if column is not None else statement.first())
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)
 
@@ -686,6 +688,13 @@ async def get_speaker_portal(
             ).bind(row["organization_id"], row["event_id"], row["event_speaker_id"]),
         )
     )
+    open_call = await _open_call_view(
+        request,
+        db,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        submitter_user_id=authenticated.actor.user_id,
+    )
     notifications = result_rows(
         await _timed_all(
             request,
@@ -772,8 +781,71 @@ async def get_speaker_portal(
             for submission in submissions
         ],
         notifications=[_speaker_notification_view(notification) for notification in notifications],
+        open_call=open_call,
         completed_tasks=sum(task.state == "completed" for task in task_views),
         total_tasks=len(task_views),
+    )
+
+
+async def _open_call_view(
+    request: Request,
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    submitter_user_id: str,
+) -> SpeakerOpenCallView | None:
+    """Summarise this event's published call for the portal's submit control.
+
+    Returns None when the event has no published form at all. A form that is
+    published but outside its window is still returned, so the portal can
+    explain the closure rather than silently hiding the control.
+    """
+    form = row_mapping(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT f.id,f.slug,f.opens_at_ms,f.closes_at_ms,f.submission_limit
+                   FROM call_for_speaker_forms f
+                   JOIN events e
+                     ON e.organization_id=f.organization_id AND e.id=f.event_id
+                   WHERE f.organization_id=?1 AND f.event_id=?2
+                     AND f.status='published' AND e.status='active'
+                   ORDER BY f.version DESC LIMIT 1"""
+            ).bind(organization_id, event_id),
+        )
+    )
+    if form is None:
+        return None
+    submitted_count = int(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT COUNT(*) AS count_value FROM submissions
+                   WHERE form_id=?1 AND submitter_user_id=?2 AND status='submitted'"""
+            ).bind(form["id"], submitter_user_id),
+            "count_value",
+        )
+        or 0
+    )
+    opens_at_ms = int(form["opens_at_ms"]) if form["opens_at_ms"] is not None else None
+    closes_at_ms = int(form["closes_at_ms"]) if form["closes_at_ms"] is not None else None
+    limit = int(form["submission_limit"]) if form["submission_limit"] is not None else None
+    remaining = max(0, limit - submitted_count) if limit is not None else None
+    accepting, message = form_availability(opens_at_ms, closes_at_ms, utc_now_ms())
+    if accepting and remaining == 0:
+        accepting = False
+        message = "You have reached the proposal limit for this Call for Proposals."
+    return SpeakerOpenCallView(
+        form_id=str(form["id"]),
+        slug=str(form["slug"]),
+        accepting_submissions=accepting,
+        availability_message=message,
+        opens_at_ms=opens_at_ms,
+        closes_at_ms=closes_at_ms,
+        submission_limit=limit,
+        submitted_count=submitted_count,
+        remaining_submissions=remaining,
     )
 
 

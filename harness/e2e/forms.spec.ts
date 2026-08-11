@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -298,7 +299,11 @@ test.describe("form validation and workflow wiring", () => {
         }],
       }),
     }));
-    await page.route(`**/api/v1/admin/events/${eventId}/evaluators`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) }));
+    const reviewerLookups: string[] = [];
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluators?email=*`, (route) => {
+      reviewerLookups.push(route.request().url());
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) });
+    });
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
     let roundWrites = 0;
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, async (route) => {
@@ -322,6 +327,18 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByRole("button", { name: "Select eligible" }).click();
     await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
     await page.getByText("Open a new evaluation round", { exact: true }).click();
+    await expect(page.getByText("Accounts are never searchable or listed.")).toBeVisible();
+    await page.getByLabel("Reviewer email").fill("reviewer@example.com");
+    await page.getByRole("button", { name: "Add reviewer" }).click();
+    await expect(page.getByLabel("Reviewer", { exact: true })).toBeChecked();
+    expect(reviewerLookups).toHaveLength(1);
+    expect(new URL(reviewerLookups[0]).searchParams.get("email")).toBe("reviewer@example.com");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const reviewerA11y = await new AxeBuilder({ page })
+      .include("#round-form")
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(reviewerA11y.violations.filter(({ impact }) => impact === "critical" || impact === "serious")).toEqual([]);
     await page.getByLabel("Minimum rating").fill("5");
     await page.getByLabel("Maximum rating").fill("5");
     await page.getByRole("button", { name: "Open evaluation round" }).click();

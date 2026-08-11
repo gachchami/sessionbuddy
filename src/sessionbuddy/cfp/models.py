@@ -188,8 +188,13 @@ class FormSettings(BaseModel):
                 raise ValueError("conditions must reference existing fields")
             if condition.source_key == condition.target_key:
                 raise ValueError("conditions cannot target their source")
+            if keys.index(condition.source_key) >= keys.index(condition.target_key):
+                raise ValueError("conditions must reference an earlier field")
             if condition.target_key in required_core:
                 raise ValueError("speaker identity and proposal fields cannot be conditional")
+            source = configured[condition.source_key]
+            if source.choices and condition.value not in source.choices:
+                raise ValueError("condition values must match a configured source choice")
         graph: dict[str, set[str]] = {key: set() for key in keys}
         for condition in self.conditions:
             graph[condition.source_key].add(condition.target_key)

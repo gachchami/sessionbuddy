@@ -98,7 +98,8 @@ class CapturingQueue:
 def _token(connection: sqlite3.Connection, email: str) -> str:
     row = connection.execute(
         """SELECT html_body FROM communication_messages
-           WHERE recipient_email=? ORDER BY queued_at_ms DESC,id DESC LIMIT 1""",
+           WHERE recipient_email=? AND html_body LIKE '%/auth/verify#token=%'
+           ORDER BY queued_at_ms DESC,id DESC LIMIT 1""",
         (email,),
     ).fetchone()
     assert row is not None
@@ -1157,6 +1158,35 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         portal = await speaker.get("/api/v1/speaker/portal")
         assert portal.status_code == 200
         assert portal.json()["event"]["id"] == event_id
+        open_call = portal.json()["open_call"]
+        assert open_call["slug"] == "speaker-summit"
+        assert open_call["accepting_submissions"] is True
+        assert open_call["submitted_count"] == 0
+        if open_call["submission_limit"] is not None:
+            assert open_call["remaining_submissions"] == open_call["submission_limit"]
+
+        # Public CFP speakers are external participants, not tenant members.
+        # Their authenticated user identity owns the draft; requiring broad
+        # organization membership here would make public draft saving fail.
+        speaker_user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email=?",
+            ("speaker@example.com",),
+        ).fetchone()[0]
+        connection.execute(
+            "DELETE FROM event_speakers WHERE person_id IN "
+            "(SELECT id FROM people WHERE user_id=?)",
+            (speaker_user_id,),
+        )
+        connection.execute("DELETE FROM people WHERE user_id=?", (speaker_user_id,))
+        connection.execute(
+            "DELETE FROM event_memberships WHERE user_id=?",
+            (speaker_user_id,),
+        )
+        connection.execute(
+            "DELETE FROM organization_memberships WHERE user_id=?",
+            (speaker_user_id,),
+        )
+        connection.commit()
 
         draft = await speaker.put(
             "/api/v1/forms/speaker-summit/draft",
@@ -1229,6 +1259,14 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         ).fetchone()[0] == 0
         portal = await speaker.get("/api/v1/speaker/portal")
         portal_submissions = {item["id"]: item for item in portal.json()["submissions"]}
+        # The portal call allowance is computed from this signed-in speaker's
+        # active proposals. A withdrawn proposal does not consume the limit.
+        refreshed_call = portal.json()["open_call"]
+        assert refreshed_call["submitted_count"] == 1
+        if refreshed_call["submission_limit"] is not None:
+            assert refreshed_call["remaining_submissions"] == (
+                refreshed_call["submission_limit"] - 1
+            )
         assert portal_submissions[submission.json()["id"]]["status"] == "submitted"
         assert portal_submissions[withdrawal_candidate.json()["id"]]["status"] == "withdrawn"
         assert portal_submissions[withdrawal_candidate.json()["id"]]["editable"] is False
@@ -1267,12 +1305,192 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert managed_profile.status_code == 200
         assert managed_profile.json()["can_edit"] is False
         assert managed_profile.json()["email"] == ""
+        reviewer_user_id = "77777777-7777-4777-8777-777777777777"
         connection.execute(
-            """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,version,
-                created_at_ms,updated_at_ms)
-               VALUES ('review-block-member',?,?,?,'evaluator','active',1,900,900)""",
-            (organization_id, event_id, session["user_id"]),
+            """INSERT INTO users
+               (id,email,normalized_email,status,email_verified_at_ms,version,
+                authorization_version,created_at_ms,updated_at_ms,display_name,
+                first_name,last_name,profile_completed_at_ms)
+               VALUES (?,?,?,?,?,1,1,?,?,?, ?,?,?)""",
+            (
+                reviewer_user_id,
+                "reviewer@example.com",
+                "reviewer@example.com",
+                "active",
+                800,
+                800,
+                800,
+                "Review Person",
+                "Review",
+                "Person",
+                800,
+            ),
+        )
+        connection.execute(
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES (?,'reviewer','active',800,800,1)""",
+            (reviewer_user_id,),
+        )
+        connection.commit()
+
+        # Exact-email lookup cannot enumerate or expose unrelated accounts.
+        assert (
+            await admin_again.get(f"/api/v1/admin/events/{event_id}/evaluators")
+        ).json() == {"data": []}
+        assert (
+            await admin_again.get(
+                f"/api/v1/admin/events/{event_id}/evaluators",
+                params={"email": "review"},
+            )
+        ).json() == {"data": []}
+        assert (
+            await admin_again.get(
+                f"/api/v1/admin/events/{event_id}/evaluators",
+                params={"email": "speaker@example.com"},
+            )
+        ).json() == {"data": []}
+        # A seeded global reviewer has neither sign-in nor assignment authority
+        # until this exact event's evaluator invitation has been accepted.
+        assert (
+            await admin_again.get(
+                f"/api/v1/admin/events/{event_id}/evaluators",
+                params={"email": "REVIEWER@example.com"},
+            )
+        ).json() == {"data": []}
+        delivered_without_invitation = connection.execute(
+            "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
+            ("reviewer@example.com",),
+        ).fetchone()[0]
+        uninvited_request = await admin_again.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "reviewer@example.com", "redirect_path": "/reviews"},
+        )
+        assert uninvited_request.status_code == 202
+        assert connection.execute(
+            "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
+            ("reviewer@example.com",),
+        ).fetchone()[0] == delivered_without_invitation
+        admin_user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms)
+               VALUES('accepted-reviewer-fixture',?,?,?,?,'evaluator','accepted',?,
+                      2000000000000,801,800,801)""",
+            (
+                organization_id,
+                event_id,
+                "reviewer@example.com",
+                "reviewer@example.com",
+                admin_user_id,
+            ),
+        )
+        connection.commit()
+        reviewer_lookup = await admin_again.get(
+            f"/api/v1/admin/events/{event_id}/evaluators",
+            params={"email": "REVIEWER@example.com"},
+        )
+        assert reviewer_lookup.json() == {
+            "data": [{"user_id": reviewer_user_id, "display_name": "Review Person"}]
+        }
+        assert connection.execute(
+            "SELECT COUNT(*) FROM event_memberships WHERE user_id=?",
+            (reviewer_user_id,),
+        ).fetchone()[0] == 0
+
+        created_round = await admin_again.post(
+            f"/api/v1/admin/events/{event_id}/evaluation-rounds",
+            headers={**headers, "idempotency-key": "external-reviewer-round"},
+            json={
+                "name": "External reviewer round",
+                "rating_min": 1,
+                "rating_max": 5,
+                "recommendations": ["accept", "reject"],
+                "assignment_strategy": "all",
+                "submission_ids": [submission.json()["id"]],
+                "evaluator_user_ids": [reviewer_user_id],
+            },
+        )
+        assert created_round.status_code == 201, created_round.text
+        assignment_id = connection.execute(
+            "SELECT id FROM evaluation_assignments WHERE round_id=?",
+            (created_round.json()["id"],),
+        ).fetchone()[0]
+        async with _client(environment) as reviewer:
+            await reviewer.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "reviewer@example.com", "redirect_path": "/reviews"},
+            )
+            verified = await reviewer.post(
+                "/auth/verify",
+                data={"token": _token(connection, "reviewer@example.com")},
+                follow_redirects=False,
+            )
+            assert verified.status_code == 303
+            reviewer_session = (await reviewer.get("/api/v1/auth/session")).json()
+            assert reviewer_session["organization_access"] == []
+            assert reviewer_session["event_access"] == [
+                {
+                    "organization_id": organization_id,
+                    "event_id": event_id,
+                    "event_name": "Speaker Summit",
+                    "permissions": [],
+                    "assignments": ["reviewer"],
+                }
+            ]
+            assert (
+                await reviewer.get(f"/api/v1/admin/events/{event_id}/submissions")
+            ).status_code == 403
+            assert (await reviewer.get("/api/v1/speaker/portal")).status_code == 404
+            reviews = await reviewer.get("/api/v1/evaluator/assignments")
+            assert reviews.status_code == 200
+            assert [item["id"] for item in reviews.json()["data"]] == [assignment_id]
+            connection.execute(
+                "UPDATE evaluation_assignments SET status='revoked' WHERE id=?",
+                (assignment_id,),
+            )
+            connection.commit()
+            assert (await reviewer.get("/api/v1/evaluator/assignments")).json()["data"] == []
+        connection.execute(
+            """UPDATE identity_invitations
+               SET status='revoked',accepted_at_ms=NULL,revoked_at_ms=902,updated_at_ms=902
+               WHERE id='accepted-reviewer-fixture'"""
+        )
+        connection.commit()
+        delivered_before = connection.execute(
+            "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
+            ("reviewer@example.com",),
+        ).fetchone()[0]
+        async with _client(environment) as signed_out_reviewer:
+            revoked_request = await signed_out_reviewer.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "reviewer@example.com", "redirect_path": "/reviews"},
+            )
+            unknown_request = await signed_out_reviewer.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "unknown@example.com", "redirect_path": "/reviews"},
+            )
+        assert revoked_request.status_code == unknown_request.status_code == 202
+        assert revoked_request.json() == unknown_request.json()
+        assert connection.execute(
+            "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
+            ("reviewer@example.com",),
+        ).fetchone()[0] == delivered_before
+        connection.execute(
+            "DELETE FROM evaluation_assignments WHERE round_id=?",
+            (created_round.json()["id"],),
+        )
+        connection.execute(
+            "DELETE FROM evaluation_rounds WHERE id=?",
+            (created_round.json()["id"],),
+        )
+        connection.execute(
+            """UPDATE identity_invitations
+               SET status='accepted',accepted_at_ms=903,revoked_at_ms=NULL,updated_at_ms=903
+               WHERE id='accepted-reviewer-fixture'"""
         )
         connection.execute(
             """INSERT INTO evaluation_rounds
@@ -1287,7 +1505,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 evaluator_user_id,status,created_at_ms,updated_at_ms)
                VALUES
                  ('review-block-assignment',?,?,'review-block-round',?,?,'assigned',900,900)""",
-            (organization_id, event_id, submission.json()["id"], session["user_id"]),
+            (organization_id, event_id, submission.json()["id"], reviewer_user_id),
         )
         connection.commit()
         async with _client(environment) as speaker_after_review:
@@ -1318,7 +1536,6 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "DELETE FROM evaluation_assignments WHERE id='review-block-assignment'"
         )
         connection.execute("DELETE FROM evaluation_rounds WHERE id='review-block-round'")
-        connection.execute("DELETE FROM event_memberships WHERE id='review-block-member'")
         connection.execute(
             """INSERT INTO evaluation_rounds
                (id,organization_id,event_id,name,rubric_json,status,
@@ -1482,9 +1699,9 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         ).status_code == 404
 
         invitations = await admin_again.get(f"/api/v1/admin/events/{event_id}/invitations")
-        assert [(item["role"], item["status"]) for item in invitations.json()["data"]] == [
-            ("speaker", "accepted")
-        ]
+        assert {
+            (item["role"], item["status"]) for item in invitations.json()["data"]
+        } == {("speaker", "accepted"), ("evaluator", "accepted")}
         members = await admin_again.get(f"/api/v1/admin/events/{event_id}/members")
         speaker_member = next(
             item for item in members.json()["data"] if item["email"] == "speaker@example.com"
@@ -1708,6 +1925,135 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
         "identity.invitation.resend",
         "identity.invitation.revoke",
     }
+
+
+async def test_accepted_reviewer_can_sign_in_before_a_round_without_event_access(
+    production_environment,
+) -> None:
+    connection, _, environment = production_environment
+    async with _client(environment) as admin:
+        bootstrap = await admin.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Pre-round Review Events",
+                "admin_name": "Admin",
+                "admin_email": "admin@example.com",
+            },
+        )
+        organization_id = bootstrap.json()["organization_id"]
+        await admin.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin/events"},
+        )
+        await admin.post(
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
+            follow_redirects=False,
+        )
+        admin_session = (await admin.get("/api/v1/auth/session")).json()
+        headers = {
+            "origin": "https://test",
+            "x-csrf-token": admin_session["csrf_token"],
+        }
+        event = await admin.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=headers,
+            json={
+                "name": "Review Summit",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "UTC",
+                "location": "Online",
+                "delivery_mode": "virtual",
+                "description": "A reviewer authentication boundary test.",
+            },
+        )
+        assert event.status_code == 201
+        event_id = event.json()["id"]
+        invitation = await admin.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=headers,
+            json={"email": "reviewer@example.com", "role": "evaluator"},
+        )
+        assert invitation.status_code == 201
+
+    async with _client(environment) as accepting_reviewer:
+        accepted = await accepting_reviewer.post(
+            "/auth/verify",
+            data={"token": _token(connection, "reviewer@example.com")},
+            follow_redirects=False,
+        )
+        assert accepted.status_code == 303
+
+    reviewer_user_id = connection.execute(
+        "SELECT id FROM users WHERE normalized_email='reviewer@example.com'"
+    ).fetchone()[0]
+    assert connection.execute(
+        "SELECT COUNT(*) FROM organization_memberships WHERE user_id=?",
+        (reviewer_user_id,),
+    ).fetchone()[0] == 0
+    assert connection.execute(
+        "SELECT COUNT(*) FROM evaluation_assignments WHERE evaluator_user_id=?",
+        (reviewer_user_id,),
+    ).fetchone()[0] == 0
+
+    async with _client(environment) as returning_reviewer:
+        requested = await returning_reviewer.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "reviewer@example.com", "redirect_path": "/reviews"},
+        )
+        assert requested.status_code == 202
+        redeemed = await returning_reviewer.post(
+            "/auth/verify",
+            data={"token": _token(connection, "reviewer@example.com")},
+            follow_redirects=False,
+        )
+        assert redeemed.status_code == 303
+        session = (await returning_reviewer.get("/api/v1/auth/session")).json()
+        assert session["organization_access"] == []
+        assert session["event_access"] == []
+        assignments = await returning_reviewer.get("/api/v1/evaluator/assignments")
+        assert assignments.status_code == 200
+        assert assignments.json()["data"] == []
+        assert (
+            await returning_reviewer.get(f"/api/v1/admin/events/{event_id}/submissions")
+        ).status_code == 403
+        assert (await returning_reviewer.get("/api/v1/admin/organizations")).status_code == 403
+        assert (
+            await returning_reviewer.get(
+                f"/api/v1/admin/organizations/{organization_id}/speakers"
+            )
+        ).status_code == 403
+        assert (await returning_reviewer.get("/api/v1/speaker/portal")).status_code == 404
+
+    delivered_before_revoke = connection.execute(
+        "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
+        ("reviewer@example.com",),
+    ).fetchone()[0]
+    connection.execute(
+        """UPDATE identity_invitations
+           SET status='revoked',accepted_at_ms=NULL,revoked_at_ms=updated_at_ms+1,
+               updated_at_ms=updated_at_ms+1
+           WHERE id=?""",
+        (invitation.json()["id"],),
+    )
+    connection.commit()
+    async with _client(environment) as revoked_reviewer:
+        rejected = await revoked_reviewer.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "reviewer@example.com", "redirect_path": "/reviews"},
+        )
+        unknown = await revoked_reviewer.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "unknown@example.com", "redirect_path": "/reviews"},
+        )
+    assert rejected.status_code == unknown.status_code == 202
+    assert rejected.json() == unknown.json()
+    assert connection.execute(
+        "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
+        ("reviewer@example.com",),
+    ).fetchone()[0] == delivered_before_revoke
 
 
 async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(

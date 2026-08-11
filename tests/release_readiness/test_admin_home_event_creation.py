@@ -40,6 +40,13 @@ def test_canonical_events_route_opens_its_complete_form_from_the_hash() -> None:
         assert f'name="{name}"' in page
     assert 'location.hash === "#event-form"' in script
     assert "openEventDialog();" in script
+    assert (
+        '<span class="field-label">Description '
+        '<span class="required-marker" aria-hidden="true">*</span></span>'
+        '<textarea name="description"' in page
+    )
+    assert 'textarea name="description" rows="4"' in page
+    assert 'maxlength="2000" required' in page
 
 
 def test_home_only_offers_creation_to_organization_owners_or_managers() -> None:

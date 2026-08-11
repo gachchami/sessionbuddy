@@ -45,6 +45,7 @@ from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
+from .availability import form_availability, public_event_key
 from .models import (
     AdminPublishedFormView,
     CfpWorkspaceView,
@@ -386,7 +387,7 @@ async def admin_submissions_page(event_id: str, request: Request) -> HTMLRespons
 
 
 def _public_event_key(event_id: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", event_id.casefold())[:6]
+    return public_event_key(event_id)
 
 
 @cfp_router.get(
@@ -1683,7 +1684,7 @@ async def complete_cfp_staged_upload(
         return StagedUploadCompletionView(staged_id=staged_id, state=status)
     now = utc_now_ms()
     if status == "uploaded":
-        await _enqueue_staged_scan(request, row)
+        await _claim_and_enqueue_staged_scan(request, row)
         return StagedUploadCompletionView(staged_id=staged_id, state="uploaded")
     if int(row["expires_at_ms"]) < now:
         raise HTTPException(status_code=404)
@@ -1740,7 +1741,7 @@ async def complete_cfp_staged_upload(
     )
     await _execute(request, batch)
     if state == "uploaded":
-        await _enqueue_staged_scan(request, row)
+        await _claim_and_enqueue_staged_scan(request, row)
     return StagedUploadCompletionView(staged_id=staged_id, state=state)
 
 
@@ -1756,13 +1757,46 @@ def _staged_scan_job(row) -> "ScanJob":
     )
 
 
-async def _enqueue_staged_scan(request: Request, row) -> None:
+async def _claim_and_enqueue_staged_scan(request: Request, row) -> None:
+    """Atomically let one completion request publish the scan job.
+
+    The short-lived claim is cleared only when queue publication fails, making
+    a later poll retryable while preventing concurrent polls from duplicating
+    a successfully published job.
+    """
     queue = getattr(_env(request), "ASSET_SCAN_QUEUE", None)
     if queue is None:
         raise HTTPException(status_code=503)
+    claim = f"enqueue:{new_id()}"
+    now = utc_now_ms()
+    stale_before = now - 5 * 60 * 1000
+    claimed = row_mapping(
+        await _db(request)
+        .prepare(
+            """UPDATE cfp_staged_assets SET scan_result_code=?1, updated_at_ms=?2
+               WHERE id=?3 AND status='uploaded' AND (
+                 scan_result_code IS NULL OR
+                 (scan_result_code LIKE 'enqueue:%' AND updated_at_ms < ?4)
+               )
+               RETURNING id"""
+        )
+        .bind(claim, now, row["id"], stale_before)
+        .first()
+    )
+    if claimed is None:
+        return
     try:
         await queue.send(_staged_scan_job(row).to_message())
     except Exception as exc:
+        await (
+            _db(request)
+            .prepare(
+                """UPDATE cfp_staged_assets SET scan_result_code=NULL
+                   WHERE id=?1 AND status='uploaded' AND scan_result_code=?2"""
+            )
+            .bind(row["id"], claim)
+            .run()
+        )
         raise HTTPException(status_code=503) from exc
 
 
@@ -1858,6 +1892,12 @@ async def update_submission(
         form_id=str(row["form_id"]),
         event_id=str(row["event_id"]),
         user_id=authenticated.actor.user_id,
+        canonical={
+            "speaker_name": body.speaker_name,
+            "speaker_email": body.speaker_email,
+            "proposal_title": body.proposal_title,
+            "proposal_abstract": body.proposal_abstract,
+        },
     )
     staged_ids = staged_references(schema, body.answers)
     staged_claim = None
@@ -2213,6 +2253,17 @@ async def create_submission(
     )
     if form is None:
         raise HTTPException(status_code=404)
+    # Scope the idempotency namespace to the concrete form. A client may use
+    # the same generated key for independent proposals without replaying a
+    # response from another event.
+    principal_key = authenticated.actor.user_id
+    fingerprint = _fingerprint(body)
+    route_key = f"POST /api/v1/forms/{form['id']}/submissions"
+    replay = await _find_replay(db, principal_key, route_key, key)
+    if replay:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return await _editable_submission_by_id(db, str(replay["response_resource_id"]))
     await _guard_new_co_speaker_invitations(
         request,
         actor_user_id=authenticated.actor.user_id,
@@ -2260,15 +2311,13 @@ async def create_submission(
         form_id=str(form["id"]),
         event_id=str(form["event_id"]),
         user_id=authenticated.actor.user_id,
+        canonical={
+            "speaker_name": body.speaker_name,
+            "speaker_email": body.speaker_email,
+            "proposal_title": body.proposal_title,
+            "proposal_abstract": body.proposal_abstract,
+        },
     )
-    principal_key = submitter_user_id
-    fingerprint = _fingerprint(body)
-    route_key = "POST /api/v1/forms/{slug}/submissions"
-    replay = await _find_replay(db, principal_key, route_key, key)
-    if replay:
-        if _blob(replay["request_fingerprint"]) != fingerprint:
-            raise HTTPException(status_code=409)
-        return await _editable_submission_by_id(db, str(replay["response_resource_id"]))
     submission_id = new_id()
     routing = _route_submission(schema, body.answers)
     await _validate_routed_track(
@@ -2818,11 +2867,7 @@ def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[boo
     del submissions_received
     opens_at = int(row["opens_at_ms"]) if row.get("opens_at_ms") is not None else None
     closes_at = int(row["closes_at_ms"]) if row.get("closes_at_ms") is not None else None
-    if opens_at is not None and now_ms < opens_at:
-        return False, "Applications have not opened yet."
-    if closes_at is not None and now_ms >= closes_at:
-        return False, "Applications are closed."
-    return True, "Applications are open."
+    return form_availability(opens_at, closes_at, now_ms)
 
 
 def _published_form_view(row, now_ms: int) -> PublishedFormView:
@@ -2845,7 +2890,13 @@ def _published_form_view(row, now_ms: int) -> PublishedFormView:
 def _condition_matches(operator: object, actual: object, expected: str) -> bool:
     if operator == "contains":
         return expected in actual if isinstance(actual, list) else expected in str(actual or "")
-    matches = str(actual if actual is not None else "") == expected
+    if isinstance(actual, list):
+        comparable = [str(item) for item in actual]
+    elif isinstance(actual, bool):
+        comparable = ["true" if actual else "false"]
+    else:
+        comparable = [str(actual if actual is not None else "")]
+    matches = expected in comparable
     return matches if operator == "equals" else not matches
 
 
@@ -2966,19 +3017,38 @@ async def _validate_upload_answers(
     form_id: str,
     event_id: str,
     user_id: str,
+    canonical: dict[str, object] | None = None,
 ) -> None:
     raw_fields = schema.get("fields", [])
     if not isinstance(raw_fields, list):
         raise HTTPException(status_code=409)
+    values = {**answers, **(canonical or {})}
+    inactive_targets: set[str] = set()
+    raw_conditions = schema.get("conditions", [])
+    if not isinstance(raw_conditions, list):
+        raise HTTPException(status_code=409)
+    for condition in raw_conditions:
+        if not isinstance(condition, dict):
+            raise HTTPException(status_code=409)
+        source_value = values.get(str(condition.get("source_key", "")), "")
+        expected = str(condition.get("value", ""))
+        if not _condition_matches(condition.get("operator"), source_value, expected):
+            inactive_targets.add(str(condition.get("target_key", "")))
     now = utc_now_ms()
     for field in raw_fields:
         if not isinstance(field, dict) or field.get("type") not in {"file", "image"}:
             continue
-        value = answers.get(str(field.get("key", "")))
+        field_key = str(field.get("key", ""))
+        if field_key in inactive_targets:
+            continue
+        value = answers.get(field_key)
         if value in (None, "") and not field.get("required"):
             continue
         if not isinstance(value, str):
-            raise HTTPException(status_code=422)
+            raise HTTPException(
+                status_code=422,
+                detail={"field": field_key, "message": "A file upload is required."},
+            )
         expected_kind = "headshot" if field.get("type") == "image" else "supporting_document"
         if value.startswith("staged:"):
             staged_id = value.removeprefix("staged:")
@@ -2992,10 +3062,16 @@ async def _validate_upload_answers(
                 .first("found")
             )
             if found is None:
-                raise HTTPException(status_code=422)
+                raise HTTPException(
+                    status_code=422,
+                    detail={"field": field_key, "message": "The uploaded file is unavailable."},
+                )
             continue
         if not value.startswith("upload:"):
-            raise HTTPException(status_code=422)
+            raise HTTPException(
+                status_code=422,
+                detail={"field": field_key, "message": "Upload this file before submitting."},
+            )
         intent_id = value.removeprefix("upload:")
         found = (
             await db.prepare(
@@ -3011,7 +3087,10 @@ async def _validate_upload_answers(
             .first("found")
         )
         if found is None:
-            raise HTTPException(status_code=422)
+            raise HTTPException(
+                status_code=422,
+                detail={"field": field_key, "message": "The uploaded file is unavailable."},
+            )
 
 
 def _request_source(request: Request) -> str:

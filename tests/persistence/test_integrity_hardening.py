@@ -37,10 +37,10 @@ def db() -> sqlite3.Connection:
             (f"event-{suffix}", f"org-{suffix}", f"Event {suffix.upper()}"),
         )
         connection.execute(
-            """INSERT INTO event_memberships
-               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?,?,?,?, 'evaluator','active',1,1)""",
-            (f"event-member-{suffix}", f"org-{suffix}", f"event-{suffix}", f"user-{suffix}"),
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES(?,'reviewer','active',1,1,1)""",
+            (f"user-{suffix}",),
         )
         connection.execute(
             """INSERT INTO call_for_speaker_forms
@@ -81,6 +81,20 @@ def db() -> sqlite3.Connection:
                 f"org-{suffix}",
                 f"event-{suffix}",
                 f"Round {suffix}",
+            ),
+        )
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms)
+               VALUES(?,?,?,?,?,'evaluator','accepted',?,20,2,1,2)""",
+            (
+                f"evaluator-invite-{suffix}",
+                f"org-{suffix}",
+                f"event-{suffix}",
+                f"user-{suffix}@example.test",
+                f"user-{suffix}@example.test",
+                f"user-{suffix}",
             ),
         )
     yield connection
@@ -149,6 +163,54 @@ def test_evaluation_graph_cannot_cross_tenant_or_event_boundaries(
                 decided_by_user_id,decided_at_ms,updated_at_ms)
                VALUES('bad-decision','org-a','event-a','round-a','submission-b','accepted','',
                       'user-a',1,1)"""
+        )
+
+
+def test_evaluation_assignment_requires_exact_accepted_event_invitation(
+    db: sqlite3.Connection,
+) -> None:
+    db.execute(
+        "UPDATE identity_invitations SET status='revoked',accepted_at_ms=NULL,"
+        "revoked_at_ms=3,updated_at_ms=3 "
+        "WHERE id='evaluator-invite-a'"
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="evaluation assignment scope mismatch"):
+        db.execute(
+            """INSERT INTO evaluation_assignments
+               (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES('uninvited-assignment','org-a','event-a','round-a','submission-a','user-a',
+                      'assigned',1,1)"""
+        )
+
+
+def test_reviewer_invited_to_another_tenant_cannot_be_assigned_by_known_user_id(
+    db: sqlite3.Connection,
+) -> None:
+    with pytest.raises(sqlite3.IntegrityError, match="evaluation assignment scope mismatch"):
+        db.execute(
+            """INSERT INTO evaluation_assignments
+               (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES('cross-tenant-reviewer','org-a','event-a','round-a','submission-a','user-b',
+                      'assigned',1,1)"""
+        )
+
+
+def test_evaluation_assignment_update_revalidates_invitation_scope(
+    db: sqlite3.Connection,
+) -> None:
+    db.execute(
+        """INSERT INTO evaluation_assignments
+           (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,status,
+            created_at_ms,updated_at_ms)
+           VALUES('assignment-update','org-a','event-a','round-a','submission-a','user-a',
+                  'assigned',1,1)"""
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="evaluation assignment scope mismatch"):
+        db.execute(
+            "UPDATE evaluation_assignments SET evaluator_user_id='user-b' "
+            "WHERE id='assignment-update'"
         )
 
 

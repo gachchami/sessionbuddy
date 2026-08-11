@@ -88,6 +88,10 @@ async function servePortal(page: Page) {
     contentType: "application/json",
     body: JSON.stringify({ csrf_token: "responsive-csrf" }),
   }));
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ email: "alex@example.test", display_name: "Alex Speaker", csrf_token: "responsive-csrf" }),
+  }));
   await page.route("**/api/v1/speaker/portal", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify(portal),
@@ -308,5 +312,87 @@ test.describe("speaker portal responsive design", () => {
 
     await expect(uploadForm.locator(".upload-status")).toHaveText("Something went wrong on our side. Try again.");
     await expect(uploadForm.locator(".upload-status")).not.toContainText("File received");
+  });
+
+  test("profile tasks PATCH the speaker profile and preserve edits on error", async ({ page }) => {
+    await servePortal(page);
+    const taskPortal = {
+      ...portal,
+      tasks: [{ id: "task-profile", task_type: "profile", title: "Confirm profile", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] }],
+    };
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      contentType: "application/json", body: JSON.stringify(taskPortal),
+    }));
+    const requests: Record<string, unknown>[] = [];
+    let attempts = 0;
+    await page.route("**/api/v1/speaker/profile", async (route) => {
+      attempts += 1;
+      requests.push(JSON.parse(route.request().postData() ?? "{}"));
+      await route.fulfill(attempts === 1 ? {
+        status: 503, contentType: "application/json",
+        body: JSON.stringify({ error: { code: "unavailable", message: "Profile service unavailable." } }),
+      } : { contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    await page.goto("/speaker");
+    const profileForm = page.locator("#speaker-profile-form .task-form");
+    await profileForm.getByLabel("Display name").fill("Alex Updated");
+    await profileForm.getByLabel("Links (one per line)").fill("https://example.test\nhttps://social.example.test/alex");
+    await profileForm.getByRole("button", { name: "Save profile" }).click();
+    await expect(page.locator("#status")).toContainText("Something went wrong on our side");
+    await expect(profileForm.getByLabel("Display name")).toHaveValue("Alex Updated");
+
+    await profileForm.getByRole("button", { name: "Save profile" }).click();
+    await expect(page.locator("#status")).toHaveText("Profile saved.");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      display_name: "Alex Updated", biography: "Builds production AI systems.", version: 1,
+      links: ["https://example.test", "https://social.example.test/alex"],
+    });
+  });
+
+  test("headshot tasks authorize, upload, and complete into the quarantined speaker asset path", async ({ page }) => {
+    await page.addInitScript(() => {
+      if (!globalThis.crypto.subtle) {
+        Object.defineProperty(globalThis.crypto, "subtle", {
+          configurable: true,
+          value: { digest: async () => new Uint8Array(32).buffer },
+        });
+      }
+    });
+    await servePortal(page);
+    const taskPortal = {
+      ...portal,
+      tasks: [{ id: "task-headshot", task_type: "headshot", title: "Upload headshot", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] }],
+    };
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      contentType: "application/json", body: JSON.stringify(taskPortal),
+    }));
+    let authorizationBody: Record<string, unknown> = {};
+    let uploads = 0;
+    let completions = 0;
+    await page.route("**/api/v1/speaker/events/event-responsive/upload-authorizations", async (route) => {
+      authorizationBody = JSON.parse(route.request().postData() ?? "{}");
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        intent_id: "intent-headshot", upload_url: "/api/v1/uploads/intent-headshot/content?token=local-test",
+        method: "PUT", headers: { "content-type": "image/png" }, expires_at_ms: Date.now() + 60_000,
+      }) });
+    });
+    await page.route("**/api/v1/uploads/intent-headshot/content?token=local-test", async (route) => {
+      uploads += 1;
+      expect(route.request().method()).toBe("PUT");
+      await route.fulfill({ status: 204 });
+    });
+    await page.route("**/api/v1/speaker/events/event-responsive/upload-intents/intent-headshot/complete", async (route) => {
+      completions += 1;
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ intent_id: "intent-headshot", state: "quarantined" }) });
+    });
+    await page.goto("/speaker");
+    const uploadForm = page.locator('#speaker-headshot-form form[data-kind="headshot"]');
+    await uploadForm.locator('input[type="file"]').setInputFiles({ name: "alex.png", mimeType: "image/png", buffer: Buffer.from("png") });
+    await uploadForm.getByLabel(/What changed/).fill("New conference headshot.");
+    await uploadForm.getByRole("button", { name: "Upload headshot" }).click();
+    await expect.poll(() => completions).toBe(1);
+    expect(uploads).toBe(1);
+    expect(authorizationBody).toMatchObject({ kind: "headshot", task_id: "task-headshot", submission_id: null });
   });
 });

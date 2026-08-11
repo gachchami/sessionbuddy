@@ -37,7 +37,9 @@ OpenAI API key. Dry runs remain model-free.
 
 Implemented: program creation, browser-managed text, choice, checkbox, phone,
 URL, image, and document questions; conditional display and answer-based
-routing; open/close times and submission limits; branded public CFP rendering;
+routing; organizer-configurable combined session formats; structured display
+rules that reference earlier proposal fields and valid configured answers;
+open/close times and submission limits; branded public CFP rendering;
 richer CFP descriptions with safe formatting; public important-date milestones;
 review-before-submit; confirmation email copy; authenticated speaker
 registration; versioned drafts; owned submissions; admin submission listing;
@@ -138,6 +140,43 @@ The requirement-by-requirement evidence and the remaining authenticated
 development rehearsal are tracked in `delivery-completion-audit.md`.
 
 ## Updates — 2026-08-16
+
+Speakers can now submit a proposal from the speaker portal instead of having to
+find the public CFP link. `/api/v1/speaker/portal` reports the event's published
+call as `open_call` — slug, window, per-speaker limit and remaining
+allowance — and the Sessions panel offers an inline composer that renders the
+published field schema, conditional fields, co-speakers, and upload questions.
+The composer posts to the existing `POST /api/v1/forms/{slug}/submissions`, so
+submission validation, routing, idempotency, and the per-speaker limit stay on
+one server-enforced path; the portal only decides whether to offer the control.
+Open/closed reasoning is shared with the public form through
+`sessionbuddy.cfp.availability`, so the two surfaces cannot disagree about
+whether a call accepts proposals.
+
+The portal rechecks the authenticated event call before opening the composer,
+so a newly exhausted allowance or event switch is resolved before uploads begin.
+Speaker profile and headshot management remain available independently of task
+completion. Organizers can preview and replace a linked speaker's headshot from
+the event-scoped directory; the route requires exact event speaker-management
+authority, validates and scans the image when a scanner is configured, and emits
+an audit record. Explicit development scanner-disable mode performs no scanner
+request, while production remains fail closed.
+
+The portal deliberately exposes only calls belonging to events the speaker
+already has an active speaker membership on. It is not a discovery surface and
+does not advertise other events' calls; organizers run events from the admin
+side, and public discovery stays on the public event pages. A speaker with no
+event membership therefore has no portal entry point by design.
+
+Both proposal surfaces now hold their idempotency key steady across retries of
+an unchanged proposal, minting a new key only when the payload changes. A lost
+response after a stored proposal previously invited a retry under a fresh key,
+which the server could not recognise as a replay and would have accepted as a
+second proposal. Browser coverage in
+`harness/e2e/speaker-portal-proposal-composer.spec.ts` exercises the composer
+end to end: submission, conditional fields, co-speaker limits and self-listing,
+retry key reuse, key rotation after an edit, exhausted allowances, a call that
+closes mid-session, Axe checks, and 320/390px layouts.
 
 The Day-N operational fixture pack is now a portable, UI-only execution kit:
 seven event worksheets, target-neutral resource keys, an instance-map template,
@@ -289,3 +328,13 @@ consumers' missing structured logs are recorded there as a known gap.
 - Label edits and archival require exact label ownership or an explicit edit/manage grant.
 - Event managers can assign up to 20 active event labels to each accepted session.
 - Published schedules display and search label names without exposing ownership metadata.
+
+## Reviewer assignment boundary
+
+- Reviewer is an account persona, not an organization or event membership role.
+- Organizers add an existing Reviewer to a round by exact email; the API never
+  lists or partially searches accounts and never returns the reviewer's email.
+- An active evaluation assignment is the sole event/proposal authorization
+  fact. Revoking it removes review and event-assignment visibility immediately.
+- Reviewer invitations establish the Reviewer persona only. They do not grant
+  organization membership, event membership, organizer access, or speaker access.

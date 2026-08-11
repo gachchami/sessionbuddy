@@ -450,7 +450,7 @@ test.describe("public smoke checks", () => {
     await expect(page.getByRole("status").first()).toHaveText(
       "Sign in or register with your email to start a proposal.",
     );
-    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Email me a signup link" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Review proposal" })).toBeHidden();
     expect(requestCount).toBe(0);
   });
@@ -587,6 +587,7 @@ test.describe("administration empty states", () => {
       "start_time",
       "end_date",
       "end_time",
+      "description",
     ]) {
       const field = eventDialog.locator(`[name="${fieldName}"]`);
       // The marker lives inside the .field-label wrapper, not as a direct child.
@@ -706,7 +707,11 @@ test.describe("administration empty states", () => {
     // A successful send closes the dialog and the invitation appears in the
     // list; reopening presents a fresh, reset form.
     await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
-    await expect(page.getByText("speaker@example.com · Speaker assignment · pending")).toBeVisible();
+    const invitationRow = page.locator("#invitation-list li").filter({
+      has: page.getByText("speaker@example.com", { exact: true }),
+    });
+    await expect(invitationRow).toContainText("Speaker assignment");
+    await expect(invitationRow).toContainText("pending");
     await page.getByRole("button", { name: "Invite someone" }).click();
     await expect(page.getByRole("dialog", { name: "Invite someone" }).getByRole("textbox", { name: "Email address" })).toHaveValue("");
     await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("");
@@ -931,7 +936,7 @@ test.describe("dynamic form drafts", () => {
 
     await page.goto(`/cfp/mobile/${slug}`);
     await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
-    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Email me a signup link" })).toBeVisible();
     return;
     await expect(page.getByRole("heading", { name: "Verify your email to submit" })).toBeHidden();
     await expect(page.getByText("Workshop equipment (required)")).toHaveCount(0);

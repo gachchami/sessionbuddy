@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speaker directory · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=58">
+  <link rel="stylesheet" href="/product/assets/product.css?v=59">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
-  <script src="/admin/speakers/assets/speakers.js?v=7" defer></script>
+  <script src="/admin/speakers/assets/speakers.js?v=8" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
   <a class="skip-link" href="#main">Skip to speakers</a>
@@ -33,6 +33,10 @@
         <div><h3>Events and proposals</h3><ul id="speaker-events" class="speaker-participations"></ul></div>
       </div>
       <form id="speaker-form"><input name="version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">One per line</span><textarea name="links" rows="3"></textarea></label></div><label>Biography<textarea name="biography" rows="6" maxlength="5000"></textarea></label><button>Save speaker details</button></form>
+      <form id="speaker-headshot-form" class="account-headshot" hidden>
+        <div class="account-headshot__preview"><img id="speaker-headshot-preview" alt="" hidden><span id="speaker-headshot-fallback" aria-hidden="true">SP</span></div>
+        <div><h3>Headshot</h3><p class="help">Upload a JPG, PNG, or WebP for this speaker. Maximum 5 MB; it is scanned before use.</p><div class="actions"><label class="button secondary account-headshot__choose">Choose image<input name="headshot" type="file" accept="image/jpeg,image/png,image/webp" required></label><button type="submit">Save headshot</button></div><p id="speaker-headshot-status" class="status status-compact" role="status"></p></div>
+      </form>
       <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="/admin/speakers">Back to speakers</a></div>
     </section>
     <section id="speaker-directory-results" class="directory-section speaker-directory-results" aria-labelledby="directory-title">

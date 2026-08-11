@@ -49,7 +49,6 @@ SPEAKER_PERMISSIONS = frozenset(
 ROLE_GRANTS = {
     Role.ORGANIZATION_ADMIN: ORGANIZER_PERMISSIONS,
     Role.EVENT_ADMIN: ORGANIZER_PERMISSIONS - {Permission.ORGANIZATION_MANAGE},
-    Role.EVALUATOR: REVIEWER_PERMISSIONS,
     Role.SPEAKER: SPEAKER_PERMISSIONS,
 }
 
@@ -90,10 +89,11 @@ def authorize(
     if actor.active_persona is Persona.REVIEWER:
         if permission not in REVIEWER_PERMISSIONS:
             return AuthorizationDecision(False, "permission_not_granted")
-        roles = actor.event_roles.get(
-            (context.organization_id, context.event_id), frozenset()
-        )
-        if Role.EVALUATOR not in roles or not context.evaluator_assigned:
+        if (
+            context.evaluator_user_id != actor.user_id
+            or context.evaluator_assignment_status == "revoked"
+            or context.evaluator_assignment_status is None
+        ):
             return AuthorizationDecision(False, "assignment_required")
         if permission is Permission.EVALUATION_SAVE and not context.evaluation_round_open:
             return AuthorizationDecision(False, "lifecycle_forbidden")

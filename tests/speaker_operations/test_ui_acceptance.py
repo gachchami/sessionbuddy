@@ -57,7 +57,9 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'id="welcome-name"' in html
     assert 'id="public-profile-link"' in html
     assert 'task.destination_path === "#profile"' in javascript
-    assert 'return "/account"' in javascript
+    assert 'api("/api/v1/speaker/profile"' in javascript
+    assert 'method: "PATCH"' in javascript
+    assert 'createUploadForm("headshot", "")' in javascript
     assert 'Completed (${completed.length})' in javascript
     assert html.count('name="version_comment"') == 0
     assert 'createUploadForm("slides", submission.id)' in javascript

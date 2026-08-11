@@ -6,17 +6,17 @@
   <meta name="color-scheme" content="light">
   <title>Speaker home · SessionBuddy</title>
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
-  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=21">
+  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=22">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=24" defer></script>
-  <script src="/speaker/assets/speaker-portal.js?v=17" defer></script>
+  <script src="/speaker/assets/speaker-portal.js?v=19" defer></script>
 </head>
 <body class="app-body speaker-portal-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <header data-auth-shell data-allow-guest></header>
 
   <main id="main" class="shell speaker-portal-shell" tabindex="-1">
-    <div id="status" class="status" role="status" aria-live="polite">
+    <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">
       Loading speaker details…
     </div>
 
@@ -58,10 +58,20 @@
           <ul id="task-list" class="item-list" aria-describedby="task-help"></ul>
         </section>
 
+        <details id="speaker-profile-tools" class="panel portal-wide-panel secondary-panel" open>
+          <summary>Profile &amp; headshot</summary>
+          <p class="section-index">Keep the profile and image organizers use for this event up to date.</p>
+          <div id="speaker-profile-form"></div>
+          <div id="speaker-headshot-form"></div>
+        </details>
+
         <section id="submissions" class="panel portal-priority-panel" aria-labelledby="submissions-title">
           <div class="section-heading">
             <div><h2 id="submissions-title">Sessions</h2><p id="session-event-label" class="section-index"></p></div>
+            <button id="open-proposal-composer" class="secondary" type="button" hidden aria-expanded="false" aria-controls="proposal-composer">Submit a proposal</button>
           </div>
+          <p id="call-availability" class="section-index" hidden></p>
+          <div id="proposal-composer" class="proposal-composer" hidden></div>
           <ul id="submission-list" class="item-list"></ul>
         </section>
 

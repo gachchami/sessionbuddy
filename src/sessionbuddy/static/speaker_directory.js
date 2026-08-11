@@ -85,6 +85,16 @@
       participationList.append(row);
     }
 
+    const primary = participations[0];
+    if (item.user_id && primary) {
+      const image = document.createElement("img");
+      image.className = "speaker-profile-card__headshot";
+      image.alt = "";
+      image.loading = "lazy";
+      image.src = `/api/v1/admin/events/${encodeURIComponent(primary.event_id)}/speakers/${encodeURIComponent(primary.event_speaker_id)}/headshot`;
+      image.addEventListener("error", () => image.remove());
+      card.append(image);
+    }
     card.append(top, heading, identity, participationList);
     return card;
   }
@@ -251,6 +261,14 @@
     form.elements.links.value = (person.links || []).join("\n");
     byId("speaker-onboarding").href = `/admin/events/${encodeURIComponent(participation.event_id)}/onboarding`;
     byId("speaker-directory").href = `/admin/events/${encodeURIComponent(participation.event_id)}/speakers`;
+    const headshotForm = byId("speaker-headshot-form");
+    headshotForm.hidden = !person.user_id;
+    if (person.user_id) {
+      const preview = byId("speaker-headshot-preview");
+      preview.src = `/api/v1/admin/events/${encodeURIComponent(participation.event_id)}/speakers/${encodeURIComponent(participation.event_speaker_id)}/headshot?v=${person.version}`;
+      preview.hidden = false;
+      preview.addEventListener("error", () => { preview.hidden = true; byId("speaker-headshot-fallback").hidden = false; }, { once: true });
+    }
     document.title = `${person.display_name} · SessionBuddy`;
   }
 
@@ -392,6 +410,29 @@
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
+    }
+  });
+
+  byId("speaker-headshot-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!selectedSpeaker?.event_speaker_id) return;
+    const form = event.currentTarget;
+    const file = form.elements.headshot.files[0];
+    if (!file || file.size <= 0 || file.size > 5 * 1024 * 1024) {
+      byId("speaker-headshot-status").textContent = "Choose an image no larger than 5 MB.";
+      return;
+    }
+    const endpoint = `/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}/headshot`;
+    try {
+      await api(endpoint, { method: "PUT", headers: { "content-type": file.type, "x-csrf-token": csrf }, body: file });
+      const preview = byId("speaker-headshot-preview");
+      preview.src = `${endpoint}?v=${Date.now()}`;
+      preview.hidden = false;
+      byId("speaker-headshot-fallback").hidden = true;
+      form.elements.headshot.value = "";
+      byId("speaker-headshot-status").textContent = "Headshot saved.";
+    } catch (error) {
+      byId("speaker-headshot-status").textContent = window.SessionBuddyApi.message(error, "The headshot could not be saved.");
     }
   });
 

@@ -31,6 +31,7 @@ def test_development_cloudflare_config_has_no_deployment_failures() -> None:
     assert variables["PUBLIC_BASE_URL"] in variables["ALLOWED_ORIGINS"].split(",")
     assert variables["CLOUDFLARE_ACCOUNT_ID"]
     assert variables["R2_BUCKET_NAME"] == "sessionbuddy-assets-development"
+    assert environment["limits"] == {"cpu_ms": 5000}
     assert any(
         check.label == "malware scanning"
         and check.state == "PASS"

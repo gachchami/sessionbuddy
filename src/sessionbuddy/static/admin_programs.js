@@ -7,10 +7,15 @@
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
   const standardProposalFields = [
-    { key: "session_type", type: "select", label: "Session type", required: true, choices: ["Talk", "Workshop", "Panel", "Lightning talk"] },
+    {
+      key: "session_type",
+      type: "select",
+      label: "Session format",
+      required: true,
+      choices: ["Keynote (45 min)", "Talk (30 min)", "Lightning Talk (10 min)", "Workshop (120 min)", "Panel (45 min)"]
+    },
     { key: "track", type: "select", label: "Track", required: false, choices: [] },
-    { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] },
-    { key: "preferred_duration", type: "select", label: "Preferred duration", required: true, choices: ["15 minutes", "30 minutes", "45 minutes", "60 minutes", "90 minutes"] }
+    { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] }
   ];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
   const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
@@ -509,6 +514,22 @@
           inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
           inputLabel("Help text", textInput("field_help", field.help_text || ""))
         );
+        if (field.key === "session_type") {
+          choices.type = "text";
+          choices.required = true;
+          choices.setAttribute("aria-label", "Session format choices");
+          choices.addEventListener("input", () => {
+            state.fields[index].choices = choices.value
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean);
+          });
+          editorBody.append(inputLabel(
+            "Session formats",
+            choices,
+            "Enter the formats speakers can propose, separated by commas. Include the duration in each label."
+          ));
+        }
       } else {
         keyInput.type = "hidden";
         const requiredLabel = make("label");
@@ -541,11 +562,37 @@
       if (!system) {
         const conditionQuestion = document.createElement("select");
         conditionQuestion.name = "condition_source";
-        conditionQuestion.add(new Option("Choose a previous question", ""));
-        state.fields.forEach((candidate) => {
-          if (candidate.key !== field.key) conditionQuestion.add(new Option(candidate.label, candidate.key));
+        conditionQuestion.add(new Option("Choose a question or event field", ""));
+        const eventFields = document.createElement("optgroup");
+        eventFields.label = "Event proposal fields";
+        const customFields = document.createElement("optgroup");
+        customFields.label = "Custom questions";
+        state.fields.forEach((candidate, candidateIndex) => {
+          if (candidate.key === field.key || candidateIndex >= index) return;
+          // The browser-facing value intentionally matches the visible label.
+          // Browser automation and assistive tooling select native options by
+          // that exposed value, while the stable schema key remains separate.
+          const option = new Option(candidate.label, candidate.label);
+          option.dataset.sourceKey = candidate.key;
+          (proposalFieldKeys.has(candidate.key) || candidate.key === "track" ? eventFields : customFields).append(option);
         });
-        conditionQuestion.value = field.condition?.source_key || "";
+        if (eventFields.children.length) conditionQuestion.append(eventFields);
+        if (customFields.children.length) conditionQuestion.append(customFields);
+        const selectedConditionSource = [...conditionQuestion.options].find(
+          (option) => option.dataset.sourceKey === field.condition?.source_key
+        );
+        if (field.condition?.source_key && !selectedConditionSource) {
+          const unresolvedSource = new Option(
+            `Unavailable question (${field.condition.source_key}) — repair or clear`,
+            field.condition.source_key
+          );
+          unresolvedSource.dataset.sourceKey = field.condition.source_key;
+          unresolvedSource.dataset.unresolved = "true";
+          unresolvedSource.selected = true;
+          conditionQuestion.add(unresolvedSource, 1);
+        } else {
+          selectedConditionSource?.setAttribute("selected", "");
+        }
         operator.options[0].textContent = "is";
         operator.options[1].textContent = "is not";
         conditionSource.remove();
@@ -554,12 +601,52 @@
         advanced.open = Boolean(field.condition?.source_key);
         const advancedSummary = make("summary", "Display rules (optional)");
         const advancedBody = make("div");
+        const answerHost = make("div");
+        const conditionWarning = make("p");
+        conditionWarning.className = "condition-warning";
+        conditionWarning.setAttribute("role", "alert");
+        const selectedSourceKey = () => conditionQuestion.selectedOptions[0]?.dataset.sourceKey || "";
+        const renderConditionAnswer = () => {
+          const source = state.fields.find((candidate) => candidate.key === selectedSourceKey());
+          const existing = answerHost.querySelector('[name="condition_value"]')?.value || conditionValue.value;
+          let control = conditionValue;
+          if (source?.choices?.length) {
+            control = document.createElement("select");
+            control.name = "condition_value";
+            control.add(new Option("Choose an answer", ""));
+            source.choices.forEach((choice) => control.add(new Option(choice, choice)));
+            if (existing && !source.choices.includes(existing)) {
+              const unresolvedChoice = new Option(`Unavailable answer (${existing}) — repair or clear`, existing);
+              unresolvedChoice.dataset.unresolved = "true";
+              control.add(unresolvedChoice, 1);
+            }
+            control.value = existing;
+          } else {
+            control.value = existing;
+          }
+          const unresolved = conditionQuestion.selectedOptions[0]?.dataset.unresolved === "true"
+            || control.selectedOptions?.[0]?.dataset.unresolved === "true";
+          conditionWarning.textContent = unresolved
+            ? "This saved display rule is no longer valid. Choose an available question and answer, or clear the question selection to remove the rule."
+            : "";
+          conditionWarning.hidden = !unresolved;
+          answerHost.replaceChildren(inputLabel("Answer", control));
+        };
+        conditionQuestion.addEventListener("change", () => {
+          if (!selectedSourceKey()) {
+            conditionValue.value = "";
+            answerHost.querySelector('[name="condition_value"]')?.replaceWith(conditionValue);
+          }
+          renderConditionAnswer();
+        });
         advancedBody.append(
-          make("p", "Show this question only when a speaker gives a particular answer to another question."),
-          inputLabel("Previous question", conditionQuestion),
+          make("p", "Show this question only when a speaker gives a particular answer to an earlier question or event field."),
+          inputLabel("Question or event field", conditionQuestion),
           inputLabel("Comparison", operator),
-          inputLabel("Answer", conditionValue)
+          answerHost,
+          conditionWarning
         );
+        renderConditionAnswer();
         advanced.append(advancedSummary, advancedBody);
         editorBody.append(advanced);
         const remove = make("button", "Remove field");
@@ -570,7 +657,21 @@
           state.fields.splice(index, 1);
           renderFields();
         });
-        editorBody.append(remove);
+        const done = make("button", "Done editing question");
+        done.type = "button";
+        done.className = "secondary";
+        done.addEventListener("click", () => {
+          const labelInput = card.elements.field_label;
+          if (!labelInput.reportValidity()) return;
+          readFields();
+          renderFields();
+          selectOutline("custom", false);
+          byId("add-field").focus();
+        });
+        const actions = make("div");
+        actions.className = "field-actions";
+        actions.append(done, remove);
+        editorBody.append(actions);
       }
       editor.append(editorSummary, editorBody);
       card.append(legend, editor);
@@ -693,7 +794,9 @@
         choices: ["select", "multiselect"].includes(type) ? choices : [],
         blind_visible: Boolean(card.elements.field_blind_visible?.checked)
       };
-      const source = card.elements.condition_source?.value.trim();
+      const sourceControl = card.elements.condition_source;
+      const source = sourceControl?.selectedOptions[0]?.dataset.sourceKey
+        || sourceControl?.value.trim();
       const value = card.elements.condition_value?.value.trim();
       if (source && value) {
         field.condition = { source_key: source, operator: card.elements.condition_operator.value, value };
@@ -889,12 +992,15 @@
       const value = card.elements.condition_value;
       if (source && value) {
         source.setCustomValidity(""); value.setCustomValidity("");
-        if (Boolean(source.value.trim()) !== Boolean(value.value.trim())) {
-          (source.value.trim() ? value : source).setCustomValidity("Complete both parts of the display condition.");
-        } else if (source.value.trim() && !keys.has(source.value.trim())) {
-          source.setCustomValidity("Use the key of an existing question.");
-        } else if (source.value.trim() && source.value.trim() === field.key) {
+        const sourceKey = source.selectedOptions[0]?.dataset.sourceKey || source.value.trim();
+        if (Boolean(sourceKey) !== Boolean(value.value.trim())) {
+          (sourceKey ? value : source).setCustomValidity("Complete both parts of the display condition.");
+        } else if (sourceKey && !keys.has(sourceKey)) {
+          source.setCustomValidity("This saved display rule references an unavailable question. Repair it or explicitly clear the rule.");
+        } else if (sourceKey && sourceKey === field.key) {
           source.setCustomValidity("A question cannot depend on itself.");
+        } else if (value.selectedOptions?.[0]?.dataset.unresolved === "true") {
+          value.setCustomValidity("This saved display rule references an unavailable answer. Repair it or explicitly clear the rule.");
         }
       }
     });

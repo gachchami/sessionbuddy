@@ -15,10 +15,61 @@ from sessionbuddy.speaker_operations.models import SpeakerProfileUpdate, UploadA
 from sessionbuddy.speaker_operations.router import (
     _cursor,
     _next_cursor,
+    _open_call_view,
     _speaker_asset_version_view,
     _speaker_message_content,
     get_speaker_portal,
 )
+
+
+class _CallStatement:
+    def __init__(self, database, query):
+        self.database = database
+        self.query = query
+        self.values = ()
+
+    def bind(self, *values):
+        self.values = values
+        return self
+
+    async def first(self, column=None):
+        self.database.queries.append((self.query, self.values))
+        if "FROM call_for_speaker_forms" in self.query:
+            return self.database.form
+        if "COUNT(*)" in self.query:
+            return self.database.submitted if column else {"count_value": self.database.submitted}
+        return None
+
+
+class _CallDatabase:
+    def __init__(self, form=None, submitted=0):
+        self.form = form
+        self.submitted = submitted
+        self.queries: list[tuple[str, tuple]] = []
+
+    def prepare(self, query):
+        return _CallStatement(self, query)
+
+
+def _call_request() -> Request:
+    return Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/speaker/portal",
+        "headers": [],
+        "query_string": b"",
+        "state": {"timings": {}},
+    })
+
+
+async def _call_view(database):
+    return await _open_call_view(
+        _call_request(),
+        database,
+        organization_id="organization-a",
+        event_id="event-a",
+        submitter_user_id="speaker-a",
+    )
 
 
 @pytest.fixture
@@ -169,6 +220,149 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     assert "personalized emails will be queued immediately" in message_page
 
 
+async def test_open_call_is_absent_when_the_event_has_no_published_form() -> None:
+    assert await _call_view(_CallDatabase(form=None)) is None
+
+
+async def test_open_call_offers_submission_while_the_window_is_open() -> None:
+    now = utc_now_ms()
+    database = _CallDatabase(
+        form={
+            "id": "form-a",
+            "slug": "devflow-2027",
+            "opens_at_ms": now - 60_000,
+            "closes_at_ms": now + 60_000,
+            "submission_limit": 3,
+        },
+        submitted=1,
+    )
+
+    call = await _call_view(database)
+
+    assert call is not None
+    assert call.accepting_submissions is True
+    assert call.slug == "devflow-2027"
+    assert call.submitted_count == 1
+    assert call.remaining_submissions == 2
+    # The portal must only ever see this speaker's own submission count.
+    count_query = next(query for query, _ in database.queries if "COUNT(*)" in query)
+    assert "submitter_user_id=?2" in count_query
+    assert ("form-a", "speaker-a") in [values for _, values in database.queries]
+
+
+async def test_open_call_explains_a_closed_window_instead_of_offering_submission() -> None:
+    now = utc_now_ms()
+    database = _CallDatabase(
+        form={
+            "id": "form-a",
+            "slug": "devflow-2027",
+            "opens_at_ms": now - 120_000,
+            "closes_at_ms": now - 60_000,
+            "submission_limit": None,
+        }
+    )
+
+    call = await _call_view(database)
+
+    assert call is not None
+    assert call.accepting_submissions is False
+    assert call.availability_message == "Applications are closed."
+    assert call.remaining_submissions is None
+
+
+async def test_open_call_stops_offering_submission_at_the_speaker_limit() -> None:
+    database = _CallDatabase(
+        form={
+            "id": "form-a",
+            "slug": "devflow-2027",
+            "opens_at_ms": None,
+            "closes_at_ms": None,
+            "submission_limit": 2,
+        },
+        submitted=2,
+    )
+
+    call = await _call_view(database)
+
+    assert call is not None
+    assert call.accepting_submissions is False
+    assert call.remaining_submissions == 0
+    assert "limit" in call.availability_message
+
+
+async def test_open_call_only_considers_published_forms_on_active_events() -> None:
+    database = _CallDatabase(form=None)
+
+    await _call_view(database)
+
+    form_query = next(query for query, _ in database.queries if "call_for_speaker_forms" in query)
+    assert "f.status='published'" in form_query
+    assert "e.status='active'" in form_query
+    assert "f.organization_id=?1" in form_query and "f.event_id=?2" in form_query
+
+
+def test_portal_submits_proposals_through_the_shared_call_endpoint() -> None:
+    static = Path(__file__).parents[2] / "src/sessionbuddy/static"
+    portal = (static / "speaker_portal.js").read_text()
+    page = (static / "speaker_portal.html").read_text()
+
+    # One create path, server-validated: the portal reuses the public form's
+    # endpoint rather than a portal-only copy of submission validation.
+    assert "`/api/v1/forms/${encodeURIComponent(call.slug)}/submissions`" in portal
+    assert '"x-public-session-id": pendingSubmission.session' in portal
+    assert '"x-csrf-token": state.csrf' in portal
+    assert 'id="open-proposal-composer"' in page
+    assert 'aria-controls="proposal-composer"' in page
+    assert "renderOpenCall(portal.open_call || null)" in portal
+    assert "innerHTML" not in portal
+
+
+def test_portal_binds_the_proposal_email_to_the_signed_in_account() -> None:
+    # create_submission rejects a proposal whose speaker_email is not the
+    # account's own address, so the composer must read the account view (which
+    # carries the email) and must not let the speaker type a different one.
+    portal = (
+        Path(__file__).parents[2] / "src/sessionbuddy/static/speaker_portal.js"
+    ).read_text()
+
+    assert '"/api/v1/auth/session"' in portal
+    assert "state.sessionEmail = account.email" in portal
+    assert "if (state.sessionEmail) input.readOnly = true;" in portal
+
+
+def test_portal_never_reports_a_stored_proposal_as_a_failed_submission() -> None:
+    # A failed refresh after a 201 must not tell the speaker to submit again;
+    # each retry mints a fresh idempotency key and would create a duplicate.
+    portal = (
+        Path(__file__).parents[2] / "src/sessionbuddy/static/speaker_portal.js"
+    ).read_text()
+    submit_block = portal.split("async function openComposer", 1)[0]
+    after_create = submit_block.rsplit("if (!created) return;", 1)[1]
+
+    assert "loadEvent" in after_create
+    assert "could not be submitted" not in after_create
+    assert "could not be refreshed" in after_create
+
+
+def test_proposal_surfaces_hold_the_idempotency_key_across_retries() -> None:
+    # A lost response leaves the proposal stored. Retrying under a fresh key
+    # would be a second proposal rather than a replay of the first.
+    static = Path(__file__).parents[2] / "src/sessionbuddy/static"
+    portal = (static / "speaker_portal.js").read_text()
+    public = (static / "public_cfp.js").read_text()
+
+    assert '"idempotency-key": pendingSubmission.key' in portal
+    assert "pendingSubmission.payload !== payload" in portal
+    assert '"idempotency-key": state.pendingSubmission.key' in public
+    assert "state.pendingSubmission?.attempt !== attempt" in public
+    # The key must still move when the proposal changes; reusing it with a
+    # different fingerprint is a 409 server-side.
+    assert "key: idempotencyKey()" in portal
+    for source in (portal, public):
+        create_call = source.split("submissions`", 1)[-1][:400]
+        assert '"idempotency-key": idempotencyKey()' not in create_call
+
+
 def test_delivered_message_content_strips_active_markup_and_allowlists_links() -> None:
     body, links = _speaker_message_content(
         "<p>Hello speaker.</p><script>alert('no')</script>"
@@ -195,6 +389,9 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
         def bind(self, *values):
             self.values = values
             return self
+
+        async def first(self, column=None):
+            return None
 
         async def all(self):
             if "FROM communication_messages" in self.query:

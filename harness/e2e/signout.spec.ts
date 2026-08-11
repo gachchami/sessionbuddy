@@ -66,9 +66,30 @@ test.describe("account sign-out", () => {
     const response = await page.goto("/admin/events");
     expect(response?.ok()).toBeTruthy();
 
+    // Pin the shared layer contract against sticky workflow content. Before
+    // the shell established its own higher layer, a workflow hero could win
+    // hit testing over the open account menu and make Sign out unclickable.
+    await page.evaluate(() => {
+      const hero = document.createElement("div");
+      hero.className = "page-heading workflow-hero";
+      hero.dataset.testOverlay = "workflow-hero";
+      Object.assign(hero.style, {
+        position: "fixed",
+        zIndex: "80",
+        inset: "4rem 0 auto 0",
+        height: "12rem",
+      });
+      document.body.append(hero);
+    });
+
     await page.locator("summary[aria-label='Profile and account for admin@example.com']").click();
     const signOut = page.getByRole("button", { name: "Sign out" });
     await expect(signOut).toBeVisible();
+    expect(await signOut.evaluate((button) => {
+      const bounds = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+      return hit === button || button.contains(hit);
+    })).toBe(true);
     await signOut.click();
 
     await expect(page).toHaveURL(/\/$/);

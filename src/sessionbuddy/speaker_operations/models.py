@@ -99,6 +99,27 @@ class SpeakerEventView(BaseModel):
     time_zone: str
 
 
+class SpeakerOpenCallView(BaseModel):
+    """The event's published call for papers, as the speaker portal needs it.
+
+    This is a summary for deciding whether to offer a submit control and what
+    to say when it is unavailable. The portal fetches the full field schema
+    from the public form endpoint before composing a proposal.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    form_id: str
+    slug: str
+    accepting_submissions: bool
+    availability_message: str
+    opens_at_ms: int | None = None
+    closes_at_ms: int | None = None
+    submission_limit: int | None = None
+    submitted_count: int = 0
+    remaining_submissions: int | None = None
+
+
 class SpeakerNotificationView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -120,6 +141,7 @@ class SpeakerPortalView(BaseModel):
     tasks: list[SpeakerTaskView]
     submissions: list[SpeakerSubmissionView]
     notifications: list[SpeakerNotificationView] = Field(default_factory=list)
+    open_call: SpeakerOpenCallView | None = None
     completed_tasks: int
     total_tasks: int
 

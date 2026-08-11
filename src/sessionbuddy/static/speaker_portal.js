@@ -1,6 +1,15 @@
 (() => {
   "use strict";
-  const state = { csrf: "", portal: null, assets: [] };
+  const state = {
+    csrf: "", portal: null, assets: [],
+    sessionEmail: "", sessionName: "",
+    // Proposal composer: the published schema plus the files chosen for its
+    // upload fields and the staged references already accepted for them.
+    form: null, composerEventId: null,
+    files: new Map(), uploaded: new Map(), applyConditions: () => {},
+    closedCallForms: new Set()
+  };
+  const PROPOSAL_UPLOAD_TYPES = ["file", "image"];
   const uploadRules = {
     headshot: { max: 5 * 1024 * 1024, types: new Set(["image/jpeg", "image/png", "image/webp"]) },
     slides: { max: 50 * 1024 * 1024, types: new Set(["application/pdf", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.oasis.opendocument.presentation"]) },
@@ -24,6 +33,61 @@
     const status = byId("status");
     status.textContent = message;
     status.className = `status${kind ? ` ${kind}` : ""}`;
+    status.hidden = kind === "success" && message === "Speaker details are ready.";
+  }
+
+  function composerDraftKey(eventId = state.composerEventId, formId = state.form?.id) {
+    return eventId && formId ? `sessionbuddy:proposal-draft:${eventId}:${formId}` : "";
+  }
+
+  function composerIsDirty() {
+    const form = byId("proposal-composer-form");
+    return Boolean(form?.dataset.dirty === "true" || state.files.size || state.uploaded.size);
+  }
+
+  function confirmComposerDiscard() {
+    if (!composerIsDirty()) return true;
+    return confirm("Discard this proposal draft? Your entered details and selected files will be removed.");
+  }
+
+  function clearComposerDraft() {
+    const key = composerDraftKey();
+    if (key) {
+      try { sessionStorage.removeItem(key); } catch (_) { /* Storage can be disabled by the browser. */ }
+    }
+  }
+
+  function saveComposerDraft() {
+    const form = byId("proposal-composer-form");
+    const key = composerDraftKey();
+    if (!form || !key) return;
+    const values = {};
+    for (const field of state.form?.fields || []) {
+      if (!PROPOSAL_UPLOAD_TYPES.includes(field.type)) values[field.key] = proposalFieldValue(field);
+    }
+    const coSpeakers = [...form.querySelectorAll(".co-speaker-row")].map((row) => ({
+      display_name: row.querySelector("[data-co-speaker-name]")?.value || "",
+      email: row.querySelector("[data-co-speaker-email]")?.value || ""
+    }));
+    try { sessionStorage.setItem(key, JSON.stringify({ values, coSpeakers })); } catch (_) { /* Confirmation still prevents data loss. */ }
+  }
+
+  function showComposerError(message, control = null) {
+    const summary = byId("proposal-composer-error");
+    if (!summary) {
+      setStatus(message, "error");
+      return;
+    }
+    summary.textContent = message;
+    summary.hidden = false;
+    if (control) control.setAttribute("aria-invalid", "true");
+    (control || summary).focus();
+  }
+
+  function clearComposerErrors() {
+    const summary = byId("proposal-composer-error");
+    if (summary) { summary.hidden = true; summary.textContent = ""; }
+    byId("proposal-composer-form")?.querySelectorAll('[aria-invalid="true"]').forEach((control) => control.removeAttribute("aria-invalid"));
   }
 
   function recordTelemetry(started, response) {
@@ -75,13 +139,12 @@
 
   function taskDestination(task) {
     // Only same-page destinations are accepted; arbitrary API-provided URLs are never used.
-    if (task.destination_path === "#profile") return "/account";
+    if (task.destination_path === "#profile") return "#tasks";
     if (task.destination_path === "#assets") return "#submissions";
     if (["#tasks", "#submissions"].includes(task.destination_path)) {
       return task.destination_path;
     }
-    if (["profile", "biography"].includes(task.task_type)) return "/account";
-    if (task.task_type === "headshot") return "/account";
+    if (["profile", "biography", "headshot"].includes(task.task_type)) return "#tasks";
     if (["slides", "supporting_document"].includes(task.task_type)) return "#submissions";
     return "#tasks";
   }
@@ -145,6 +208,59 @@
     return form;
   }
 
+  function profileTaskForm() {
+    const profile = state.portal?.profile || {};
+    const form = make("form", undefined, "task-form");
+    const fields = [
+      ["display_name", "Display name", "text", true],
+      ["job_title", "Job title", "text", false],
+      ["company", "Company", "text", false],
+      ["biography", "Biography", "textarea", true],
+      ["location", "Location", "text", false],
+      ["links", "Links (one per line)", "textarea", false]
+    ];
+    for (const [key, labelText, type, required] of fields) {
+      const label = make("label", labelText);
+      const input = type === "textarea" ? document.createElement("textarea") : document.createElement("input");
+      input.name = key;
+      input.required = required;
+      input.maxLength = key === "biography" ? 5000 : key === "links" ? 20000 : 200;
+      input.value = key === "links" ? (profile.links || []).join("\n") : profile[key] || "";
+      label.append(input);
+      form.append(label);
+    }
+    const submit = make("button", "Save profile");
+    submit.type = "submit";
+    form.append(submit);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      submit.disabled = true;
+      try {
+        await api("/api/v1/speaker/profile", {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
+          body: JSON.stringify({
+            display_name: form.elements.display_name.value,
+            job_title: form.elements.job_title.value,
+            company: form.elements.company.value,
+            biography: form.elements.biography.value,
+            location: form.elements.location.value,
+            links: form.elements.links.value.split("\n").map((value) => value.trim()).filter(Boolean),
+            version: profile.version
+          })
+        });
+        await loadEvent(state.portal?.event?.id);
+        announceOnboardingChange();
+        setStatus("Profile saved.", "success");
+      } catch (error) {
+        setStatus(error.status === 409 ? "This profile changed. Reload and try again." : window.SessionBuddyApi.message(error, "The profile could not be saved."), "error");
+        submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
   function renderTasks(tasks, timezone) {
     const list = byId("task-list");
     list.replaceChildren();
@@ -167,7 +283,11 @@
       item.append(heading);
       if (help) item.append(help);
       item.append(meta);
-      if (task.task_type === "custom") {
+      if (["profile", "biography", "headshot"].includes(task.task_type)) {
+        const action = make("a", task.task_type === "headshot" ? "Manage headshot" : "Edit profile", "task-link");
+        action.href = "#speaker-profile-tools";
+        item.append(action);
+      } else if (task.task_type === "custom") {
         item.append(customTaskForm(task));
       } else {
         const action = make("a", task.action_label || "Complete task", "task-link");
@@ -319,16 +439,550 @@
     });
   }
 
+  function publicSessionId() {
+    // The submission endpoint requires a stable client identifier of its own,
+    // separate from the authenticated session cookie.
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
+
+  function renderOpenCall(call) {
+    const trigger = byId("open-proposal-composer");
+    const availability = byId("call-availability");
+    // A half-written proposal survives incidental portal refreshes (completing
+    // a task, uploading session files). Only a different event, or the call
+    // disappearing, discards it.
+    const composing = !byId("proposal-composer").hidden;
+    if (!composing || !call || state.composerEventId !== state.portal?.event?.id) closeComposer();
+    if (!call) {
+      trigger.hidden = true;
+      availability.hidden = true;
+      return;
+    }
+    const composerOpen = !byId("proposal-composer").hidden;
+    trigger.hidden = !call.accepting_submissions && !composerOpen;
+    availability.hidden = call.accepting_submissions;
+    if (!call.accepting_submissions) availability.textContent = call.availability_message;
+    if (call.accepting_submissions && typeof call.remaining_submissions === "number") {
+      trigger.textContent = call.remaining_submissions === 1
+        ? "Submit a proposal (1 left)"
+        : `Submit a proposal (${call.remaining_submissions} left)`;
+    } else {
+      trigger.textContent = "Submit a proposal";
+    }
+  }
+
+  function closeComposer({ discardDraft = false } = {}) {
+    if (discardDraft) clearComposerDraft();
+    const composer = byId("proposal-composer");
+    composer.replaceChildren();
+    composer.hidden = true;
+    byId("open-proposal-composer").setAttribute("aria-expanded", "false");
+    state.form = null;
+    state.composerEventId = null;
+    state.files.clear();
+    state.uploaded.clear();
+    state.applyConditions = () => {};
+  }
+
+  function proposalFieldValue(field) {
+    const form = byId("proposal-composer-form");
+    const control = form?.elements.namedItem(field.key);
+    if (!control) return null;
+    if (field.type === "checkbox") return Boolean(control.checked);
+    if (field.type === "multiselect") return [...control.selectedOptions].map((option) => option.value);
+    if (PROPOSAL_UPLOAD_TYPES.includes(field.type)) return state.uploaded.get(field.key) || "";
+    return control.value;
+  }
+
+  function proposalAnswers(form) {
+    const result = {};
+    for (const field of form?.fields || []) result[field.key] = proposalFieldValue(field);
+    return result;
+  }
+
+  function proposalConditionMatches(condition) {
+    const source = state.form?.fields?.find((field) => field.key === condition.source_key);
+    const actual = proposalFieldValue({ key: condition.source_key, type: source?.type });
+    const comparable = Array.isArray(actual) ? actual : [String(actual ?? "")];
+    const matches = comparable.includes(condition.value);
+    return condition.operator === "equals" ? matches : !matches;
+  }
+
+  function renderProposalFields(container, fields, conditions) {
+    container.replaceChildren();
+    for (const field of fields) {
+      const label = make("label");
+      const caption = make("span", field.label, "field-label");
+      if (field.required) {
+        const marker = make("span", "*", "required-marker");
+        marker.setAttribute("aria-hidden", "true");
+        caption.append(marker);
+      }
+      label.append(caption);
+      label.dataset.fieldKey = field.key;
+      let input;
+      if (field.type === "textarea") {
+        input = document.createElement("textarea");
+        input.rows = 6;
+        input.maxLength = 5000;
+      } else if (["select", "multiselect"].includes(field.type)) {
+        input = document.createElement("select");
+        input.multiple = field.type === "multiselect";
+        if (!input.multiple) input.append(new Option("Choose…", ""));
+        for (const choice of field.choices || []) input.add(new Option(choice, choice));
+      } else if (field.type === "checkbox") {
+        input = document.createElement("input");
+        input.type = "checkbox";
+        label.classList.add("check-label");
+      } else if (PROPOSAL_UPLOAD_TYPES.includes(field.type)) {
+        input = document.createElement("input");
+        input.type = "file";
+        input.accept = field.type === "image" ? "image/jpeg,image/png,image/webp" : "application/pdf";
+        input.addEventListener("change", () => {
+          const file = input.files?.[0];
+          if (file) state.files.set(field.key, file); else state.files.delete(field.key);
+          state.uploaded.delete(field.key);
+          delete input.dataset.stagedReference;
+        });
+      } else {
+        const inputType = field.type === "phone" ? "tel" : field.type;
+        input = document.createElement("input");
+        input.type = ["email", "url", "tel"].includes(inputType) ? inputType : "text";
+        input.maxLength = field.type === "email" || field.key === "speaker_email"
+          ? 320
+          : ["speaker_name", "proposal_title"].includes(field.key) ? 200 : 500;
+      }
+      input.name = field.key;
+      input.id = `proposal-field-${field.key}`;
+      input.required = Boolean(field.required);
+      input.dataset.required = field.required ? "true" : "false";
+      if (field.placeholder && !["select", "multiselect", "checkbox", ...PROPOSAL_UPLOAD_TYPES].includes(field.type)) {
+        input.placeholder = field.placeholder;
+      }
+      if (field.key === "speaker_name") {
+        input.autocomplete = "name";
+        input.value = state.portal?.profile?.display_name || state.sessionName || "";
+      }
+      if (field.key === "speaker_email") {
+        input.autocomplete = "email";
+        input.value = state.sessionEmail || "";
+        // The server rejects a proposal whose email is not the signed-in
+        // account, so the field is shown but not editable.
+        if (state.sessionEmail) input.readOnly = true;
+      }
+      label.append(input);
+      if (field.help_text) label.append(make("small", field.help_text));
+      if (field.key === "speaker_email" && state.sessionEmail) {
+        label.append(make("small", `Signed in as ${state.sessionEmail}.`));
+      }
+      container.append(label);
+    }
+    state.applyConditions = () => {
+      const form = byId("proposal-composer-form");
+      for (const field of fields) {
+        const related = conditions.filter((condition) => condition.target_key === field.key);
+        const visible = related.every(proposalConditionMatches);
+        const wrapper = container.querySelector(`[data-field-key="${CSS.escape(field.key)}"]`);
+        const control = form?.elements.namedItem(field.key);
+        if (!wrapper || !control) continue;
+        wrapper.hidden = !visible;
+        control.disabled = !visible;
+        control.required = visible && control.dataset.required === "true";
+      }
+    };
+    container.addEventListener("input", state.applyConditions);
+    container.addEventListener("change", state.applyConditions);
+    state.applyConditions();
+  }
+
+  function coSpeakerRows(container) {
+    return [...container.querySelectorAll(".co-speaker-row")].map((row) => ({
+      display_name: row.querySelector("[data-co-speaker-name]").value.trim(),
+      email: row.querySelector("[data-co-speaker-email]").value.trim(),
+      role: "co_speaker"
+    })).filter((entry) => entry.display_name || entry.email);
+  }
+
+  function coSpeakerConflict(rows, speakerEmail) {
+    // The server rejects duplicate or self-referencing co-speakers with an
+    // unattributable 422, so name the offending address before uploading.
+    const seen = new Set([String(speakerEmail || "").trim().toLowerCase()].filter(Boolean));
+    for (const entry of rows) {
+      const email = entry.email.toLowerCase();
+      if (seen.has(email)) return { email, message: `${entry.email} is already listed on this proposal.` };
+      seen.add(email);
+    }
+    return null;
+  }
+
+  function addCoSpeakerRow(container) {
+    const row = make("div", undefined, "co-speaker-row");
+    const nameLabel = make("label", "Co-speaker name");
+    const name = document.createElement("input");
+    name.type = "text";
+    name.maxLength = 200;
+    // Both halves are required once a row exists, so an incomplete co-speaker
+    // is caught here instead of coming back as a server validation error.
+    name.required = true;
+    name.dataset.coSpeakerName = "true";
+    nameLabel.append(name);
+    const emailLabel = make("label", "Co-speaker email");
+    const email = document.createElement("input");
+    email.type = "email";
+    email.maxLength = 320;
+    email.required = true;
+    email.dataset.coSpeakerEmail = "true";
+    emailLabel.append(email);
+    const remove = make("button", "Remove", "secondary");
+    remove.type = "button";
+    remove.addEventListener("click", () => { row.remove(); saveComposerDraft(); });
+    row.append(nameLabel, emailLabel, remove);
+    container.append(row);
+    name.focus();
+  }
+
+  async function proposalChecksum(file) {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function uploadProposalFile(formId, field, file) {
+    const kind = field.type === "image" ? "headshot" : "supporting_document";
+    const max = field.type === "image" ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (file.size <= 0) throw new Error(`${field.label} is empty.`);
+    if (file.size > max) throw new Error(`${field.label} is too large.`);
+    const authorization = await api(`/api/v1/cfp/forms/${encodeURIComponent(formId)}/upload-authorizations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
+      body: JSON.stringify({
+        kind, filename: file.name, content_type: file.type,
+        byte_size: file.size, checksum_sha256: await proposalChecksum(file)
+      })
+    });
+    const uploadUrl = safeUploadUrl(authorization.upload_url);
+    if (!uploadUrl || authorization.expires_at_ms <= Date.now()) throw new Error("The upload authorization expired.");
+    let upload;
+    try {
+      upload = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: safeUploadHeaders(authorization.headers, file.type),
+        body: file
+      });
+    } catch (_) {
+      throw new Error("The file could not be uploaded. Check your connection and try again.");
+    }
+    if (!upload.ok) throw new Error("The file could not be uploaded. Try again.");
+    const completionPath = `/api/v1/cfp/forms/${encodeURIComponent(formId)}/upload-authorizations/${encodeURIComponent(authorization.staged_id)}/complete`;
+    const complete = () => api(completionPath, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
+      body: "{}"
+    });
+    let completion = await complete();
+    for (let attempt = 0; ["uploaded", "scanning"].includes(completion.state) && attempt < 60; attempt += 1) {
+      setStatus(`Checking ${field.label} for safety…`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      completion = await complete();
+    }
+    if (completion.state === "rejected") throw new Error(`${field.label} did not pass the safety check.`);
+    if (completion.state !== "staged") throw new Error(`${field.label} is still being checked. Try again in a moment.`);
+    return `staged:${authorization.staged_id}`;
+  }
+
+  /**
+   * Stage every chosen upload and record its reference in `staged`.
+   *
+   * Both maps are the caller's, not module state: a scan can take a minute,
+   * and a composer torn down in that window must not be able to erase a
+   * reference for a file that was already accepted.
+   */
+  async function uploadProposalFiles(form, chosen, staged) {
+    for (const field of (form?.fields || []).filter((item) => PROPOSAL_UPLOAD_TYPES.includes(item.type))) {
+      const file = chosen.get(field.key);
+      if (file && !staged.has(field.key)) {
+        setStatus(`Uploading ${field.label}…`);
+        staged.set(field.key, await uploadProposalFile(form.id, field, file));
+      }
+    }
+  }
+
+  function buildComposer(call, form) {
+    const composer = byId("proposal-composer");
+    const shell = make("form", undefined, "proposal-composer__form");
+    shell.id = "proposal-composer-form";
+    const heading = make("div", undefined, "proposal-composer__heading");
+    heading.append(make("h3", "New proposal"));
+    heading.append(make("p", form.welcome_text || "Share the session you would like the event team to consider.", "help"));
+    shell.append(heading);
+    const errorSummary = make("p", "", "proposal-composer__error");
+    errorSummary.id = "proposal-composer-error";
+    errorSummary.setAttribute("role", "alert");
+    errorSummary.tabIndex = -1;
+    errorSummary.hidden = true;
+    shell.append(errorSummary);
+    const fields = make("div", undefined, "proposal-composer__fields");
+    shell.append(fields);
+    const coSpeakerLimit = Number(form.co_speaker_limit ?? 0);
+    let coSpeakerRowHost = null;
+    if (coSpeakerLimit > 0) {
+      const coSpeakers = make("div", undefined, "proposal-composer__co-speakers");
+      coSpeakerRowHost = make("div");
+      const add = make("button", "Add co-speaker", "secondary");
+      add.type = "button";
+      add.addEventListener("click", () => {
+        if (coSpeakerRowHost.querySelectorAll(".co-speaker-row").length >= coSpeakerLimit) {
+          showComposerError(`This call allows up to ${coSpeakerLimit} co-speaker${coSpeakerLimit === 1 ? "" : "s"}.`);
+          return;
+        }
+        addCoSpeakerRow(coSpeakerRowHost);
+        shell.dataset.dirty = "true";
+        saveComposerDraft();
+      });
+      coSpeakers.append(make("h4", "Co-speakers"), coSpeakerRowHost, add);
+      shell.append(coSpeakers);
+    }
+    const actions = make("div", undefined, "actions");
+    const cancel = make("button", "Cancel", "secondary");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => {
+      if (!confirmComposerDiscard()) return;
+      closeComposer({ discardDraft: true });
+      byId("open-proposal-composer").focus();
+    });
+    const submit = make("button", "Submit proposal");
+    submit.type = "submit";
+    actions.append(cancel, submit);
+    shell.append(actions);
+    composer.replaceChildren(shell);
+    composer.hidden = false;
+    renderProposalFields(fields, form.fields || [], form.conditions || []);
+
+    const draftKey = composerDraftKey();
+    if (draftKey) {
+      try {
+        const draft = JSON.parse(sessionStorage.getItem(draftKey) || "null");
+        for (const field of form.fields || []) {
+          const control = shell.elements.namedItem(field.key);
+          const value = draft?.values?.[field.key];
+          if (!control || value === undefined || PROPOSAL_UPLOAD_TYPES.includes(field.type)) continue;
+          // The authenticated account is authoritative. A draft can have been
+          // saved before that lookup completed, but must never replace it.
+          if (field.key === "speaker_email" && state.sessionEmail) continue;
+          if (field.type === "checkbox") control.checked = Boolean(value);
+          else if (field.type === "multiselect") [...control.options].forEach((option) => { option.selected = value.includes(option.value); });
+          else control.value = value;
+        }
+        for (const entry of draft?.coSpeakers || []) {
+          if (!coSpeakerRowHost || coSpeakerRowHost.children.length >= coSpeakerLimit) break;
+          addCoSpeakerRow(coSpeakerRowHost);
+          const row = coSpeakerRowHost.lastElementChild;
+          row.querySelector("[data-co-speaker-name]").value = entry.display_name || "";
+          row.querySelector("[data-co-speaker-email]").value = entry.email || "";
+        }
+        if (draft) shell.dataset.dirty = "true";
+        state.applyConditions();
+      } catch (_) {
+        try { sessionStorage.removeItem(draftKey); } catch (_) { /* Storage can be disabled by the browser. */ }
+      }
+    }
+    shell.addEventListener("input", (event) => {
+      event.target.removeAttribute?.("aria-invalid");
+      clearComposerErrors();
+      shell.dataset.dirty = "true";
+      saveComposerDraft();
+    });
+    shell.addEventListener("change", () => {
+      shell.dataset.dirty = "true";
+      saveComposerDraft();
+    });
+    shell.addEventListener("invalid", (event) => {
+      event.preventDefault();
+      if (byId("proposal-composer-error")?.hidden) {
+        showComposerError("Complete the highlighted field before submitting.", event.target);
+      }
+    }, true);
+
+    // Held across retries of an unchanged proposal. A lost response leaves the
+    // proposal stored server-side; retrying with a fresh key would create a
+    // second one, so the key only changes when the payload does — which is
+    // also what the server's replay check requires (same key + changed
+    // fingerprint is a 409).
+    let pendingSubmission = null;
+
+    shell.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (shell.getAttribute("aria-busy") === "true") return;
+      clearComposerErrors();
+      if (!shell.checkValidity()) {
+        const invalid = shell.querySelector(":invalid");
+        showComposerError("Complete the highlighted field before submitting.", invalid);
+        invalid?.reportValidity();
+        return;
+      }
+      const entered = coSpeakerRowHost ? coSpeakerRows(coSpeakerRowHost) : [];
+      // Read the address actually being submitted, not the cached session one:
+      // when the account lookup failed the field is editable and is the only
+      // case where a speaker can list themselves as their own co-speaker.
+      const conflict = coSpeakerConflict(
+        entered,
+        shell.elements.namedItem("speaker_email")?.value || state.sessionEmail
+      );
+      if (conflict) {
+        const repeated = [...shell.querySelectorAll("[data-co-speaker-email]")].find(
+          (input) => input.value.trim().toLowerCase() === conflict.email
+        );
+        showComposerError(conflict.message, repeated);
+        return;
+      }
+      shell.setAttribute("aria-busy", "true");
+      submit.disabled = true;
+      cancel.disabled = true;
+      submit.textContent = "Submitting…";
+      setStatus("Submitting your proposal…");
+      let created = null;
+      // Read the controls and chosen files before the upload wait: scanning can
+      // take a minute, and the composer may be torn down in that window.
+      const activeForm = state.form;
+      const values = proposalAnswers(activeForm);
+      const chosen = new Map(state.files);
+      const staged = new Map(state.uploaded);
+      for (const field of (activeForm?.fields || []).filter((item) => PROPOSAL_UPLOAD_TYPES.includes(item.type))) {
+        const reference = activeForm && shell.elements.namedItem(field.key)?.dataset?.stagedReference;
+        if (reference) staged.set(field.key, reference);
+      }
+      try {
+        try {
+          await uploadProposalFiles(activeForm, chosen, staged);
+        } finally {
+          // Keep every successful write for a retry even when a later file
+          // fails, so accepted files are not uploaded and scanned twice.
+          if (state.form === activeForm) state.uploaded = new Map(staged);
+          for (const field of (activeForm?.fields || []).filter((item) => PROPOSAL_UPLOAD_TYPES.includes(item.type))) {
+            values[field.key] = staged.get(field.key) || "";
+            const control = shell.elements.namedItem(field.key);
+            if (control && values[field.key]) control.dataset.stagedReference = values[field.key];
+          }
+        }
+        const payload = JSON.stringify({
+          speaker_name: values.speaker_name,
+          speaker_email: values.speaker_email,
+          proposal_title: values.proposal_title,
+          proposal_abstract: values.proposal_abstract,
+          answers: values,
+          co_speakers: entered
+        });
+        if (!pendingSubmission || pendingSubmission.payload !== payload) {
+          pendingSubmission = { payload, key: idempotencyKey(), session: publicSessionId() };
+        }
+        created = await api(`/api/v1/forms/${encodeURIComponent(call.slug)}/submissions`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": state.csrf,
+            "idempotency-key": pendingSubmission.key,
+            "x-public-session-id": pendingSubmission.session
+          },
+          body: payload
+        });
+      } catch (error) {
+        setStatus("");
+        const message = error?.status
+          ? window.SessionBuddyApi.message(error, "The proposal could not be submitted. Review the form and try again.")
+          : error?.message || "The proposal could not be submitted. Review the form and try again.";
+        showComposerError(message);
+        submit.disabled = false;
+        cancel.disabled = false;
+        submit.textContent = "Submit proposal";
+      } finally {
+        shell.setAttribute("aria-busy", "false");
+      }
+      if (!created) return;
+      // The proposal exists from here on. Refreshing the portal must never be
+      // reported as a submission failure, or the speaker submits again.
+      clearComposerDraft();
+      closeComposer();
+      setStatus(`Proposal submitted. Receipt ${created.id}.`, "success");
+      try {
+        await loadEvent(state.portal?.event?.id);
+        setStatus(`Proposal submitted. Receipt ${created.id}.`, "success");
+      } catch (_) {
+        setStatus(`Proposal submitted (receipt ${created.id}), but the portal could not be refreshed. Reload to see it.`, "success");
+      }
+      const trigger = byId("open-proposal-composer");
+      (trigger.hidden ? byId("status") : trigger).focus();
+    });
+    const firstField = fields.querySelector("input:not(:disabled), textarea:not(:disabled), select:not(:disabled)");
+    firstField?.focus();
+  }
+
+  async function openComposer() {
+    const call = state.portal?.open_call;
+    if (!call?.accepting_submissions) return;
+    const requestedEventId = state.portal?.event?.id || "";
+    const trigger = byId("open-proposal-composer");
+    trigger.disabled = true;
+    setStatus("Loading the call for proposals…");
+    try {
+      const [form, freshPortal] = await Promise.all([
+        api(`/api/v1/forms/${encodeURIComponent(call.slug)}`),
+        api(portalPath(requestedEventId))
+      ]);
+      // A concurrent event switch must not attach the old form to the newly
+      // selected event. The authenticated portal response is also the source
+      // of truth for the per-speaker submission limit.
+      if (state.portal?.event?.id !== requestedEventId) return;
+      const freshCall = freshPortal.open_call;
+      if (!freshCall || freshCall.form_id !== call.form_id || !freshCall.accepting_submissions) {
+        state.portal.open_call = freshCall || null;
+        if (freshCall) state.closedCallForms.add(call.form_id);
+        renderOpenCall(freshCall || null);
+        setStatus(freshCall?.availability_message || "This call is no longer accepting proposals.", "error");
+        return;
+      }
+      // The portal payload can be minutes old; the form endpoint is authoritative
+      // about the window right now. Stop here rather than after an upload.
+      if (form.accepting_submissions === false) {
+        state.closedCallForms.add(call.form_id);
+        state.portal.open_call = {
+          ...call,
+          accepting_submissions: false,
+          availability_message: form.availability_message || "Applications are closed."
+        };
+        renderOpenCall(state.portal.open_call);
+        setStatus(form.availability_message || "This call is no longer accepting proposals.", "error");
+        return;
+      }
+      state.form = form;
+      state.portal.open_call = freshCall;
+      state.composerEventId = requestedEventId;
+      state.files.clear();
+      state.uploaded.clear();
+      trigger.setAttribute("aria-expanded", "true");
+      buildComposer(call, form);
+      setStatus("Complete the proposal form to submit.", "");
+    } catch (error) {
+      setStatus(window.SessionBuddyApi.message(error, "The call for proposals could not be loaded."), "error");
+    } finally {
+      trigger.disabled = false;
+    }
+  }
+
   function createUploadForm(kind, submissionId) {
     const slides = kind === "slides";
+    const headshot = kind === "headshot";
     const form = make("form", undefined, "session-upload-card");
     form.dataset.kind = kind;
     form.dataset.submissionId = submissionId;
-    const title = slides ? "Slides" : "Supporting document";
-    const fileLabel = make("label", `Choose ${slides ? "slides" : "document"}`);
+    const title = headshot ? "Headshot" : slides ? "Slides" : "Supporting document";
+    const fileLabel = make("label", `Choose ${headshot ? "headshot" : slides ? "slides" : "document"}`);
     const file = document.createElement("input");
     file.name = "file"; file.type = "file"; file.required = true;
-    file.accept = slides
+    file.accept = headshot
+      ? "image/jpeg,image/png,image/webp"
+      : slides
       ? "application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation"
       : "application/pdf";
     fileLabel.append(file);
@@ -336,7 +990,7 @@
     const comment = document.createElement("textarea");
     comment.name = "version_comment"; comment.rows = 2; comment.minLength = 1; comment.maxLength = 1000; comment.required = true;
     commentLabel.append(comment);
-    const button = make("button", `Upload ${slides ? "slides" : "document"}`);
+    const button = make("button", `Upload ${headshot ? "headshot" : slides ? "slides" : "document"}`);
     button.type = "submit";
     const progress = document.createElement("progress");
     progress.max = 100; progress.value = 0; progress.hidden = true; progress.setAttribute("aria-label", `${title} upload progress`);
@@ -347,6 +1001,13 @@
   }
 
   function renderPortal(portal) {
+    if (portal.open_call && state.closedCallForms.has(portal.open_call.form_id)) {
+      portal.open_call = {
+        ...portal.open_call,
+        accepting_submissions: false,
+        availability_message: portal.open_call.availability_message || "Applications are closed."
+      };
+    }
     state.portal = portal;
     const event = portal.event;
     byId("welcome-name").textContent = portal.profile.display_name || "speaker";
@@ -382,6 +1043,9 @@
     byId("notification-event-label").textContent = `${event.name} · Event time (${event.time_zone})`;
     const tasks = portal.tasks || [];
     renderTasks(tasks, event.time_zone);
+    byId("speaker-profile-form").replaceChildren(profileTaskForm());
+    byId("speaker-headshot-form").replaceChildren(createUploadForm("headshot", ""));
+    renderOpenCall(portal.open_call || null);
     renderSubmissions(portal.submissions || []);
     renderNotifications(portal.notifications || [], event.time_zone);
     byId("auth-state").hidden = true;
@@ -439,6 +1103,17 @@
     try {
       const session = await api("/api/v1/session");
       state.csrf = session.csrf_token;
+      // The submission endpoint binds a proposal to the signed-in account's
+      // email, so the composer needs the account address. /api/v1/session
+      // deliberately omits it; the account view is the endpoint that carries it.
+      try {
+        const account = await api("/api/v1/auth/session");
+        state.sessionEmail = account.email || "";
+        state.sessionName = account.display_name || "";
+      } catch (_) {
+        state.sessionEmail = "";
+        state.sessionName = "";
+      }
       await loadEvent();
       setStatus("Speaker details are ready.", "success");
     } catch (error) {
@@ -461,6 +1136,8 @@
 
   async function selectEvent(eventId) {
     if (eventId === state.portal?.event?.id) return;
+    if (!confirmComposerDiscard()) return;
+    closeComposer({ discardDraft: true });
     setStatus("Loading event…");
     try {
       await loadEvent(eventId);
@@ -472,6 +1149,24 @@
 
   byId("speaker-sign-in").addEventListener("click", () => {
     location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
+  });
+
+  byId("open-proposal-composer").addEventListener("click", () => {
+    if (byId("proposal-composer").hidden) {
+      openComposer();
+      return;
+    }
+    // Never discard a proposal that is mid-flight; its uploads are still being
+    // staged and the submission may already be on the wire.
+    if (byId("proposal-composer-form")?.getAttribute("aria-busy") === "true") return;
+    if (!confirmComposerDiscard()) return;
+    closeComposer({ discardDraft: true });
+  });
+
+  addEventListener("beforeunload", (event) => {
+    if (!composerIsDirty()) return;
+    event.preventDefault();
+    event.returnValue = "";
   });
 
   function safeUploadUrl(value) {

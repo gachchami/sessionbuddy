@@ -6,7 +6,7 @@ from html import escape
 from io import StringIO
 from time import perf_counter
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.console import embedded_assets
@@ -16,6 +16,7 @@ from sessionbuddy.platform.auth.http import (
     require_document_persona,
     require_permission,
 )
+from sessionbuddy.platform.auth.tokens import normalize_email
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
@@ -322,16 +323,21 @@ async def create_evaluation_round(
         raise HTTPException(status_code=409)
 
     evaluator_placeholders = ",".join(
-        f"?{index + 3}" for index in range(len(body.evaluator_user_ids))
+        f"?{index + 1}" for index in range(len(body.evaluator_user_ids))
     )
     evaluators = result_rows(
         await db.prepare(
-            f"""SELECT user_id FROM event_memberships
-            WHERE organization_id = ?1 AND event_id = ?2
-              AND user_id IN ({evaluator_placeholders})
-              AND role = 'evaluator' AND status = 'active'"""  # noqa: S608
+            f"""SELECT u.id AS user_id FROM users u
+            JOIN user_roles ur ON ur.user_id=u.id
+            JOIN identity_invitations i
+              ON i.organization_id=?{len(body.evaluator_user_ids) + 1}
+             AND i.event_id=?{len(body.evaluator_user_ids) + 2}
+             AND i.normalized_email=u.normalized_email
+             AND i.role='evaluator' AND i.status='accepted'
+            WHERE u.id IN ({evaluator_placeholders})
+              AND u.status='active' AND ur.role='reviewer' AND ur.status='active'"""  # noqa: S608
         )
-        .bind(organization_id, event_id, *body.evaluator_user_ids)
+        .bind(*body.evaluator_user_ids, organization_id, event_id)
         .all()
     )
     if {str(row["user_id"]) for row in evaluators} != set(body.evaluator_user_ids):
@@ -522,7 +528,11 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
     operation_id="listEventEvaluators",
     tags=["evaluations"],
 )
-async def list_event_evaluators(event_id: str, request: Request) -> EvaluatorList:
+async def list_event_evaluators(
+    event_id: str,
+    request: Request,
+    email: str | None = Query(default=None, min_length=3, max_length=320),
+) -> EvaluatorList:
     db = _db(request)
     organization_id = await _event_organization_id(db, event_id)
     await require_permission(
@@ -531,15 +541,22 @@ async def list_event_evaluators(event_id: str, request: Request) -> EvaluatorLis
         ResourceContext(organization_id, event_id),
         mutation=False,
     )
+    if email is None:
+        return EvaluatorList(data=[])
+    normalized = normalize_email(email)
     rows = result_rows(
         await db.prepare(
             """SELECT u.id AS user_id, COALESCE(u.display_name,u.email) AS display_name
-           FROM event_memberships em JOIN users u ON u.id = em.user_id
-           WHERE em.organization_id = ?1 AND em.event_id = ?2
-             AND em.role = 'evaluator' AND em.status = 'active' AND u.status = 'active'
-           ORDER BY u.normalized_email LIMIT 100"""
+               FROM users u JOIN user_roles ur ON ur.user_id=u.id
+               JOIN identity_invitations i
+                 ON i.organization_id=?2 AND i.event_id=?3
+                AND i.normalized_email=u.normalized_email
+                AND i.role='evaluator' AND i.status='accepted'
+               WHERE u.normalized_email=?1 AND u.status='active'
+                 AND ur.role='reviewer' AND ur.status='active'
+               LIMIT 1"""
         )
-        .bind(organization_id, event_id)
+        .bind(normalized, organization_id, event_id)
         .all()
     )
     return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
@@ -660,14 +677,18 @@ async def add_round_evaluator(
     )
     if round_row["status"] != "open":
         raise HTTPException(status_code=409)
-    membership = await db.prepare(
-        """SELECT 1 AS found FROM event_memberships
-           WHERE organization_id=?1 AND event_id=?2 AND user_id=?3
-             AND role='evaluator' AND status='active' LIMIT 1"""
+    reviewer = await db.prepare(
+        """SELECT 1 AS found FROM users u JOIN user_roles ur ON ur.user_id=u.id
+           JOIN identity_invitations i
+             ON i.organization_id=?2 AND i.event_id=?3
+            AND i.normalized_email=u.normalized_email
+            AND i.role='evaluator' AND i.status='accepted'
+           WHERE u.id=?1 AND u.status='active'
+             AND ur.role='reviewer' AND ur.status='active' LIMIT 1"""
     ).bind(
-        round_row["organization_id"], round_row["event_id"], body.evaluator_user_id
+        body.evaluator_user_id, round_row["organization_id"], round_row["event_id"]
     ).first("found")
-    if membership is None:
+    if reviewer is None:
         raise HTTPException(status_code=400)
     submission_ids = [
         str(row["submission_id"])
@@ -1224,7 +1245,8 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
         scope_id=authenticated.actor.user_id,
     )
     after_created_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
-    assignment_query = """SELECT a.id, a.round_id, r.name AS round_name, a.submission_id,
+    assignment_query = """SELECT a.id, a.round_id, a.evaluator_user_id, a.status,
+                  r.name AS round_name, a.submission_id,
                   s.proposal_title, s.proposal_abstract,
                   CASE WHEN COALESCE(json_extract(r.rubric_json,'$.blind_review'),0)=1
                        THEN 'Hidden for blind review' ELSE s.speaker_name END AS speaker_name,
@@ -1269,7 +1291,8 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
             ResourceContext(
                 str(row["organization_id"]),
                 str(row["event_id"]),
-                evaluator_assigned=True,
+                evaluator_user_id=str(row["evaluator_user_id"]),
+                evaluator_assignment_status=str(row["status"]),
                 evaluation_round_open=True,
             ),
             mutation=False,
@@ -1390,13 +1413,12 @@ async def save_evaluation(
         ResourceContext(
             str(assignment["organization_id"]),
             str(assignment["event_id"]),
-            evaluator_assigned=True,
+            evaluator_user_id=str(assignment["evaluator_user_id"]),
+            evaluator_assignment_status=str(assignment["status"]),
             evaluation_round_open=assignment["round_status"] == "open" and within_window,
         ),
         mutation=True,
     )
-    if str(assignment["evaluator_user_id"]) != authenticated.actor.user_id:
-        raise HTTPException(status_code=404)
     if assignment["status"] == "revoked" or assignment["existing_state"] == "final":
         raise HTTPException(status_code=409)
     rubric = json.loads(str(assignment["rubric_json"]))
@@ -1579,13 +1601,12 @@ async def declare_conflict(
         ResourceContext(
             str(assignment["organization_id"]),
             str(assignment["event_id"]),
-            evaluator_assigned=True,
+            evaluator_user_id=str(assignment["evaluator_user_id"]),
+            evaluator_assignment_status=str(assignment["status"]),
             evaluation_round_open=assignment["round_status"] == "open",
         ),
         mutation=True,
     )
-    if str(assignment["evaluator_user_id"]) != auth.actor.user_id:
-        raise HTTPException(status_code=404)
     if assignment["status"] != "assigned" or assignment["evaluation_state"] == "final":
         raise HTTPException(status_code=409)
     key = _key(idempotency_key)
@@ -1693,11 +1714,15 @@ async def reassign_conflict(
         raise HTTPException(status_code=409)
     evaluator = (
         await db.prepare(
-            """SELECT 1 AS found FROM event_memberships WHERE organization_id = ?1
-           AND event_id = ?2 AND user_id = ?3 AND role = 'evaluator'
-           AND status = 'active' LIMIT 1"""
+            """SELECT 1 AS found FROM users u JOIN user_roles ur ON ur.user_id=u.id
+               JOIN identity_invitations i
+                 ON i.organization_id=?2 AND i.event_id=?3
+                AND i.normalized_email=u.normalized_email
+                AND i.role='evaluator' AND i.status='accepted'
+               WHERE u.id=?1 AND u.status='active'
+                 AND ur.role='reviewer' AND ur.status='active' LIMIT 1"""
         )
-        .bind(assignment["organization_id"], assignment["event_id"], body.evaluator_user_id)
+        .bind(body.evaluator_user_id, assignment["organization_id"], assignment["event_id"])
         .first("found")
     )
     if evaluator is None:
@@ -1932,10 +1957,13 @@ async def get_round_results(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT u.id AS user_id,COALESCE(u.display_name,u.email) AS display_name
-                   FROM event_memberships em JOIN users u ON u.id=em.user_id
-                   WHERE em.organization_id=?1 AND em.event_id=?2
-                     AND em.role='evaluator' AND em.status='active' AND u.status='active'
+                """SELECT DISTINCT u.id AS user_id,
+                          COALESCE(u.display_name,u.email) AS display_name
+                   FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
+                   JOIN user_roles ur ON ur.user_id=u.id
+                   WHERE a.organization_id=?1 AND a.event_id=?2
+                     AND a.status!='revoked' AND u.status='active'
+                     AND ur.role='reviewer' AND ur.status='active'
                    ORDER BY u.normalized_email LIMIT 100"""
             ).bind(round_row["organization_id"], round_row["event_id"]),
         )

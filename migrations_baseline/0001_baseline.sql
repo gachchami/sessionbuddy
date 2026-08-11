@@ -304,6 +304,37 @@ CREATE TABLE cfp_staged_assets (
   CHECK (claimed_submission_id IS NULL OR status = 'claimed')
 );
 
+-- These guards close the authorization-quota race at the database boundary.
+-- Application preflight checks provide the friendly 429 response; the
+-- triggers are the final authority when concurrent requests pass preflight.
+CREATE TRIGGER cfp_staged_assets_creation_quota
+BEFORE INSERT ON cfp_staged_assets
+WHEN (
+  SELECT COUNT(*) FROM cfp_staged_assets existing
+  WHERE existing.form_id=NEW.form_id AND existing.user_id=NEW.user_id
+    AND existing.created_at_ms > NEW.created_at_ms - 3600000
+) >= 20
+BEGIN
+  SELECT RAISE(ABORT, 'cfp staged authorization quota exceeded');
+END;
+
+CREATE TRIGGER cfp_staged_assets_active_quota
+BEFORE INSERT ON cfp_staged_assets
+WHEN (
+  SELECT COUNT(*) FROM cfp_staged_assets existing
+  WHERE existing.form_id=NEW.form_id AND existing.user_id=NEW.user_id
+    AND existing.expires_at_ms > NEW.created_at_ms
+    AND existing.status IN ('pending_upload','uploaded','scanning','staged')
+) >= 10 OR (
+  SELECT COALESCE(SUM(existing.byte_size), 0) FROM cfp_staged_assets existing
+  WHERE existing.form_id=NEW.form_id AND existing.user_id=NEW.user_id
+    AND existing.expires_at_ms > NEW.created_at_ms
+    AND existing.status IN ('pending_upload','uploaded','scanning','staged')
+) + NEW.byte_size > 104857600
+BEGIN
+  SELECT RAISE(ABORT, 'cfp staged active quota exceeded');
+END;
+
 CREATE TABLE "communication_delivery_attempts" (
   id TEXT PRIMARY KEY NOT NULL,
   organization_id TEXT NOT NULL,
@@ -374,8 +405,7 @@ CREATE TABLE evaluation_assignments (
   updated_at_ms INTEGER NOT NULL,
   FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE RESTRICT,
   FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE RESTRICT,
-  FOREIGN KEY (organization_id, event_id, evaluator_user_id, role)
-    REFERENCES event_memberships(organization_id, event_id, user_id, role) ON DELETE RESTRICT,
+  FOREIGN KEY (evaluator_user_id) REFERENCES users(id) ON DELETE RESTRICT,
   UNIQUE (round_id, submission_id, evaluator_user_id)
 );
 
@@ -529,7 +559,7 @@ CREATE TABLE event_memberships (
   organization_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('event_admin', 'evaluator', 'speaker')),
+  role TEXT NOT NULL CHECK (role IN ('event_admin', 'speaker')),
   status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
   version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
   created_at_ms INTEGER NOT NULL,
@@ -1974,6 +2004,18 @@ WHEN (NEW.event_id IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM organization_memberships m
         WHERE m.organization_id=NEW.organization_id AND m.user_id=NEW.user_id
           AND m.status='active'
+        UNION ALL
+        SELECT 1 FROM evaluation_assignments a
+        WHERE a.organization_id=NEW.organization_id AND a.event_id=NEW.event_id
+          AND a.evaluator_user_id=NEW.user_id AND a.status!='revoked'
+        UNION ALL
+        SELECT 1 FROM identity_invitations i
+        JOIN users u ON u.id=NEW.user_id
+          AND u.normalized_email=NEW.normalized_email
+          AND u.status='active'
+        WHERE i.organization_id=NEW.organization_id AND i.event_id=NEW.event_id
+          AND i.normalized_email=NEW.normalized_email
+          AND i.role='evaluator' AND i.status='accepted'
       ))
   OR (NEW.invitation_id IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM identity_invitations i
@@ -1995,6 +2037,18 @@ WHEN (NEW.event_id IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM organization_memberships m
         WHERE m.organization_id=NEW.organization_id AND m.user_id=NEW.user_id
           AND m.status='active'
+        UNION ALL
+        SELECT 1 FROM evaluation_assignments a
+        WHERE a.organization_id=NEW.organization_id AND a.event_id=NEW.event_id
+          AND a.evaluator_user_id=NEW.user_id AND a.status!='revoked'
+        UNION ALL
+        SELECT 1 FROM identity_invitations i
+        JOIN users u ON u.id=NEW.user_id
+          AND u.normalized_email=NEW.normalized_email
+          AND u.status='active'
+        WHERE i.organization_id=NEW.organization_id AND i.event_id=NEW.event_id
+          AND i.normalized_email=NEW.normalized_email
+          AND i.role='evaluator' AND i.status='accepted'
       ))
   OR (NEW.invitation_id IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM identity_invitations i
@@ -2121,21 +2175,46 @@ END;
 
 CREATE TRIGGER validate_communication_recipient_insert
 BEFORE INSERT ON communication_messages
-WHEN NEW.recipient_user_id IS NOT NULL AND NOT EXISTS (
+WHEN NEW.recipient_user_id IS NOT NULL AND NEW.event_id IS NOT NULL AND NOT EXISTS (
   SELECT 1 FROM organization_memberships m
   WHERE m.organization_id=NEW.organization_id AND m.user_id=NEW.recipient_user_id
     AND m.status='active'
+  UNION ALL
+  SELECT 1 FROM evaluation_assignments a
+  WHERE a.organization_id=NEW.organization_id AND a.event_id=NEW.event_id
+    AND a.evaluator_user_id=NEW.recipient_user_id AND a.status!='revoked'
+  UNION ALL
+  SELECT 1 FROM identity_invitations i
+  JOIN users u ON u.id=NEW.recipient_user_id
+    AND u.normalized_email=i.normalized_email
+    AND u.status='active'
+  WHERE i.organization_id=NEW.organization_id AND i.event_id=NEW.event_id
+    AND i.normalized_email=NEW.recipient_email
+    AND i.role='evaluator' AND i.status='accepted'
 )
 BEGIN
   SELECT RAISE(ABORT, 'communication recipient scope mismatch');
 END;
 
 CREATE TRIGGER validate_communication_recipient_update
-BEFORE UPDATE OF organization_id,recipient_user_id ON communication_messages
-WHEN NEW.recipient_user_id IS NOT NULL AND NOT EXISTS (
+BEFORE UPDATE OF organization_id,event_id,recipient_user_id,recipient_email
+ON communication_messages
+WHEN NEW.recipient_user_id IS NOT NULL AND NEW.event_id IS NOT NULL AND NOT EXISTS (
   SELECT 1 FROM organization_memberships m
   WHERE m.organization_id=NEW.organization_id AND m.user_id=NEW.recipient_user_id
     AND m.status='active'
+  UNION ALL
+  SELECT 1 FROM evaluation_assignments a
+  WHERE a.organization_id=NEW.organization_id AND a.event_id=NEW.event_id
+    AND a.evaluator_user_id=NEW.recipient_user_id AND a.status!='revoked'
+  UNION ALL
+  SELECT 1 FROM identity_invitations i
+  JOIN users u ON u.id=NEW.recipient_user_id
+    AND u.normalized_email=i.normalized_email
+    AND u.status='active'
+  WHERE i.organization_id=NEW.organization_id AND i.event_id=NEW.event_id
+    AND i.normalized_email=NEW.recipient_email
+    AND i.role='evaluator' AND i.status='accepted'
 )
 BEGIN
   SELECT RAISE(ABORT, 'communication recipient scope mismatch');
@@ -2188,9 +2267,12 @@ BEFORE INSERT ON evaluation_assignments
 WHEN NOT EXISTS (
   SELECT 1 FROM evaluation_rounds r
   JOIN submissions s ON s.id=NEW.submission_id
-  JOIN event_memberships m ON m.organization_id=NEW.organization_id
-    AND m.event_id=NEW.event_id AND m.user_id=NEW.evaluator_user_id
-    AND m.role='evaluator' AND m.status='active'
+  JOIN users u ON u.id=NEW.evaluator_user_id AND u.status='active'
+  JOIN user_roles ur ON ur.user_id=u.id
+    AND ur.role='reviewer' AND ur.status='active'
+  JOIN identity_invitations i ON i.organization_id=NEW.organization_id
+    AND i.event_id=NEW.event_id AND i.normalized_email=u.normalized_email
+    AND i.role='evaluator' AND i.status='accepted'
   WHERE r.id=NEW.round_id AND r.organization_id=NEW.organization_id
     AND r.event_id=NEW.event_id AND s.organization_id=NEW.organization_id
     AND s.event_id=NEW.event_id
@@ -2205,9 +2287,12 @@ ON evaluation_assignments
 WHEN NOT EXISTS (
   SELECT 1 FROM evaluation_rounds r
   JOIN submissions s ON s.id=NEW.submission_id
-  JOIN event_memberships m ON m.organization_id=NEW.organization_id
-    AND m.event_id=NEW.event_id AND m.user_id=NEW.evaluator_user_id
-    AND m.role='evaluator' AND m.status='active'
+  JOIN users u ON u.id=NEW.evaluator_user_id AND u.status='active'
+  JOIN user_roles ur ON ur.user_id=u.id
+    AND ur.role='reviewer' AND ur.status='active'
+  JOIN identity_invitations i ON i.organization_id=NEW.organization_id
+    AND i.event_id=NEW.event_id AND i.normalized_email=u.normalized_email
+    AND i.role='evaluator' AND i.status='accepted'
   WHERE r.id=NEW.round_id AND r.organization_id=NEW.organization_id
     AND r.event_id=NEW.event_id AND s.organization_id=NEW.organization_id
     AND s.event_id=NEW.event_id
@@ -2653,28 +2738,6 @@ WHEN NOT EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'submission decision scope mismatch');
-END;
-
-CREATE TRIGGER validate_submission_draft_owner_insert
-BEFORE INSERT ON submission_drafts
-WHEN NOT EXISTS (
-  SELECT 1 FROM organization_memberships m
-  WHERE m.organization_id=NEW.organization_id AND m.user_id=NEW.user_id
-    AND m.status='active'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'submission draft owner scope mismatch');
-END;
-
-CREATE TRIGGER validate_submission_draft_owner_update
-BEFORE UPDATE OF organization_id,user_id ON submission_drafts
-WHEN NOT EXISTS (
-  SELECT 1 FROM organization_memberships m
-  WHERE m.organization_id=NEW.organization_id AND m.user_id=NEW.user_id
-    AND m.status='active'
-)
-BEGIN
-  SELECT RAISE(ABORT, 'submission draft owner scope mismatch');
 END;
 
 CREATE TRIGGER validate_submission_draft_scope_insert

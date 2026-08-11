@@ -7,6 +7,7 @@ stay revoked, cross-proposal file isolation, scan-mode gating, expiry purge,
 and GET-does-not-consume magic links.
 """
 
+import asyncio
 import hashlib
 import json
 import os
@@ -285,6 +286,81 @@ async def test_upload_authorization_creates_no_speaker_graph(cfp_environment) ->
     assert staged["form_id"] == "form"
 
 
+async def test_database_enforces_active_staging_quota(cfp_environment) -> None:
+    """The database remains authoritative when concurrent preflights race."""
+    connection, environment = cfp_environment
+    async with _client(environment) as client:
+        await _sign_in(client, connection, "speaker@example.test")
+    user_id = connection.execute("SELECT id FROM users").fetchone()[0]
+    insert = """INSERT INTO cfp_staged_assets
+        (id,organization_id,event_id,form_id,user_id,kind,object_key,
+         original_filename,content_type,byte_size,checksum_sha256,
+         upload_token_hash,status,expires_at_ms,created_at_ms,updated_at_ms)
+        VALUES(?, 'org', 'event', 'form', ?, 'supporting_document', ?,
+               'paper.pdf', 'application/pdf', 1, ?, ?, 'pending_upload', ?, ?, ?)"""
+    now = utc_now_ms()
+    for index in range(10):
+        connection.execute(
+            insert,
+            (
+                f"quota-{index}",
+                user_id,
+                f"staged/quota/object/{index}",
+                bytes([index]) * 32,
+                bytes([index + 10]) * 32,
+                now + 60_000,
+                now,
+                now,
+            ),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="active quota exceeded"):
+        connection.execute(
+            insert,
+            (
+                "quota-overflow",
+                user_id,
+                "staged/quota/object/overflow",
+                b"x" * 32,
+                b"y" * 32,
+                now + 60_000,
+                now,
+                now,
+            ),
+        )
+
+
+async def test_concurrent_http_authorizations_cannot_exceed_quota(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    async with _client(environment) as client:
+        csrf = await _sign_in(client, connection, "speaker@example.test")
+        body = b"%PDF concurrent"
+
+        async def authorize(index: int):
+            return await client.post(
+                "/api/v1/cfp/forms/form/upload-authorizations",
+                headers={
+                    **_mutation_headers(csrf),
+                    "idempotency-key": f"concurrent-quota-{index}-0123456789abcdef",
+                },
+                json={
+                    "kind": "supporting_document",
+                    "filename": f"paper-{index}.pdf",
+                    "content_type": "application/pdf",
+                    "byte_size": len(body),
+                    "checksum_sha256": hashlib.sha256(body + bytes([index])).hexdigest(),
+                },
+            )
+
+        # Fill all but one slot through the public HTTP contract.
+        for index in range(9):
+            response = await authorize(index)
+            assert response.status_code == 201, response.text
+        contenders = await asyncio.gather(authorize(20), authorize(21))
+
+    assert sorted(response.status_code for response in contenders) == [201, 429]
+    assert connection.execute("SELECT COUNT(*) FROM cfp_staged_assets").fetchone()[0] == 10
+
+
 async def test_successful_submission_claims_staged_file_atomically(cfp_environment) -> None:
     connection, environment = cfp_environment
     async with _client(environment) as client:
@@ -325,6 +401,80 @@ async def test_successful_submission_claims_staged_file_atomically(cfp_environme
     assert connection.execute(
         "SELECT status FROM event_memberships WHERE user_id=(SELECT id FROM users)"
     ).fetchone()[0] == "active"
+
+
+async def test_submission_replay_precedes_limit_and_claim_validation(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    connection.execute(
+        "UPDATE call_for_speaker_forms SET submission_limit=1 WHERE id='form'"
+    )
+    connection.commit()
+    async with _client(environment) as client:
+        csrf = await _sign_in(client, connection, "speaker@example.test")
+        staged_id = await _stage_file(client, csrf)
+        first = await _submit(client, csrf, staged_id, title="Replay-safe proposal")
+        replay = await _submit(client, csrf, staged_id, title="Replay-safe proposal")
+
+    assert first.status_code == 201, first.text
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+    assert connection.execute("SELECT COUNT(*) FROM submissions").fetchone()[0] == 1
+
+
+async def test_submission_idempotency_key_is_scoped_to_form(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    now = utc_now_ms()
+    second_schema = {
+        "fields": [field for field in FORM_SCHEMA["fields"] if field["key"] != "paper"],
+        "conditions": [],
+    }
+    connection.execute(
+        """INSERT INTO events
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+            delivery_mode,description,status,created_at_ms,updated_at_ms)
+           VALUES('event-2','org','Second Event',9999999999999,9999999999999999,
+                  'UTC','Online','virtual','Description','active',?,?)""",
+        (now, now),
+    )
+    connection.execute(
+        """INSERT INTO call_for_speaker_forms
+           (id,organization_id,event_id,version,slug,welcome_text,schema_json,
+            status,published_at_ms,created_at_ms,updated_at_ms)
+           VALUES('form-2','org','event-2',1,'event-2-cfp','Welcome',?,
+                  'published',?,?,?)""",
+        (json.dumps(second_schema), now, now, now),
+    )
+    connection.commit()
+    shared_key = "cross-form-key-0123456789abcdef"
+    async with _client(environment) as client:
+        csrf = await _sign_in(client, connection, "speaker@example.test")
+        staged_id = await _stage_file(client, csrf)
+        first_payload = _submission_payload(staged_id, title="First event")
+        first = await client.post(
+            "/api/v1/forms/event-cfp/submissions",
+            headers={
+                **_mutation_headers(csrf),
+                "idempotency-key": shared_key,
+                "x-public-session-id": "public-session-0123456789abcdef",
+            },
+            json=first_payload,
+        )
+        second_payload = _submission_payload(staged_id, title="Second event")
+        second_payload["answers"].pop("paper")  # type: ignore[union-attr]
+        second = await client.post(
+            "/api/v1/forms/event-2-cfp/submissions",
+            headers={
+                **_mutation_headers(csrf),
+                "idempotency-key": shared_key,
+                "x-public-session-id": "public-session-0123456789abcdef",
+            },
+            json=second_payload,
+        )
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] != second.json()["id"]
+    assert connection.execute("SELECT COUNT(*) FROM submissions").fetchone()[0] == 2
 
 
 async def test_staged_file_cannot_appear_in_a_second_proposal(cfp_environment) -> None:
@@ -770,6 +920,37 @@ async def test_scan_gating_honors_malware_scan_mode(cfp_environment) -> None:
         assert completed.json()["state"] == "uploaded"
         assert len(scan_queue.messages) == 1
 
+        # Completion is a polling endpoint. Repeated requests must observe the
+        # existing publication claim instead of duplicating queue messages.
+        repeated = await client.post(
+            f"/api/v1/cfp/forms/form/upload-authorizations/{staged_id}/complete",
+            headers={
+                **_mutation_headers(csrf),
+                "idempotency-key": "repeat-completion-0123456789abcdef",
+            },
+            json={},
+        )
+        assert repeated.status_code == 200
+        assert repeated.json()["state"] == "uploaded"
+        assert len(scan_queue.messages) == 1
+
+        # A process crash after claiming but before publishing must not strand
+        # the upload forever. Only an expired enqueue claim is reclaimable.
+        connection.execute(
+            """UPDATE cfp_staged_assets
+               SET scan_result_code='enqueue:dead',updated_at_ms=0 WHERE id=?""",
+            (staged_id,),
+        )
+        connection.commit()
+        scan_queue.messages.clear()
+        reclaimed = await client.post(
+            f"/api/v1/cfp/forms/form/upload-authorizations/{staged_id}/complete",
+            headers=_mutation_headers(csrf),
+            json={},
+        )
+        assert reclaimed.status_code == 200
+        assert len(scan_queue.messages) == 1
+
         class CleanScanner:
             async def scan(self, stored, *, job: ScanJob) -> ScanResult:
                 return ScanResult(
@@ -1208,6 +1389,11 @@ def test_sbek_launcher_matches_the_current_persona_contract() -> None:
 
     assert 'required_personas="organizer speaker reviewer"' in launcher
     assert "check_sbek_config.mjs" in launcher
+    assert 'using configured password credentials' in launcher
+    assert '[ -z "$missing_personas" ]' in launcher
+    assert "body?.profile_complete === true" in checker
+    assert "profile onboarding is incomplete" in checker
+    assert "Missing saved eval persona session" not in launcher
     assert (
         'dependencies_volume="${SBEK_NODE_MODULES_VOLUME:-sessionbuddy-sbek-node-modules-v2}"'
         in launcher

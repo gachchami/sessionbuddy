@@ -133,7 +133,7 @@
         {
           "binding": "DB",
           "database_name": "sessionbuddy-development-clean",
-          "database_id": "1b7ec12d-020a-4500-bc8e-72f53a8a2868",
+          "database_id": "367e2a09-c440-4db1-a265-e41e26acbe3e",
           "migrations_dir": "migrations_baseline"
         }
       ],
@@ -214,6 +214,9 @@
           "simple": {"limit": 10, "period": 60}
         }
       ],
+      "limits": {
+        "cpu_ms": 5000
+      },
       "vars": {
         "APP_ENV": "development",
         "APP_VERSION": "development",

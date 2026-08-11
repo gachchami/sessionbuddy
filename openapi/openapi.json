@@ -8182,6 +8182,85 @@
         "title": "SpeakerNotificationView",
         "type": "object"
       },
+      "SpeakerOpenCallView": {
+        "additionalProperties": false,
+        "description": "The event's published call for papers, as the speaker portal needs it.\n\nThis is a summary for deciding whether to offer a submit control and what\nto say when it is unavailable. The portal fetches the full field schema\nfrom the public form endpoint before composing a proposal.",
+        "properties": {
+          "accepting_submissions": {
+            "title": "Accepting Submissions",
+            "type": "boolean"
+          },
+          "availability_message": {
+            "title": "Availability Message",
+            "type": "string"
+          },
+          "closes_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closes At Ms"
+          },
+          "form_id": {
+            "title": "Form Id",
+            "type": "string"
+          },
+          "opens_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opens At Ms"
+          },
+          "remaining_submissions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Submissions"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "submitted_count": {
+            "default": 0,
+            "title": "Submitted Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "form_id",
+          "slug",
+          "accepting_submissions",
+          "availability_message"
+        ],
+        "title": "SpeakerOpenCallView",
+        "type": "object"
+      },
       "SpeakerPortalView": {
         "additionalProperties": false,
         "properties": {
@@ -8209,6 +8288,16 @@
             },
             "title": "Notifications",
             "type": "array"
+          },
+          "open_call": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerOpenCallView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "profile": {
             "$ref": "#/components/schemas/SpeakerProfileView"
@@ -12499,6 +12588,24 @@
               "title": "Event Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "email",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 320,
+                  "minLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
           }
         ],
         "responses": {
@@ -13814,6 +13921,92 @@
           }
         },
         "summary": "Update Admin Speaker",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot": {
+      "get": {
+        "operationId": "admin_speaker_headshot_api_v1_admin_events__event_id__speakers__event_speaker_id__headshot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Speaker Headshot",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      },
+      "put": {
+        "operationId": "upload_admin_speaker_headshot_api_v1_admin_events__event_id__speakers__event_speaker_id__headshot_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Admin Speaker Headshot",
         "tags": [
           "speaker-onboarding"
         ]

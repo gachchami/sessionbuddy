@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 const publicCfpTemplate = readFileSync(
@@ -69,7 +70,12 @@ const publishedForm = {
   redirect_to_portal: true,
 };
 
-async function servePublicCfp(page: Page, authenticated: boolean, submissions: unknown[] = []) {
+async function servePublicCfp(
+  page: Page,
+  authenticated: boolean,
+  submissions: unknown[] = [],
+  serverDraft: unknown = null,
+) {
   await page.route("**/cfp/mobile/responsive-conference*", (route) => route.fulfill({
     contentType: "text/html",
     body: publicCfpHtml,
@@ -85,6 +91,7 @@ async function servePublicCfp(page: Page, authenticated: boolean, submissions: u
           authenticated: true,
           user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           email: "speaker@example.test",
+          display_name: "Account Speaker",
           csrf_token: "responsive-csrf",
         }),
       }
@@ -95,7 +102,7 @@ async function servePublicCfp(page: Page, authenticated: boolean, submissions: u
   }));
   await page.route("**/api/v1/forms/responsive-conference/draft", (route) => route.fulfill({
     contentType: "application/json",
-    body: "null",
+    body: JSON.stringify(serverDraft),
   }));
 }
 
@@ -124,11 +131,89 @@ test.describe("public CFP responsive design", () => {
       await expect(page.locator("#event-logo")).toBeVisible();
       await expect(page.locator("#event-cover")).toBeVisible();
       await expect(page.locator("#proposal-card")).toBeHidden();
+      const signup = page.getByRole("button", { name: "Email me a signup link" });
+      await expect(signup).toHaveAttribute("aria-describedby", "cfp-signup-help");
+      await expect(page.locator("#cfp-signup-help")).toContainText("No password is needed");
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expectWithinViewport(page, "#event-public-header", width);
       await expectWithinViewport(page, "#sign-in-card", width);
+      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      expect(results.violations.filter(({ impact }) => impact === "critical" || impact === "serious")).toEqual([]);
     });
   }
+
+  test("account identity wins after browser and server draft restoration", async ({ page }) => {
+    await servePublicCfp(page, true, [], {
+      version: 2,
+      answers: { proposal_title: "Title from server draft" },
+    });
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem("identity-draft-seeded")) return;
+      sessionStorage.setItem("identity-draft-seeded", "true");
+      localStorage.setItem("sessionbuddy:cfp:responsive-conference:draft", JSON.stringify({
+        schemaVersion: 1,
+        formVersion: 1,
+        answers: { speaker_name: "Stale Draft Name", proposal_title: "Title from browser draft" },
+        coSpeakers: [],
+        submissionId: null,
+        fileNames: [],
+        readyToSubmit: false,
+        ownerEmail: "speaker@example.test",
+        savedAt: Date.now(),
+      }));
+    });
+    await page.goto("/cfp/mobile/responsive-conference");
+
+    await expect(page.getByLabel("Speaker name")).toHaveValue("Account Speaker");
+    await expect(page.locator('[name="speaker_email"]')).toHaveValue("speaker@example.test");
+    await expect(page.getByLabel("Proposal title")).toHaveValue("Title from browser draft");
+
+    // A published form version change makes the old browser draft ineligible,
+    // exercising the independent server-draft restoration path on reload.
+    await page.route("**/api/v1/forms/responsive-conference", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ...publishedForm, version: 2 }),
+    }));
+    await page.reload();
+    await expect(page.getByLabel("Speaker name")).toHaveValue("Account Speaker");
+    await expect(page.locator('[name="speaker_email"]')).toHaveValue("speaker@example.test");
+    await expect(page.getByLabel("Proposal title")).toHaveValue("Title from server draft");
+    await page.getByLabel(/Proposal abstract/).fill("Identity fields no longer block validation.");
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await expect(page.getByRole("heading", { name: "Review your proposal" })).toBeVisible();
+  });
+
+  test("password sign-in and email signup send separate authentication payloads", async ({ page }) => {
+    await servePublicCfp(page, false);
+    let passwordPayload: unknown;
+    let signupPayload: unknown;
+    await page.route("**/api/v1/auth/password/sign-in", async (route) => {
+      passwordPayload = route.request().postDataJSON();
+      await route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { message: "Incorrect credentials" } }) });
+    });
+    await page.route("**/api/v1/auth/magic-links", async (route) => {
+      signupPayload = route.request().postDataJSON();
+      await route.fulfill({ status: 202, contentType: "application/json", body: "{}" });
+    });
+    await page.goto("/cfp/mobile/responsive-conference");
+    await page.getByLabel("Email address").fill("new-speaker@example.test");
+    await page.getByLabel("Password").fill("private returning password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect.poll(() => passwordPayload).toEqual({
+      email: "new-speaker@example.test",
+      password: "private returning password",
+      redirect_path: "/cfp/mobile/responsive-conference",
+    });
+
+    await page.getByLabel("Password").fill("");
+    await page.getByRole("button", { name: "Email me a signup link" }).click();
+    await expect.poll(() => signupPayload).toEqual({
+      email: "new-speaker@example.test",
+      form_slug: "responsive-conference",
+      redirect_path: "/cfp/mobile/responsive-conference",
+    });
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  });
 
   test("verified speaker form becomes a single usable column on mobile", async ({ page }) => {
     const width = 390;

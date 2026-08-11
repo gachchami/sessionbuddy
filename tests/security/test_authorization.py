@@ -23,10 +23,15 @@ def organizer(*resources: str, grants: dict[str, frozenset[ResourceGrant]] | Non
 
 
 def reviewer(*, assigned: bool = True) -> tuple[Actor, ResourceContext]:
-    roles = {(ORG, EVENT): frozenset({Role.EVALUATOR})} if assigned else {}
     return (
-        Actor("user-a", active_persona=Persona.REVIEWER, event_roles=roles),
-        ResourceContext(ORG, EVENT, evaluator_assigned=assigned, evaluation_round_open=True),
+        Actor("user-a", active_persona=Persona.REVIEWER),
+        ResourceContext(
+            ORG,
+            EVENT,
+            evaluator_user_id="user-a" if assigned else None,
+            evaluator_assignment_status="assigned" if assigned else None,
+            evaluation_round_open=True,
+        ),
     )
 
 
@@ -70,7 +75,7 @@ def test_reviewer_active_persona_cannot_use_owned_organizer_artifact() -> None:
         "user-a",
         active_persona=Persona.REVIEWER,
         owned_resource_ids=frozenset({EVENT}),
-        event_roles={(ORG, EVENT): frozenset({Role.EVALUATOR})},
+        event_roles={},
     )
     assert not authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT)).allowed
 
@@ -164,7 +169,12 @@ def test_speaker_permissions_require_active_assignment_and_ownership() -> None:
 def test_reviewer_needs_assignment_and_open_round() -> None:
     subject, context = reviewer()
     assert authorize(subject, Permission.EVALUATION_SAVE, context).allowed
-    closed = ResourceContext(ORG, EVENT, evaluator_assigned=True)
+    closed = ResourceContext(
+        ORG,
+        EVENT,
+        evaluator_user_id="user-a",
+        evaluator_assignment_status="assigned",
+    )
     assert authorize(subject, Permission.EVALUATION_SAVE, closed).reason == "lifecycle_forbidden"
     unassigned, missing = reviewer(assigned=False)
     assert (
@@ -173,11 +183,58 @@ def test_reviewer_needs_assignment_and_open_round() -> None:
     )
 
 
+@pytest.mark.parametrize("status", [None, "revoked"])
+def test_reviewer_assignment_fact_fails_closed(status: str | None) -> None:
+    subject = Actor("user-a", active_persona=Persona.REVIEWER)
+    context = ResourceContext(
+        ORG,
+        EVENT,
+        evaluator_user_id="user-a",
+        evaluator_assignment_status=status,
+        evaluation_round_open=True,
+    )
+    assert authorize(subject, Permission.EVALUATION_SAVE, context).reason == "assignment_required"
+
+
+def test_reviewer_assignment_must_name_exact_actor() -> None:
+    subject = Actor("user-a", active_persona=Persona.REVIEWER)
+    context = ResourceContext(
+        ORG,
+        EVENT,
+        evaluator_user_id="user-b",
+        evaluator_assignment_status="assigned",
+        evaluation_round_open=True,
+    )
+    assert authorize(subject, Permission.EVALUATION_SAVE, context).reason == "assignment_required"
+
+
 def test_organizer_cannot_submit_a_review_without_reviewer_persona() -> None:
     decision = authorize(
         organizer(EVENT),
         Permission.EVALUATION_SAVE,
-        ResourceContext(ORG, EVENT, evaluator_assigned=True, evaluation_round_open=True),
+        ResourceContext(
+            ORG,
+            EVENT,
+            evaluator_user_id="user-a",
+            evaluator_assignment_status="assigned",
+            evaluation_round_open=True,
+        ),
+    )
+    assert (decision.allowed, decision.reason) == (False, "permission_not_granted")
+
+
+def test_speaker_cannot_submit_a_review_despite_an_assignment_context() -> None:
+    subject, _ = speaker()
+    decision = authorize(
+        subject,
+        Permission.EVALUATION_SAVE,
+        ResourceContext(
+            ORG,
+            EVENT,
+            evaluator_user_id="user-a",
+            evaluator_assignment_status="assigned",
+            evaluation_round_open=True,
+        ),
     )
     assert (decision.allowed, decision.reason) == (False, "permission_not_granted")
 
