@@ -30,11 +30,29 @@ def timestamp_ms(value: str) -> int:
 def bootstrap_payload(arguments: argparse.Namespace) -> dict[str, str | int]:
     if "@" not in arguments.admin_email or len(arguments.admin_email) > 320:
         raise ValueError("--admin-email must be a valid email address")
+    admin_first_name = getattr(arguments, "admin_first_name", None)
+    admin_last_name = getattr(arguments, "admin_last_name", None)
+    exact_name_parts = (admin_first_name, admin_last_name)
+    if any(exact_name_parts) and not all(exact_name_parts):
+        raise ValueError("--admin-first-name and --admin-last-name must be supplied together")
+    if all(exact_name_parts):
+        admin_name = f"{admin_first_name} {admin_last_name}"
+    elif arguments.admin_name:
+        admin_name = arguments.admin_name
+    else:
+        raise ValueError("supply --admin-first-name and --admin-last-name")
     payload: dict[str, str | int] = {
         "organization_name": arguments.organization_name,
-        "admin_name": arguments.admin_name,
+        "admin_name": admin_name,
         "admin_email": arguments.admin_email,
     }
+    if all(exact_name_parts):
+        payload.update(
+            {
+                "admin_first_name": admin_first_name,
+                "admin_last_name": admin_last_name,
+            }
+        )
     event_values = (
         arguments.event_name,
         arguments.starts_at,
@@ -92,7 +110,9 @@ def main() -> int:
     parser.add_argument("--env", default="dev", help="Wrangler environment name")
     parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "wrangler.jsonc")
     parser.add_argument("--organization-name", required=True)
-    parser.add_argument("--admin-name", required=True)
+    parser.add_argument("--admin-name", help="Legacy combined administrator name")
+    parser.add_argument("--admin-first-name")
+    parser.add_argument("--admin-last-name")
     parser.add_argument("--admin-email", required=True)
     parser.add_argument("--event-name")
     parser.add_argument(

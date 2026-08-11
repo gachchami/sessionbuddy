@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">SessionBuddy reversed mark</title>
-  <desc id="desc">An agenda row folding into an S with a forward cue.</desc>
-  <path d="M17 18h28v9H26c-5 0-9 4-9 9s4 9 9 9h21" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M42 41l7 4-7 4" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <desc id="desc">A timeline spine with three session rows; the live session runs longest.</desc>
+  <g fill="none" stroke-width="6" stroke-linecap="round"><path d="M16 20V44" stroke="#FFFFFF"/><path d="M30 20H43" stroke="#FFFFFF"/><path d="M30 32H48" stroke="#FFFFFF"/><path d="M30 44H43" stroke="#FFFFFF"/></g>
 </svg>

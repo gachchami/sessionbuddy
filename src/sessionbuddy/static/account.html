@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="/product/assets/product.css?v=57">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
-  <script src="/account/assets/account.js?v=10" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
+  <script src="/account/assets/account.js?v=12" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
@@ -17,7 +17,7 @@
     <div class="page-heading organizer-hero"><div><p class="eyebrow">Personal settings</p><h1 id="account-title">Account</h1><p id="account-summary" class="lede">Profile details and access.</p></div></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
     <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title">
-      <div class="account-profile-heading"><div><p class="eyebrow">Your identity</p><h2 id="profile-title">Profile</h2><p>Used across every SessionBuddy workspace you can access.</p></div><div id="profile-roles" class="account-role-list" aria-label="Assigned roles"></div></div>
+      <div class="account-profile-heading"><div><p class="eyebrow">Your identity</p><h2 id="profile-title">Profile</h2><p>Used across every SessionBuddy workspace you can access.</p></div><div id="profile-roles" class="account-role-list"></div></div>
       <section class="account-headshot" aria-labelledby="headshot-title">
         <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
         <div><h3 id="headshot-title">Headshot</h3><p class="help">A square JPG, PNG, or WebP works best. Maximum 5 MB.</p>
@@ -25,9 +25,10 @@
         </div>
       </section>
       <form id="profile-form">
+        <p id="name-draft-help" class="help" hidden>We split your existing account name into these fields as a draft. Review both names before saving. Nothing changes until you save your profile.</p>
         <div class="form-grid">
-          <label>First name<input name="first_name" autocomplete="given-name" maxlength="100" required></label>
-          <label>Last name<input name="last_name" autocomplete="family-name" maxlength="100" required></label>
+          <label>First name<input name="first_name" autocomplete="given-name" maxlength="100" aria-describedby="name-draft-help" required></label>
+          <label>Last name<input name="last_name" autocomplete="family-name" maxlength="100" aria-describedby="name-draft-help" required></label>
           <label>Sign-in email<input id="account-email" type="email" autocomplete="email" disabled><small>Your email is verified and cannot be changed here.</small></label>
           <label>Job title <span class="optional">Optional</span><input name="job_title" autocomplete="organization-title" maxlength="200"></label>
           <label>Company or team <span class="optional">Optional</span><input name="company" autocomplete="organization" maxlength="200"></label>
@@ -52,7 +53,7 @@
     </section>
     <section id="organization-settings" class="directory-section organizer-section organizer-section--organizations" aria-labelledby="organization-settings-title" hidden>
       <div class="section-heading">
-        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Manage organization details shared by all events.</p></div>
+        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Manage organization details and exact organization access. Event access remains separate.</p></div>
       </div>
       <div id="organization-settings-list" class="entity-grid"></div>
     </section>

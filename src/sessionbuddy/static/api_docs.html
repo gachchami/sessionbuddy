@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>API contract · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=57">
+  <link rel="stylesheet" href="/docs/assets/api-docs.css?v=1">
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
+  <script src="/docs/assets/api-docs.js?v=1" defer></script>
+</head>
+<body class="app-body docs-page">
+  <a class="skip-link" href="#main">Skip to API contract</a>
+  <header class="docs-header">
+    <div class="shell docs-header__inner">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt="">
+        <span>SessionBuddy</span>
+      </a>
+      <nav aria-label="Documentation links">
+        <a href="/engine-room">Engine Room</a>
+        <a href="/api/v1/openapi.json">View JSON</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="shell docs-main" tabindex="-1">
+    <section class="docs-intro" aria-labelledby="docs-title">
+      <div>
+        <p class="eyebrow">Development reference</p>
+        <h1 id="docs-title">API contract, without side effects.</h1>
+        <p class="lede">Browse the checked SessionBuddy interface by capability, route, and response. This surface documents requests; it never sends them.</p>
+      </div>
+      <aside class="read-only-note" aria-label="Read-only documentation">
+        <span class="read-only-note__mark" aria-hidden="true"></span>
+        <div><strong>Read-only</strong><span>No request runner. No credentials entered. No data changed.</span></div>
+      </aside>
+    </section>
+
+    <section class="contract-summary" aria-labelledby="contract-summary-title">
+      <h2 id="contract-summary-title">Contract at a glance</h2>
+      <dl>
+        <div><dt>Version</dt><dd id="contract-version">Loading</dd></div>
+        <div><dt>Routes</dt><dd id="route-count">—</dd></div>
+        <div><dt>Operations</dt><dd id="operation-count">—</dd></div>
+        <div><dt>Source</dt><dd><code>/api/v1/openapi.json</code></dd></div>
+      </dl>
+    </section>
+
+    <section class="docs-toolbar" aria-labelledby="browse-title">
+      <div>
+        <p class="eyebrow">Contract ledger</p>
+        <h2 id="browse-title">Browse operations</h2>
+      </div>
+      <label class="docs-search" for="operation-search">
+        <span>Search path, summary, or tag</span>
+        <input id="operation-search" type="search" inputmode="search" autocomplete="off" placeholder="Try agenda, speaker, or /api/v1/events">
+      </label>
+    </section>
+
+    <div class="docs-layout">
+      <aside class="tag-panel" aria-labelledby="tag-title">
+        <div class="tag-panel__heading">
+          <h2 id="tag-title">Capabilities</h2>
+          <span id="tag-count" aria-hidden="true">—</span>
+        </div>
+        <nav id="tag-list" aria-label="Filter operations by capability"></nav>
+      </aside>
+
+      <section class="operation-panel" aria-labelledby="operation-title" aria-busy="true">
+        <div class="operation-panel__heading">
+          <h2 id="operation-title">Operations</h2>
+          <p id="result-count" role="status" aria-live="polite">Loading the checked contract…</p>
+        </div>
+        <div id="operation-list" class="operation-list">
+          <div class="docs-loading" role="status"><span aria-hidden="true"></span>Reading the API contract…</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <noscript>This read-only reference needs JavaScript to organize the checked OpenAPI JSON. You can still open <a href="/api/v1/openapi.json">the raw contract</a>.</noscript>
+</body>
+</html>

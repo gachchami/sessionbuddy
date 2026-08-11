@@ -7,32 +7,109 @@ The launcher remembers these non-secret integration facts:
 
 - deployed target: `https://sessionbuddy-development.shiny-cloud-dd47.workers.dev`
 - eval checkout discovery: `/private/tmp/sessionbuddy-evals.*/repo`
-- Claude OAuth Docker volume: `sessionbuddy-claude-auth`
 - browser image: `mcr.microsoft.com/playwright:v1.62.1-noble`
 - browser location inside that image: `/ms-playwright`
-- required saved personas: `organizer` and `speaker` in the eval checkout's
+- required saved personas: `organizer`, `speaker`, and `reviewer` in the eval checkout's
   ignored `.auth/` directory
 
 It never reads or prints cookies, OAuth data, or application secrets.
 
-Before a paid run, the launcher makes a safe request with each saved persona
-and stops immediately if either session has expired. Refresh an expired state
-with:
+The public-widget scenarios use anonymous attendee access, so SessionBuddy does
+not need an attendee account. A second speaker email is still useful when the
+agent exercises co-speaker handoffs.
+
+Before a paid run, the launcher makes a safe request with each saved persona,
+checks the current `account_roles`/`active_role` contract, and stops immediately
+if a session has expired or is using the wrong active persona.
+
+## Provision the starting personas through SessionBuddy
+
+Use the ordinary product UI and emailed links. Do not insert accounts in D1 or
+obtain an invitation acceptance URL from an API response.
+
+1. Open `/setup` on the fresh instance. Enter the eval Organizer's exact first
+   name, last name, email, organization, and deployment setup key, then select
+   **Complete setup**. Open the newest administrator sign-in email and continue
+   to the account. In **Profile**, review the names and use **Create a password**
+   to set the eval password. The current UI requires at least 15 characters.
+   Select **Save profile**, then sign in again at `/sign-in`; creating a password
+   intentionally invalidates the email-link session. This bootstrap account is
+   the one Organizer needed by the eval: it owns the organization and has the
+   Organizer persona, so do not create a second Organizer or an event-admin
+   substitute.
+2. Open `/admin/events`, select **Create event**, fill the eval setup event, and
+   select **Create active event**. The setup screen does not create an event, and
+   Speaker and Reviewer invitations are scoped to a specific event.
+3. Open the event and select **Team & access** in its sidebar. Select **Invite
+   someone**, enter the eval Speaker email, choose **Speaker assignment**, fill
+   the required **Name** under **Speaker details**, and select **Send
+   invitation**.
+4. Repeat **Invite someone** for the eval Reviewer, choosing **Reviewer
+   assignment**. This provisions the Reviewer account and event membership; it
+   does not put that person into an evaluation round or assign submissions.
+   Configure reviewer pools, rounds, and submission assignments separately in
+   the evaluation workflow.
+5. In each recipient inbox, open the newest SessionBuddy invitation, select
+   **Accept your SessionBuddy invitation**, and continue to the account. The
+   Speaker is directed toward `/speaker` and the Reviewer toward `/reviews`;
+   incomplete profiles are first routed to Account. Enter the required first
+   and last names, create and confirm the 15-or-more-character password, select
+   **Save profile**, and then sign in again with that password.
+
+Only Organizer, Speaker, and Reviewer need provisioned accounts, passwords, and
+saved browser state. `speaker2` never starts a scenario: retain only its
+controlled email for the co-speaker handoff and do not create saved auth for it.
+Do not provision Attendee at all. SessionBuddy's public program and browser-local
+**My itinerary** flow are intentionally exercised anonymously.
+
+On the local Docker stack, normal outbound messages are captured by Mailpit at
+`http://127.0.0.1:8025`. The links inside those messages use the configured
+`PUBLIC_BASE_URL`, not necessarily the origin open in the browser, so confirm
+that it resolves to the running local instance or active tunnel before sending
+invitations. The deployed instance delivers the same flows to the configured
+real inboxes.
+
+For each persona, request a SessionBuddy sign-in email in the normal UI. Then
+copy its one-time URL into the helper; the URL is consumed inside a fresh eval
+browser context and its storage state is saved without printing cookies:
 
 ```sh
 scripts/run_sbek.sh auth organizer
-scripts/run_sbek.sh auth speaker
+scripts/run_sbek.sh auth-link organizer '<organizer-magic-link-url>'
+scripts/run_sbek.sh auth-link speaker '<speaker-magic-link-url>'
+scripts/run_sbek.sh auth-link reviewer '<reviewer-magic-link-url>'
 ```
 
-Each command waits for the matching one-time link. The browser state remains in
-the eval kit's ignored `.auth/` directory.
+The `auth` command prints the correct sign-in and `auth-link` instructions; it
+does not pass the judge kit's removed `--paste-link` or `--reuse` flags. The
+browser state remains in the eval kit's ignored `.auth/` directory.
 
-When one application account genuinely holds both roles, reuse the validated
-browser state without another email round-trip:
+Use three distinct accounts. Reusing one account for multiple starting personas
+can leak the wrong active role into a scenario and is not representative of the
+judge's multi-user workflows.
 
-```sh
-scripts/run_sbek.sh auth speaker --reuse organizer
+Configure inboxes you control in the eval checkout's ignored
+`evalconfig.json`. Plus-address aliases are acceptable when the mail provider
+delivers all aliases to the same inbox:
+
+```json
+{
+  "personaEmails": {
+    "organizer": "you+sbek-organizer@example.com",
+    "speaker": "you+sbek-speaker@example.com",
+    "speaker2": "you+sbek-speaker2@example.com",
+    "reviewer": "you+sbek-reviewer@example.com"
+  }
+}
 ```
+
+Also give the three starting accounts passwords in the ignored config. Saved
+browser state starts the correct persona, while several judge scenarios later
+sign out and switch to another user. The launcher therefore refuses a paid run
+unless Organizer, Speaker, and Reviewer each have matching email/password
+credentials. `speaker2` needs only an email because it never starts a scenario.
+Do not add Attendee credentials; the two attendee scenarios intentionally test
+the anonymous public experience.
 
 Inspect the resolved setup without launching an evaluation:
 
@@ -49,6 +126,21 @@ scripts/run_sbek.sh \
   --judge-model claude-opus-5
 ```
 
+The current judge contains 18 required scenarios across six required areas.
+Speaker CRM is optional and runs only with `--include-optional`.
+
+The paid run needs `ANTHROPIC_API_KEY`. Put it in the eval checkout's ignored
+`.env` file or export it in the invoking shell; never put it in this repository
+or paste it into a task. Validate the harness without a key first:
+
+```sh
+scripts/run_sbek.sh list
+scripts/run_sbek.sh smoke
+scripts/run_sbek.sh --dry-run \
+  --agent-model claude-sonnet-5 \
+  --judge-model claude-opus-5
+```
+
 Resume an interrupted run without paying for completed scenarios again:
 
 ```sh
@@ -61,7 +153,6 @@ Override a discovered value only when the local setup changes:
 
 ```sh
 SBEK_ROOT=/path/to/killmysaas-evals \
-SBEK_CLAUDE_AUTH_VOLUME=sessionbuddy-claude-auth \
 SBEK_TARGET_URL=https://example.workers.dev \
 scripts/run_sbek.sh where
 ```

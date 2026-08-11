@@ -1,7 +1,6 @@
 import json
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,12 +11,12 @@ from sessionbuddy.cfp.router import get_form
 from sessionbuddy.competition.router import public_speakers
 from sessionbuddy.platform.auth import access
 from sessionbuddy.platform.auth.http import AuthenticatedContext
-from sessionbuddy.platform.authorization import Actor, Permission, Role
+from sessionbuddy.platform.authorization import Actor, Permission, Persona
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.scheduling.router import get_public_schedule
+from tests.schema import MIGRATIONS
 from tests.speaker_operations.test_asset_boundary import AsyncSqlite
 
-MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
 PNG = b"\x89PNG\r\n\x1a\n" + b"event-branding"
 
 
@@ -103,7 +102,8 @@ def allow_organization_admin(monkeypatch):
     authenticated_context = AuthenticatedContext(
         Actor(
             "user-a",
-            organization_roles={"org-a": frozenset({Role.ORGANIZATION_ADMIN})},
+            active_persona=Persona.ORGANIZER,
+            owned_resource_ids=frozenset({"org-a"}),
         ),
         "session-a",
     )

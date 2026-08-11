@@ -309,8 +309,10 @@
   async function initialize() {
     const session = await api("/api/v1/auth/session");
     csrf = session.csrf_token;
-    sessionHasOrganizerAccess = (session.organization_access || []).some((item) => item.roles.includes("organization_admin"))
-      || (session.event_access || []).some((item) => item.roles.includes("event_admin"));
+    const canUseOrganizerResource = (item) => (item.permissions || []).some((permission) =>
+      ["owner", "edit", "manage"].includes(permission));
+    sessionHasOrganizerAccess = (session.organization_access || []).some(canUseOrganizerResource)
+      || (session.event_access || []).some(canUseOrganizerResource);
     if (profileScoped) {
       const profile = await api(`/api/v1/speaker-profiles/${encodeURIComponent(selectedPersonId)}`);
       showProfile(profile);

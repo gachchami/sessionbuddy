@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>Speaker home · SessionBuddy</title>
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
-  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=20">
+  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=21">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=24" defer></script>
-  <script src="/speaker/assets/speaker-portal.js?v=16" defer></script>
+  <script src="/speaker/assets/speaker-portal.js?v=17" defer></script>
 </head>
 <body class="app-body speaker-portal-page">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -34,20 +34,25 @@
           <p id="event-summary" class="portal-hero__context section-index"></p>
         </div>
         <div class="portal-hero__tools">
-          <div class="event-picker">
-            <span class="event-picker__label">Viewing event</span>
-            <details id="event-menu" class="event-menu">
-              <summary aria-label="Choose event" aria-haspopup="menu"><span id="event-current">Choose event</span><span class="event-menu__chevron" aria-hidden="true"></span></summary>
-              <div id="event-options" class="event-menu__options" role="menu" aria-label="Events"></div>
-            </details>
-          </div>
           <a id="public-profile-link" class="portal-hero__profile" href="#" hidden>Public profile</a>
         </div>
       </header>
-      <div class="portal-grid">
+      <div class="portfolio-layout">
+        <nav class="event-index panel" aria-labelledby="event-index-title">
+          <div class="section-heading"><h2 id="event-index-title">Your events</h2><span id="event-count" class="count-badge">0</span></div>
+          <div class="event-index__group">
+            <h3>Current and upcoming</h3>
+            <div id="active-event-list" class="event-index__list"></div>
+          </div>
+          <details class="event-index__archive" open>
+            <summary>Past events <span id="past-event-count">0</span></summary>
+            <div id="past-event-list" class="event-index__list"></div>
+          </details>
+        </nav>
+        <div class="portal-grid">
         <section id="tasks" class="panel portal-priority-panel" aria-labelledby="tasks-title">
           <div class="section-heading">
-            <div><h2 id="tasks-title">Actions</h2></div>
+            <div><h2 id="tasks-title">Needs attention</h2><p id="task-event-label" class="section-index"></p></div>
             <span id="task-count" class="count-badge">0</span>
           </div>
           <ul id="task-list" class="item-list" aria-describedby="task-help"></ul>
@@ -55,21 +60,22 @@
 
         <section id="submissions" class="panel portal-priority-panel" aria-labelledby="submissions-title">
           <div class="section-heading">
-            <div><h2 id="submissions-title">Sessions</h2></div>
+            <div><h2 id="submissions-title">Sessions</h2><p id="session-event-label" class="section-index"></p></div>
           </div>
           <ul id="submission-list" class="item-list"></ul>
         </section>
 
         <details id="resources" class="panel portal-wide-panel secondary-panel">
-          <summary><span id="resources-title">Resources</span><span id="resource-count" class="count-badge">0</span></summary>
+          <summary><span id="resources-title">Event resources</span><span id="resource-count" class="count-badge">0</span></summary>
           <div id="resource-list" class="resource-list"><p class="empty">Loading resources…</p></div>
         </details>
 
         <section id="notifications" class="panel portal-wide-panel" aria-labelledby="notifications-title">
-          <div class="section-heading"><h2 id="notifications-title">Notifications</h2><span id="notification-count" class="count-badge">0</span></div>
+          <div class="section-heading"><div><h2 id="notifications-title">Event updates</h2><p id="notification-event-label" class="section-index"></p></div><span id="notification-count" class="count-badge">0</span></div>
           <ul id="notification-list" class="notification-list"></ul>
         </section>
 
+        </div>
       </div>
     </div>
   </main>

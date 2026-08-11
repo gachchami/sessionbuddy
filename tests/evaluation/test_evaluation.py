@@ -105,6 +105,35 @@ def test_evaluation_rounds_are_owned_by_events() -> None:
     assert "/admin/events/${encodeURIComponent(results.event_id)}/submissions" in reviews
 
 
+def test_withdrawn_submissions_cannot_enter_review_assignments() -> None:
+    router = (
+        Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"
+    ).read_text()
+    create_round = router.split("async def create_evaluation_round(", 1)[1].split(
+        "async def", 1
+    )[0]
+    add_submissions = router.split("async def add_round_submissions(", 1)[1].split(
+        "async def", 1
+    )[0]
+
+    assert "AND status='submitted'" in create_round
+    assert "AND status='submitted'" in add_submissions
+
+
+def test_decision_readiness_ignores_revoked_conflict_assignments() -> None:
+    router = (
+        Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"
+    ).read_text()
+    decision = router.split("async def record_submission_decision(", 1)[1].split(
+        "async def", 1
+    )[0]
+
+    assert (
+        "JOIN evaluation_assignments a ON a.round_id = r.id "
+        "AND a.status != 'revoked'"
+    ) in decision
+
+
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:
     assert _weighted_mean([(4.0, 1), (2.0, 3)]) == 2.5
     assert _weighted_mean([]) is None

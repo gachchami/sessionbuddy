@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import json
-import logging
 import time
 import uuid
-from collections.abc import Awaitable, Callable
 from typing import Any
 
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
-
-logger = logging.getLogger("sessionbuddy.request")
+from fastapi import Request
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SAFE_PHASES = ("authn", "authz", "validation", "db", "domain", "serialization")
 
@@ -29,13 +26,24 @@ def _route_template(request: Request) -> str:
     return path if isinstance(path, str) else "unmatched"
 
 
-class RequestObservabilityMiddleware(BaseHTTPMiddleware):
-    async def dispatch(
+class RequestObservabilityMiddleware:
+    """Add request telemetry without Starlette's task-spawning HTTP adapter."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(
         self,
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         started_ns = time.perf_counter_ns()
+        request = Request(scope, receive=receive)
         supplied_request_id = request.headers.get("x-request-id", "")
         request_id = (
             supplied_request_id
@@ -45,22 +53,29 @@ class RequestObservabilityMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         request.state.request_started_ns = started_ns
         request.state.timings = {}
-        response: Response | None = None
         status_code = 500
 
+        async def send_with_observability(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = int(message["status"])
+                elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
+                headers = MutableHeaders(scope=message)
+                headers["X-Request-ID"] = request_id
+                headers["Server-Timing"] = _server_timing(
+                    elapsed_ms,
+                    request.state.timings,
+                )
+            await send(message)
+
         try:
-            response = await call_next(request)
-            status_code = response.status_code
-            return response
+            await self.app(scope, receive, send_with_observability)
         finally:
             total_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
             timings: dict[str, float] = request.state.timings
-            if response is not None:
-                response.headers["X-Request-ID"] = request_id
-                response.headers["Server-Timing"] = _server_timing(total_ms, timings)
-
             event: dict[str, Any] = {
                 "event": "http.request.completed",
+                "level": "error" if status_code >= 500 else "info",
                 "request_id": request_id,
                 "method": request.method,
                 "route": _route_template(request),
@@ -68,7 +83,10 @@ class RequestObservabilityMiddleware(BaseHTTPMiddleware):
                 "duration_ms": round(total_ms, 3),
                 "timings_ms": {key: round(value, 3) for key, value in timings.items()},
             }
-            logger.info(json.dumps(event, separators=(",", ":"), sort_keys=True))
+            # Python Workers reliably retain stdout/stderr in Workers Logs.
+            # Logging's default warning threshold can otherwise suppress these
+            # completion records and make a user-facing reference unsearchable.
+            print(json.dumps(event, separators=(",", ":"), sort_keys=True))
 
 
 def _valid_request_id(value: str) -> bool:

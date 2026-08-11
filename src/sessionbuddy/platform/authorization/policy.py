@@ -1,9 +1,18 @@
-from .types import Actor, AuthorizationDecision, Permission, ResourceContext, Role
+from .types import (
+    Actor,
+    AuthorizationDecision,
+    Permission,
+    Persona,
+    ResourceContext,
+    ResourceGrant,
+    Role,
+)
 
-ORG_ADMIN_GRANTS = frozenset(
+ORGANIZER_PERMISSIONS = frozenset(
     {
         Permission.ORGANIZATION_MANAGE,
         Permission.EVENT_MANAGE,
+        Permission.RESOURCE_ACCESS_MANAGE,
         Permission.FORM_MANAGE,
         Permission.SUBMISSION_MANAGE,
         Permission.SUBMISSION_READ_FOR_EVALUATION,
@@ -11,19 +20,19 @@ ORG_ADMIN_GRANTS = frozenset(
         Permission.SPEAKER_MANAGE,
         Permission.SPEAKER_ASSET_READ,
         Permission.AGENDA_MANAGE,
+        Permission.LABEL_MANAGE,
         Permission.COMMUNICATION_SEND,
         Permission.DASHBOARD_READ,
     }
 )
-EVENT_ADMIN_GRANTS = ORG_ADMIN_GRANTS - {Permission.ORGANIZATION_MANAGE}
-EVALUATOR_GRANTS = frozenset(
+REVIEWER_PERMISSIONS = frozenset(
     {
         Permission.SUBMISSION_READ_FOR_EVALUATION,
         Permission.EVALUATION_SAVE,
         Permission.EVALUATION_OWN_READ,
     }
 )
-SPEAKER_GRANTS = frozenset(
+SPEAKER_PERMISSIONS = frozenset(
     {
         Permission.SUBMISSION_READ_OWN,
         Permission.SPEAKER_PROFILE_READ_OWN,
@@ -34,58 +43,71 @@ SPEAKER_GRANTS = frozenset(
         Permission.SPEAKER_TASK_READ_OWN,
     }
 )
+
+# Kept as a compatibility export for callers/tests that enumerate the legacy
+# membership vocabulary. Administrative membership roles no longer authorize.
 ROLE_GRANTS = {
-    Role.ORGANIZATION_ADMIN: ORG_ADMIN_GRANTS,
-    Role.EVENT_ADMIN: EVENT_ADMIN_GRANTS,
-    Role.EVALUATOR: EVALUATOR_GRANTS,
-    Role.SPEAKER: SPEAKER_GRANTS,
+    Role.ORGANIZATION_ADMIN: ORGANIZER_PERMISSIONS,
+    Role.EVENT_ADMIN: ORGANIZER_PERMISSIONS - {Permission.ORGANIZATION_MANAGE},
+    Role.EVALUATOR: REVIEWER_PERMISSIONS,
+    Role.SPEAKER: SPEAKER_PERMISSIONS,
 }
 
-OWNERSHIP_PERMISSIONS = SPEAKER_GRANTS
-ASSIGNMENT_PERMISSIONS = EVALUATOR_GRANTS
+OWNERSHIP_PERMISSIONS = SPEAKER_PERMISSIONS
 
-# Self-scoped reads that must work before the first submission creates any
-# membership: a CFP-provisioned user saving/reading their own draft.
-PRE_MEMBERSHIP_SELF_PERMISSIONS = frozenset({Permission.SUBMISSION_READ_OWN})
+
+def _resource_authority(
+    actor: Actor, permission: Permission, context: ResourceContext
+) -> bool:
+    resource_id = context.authorization_resource_id
+    if resource_id in actor.owned_resource_ids:
+        return True
+    grants = actor.resource_grants.get(resource_id, frozenset())
+    if permission is Permission.RESOURCE_ACCESS_MANAGE:
+        return ResourceGrant.MANAGE in grants
+    return bool(grants & {ResourceGrant.EDIT, ResourceGrant.MANAGE})
 
 
 def authorize(
     actor: Actor, permission: Permission, context: ResourceContext
 ) -> AuthorizationDecision:
-    """Evaluate role candidates plus server-resolved tenant/resource facts."""
+    """Require an active persona and an exact resource fact for every request."""
     if not actor.active or not actor.session_active:
         return AuthorizationDecision(False, "inactive_principal")
     if not context.resource_exists:
         return AuthorizationDecision(False, "resource_not_found")
 
-    org_roles = actor.organization_roles.get(context.organization_id, frozenset())
-    event_roles = (
-        actor.event_roles.get((context.organization_id, context.event_id), frozenset())
-        if context.event_id
-        else frozenset()
-    )
-    roles = org_roles | event_roles
-    if not roles:
-        if (
-            permission in PRE_MEMBERSHIP_SELF_PERMISSIONS
-            and context.resource_owner_user_id is not None
-            and context.resource_owner_user_id == actor.user_id
-        ):
-            return AuthorizationDecision(True, "self_scope")
-        return AuthorizationDecision(False, "tenant_membership_required")
-    if not any(permission in ROLE_GRANTS[role] for role in roles):
-        return AuthorizationDecision(False, "permission_not_granted")
+    if actor.active_persona is Persona.ORGANIZER:
+        if permission not in ORGANIZER_PERMISSIONS:
+            return AuthorizationDecision(False, "permission_not_granted")
+        if not _resource_authority(actor, permission, context):
+            return AuthorizationDecision(False, "resource_access_required")
+        return AuthorizationDecision(True, "allowed")
 
-    if permission in OWNERSHIP_PERMISSIONS and Role.SPEAKER in roles:
-        if context.resource_owner_user_id != actor.user_id:
-            return AuthorizationDecision(False, "ownership_required")
-    if permission in ASSIGNMENT_PERMISSIONS and Role.EVALUATOR in roles:
-        # Admin grants can satisfy reads independently, but never evaluation writes.
-        admin_grant = bool(roles & {Role.ORGANIZATION_ADMIN, Role.EVENT_ADMIN})
-        if not context.evaluator_assigned and (
-            permission is Permission.EVALUATION_SAVE or not admin_grant
-        ):
+    if actor.active_persona is Persona.REVIEWER:
+        if permission not in REVIEWER_PERMISSIONS:
+            return AuthorizationDecision(False, "permission_not_granted")
+        roles = actor.event_roles.get(
+            (context.organization_id, context.event_id), frozenset()
+        )
+        if Role.EVALUATOR not in roles or not context.evaluator_assigned:
             return AuthorizationDecision(False, "assignment_required")
         if permission is Permission.EVALUATION_SAVE and not context.evaluation_round_open:
             return AuthorizationDecision(False, "lifecycle_forbidden")
-    return AuthorizationDecision(True, "allowed")
+        return AuthorizationDecision(True, "allowed")
+
+    if actor.active_persona is Persona.SPEAKER:
+        if permission not in SPEAKER_PERMISSIONS:
+            return AuthorizationDecision(False, "permission_not_granted")
+        # A submitter may read their own draft before the first event-speaker
+        # assignment exists. Every other speaker operation requires assignment.
+        roles = actor.event_roles.get(
+            (context.organization_id, context.event_id), frozenset()
+        )
+        if permission is not Permission.SUBMISSION_READ_OWN and Role.SPEAKER not in roles:
+            return AuthorizationDecision(False, "assignment_required")
+        if context.resource_owner_user_id != actor.user_id:
+            return AuthorizationDecision(False, "ownership_required")
+        return AuthorizationDecision(True, "allowed")
+
+    return AuthorizationDecision(False, "active_persona_required")

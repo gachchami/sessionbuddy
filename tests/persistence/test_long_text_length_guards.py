@@ -1,13 +1,11 @@
 import json
 import sqlite3
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from sessionbuddy.platform.auth.access import BootstrapCreate, EventCreate
-
-MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
+from tests.schema import MIGRATIONS
 
 
 @pytest.fixture

@@ -4,16 +4,18 @@
   const labels = {
     organizer: "Organizer",
     reviewer: "Reviewer",
-    organization_admin: "Organization administrator",
-    event_admin: "Event administrator",
-    evaluator: "Reviewer",
-    speaker: "Speaker"
+    speaker: "Speaker",
+    owner: "Owner",
+    view: "Can view",
+    edit: "Can edit",
+    manage: "Can manage"
   };
 
   let session;
   let version;
   let selectedHeadshot;
   let previewObjectUrl;
+  let inferredNameDraft = false;
   const query = new URLSearchParams(location.search);
   const onboarding = query.get("onboarding") === "1";
   const nextPath = query.get("next") || "";
@@ -36,9 +38,19 @@
 
   function setProfile(profile) {
     const form = byId("profile-form");
+    let firstName = profile.first_name || "";
+    let lastName = profile.last_name || "";
+    inferredNameDraft = false;
+    if (!firstName && !lastName && profile.display_name?.trim()) {
+      const nameParts = profile.display_name.trim().split(/\s+/);
+      firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : nameParts[0];
+      lastName = nameParts.length > 1 ? nameParts.at(-1) : "";
+      inferredNameDraft = true;
+    }
     byId("account-email").value = profile.email;
-    form.elements.first_name.value = profile.first_name || "";
-    form.elements.last_name.value = profile.last_name || "";
+    form.elements.first_name.value = firstName;
+    form.elements.last_name.value = lastName;
+    byId("name-draft-help").hidden = !inferredNameDraft;
     form.elements.job_title.value = profile.job_title || "";
     form.elements.company.value = profile.company || "";
     form.elements.time_zone.value = profile.time_zone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
@@ -53,7 +65,7 @@
       return item;
     });
     byId("profile-roles").replaceChildren(...roleNodes);
-    const initials = `${profile.first_name?.[0] || ""}${profile.last_name?.[0] || ""}`.toUpperCase() || "SB";
+    const initials = `${firstName[0] || ""}${lastName[0] || ""}`.toUpperCase() || "SB";
     byId("headshot-fallback").textContent = initials;
     if (profile.headshot_url) {
       byId("headshot-preview").src = `${profile.headshot_url}?v=${profile.version}`;
@@ -118,10 +130,11 @@
     byId("save-default-role").disabled = true;
   }
 
-  function organizationForm(organization) {
+  function organizationForm(organization, canRecoverEventOwnership) {
     const card = document.createElement("article");
     card.className = "card organizer-panel organizer-organization-card";
     const form = document.createElement("form");
+    form.className = "organization-name-form";
     form.dataset.organizationId = organization.id;
     form.dataset.version = String(organization.version);
     const heading = document.createElement("h3");
@@ -138,22 +151,390 @@
     save.textContent = "Save organization";
     label.append(input);
     form.append(heading, label, save);
-    card.append(form);
+    const access = document.createElement("section");
+    access.className = "organization-access-manager";
+    access.dataset.organizationAccessId = organization.id;
+    const accessHeading = document.createElement("div");
+    accessHeading.className = "section-heading";
+    const accessCopy = document.createElement("div");
+    const accessTitle = document.createElement("h4");
+    accessTitle.textContent = "Organization access";
+    const accessSummary = document.createElement("p");
+    accessSummary.className = "help";
+    accessSummary.textContent = "These permissions apply only to this organization. They do not grant, revoke, or change access to any event.";
+    accessCopy.append(accessTitle, accessSummary);
+    accessHeading.append(accessCopy);
+    const create = document.createElement("form");
+    create.className = "organization-grant-form";
+    create.dataset.organizationGrantCreate = organization.id;
+    const emailLabel = document.createElement("label");
+    emailLabel.textContent = "Account email";
+    const email = document.createElement("input");
+    email.name = "email";
+    email.type = "email";
+    email.autocomplete = "email";
+    email.maxLength = 320;
+    email.required = true;
+    emailLabel.append(email);
+    const permissionLabel = document.createElement("label");
+    permissionLabel.textContent = "Permission";
+    const permission = document.createElement("select");
+    permission.name = "permission";
+    permission.setAttribute("aria-label", "Organization permission to grant");
+    for (const [value, text] of [["view", "Can view"], ["edit", "Can edit"], ["manage", "Can manage access"]]) {
+      permission.append(new Option(text, value));
+    }
+    permissionLabel.append(permission);
+    const grant = document.createElement("button");
+    grant.type = "submit";
+    grant.textContent = "Grant organization access";
+    create.append(emailLabel, permissionLabel, grant);
+    const accessStatus = document.createElement("p");
+    accessStatus.className = "help organization-access-status";
+    accessStatus.setAttribute("role", "status");
+    accessStatus.setAttribute("aria-live", "polite");
+    const list = document.createElement("ul");
+    list.className = "item-list organizer-access-list organization-grant-list";
+    list.append(document.createElement("li"));
+    list.firstElementChild.textContent = "Loading organization access…";
+    access.append(accessHeading, create, accessStatus, list);
+    card.append(form, access);
+    if (canRecoverEventOwnership) {
+      const recovery = document.createElement("section");
+      recovery.className = "organization-ownership-recovery";
+      recovery.dataset.ownershipRecoveryId = organization.id;
+      const recoveryHeading = document.createElement("h4");
+      recoveryHeading.textContent = "Event ownership recovery";
+      const recoverySummary = document.createElement("p");
+      recoverySummary.className = "help";
+      recoverySummary.textContent = "Use this owner-only control when an event’s current owner cannot hand it over. It shows only event identity, status, and current owner; it does not grant you access to the event or its content.";
+      const recoveryScope = document.createElement("p");
+      recoveryScope.className = "help";
+      recoveryScope.textContent = "A transfer changes administrative ownership only. It does not delete, move, archive, or rewrite event content or other access.";
+      const recoveryStatus = document.createElement("p");
+      recoveryStatus.className = "help ownership-recovery-status";
+      recoveryStatus.setAttribute("role", "status");
+      recoveryStatus.setAttribute("aria-live", "polite");
+      recoveryStatus.textContent = "Loading events eligible for ownership recovery…";
+      const recoveryList = document.createElement("ul");
+      recoveryList.className = "item-list organizer-access-list ownership-recovery-list";
+      const loadMore = document.createElement("button");
+      loadMore.type = "button";
+      loadMore.className = "secondary ownership-recovery-more";
+      loadMore.textContent = "Load more recovery events";
+      loadMore.hidden = true;
+      loadMore.addEventListener("click", async () => {
+        loadMore.disabled = true;
+        await loadOwnershipRecoveryEvents(organization.id, false);
+        loadMore.disabled = false;
+      });
+      recovery.append(recoveryHeading, recoverySummary, recoveryScope, recoveryStatus, recoveryList, loadMore);
+      card.append(recovery);
+    }
     return card;
   }
 
+  function organizationAccessSection(organizationId) {
+    return [...byId("organization-settings-list").querySelectorAll("[data-organization-access-id]")]
+      .find((node) => node.dataset.organizationAccessId === organizationId);
+  }
+
+  function organizationAccessMessage(error, fallback) {
+    if (error.status === 404) {
+      return "No active SessionBuddy account uses that email. Ask them to sign in once, then try again.";
+    }
+    if (error.status === 409) return "Owner access cannot be changed or revoked here.";
+    return window.SessionBuddyApi.message(error) || fallback;
+  }
+
+  function ownershipRecoverySection(organizationId) {
+    return [...byId("organization-settings-list").querySelectorAll("[data-ownership-recovery-id]")]
+      .find((node) => node.dataset.ownershipRecoveryId === organizationId);
+  }
+
+  function ownershipRecoveryRow(organizationId, eventRecord) {
+    const row = document.createElement("li");
+    row.className = "organizer-access-list__item ownership-recovery-item";
+    const summary = document.createElement("span");
+    summary.className = "organizer-access-list__summary";
+    const name = document.createElement("strong");
+    name.textContent = eventRecord.name;
+    const details = document.createElement("span");
+    details.textContent = ` · ${eventRecord.status} · Current owner: ${eventRecord.current_owner_email}`;
+    const identifiers = document.createElement("small");
+    identifiers.textContent = `Event ${eventRecord.event_id} · Owner account ${eventRecord.current_owner_user_id}`;
+    summary.append(name, details, identifiers);
+
+    const form = document.createElement("form");
+    form.className = "ownership-recovery-transfer-form";
+    const emailLabel = document.createElement("label");
+    emailLabel.textContent = "New owner’s account email";
+    const email = document.createElement("input");
+    email.name = "email";
+    email.type = "email";
+    email.autocomplete = "email";
+    email.maxLength = 320;
+    email.required = true;
+    email.setAttribute("aria-label", `New owner email for ${eventRecord.name}`);
+    emailLabel.append(email);
+    const reasonLabel = document.createElement("label");
+    reasonLabel.textContent = "Reason (optional)";
+    const reason = document.createElement("textarea");
+    reason.name = "reason";
+    reason.rows = 2;
+    reason.maxLength = 1000;
+    reason.setAttribute("aria-label", `Ownership transfer reason for ${eventRecord.name}`);
+    reasonLabel.append(reason);
+    const keepLabel = document.createElement("label");
+    keepLabel.className = "check-label";
+    const keep = document.createElement("input");
+    keep.name = "grant_previous_owner_manage";
+    keep.type = "checkbox";
+    keep.setAttribute("aria-label", `Keep ${eventRecord.current_owner_email} as Can manage after transfer`);
+    keepLabel.append(keep, ` Keep ${eventRecord.current_owner_email} as Can manage after transfer`);
+    const review = document.createElement("button");
+    review.type = "submit";
+    review.textContent = "Review ownership transfer";
+    const confirmation = document.createElement("div");
+    confirmation.className = "confirmation ownership-recovery-confirmation";
+    confirmation.setAttribute("role", "alert");
+    confirmation.tabIndex = -1;
+    confirmation.hidden = true;
+    const confirmationTitle = document.createElement("h5");
+    confirmationTitle.textContent = "Confirm ownership transfer";
+    const confirmationSummary = document.createElement("p");
+    const confirmationScope = document.createElement("p");
+    confirmationScope.className = "help";
+    confirmationScope.textContent = "Only event ownership and the former owner’s permission can change. Event content and other access are not changed.";
+    const confirmationActions = document.createElement("div");
+    confirmationActions.className = "actions";
+    const goBack = document.createElement("button");
+    goBack.type = "button";
+    goBack.className = "secondary";
+    goBack.textContent = "Go back";
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.textContent = "Confirm transfer";
+    confirmationActions.append(goBack, confirm);
+    confirmation.append(confirmationTitle, confirmationSummary, confirmationScope, confirmationActions);
+    form.append(emailLabel, reasonLabel, keepLabel, review, confirmation);
+
+    let transfer = null;
+    const resetConfirmation = () => {
+      transfer = null;
+      confirmation.hidden = true;
+      confirm.disabled = false;
+    };
+    form.addEventListener("input", resetConfirmation);
+    form.addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      if (!form.reportValidity()) return;
+      const values = Object.fromEntries(new FormData(form));
+      transfer = {
+        email: String(values.email),
+        reason: String(values.reason || "") || null,
+        grant_previous_owner_manage: values.grant_previous_owner_manage === "on"
+      };
+      confirmationSummary.textContent = transfer.grant_previous_owner_manage
+        ? `${transfer.email} will own ${eventRecord.name}. ${eventRecord.current_owner_email} will keep Can manage access.`
+        : `${transfer.email} will own ${eventRecord.name}. ${eventRecord.current_owner_email} will lose event access unless it is granted again.`;
+      confirmation.hidden = false;
+      confirmation.focus();
+    });
+    goBack.addEventListener("click", () => {
+      resetConfirmation();
+      email.focus();
+    });
+    confirm.addEventListener("click", async () => {
+      if (!transfer) return;
+      const requestBody = transfer;
+      confirm.disabled = true;
+      try {
+        await api(`/api/v1/admin/events/${encodeURIComponent(eventRecord.event_id)}/ownership-transfers`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+          body: JSON.stringify(requestBody)
+        });
+        form.reset();
+        resetConfirmation();
+        await loadOwnershipRecoveryEvents(organizationId, true);
+        showStatus(`Event ownership transferred to ${requestBody.email}. Event content and other access were not changed.`, "success");
+      } catch (error) {
+        const message = error.status === 409
+          ? "Event ownership changed while you were reviewing, or that account already owns the event. Refresh the recovery list and try again."
+          : error.status === 404
+          ? "The target account was not found, or you no longer own this organization."
+          : window.SessionBuddyApi.message(error);
+        showStatus(message, "error", true);
+        confirm.disabled = false;
+      }
+    });
+    row.append(summary, form);
+    return row;
+  }
+
+  async function loadOwnershipRecoveryEvents(organizationId, reset) {
+    const section = ownershipRecoverySection(organizationId);
+    if (!section) return;
+    const list = section.querySelector(".ownership-recovery-list");
+    const status = section.querySelector(".ownership-recovery-status");
+    const more = section.querySelector(".ownership-recovery-more");
+    const cursor = reset ? "" : section.dataset.nextCursor || "";
+    if (reset) {
+      list.replaceChildren();
+      status.textContent = "Loading events eligible for ownership recovery…";
+    }
+    try {
+      const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const page = await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/ownership-recovery/events?limit=50${suffix}`);
+      list.append(...page.data.map((eventRecord) => ownershipRecoveryRow(organizationId, eventRecord)));
+      section.dataset.nextCursor = page.next_cursor || "";
+      more.hidden = !page.next_cursor;
+      if (!list.children.length) {
+        const empty = document.createElement("li");
+        empty.textContent = "No events need ownership recovery.";
+        list.append(empty);
+        status.textContent = "No events are available for ownership recovery.";
+      } else {
+        status.textContent = `${list.querySelectorAll(".ownership-recovery-item").length} recovery ${list.querySelectorAll(".ownership-recovery-item").length === 1 ? "event" : "events"} shown.`;
+      }
+    } catch (error) {
+      section.hidden = true;
+      if (error.status !== 404) showStatus(window.SessionBuddyApi.message(error), "error", true);
+    }
+  }
+
+  function organizationGrantRow(organizationId, grant) {
+    const row = document.createElement("li");
+    row.className = "organizer-access-list__item";
+    const summary = document.createElement("span");
+    summary.className = "organizer-access-list__summary";
+    const email = document.createElement("strong");
+    email.textContent = grant.email;
+    const current = document.createElement("span");
+    current.textContent = grant.permission === "owner" ? "Owner" : labels[grant.permission] || grant.permission;
+    summary.append(email, " · ", current);
+    row.append(summary);
+    if (grant.permission === "owner") {
+      const note = document.createElement("small");
+      note.textContent = "Ownership cannot be revoked from this access list.";
+      row.append(note);
+      return row;
+    }
+    const actions = document.createElement("span");
+    actions.className = "actions";
+    const permission = document.createElement("select");
+    permission.setAttribute("aria-label", `Organization permission for ${grant.email}`);
+    for (const [value, text] of [["view", "Can view"], ["edit", "Can edit"], ["manage", "Can manage access"]]) {
+      permission.append(new Option(text, value));
+    }
+    permission.value = grant.permission;
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "secondary";
+    save.textContent = "Save access";
+    save.disabled = true;
+    permission.addEventListener("change", () => { save.disabled = permission.value === grant.permission; });
+    save.addEventListener("click", async () => {
+      save.disabled = true;
+      try {
+        await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/access-grants/${encodeURIComponent(grant.user_id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+          body: JSON.stringify({ permission: permission.value })
+        });
+        await loadOrganizationGrantList(organizationId);
+        showStatus(`Organization access updated for ${grant.email}.`, "success");
+      } catch (error) {
+        showStatus(organizationAccessMessage(error, "Organization access could not be updated."), "error", true);
+        permission.disabled = false;
+        save.disabled = false;
+      }
+    });
+    const revoke = document.createElement("button");
+    revoke.type = "button";
+    revoke.className = "secondary";
+    revoke.textContent = "Revoke access";
+    const resetRevoke = () => {
+      revoke.dataset.confirming = "false";
+      revoke.textContent = "Revoke access";
+      revoke.setAttribute("aria-label", `Revoke organization access for ${grant.email}`);
+    };
+    resetRevoke();
+    revoke.addEventListener("blur", resetRevoke);
+    revoke.addEventListener("keydown", (event) => { if (event.key === "Escape") resetRevoke(); });
+    revoke.addEventListener("click", async () => {
+      if (revoke.dataset.confirming !== "true") {
+        revoke.dataset.confirming = "true";
+        revoke.textContent = "Confirm revoke";
+        revoke.setAttribute("aria-label", `Confirm revoke organization access for ${grant.email}`);
+        return;
+      }
+      revoke.disabled = true;
+      try {
+        await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/access-grants/${encodeURIComponent(grant.user_id)}`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token }
+        });
+        await loadOrganizationGrantList(organizationId);
+        showStatus(`Organization access revoked for ${grant.email}. Event access was not changed.`, "success");
+      } catch (error) {
+        showStatus(organizationAccessMessage(error, "Organization access could not be revoked."), "error", true);
+        revoke.disabled = false;
+        resetRevoke();
+      }
+    });
+    actions.append(permission, save, revoke);
+    row.append(actions);
+    return row;
+  }
+
+  async function loadOrganizationGrantList(organizationId) {
+    const section = organizationAccessSection(organizationId);
+    if (!section) return;
+    const list = section.querySelector(".organization-grant-list");
+    const status = section.querySelector(".organization-access-status");
+    try {
+      const grants = await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/access-grants`);
+      list.replaceChildren(...grants.data.map((grant) => organizationGrantRow(organizationId, grant)));
+      if (!grants.data.length) {
+        const empty = document.createElement("li");
+        empty.textContent = "No organization access entries.";
+        list.append(empty);
+      }
+      status.textContent = `${grants.data.length} active organization access ${grants.data.length === 1 ? "entry" : "entries"}.`;
+    } catch (error) {
+      section.hidden = true;
+      if (error.status !== 404) showStatus(window.SessionBuddyApi.message(error), "error", true);
+    }
+  }
+
   async function loadOrganizationSettings() {
+    const organizationAccess = session.organization_access || [];
     const manageable = new Set(
-      (session.organization_access || [])
-        .filter((item) => (item.roles || []).includes("organization_admin"))
+      organizationAccess
+        .filter((item) => (item.permissions || []).some(
+          (permission) => ["owner", "manage"].includes(permission)
+        ))
+        .map((item) => item.organization_id)
+    );
+    const owned = new Set(
+      organizationAccess
+        .filter((item) => (item.permissions || []).includes("owner"))
         .map((item) => item.organization_id)
     );
     if (!manageable.size) return;
     const organizations = (await api("/api/v1/admin/organizations")).data
       .filter((organization) => manageable.has(organization.id));
     if (!organizations.length) return;
-    byId("organization-settings-list").replaceChildren(...organizations.map(organizationForm));
+    byId("organization-settings-list").replaceChildren(
+      ...organizations.map((organization) => organizationForm(organization, owned.has(organization.id)))
+    );
     byId("organization-settings").hidden = false;
+    await Promise.all(organizations.flatMap((organization) => [
+      loadOrganizationGrantList(organization.id),
+      ...(owned.has(organization.id) ? [loadOwnershipRecoveryEvents(organization.id, true)] : [])
+    ]));
   }
 
   async function initialize() {
@@ -162,13 +543,25 @@
     const access = [];
     renderDefaultRoles();
     for (const item of session.organization_access || []) {
-      access.push(accessCard("Organization", "Organization access", item.roles, "/admin"));
+      access.push(accessCard(
+        item.organization_name,
+        "Owned or delegated resource",
+        item.permissions,
+        "/admin"
+      ));
     }
     for (const item of session.event_access || []) {
-      const roles = item.roles || [];
-      const href = roles.includes("event_admin") ? `/admin/events/${encodeURIComponent(item.event_id)}`
-        : roles.includes("speaker") ? "/speaker" : "/reviews";
-      access.push(accessCard("Event", `Event ${item.event_id}`, roles, href));
+      const permissions = item.permissions || [];
+      const assignments = item.assignments || [];
+      const canManage = permissions.some((permission) => ["owner", "manage", "edit"].includes(permission));
+      const href = canManage ? `/admin/events/${encodeURIComponent(item.event_id)}`
+        : assignments.includes("speaker") ? "/speaker" : "/reviews";
+      access.push(accessCard(
+        item.event_name,
+        "Event resource",
+        [...permissions, ...assignments],
+        href
+      ));
     }
     if (!access.length) access.push(accessCard("No resource access yet", "Organizations and events", [], null));
     byId("access-list").replaceChildren(...access);
@@ -177,7 +570,9 @@
     if (onboarding && !session.profile_complete) {
       byId("account-title").textContent = "Complete your profile";
       byId("account-summary").textContent = "Add your details before continuing.";
-      showStatus("Complete the required fields, then save your profile.");
+      showStatus(inferredNameDraft
+        ? "Review the suggested name fields, complete the required fields, then save your profile."
+        : "Complete the required fields, then save your profile.");
       byId("profile-form").elements.first_name.focus();
     }
   }
@@ -252,9 +647,10 @@
     }
   });
   byId("organization-settings-list").addEventListener("submit", async (event) => {
+    const form = event.target.closest("form.organization-name-form[data-organization-id]");
+    if (!form) return;
     event.preventDefault();
-    const form = event.target.closest("form[data-organization-id]");
-    if (!form || !form.reportValidity()) return;
+    if (!form.reportValidity()) return;
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     try {
@@ -275,6 +671,30 @@
         ? "The organization changed elsewhere. Reload and try again."
         : window.SessionBuddyApi.message(error), "error", true);
     } finally { button.disabled = false; }
+  });
+  byId("organization-settings-list").addEventListener("submit", async (event) => {
+    const form = event.target.closest("form[data-organization-grant-create]");
+    if (!form) return;
+    event.preventDefault();
+    if (!form.reportValidity()) return;
+    const button = form.querySelector('button[type="submit"]');
+    const values = Object.fromEntries(new FormData(form));
+    button.disabled = true;
+    try {
+      await api(`/api/v1/admin/organizations/${encodeURIComponent(form.dataset.organizationGrantCreate)}/access-grants`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+        body: JSON.stringify(values)
+      });
+      const email = values.email;
+      form.reset();
+      await loadOrganizationGrantList(form.dataset.organizationGrantCreate);
+      showStatus(`Organization access granted to ${email}. Event access was not changed.`, "success");
+    } catch (error) {
+      showStatus(organizationAccessMessage(error, "Organization access could not be granted."), "error", true);
+    } finally {
+      button.disabled = false;
+    }
   });
   byId("profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -322,7 +742,12 @@
         location.replace(safeNext);
       }
     } catch (error) {
-      showStatus(error.status === 409 ? "Your profile changed elsewhere. Reload and try again." : window.SessionBuddyApi.message(error), "error", true);
+      const message = error.status === 409
+        ? "Your profile changed elsewhere. Reload and try again."
+        : error.status === 503 && values.password
+        ? "Your profile was not saved because password sign-in is temporarily unavailable. Leave both password fields blank to save the rest of your profile now, or ask the administrator to check password configuration."
+        : window.SessionBuddyApi.message(error);
+      showStatus(message, "error", true);
     } finally {
       button.disabled = false;
     }

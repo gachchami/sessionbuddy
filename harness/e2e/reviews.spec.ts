@@ -6,13 +6,18 @@ const reviewerSession = JSON.stringify({
   event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   csrf_token: "browser-test-csrf",
   email: "namohh.namaha+reviewer@example.com",
-  display_name: null,
+  display_name: "Rhea Reviewer",
   profile_complete: true,
+  account_roles: ["reviewer"],
+  active_role: "reviewer",
+  default_role: "reviewer",
   organization_access: [],
   event_access: [{
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-    roles: ["evaluator"],
+    event_name: "Example Event",
+    permissions: [],
+    assignments: ["reviewer"],
   }],
 });
 
@@ -38,7 +43,7 @@ test.describe("reviewer workspace", () => {
 
     // Non-organizer portals do not render an empty Main navigation card.
     await expect(page.locator(".sb-sidebar__primary")).toHaveCount(0);
-    await expect(page.locator(".sb-account__identity strong")).toHaveText("Reviewer");
+    await expect(page.locator(".sb-account__identity strong")).toHaveText("Rhea Reviewer · Reviewer");
 
     // The accessibility link is visually clipped until keyboard focus.
     const skipLink = page.getByRole("link", { name: "Skip to reviews" });

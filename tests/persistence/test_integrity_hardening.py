@@ -1,9 +1,8 @@
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
+from tests.schema import MIGRATIONS
 
 
 @pytest.fixture

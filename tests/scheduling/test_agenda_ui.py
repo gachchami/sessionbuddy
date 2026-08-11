@@ -44,6 +44,27 @@ def test_existing_agenda_can_manage_resources_and_build_a_draft() -> None:
     assert "weekday" in javascript
 
 
+def test_event_labels_are_managed_and_assigned_in_the_agenda() -> None:
+    html, javascript = read("agenda_admin.html"), read("agenda.js")
+    assert 'id="label-form"' in html and 'name="color" type="color"' in html
+    assert 'id="label-list"' in html and 'id="label-editor"' in html
+    assert 'id="session-labels"' in html and 'name="label_version"' in html
+    assert "/labels/${encodeURIComponent(label.id)}" in javascript
+    assert "/sessions/${encodeURIComponent(item.session_id)}/labels" in javascript
+    assert 'input[name="session_label"]:checked' in javascript
+    assert "label.can_manage" in javascript
+
+
+def test_publish_uses_an_accessible_in_page_confirmation() -> None:
+    html, javascript = read("agenda_admin.html"), read("agenda.js")
+    assert 'id="publish-dialog"' in html
+    assert 'aria-labelledby="publish-dialog-title"' in html
+    assert 'aria-describedby="publish-dialog-summary publish-dialog-notice"' in html
+    assert 'id="cancel-publish"' in html and 'id="confirm-publish"' in html
+    assert 'byId("publish-dialog").showModal()' in javascript
+    assert "Publish this agenda? ${scheduled}" not in javascript
+
+
 def test_scheduled_session_can_be_returned_to_unscheduled_list() -> None:
     html, javascript = read("agenda_admin.html"), read("agenda.js")
     assert 'id="unschedule-item"' in html
@@ -112,3 +133,4 @@ def test_read_only_schedule_has_staff_speaker_views_and_empty_error_states() -> 
     assert ".catch((error)" in javascript
     assert 'id="download-calendar"' in html
     assert "BEGIN:VCALENDAR" in javascript
+    assert "item.labels" in javascript and "schedule-label" in javascript

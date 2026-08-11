@@ -10,17 +10,35 @@
 .schedule { display: grid; gap: 1.15rem; }
 .schedule.week-view { grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); align-items: start; }
 .schedule-group { min-width: 0; padding: 1.15rem; border: 1px solid var(--line); border-radius: 1rem; background: white; box-shadow: 0 .75rem 2.5rem rgba(16,24,40,.05); }
-.schedule-group h2 { margin-top: 0; font-size: 1.2rem; }
+.schedule-group h2 { margin-top: 0; font-size: 1.125rem; }
 .schedule-list { display: grid; gap: .1rem; margin: 0; padding: 0; list-style: none; }
 .schedule-item { min-width: 0; display: grid; grid-template-columns: minmax(7rem,.25fr) minmax(0,1fr) auto; gap: 1rem; align-items: start; padding: 1rem .35rem; border-top: 1px solid var(--line); }
 .schedule-item:first-child { border-top: 0; }
-.schedule-item time { color: #34435c; font-size: .88rem; font-weight: 800; }
+.schedule-item time { color: #34435c; font-size: .875rem; font-weight: 800; }
 .schedule-item h3 { margin: 0; }
 .schedule-item p { margin: .3rem 0; color: var(--muted); }
-.schedule-item .description { font-size: .88rem; }
-.itinerary-button { width: 2.8rem; min-width: 2.8rem; padding: 0; border: 1px solid #cbd4e2; background: white; color: var(--blue-dark); font-size: 1.25rem; }
+.schedule-item .description { font-size: .875rem; }
+.itinerary-button { width: 2.8rem; min-width: 2.8rem; padding: 0; border: 1px solid #cbd4e2; background: white; color: var(--blue-dark); font-size: 1.375rem; }
 .itinerary-button:hover, .itinerary-button[aria-pressed="true"] { background: #e4ebff; color: #183eae; }
 body.embedded #site-header { display: none; }
 body.embedded .page { padding: .75rem; }
 body.embedded .shell { width: 100%; }
 @media(max-width: 38rem) { .schedule-item { grid-template-columns: 1fr auto; } .schedule-item time { grid-column: 1 / -1; } }
+.schedule-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .55rem;
+}
+.schedule-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.55rem;
+  padding: .18rem .5rem;
+  border: 1px solid color-mix(in srgb,var(--label-color) 45%,white);
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--label-color) 12%,white);
+  color: #27354d;
+  font-size: .75rem;
+  font-weight: 700;
+}

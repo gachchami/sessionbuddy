@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 from pathlib import Path
@@ -27,6 +28,7 @@ from sessionbuddy.cfp.staged_uploads import (
 )
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob, ScanResult, consume_scan_job
+from tests.schema import MIGRATIONS
 from tests.security.test_production_identity_flow import (
     AllowingRateLimiter,
     CapturingQueue,
@@ -34,7 +36,6 @@ from tests.security.test_production_identity_flow import (
 )
 
 PROJECT_ROOT = Path(__file__).parents[2]
-MIGRATIONS = sorted((PROJECT_ROOT / "migrations").glob("*.sql"))
 STATIC = PROJECT_ROOT / "src" / "sessionbuddy" / "static"
 
 FORM_SCHEMA = {
@@ -959,7 +960,7 @@ async def test_existing_speaker_magic_link_auto_continues(cfp_environment) -> No
         assert page.status_code == 200
         assert "Signing you in…" in page.text
         assert 'data-auto-submit="true"' in page.text
-        assert 'auth_link_confirm.js?v=1' in page.text
+        assert 'auth-link-confirm.js?v=2' in page.text
         assert "Create your speaker account" not in page.text
         assert connection.execute(
             "SELECT consumed_at_ms FROM authentication_challenges "
@@ -1071,7 +1072,7 @@ def test_magic_link_confirmation_page_is_packaged_and_csp_safe() -> None:
     assert '<meta name="robots" content="noindex">' in page
     assert '_asset("auth_link_confirm.html")' in access
     assert 'data-auto-submit="true"' in access
-    assert 'auth_link_confirm.js?v=1' in access
+    assert 'auth-link-confirm.js?v=2' in access
     interstitial = access.split("magic_link_interstitial", 1)[1].split("@access_router", 1)[0]
     assert "<style>" not in interstitial
     # Consume-on-success: a failed sign-in restores the challenge it consumed.
@@ -1134,28 +1135,17 @@ def test_sbek_helper_completes_the_confirmation_page() -> None:
     assert "storageState" in helper
 
 
-def test_run_sbek_auth_invokes_eval_kit_paste_link(tmp_path: Path) -> None:
+def test_run_sbek_auth_explains_the_sessionbuddy_magic_link_capture(tmp_path: Path) -> None:
     eval_root = tmp_path / "eval"
     (eval_root / "src").mkdir(parents=True)
     (eval_root / "src" / "cli.ts").write_text("", encoding="utf-8")
     (eval_root / "package.json").write_text("{}", encoding="utf-8")
 
-    capture = tmp_path / "docker-arguments.txt"
-    executable_dir = tmp_path / "bin"
-    executable_dir.mkdir()
-    fake_docker = executable_dir / "docker"
-    fake_docker.write_text(
-        '#!/bin/sh\nprintf "%s\\n" "$@" > "$SBEK_TEST_CAPTURE"\n',
-        encoding="utf-8",
-    )
-    fake_docker.chmod(0o755)
     target = "https://sessionbuddy-development.example.test"
     environment = {
         **os.environ,
-        "PATH": f"{executable_dir}:{os.environ['PATH']}",
         "SBEK_ROOT": str(eval_root),
         "SBEK_TARGET_URL": target,
-        "SBEK_TEST_CAPTURE": str(capture),
     }
 
     completed = subprocess.run(  # noqa: S603 - fixed repository script under test
@@ -1168,17 +1158,94 @@ def test_run_sbek_auth_invokes_eval_kit_paste_link(tmp_path: Path) -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
-    arguments = capture.read_text(encoding="utf-8").splitlines()
-    assert arguments[:3] == ["run", "--rm", "-it"]
-    assert arguments[-10:] == [
-        "./node_modules/.bin/tsx",
-        "src/cli.ts",
-        "auth",
-        "--persona",
-        "organizer",
-        "--url",
-        target,
-        "--at",
-        "/sign-in",
-        "--paste-link",
-    ]
+    assert f"{target}/sign-in" in completed.stderr
+    assert "scripts/run_sbek.sh auth-link organizer '<magic-link-url>'" in completed.stderr
+
+
+def test_sbek_launcher_matches_the_current_persona_contract() -> None:
+    launcher = (PROJECT_ROOT / "scripts" / "run_sbek.sh").read_text(encoding="utf-8")
+    checker = (PROJECT_ROOT / "scripts" / "check_sbek_sessions.mjs").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'required_personas="organizer speaker reviewer"' in launcher
+    assert "check_sbek_config.mjs" in launcher
+    assert (
+        'dependencies_volume="${SBEK_NODE_MODULES_VOLUME:-sessionbuddy-sbek-node-modules-v2}"'
+        in launcher
+    )
+    assert (
+        'store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"'
+        in launcher
+    )
+    installer = (PROJECT_ROOT / "scripts" / "install_sbek_dependencies.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "node_modules/.sessionbuddy-sbek-lock.sha256" in installer
+    assert "corepack pnpm install --frozen-lockfile --ignore-scripts" in installer
+    assert "--store-dir=/pnpm-store" in installer
+    assert '-v "$dependencies_volume:/eval/node_modules"' in launcher
+    assert "corepack pnpm exec tsx" in launcher
+    assert '--paste-link "$@"' not in launcher
+    assert 'if [ "${1:-}" = "--reuse" ]' not in launcher
+    assert "body?.account_roles" in checker
+    assert "body?.active_role" in checker
+    assert "item.permissions" in checker
+    assert "organization_admin" not in checker
+    assert "event_admin" not in checker
+    assert "evaluator" not in checker
+
+
+def test_sbek_config_preflight_requires_real_inboxes_and_switch_credentials(
+    tmp_path: Path,
+) -> None:
+    target = "https://sessionbuddy-development.example.test"
+    config = {
+        "url": target,
+        "personaEmails": {
+            "organizer": "qa+organizer@example.test",
+            "speaker": "qa+speaker@example.test",
+            "speaker2": "qa+speaker2@example.test",
+            "reviewer": "qa+reviewer@example.test",
+        },
+        "credentials": {
+            "organizer": {
+                "email": "qa+organizer@example.test",
+                "password": "fixture-organizer-password",
+            },
+            "speaker": {
+                "email": "qa+speaker@example.test",
+                "password": "fixture-speaker-password",
+            },
+            "reviewer": {
+                "email": "qa+reviewer@example.test",
+                "password": "fixture-reviewer-password",
+            },
+        },
+    }
+    config_path = tmp_path / "evalconfig.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    checker = PROJECT_ROOT / "scripts" / "check_sbek_config.mjs"
+    node = shutil.which("node")
+    assert node is not None
+
+    valid = subprocess.run(  # noqa: S603 - fixed repository script under test
+        [node, str(checker), str(tmp_path), target],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert valid.returncode == 0, valid.stderr
+    assert "fixture-organizer-password" not in valid.stdout
+
+    config["personaEmails"]["reviewer"] = "replace-me@example.invalid"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    invalid = subprocess.run(  # noqa: S603 - fixed repository script under test
+        [node, str(checker), str(tmp_path), target],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert invalid.returncode == 2
+    assert "reviewer needs an inbox address you control" in invalid.stderr
+    assert "fixture-reviewer-password" not in invalid.stderr

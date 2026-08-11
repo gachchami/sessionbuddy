@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,18 @@ from sessionbuddy.api.app import app
 @pytest.fixture
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as value:
+        yield value
+
+
+@pytest.fixture
+async def openapi_client():
+    async def inject_environment(scope, receive, send):
+        scope["env"] = SimpleNamespace(APP_ENV="local")
+        await app(scope, receive, send)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=inject_environment), base_url="http://test"
+    ) as value:
         yield value
 
 
@@ -41,7 +54,6 @@ async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
         ("organizer", "/admin"),
         ("speaker", "/speaker"),
         ("reviewer", "/reviews"),
-        (None, "/account"),
     ],
 )
 async def test_authenticated_root_redirects_to_active_role_dashboard(
@@ -77,14 +89,26 @@ async def test_incomplete_profile_root_redirects_to_account_onboarding(
     assert response.headers["location"] == "/account?onboarding=1&next=%2F"
 
 
-async def test_event_only_speaker_root_redirects_to_speaker_portal(
-    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("active_role", "profile_complete"),
+    [
+        (None, True),
+        ("unknown-role", True),
+        (None, False),
+        ("unknown-role", False),
+    ],
+)
+async def test_missing_or_unknown_active_role_fails_without_any_fallback(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    active_role: str | None,
+    profile_complete: bool,
 ) -> None:
     async def session(_request):
         return SimpleNamespace(
-            profile_complete=True,
-            active_role=None,
-            default_role=None,
+            profile_complete=profile_complete,
+            active_role=active_role,
+            default_role="speaker",
             organization_access=[],
             event_access=[SimpleNamespace(roles=["speaker"])],
         )
@@ -93,8 +117,9 @@ async def test_event_only_speaker_root_redirects_to_speaker_portal(
     client.cookies.set("sessionbuddy-local", "test-session")
     response = await client.get("/", follow_redirects=False)
 
-    assert response.status_code == 303
-    assert response.headers["location"] == "/speaker"
+    assert response.status_code == 403
+    assert "location" not in response.headers
+    assert response.headers["content-type"].startswith("application/json")
 
 
 async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:
@@ -132,8 +157,10 @@ async def test_not_found_uses_error_envelope(client: AsyncClient) -> None:
     assert body["request_id"] == response.headers["x-request-id"]
 
 
-async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) -> None:
-    response = await client.get("/api/v1/openapi.json")
+async def test_openapi_contains_engine_room_and_cfp_routes(
+    openapi_client: AsyncClient,
+) -> None:
+    response = await openapi_client.get("/api/v1/openapi.json")
 
     assert response.status_code == 200
     expected = {
@@ -171,6 +198,9 @@ async def test_openapi_contains_engine_room_and_cfp_routes(client: AsyncClient) 
         "/api/v1/admin/events/{event_id}/agenda/rooms/{room_id}",
         "/api/v1/admin/events/{event_id}/agenda/tracks",
         "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}",
+        "/api/v1/admin/events/{event_id}/labels",
+        "/api/v1/admin/events/{event_id}/labels/{label_id}",
+        "/api/v1/admin/events/{event_id}/sessions/{session_id}/labels",
         "/api/v1/admin/events/{event_id}/agenda/auto-schedule",
         "/api/v1/admin/events/{event_id}/agenda/preview",
         "/api/v1/admin/events/{event_id}/agenda/items",
@@ -227,6 +257,32 @@ async def test_database_probe_fails_closed_without_binding(client: AsyncClient) 
     assert "database" not in response.text
 
 
+async def test_dependency_failure_reference_is_emitted_to_workers_logs(
+    client: AsyncClient, capsys: pytest.CaptureFixture[str]
+) -> None:
+    response = await client.get(
+        "/api/v1/engine-room/database",
+        headers={"X-Request-ID": "searchable-reference"},
+    )
+
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"event":"http.request.completed"' in line
+    ]
+    assert response.status_code == 503
+    assert events[-1] == {
+        "duration_ms": events[-1]["duration_ms"],
+        "event": "http.request.completed",
+        "level": "error",
+        "method": "GET",
+        "request_id": "searchable-reference",
+        "route": "/api/v1/engine-room/database",
+        "status_class": "5xx",
+        "timings_ms": events[-1]["timings_ms"],
+    }
+
+
 async def test_deployed_environment_comes_from_request_binding() -> None:
     class Environment:
         APP_ENV = "development"
@@ -245,8 +301,10 @@ async def test_deployed_environment_comes_from_request_binding() -> None:
     assert response.json()["data_classification"] == "synthetic/non-production"
 
 
-async def test_openapi_operations_have_stable_unique_ids_and_models(client: AsyncClient) -> None:
-    document = (await client.get("/api/v1/openapi.json")).json()
+async def test_openapi_operations_have_stable_unique_ids_and_models(
+    openapi_client: AsyncClient,
+) -> None:
+    document = (await openapi_client.get("/api/v1/openapi.json")).json()
     operations = [
         operation
         for methods in document["paths"].values()

@@ -15,7 +15,12 @@ from sessionbuddy.agenda import (
 )
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.auth.http import authenticate_request, require_permission
-from sessionbuddy.platform.authorization import Permission, ResourceContext
+from sessionbuddy.platform.authorization import (
+    Permission,
+    Persona,
+    ResourceContext,
+    ResourceGrant,
+)
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
@@ -31,7 +36,13 @@ from .models import (
     AgendaResourceCreate,
     AgendaResourceUpdate,
     AgendaSetup,
+    EventLabelCreate,
+    EventLabelList,
+    EventLabelUpdate,
+    EventLabelView,
     EventTrackList,
+    SessionLabelAssignmentUpdate,
+    SessionLabelAssignmentView,
 )
 
 scheduling_router = APIRouter()
@@ -194,7 +205,77 @@ async def _speaker_ids(db, organization_id: str, event_id: str, accepted_session
     return tuple(str(row["event_speaker_id"]) for row in rows)
 
 
-async def _agenda_model(db, event, revision) -> dict[str, object]:
+def _can_manage_resource(actor, resource_id: str) -> bool:
+    grants = actor.resource_grants.get(resource_id, frozenset())
+    return resource_id in actor.owned_resource_ids or bool(
+        grants & {ResourceGrant.EDIT, ResourceGrant.MANAGE}
+    )
+
+
+def _can_manage_event(actor, event_id: str) -> bool:
+    return event_id in actor.owned_resource_ids or ResourceGrant.MANAGE in (
+        actor.resource_grants.get(event_id, frozenset())
+    )
+
+
+async def _event_label_rows(db, organization_id: str, event_id: str, actor) -> list[dict]:
+    rows = result_rows(
+        await db.prepare(
+            """SELECT id,name,color,status,version FROM event_labels
+               WHERE organization_id=?1 AND event_id=?2 AND status='active'
+               ORDER BY lower(name),id"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
+    return [
+        {
+            **row,
+            "can_manage": _can_manage_resource(actor, str(row["id"]))
+            or _can_manage_event(actor, event_id),
+        }
+        for row in rows
+    ]
+
+
+async def _attach_session_labels(
+    db, organization_id: str, event_id: str, sessions: list[dict], actor=None
+) -> None:
+    rows = result_rows(
+        await db.prepare(
+            """SELECT assignment.accepted_session_id,label.id,label.name,label.color,
+                      label.status,label.version
+               FROM accepted_session_labels assignment
+               JOIN event_labels label ON label.organization_id=assignment.organization_id
+                 AND label.event_id=assignment.event_id AND label.id=assignment.label_id
+               WHERE assignment.organization_id=?1 AND assignment.event_id=?2
+               ORDER BY lower(label.name),label.id"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
+    by_session: dict[str, list[dict]] = {}
+    for row in rows:
+        label = {
+            "id": row["id"],
+            "name": row["name"],
+            "color": row["color"],
+        }
+        if actor is not None:
+            label.update(
+                status=row["status"],
+                version=row["version"],
+                can_manage=_can_manage_resource(actor, str(row["id"]))
+                or _can_manage_event(actor, event_id),
+            )
+        by_session.setdefault(str(row["accepted_session_id"]), []).append(label)
+    for session in sessions:
+        assigned = by_session.get(str(session["session_id"]), [])
+        session["labels"] = assigned
+        session["label_ids"] = [str(label["id"]) for label in assigned]
+
+
+async def _agenda_model(db, event, revision, actor) -> dict[str, object]:
     organization_id, event_id = str(event["organization_id"]), str(event["id"])
     published_revision = row_mapping(
         await db.prepare(
@@ -208,7 +289,7 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
         await db.prepare(
             """SELECT ai.id,ai.accepted_session_id AS session_id,s.proposal_title AS title,
                       s.proposal_abstract AS abstract,ac.content_status,
-                      ac.version AS content_version,
+                      ac.version AS content_version,ac.label_version,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                       ai.room_id,r.name AS room_name,ai.track_id,t.name AS track_name,ai.version
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
@@ -224,7 +305,7 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
         await db.prepare(
             """SELECT ac.id AS session_id,s.proposal_title AS title,
                       s.proposal_abstract AS abstract,ac.content_status,
-                      ac.version AS content_version
+                      ac.version AS content_version,ac.label_version
                FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
@@ -252,6 +333,9 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
         .bind(organization_id, event_id)
         .all()
     )
+    labels = await _event_label_rows(db, organization_id, event_id, actor)
+    await _attach_session_labels(db, organization_id, event_id, items, actor)
+    await _attach_session_labels(db, organization_id, event_id, unscheduled, actor)
     return {
         "event": {
             key: event[key] for key in ("id", "name", "time_zone", "starts_at_ms", "ends_at_ms")
@@ -266,16 +350,19 @@ async def _agenda_model(db, event, revision) -> dict[str, object]:
         "unscheduled_sessions": unscheduled,
         "rooms": rooms,
         "tracks": tracks,
+        "labels": labels,
     }
 
 
 @scheduling_router.get("/api/v1/admin/events/{event_id}/agenda", tags=["agenda"])
 async def get_admin_agenda(event_id: str, request: Request) -> dict[str, object]:
-    event, _ = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=False)
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=False
+    )
     revision = await _revision(_db(request), str(event["organization_id"]), event_id)
     if revision is None:
         raise HTTPException(status_code=404)
-    return await _agenda_model(_db(request), event, revision)
+    return await _agenda_model(_db(request), event, revision, auth.actor)
 
 
 @scheduling_router.post(
@@ -310,7 +397,7 @@ async def setup_admin_agenda(
         revision = await _revision(db, organization_id, event_id)
         if revision is None:
             raise HTTPException(status_code=409)
-        return await _agenda_model(db, event, revision)
+        return await _agenda_model(db, event, revision, auth.actor)
     if await _revision(db, organization_id, event_id) is not None:
         raise HTTPException(status_code=409)
 
@@ -380,7 +467,7 @@ async def setup_admin_agenda(
     revision = await _revision(db, organization_id, event_id)
     if revision is None:
         raise HTTPException(status_code=409)
-    return await _agenda_model(db, event, revision)
+    return await _agenda_model(db, event, revision, auth.actor)
 
 
 async def _create_agenda_resource(
@@ -443,7 +530,7 @@ async def _create_agenda_resource(
         await batch.execute()
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
-    return await _agenda_model(db, event, revision)
+    return await _agenda_model(db, event, revision, auth.actor)
 
 
 async def _update_agenda_resource(
@@ -468,6 +555,16 @@ async def _update_agenda_resource(
     )
     if row is None:
         raise HTTPException(status_code=404)
+    if body.status == "archived":
+        # Rooms and tracks belong to the event. Archiving either one is an
+        # exact event-owner/manager operation, even though editors may keep
+        # performing ordinary agenda work.
+        auth = await require_permission(
+            request,
+            Permission.RESOURCE_ACCESS_MANAGE,
+            ResourceContext(organization_id, event_id),
+            mutation=True,
+        )
     if int(row["version"]) != body.version:
         raise HTTPException(status_code=409, detail="This item changed. Refresh and try again.")
     if body.status == "archived":
@@ -517,7 +614,7 @@ async def _update_agenda_resource(
         await batch.execute()
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
-    return await _agenda_model(db, event, revision)
+    return await _agenda_model(db, event, revision, auth.actor)
 
 
 @scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/rooms", tags=["agenda"])
@@ -578,6 +675,337 @@ async def update_agenda_track(
     )
 
 
+def _label_view(row: dict, actor, event_id: str) -> EventLabelView:
+    return EventLabelView(
+        id=str(row["id"]),
+        name=str(row["name"]),
+        color=str(row["color"]),
+        status=str(row["status"]),
+        version=int(row["version"]),
+        can_manage=_can_manage_resource(actor, str(row["id"]))
+        or _can_manage_event(actor, event_id),
+    )
+
+
+@scheduling_router.get(
+    "/api/v1/admin/events/{event_id}/labels",
+    response_model=EventLabelList,
+    tags=["agenda"],
+)
+async def list_event_labels(event_id: str, request: Request) -> EventLabelList:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=False
+    )
+    rows = await _event_label_rows(
+        _db(request), str(event["organization_id"]), event_id, auth.actor
+    )
+    return EventLabelList(event_id=event_id, data=rows)
+
+
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/labels",
+    response_model=EventLabelView,
+    status_code=201,
+    tags=["agenda"],
+)
+async def create_event_label(
+    event_id: str, request: Request, body: EventLabelCreate
+) -> EventLabelView:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    active = row_mapping(
+        await db.prepare(
+            """SELECT COUNT(*) AS total FROM event_labels
+               WHERE organization_id=?1 AND event_id=?2 AND status='active'"""
+        )
+        .bind(organization_id, event_id)
+        .first()
+    )
+    if active is not None and int(active["total"]) >= 100:
+        raise HTTPException(status_code=409, detail="An event can have up to 100 labels")
+    duplicate = row_mapping(
+        await db.prepare(
+            """SELECT id FROM event_labels WHERE organization_id=?1 AND event_id=?2
+                 AND status='active' AND lower(name)=lower(?3) LIMIT 1"""
+        )
+        .bind(organization_id, event_id, body.name)
+        .first()
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="That label already exists")
+    now, label_id = utc_now_ms(), new_id()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO owned_resources
+               (id,resource_type,created_by_user_id,owner_user_id,status,version,
+                created_at_ms,updated_at_ms)
+               VALUES (?1,'label',?2,?2,'active',1,?3,?3)"""
+        ).bind(label_id, auth.actor.user_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO event_labels
+               (id,organization_id,event_id,name,color,status,version,
+                created_at_ms,updated_at_ms,archived_at_ms)
+               VALUES (?1,?2,?3,?4,?5,'active',1,?6,?6,NULL)"""
+        ).bind(label_id, organization_id, event_id, body.name, body.color, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="label.create",
+            target_type="event_label",
+            target_id=label_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409, detail="That label already exists") from exc
+    return EventLabelView(
+        id=label_id,
+        name=body.name,
+        color=body.color,
+        status="active",
+        version=1,
+        can_manage=True,
+    )
+
+
+@scheduling_router.patch(
+    "/api/v1/admin/events/{event_id}/labels/{label_id}",
+    response_model=EventLabelView,
+    tags=["agenda"],
+)
+async def update_event_label(
+    event_id: str,
+    label_id: str,
+    request: Request,
+    body: EventLabelUpdate,
+) -> EventLabelView:
+    event, _ = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=False
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    current = row_mapping(
+        await db.prepare(
+            """SELECT id,name,color,status,version FROM event_labels
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+        )
+        .bind(organization_id, event_id, label_id)
+        .first()
+    )
+    if current is None:
+        raise HTTPException(status_code=404)
+    if body.status == "archived" or str(current["status"]) == "archived":
+        # Label lifecycle belongs to the event owner/managers. This prevents
+        # a departed label creator from orphaning an active label forever.
+        auth = await require_permission(
+            request,
+            Permission.RESOURCE_ACCESS_MANAGE,
+            ResourceContext(organization_id, event_id),
+            mutation=True,
+        )
+    else:
+        auth = await require_permission(
+            request,
+            Permission.LABEL_MANAGE,
+            ResourceContext(organization_id, event_id, resource_id=label_id),
+            mutation=True,
+        )
+    if int(current["version"]) != body.version:
+        raise HTTPException(status_code=409, detail="This label changed. Refresh and try again.")
+    if body.status == "archived":
+        assignment = row_mapping(
+            await db.prepare(
+                """SELECT accepted_session_id FROM accepted_session_labels
+                   WHERE organization_id=?1 AND event_id=?2 AND label_id=?3 LIMIT 1"""
+            )
+            .bind(organization_id, event_id, label_id)
+            .first()
+        )
+        if assignment is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Remove this label from every session before archiving it",
+            )
+    now = utc_now_ms()
+    archived_at = now if body.status == "archived" else None
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE event_labels SET name=?1,color=?2,status=?3,
+                  version=version+1,updated_at_ms=?4,archived_at_ms=?5
+               WHERE organization_id=?6 AND event_id=?7 AND id=?8 AND version=?9"""
+        ).bind(
+            body.name,
+            body.color,
+            body.status,
+            now,
+            archived_at,
+            organization_id,
+            event_id,
+            label_id,
+            body.version,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO event_label_write_guards
+               (id,label_id,applied_changes,created_at_ms)
+               VALUES (?1,?2,changes(),?3)"""
+        ).bind(new_id(), label_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE owned_resources SET status=?1,version=version+1,
+                  updated_at_ms=?2,archived_at_ms=?3
+               WHERE id=?4 AND version=?5"""
+        ).bind(body.status, now, archived_at, label_id, body.version)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="label.archive" if body.status == "archived" else "label.update",
+            target_type="event_label",
+            target_id=label_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409, detail="The label could not be updated") from exc
+    saved = row_mapping(
+        await db.prepare(
+            """SELECT id,name,color,status,version FROM event_labels
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+        )
+        .bind(organization_id, event_id, label_id)
+        .first()
+    )
+    if saved is None:
+        raise HTTPException(status_code=409)
+    return _label_view(saved, auth.actor, event_id)
+
+
+@scheduling_router.put(
+    "/api/v1/admin/events/{event_id}/sessions/{session_id}/labels",
+    response_model=SessionLabelAssignmentView,
+    tags=["agenda"],
+)
+async def assign_session_labels(
+    event_id: str,
+    session_id: str,
+    request: Request,
+    body: SessionLabelAssignmentUpdate,
+) -> SessionLabelAssignmentView:
+    event, auth = await _event_scope(
+        request, event_id, Permission.AGENDA_MANAGE, mutation=True
+    )
+    db, organization_id = _db(request), str(event["organization_id"])
+    session = row_mapping(
+        await db.prepare(
+            """SELECT id,label_version FROM accepted_sessions
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+        )
+        .bind(organization_id, event_id, session_id)
+        .first()
+    )
+    if session is None:
+        raise HTTPException(status_code=404)
+    if int(session["label_version"]) != body.version:
+        raise HTTPException(status_code=409, detail="These labels changed. Refresh and try again.")
+    active_labels = result_rows(
+        await db.prepare(
+            """SELECT id FROM event_labels WHERE organization_id=?1 AND event_id=?2
+                 AND status='active' ORDER BY id"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
+    active_ids = {str(row["id"]) for row in active_labels}
+    if not set(body.label_ids).issubset(active_ids):
+        raise HTTPException(status_code=422, detail="Choose active labels from this event")
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE accepted_sessions SET label_version=label_version+1
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 AND label_version=?4"""
+        ).bind(organization_id, event_id, session_id, body.version)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_label_write_guards
+               (id,accepted_session_id,applied_changes,created_at_ms)
+               VALUES (?1,?2,changes(),?3)"""
+        ).bind(new_id(), session_id, now)
+    )
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM accepted_session_labels
+               WHERE organization_id=?1 AND event_id=?2 AND accepted_session_id=?3"""
+        ).bind(organization_id, event_id, session_id)
+    )
+    for label_id_value in body.label_ids:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO accepted_session_labels
+                   (organization_id,event_id,accepted_session_id,label_id,
+                    assigned_by_user_id,created_at_ms)
+                   VALUES (?1,?2,?3,?4,?5,?6)"""
+            ).bind(
+                organization_id,
+                event_id,
+                session_id,
+                label_id_value,
+                auth.actor.user_id,
+                now,
+            )
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.session_labels.update",
+            target_type="accepted_session",
+            target_id=session_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={"label_count": len(body.label_ids)},
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409, detail="The session labels changed") from exc
+    payload = [{"session_id": session_id}]
+    await _attach_session_labels(db, organization_id, event_id, payload, auth.actor)
+    return SessionLabelAssignmentView(
+        session_id=session_id,
+        version=body.version + 1,
+        labels=payload[0]["labels"],
+    )
+
+
 def _agenda_date(timestamp_ms: int, time_zone: str) -> str:
     try:
         zone = ZoneInfo(time_zone)
@@ -616,7 +1044,7 @@ async def auto_schedule_agenda(
     if replay is not None:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
-        return await _agenda_model(db, event, revision)
+        return await _agenda_model(db, event, revision, auth.actor)
     rooms = result_rows(
         await db.prepare(
             """SELECT id FROM event_rooms WHERE organization_id=?1 AND event_id=?2
@@ -781,7 +1209,7 @@ async def auto_schedule_agenda(
         await batch.execute()
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
-    model = await _agenda_model(db, event, revision)
+    model = await _agenda_model(db, event, revision, auth.actor)
     model["auto_schedule"] = {
         "scheduled_count": len(planned),
         "remaining_count": len(sessions) - len(planned),
@@ -1327,12 +1755,9 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
     if event is None:
         raise HTTPException(status_code=404)
     auth = await authenticate_request(request)
-    roles = auth.actor.organization_roles.get(
-        str(event["organization_id"]), frozenset()
-    ) | auth.actor.event_roles.get((str(event["organization_id"]), event_id), frozenset())
     permission = (
         Permission.SPEAKER_TASK_READ_OWN
-        if any(role.value == "speaker" for role in roles)
+        if auth.actor.active_persona is Persona.SPEAKER
         else Permission.DASHBOARD_READ
     )
     await require_permission(
@@ -1349,7 +1774,8 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
     items = result_rows(
         await _db(request)
         .prepare(
-            """SELECT ai.id,s.proposal_title AS title,ai.starts_at_ms AS start_at_ms,
+            """SELECT ai.id,ac.id AS session_id,s.proposal_title AS title,
+                  ai.starts_at_ms AS start_at_ms,
                   ai.ends_at_ms AS end_at_ms,r.name AS room_name,t.name AS track_name,
                   COALESCE(group_concat(ss.snapshot_name, ', '),'') AS speaker_names
            FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
@@ -1361,6 +1787,9 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
         )
         .bind(event["organization_id"], event_id, revision["id"])
         .all()
+    )
+    await _attach_session_labels(
+        _db(request), str(event["organization_id"]), event_id, items
     )
     return {
         "event": {"id": event["id"], "name": event["name"], "time_zone": event["time_zone"]},
@@ -1407,7 +1836,8 @@ async def get_public_schedule(
         }
     items = result_rows(
         await db.prepare(
-            """SELECT ai.id,s.proposal_title AS title,s.proposal_abstract AS description,
+            """SELECT ai.id,ac.id AS session_id,s.proposal_title AS title,
+                      s.proposal_abstract AS description,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                       r.name AS room_name,t.name AS track_name,
                       COALESCE(group_concat(ss.snapshot_name, ', '),'') AS speaker_names
@@ -1422,6 +1852,7 @@ async def get_public_schedule(
         .bind(event["organization_id"], event_id, revision["id"])
         .all()
     )
+    await _attach_session_labels(db, str(event["organization_id"]), event_id, items)
     return {
         "event": {
             "id": event["id"],

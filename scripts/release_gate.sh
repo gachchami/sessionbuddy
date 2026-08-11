@@ -31,6 +31,7 @@ release_compose run --rm --no-deps worker uv run pywrangler d1 execute DB \
 release_compose up --detach worker
 release_compose run --rm --no-deps worker npm run frontend:check
 release_compose run --rm --no-deps worker npm run frontend:build
+release_compose run --rm --no-deps worker npm run fixtures:check-assets
 release_compose run --rm --no-deps worker uv run python scripts/embed_console_assets.py --check
 release_compose run --rm --no-deps worker uv run ruff check .
 release_compose run --rm --no-deps worker uv run pytest -q
@@ -51,5 +52,7 @@ release_compose run --rm e2e sh -lc \
    --chrome-flags='--headless --no-sandbox --disable-dev-shm-usage' --quiet"
 release_compose run --rm --no-deps worker uv run pywrangler deploy \
   --env dev --dry-run --outdir /tmp/sessionbuddy-release-dry-run
+release_compose run --rm --no-deps worker uv run python \
+  scripts/validate_worker_package.py /tmp/sessionbuddy-release-dry-run
 
 echo "Release readiness local release gate passed. No remote deployment was performed."

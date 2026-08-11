@@ -2,7 +2,13 @@
 
 from collections.abc import Sequence
 
-from sessionbuddy.platform.authorization.types import Actor, ResourceContext, Role
+from sessionbuddy.platform.authorization.types import (
+    Actor,
+    Persona,
+    ResourceContext,
+    ResourceGrant,
+    Role,
+)
 from sessionbuddy.platform.db.d1 import result_rows, to_python
 
 from .sessions import SessionRecord
@@ -69,9 +75,14 @@ class D1AuthorizationFacts:
         rows = result_rows(
             await self._db.prepare(
                 """WITH principal AS (
-                     SELECT u.id AS user_id, u.status AS user_status
+                     SELECT u.id AS user_id, u.status AS user_status,
+                            COALESCE(active.role, default_role.role) AS active_persona
                      FROM sessions s
                      JOIN users u ON u.id = s.user_id
+                     LEFT JOIN session_active_roles active ON active.session_id=s.id
+                     LEFT JOIN user_roles default_role
+                       ON default_role.user_id=u.id AND default_role.status='active'
+                      AND default_role.is_default=1
                      WHERE s.id = ?1
                    ), organization_facts AS (
                      SELECT p.user_id, p.user_status, om.organization_id, om.role
@@ -86,18 +97,37 @@ class D1AuthorizationFacts:
                      JOIN event_memberships em ON em.user_id = p.user_id
                      WHERE em.status = 'active'
                      LIMIT 500
+                   ), ownership_facts AS (
+                     SELECT p.user_id,p.user_status,p.active_persona,r.id AS resource_id
+                     FROM principal p JOIN owned_resources r ON r.owner_user_id=p.user_id
+                     WHERE r.status='active'
+                   ), grant_facts AS (
+                     SELECT p.user_id,p.user_status,p.active_persona,g.resource_id,g.permission
+                     FROM principal p JOIN resource_access_grants g ON g.user_id=p.user_id
+                     WHERE g.status='active'
                    )
                    SELECT 'principal' AS fact_type, p.user_id, p.user_status,
-                          NULL AS organization_id, NULL AS event_id, NULL AS role
+                          NULL AS organization_id, NULL AS event_id, NULL AS role,
+                          p.active_persona, NULL AS resource_id, NULL AS permission
                    FROM principal p
                    UNION ALL
                    SELECT 'organization', o.user_id, o.user_status,
-                          o.organization_id, NULL, o.role
+                          o.organization_id, NULL, o.role,
+                          NULL, NULL, NULL
                    FROM organization_facts o
                    UNION ALL
                    SELECT 'event', e.user_id, e.user_status,
-                          e.organization_id, e.event_id, e.role
-                   FROM event_facts e"""
+                          e.organization_id, e.event_id, e.role,
+                          NULL, NULL, NULL
+                   FROM event_facts e
+                   UNION ALL
+                   SELECT 'owner', o.user_id, o.user_status,
+                          NULL,NULL,NULL,o.active_persona,o.resource_id,NULL
+                   FROM ownership_facts o
+                   UNION ALL
+                   SELECT 'grant', g.user_id, g.user_status,
+                          NULL,NULL,NULL,g.active_persona,g.resource_id,g.permission
+                   FROM grant_facts g"""
             )
             .bind(session_id)
             .all()
@@ -106,26 +136,35 @@ class D1AuthorizationFacts:
             return None
         principal = rows[0]
         user_id = str(principal["user_id"])
-        organization_roles: dict[str, set[Role]] = {}
+        active_persona = (
+            Persona(str(principal["active_persona"]))
+            if principal.get("active_persona") is not None
+            else None
+        )
+        owned_resource_ids = frozenset(
+            str(row["resource_id"]) for row in rows if row["fact_type"] == "owner"
+        )
+        resource_grants: dict[str, set[ResourceGrant]] = {}
         for row in rows:
-            if row["fact_type"] != "organization":
-                continue
-            # `member` establishes organization membership for FK and account
-            # lifecycle purposes but intentionally grants no application role.
-            if str(row["role"]) == Role.ORGANIZATION_ADMIN:
-                organization_roles.setdefault(str(row["organization_id"]), set()).add(
-                    Role.ORGANIZATION_ADMIN
+            if row["fact_type"] == "grant":
+                resource_grants.setdefault(str(row["resource_id"]), set()).add(
+                    ResourceGrant(str(row["permission"]))
                 )
         event_roles: dict[tuple[str, str], set[Role]] = {}
         for row in rows:
             if row["fact_type"] != "event":
                 continue
             key = (str(row["organization_id"]), str(row["event_id"]))
-            event_roles.setdefault(key, set()).add(Role(str(row["role"])))
+            role = Role(str(row["role"]))
+            if role in {Role.EVALUATOR, Role.SPEAKER}:
+                event_roles.setdefault(key, set()).add(role)
         return Actor(
             user_id=user_id,
             active=principal["user_status"] == "active",
-            organization_roles={key: frozenset(value) for key, value in organization_roles.items()},
+            active_persona=active_persona,
+            owned_resource_ids=owned_resource_ids,
+            resource_grants={key: frozenset(value) for key, value in resource_grants.items()},
+            organization_roles={},
             event_roles={key: frozenset(value) for key, value in event_roles.items()},
         )
 

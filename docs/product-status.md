@@ -5,14 +5,18 @@ are no longer used as product or architecture terminology.
 
 ## Platform and Engine Room
 
-Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded browser-based first-run setup for a named
-administrator, magic-link and password identity, invitation and
+Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded browser-based first-run setup that preserves the administrator's exact first and last name and shows an in-place first-link confirmation, magic-link and password identity, invitation and
 submission-context provisioning, opaque sessions, RBAC, CSRF/origin protection,
 rate limiting, structured API errors, safe shared browser error handling,
 branded browser 404/500 recovery pages, request IDs, observability, containerized
 development, registration-ready account profiles with private headshots and public links,
 account-level roles with one active session role, browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
+
+Fresh D1 databases now install from one canonical `0001_baseline.sql`. Runtime,
+test fixtures, release scripts, and baseline validation do not depend on the
+historical migration directory; rebasing intentionally requires every existing
+database to be recreated and provides no incremental compatibility path.
 
 The active-role and resource-consumption redesign is in progress. Its durable
 handoff, intended user-story arc, completed UI work, and known transitional gaps
@@ -33,7 +37,9 @@ review-before-submit; confirmation email copy; authenticated speaker
 registration; versioned drafts; owned submissions; admin submission listing;
 tenant scoping; authenticated writes; and a persistent event-scoped CFP link
 using `/cfp/{event_key}/{slug}`, with legacy-link redirects plus copy, open, and
-submission-review actions. CFP-scoped sign-in grants the
+submission-review actions. Primary speakers can withdraw their own submitted
+proposal before review begins; withdrawal is audited, repeat-safe, excluded from
+review assignment, and read-only in the speaker portal. CFP-scoped sign-in grants the
 speaker role for that event even when the email already belongs to an administrator,
 and organizers can inspect the complete proposal, routing, and custom answers.
 
@@ -93,9 +99,12 @@ migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
 health checks, browser-route checks, desktop/mobile API-failure recovery checks,
 and the anonymous identity boundary.
 
-The isolated Cloudflare development rehearsal is complete with 23 passing
-preflight checks. Resend and direct-R2 credentials are configured, the
-organization and first administrator were bootstrapped for the previous rehearsal.
+The isolated Cloudflare development rehearsal is complete. Resend and direct-R2
+credentials are configured. On 2026-08-16 the development D1 database, R2 bucket,
+queues/DLQs, and reminder workflow were backed up where applicable, purged, and
+recreated; the Worker was redeployed from the rebased canonical baseline while
+all seven secret bindings were preserved. Remote activation now has 23 passing
+checks, no pending activation, and the first administrator is bootstrapped.
 The application no longer contains synthetic identities or data-seeding endpoints, and
 fresh instances begin with no organizations, events, or speakers. Live organization/event
 edits, invitation creation/revocation/acceptance, speaker ownership, conditional
@@ -105,11 +114,111 @@ submission-payload handling, and CSP blocking R2—and each is fixed, covered by
 regression, and deployed. The development environment intentionally bypasses
 malware scanning; staging and production reject that bypass and require a scanner
 endpoint/secret. No Cloudflare Container is configured. Applied D1 migration
-filenames retain their original delivery-era names because migration identifiers
-are immutable.
+ledger contains only the single canonical baseline migration.
 
 The requirement-by-requirement evidence and the remaining authenticated
 development rehearsal are tracked in `delivery-completion-audit.md`.
+
+## Updates — 2026-08-16
+
+The Day-N operational fixture pack is now a portable, UI-only execution kit:
+seven event worksheets, target-neutral resource keys, an instance-map template,
+original event branding, deterministic synthetic speaker portraits, an original
+supporting PDF, labels, sessions, reviews, speaker operations, and a phase-ordered
+runbook. Downloaded third-party speaker catalogs, biographies, portraits, and
+schedule files are excluded and ignored. A release-package gate proves that no
+fixture worksheet or asset is included in the deployed Worker. A target-specific
+map records generated IDs without storing passwords, cookies, mail links, or
+tokens. Local rehearsal evidence includes exact persona/resource denials, an
+overdue speaker task, uploaded asset safety boundaries, and three manual speaker
+messages delivered through Mailpit.
+
+Local communication sends now publish to the bound communication queue instead
+of intentionally remaining queued, so the same consumer and Mailpit provider
+exercise the deployed delivery boundary. Speaker file completion failures after
+the byte transfer retain the pending upload for a safe completion retry and tell
+the user that the file was received, is not yet public/current, and does not need
+to be selected or transferred again.
+
+Persona document boundaries now fail closed before a portal shell is served.
+An authenticated Organizer receives HTTP 403 from `/speaker` and `/reviews`,
+while matching Speaker/Reviewer sessions and anonymous sign-in shells retain
+their intended behavior. The SessionBuddy brand follows only the explicit
+active persona. Missing or unknown active-role state also returns 403; the
+server and browser no longer infer a destination from default roles, legacy
+memberships, or unrelated resource access.
+
+First-run profile onboarding preserves the exact bootstrap first and last name,
+shows legacy display-name splitting as an editable unsaved draft, and provides
+actionable recovery when password configuration is temporarily unavailable.
+Persona-neutral account pages with no real destinations use a topbar-only shell
+instead of an empty navigation column.
+
+An Organizer with only an exact-event grant now lands in that event workspace,
+sees event navigation without organization-wide navigation, and can load the
+event overview even when the organization list is intentionally unavailable.
+Other event workspaces remain denied, and switching the same account to Speaker
+continues to block all organizer APIs and pages.
+
+Destructive administration is separated from ordinary editing. Event editors
+cannot archive or restore events, rooms, or tracks; exact managers and owners
+retain recovery access to archived-event grants. Label archive and restore are
+likewise event-manage actions, so a manager can recover labels created by a
+revoked editor without receiving unrelated label-edit ownership.
+
+Organization speaker-directory reads expose people and per-event participation
+only for events the caller can manage exactly. Event duplication additionally
+requires exact source-event management before private branding references are
+read or copied.
+
+The resource control plane now includes exact organization `view`, `edit`, and
+`manage` grant CRUD, immutable owner rows, audited event ownership transfer, and
+an organization-owner-only paginated recovery inventory for colleague-owned
+events, including archived events. Transfer is explicit and non-cascading: it
+does not move, delete, archive, or rewrite event content and does not silently
+preserve the previous owner's event access.
+
+The versioned OpenAPI contract is generated at release time and served as
+pre-generated bytes from `/api/v1/openapi.json` in local, development, and
+preview environments. Production, staging, missing, and unknown environment
+bindings return 404. This removes request-time schema generation from the
+Cloudflare CPU path while preserving `app.openapi()` for deterministic contract
+generation and drift checks.
+
+Those same approved non-production environments expose a self-hosted,
+read-only reference at `/docs`. It searches and filters the checked OpenAPI
+contract without a request runner, credentials, or mutation controls. The page
+and its assets fail closed with 404 outside local, development, and preview.
+
+Resource authorization now treats access delegation as a distinct manage-only
+operation: an editor can change event content but cannot list grants, promote
+their own grant, or create an administrative invitation. Administrative
+invitation acceptance revokes an older active view/edit grant before applying
+manage. D1 authorization facts exclude revoked grants and archived ownership,
+and no longer silently truncate ownership or grants after 500 rows. The account
+shell keeps event-scoped invitees on `/account` while they complete onboarding,
+and the speaker directory consumes named resource permissions instead of the
+removed administrative-role response field.
+
+## Updates — 2026-08-15
+
+Resource authorization now separates account personas from administrative
+authority. Organizer, Reviewer, and Speaker remain the only switchable
+personas. Organizations and events record an immutable creator and an owner;
+another organizer receives an explicit `view`, `edit`, or `manage` grant on the
+exact resource. Organization access does not automatically cascade to its
+events. The shared API policy requires both the appropriate active session
+persona and exact ownership/delegation, so an event owner using the Speaker
+persona cannot call organizer APIs.
+
+New event creation and duplication record the authenticated user as owner and
+no longer create `event_admin` memberships. Administrative invitation
+acceptance provisions an Organizer persona plus a resource grant; speaker and
+reviewer participation remains assignment-based. The account page and role
+switcher display these concepts separately, with named resources and
+owner/manage facts outside the persona switcher. The rebased fresh-install
+baseline creates this ownership, grant, persona, and label schema directly;
+the development deployment does not carry or apply a legacy upgrade ledger.
 
 ## Updates — 2026-08-14
 
@@ -155,3 +264,10 @@ Observability: `observability/manifest.json` now registers every API route,
 document route, and asynchronous handler (cron steps, queue consumers,
 workflow) with owners, budgets, and runbooks, enforced by tests; queue
 consumers' missing structured logs are recorded there as a known gap.
+## Event labels
+
+- Organizers can create color-coded labels for an exact event from Schedule tools.
+- Every label records its authenticated creator and owner as an individual resource.
+- Label edits and archival require exact label ownership or an explicit edit/manage grant.
+- Event managers can assign up to 20 active event labels to each accepted session.
+- Published schedules display and search label names without exposing ownership metadata.

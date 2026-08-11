@@ -66,7 +66,11 @@
     const organizations = (await api("/api/v1/admin/organizations")).data;
     if (!organizations.length) throw new Error("Your organization workspace is not available yet. Please try again or contact an administrator.");
     const organization = organizations[0];
-    const manageableIds = new Set((state.session.organization_access || []).filter((access) => access.roles.includes("organization_admin")).map((access) => access.organization_id));
+    const manageableIds = new Set(
+      (state.session.organization_access || [])
+        .filter((access) => (access.permissions || []).some((permission) => ["owner", "manage"].includes(permission)))
+        .map((access) => access.organization_id),
+    );
     state.organizations = manageableIds.has(organization.id) ? [organization] : [];
     byId("new-event").hidden = state.organizations.length === 0;
     byId("organization-name").textContent = organization.name;

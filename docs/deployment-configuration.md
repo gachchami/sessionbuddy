@@ -45,19 +45,24 @@ replace `RESEND_FROM_ADDRESS` with another address on a verified domain.
 
 ## Initial administrator bootstrap
 
-Fresh demo deployments use `migrations_baseline/0001_baseline.sql`, a generated
-single-file schema built from the immutable historical ledger in `migrations/`.
+Fresh demo deployments use `migrations_baseline/0001_baseline.sql` as the
+canonical single-file schema.
 The baseline contains no organizations, users, events, submissions, evaluation
-data, or `d1_migrations` bookkeeping. Regenerate and verify it inside Docker after
-adding a historical-ledger migration:
+data, or `d1_migrations` bookkeeping. Verify it inside Docker after every schema
+change:
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:migrations:baseline
 docker compose run --rm --no-deps worker npm run worker:migrations:baseline:check
 ```
 
-Never edit or squash the files in `migrations/`; they remain the upgrade and audit
-history. `wrangler.jsonc` points clean demo databases at the generated baseline.
+`wrangler.jsonc` points every database at the single migration in
+`migrations_baseline/`. Historical migration files are not required by runtime,
+test fixtures, release scripts, or baseline validation.
+
+The active migration path intentionally has no compatibility or incremental
+upgrade path. After `0001_baseline.sql` changes, recreate every local,
+preview, development, or production D1 database before applying it. A database
+whose `d1_migrations` table contains an older baseline must not be reused.
 
 Applying the D1 baseline creates a random 256-bit, instance-specific
 setup key. Retrieve it in a private terminal without putting it in source or chat:
@@ -67,7 +72,7 @@ docker compose run --rm --no-deps worker npm run worker:setup-key:dev
 ```
 
 Open `/setup`, enter that same key, and provide the organization name plus the
-administrator's full name and email. The setup creates no sample events or
+administrator's first name, last name, and email. The setup creates no sample events or
 speakers. To invalidate a key before setup and generate a replacement:
 
 ```sh
@@ -84,13 +89,16 @@ For non-interactive automation, the guarded command remains available:
 ```sh
 docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
   --organization-name "Example Events" \
-  --admin-name "Example Administrator" \
+  --admin-first-name "Example" \
+  --admin-last-name "Administrator" \
   --admin-email "admin@example.com"
 ```
 
 The endpoint refuses a second organization. The command reads the migration-generated
 key without printing it. Browser setup requests the administrator's first magic
-link automatically. An event is intentionally optional; the initial administrator
+link automatically and remains on a check-your-email confirmation instead of
+sending the administrator through the homepage or another sign-in request. An
+event is intentionally optional; the initial administrator
 creates the first event from the empty-state UI.
 
 Completion is also recorded by an atomic, singleton D1 marker. The marker is

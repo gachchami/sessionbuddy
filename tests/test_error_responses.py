@@ -18,7 +18,8 @@ async def test_browser_navigation_gets_a_real_not_found_page() -> None:
     assert "We could not find that page." in response.text
     assert "missing-page-test" in response.text
     assert "resource_not_found" not in response.text
-    assert 'href="/admin"' in response.text
+    assert 'href="/"' in response.text
+    assert 'href="/admin"' not in response.text
 
 
 async def test_missing_api_always_keeps_the_json_error_contract() -> None:

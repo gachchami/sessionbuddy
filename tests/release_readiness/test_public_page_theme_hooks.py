@@ -54,12 +54,42 @@ def test_page_specific_stylesheets_own_visual_treatments() -> None:
         "speaker.css": (".speaker-portal-page", ".portal-hero"),
         "schedule.css": (".schedule-page", ".schedule-hero", ".schedule-controls"),
         "setup.css": ("linear-gradient", ".setup-card"),
-        "error_page.css": ("radial-gradient", "border-radius: 1.35rem"),
+        "error_page.css": ("radial-gradient", ".status-panel", ".route-line"),
     }
     for filename, markers in styles.items():
         stylesheet = page(filename)
         for marker in markers:
             assert marker in stylesheet, f"{filename} is missing {marker}"
+
+
+def test_error_document_is_reusable_and_offers_explicit_recovery() -> None:
+    markup = page("error_page.html")
+
+    assert '<section class="error-surface" aria-labelledby="error-heading">' in markup
+    assert '<h1 id="error-heading">{{HEADING}}</h1>' in markup
+    assert '<p class="status-code"><span>Status</span>{{STATUS}}</p>' in markup
+    assert '<nav class="actions" aria-label="Recovery options">' in markup
+    assert 'href="{{PRIMARY_HREF}}">{{PRIMARY_LABEL}}</a>' in markup
+    assert '<footer class="error-reference">{{REFERENCE}}</footer>' in markup
+    assert 'class="skip-link" href="#main"' in markup
+
+    # The shared 403/404 document presents server-selected actions. It never
+    # guesses a role portal or navigates before the person chooses an action.
+    assert 'href="/admin"' not in markup
+    assert 'href="/speaker"' not in markup
+    assert 'href="/reviews"' not in markup
+    assert "http-equiv=\"refresh\"" not in markup
+    assert "<script" not in markup
+
+
+def test_error_document_remains_accessible_on_small_screens() -> None:
+    stylesheet = page("error_page.css")
+
+    assert "a:focus-visible" in stylesheet
+    assert "@media (max-width: 42rem)" in stylesheet
+    assert ".actions { display: grid; }" in stylesheet
+    assert ".button { width: 100%; }" in stylesheet
+    assert "@media (forced-colors: active)" in stylesheet
 
 
 def test_schedule_controls_remain_semantically_labelled() -> None:

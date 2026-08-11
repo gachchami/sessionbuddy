@@ -113,6 +113,15 @@ async function servePortal(page: Page) {
     body: JSON.stringify({ data: [] }),
   }));
   await page.route("**/api/v1/forms/**/submissions/**", async (route) => {
+    if (route.request().url().endsWith("/withdraw")) {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-csrf-token"]).toBe("responsive-csrf");
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ...portal.submissions[0], status: "withdrawn", editable: false, version: 2 }),
+      });
+      return;
+    }
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -138,7 +147,7 @@ test.describe("speaker portal responsive design", () => {
       await page.goto("/speaker");
 
       await expect(page.locator("#status")).toHaveText("Speaker details are ready.");
-      await expect(page.getByRole("heading", { name: "Actions" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
       await expect(page.locator(".portal-hero__title")).toContainText("Welcome, Alex Speaker");
       await expect(page.getByRole("link", { name: "Public profile" })).toBeVisible();
       await expect(page.locator(".session-files")).toHaveCount(1);
@@ -167,16 +176,119 @@ test.describe("speaker portal responsive design", () => {
     await expect(page.getByRole("heading", { name: "Updated proposal title" })).toBeVisible();
   });
 
+  test("primary speaker can withdraw an unreviewed proposal", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await servePortal(page);
+    await page.goto("/speaker");
+    page.once("dialog", (dialog) => dialog.accept());
+
+    await page.getByRole("button", { name: "Withdraw proposal" }).click();
+
+    await expect(page.locator("#status")).toHaveText("Proposal withdrawn. It is now read-only.");
+    await expect(page.locator("#submission-list")).toContainText("Withdrawn");
+    await expect(page.locator("#submission-list")).toContainText("withdrawn and read-only");
+    await expect(page.getByRole("button", { name: "Edit proposal" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Withdraw proposal" })).toHaveCount(0);
+    await expect(page.locator(".session-upload-grid")).toHaveCount(0);
+  });
+
   test("speaker can switch between event workspaces", async ({ page }) => {
     await servePortal(page);
     await page.goto("/speaker");
 
-    await page.getByLabel("Choose event").click();
-    await expect(page.locator("#event-options button")).toHaveCount(2);
-    await page.getByRole("menuitemradio", { name: /Applied AI Conference 2027/ }).click();
+    await expect(page.locator(".event-index__item")).toHaveCount(2);
+    await page.getByRole("button", { name: /Applied AI Conference 2027/ }).click();
 
     await expect(page.locator("#event-summary")).toContainText("Applied AI Conference 2027");
     await expect(page.locator("#submission-list")).toContainText("No proposals");
     await expect(page.locator("#notification-list")).toContainText("No updates from this event yet.");
+  });
+
+  test("a failed safety check retries the same upload intent", async ({ page }) => {
+    await servePortal(page);
+    let authorizations = 0;
+    let uploads = 0;
+    let completions = 0;
+    await page.route("**/api/v1/speaker/events/event-responsive/upload-authorizations", async (route) => {
+      authorizations += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          intent_id: "intent-retry",
+          upload_url: "/api/v1/uploads/intent-retry/content?token=local-test",
+          method: "PUT",
+          headers: { "content-type": "application/pdf" },
+          expires_at_ms: Date.now() + 60_000,
+        }),
+      });
+    });
+    await page.route("**/api/v1/uploads/intent-retry/content?token=local-test", async (route) => {
+      uploads += 1;
+      await route.fulfill({ status: 204 });
+    });
+    await page.route("**/api/v1/speaker/events/event-responsive/upload-intents/intent-retry/complete", async (route) => {
+      completions += 1;
+      if (completions === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: { code: "service_unavailable", message: "Safety checks are temporarily unavailable." },
+          }),
+        });
+        return;
+      }
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ intent_id: "intent-retry", state: "clean" }) });
+    });
+
+    await page.goto("https://sessionbuddy.test/speaker");
+    await page.locator(".session-files summary").click();
+    const uploadForm = page.locator('form[data-kind="supporting_document"]');
+    await uploadForm.locator('input[type="file"]').setInputFiles({
+      name: "briefing.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("fixture PDF"),
+    });
+    await uploadForm.getByLabel(/What changed/).fill("Updated moderator briefing.");
+    await uploadForm.getByRole("button", { name: "Upload document" }).click();
+    const uploadStatus = uploadForm.locator(".upload-status");
+    await expect(uploadStatus).toHaveText(
+      "File received. Safety checks are temporarily unavailable, so this file is not public or current yet. "
+      + "Press “Upload document” again to retry. You do not need to choose or upload the file again.",
+    );
+    await expect(uploadStatus).not.toContainText("Something went wrong");
+
+    await uploadForm.getByRole("button", { name: "Upload document" }).click();
+    await expect.poll(() => completions).toBe(2);
+    await expect(uploadForm.locator('input[type="file"]')).toHaveValue("");
+    await expect(uploadForm.getByLabel(/What changed/)).toHaveValue("");
+    expect({ authorizations, uploads, completions }).toEqual({ authorizations: 1, uploads: 1, completions: 2 });
+  });
+
+  test("an authorization failure does not claim the file was received", async ({ page }) => {
+    await servePortal(page);
+    await page.route("**/api/v1/speaker/events/event-responsive/upload-authorizations", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "service_unavailable", message: "Upload authorization is temporarily unavailable." },
+        }),
+      });
+    });
+
+    await page.goto("https://sessionbuddy.test/speaker");
+    await page.locator(".session-files summary").click();
+    const uploadForm = page.locator('form[data-kind="supporting_document"]');
+    await uploadForm.locator('input[type="file"]').setInputFiles({
+      name: "briefing.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("fixture PDF"),
+    });
+    await uploadForm.getByLabel(/What changed/).fill("Updated moderator briefing.");
+    await uploadForm.getByRole("button", { name: "Upload document" }).click();
+
+    await expect(uploadForm.locator(".upload-status")).toHaveText("Something went wrong on our side. Try again.");
+    await expect(uploadForm.locator(".upload-status")).not.toContainText("File received");
   });
 });

@@ -186,9 +186,10 @@
     }
     submissions.forEach((submission) => {
       const item = make("li", undefined, "item-card");
+      const statusLabel = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
       item.append(
         make("h3", submission.proposal_title),
-        make("p", submission.status.replaceAll("_", " "), `state-badge${submission.status === "accepted" ? " success" : ""}`)
+        make("p", statusLabel, `state-badge${submission.status === "accepted" ? " success" : ""}`)
       );
       if (submission.editable) {
         const edit = make("button", "Edit proposal", "secondary");
@@ -260,7 +261,30 @@
           title.focus();
         });
         item.append(edit);
+        const withdraw = make("button", "Withdraw proposal", "secondary");
+        withdraw.type = "button";
+        withdraw.addEventListener("click", async () => {
+          if (!confirm("Withdraw this proposal? It will become read-only and cannot enter review.")) return;
+          withdraw.disabled = true;
+          withdraw.textContent = "Withdrawing…";
+          try {
+            const updated = await api(`/api/v1/forms/${encodeURIComponent(submission.form_slug)}/submissions/${encodeURIComponent(submission.id)}/withdraw`, {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
+              body: "{}"
+            });
+            Object.assign(submission, updated);
+            renderSubmissions(submissions);
+            setStatus("Proposal withdrawn. It is now read-only.", "success");
+          } catch (error) {
+            setStatus(window.SessionBuddyApi.message(error, "The proposal could not be withdrawn."), "error");
+            withdraw.disabled = false;
+            withdraw.textContent = "Withdraw proposal";
+          }
+        });
+        item.append(withdraw);
       }
+      if (submission.status === "withdrawn") item.append(make("p", "This proposal is withdrawn and read-only.", "help"));
       const files = document.createElement("details");
       files.className = "session-files";
       files.append(make("summary", "Files"));
@@ -268,12 +292,15 @@
       const sessionAssets = state.assets.filter((asset) => asset.submission_id === submission.id);
       if (!sessionAssets.length) saved.append(make("li", "No files uploaded for this session.", "empty"));
       sessionAssets.forEach((asset) => saved.append(make("li", `${asset.kind === "slides" ? "Slides" : "Document"}: ${asset.filename}`)));
-      const uploads = make("div", undefined, "session-upload-grid");
-      uploads.append(
-        createUploadForm("slides", submission.id),
-        createUploadForm("supporting_document", submission.id)
-      );
-      files.append(saved, uploads);
+      files.append(saved);
+      if (submission.status !== "withdrawn") {
+        const uploads = make("div", undefined, "session-upload-grid");
+        uploads.append(
+          createUploadForm("slides", submission.id),
+          createUploadForm("supporting_document", submission.id)
+        );
+        files.append(uploads);
+      }
       item.append(files);
       list.append(item);
     });
@@ -313,23 +340,33 @@
     const publicProfile = byId("public-profile-link");
     publicProfile.hidden = !portal.public_profile_url;
     if (portal.public_profile_url) publicProfile.href = portal.public_profile_url;
-    byId("event-current").textContent = event.name;
-    const eventOptions = byId("event-options");
-    eventOptions.replaceChildren();
-    (portal.events || [event]).forEach((available) => {
-      const option = make("button", undefined, "event-menu__option");
+    const availableEvents = portal.events || [event];
+    const activeList = byId("active-event-list");
+    const pastList = byId("past-event-list");
+    activeList.replaceChildren();
+    pastList.replaceChildren();
+    byId("event-count").textContent = String(availableEvents.length);
+    const pastEvents = availableEvents.filter((available) => available.ends_at_ms < Date.now());
+    byId("past-event-count").textContent = String(pastEvents.length);
+    availableEvents.forEach((available) => {
+      const option = make("button", undefined, "event-index__item");
       option.type = "button";
       option.dataset.eventId = available.id;
-      option.setAttribute("role", "menuitemradio");
-      option.setAttribute("aria-checked", String(available.id === event.id));
+      option.classList.toggle("is-current", available.id === event.id);
+      if (available.id === event.id) option.setAttribute("aria-current", "page");
       const copy = make("span");
       copy.append(make("strong", available.name), make("small", formatDate(available.starts_at_ms, available.time_zone)));
-      option.append(copy, make("span", available.id === event.id ? "✓" : "", "event-menu__check"));
+      option.append(copy, make("span", available.id === event.id ? "Open" : "View", "event-index__state"));
       option.addEventListener("click", () => selectEvent(available.id));
-      eventOptions.append(option);
+      (available.ends_at_ms < Date.now() ? pastList : activeList).append(option);
     });
+    if (!activeList.children.length) activeList.append(make("p", "No upcoming events.", "empty"));
+    if (!pastList.children.length) pastList.append(make("p", "No past events yet.", "empty"));
     const eventDates = `${formatDate(event.starts_at_ms, event.time_zone)}–${formatDate(event.ends_at_ms, event.time_zone)}`;
     byId("event-summary").textContent = `${event.name} · ${eventDates}`;
+    byId("task-event-label").textContent = event.name;
+    byId("session-event-label").textContent = event.name;
+    byId("notification-event-label").textContent = event.name;
     const tasks = portal.tasks || [];
     renderTasks(tasks, event.time_zone);
     renderSubmissions(portal.submissions || []);
@@ -390,7 +427,6 @@
   }
 
   async function selectEvent(eventId) {
-    byId("event-menu").open = false;
     if (eventId === state.portal?.event?.id) return;
     setStatus("Loading event…");
     try {
@@ -400,11 +436,6 @@
       setStatus(window.SessionBuddyApi.message(error, "This event could not be loaded."), "error");
     }
   }
-
-  document.addEventListener("click", (event) => {
-    const menu = byId("event-menu");
-    if (menu.open && !menu.contains(event.target)) menu.open = false;
-  });
 
   byId("speaker-sign-in").addEventListener("click", () => {
     location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
@@ -519,6 +550,7 @@
   }
 
   function bindUploadForm(form) {
+    let pendingCompletion = null;
     form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const kind = form.dataset.kind;
@@ -540,24 +572,39 @@
     try {
       const eventId = state.portal?.event?.id;
       if (!eventId) throw new Error("Speaker event is unavailable.");
-      const authorization = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/upload-authorizations`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
-        body: JSON.stringify({
-          kind, submission_id: form.dataset.submissionId || null,
-          task_id: taskForKind(kind), filename: file.name, content_type: file.type,
-          byte_size: file.size, checksum_sha256: await checksum(file),
-          version_comment: versionComment
-        })
-      });
-      const uploadUrl = safeUploadUrl(authorization.upload_url);
-      if (!uploadUrl || authorization.expires_at_ms <= Date.now()) throw new Error("Upload authorization is invalid or expired.");
-      status.textContent = "Uploading…";
-      await uploadFile(uploadUrl, authorization.method, safeUploadHeaders(authorization.headers, file.type), file, progress);
-      status.textContent = "Upload received. Starting safety checks…";
-      const completion = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/upload-intents/${encodeURIComponent(authorization.intent_id)}/complete`, {
+      const uploadRequest = {
+        kind, submission_id: form.dataset.submissionId || null,
+        task_id: taskForKind(kind), filename: file.name, content_type: file.type,
+        byte_size: file.size, checksum_sha256: await checksum(file),
+        version_comment: versionComment
+      };
+      const uploadFingerprint = JSON.stringify(uploadRequest);
+      if (!pendingCompletion
+          || pendingCompletion.fingerprint !== uploadFingerprint
+          || pendingCompletion.expiresAtMs <= Date.now()) {
+        pendingCompletion = null;
+        const authorization = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/upload-authorizations`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
+          body: JSON.stringify(uploadRequest)
+        });
+        const uploadUrl = safeUploadUrl(authorization.upload_url);
+        if (!uploadUrl || authorization.expires_at_ms <= Date.now()) throw new Error("Upload authorization is invalid or expired.");
+        status.textContent = "Uploading…";
+        await uploadFile(uploadUrl, authorization.method, safeUploadHeaders(authorization.headers, file.type), file, progress);
+        pendingCompletion = {
+          fingerprint: uploadFingerprint,
+          intentId: authorization.intent_id,
+          expiresAtMs: authorization.expires_at_ms
+        };
+        status.textContent = "Upload received. Starting safety checks…";
+      } else {
+        status.textContent = "Upload received. Retrying safety checks…";
+      }
+      const completion = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/upload-intents/${encodeURIComponent(pendingCompletion.intentId)}/complete`, {
         method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() }, body: "{}"
       });
+      pendingCompletion = null;
       progress.value = 100;
       if (completion.state === "rejected") {
         status.textContent = "This file was rejected by the safety scan. It was not made available. Choose a different file.";
@@ -574,7 +621,9 @@
       const portal = await api(portalPath()); renderPortal(portal);
       announceOnboardingChange();
     } catch (error) {
-      status.textContent = window.SessionBuddyApi.message(error, "Upload failed. Choose the file and try again.");
+      status.textContent = pendingCompletion
+        ? `File received. Safety checks are temporarily unavailable, so this file is not public or current yet. Press “${button.textContent.trim()}” again to retry. You do not need to choose or upload the file again.`
+        : window.SessionBuddyApi.message(error, "Upload failed. Choose the file and try again.");
       status.classList.add("error");
     } finally { button.disabled = false; }
     });

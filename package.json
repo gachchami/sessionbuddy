@@ -7,10 +7,11 @@
   "scripts": {
     "frontend:build": "vite build --config frontend/vite.config.ts",
     "frontend:check": "tsc --noEmit -p frontend/tsconfig.json",
+    "fixtures:build-assets": "uv run --group fixture-assets python scripts/build_fixture_avatars.py && uv run --group fixture-assets python scripts/build_fixture_supporting_document.py",
+    "fixtures:check-assets": "uv run --group fixture-assets python scripts/build_fixture_avatars.py --check && uv run --group fixture-assets python scripts/build_fixture_supporting_document.py --check",
     "worker:sync": "uv run pywrangler sync",
     "worker:dev": "uv run pywrangler dev",
-    "worker:migrations:baseline": "uv run python scripts/build_baseline_migration.py",
-    "worker:migrations:baseline:check": "uv run python scripts/build_baseline_migration.py --check",
+    "worker:migrations:baseline:check": "uv run python scripts/validate_baseline_migration.py",
     "worker:migrate": "uv run pywrangler d1 migrations apply DB --local",
     "worker:migrate:dev": "uv run pywrangler d1 migrations apply DB --remote --env dev",
     "worker:deploy:dev": "uv run pywrangler deploy --env dev",

@@ -47,7 +47,7 @@
   function toggleItinerary(id) { if (state.itinerary.has(id)) state.itinerary.delete(id); else state.itinerary.add(id); saveItinerary(); render(); }
   function render() {
     const source = state.view === "mine" ? state.model.items.filter((item) => state.itinerary.has(item.id)) : state.model.items;
-    const visible = state.query ? source.filter((item) => [item.title, item.description, item.speaker_names, item.room_name, item.track_name].join(" ").toLowerCase().includes(state.query)) : source;
+    const visible = state.query ? source.filter((item) => [item.title, item.description, item.speaker_names, item.room_name, item.track_name, ...(item.labels || []).map((label) => label.name)].join(" ").toLowerCase().includes(state.query)) : source;
     const groups = new Map();
     visible.forEach((item) => { const key = group(item); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); });
     const root = byId("schedule"); root.replaceChildren(); root.classList.toggle("week-view", state.view === "week");
@@ -64,6 +64,15 @@
         const row = make("li", undefined, "schedule-item");
         const time = make("time", `${format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`); time.dateTime = new Date(item.start_at_ms).toISOString();
         const details = document.createElement("div"); details.append(make("h3", item.title), make("p", `${item.speaker_names || "Speaker TBA"} · ${item.room_name}${item.track_name ? ` · ${item.track_name}` : ""}`));
+        if (item.labels?.length) {
+          const labels = make("div", undefined, "schedule-labels");
+          item.labels.forEach((label) => {
+            const chip = make("span", label.name, "schedule-label");
+            chip.style.setProperty("--label-color", label.color);
+            labels.append(chip);
+          });
+          details.append(labels);
+        }
         if (item.description) details.append(make("p", item.description, "description"));
         const add = make("button", state.itinerary.has(item.id) ? "✓" : "+", "itinerary-button"); add.type = "button"; add.setAttribute("aria-pressed", String(state.itinerary.has(item.id))); add.setAttribute("aria-label", `${state.itinerary.has(item.id) ? "Remove" : "Add"} ${item.title} ${state.itinerary.has(item.id) ? "from" : "to"} my itinerary`); add.addEventListener("click", () => toggleItinerary(item.id));
         row.append(time, details);

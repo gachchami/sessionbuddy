@@ -32,25 +32,22 @@ try {
       }
     }
     await context.close();
-    const organizationRoles = new Set(
-      (body?.organization_access ?? []).flatMap((item) => item.roles ?? []),
+    const accountRoles = new Set(body?.account_roles ?? []);
+    const activeRole = body?.active_role;
+    const hasOrganizerResource = (body?.organization_access ?? []).some((item) =>
+      (item.permissions ?? []).some((permission) => ["owner", "manage"].includes(permission)),
+    ) || (body?.event_access ?? []).some((item) =>
+      (item.permissions ?? []).some((permission) => ["owner", "manage"].includes(permission)),
     );
-    const eventRoles = new Set((body?.event_access ?? []).flatMap((item) => item.roles ?? []));
-    const correctBoundary = persona === "organizer"
-      ? organizationRoles.has("organization_admin")
-      : persona === "speaker"
-        ? eventRoles.has("speaker") && !organizationRoles.has("organization_admin")
-        : persona === "reviewer"
-          ? eventRoles.has("evaluator")
-            && !eventRoles.has("event_admin")
-            && !organizationRoles.has("organization_admin")
-          : true;
+    const correctBoundary = accountRoles.has(persona)
+      && activeRole === persona
+      && (persona !== "organizer" || hasOrganizerResource);
     const valid = status === 200 && correctBoundary;
     const reason = status !== 200
       ? `status ${status || "timeout"}`
       : correctBoundary
-        ? "role boundary confirmed"
-        : "authenticated with the wrong role boundary";
+        ? "active persona boundary confirmed"
+        : "authenticated with the wrong active persona or resource boundary";
     console.log(`${persona}: ${valid ? "valid" : "invalid"} (${reason}, ${elapsedMs} ms)`);
     failed ||= !valid;
   }

@@ -14,7 +14,11 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     assert 'id="cfp-selection-preview"' in page
     assert "Preview form" in page
     assert "Back to editing" in page
-    assert 'const visibleFields = fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key));' in script
+    visible_fields = (
+        'const visibleFields = fields.filter((field) => '
+        '!["speaker_name", "speaker_email"].includes(field.key));'
+    )
+    assert visible_fields in script
     assert 'id="cfp-live-preview"' not in page
     assert "queuePreview()" not in script
     assert "cfp-preview-dialog" not in page

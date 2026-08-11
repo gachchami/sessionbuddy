@@ -64,6 +64,11 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'createUploadForm("supporting_document", submission.id)' in javascript
     assert "form.dataset.submissionId || null" in javascript
     assert "version_comment: versionComment" in javascript
+    assert "Upload received. Retrying safety checks" in javascript
+    assert "pendingCompletion.intentId" in javascript
+    assert "File received. Safety checks are temporarily unavailable" in javascript
+    assert "this file is not public or current yet" in javascript
+    assert "You do not need to choose or upload the file again" in javascript
 
 
 def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:

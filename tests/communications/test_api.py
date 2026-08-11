@@ -20,10 +20,8 @@ async def test_communications_routes_fail_closed_without_runtime_dependencies() 
     assert {statuses.status_code, preview.status_code, reminder.status_code} == {503}
 
 
-@pytest.mark.asyncio
-async def test_communications_openapi_is_strict_and_explicit() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        document = (await client.get("/api/v1/openapi.json")).json()
+def test_communications_openapi_is_strict_and_explicit() -> None:
+    document = app.openapi()
     paths = document["paths"]
     assert (
         paths["/api/v1/admin/events/{event_id}/communications/send"]["post"]["operationId"]

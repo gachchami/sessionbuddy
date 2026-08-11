@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
-  <script src="/admin/access/assets/access.js?v=9" defer></script>
+  <script src="/admin/access/assets/access.js?v=10" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--access">
   <a class="skip-link" href="#main">Skip to access management</a>
@@ -19,8 +19,26 @@
     <div class="access-layout organizer-split-layout">
       <section class="card organizer-panel organizer-panel--members"><div class="section-heading"><div><h2>Members</h2><p class="section-summary">People with active access to this event.</p></div><span id="member-count" class="badge">—</span></div><ul id="member-list" class="item-list organizer-access-list"><li>Loading…</li></ul></section>
       <section class="card organizer-panel organizer-panel--invitations"><div class="section-heading"><div><h2>Pending invitations</h2><p class="section-summary">Links waiting to be accepted.</p></div><span id="invitation-count" class="badge">—</span></div><ul id="invitation-list" class="item-list organizer-access-list"><li>Loading…</li></ul></section>
+      <section class="card organizer-panel"><div class="section-heading"><div><h2>Resource access</h2><p class="section-summary">Exact permissions for this event. These are not account roles.</p></div><span id="grant-count" class="badge">—</span></div><form id="grant-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Permission<select name="permission"><option value="view">Can view</option><option value="edit">Can edit</option><option value="manage">Can manage</option></select></label><button>Grant access</button></form><ul id="grant-list" class="item-list organizer-access-list"><li>Loading…</li></ul></section>
+      <section id="ownership-panel" class="card organizer-panel" aria-labelledby="ownership-title" hidden>
+        <div class="section-heading"><div><h2 id="ownership-title">Event ownership</h2><p class="section-summary">Recover or hand over final administrative ownership of this event.</p></div></div>
+        <p>Current owner: <strong id="current-owner">—</strong></p>
+        <p class="help">Transferring ownership changes who controls this event. It does not delete, move, archive, or rewrite sessions, submissions, speakers, files, branding, or other users’ grants.</p>
+        <form id="ownership-transfer-form">
+          <label>New owner’s account email<input name="email" type="email" autocomplete="email" maxlength="320" required></label>
+          <label>Reason <span class="optional">Optional</span><textarea name="reason" rows="3" maxlength="1000" placeholder="Why ownership is being transferred"></textarea></label>
+          <label class="check-label"><input name="grant_previous_owner_manage" type="checkbox"> Keep the previous owner as Can manage after transfer</label>
+          <button type="submit">Review ownership transfer</button>
+        </form>
+        <div id="ownership-confirmation" class="confirmation" role="alert" aria-labelledby="ownership-confirmation-title" tabindex="-1" hidden>
+          <h3 id="ownership-confirmation-title">Confirm ownership transfer</h3>
+          <p id="ownership-confirmation-summary"></p>
+          <p class="help">Only ownership and the previous owner’s event permission can change. Event content is not changed.</p>
+          <div class="actions"><button id="cancel-ownership-transfer" class="secondary" type="button">Go back</button><button id="confirm-ownership-transfer" type="button">Confirm transfer</button></div>
+        </div>
+      </section>
     </div>
-    <dialog id="invite-dialog" class="form-dialog organizer-dialog organizer-dialog--invite" aria-labelledby="invite-title"><div class="dialog-heading"><div><h2 id="invite-title">Invite someone</h2><p class="result">Choose the role they need for this event.</p></div><button id="close-invite" class="icon-button" type="button" aria-label="Close invitation form">×</button></div><form id="invite-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Event role<select name="role"><option value="speaker">Speaker</option><option value="evaluator">Reviewer</option><option value="event_admin">Event administrator</option><option value="organization_admin" hidden>Organization administrator</option></select></label><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="14" selected>14 days</option><option value="30">30 days</option></select></label><div class="dialog-actions"><button id="cancel-invite" class="secondary" type="button">Cancel</button><button>Send invitation</button></div></form></dialog>
+    <dialog id="invite-dialog" class="form-dialog organizer-dialog organizer-dialog--invite" aria-labelledby="invite-title"><div class="dialog-heading"><div><h2 id="invite-title">Invite someone</h2><p class="result">Choose their assignment or the resource they can manage.</p></div><button id="close-invite" class="icon-button" type="button" aria-label="Close invitation form">×</button></div><form id="invite-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Access<select name="role"><option value="speaker">Speaker assignment</option><option value="evaluator">Reviewer assignment</option><option value="event_admin">Can manage this event</option><option value="organization_admin" hidden>Can manage this organization</option></select></label><p class="help">Management access applies only to the named event or organization. It does not become an account role.</p><label>Expires after<select name="expires_in_days"><option value="7">7 days</option><option value="14" selected>14 days</option><option value="30">30 days</option></select></label><div class="dialog-actions"><button id="cancel-invite" class="secondary" type="button">Cancel</button><button>Send invitation</button></div></form></dialog>
   </main>
 </body>
 </html>

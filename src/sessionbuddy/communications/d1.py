@@ -41,10 +41,13 @@ class D1CommunicationsService:
 
     async def _publish_delivery_requests(self, message_ids: list[str]) -> None:
         environment = self.request.scope.get("env")
-        if getattr(environment, "APP_ENV", "production") == "local":
-            return
         queue = getattr(environment, "COMMUNICATION_QUEUE", None)
         if queue is None:
+            # Lightweight unit/local harnesses may intentionally omit a queue.
+            # A real local Worker binds the same queue consumer used in deployed
+            # environments so messages reach Mailpit instead of staying queued.
+            if getattr(environment, "APP_ENV", "production") == "local":
+                return
             raise HTTPException(status_code=503)
         try:
             for message_id in message_ids:

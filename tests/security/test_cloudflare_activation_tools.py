@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ from scripts.cloudflare_preflight import (
     load_environment,
     parse_organization_count,
     r2_cors_ready,
+    run_command,
     secret_checks,
     static_configuration_checks,
 )
@@ -89,9 +91,49 @@ def test_bootstrap_payload_allows_an_organization_without_an_event() -> None:
     }
 
 
+def test_bootstrap_payload_preserves_exact_administrator_name_parts() -> None:
+    arguments = argparse.Namespace(
+        organization_name="SessionBuddy Development",
+        admin_name=None,
+        admin_first_name="Devang",
+        admin_last_name="Hanushali",
+        admin_email="admin@example.test",
+        event_name=None,
+        starts_at=None,
+        ends_at=None,
+        time_zone=None,
+        event_location=None,
+        event_description=None,
+        event_delivery_mode=None,
+    )
+
+    assert bootstrap_payload(arguments) == {
+        "organization_name": "SessionBuddy Development",
+        "admin_name": "Devang Hanushali",
+        "admin_first_name": "Devang",
+        "admin_last_name": "Hanushali",
+        "admin_email": "admin@example.test",
+    }
+
+
 def test_preflight_parses_wrangler_d1_json() -> None:
     output = json.dumps([{"results": [{"organization_count": 3}]}])
     assert parse_organization_count(output) == 3
+
+
+def test_preflight_keeps_successful_json_stdout_separate_from_warnings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "scripts.cloudflare_preflight.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='[{"name":"SESSION_HMAC_KEY"}]\n',
+            stderr="Wrangler configuration warning\n",
+        ),
+    )
+
+    result = run_command(["npx", "wrangler", "secret", "list"])
+
+    assert result.output == '[{"name":"SESSION_HMAC_KEY"}]'
 
 
 def test_preflight_requires_exact_r2_browser_upload_cors() -> None:

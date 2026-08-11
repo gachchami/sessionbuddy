@@ -8,17 +8,17 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
 
     assert "`sb-sidebar__group sb-sidebar__primary${organizerWorkspace" in javascript
     assert '"sb-sidebar__group sb-sidebar__event"' in javascript
-    assert "sidebar.append(primaryGroup);" in javascript
-    assert "sidebar.append(eventNav(currentEventId))" in javascript
+    assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
+    assert "sidebar.append(eventNav(currentEventId" in javascript
     assert javascript.index("sidebar.append(primaryGroup);") < javascript.index(
-        "sidebar.append(eventNav(currentEventId))"
+        "sidebar.append(eventNav(currentEventId"
     )
     assert (
         'document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace)'
         in javascript
     )
-    assert "const globalNav" in javascript
-    assert 'if (organizerWorkspace) {' in javascript
+    assert "let globalNav = null" in javascript
+    assert 'if (organizationWorkspace) {' in javascript
     assert 'Boolean(currentEventId) || section === "events"' in javascript
     assert "if (!organizerWorkspace || currentEventId) sidebar.append(brand);" in javascript
     assert 'topbar.classList.add("sb-topbar--event")' in javascript
@@ -52,9 +52,37 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
 def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    assert "if (organizerWorkspace) sidebar.append(primaryGroup);" in javascript
-    assert 'if (roles.has("reviewer")) utilityNav.append' in javascript
+    assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
+    assert 'if (accountRoles.has("reviewer")) utilityNav.append' in javascript
     assert 'navLink("My reviews", "/reviews"' in javascript
+
+
+def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert (
+        'const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));'
+        in javascript
+    )
+    assert (
+        "const topbarOnlyWorkspace = singleSpeakerWorkspace || !hasSidebarNavigation"
+        in javascript
+    )
+    assert "} else if (!hasSidebarNavigation) {" in javascript
+    assert 'topbar.append(accountBrand, crumb, accountMenu(session, roles));' in javascript
+    assert "if (topbarOnlyWorkspace) {" in javascript
+
+
+def test_account_brand_uses_the_active_role_destination() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert "const activeDestination = roleDestination(active, session)" in javascript
+    assert 'const brand = link("", activeDestination)' in javascript
+    assert 'const accountBrand = link("", activeDestination)' in javascript
+    assert (
+        'organizerWorkspace ? organizerDestination(session) : roles.has("speaker")'
+        not in javascript
+    )
 
 
 def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
@@ -64,7 +92,7 @@ def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
     assert 'const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker")' in javascript
     assert 'shell.replaceChildren(topbar);' in javascript
     assert 'speakerBrand = link("", "/speaker")' in javascript
-    assert 'document.body.classList.toggle("sb-shell-single", singleSpeakerWorkspace)' in javascript
+    assert 'document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace)' in javascript
     assert ".sb-shell-single .sb-topbar {" in stylesheet
     assert ".app-body.sb-shell-authenticated.sb-shell-single > main.shell" in stylesheet
 
@@ -86,6 +114,7 @@ def test_account_navigation_exposes_one_active_role_and_role_switching() -> None
     assert 'navLink("Account settings", "/account", "account")' in javascript
     assert 'make("span", "Sign out")' in javascript
     assert "return new Set(active ? [active.role] : [])" in javascript
+    assert "return organizerDestination(session)" in javascript
     assert ".sb-role-option" in stylesheet
     assert ".sb-role-option__check" in stylesheet
     assert ".sb-account__menu-identity" in stylesheet
@@ -103,7 +132,7 @@ def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
 def test_single_speaker_shell_has_no_redundant_page_heading() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     branch = javascript.split("} else if (singleSpeakerWorkspace) {", 1)[1].split(
-        "} else {", 1
+        "} else if (!hasSidebarNavigation) {", 1
     )[0]
     assert "crumb" not in branch
     assert "topbar.append(speakerBrand, accountMenu(session, roles));" in branch
@@ -123,15 +152,84 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert "Platform status" not in primary_navigation
     assert "Speaker portal" not in hero_actions
     assert 'const label = "Open dashboard"' in javascript
-    assert 'return "/admin"' in javascript
+    assert 'if (canManageOrganization(session)) return "/admin"' in javascript
     assert 'return "/speaker"' in javascript
     assert 'return "/reviews"' in javascript
-    assert 'choice.role === "organization_admin"' in javascript
-    assert 'choice.role === "evaluator"' in javascript
     assert 'choice.role === "speaker"' in javascript
+    assert "session.account_roles || []" in javascript
+    assert 'choice.role === "organization_admin"' not in javascript
+    assert 'choice.role === "event_admin"' not in javascript
     assert 'if (landingAccount && location.pathname === "/")' in javascript
-    assert "location.replace(dashboardDestination(session))" in javascript
-    assert 'return active ? roleDestination(active) : "/account"' in javascript
+    assert "location.replace(destination)" in javascript
+    assert "return active ? roleDestination(active, session) : null" in javascript
+
+
+def test_missing_or_unknown_active_role_fails_closed_without_a_destination_guess() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    active_role = javascript.split("function activeRole(session)", 1)[1].split(
+        "function roleSet", 1
+    )[0]
+    assert "session.active_role" in active_role
+    assert "session.default_role" not in active_role
+    assert "choices[0]" not in active_role
+    assert "supportedRoles.has(requested)" in active_role
+    assert "return roleChoices(session).find" in active_role
+
+    destination = javascript.split("const roleDestination", 1)[1].split(
+        "function sameRole", 1
+    )[0]
+    assert 'return "/account"' not in destination
+    assert "return null" in destination
+
+    assert "if (!activeRole(session)) {" in javascript
+    assert "renderSessionContractError();" in javascript
+    assert "renderLandingSessionContractError();" in javascript
+    assert "this session has no valid active role" in javascript
+    assert 'error.setAttribute("role", "alert")' in javascript
+    assert 'entry.removeAttribute("href")' in javascript
+    assert 'entry.setAttribute("aria-disabled", "true")' in javascript
+
+
+def test_organizer_without_manageable_resources_has_no_account_fallback() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    organizer_destination = javascript.split(
+        "function organizerDestination(session)", 1
+    )[1].split("const roleDestination", 1)[0]
+    assert 'return "/admin"' in organizer_destination
+    assert "event.event_id" in organizer_destination
+    assert 'return "/account"' not in organizer_destination
+    assert " : null" in organizer_destination
+
+    assert "const activeDestination = roleDestination(active, session)" in javascript
+    assert "if (!activeDestination) {" in javascript
+    assert 'renderSessionContractError("workspace")' in javascript
+    assert "this session has no manageable organization or event" in javascript
+    assert "if (!dashboardDestination(session)) {" in javascript
+
+
+def test_exact_event_only_organizers_land_in_their_event_workspace() -> None:
+    shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    overview = (STATIC / "event_overview.js").read_text(encoding="utf-8")
+
+    assert "function organizerDestination(session)" in shell
+    assert "session.event_access || []" in shell
+    assert "if (organizerWorkspace && !organizationWorkspace && !currentEventId)" in shell
+    assert 'organization?.name || "Event workspace"' in overview
+    assert 'if (!organization) throw new Error("This event is not available' not in overview
+
+
+def test_account_is_persona_neutral_and_same_destination_still_renders_shell() -> None:
+    shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert '!["account", "speaker", "reviews"].includes(section)' in shell
+    destination_guard = shell.split(
+        "if (organizerWorkspace && !organizationWorkspace && !currentEventId)", 1
+    )[1].split("const globalOrganizerWorkspace", 1)[0]
+    assert "if (destination !== location.pathname) {" in destination_guard
+    assert "location.replace(destination);\n        return;" in destination_guard
+    assert not destination_guard.rstrip().endswith("return;\n    }")
 
 
 def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
@@ -160,3 +258,56 @@ def test_only_event_navigation_scrolls_inside_the_sidebar_on_all_viewports() -> 
     mobile_rules = stylesheet.split("@media (max-width: 52rem)", 1)[1]
     assert ".sb-sidebar { transform:" in mobile_rules
     assert ".sb-sidebar { overflow" not in mobile_rules
+
+
+def test_every_organizer_persona_reaches_a_navigable_workspace() -> None:
+    """An organizer must never be shown an empty navigation rail.
+
+    Three separate gates each used to empty the sidebar: the organization links
+    were gated on ``organizerWorkspace`` (which excludes /account), an organizer
+    holding only exact event grants had no organization-wide page to link, and
+    the portals group read the active role instead of the account's roles.
+    """
+
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    # Organization links are gated on organization authority alone, so they
+    # still render on the persona-neutral /account page.
+    organization_gate = (
+        "const organizationNavigation = organizer && canManageOrganization(session);"
+    )
+    assert organization_gate in javascript
+    assert "if (organizationNavigation) {" in javascript
+
+    # An organizer whose authority is a set of exact event grants gets their
+    # granted events instead of an empty rail.
+    assert "if (organizer && !organizationNavigation) {" in javascript
+    assert "const grantedEvents = eventsWithContentAccess(session);" in javascript
+    assert '"Your events"' in javascript
+
+    # Portals come from every role on the account, not just the active one.
+    assert "const accountRoles = new Set((session.account_roles || [])" in javascript
+    assert 'accountRoles.has("reviewer") || accountRoles.has("speaker")' in javascript
+
+    # The group is appended only when it actually holds links.
+    assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
+
+
+def test_event_navigation_matches_the_server_authority_split() -> None:
+    """`edit` earns the event workspace; only owner/manage earns Team & access."""
+
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert 'const CONTENT_PERMISSIONS = ["owner", "manage", "edit"];' in javascript
+    assert 'const ADMIN_PERMISSIONS = ["owner", "manage"];' in javascript
+
+    # Content authority opens the event navigation.
+    assert "function worksInEventDirectly(session, eventId)" in javascript
+    assert "if (worksInEventDirectly(session, currentEventId)) {" in javascript
+
+    # Access administration is a separate, narrower test.
+    assert "function administersEventDirectly(session, eventId)" in javascript
+    assert "item.event_id === eventId && holds(item, ADMIN_PERMISSIONS)" in javascript
+    event_nav_call = "eventNav(currentEventId, administersEventDirectly(session, currentEventId))"
+    assert event_nav_call in javascript
+    assert "if (canAdministerAccess) {" in javascript

@@ -33,3 +33,31 @@ def test_sign_in_is_minimal_and_explains_default_role_behavior() -> None:
     assert "Organizer" not in markup and "Reviewer" not in markup and "Speaker" not in markup
     assert ".sign-in-card::before" in stylesheet
     assert "@media (max-width: 48rem)" in stylesheet
+
+
+def test_setup_confirms_the_automatic_sign_in_link_without_leaving_setup() -> None:
+    markup = source("setup.html")
+    javascript = source("setup.js")
+
+    assert 'id="setup-complete" class="setup-complete" tabindex="-1" hidden' in markup
+    assert 'id="setup-complete-title">Check your email.</h2>' in markup
+    assert 'id="setup-complete-email"' in markup
+    assert 'id="setup-complete-recovery"' in markup
+    assert 'showCompletion(values.admin_email, true)' in javascript
+    assert 'showCompletion(values.admin_email, false)' in javascript
+    automatic_request = javascript.split(
+        'window.SessionBuddyApi.request("/api/v1/auth/magic-links"', 1
+    )[1]
+    assert 'location.replace("/")' not in automatic_request
+
+
+def test_setup_collects_exact_administrator_name_parts() -> None:
+    markup = source("setup.html")
+    javascript = source("setup.js")
+
+    assert 'name="admin_first_name" autocomplete="given-name"' in markup
+    assert 'name="admin_last_name" autocomplete="family-name"' in markup
+    assert "firstName.value.trim()" in javascript
+    assert "lastName.value.trim()" in javascript
+    assert "admin_first_name: adminFirstName" in javascript
+    assert "admin_last_name: adminLastName" in javascript

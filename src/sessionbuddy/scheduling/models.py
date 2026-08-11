@@ -74,6 +74,63 @@ class EventTrackList(StrictModel):
     data: list[EventTrackView]
 
 
+class EventLabelCreate(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @field_validator("name")
+    @classmethod
+    def clean_label_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("label name is required")
+        return cleaned
+
+    @field_validator("color")
+    @classmethod
+    def normalize_color(cls, value: str) -> str:
+        return value.upper()
+
+
+class EventLabelUpdate(EventLabelCreate):
+    status: Literal["active", "archived"]
+    version: int = Field(ge=1)
+
+
+class EventLabelView(StrictModel):
+    id: str
+    name: str
+    color: str
+    status: Literal["active", "archived"]
+    version: int = Field(ge=1)
+    can_manage: bool
+
+
+class EventLabelList(StrictModel):
+    event_id: str
+    data: list[EventLabelView]
+
+
+class SessionLabelAssignmentUpdate(StrictModel):
+    label_ids: list[str] = Field(default_factory=list, max_length=20)
+    version: int = Field(ge=1)
+
+    @field_validator("label_ids")
+    @classmethod
+    def validate_label_ids(cls, values: list[str]) -> list[str]:
+        if any(not value or len(value) > 128 for value in values):
+            raise ValueError("invalid label id")
+        if len(values) != len(set(values)):
+            raise ValueError("label ids must be unique")
+        return values
+
+
+class SessionLabelAssignmentView(StrictModel):
+    session_id: str
+    version: int = Field(ge=1)
+    labels: list[EventLabelView]
+
+
 class AgendaAutoSchedule(StrictModel):
     start_at_ms: int | None = Field(default=None, ge=0)
     session_minutes: int = Field(default=45, ge=10, le=240)

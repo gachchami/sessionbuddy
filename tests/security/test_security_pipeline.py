@@ -3,7 +3,7 @@ from sessionbuddy.platform.auth.service import authenticate_session
 from sessionbuddy.platform.auth.sessions import SessionRecord
 from sessionbuddy.platform.auth.tokens import hash_token
 from sessionbuddy.platform.authorization.policy import authorize
-from sessionbuddy.platform.authorization.types import Actor, Permission, ResourceContext, Role
+from sessionbuddy.platform.authorization.types import Actor, Permission, Persona, ResourceContext
 
 
 class Sessions:
@@ -51,7 +51,8 @@ async def test_verified_session_flows_into_tenant_authorization() -> None:
     token = "opaque-token"  # noqa: S105 - synthetic test fixture
     actor = Actor(
         "user-a",
-        organization_roles={"org-a": frozenset({Role.ORGANIZATION_ADMIN})},
+        active_persona=Persona.ORGANIZER,
+        owned_resource_ids=frozenset({"event-a"}),
     )
     result = await authenticate_session(
         cookie_value=sign_session_cookie(token, secret),
@@ -75,7 +76,8 @@ async def test_tampered_cookie_and_revoked_session_fail_before_authorization() -
     token = "opaque-token"  # noqa: S105 - synthetic test fixture
     actor = Actor(
         "user-a",
-        organization_roles={"org-a": frozenset({Role.ORGANIZATION_ADMIN})},
+        active_persona=Persona.ORGANIZER,
+        owned_resource_ids=frozenset({"event-a"}),
     )
     common = {
         "signing_secret": secret,

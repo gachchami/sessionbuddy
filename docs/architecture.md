@@ -124,7 +124,7 @@ frontend/
   src/features/                  UI organized by the same product slices
   src/components/                accessible shared primitives
   src/api/                       generated client types and fetch adapter
-migrations/                      ordered D1 SQL; one migration owner
+migrations_baseline/             canonical D1 SQL; one migration owner
 openapi/                         generated checked contract
 tests/                           integration, contract, security, E2E, load
 ```
@@ -169,7 +169,7 @@ pyproject.toml + uv.lock       Python runtime and dev dependencies
 package.json + package-lock    frontend/Vite/Wrangler dependencies
 .dev.vars.example              names and harmless local defaults
 .dev.vars                      ignored local secrets
-migrations/                    D1 migrations
+migrations_baseline/           canonical D1 migration
 .local/                        ignored, disposable local binding state
 ```
 

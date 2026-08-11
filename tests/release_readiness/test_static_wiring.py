@@ -124,8 +124,9 @@ def test_event_images_use_an_explicit_preview_then_upload_flow() -> None:
         section = page.split(
             f'aria-labelledby="event-{kind}-label">', 1
         )[1].split("</section>", 1)[0]
-        assert 'class="button secondary image-upload__button"' in section
-        assert f'for="event-{kind}-file">Choose {kind}</label>' in section
+        assert 'class="image-upload__file"' in section
+        assert f'id="event-{kind}-file"' in section
+        assert f'aria-labelledby="event-{kind}-label"' in section
         assert f'id="event-{kind}-preview-frame"' in section
         assert f'id="event-{kind}-status"' in section
         assert re.search(
@@ -267,7 +268,7 @@ def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> Non
         card = page.split(
             f'aria-labelledby="event-{kind}-label">', 1
         )[1].split("</section>", 1)[0]
-        assert card.index(f'for="event-{kind}-file"') < card.index(
+        assert card.index(f'id="event-{kind}-file"') < card.index(
             f'id="event-{kind}-preview-frame"'
         )
         assert card.index(f'id="upload-event-{kind}"') < card.index(
@@ -278,6 +279,7 @@ def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> Non
     upload_card_rule = stylesheet.rsplit(".image-upload {", 1)[1].split("}", 1)[0]
     assert "flex-direction: column" in upload_card_rule
     assert "align-self: start" in upload_card_rule
+    assert ".image-upload__file::file-selector-button" in stylesheet
     preview_rule = stylesheet.split("\n.image-upload__preview {", 1)[1].split("}", 1)[0]
     assert "max-height:" in preview_rule
     assert "overflow: hidden" in preview_rule
@@ -295,6 +297,21 @@ def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
     restore = script.split("async function restoreSession() {", 1)[1]
     assert "const workspace = await loadWorkspace(eventId);" in restore
     assert "/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}" in restore
+
+
+def test_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> None:
+    script = (STATIC / "admin_programs.js").read_text()
+
+    assert (
+        "editor.elements.confirmation_subject.value = form.confirmation_subject"
+        in script
+    )
+    assert "editor.elements.confirmation_body.value = form.confirmation_body" in script
+    assert "payload.confirmation_subject = values.confirmation_subject" in script
+    assert "payload.confirmation_body = values.confirmation_body" in script
+    slug_update = script.split('byId("save-url-header").addEventListener', 1)[1]
+    assert "confirmation_subject: current.confirmation_subject" in slug_update
+    assert "confirmation_body: current.confirmation_body" in slug_update
 
 
 def test_public_event_pages_render_cover_images() -> None:

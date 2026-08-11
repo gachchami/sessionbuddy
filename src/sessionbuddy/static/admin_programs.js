@@ -1057,11 +1057,9 @@
         success_message: values.success_message,
         redirect_to_portal: formElement.elements.redirect_to_portal.checked
       };
+      payload.confirmation_subject = values.confirmation_subject;
+      payload.confirmation_body = values.confirmation_body;
       if (updating) payload.version = state.publishedForm.version;
-      else {
-        payload.confirmation_subject = values.confirmation_subject;
-        payload.confirmation_body = values.confirmation_body;
-      }
       const form = await api(
         updating
           ? `/api/v1/admin/events/${encodeURIComponent(state.context.event_id)}/cfp`
@@ -1260,7 +1258,9 @@
           co_speaker_limit: current.co_speaker_limit ?? 1,
           success_title: current.success_title,
           success_message: current.success_message,
-          redirect_to_portal: current.redirect_to_portal
+          redirect_to_portal: current.redirect_to_portal,
+          confirmation_subject: current.confirmation_subject,
+          confirmation_body: current.confirmation_body
         })
       });
       state.publishedForm = updated;

@@ -28,6 +28,25 @@ def test_worker_queue_entrypoint_accepts_cloudflare_runtime_arguments() -> None:
     ]
 
 
+def test_worker_scheduled_entrypoint_accepts_cloudflare_runtime_arguments() -> None:
+    module = ast.parse((ROOT / "src" / "entry.py").read_text())
+    default_class = next(
+        node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "Default"
+    )
+    scheduled_handler = next(
+        node
+        for node in default_class.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "scheduled"
+    )
+
+    assert [argument.arg for argument in scheduled_handler.args.args] == [
+        "self",
+        "_controller",
+        "_environment",
+        "_context",
+    ]
+
+
 def test_r2_scanner_adapter_uses_fixed_length_stream_not_full_body_buffering() -> None:
     source = (
         ROOT / "src" / "sessionbuddy" / "speaker_operations" / "scanner_adapter.py"

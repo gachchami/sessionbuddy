@@ -1,10 +1,9 @@
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).parents[2]
-MIGRATIONS = sorted((ROOT / "migrations").glob("*.sql"))
+from tests.schema import MIGRATIONS
+
 INSERT_SUBMISSION_SPEAKER = """INSERT INTO submission_speakers
     (id, organization_id, event_id, submission_id, event_speaker_id, role,
      snapshot_name, created_at_ms)

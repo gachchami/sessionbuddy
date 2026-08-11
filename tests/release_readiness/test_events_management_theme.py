@@ -41,12 +41,14 @@ def test_events_page_uses_an_operational_management_layout() -> None:
     assert 'if (!eventId) body.status = createStatus' in script
     assert 'event.submitter?.value === "draft"' in script
     assert 'state.editingDraft = event.status === "draft"' in script
-    assert 'body.status = state.editingDraft ? createStatus : values.status' in script
-    assert 'byId("event-status-label").hidden = state.editingDraft' in script
-    assert 'state.editingDraft ? "Activate event" : "Save changes"' in script
-    assert '"Activating event…"' in script
+    assert 'body.status = state.editingDraft ? intendedStatus : values.status' in script
+    assert 'state.editingDraft\n        ? values.status === "archived"' in script
+    assert ': values.status\n      : createStatus' in script
+    assert 'byId("event-status-label").hidden = false' in script
+    assert 'values.status === "archived"' in script
+    assert '"Event archived."' in script
     assert '"Event activated."' in script
-    assert 'createStatus === "active" && endsAt <= Date.now()' in script
+    assert 'intendedStatus === "active" && endsAt <= Date.now()' in script
     assert "Update the event dates before activating." in script
     assert ".event-table-header, .event-table-row" in styles
     assert ".event-table-actions" in styles

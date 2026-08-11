@@ -50,7 +50,10 @@ def run_command(arguments: list[str]) -> CommandResult:
         timeout=120,
         check=False,
     )
-    return CommandResult(result.returncode, f"{result.stdout}\n{result.stderr}".strip())
+    output = result.stdout.strip()
+    if result.returncode != 0 and result.stderr:
+        output = f"{output}\n{result.stderr}".strip()
+    return CommandResult(result.returncode, output)
 
 
 def load_environment(path: Path, environment_name: str) -> tuple[dict, dict[str, str]]:

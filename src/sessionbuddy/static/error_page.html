@@ -5,19 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>{{TITLE}} · SessionBuddy</title>
-  <link rel="stylesheet" href="/app-shell/assets/error-page.css?v=1">
+  <link rel="stylesheet" href="/app-shell/assets/error-page.css?v=2">
 </head>
 <body class="error-page">
-  <main class="error-surface">
-    <a class="brand" href="/"><span class="mark" aria-hidden="true">S</span>SessionBuddy</a>
-    <p class="code">{{STATUS}}</p>
-    <h1>{{HEADING}}</h1>
-    <p>{{MESSAGE}}</p>
-    <div class="actions">
-      <a class="button" href="{{PRIMARY_HREF}}">{{PRIMARY_LABEL}}</a>
-      <a class="button secondary" href="/">Home</a>
-    </div>
-    {{REFERENCE}}
+  <a class="skip-link" href="#main">Skip to error details</a>
+  <main id="main" class="error-shell" tabindex="-1">
+    <section class="error-surface" aria-labelledby="error-heading">
+      <header class="error-header">
+        <a class="brand" href="/" aria-label="SessionBuddy home">
+          <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <linearGradient id="error-brand-gradient" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#8b3ff5"/>
+                <stop offset="1" stop-color="#5d8cff"/>
+              </linearGradient>
+            </defs>
+            <rect width="64" height="64" rx="16" fill="url(#error-brand-gradient)"/>
+            <g fill="none" stroke-width="6" stroke-linecap="round">
+              <path d="M16 20V44" stroke="#fff"/>
+              <path d="M30 20H43" stroke="#c9d3ff"/>
+              <path d="M30 32H48" stroke="#fff"/>
+              <path d="M30 44H43" stroke="#c9d3ff"/>
+            </g>
+          </svg>
+          <span>SessionBuddy</span>
+        </a>
+      </header>
+
+      <div class="error-layout">
+        <div class="status-panel">
+          <p class="status-code"><span>Status</span>{{STATUS}}</p>
+          <span class="route-line" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+
+        <div class="error-content">
+          <p class="eyebrow">This route stops here</p>
+          <h1 id="error-heading">{{HEADING}}</h1>
+          <p class="error-message">{{MESSAGE}}</p>
+          <nav class="actions" aria-label="Recovery options">
+            <a class="button" href="{{PRIMARY_HREF}}">{{PRIMARY_LABEL}}</a>
+          </nav>
+          <footer class="error-reference">{{REFERENCE}}</footer>
+        </div>
+      </div>
+    </section>
   </main>
 </body>
 </html>

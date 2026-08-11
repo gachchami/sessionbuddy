@@ -14,8 +14,13 @@ from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
-from sessionbuddy.platform.auth.http import authenticate_request, require_permission, secret
-from sessionbuddy.platform.authorization import Permission, ResourceContext
+from sessionbuddy.platform.auth.http import (
+    authenticate_request,
+    require_document_persona,
+    require_permission,
+    secret,
+)
+from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
@@ -141,6 +146,7 @@ def _asset(name: str) -> str:
 
 @evaluation_router.get("/reviews", response_class=HTMLResponse, include_in_schema=False)
 async def reviews_page(request: Request) -> HTMLResponse:
+    await require_document_persona(request, Persona.REVIEWER)
     return HTMLResponse(_asset("app/index.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -378,6 +384,7 @@ async def create_evaluation_round(
     submissions = result_rows(
         await db.prepare(
             f"""SELECT id FROM submissions WHERE organization_id = ?1 AND event_id = ?2
+                  AND status='submitted'
                   AND id IN ({placeholders})"""  # noqa: S608
         )
         .bind(organization_id, event_id, *body.submission_ids)
@@ -2152,7 +2159,7 @@ async def record_submission_decision(
             """SELECT r.organization_id, r.event_id, COUNT(a.id) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count
            FROM evaluation_rounds r
-           JOIN evaluation_assignments a ON a.round_id = r.id
+           JOIN evaluation_assignments a ON a.round_id = r.id AND a.status != 'revoked'
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            WHERE r.id = ?1 AND a.submission_id = ?2
            GROUP BY r.organization_id, r.event_id"""

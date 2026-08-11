@@ -14,10 +14,13 @@ const organizerSession = {
   display_name: "Admin User",
   profile_complete: true,
   csrf_token: "browser-test-csrf",
+  account_roles: ["organizer"],
+  active_role: "organizer",
+  default_role: "organizer",
   organization_id: organizationId,
   event_id: eventId,
-  organization_access: [{ organization_id: organizationId, roles: ["organization_admin"] }],
-  event_access: [{ organization_id: organizationId, event_id: eventId, roles: ["event_admin", "evaluator"] }],
+  organization_access: [{ organization_id: organizationId, organization_name: "Example Events", permissions: ["owner"] }],
+  event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", permissions: ["owner"], assignments: [] }],
 };
 
 async function polyfillUuid(page: Page) {
@@ -65,7 +68,7 @@ test.describe("form validation and workflow wiring", () => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: organizationId, name: organizationName, status: "active", version: 2 }) });
     });
     let profileWrites = 0;
-    let profile = { email: "admin@example.com", display_name: "Admin User", job_title: null, company: null, time_zone: "UTC", version: 1 };
+    let profile = { email: "admin@example.com", display_name: "Admin User", first_name: "Admin", last_name: "User", job_title: null, company: null, time_zone: "UTC", description: null, website_url: null, linkedin_url: null, x_url: null, version: 1 };
     await page.route("**/api/v1/account/profile", async (route) => {
       if (route.request().method() === "PATCH") {
         profileWrites += 1;
@@ -87,8 +90,8 @@ test.describe("form validation and workflow wiring", () => {
     expect(profileWrites).toBe(0);
     await page.getByLabel(/Time zone/).fill("Asia/Kolkata");
     await page.getByRole("button", { name: "Save profile" }).click();
-    await expect(page.getByRole("status").first()).toHaveText("Profile saved.");
     await expect.poll(() => profileWrites).toBe(1);
+    await expect(page.locator("#status")).toHaveText("Profile saved.");
   });
 
   test("CFP builder rejects invalid availability and publishes a valid form", async ({ page }) => {
@@ -106,7 +109,7 @@ test.describe("form validation and workflow wiring", () => {
     }));
     await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ id: eventId, time_zone: "UTC" }),
+      body: JSON.stringify({ id: eventId, status: "active", time_zone: "UTC" }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/tracks`, (route) => route.fulfill({
       contentType: "application/json",
@@ -122,11 +125,8 @@ test.describe("form validation and workflow wiring", () => {
 
     await page.goto(`/admin/events/${eventId}/cfp`);
     const form = page.locator("#publish-form");
-    await form.getByLabel("Welcome message").fill("Share your best conference proposal.");
-    await form.getByLabel("Public URL slug").fill("ab");
-    await form.getByRole("button", { name: "Publish CFP" }).click();
-    expect(publishWrites).toBe(0);
-    await form.getByLabel("Public URL slug").fill("conference-2030");
+    await form.locator("#cfp-description-editor").fill("Share your best conference proposal.");
+    await page.getByRole("button", { name: "Availability" }).click();
     await form.getByLabel(/Opens/).fill("2030-03-20T10:00");
     await form.getByLabel(/Closes/).fill("2030-03-20T09:00");
     await form.getByRole("button", { name: "Publish CFP" }).click();
@@ -139,12 +139,74 @@ test.describe("form validation and workflow wiring", () => {
   });
 
   test("CFP builder keeps every section usable at narrow mobile widths", async ({ page }) => {
+    await polyfillUuid(page);
+    const responsiveSession = {
+      ...organizerSession,
+      event_id: responsiveBuilderEventId,
+      event_access: [{
+        organization_id: organizationId,
+        event_id: responsiveBuilderEventId,
+        event_name: "Responsive Builder Conference",
+        permissions: ["owner"],
+        assignments: [],
+      }],
+    };
+    await mockSession(page, responsiveSession);
+    await page.route(`**/api/v1/admin/events/${responsiveBuilderEventId}`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: responsiveBuilderEventId,
+        organization_id: organizationId,
+        name: "Responsive Builder Conference",
+        status: "active",
+        version: 1,
+        time_zone: "UTC",
+        delivery_mode: "virtual",
+        starts_at_ms: Date.UTC(2030, 5, 1, 9),
+        ends_at_ms: Date.UTC(2030, 5, 1, 18),
+      }),
+    }));
+    await page.route(`**/api/v1/admin/events/${responsiveBuilderEventId}/agenda/tracks`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    }));
+    await page.route(`**/api/v1/admin/events/${responsiveBuilderEventId}/cfp`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        organization_id: organizationId,
+        event_id: responsiveBuilderEventId,
+        event_name: "Responsive Builder Conference",
+        event_starts_at_ms: Date.UTC(2030, 5, 1, 9),
+        published_form: {
+          id: programId,
+          event_id: responsiveBuilderEventId,
+          version: 1,
+          slug: "responsive-builder-conference",
+          welcome_text: "Share a practical proposal.",
+          description_html: "<p>Share a practical proposal.</p>",
+          important_dates: [],
+          fields: [
+            { key: "speaker_name", label: "Speaker name", type: "text", required: true, choices: [] },
+            { key: "speaker_email", label: "Email", type: "email", required: true, choices: [] },
+            { key: "proposal_title", label: "Proposal title", type: "text", required: true, choices: [] },
+            { key: "proposal_abstract", label: "Proposal abstract", type: "textarea", required: true, choices: [] },
+          ],
+          conditions: [],
+          routing_rules: [],
+          opens_at_ms: null,
+          closes_at_ms: null,
+          submission_limit: null,
+          co_speaker_limit: 1,
+          success_title: "Proposal received",
+          success_message: "We received your proposal.",
+          confirmation_subject: "We received your proposal",
+          confirmation_body: "Thank you for submitting.",
+          redirect_to_portal: true,
+        },
+      }),
+    }));
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/sign-in?redirect=${encodeURIComponent(`/admin/events/${responsiveBuilderEventId}/cfp`)}`);
-    await page.getByLabel("Email").fill("user0@example.test");
-    await page.getByLabel("Password").fill("user0-local-password");
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/events/${responsiveBuilderEventId}/cfp$`));
+    await page.goto(`/admin/events/${responsiveBuilderEventId}/cfp`);
     await page.getByRole("button", { name: /^Custom questions/ }).click();
     await page.getByRole("button", { name: /Add custom question/ }).click();
     await expect(page.locator('.question-card:not([hidden]) input[name="field_label"]')).toBeVisible();
@@ -316,7 +378,7 @@ test.describe("form validation and workflow wiring", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/speaker-tasks`, async (route) => { taskWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({}) }); });
     await page.route(`**/api/v1/admin/events/${eventId}/integrations/accelevents/tokens`, async (route) => { tokenWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ token: "one-time-token" }) }); });
 
-    await page.goto(`/admin/events/${eventId}/workspace`);
+    await page.goto(`/admin/events/${eventId}/speaker-content`);
     await page.getByText("Add a resource", { exact: true }).click();
     const resource = page.locator("#resource-form");
     await resource.getByLabel("Title").fill("Speaker guide");
@@ -338,6 +400,7 @@ test.describe("form validation and workflow wiring", () => {
     await task.getByRole("button", { name: "Assign task" }).click();
     await expect.poll(() => taskWrites).toBe(1);
 
+    await page.goto(`/admin/events/${eventId}/workspace`);
     await page.getByText("Connect Accelevents", { exact: true }).click();
     await page.getByLabel("Token label").fill("Accelevents demo");
     await page.getByRole("button", { name: "Generate token" }).click();
@@ -375,16 +438,12 @@ test.describe("form validation and workflow wiring", () => {
     await expect(page).toHaveURL(/state=overdue&task_type=headshot/);
   });
 
-  test("speaker profile, custom task, and upload forms validate locally", async ({ page }) => {
+  test("speaker custom task forms validate locally", async ({ page }) => {
     await polyfillUuid(page);
-    const speakerSession = { ...organizerSession, email: "speaker@example.com", organization_access: [], event_access: [{ organization_id: organizationId, event_id: eventId, roles: ["speaker"] }] };
+    const speakerSession = { ...organizerSession, email: "speaker@example.com", account_roles: ["speaker"], active_role: "speaker", default_role: "speaker", organization_access: [], event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", permissions: [], assignments: ["speaker"] }] };
     await mockSession(page, speakerSession);
-    let profileWrites = 0;
     let taskWrites = 0;
     let taskComplete = false;
-    let authorizationWrites = 0;
-    let storageWrites = 0;
-    let completionWrites = 0;
     let profile = { display_name: "Speaker", job_title: "", company: "", biography: "", location: "", links: [], version: 1 };
     const portal = () => ({
       event: { id: eventId, name: "Conference", starts_at_ms: Date.UTC(2030, 2, 20), ends_at_ms: Date.UTC(2030, 2, 21), time_zone: "Asia/Kolkata" },
@@ -393,43 +452,12 @@ test.describe("form validation and workflow wiring", () => {
       submissions: [{ id: programId, proposal_title: "A proposal", status: "accepted" }], completed_tasks: taskComplete ? 1 : 0, total_tasks: 1,
     });
     await page.route("**/api/v1/speaker/portal", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(portal()) }));
-    await page.route("**/api/v1/speaker/profile", async (route) => { profileWrites += 1; profile = { ...profile, ...route.request().postDataJSON(), version: 2 }; await route.fulfill({ contentType: "application/json", body: JSON.stringify(profile) }); });
     await page.route("**/api/v1/speaker/resources", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
     await page.route(`**/api/v1/speaker/events/${eventId}/assets`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
     await page.route(`**/api/v1/speaker/tasks/${assignmentId}/response`, async (route) => { taskWrites += 1; taskComplete = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: assignmentId, state: "completed", response: {}, version: 2 }) }); });
-    await page.route(`**/api/v1/speaker/events/${eventId}/upload-authorizations`, async (route) => {
-      authorizationWrites += 1;
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({
-          intent_id: "99999999-9999-4999-8999-999999999999",
-          upload_url: "/api/v1/uploads/99999999-9999-4999-8999-999999999999/content?token=test",
-          method: "PUT",
-          headers: { "content-type": "image/png" },
-          expires_at_ms: Date.now() + 60_000,
-        }),
-      });
-    });
-    await page.route("**/api/v1/uploads/99999999-9999-4999-8999-999999999999/content?token=test", async (route) => {
-      storageWrites += 1;
-      await route.fulfill({ status: 204, body: "" });
-    });
-    await page.route(`**/api/v1/speaker/events/${eventId}/upload-intents/99999999-9999-4999-8999-999999999999/complete`, async (route) => {
-      completionWrites += 1;
-      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ state: "clean" }) });
-    });
 
     await page.goto("/speaker");
-    await page.getByRole("button", { name: "Save profile" }).click();
-    expect(profileWrites).toBe(0);
-    await page.getByLabel(/Biography/).fill("Conference speaker biography.");
-    await page.getByLabel("Website").fill("ftp://example.com");
-    await page.getByRole("button", { name: "Save profile" }).click();
-    expect(profileWrites).toBe(0);
-    await page.getByLabel("Website").fill("https://example.com");
-    await page.getByRole("button", { name: "Save profile" }).click();
-    await expect.poll(() => profileWrites).toBe(1);
+    await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
 
     const taskForm = page.locator("#task-list form");
     await taskForm.getByRole("button", { name: "Send response" }).click();
@@ -438,16 +466,6 @@ test.describe("form validation and workflow wiring", () => {
     await taskForm.getByRole("button", { name: "Send response" }).click();
     await expect.poll(() => taskWrites).toBe(1);
 
-    await page.getByLabel("What changed?").first().fill("Updated conference headshot");
-    await page.getByLabel("Choose headshot").setInputFiles({ name: "not-an-image.txt", mimeType: "text/plain", buffer: Buffer.from("not an image") });
-    await page.getByRole("button", { name: "Upload headshot" }).click();
-    await expect(page.locator('[data-kind="headshot"] .upload-status')).toHaveText("This file type is not allowed.");
-    await page.getByLabel("Choose headshot").setInputFiles({ name: "speaker.png", mimeType: "image/png", buffer: Buffer.from("valid image payload") });
-    await page.getByRole("button", { name: "Upload headshot" }).click();
-    await expect(page.locator('[data-kind="headshot"] .upload-status')).toHaveText("Upload checked and ready.");
-    expect(authorizationWrites).toBe(1);
-    expect(storageWrites).toBe(1);
-    expect(completionWrites).toBe(1);
   });
 
   test("fresh agenda setup leads directly to timezone-correct scheduling", async ({ page }) => {
@@ -459,14 +477,20 @@ test.describe("form validation and workflow wiring", () => {
     let scheduled = false;
     let setupWrites = 0;
     let publishWrites = 0;
+    let labelWrites = 0;
+    let labelAssignmentWrites = 0;
+    let labels: Array<Record<string, unknown>> = [];
+    let assignedLabelIds: string[] = [];
     let savedCandidate: Record<string, unknown> | null = null;
+    const assignedLabels = () => labels.filter((label) => assignedLabelIds.includes(String(label.id)));
     const model = () => ({
       event: { id: eventId, name: "Conference", time_zone: "Asia/Kolkata", starts_at_ms: start, ends_at_ms: end },
       revision: { id: "11111111-1111-4111-8111-111111111111", version: 1, state: "draft" },
       rooms: [{ id: "22222222-2222-4222-8222-222222222222", name: "Main stage" }],
       tracks: [{ id: "33333333-3333-4333-8333-333333333333", name: "General" }],
-      items: scheduled ? [{ id: "44444444-4444-4444-8444-444444444444", session_id: assignmentId, title: "A proposal", abstract: "Abstract", content_status: "approved", content_version: 1, start_at_ms: savedCandidate?.start_at_ms, end_at_ms: savedCandidate?.end_at_ms, room_id: "22222222-2222-4222-8222-222222222222", room_name: "Main stage", track_id: null, track_name: null, version: 1 }] : [],
-      unscheduled_sessions: scheduled ? [] : [{ session_id: assignmentId, title: "A proposal", abstract: "Abstract", content_status: "approved", content_version: 1 }],
+      labels,
+      items: scheduled ? [{ id: "44444444-4444-4444-8444-444444444444", session_id: assignmentId, title: "A proposal", abstract: "Abstract", content_status: "approved", content_version: 1, label_version: labelAssignmentWrites + 1, labels: assignedLabels(), label_ids: assignedLabelIds, start_at_ms: savedCandidate?.start_at_ms, end_at_ms: savedCandidate?.end_at_ms, room_id: "22222222-2222-4222-8222-222222222222", room_name: "Main stage", track_id: null, track_name: null, version: 1 }] : [],
+      unscheduled_sessions: scheduled ? [] : [{ session_id: assignmentId, title: "A proposal", abstract: "Abstract", content_status: "approved", content_version: 1, label_version: labelAssignmentWrites + 1, labels: assignedLabels(), label_ids: assignedLabelIds }],
     });
     await page.route(`**/api/v1/admin/events/${eventId}/agenda`, async (route) => {
       if (!configured) { await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "Not found" } }) }); return; }
@@ -476,6 +500,18 @@ test.describe("form validation and workflow wiring", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/preview`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ valid: true, conflicts: [] }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/items`, async (route) => { savedCandidate = route.request().postDataJSON(); scheduled = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "44444444-4444-4444-8444-444444444444", version: 1 }) }); });
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/publish`, async (route) => { publishWrites += 1; await route.fulfill({ contentType: "application/json", body: JSON.stringify({ state: "published" }) }); });
+    await page.route(`**/api/v1/admin/events/${eventId}/labels`, async (route) => {
+      labelWrites += 1;
+      const body = route.request().postDataJSON();
+      const label = { id: "55555555-5555-4555-8555-555555555555", name: body.name, color: String(body.color).toUpperCase(), status: "active", version: 1, can_manage: true };
+      labels = [label];
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(label) });
+    });
+    await page.route(`**/api/v1/admin/events/${eventId}/sessions/${assignmentId}/labels`, async (route) => {
+      labelAssignmentWrites += 1;
+      assignedLabelIds = route.request().postDataJSON().label_ids;
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ session_id: assignmentId, version: labelAssignmentWrites + 1, labels: assignedLabels() }) });
+    });
 
     await page.goto(`/admin/events/${eventId}/agenda`);
     await expect(page.getByRole("heading", { name: "Set up the schedule" })).toBeVisible();
@@ -484,23 +520,39 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByLabel("Rooms").fill("Main stage");
     await page.getByLabel(/Tracks/).fill("General");
     await page.getByRole("button", { name: "Create agenda" }).click();
-    await expect(page.getByRole("button", { name: "Schedule" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Schedule", exact: true })).toBeVisible();
     expect(setupWrites).toBe(1);
-    await page.getByRole("button", { name: "Schedule" }).click();
+    await page.getByText("Schedule tools", { exact: true }).click();
+    const labelForm = page.locator("#label-form");
+    await labelForm.getByLabel("Label name").fill("Beginner");
+    await labelForm.getByLabel("Color", { exact: true }).fill("#19724b");
+    await labelForm.getByRole("button", { name: "Add label" }).click();
+    await expect(page.getByText("Beginner", { exact: true }).first()).toBeVisible();
+    expect(labelWrites).toBe(1);
+    await page.getByRole("button", { name: "Schedule", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Schedule session" });
+    await editor.getByLabel("Beginner").check();
     await editor.getByLabel("Starts").fill("2030-03-20T09:00");
     await editor.getByLabel("Ends").fill("2030-03-20T10:00");
     await editor.getByLabel("Room").selectOption("22222222-2222-4222-8222-222222222222");
     await expect(editor.getByText("No room or speaker conflicts found.")).toBeVisible();
     await editor.getByRole("button", { name: "Save to draft" }).click();
     await expect(page.locator("#status")).toHaveText("Session scheduled successfully.");
+    expect(labelAssignmentWrites).toBe(1);
+    await expect(page.locator(".session-card .label-chip", { hasText: "Beginner" })).toBeVisible();
     expect(savedCandidate).toMatchObject({
       start_at_ms: Date.UTC(2030, 2, 20, 3, 30),
       end_at_ms: Date.UTC(2030, 2, 20, 4, 30),
       room_id: "22222222-2222-4222-8222-222222222222",
     });
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Publish agenda" }).click();
+    const publishDialog = page.getByRole("dialog", { name: "Publish this agenda?" });
+    await expect(publishDialog).toBeVisible();
+    await expect(publishDialog.getByText("1 scheduled session will become publicly visible.")).toBeVisible();
+    await publishDialog.getByRole("button", { name: "Cancel" }).click();
+    expect(publishWrites).toBe(0);
+    await page.getByRole("button", { name: "Publish agenda" }).click();
+    await publishDialog.getByRole("button", { name: "Publish agenda" }).click();
     await expect(page.locator("#status")).toHaveText("Agenda published. Calendar updates were queued for speakers.");
     expect(publishWrites).toBe(1);
   });

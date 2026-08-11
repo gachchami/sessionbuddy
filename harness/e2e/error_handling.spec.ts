@@ -12,8 +12,11 @@ const session = {
   csrf_token: "browser-test-csrf",
   organization_id: organizationId,
   event_id: eventId,
-  organization_access: [{ organization_id: organizationId, roles: ["organization_admin"] }],
-  event_access: [{ organization_id: organizationId, event_id: eventId, roles: ["event_admin"] }],
+  account_roles: ["organizer"],
+  active_role: "organizer",
+  default_role: "organizer",
+  organization_access: [{ organization_id: organizationId, organization_name: "Example Organization", permissions: ["owner"] }],
+  event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Example Event", permissions: ["owner"], assignments: [] }],
 };
 
 async function mockSession(page: Page) {

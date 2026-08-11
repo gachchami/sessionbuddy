@@ -320,6 +320,268 @@
         "title": "ActiveRoleUpdate",
         "type": "object"
       },
+      "AdminPublishedFormView": {
+        "additionalProperties": false,
+        "properties": {
+          "accent_color": {
+            "default": "#3159d9",
+            "title": "Accent Color",
+            "type": "string"
+          },
+          "accepting_submissions": {
+            "default": true,
+            "title": "Accepting Submissions",
+            "type": "boolean"
+          },
+          "availability_message": {
+            "default": "Applications are open.",
+            "title": "Availability Message",
+            "type": "string"
+          },
+          "closes_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closes At Ms"
+          },
+          "co_speaker_limit": {
+            "default": 1,
+            "title": "Co Speaker Limit",
+            "type": "integer"
+          },
+          "conditions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormCondition"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "confirmation_body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Confirmation Body",
+            "type": "string"
+          },
+          "confirmation_subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Confirmation Subject",
+            "type": "string"
+          },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
+          },
+          "description_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Html"
+          },
+          "event_delivery_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Delivery Mode"
+          },
+          "event_ends_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Ends At Ms"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Location"
+          },
+          "event_name": {
+            "default": "Event",
+            "title": "Event Name",
+            "type": "string"
+          },
+          "event_starts_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Starts At Ms"
+          },
+          "event_time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Time Zone"
+          },
+          "event_website_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Website Url"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FormFieldDefinition"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "important_dates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ImportantDate"
+            },
+            "title": "Important Dates",
+            "type": "array"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "opens_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opens At Ms"
+          },
+          "redirect_to_portal": {
+            "default": true,
+            "title": "Redirect To Portal",
+            "type": "boolean"
+          },
+          "routing_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/FormRoutingRule"
+            },
+            "title": "Routing Rules",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "submissions_received": {
+            "default": 0,
+            "title": "Submissions Received",
+            "type": "integer"
+          },
+          "success_message": {
+            "default": "We sent a confirmation to your email address.",
+            "title": "Success Message",
+            "type": "string"
+          },
+          "success_title": {
+            "default": "Proposal received",
+            "title": "Success Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "welcome_text": {
+            "title": "Welcome Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "version",
+          "slug",
+          "welcome_text",
+          "fields",
+          "confirmation_subject",
+          "confirmation_body"
+        ],
+        "title": "AdminPublishedFormView",
+        "type": "object"
+      },
       "AdminSessionContentRestore": {
         "additionalProperties": false,
         "properties": {
@@ -966,6 +1228,19 @@
             "title": "Admin Email",
             "type": "string"
           },
+          "admin_first_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin First Name"
+          },
           "admin_job_title": {
             "anyOf": [
               {
@@ -977,6 +1252,19 @@
               }
             ],
             "title": "Admin Job Title"
+          },
+          "admin_last_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Last Name"
           },
           "admin_name": {
             "maxLength": 200,
@@ -1189,7 +1477,7 @@
           "published_form": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PublishedFormView"
+                "$ref": "#/components/schemas/AdminPublishedFormView"
               },
               {
                 "type": "null"
@@ -1690,20 +1978,13 @@
             "type": "array"
           },
           "active_role": {
-            "anyOf": [
-              {
-                "enum": [
-                  "organizer",
-                  "reviewer",
-                  "speaker"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
+            "enum": [
+              "organizer",
+              "reviewer",
+              "speaker"
             ],
-            "title": "Active Role"
+            "title": "Active Role",
+            "type": "string"
           },
           "authenticated": {
             "default": true,
@@ -1815,7 +2096,8 @@
           "email",
           "csrf_token",
           "default_email_sender_name",
-          "default_email_address"
+          "default_email_address",
+          "active_role"
         ],
         "title": "CurrentSession",
         "type": "object"
@@ -3117,6 +3399,131 @@
         "title": "EventDuplicateCreate",
         "type": "object"
       },
+      "EventLabelCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "color"
+        ],
+        "title": "EventLabelCreate",
+        "type": "object"
+      },
+      "EventLabelList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "data"
+        ],
+        "title": "EventLabelList",
+        "type": "object"
+      },
+      "EventLabelUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "pattern": "^#[0-9A-Fa-f]{6}$",
+            "title": "Color",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "color",
+          "status",
+          "version"
+        ],
+        "title": "EventLabelUpdate",
+        "type": "object"
+      },
+      "EventLabelView": {
+        "additionalProperties": false,
+        "properties": {
+          "can_manage": {
+            "title": "Can Manage",
+            "type": "boolean"
+          },
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "color",
+          "status",
+          "version",
+          "can_manage"
+        ],
+        "title": "EventLabelView",
+        "type": "object"
+      },
       "EventList": {
         "properties": {
           "data": {
@@ -3213,6 +3620,84 @@
           "status"
         ],
         "title": "EventMemberView",
+        "type": "object"
+      },
+      "EventOwnershipTransferCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "grant_previous_owner_manage": {
+            "default": false,
+            "title": "Grant Previous Owner Manage",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "EventOwnershipTransferCreate",
+        "type": "object"
+      },
+      "EventOwnershipTransferView": {
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "new_owner_user_id": {
+            "title": "New Owner User Id",
+            "type": "string"
+          },
+          "previous_owner_permission": {
+            "anyOf": [
+              {
+                "const": "manage",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Owner Permission"
+          },
+          "previous_owner_user_id": {
+            "title": "Previous Owner User Id",
+            "type": "string"
+          },
+          "transfer_id": {
+            "title": "Transfer Id",
+            "type": "string"
+          },
+          "transferred_at_ms": {
+            "title": "Transferred At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transfer_id",
+          "event_id",
+          "previous_owner_user_id",
+          "new_owner_user_id",
+          "transferred_at_ms"
+        ],
+        "title": "EventOwnershipTransferView",
         "type": "object"
       },
       "EventTrackList": {
@@ -3990,6 +4475,20 @@
             "maxItems": 200,
             "title": "Conditions",
             "type": "array"
+          },
+          "confirmation_body": {
+            "default": "Thank you for submitting. Your proposal is now ready for review.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Confirmation Body",
+            "type": "string"
+          },
+          "confirmation_subject": {
+            "default": "We received your proposal",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Confirmation Subject",
+            "type": "string"
           },
           "description_html": {
             "anyOf": [
@@ -4891,6 +5390,71 @@
         "title": "OwnedSubmissionList",
         "type": "object"
       },
+      "OwnershipRecoveryEventList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OwnershipRecoveryEventView"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "OwnershipRecoveryEventList",
+        "type": "object"
+      },
+      "OwnershipRecoveryEventView": {
+        "properties": {
+          "current_owner_email": {
+            "title": "Current Owner Email",
+            "type": "string"
+          },
+          "current_owner_user_id": {
+            "title": "Current Owner User Id",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "name",
+          "status",
+          "current_owner_user_id",
+          "current_owner_email"
+        ],
+        "title": "OwnershipRecoveryEventView",
+        "type": "object"
+      },
       "PasswordSignIn": {
         "additionalProperties": false,
         "properties": {
@@ -5723,6 +6287,102 @@
         "title": "ResourceCreate",
         "type": "object"
       },
+      "ResourceGrantCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "permission": {
+            "enum": [
+              "view",
+              "edit",
+              "manage"
+            ],
+            "title": "Permission",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "permission"
+        ],
+        "title": "ResourceGrantCreate",
+        "type": "object"
+      },
+      "ResourceGrantList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceGrantView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "ResourceGrantList",
+        "type": "object"
+      },
+      "ResourceGrantUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "permission": {
+            "enum": [
+              "view",
+              "edit",
+              "manage"
+            ],
+            "title": "Permission",
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission"
+        ],
+        "title": "ResourceGrantUpdate",
+        "type": "object"
+      },
+      "ResourceGrantView": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "permission": {
+            "enum": [
+              "owner",
+              "view",
+              "edit",
+              "manage"
+            ],
+            "title": "Permission",
+            "type": "string"
+          },
+          "status": {
+            "const": "active",
+            "default": "active",
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "permission"
+        ],
+        "title": "ResourceGrantView",
+        "type": "object"
+      },
       "ResourceList": {
         "properties": {
           "data": {
@@ -6018,33 +6678,100 @@
       },
       "SessionEventAccess": {
         "properties": {
+          "assignments": {
+            "items": {
+              "enum": [
+                "reviewer",
+                "speaker"
+              ],
+              "type": "string"
+            },
+            "title": "Assignments",
+            "type": "array"
+          },
           "event_id": {
             "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
             "type": "string"
           },
           "organization_id": {
             "title": "Organization Id",
             "type": "string"
           },
-          "roles": {
+          "permissions": {
             "items": {
               "enum": [
-                "event_admin",
-                "evaluator",
-                "speaker"
+                "owner",
+                "view",
+                "edit",
+                "manage"
               ],
               "type": "string"
             },
-            "title": "Roles",
+            "title": "Permissions",
             "type": "array"
           }
         },
         "required": [
           "organization_id",
           "event_id",
-          "roles"
+          "event_name"
         ],
         "title": "SessionEventAccess",
+        "type": "object"
+      },
+      "SessionLabelAssignmentUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "SessionLabelAssignmentUpdate",
+        "type": "object"
+      },
+      "SessionLabelAssignmentView": {
+        "additionalProperties": false,
+        "properties": {
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "version",
+          "labels"
+        ],
+        "title": "SessionLabelAssignmentView",
         "type": "object"
       },
       "SessionOrganizationAccess": {
@@ -6053,18 +6780,28 @@
             "title": "Organization Id",
             "type": "string"
           },
-          "roles": {
+          "organization_name": {
+            "title": "Organization Name",
+            "type": "string"
+          },
+          "permissions": {
             "items": {
-              "const": "organization_admin",
+              "enum": [
+                "owner",
+                "view",
+                "edit",
+                "manage"
+              ],
               "type": "string"
             },
-            "title": "Roles",
+            "title": "Permissions",
             "type": "array"
           }
         },
         "required": [
           "organization_id",
-          "roles"
+          "organization_name",
+          "permissions"
         ],
         "title": "SessionOrganizationAccess",
         "type": "object"
@@ -8837,6 +9574,201 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/access-grants": {
+      "get": {
+        "operationId": "list_event_access_grants_api_v1_admin_events__event_id__access_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGrantList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Access Grants",
+        "tags": [
+          "administration"
+        ]
+      },
+      "post": {
+        "operationId": "create_event_access_grant_api_v1_admin_events__event_id__access_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceGrantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Event Access Grant",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/access-grants/{user_id}": {
+      "delete": {
+        "operationId": "revoke_event_access_grant_api_v1_admin_events__event_id__access_grants__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Event Access Grant",
+        "tags": [
+          "administration"
+        ]
+      },
+      "patch": {
+        "operationId": "update_event_access_grant_api_v1_admin_events__event_id__access_grants__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceGrantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Event Access Grant",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/agenda": {
       "get": {
         "operationId": "get_admin_agenda_api_v1_admin_events__event_id__agenda_get",
@@ -9825,7 +10757,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublishedFormView"
+                  "$ref": "#/components/schemas/AdminPublishedFormView"
                 }
               }
             },
@@ -9893,7 +10825,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublishedFormView"
+                  "$ref": "#/components/schemas/AdminPublishedFormView"
                 }
               }
             },
@@ -10820,6 +11752,159 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/labels": {
+      "get": {
+        "operationId": "list_event_labels_api_v1_admin_events__event_id__labels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLabelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Labels",
+        "tags": [
+          "agenda"
+        ]
+      },
+      "post": {
+        "operationId": "create_event_label_api_v1_admin_events__event_id__labels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLabelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLabelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Event Label",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/labels/{label_id}": {
+      "patch": {
+        "operationId": "update_event_label_api_v1_admin_events__event_id__labels__label_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "title": "Label Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventLabelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventLabelView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Event Label",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/logo": {
       "post": {
         "operationId": "upload_event_logo_api_v1_admin_events__event_id__logo_post",
@@ -11069,6 +12154,58 @@
         "summary": "Get Admin Onboarding Dashboard",
         "tags": [
           "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/ownership-transfers": {
+      "post": {
+        "operationId": "transfer_event_ownership_api_v1_admin_events__event_id__ownership_transfers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventOwnershipTransferCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventOwnershipTransferView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transfer Event Ownership",
+        "tags": [
+          "administration"
         ]
       }
     },
@@ -11348,6 +12485,67 @@
         "summary": "Restore Admin Session Content",
         "tags": [
           "session-content"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/sessions/{session_id}/labels": {
+      "put": {
+        "operationId": "assign_session_labels_api_v1_admin_events__event_id__sessions__session_id__labels_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionLabelAssignmentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionLabelAssignmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Session Labels",
+        "tags": [
+          "agenda"
         ]
       }
     },
@@ -11730,6 +12928,201 @@
         ]
       }
     },
+    "/api/v1/admin/organizations/{organization_id}/access-grants": {
+      "get": {
+        "operationId": "list_organization_access_grants_api_v1_admin_organizations__organization_id__access_grants_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGrantList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Organization Access Grants",
+        "tags": [
+          "administration"
+        ]
+      },
+      "post": {
+        "operationId": "create_organization_access_grant_api_v1_admin_organizations__organization_id__access_grants_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceGrantCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Organization Access Grant",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
+      "delete": {
+        "operationId": "revoke_organization_access_grant_api_v1_admin_organizations__organization_id__access_grants__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Organization Access Grant",
+        "tags": [
+          "administration"
+        ]
+      },
+      "patch": {
+        "operationId": "update_organization_access_grant_api_v1_admin_organizations__organization_id__access_grants__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceGrantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceGrantView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Organization Access Grant",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
     "/api/v1/admin/organizations/{organization_id}/event-assets/{kind}": {
       "post": {
         "operationId": "upload_organization_event_asset_api_v1_admin_organizations__organization_id__event_assets__kind__post",
@@ -11951,7 +13344,7 @@
     },
     "/api/v1/admin/organizations/{organization_id}/metrics": {
       "get": {
-        "description": "Lightweight aggregate counts for dashboards instead of paging every\nevent and fanning out per-event requests.\n\nOrganization admins see organization-wide counts; event administrators see\ncounts over the events they administer.",
+        "description": "Lightweight aggregate counts for dashboards instead of paging every\nevent and fanning out per-event requests.\n\nCounts include only events the active organizer owns or can explicitly manage.",
         "operationId": "organization_metrics_api_v1_admin_organizations__organization_id__metrics_get",
         "parameters": [
           {
@@ -11987,6 +13380,78 @@
           }
         },
         "summary": "Organization Metrics",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/organizations/{organization_id}/ownership-recovery/events": {
+      "get": {
+        "description": "Expose a minimal event index to the exact organization owner only.\n\nThis is a recovery control plane and deliberately does not authorize the\ncaller to read any of the returned events through ordinary event APIs.",
+        "operationId": "list_ownership_recovery_events_api_v1_admin_organizations__organization_id__ownership_recovery_events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnershipRecoveryEventList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Ownership Recovery Events",
         "tags": [
           "administration"
         ]
@@ -13384,6 +14849,57 @@
           }
         },
         "summary": "Resend Co Speaker Invitation",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/{submission_id}/withdraw": {
+      "post": {
+        "operationId": "withdrawMyCallForSpeakersSubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateSubmissionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Submission",
         "tags": [
           "submissions"
         ]

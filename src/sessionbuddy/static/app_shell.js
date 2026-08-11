@@ -76,42 +76,47 @@
     return new URLSearchParams(location.search).get("event_id") || document.body.dataset.eventId || "";
   }
 
+  const supportedRoles = new Set(["organizer", "reviewer", "speaker"]);
+
   function roleChoices(session) {
-    if ((session.account_roles || []).length) {
-      return session.account_roles.map((role) => ({ role, organizationId: "", eventId: "" }));
-    }
-    const choices = [];
-    for (const item of session.organization_access || []) {
-      for (const role of item.roles || []) {
-        choices.push({ role, organizationId: item.organization_id, eventId: "" });
-      }
-    }
-    for (const item of session.event_access || []) {
-      for (const role of item.roles || []) {
-        choices.push({ role, organizationId: item.organization_id, eventId: item.event_id });
-      }
-    }
-    return choices;
+    return (session.account_roles || [])
+      .filter((role) => supportedRoles.has(role))
+      .map((role) => ({ role, organizationId: "", eventId: "" }));
   }
 
   const roleLabel = (role) => ({
     organizer: "Organizer",
     reviewer: "Reviewer",
-    organization_admin: "Organization administrator",
-    event_admin: "Event administrator",
-    evaluator: "Reviewer",
     speaker: "Speaker"
   }[role] || role);
 
-  const roleDestination = (choice) => {
-    if (!choice) return "/account";
-    if (choice.role === "organizer") return "/admin";
+  // Mirrors the server's authority model in platform/authorization/policy.py:
+  // owner/manage/edit may work inside a resource, but only owner/manage may
+  // administer its access. Keeping these two lists next to each other is what
+  // stops the console from offering a control the server refuses, or hiding
+  // one it allows.
+  const CONTENT_PERMISSIONS = ["owner", "manage", "edit"];
+  const ADMIN_PERMISSIONS = ["owner", "manage"];
+
+  const grants = (item) => item.permissions || [];
+  const holds = (item, allowed) => grants(item).some((permission) => allowed.includes(permission));
+
+  function eventsWithContentAccess(session) {
+    return (session.event_access || []).filter((item) => holds(item, CONTENT_PERMISSIONS));
+  }
+
+  function organizerDestination(session) {
+    if (canManageOrganization(session)) return "/admin";
+    const event = eventsWithContentAccess(session)[0];
+    return event ? `/admin/events/${encodeURIComponent(event.event_id)}` : null;
+  }
+
+  const roleDestination = (choice, session) => {
+    if (!choice || !supportedRoles.has(choice.role)) return null;
+    if (choice.role === "organizer") return organizerDestination(session);
     if (choice.role === "reviewer") return "/reviews";
-    if (choice.role === "organization_admin") return "/admin";
-    if (choice.role === "event_admin") return choice.eventId ? `/admin/events/${encodeURIComponent(choice.eventId)}` : "/admin";
-    if (choice.role === "evaluator") return "/reviews";
     if (choice.role === "speaker") return "/speaker";
-    return "/account";
+    return null;
   };
 
   function sameRole(a, b) {
@@ -119,11 +124,9 @@
   }
 
   function activeRole(session) {
-    const choices = roleChoices(session);
-    return choices.find((choice) => choice.role === session.active_role)
-      || choices.find((choice) => choice.role === session.default_role)
-      || choices[0]
-      || null;
+    const requested = String(session.active_role || "").trim();
+    if (!supportedRoles.has(requested)) return null;
+    return roleChoices(session).find((choice) => choice.role === requested) || null;
   }
 
   function roleSet(session) {
@@ -132,17 +135,21 @@
   }
 
   function canManageOrganization(session) {
-    return (session.organization_access || []).some((item) =>
-      (item.roles || []).includes("organization_admin"));
+    return (session.organization_access || []).some((item) => holds(item, ADMIN_PERMISSIONS));
+  }
+
+  function worksInEventDirectly(session, eventId) {
+    // Event authority is exact and never inherited from an organization. An
+    // `edit` grant is real authority over the event's content, so it earns the
+    // event navigation even though it may not administer access.
+    if (!eventId) return false;
+    return eventsWithContentAccess(session).some((item) => item.event_id === eventId);
   }
 
   function administersEventDirectly(session, eventId) {
-    // A direct event_admin membership names the event, so this check is
-    // exact. Organization admins are resolved separately (and org-scoped)
-    // with a permission probe against the event itself.
     if (!eventId) return false;
     return (session.event_access || []).some((item) =>
-      item.event_id === eventId && (item.roles || []).includes("event_admin"));
+      item.event_id === eventId && holds(item, ADMIN_PERMISSIONS));
   }
 
   function displayName(session) {
@@ -198,12 +205,12 @@
         if (isActive) button.setAttribute("aria-disabled", "true");
         const scope = choice.role === "speaker"
           ? "Speaker home"
-          : ["reviewer", "evaluator"].includes(choice.role)
+          : choice.role === "reviewer"
             ? "Assigned reviews"
             : choice.role === "organizer"
               ? (session.organization_name || "Organization workspace")
               : "Account role";
-        const roleIconName = choice.role === "speaker" ? "mic" : ["reviewer", "evaluator"].includes(choice.role) ? "review" : "calendar";
+        const roleIconName = choice.role === "speaker" ? "mic" : choice.role === "reviewer" ? "review" : "calendar";
         const roleCopy = make("span", undefined, "sb-role-option__copy");
         roleCopy.append(make("strong", roleLabel(choice.role)), make("small", scope));
         button.append(icon(roleIconName), roleCopy);
@@ -224,7 +231,12 @@
               headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
               body: JSON.stringify({ role: choice.role })
             });
-            location.assign(roleDestination(choice));
+            const destination = roleDestination(choice, session);
+            if (!destination) {
+              renderSessionContractError();
+              return;
+            }
+            location.assign(destination);
           } catch (error) {
             button.disabled = false;
             button.querySelector("small").textContent = "Could not switch role. Try again.";
@@ -291,7 +303,7 @@
     return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker home", account: "Account" }[section] || "Home";
   }
 
-  function eventNav(eventId) {
+  function eventNav(eventId, canAdministerAccess = true) {
     const group = make("div", undefined, "sb-sidebar__group sb-sidebar__event");
     const nav = make("nav", undefined, "sb-sidebar__nav");
     nav.setAttribute("aria-label", "Event navigation");
@@ -310,9 +322,14 @@
         `${prefix}/messages`
       ]],
       ["Agenda", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
-      ["Publish", `${prefix}/workspace`, "external", [`${prefix}/workspace`]],
-      ["Team & access", `${prefix}/access`, "access", [`${prefix}/access`]]
+      ["Publish", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
     ];
+    // Access administration needs owner/manage on this exact event. An `edit`
+    // grantee reaches every page above and is refused this one, so offering it
+    // would be a link straight to a 404.
+    if (canAdministerAccess) {
+      items.push(["Team & access", `${prefix}/access`, "access", [`${prefix}/access`]]);
+    }
     for (const [label, href, iconName, matches] of items) {
       const current = matches.some((path) => (
         location.pathname === path || (path !== prefix && location.pathname.startsWith(`${path}/`))
@@ -344,29 +361,46 @@
   }
 
   function renderShell(session) {
-    const roles = roleSet(session);
+    const active = activeRole(session);
+    if (!active) {
+      renderSessionContractError();
+      return;
+    }
+    const activeDestination = roleDestination(active, session);
+    if (!activeDestination) {
+      renderSessionContractError("workspace");
+      return;
+    }
+    const roles = new Set([active.role]);
     const organizer = roles.has("organizer");
     const section = currentSection();
     const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker");
     if (location.pathname.startsWith("/admin") && !organizer) {
       if (roles.has("reviewer")) location.replace("/reviews");
       else if (roles.has("speaker")) location.replace("/speaker");
-      else location.replace("/account");
+      else renderSessionContractError();
       return;
     }
-    const organizerWorkspace = organizer && !["speaker", "reviews"].includes(section);
+    // Account settings are persona-neutral. Treating /account as an organizer
+    // workspace made an event-scoped organizer bounce account -> event ->
+    // account forever while their required profile was still incomplete.
+    const organizerWorkspace = organizer && !["account", "speaker", "reviews"].includes(section);
     const currentEventId = eventIdFromLocation();
-    const globalOrganizerWorkspace = organizerWorkspace && !currentEventId;
+    const organizationWorkspace = organizerWorkspace && canManageOrganization(session);
+    if (organizerWorkspace && !organizationWorkspace && !currentEventId) {
+      const destination = activeDestination;
+      if (destination !== location.pathname) {
+        location.replace(destination);
+        return;
+      }
+    }
+    const globalOrganizerWorkspace = organizationWorkspace && !currentEventId;
     document.body.classList.add("sb-shell-authenticated");
     document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace);
-    document.body.classList.toggle("sb-shell-single", singleSpeakerWorkspace);
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
-    const brand = link(
-      "",
-      organizerWorkspace ? "/admin" : roles.has("speaker") ? "/speaker" : "/reviews"
-    );
+    const brand = link("", activeDestination);
     brand.className = "sb-app-brand";
     const mark = brandMark();
     const brandText = make("span", undefined, "sb-app-brand__text");
@@ -382,41 +416,85 @@
     primaryGroup.append(make("p", "Main", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
     nav.setAttribute("aria-label", "Main navigation");
-    if (organizerWorkspace) {
+    // These three destinations are organization wide, so they need organization
+    // authority — event grants never cascade upward. They are NOT gated on
+    // organizerWorkspace: /account is persona-neutral for the redirect guard,
+    // but an organizer still needs a way out of it.
+    const organizationNavigation = organizer && canManageOrganization(session);
+    if (organizationNavigation) {
       nav.append(
-        navLink("Home", "/admin", "home", !currentEventId && section === "home"),
-        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
+        navLink("Home", "/admin", "home", organizerWorkspace && !currentEventId && section === "home"),
+        navLink(
+          "Events",
+          "/admin/events",
+          "calendar",
+          organizerWorkspace && (Boolean(currentEventId) || section === "events")
+        )
       );
-      nav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
+      nav.append(navLink("People", "/admin/speakers", "people", organizerWorkspace && !currentEventId && section === "speakers"));
+    }
+    // Portals are offered for every role on the account, not just the active
+    // one. Reading only the active role left an organizer who is also a speaker
+    // with no route back to their portal.
+    const accountRoles = new Set((session.account_roles || []).filter((role) => supportedRoles.has(role)));
+    const showPortals = !organizerWorkspace && (accountRoles.has("reviewer") || accountRoles.has("speaker"));
+    if (!organizerWorkspace && !showPortals) {
+      if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
+      if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
     primaryGroup.append(nav);
-    if (organizerWorkspace) sidebar.append(primaryGroup);
-    if (!organizerWorkspace && (roles.has("reviewer") || roles.has("speaker"))) {
+    if (nav.children.length) sidebar.append(primaryGroup);
+    // An organizer whose authority is a set of exact event grants has no
+    // organization-wide page to link. Without this group their sidebar was
+    // empty on every page they could reach, including /account.
+    if (organizer && !organizationNavigation) {
+      const grantedEvents = eventsWithContentAccess(session);
+      if (grantedEvents.length) {
+        const eventsGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__primary");
+        eventsGroup.append(make("p", "Your events", "sb-sidebar__label"));
+        const eventsNav = make("nav", undefined, "sb-sidebar__nav");
+        eventsNav.setAttribute("aria-label", "Your events");
+        grantedEvents.forEach((item) => {
+          eventsNav.append(navLink(
+            item.event_name || "Event",
+            `/admin/events/${encodeURIComponent(item.event_id)}`,
+            "calendar",
+            organizerWorkspace && item.event_id === currentEventId
+          ));
+        });
+        eventsGroup.append(eventsNav);
+        sidebar.append(eventsGroup);
+      }
+    }
+    if (showPortals) {
       const utilityGroup = make("div", undefined, "sb-sidebar__group sb-sidebar__utility");
       utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));
       const utilityNav = make("nav", undefined, "sb-sidebar__nav");
       utilityNav.setAttribute("aria-label", "Your portals");
-      if (roles.has("reviewer")) utilityNav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
-      if (roles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
+      if (accountRoles.has("reviewer")) utilityNav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
+      if (accountRoles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
       utilityGroup.append(utilityNav);
       sidebar.append(utilityGroup);
-    } else if (!organizerWorkspace) {
-      if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
-      if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
     speakerHubTabs(organizerWorkspace ? currentEventId : "");
     if (organizerWorkspace && currentEventId) {
-      if (administersEventDirectly(session, currentEventId)) {
-        sidebar.append(eventNav(currentEventId));
+      if (worksInEventDirectly(session, currentEventId)) {
+        sidebar.append(eventNav(currentEventId, administersEventDirectly(session, currentEventId)));
       } else if (canManageOrganization(session)) {
         // Being an admin of SOME organization is not enough: confirm against
         // the API (which enforces the real event permission) before showing
         // this event's navigation.
         window.SessionBuddyApi.request(`/api/v1/admin/events/${encodeURIComponent(currentEventId)}`)
-          .then(() => sidebar.append(eventNav(currentEventId)))
+          // The probe proves the server grants EVENT_MANAGE, which an `edit`
+          // grant also satisfies — it does not prove access administration, so
+          // that entry stays hidden on this path.
+          .then(() => sidebar.append(eventNav(currentEventId, false)))
           .catch(() => { /* not an administrator of this event's organization */ });
       }
     }
+    const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));
+    const topbarOnlyWorkspace = singleSpeakerWorkspace || !hasSidebarNavigation;
+    document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace);
 
     const topbar = make("div", undefined, "sb-topbar");
     const menuButton = make("button", undefined, "sb-menu-button");
@@ -428,16 +506,22 @@
     const crumb = make("div", undefined, "sb-topbar__title");
     crumb.append(make("strong", pageLabel(section, currentEventId)));
     if (organizerWorkspace) {
-      const globalNav = make("nav", undefined, "sb-global-nav");
-      globalNav.setAttribute("aria-label", "Workspace navigation");
-      globalNav.append(
-        navLink("Home", "/admin", "home", !currentEventId && section === "home"),
-        navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
-      );
-      globalNav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
+      let globalNav = null;
+      if (organizationWorkspace) {
+        globalNav = make("nav", undefined, "sb-global-nav");
+        globalNav.setAttribute("aria-label", "Workspace navigation");
+        globalNav.append(
+          navLink("Home", "/admin", "home", !currentEventId && section === "home"),
+          navLink("Events", "/admin/events", "calendar", Boolean(currentEventId) || section === "events")
+        );
+        globalNav.append(navLink("People", "/admin/speakers", "people", !currentEventId && section === "speakers"));
+      }
       if (currentEventId) {
         topbar.classList.add("sb-topbar--event");
-        topbar.append(menuButton, make("span", undefined, "sb-topbar__brand-space"), globalNav, accountMenu(session, roles));
+        topbar.append(menuButton, make("span", undefined, "sb-topbar__brand-space"));
+        if (globalNav) topbar.append(globalNav);
+        else topbar.append(crumb);
+        topbar.append(accountMenu(session, roles));
       } else {
         const topbarBrand = link("", "/admin");
         topbarBrand.className = "sb-global-brand";
@@ -450,11 +534,16 @@
       speakerBrand.className = "sb-global-brand";
       speakerBrand.append(brandMark(), make("strong", "SessionBuddy"));
       topbar.append(speakerBrand, accountMenu(session, roles));
+    } else if (!hasSidebarNavigation) {
+      const accountBrand = link("", activeDestination);
+      accountBrand.className = "sb-global-brand";
+      accountBrand.append(brandMark(), make("strong", "SessionBuddy"));
+      topbar.append(accountBrand, crumb, accountMenu(session, roles));
     } else {
       topbar.append(menuButton, crumb, accountMenu(session, roles));
     }
 
-    if (singleSpeakerWorkspace) {
+    if (topbarOnlyWorkspace) {
       shell.className = "sb-app-shell sb-app-shell--single";
       shell.replaceChildren(topbar);
       return;
@@ -505,13 +594,17 @@
 
   function dashboardDestination(session) {
     const active = activeRole(session);
-    return active ? roleDestination(active) : "/account";
+    return active ? roleDestination(active, session) : null;
   }
 
   function renderLandingAccount(session) {
+    const href = dashboardDestination(session);
+    if (!href) {
+      renderLandingSessionContractError();
+      return;
+    }
     const roles = roleSet(session);
     const wrapper = make("span", undefined, "sb-landing-account");
-    const href = dashboardDestination(session);
     const label = "Open dashboard";
     wrapper.append(link(label, href));
     wrapper.append(accountMenu(session, roles));
@@ -580,6 +673,39 @@
     shell.replaceChildren(inner);
   }
 
+  function renderSessionContractError(reason = "active-role") {
+    if (!shell) return;
+    document.body.classList.remove("sb-shell-authenticated", "sb-shell-single", "sb-shell-global");
+    document.body.classList.add("sb-shell-guest");
+    const inner = make("div", undefined, "sb-guest-header__inner");
+    const identity = make("span", undefined, "sb-app-brand");
+    identity.append(brandMark(), make("span", "SessionBuddy"));
+    const error = make(
+      "span",
+      reason === "workspace"
+        ? "Organizer access is unavailable because this session has no manageable organization or event. Sign in again or ask an administrator to restore your access."
+        : "Account access is unavailable because this session has no valid active role. Sign in again or ask an administrator to restore your access.",
+      "sb-session-contract-error"
+    );
+    error.setAttribute("role", "alert");
+    inner.append(identity, error);
+    shell.className = "sb-guest-header";
+    shell.replaceChildren(inner);
+  }
+
+  function renderLandingSessionContractError() {
+    if (landingAccount) {
+      const error = make("span", "Account access unavailable", "sb-landing-account-error");
+      error.setAttribute("role", "alert");
+      landingAccount.replaceChildren(error);
+    }
+    for (const entry of document.querySelectorAll("[data-auth-entry]")) {
+      entry.textContent = "Account access unavailable";
+      entry.removeAttribute("href");
+      entry.setAttribute("aria-disabled", "true");
+    }
+  }
+
   async function initialize() {
     renderPublicEvents();
     let session;
@@ -603,6 +729,16 @@
       else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
       return;
     }
+    if (!activeRole(session)) {
+      renderSessionContractError();
+      renderLandingSessionContractError();
+      return;
+    }
+    if (!dashboardDestination(session)) {
+      renderSessionContractError("workspace");
+      renderLandingSessionContractError();
+      return;
+    }
     window.SessionBuddyShellSession = session;
     if (!session.profile_complete && location.pathname !== "/account") {
       const next = `${location.pathname}${location.search}${location.hash}`;
@@ -610,7 +746,12 @@
       return;
     }
     if (landingAccount && location.pathname === "/") {
-      location.replace(dashboardDestination(session));
+      const destination = dashboardDestination(session);
+      if (!destination) {
+        renderLandingSessionContractError();
+        return;
+      }
+      location.replace(destination);
       return;
     }
     if (shell) renderShell(session);

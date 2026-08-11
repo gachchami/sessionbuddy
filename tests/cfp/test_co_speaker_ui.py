@@ -18,7 +18,10 @@ def test_public_cfp_collects_repeatable_distinct_co_speaker_contacts() -> None:
     assert "state.form?.co_speaker_limit ?? 1" in script
     assert "A co-speaker must use a different email" in script
     assert "Each co-speaker must use a different email" in script
-    assert "showReview(Boolean(restored.readyToSubmit) && !needsFiles)" in script
+    assert "const readyToReview = Boolean(restored.readyToSubmit)" in script
+    assert "&& !needsFiles" in script
+    assert '&& byId("proposal-form").checkValidity()' in script
+    assert "showReview(readyToReview)" in script
     assert "queueMicrotask(() => byId(\"proposal-form\").requestSubmit())" not in script
     assert "validateCoSpeakers(form)" in script
 

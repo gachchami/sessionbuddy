@@ -14,9 +14,13 @@ const sessionBody = JSON.stringify({
   email: "admin@example.com",
   display_name: "Admin User",
   profile_complete: true,
+  account_roles: ["organizer"],
+  active_role: "organizer",
+  default_role: "organizer",
   organization_access: [{
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    roles: ["organization_admin"],
+    organization_name: "Sign Out Organization",
+    permissions: ["owner"],
   }],
   event_access: [],
 });

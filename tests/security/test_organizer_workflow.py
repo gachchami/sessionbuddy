@@ -10,6 +10,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from tests.schema import MIGRATIONS
 from tests.security.test_production_identity_flow import (
     _client,
     _deployment_key,
@@ -88,7 +89,9 @@ async def test_event_creation_is_idempotent_and_rejects_key_reuse(
             "SELECT COUNT(*) FROM events WHERE id=?", (event_id,)
         ).fetchone()[0] == 1
         assert connection.execute(
-            "SELECT COUNT(*) FROM event_memberships WHERE event_id=?", (event_id,)
+            "SELECT COUNT(*) FROM owned_resources WHERE id=? AND owner_user_id="
+            "(SELECT id FROM users WHERE normalized_email='root@example.com')",
+            (event_id,)
         ).fetchone()[0] == 1
         assert connection.execute(
             "SELECT COUNT(*) FROM audit_events WHERE action='event.create' AND event_id=?",
@@ -117,6 +120,180 @@ async def test_event_creation_rejects_malformed_idempotency_key(
         )
         assert response.status_code == 400
         assert response.json()["error"]["code"] == "invalid_request"
+
+
+async def test_exact_event_grants_can_be_created_updated_listed_and_revoked(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        csrf, organization_id = await _bootstrap_admin(root, connection)
+        event = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=_mutation(csrf), json=EVENT_PAYLOAD,
+        )
+        event_id = event.json()["id"]
+        now = int(time.time() * 1000)
+        connection.execute(
+            """INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms)
+               VALUES('grant-user','grantee@example.com','grantee@example.com','active',?,?)""",
+            (now, now),
+        )
+        connection.commit()
+
+        created = await root.post(
+            f"/api/v1/admin/events/{event_id}/access-grants",
+            headers=_mutation(csrf),
+            json={"email": "grantee@example.com", "permission": "view"},
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["permission"] == "view"
+        listed = await root.get(f"/api/v1/admin/events/{event_id}/access-grants")
+        assert [(row["email"], row["permission"]) for row in listed.json()["data"]] == [
+            ("root@example.com", "owner"), ("grantee@example.com", "view")
+        ]
+
+        updated = await root.patch(
+            f"/api/v1/admin/events/{event_id}/access-grants/grant-user",
+            headers=_mutation(csrf), json={"permission": "manage"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["permission"] == "manage"
+        assert connection.execute(
+            """SELECT permission FROM resource_access_grants
+               WHERE resource_id=? AND user_id='grant-user' AND status='active'""",
+            (event_id,),
+        ).fetchone()[0] == "manage"
+
+        owner_id = connection.execute(
+            "SELECT owner_user_id FROM owned_resources WHERE id=?", (event_id,)
+        ).fetchone()[0]
+        denied = await root.patch(
+            f"/api/v1/admin/events/{event_id}/access-grants/{owner_id}",
+            headers=_mutation(csrf), json={"permission": "view"},
+        )
+        assert denied.status_code == 409
+
+        revoked = await root.delete(
+            f"/api/v1/admin/events/{event_id}/access-grants/grant-user",
+            headers={**_mutation(csrf), "content-type": "application/json"},
+        )
+        assert revoked.status_code == 204, revoked.text
+        assert connection.execute(
+            """SELECT status FROM resource_access_grants
+               WHERE resource_id=? AND user_id='grant-user' AND permission='manage'""",
+            (event_id,),
+        ).fetchone()[0] == "revoked"
+        assert connection.execute(
+            """SELECT COUNT(*) FROM audit_events
+               WHERE event_id=? AND action LIKE 'resource_access_grant.%'""",
+            (event_id,),
+        ).fetchone()[0] == 3
+
+
+async def test_event_editor_cannot_promote_own_access_over_http(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        csrf, organization_id = await _bootstrap_admin(root, connection)
+        created = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=_mutation(csrf),
+            json=EVENT_PAYLOAD,
+        )
+        event_id = created.json()["id"]
+        owner_id = connection.execute(
+            "SELECT owner_user_id FROM owned_resources WHERE id=?", (event_id,)
+        ).fetchone()[0]
+        now = int(time.time() * 1000)
+        connection.execute(
+            """INSERT INTO users
+               (id,email,normalized_email,status,created_at_ms,updated_at_ms)
+               VALUES('editor-user','editor@example.com','editor@example.com','active',?,?)""",
+            (now, now),
+        )
+        connection.execute(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES('editor-member',?,'editor-user','member','active',?,?)""",
+            (organization_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES('editor-user','organizer','active',?,?,1)""",
+            (now, now),
+        )
+        connection.commit()
+        granted = await root.post(
+            f"/api/v1/admin/events/{event_id}/access-grants",
+            headers=_mutation(csrf),
+            json={"email": "editor@example.com", "permission": "edit"},
+        )
+        assert granted.status_code == 201, granted.text
+
+        async with _client(environment) as editor:
+            requested = await editor.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "editor@example.com", "redirect_path": "/account"},
+            )
+            assert requested.status_code == 202
+            signed_in = await editor.post(
+                f"/auth/verify?token={_token(connection, 'editor@example.com')}",
+                follow_redirects=False,
+            )
+            assert signed_in.status_code == 303
+            editor_session = (await editor.get("/api/v1/auth/session")).json()
+
+            denied_list = await editor.get(
+                f"/api/v1/admin/events/{event_id}/access-grants"
+            )
+            denied_patch = await editor.patch(
+                f"/api/v1/admin/events/{event_id}/access-grants/editor-user",
+                headers=_mutation(editor_session["csrf_token"]),
+                json={"permission": "manage"},
+            )
+            denied_invite = await editor.post(
+                f"/api/v1/admin/events/{event_id}/invitations",
+                headers=_mutation(editor_session["csrf_token"]),
+                json={"email": "editor@example.com", "role": "event_admin"},
+            )
+            # Exact-resource authorization failures are deliberately 404 so
+            # an editor cannot use access administration to enumerate scope.
+            assert (denied_list.status_code, denied_patch.status_code) == (404, 404)
+            assert denied_invite.status_code == 404
+            assert connection.execute(
+                """SELECT permission FROM resource_access_grants
+                   WHERE resource_id=? AND user_id='editor-user' AND status='active'""",
+                (event_id,),
+            ).fetchone()[0] == "edit"
+
+            invited = await root.post(
+                f"/api/v1/admin/events/{event_id}/invitations",
+                headers=_mutation(csrf),
+                json={"email": "editor@example.com", "role": "event_admin"},
+            )
+            assert invited.status_code == 201, invited.text
+            accepted = await editor.post(
+                f"/auth/verify?token={_token(connection, 'editor@example.com')}",
+                follow_redirects=False,
+            )
+            assert accepted.status_code == 303, accepted.text
+
+            active_permissions = connection.execute(
+                """SELECT permission FROM resource_access_grants
+                   WHERE resource_id=? AND user_id='editor-user' AND status='active'
+                   ORDER BY permission""",
+                (event_id,),
+            ).fetchall()
+            assert [row[0] for row in active_permissions] == ["manage"]
+            assert connection.execute(
+                """SELECT granted_by_user_id FROM resource_access_grants
+                   WHERE resource_id=? AND user_id='editor-user'
+                     AND permission='manage' AND status='active'""",
+                (event_id,),
+            ).fetchone()[0] == owner_id
 
 
 async def test_draft_can_store_past_dates_but_active_creation_and_activation_cannot(
@@ -199,14 +376,20 @@ async def test_second_event_admin_can_manage_but_not_escalate(
 
         async with _client(environment) as helper:
             helper_session = await _accept_invitation(helper, connection, "helper@example.com")
+            assert helper_session["profile_complete"] is False
             assert helper_session["event_access"] == [
                 {
                     "organization_id": organization_id,
                     "event_id": event["id"],
-                    "roles": ["event_admin"],
+                    "event_name": event["name"],
+                    "permissions": ["manage"],
+                    "assignments": [],
                 }
             ]
             assert helper_session["organization_access"] == []
+            account_page = await helper.get("/account", follow_redirects=False)
+            assert account_page.status_code == 200
+            assert 'data-auth-shell' in account_page.text
             helper_csrf = helper_session["csrf_token"]
 
             # The second organizer can read and manage the event directly.
@@ -242,9 +425,14 @@ async def test_second_event_admin_can_manage_but_not_escalate(
             )
             assert denied_escalation.status_code == 404
         members = await root.get(f"/api/v1/admin/events/{event['id']}/members")
-        assert {
-            (member["email"], member["role"]) for member in members.json()["data"]
-        } >= {("root@example.com", "event_admin"), ("helper@example.com", "event_admin")}
+        assert all(member["role"] != "event_admin" for member in members.json()["data"])
+        assert connection.execute(
+            """SELECT permission FROM resource_access_grants
+               WHERE resource_id=? AND user_id=(
+                 SELECT id FROM users WHERE normalized_email='helper@example.com'
+               ) AND status='active'""",
+            (event["id"],),
+        ).fetchone()["permission"] == "manage"
     assert connection.execute(
         "SELECT COUNT(*) FROM organization_memberships WHERE role='organization_admin'"
     ).fetchone()[0] == 1
@@ -272,9 +460,11 @@ async def test_organization_admin_is_invitable_and_shares_org_control(
 
         async with _client(environment) as co_owner:
             session = await _accept_invitation(co_owner, connection, "co-owner@example.com")
-            assert session["organization_access"] == [
-                {"organization_id": organization_id, "roles": ["organization_admin"]}
-            ]
+            assert session["organization_access"] == [{
+                "organization_id": organization_id,
+                "organization_name": "Summit Events",
+                "permissions": ["manage"],
+            }]
             # Organization-wide control: the co-owner can create further events.
             second_event = await co_owner.post(
                 f"/api/v1/admin/organizations/{organization_id}/events",
@@ -285,7 +475,12 @@ async def test_organization_admin_is_invitable_and_shares_org_control(
     assert connection.execute(
         "SELECT COUNT(*) FROM organization_memberships WHERE role='organization_admin' "
         "AND status='active'"
-    ).fetchone()[0] == 2
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM resource_access_grants WHERE resource_id=? "
+        "AND permission='manage' AND status='active'",
+        (organization_id,),
+    ).fetchone()[0] == 1
 
 
 async def test_event_update_without_status_preserves_archived(
@@ -313,12 +508,30 @@ async def test_event_update_without_status_preserves_archived(
         ).fetchone()[0]
         assert archived_at_ms is not None
 
+        now = int(time.time() * 1000)
+        past_archive = {
+            **EVENT_PAYLOAD,
+            "name": "Historical event with branding",
+            "starts_at_ms": now - 172_800_000,
+            "ends_at_ms": now - 86_400_000,
+            "status": "archived",
+            "version": 2,
+        }
+        historical = await root.patch(
+            f"/api/v1/admin/events/{event['id']}",
+            headers=_mutation(csrf),
+            json=past_archive,
+        )
+        assert historical.status_code == 200, historical.text
+        assert historical.json()["status"] == "archived"
+        assert historical.json()["ends_at_ms"] < now
+
         # A partial-intent update that omits status must not resurrect it —
         # and must not restamp the original archive timestamp either.
         renamed = await root.patch(
             f"/api/v1/admin/events/{event['id']}",
             headers=_mutation(csrf),
-            json={**EVENT_PAYLOAD, "name": "Renamed while archived", "version": 2},
+            json={**past_archive, "name": "Renamed while archived", "version": 3},
         )
         assert renamed.status_code == 200, renamed.text
         assert renamed.json()["status"] == "archived"
@@ -360,15 +573,19 @@ def test_console_gates_privileged_entry_points_by_real_permission() -> None:
     # People directory requires organization management; nav renders only then.
     assert "function canManageOrganization(session)" in shell
     assert shell.count('navLink("People", "/admin/speakers"') == 2
-    # Event sub-nav: exact event_admin membership, or an API permission probe
-    # for organization admins — never "admin of any organization".
+    # Event sub-nav uses exact event authority, or an API permission probe for
+    # the selected event — never authority over some unrelated resource.
     assert "administersEventDirectly(session, currentEventId)" in shell
     assert "/api/v1/admin/events/${encodeURIComponent(currentEventId)}" in shell
-    # Create event tracks the SELECTED organization's admin role.
+    # Create event tracks the selected organization's exact manage permission.
     assert "state.adminOrganizationIds" in events
     assert "updateCreateAccess(event.currentTarget.value)" in events
-    # Organization-admin invitations offered only for this event's own org.
-    assert "adminOrganizationIds.has(event.organization_id)" in access
+    # Organization management invitations are presented as exact resource
+    # permissions and offered only for this event's own organization.
+    assert "manageableOrganizationIds.has(selectedEvent.organization_id)" in access
+    assert '["owner", "manage"].includes(permission)' in access
+    assert 'event_admin: "Can manage this event"' in access
+    assert 'organization_admin: "Can manage this organization"' in access
     # Destructive access changes require an explicit second click and surface
     # failures.
     assert "destructiveButton(" in access
@@ -406,10 +623,18 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
         assert co_owner_invite.status_code == 201, co_owner_invite.text
         async with _client(environment) as former:
             await _accept_invitation(former, connection, "former@example.com")
-        # Offboard the co-owner (no dedicated endpoint yet: direct revocation).
+        # Offboard the delegated manager (no dedicated endpoint yet: direct revocation).
         connection.execute(
             """UPDATE organization_memberships SET status='revoked',revoked_at_ms=1
                WHERE user_id=(SELECT id FROM users WHERE normalized_email='former@example.com')""",
+        )
+        connection.execute(
+            """UPDATE resource_access_grants
+               SET status='revoked',revoked_at_ms=1,
+                   revoked_by_user_id=(SELECT owner_user_id FROM owned_resources
+                                       WHERE id=resource_access_grants.resource_id)
+               WHERE user_id=(SELECT id FROM users
+                              WHERE normalized_email='former@example.com')"""
         )
         connection.execute(
             """UPDATE users SET authorization_version=authorization_version+1
@@ -441,7 +666,13 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
             # Reactivated as a speaker only — the admin role did not return.
             assert session["organization_access"] == []
             assert session["event_access"] == [
-                {"organization_id": organization_id, "event_id": event_id, "roles": ["speaker"]}
+                {
+                    "organization_id": organization_id,
+                    "event_id": event_id,
+                    "event_name": "Speaker Summit",
+                    "permissions": [],
+                    "assignments": ["speaker"],
+                }
             ]
     membership = connection.execute(
         """SELECT role,status FROM organization_memberships
@@ -506,79 +737,6 @@ async def test_event_admin_cannot_manage_org_admin_invitations(
     ).fetchone()[0] == "revoked"
 
 
-def test_invitation_rebuild_migration_survives_live_challenges() -> None:
-    """Deploying 0045 with pending invitation sign-in challenges must succeed
-    and preserve every row, with foreign keys enabled throughout."""
-    import sqlite3
-
-    migrations = sorted((PROJECT_ROOT / "migrations").glob("*.sql"))
-    target = PROJECT_ROOT / "migrations" / "0045_org_admin_invitations.sql"
-    connection = sqlite3.connect(":memory:")
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys=ON")
-    for migration in migrations:
-        if migration.name >= target.name:
-            break
-        connection.executescript(migration.read_text(encoding="utf-8"))
-    now = 1_000_000
-    connection.execute(
-        "INSERT INTO organizations(id,name,status,created_at_ms,updated_at_ms) "
-        "VALUES('org','O','active',?,?)",
-        (now, now),
-    )
-    connection.execute(
-        "INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms) "
-        "VALUES('root','r@x.t','r@x.t','active',?,?)",
-        (now, now),
-    )
-    connection.execute(
-        "INSERT INTO organization_memberships"
-        "(id,organization_id,user_id,role,status,created_at_ms,updated_at_ms) "
-        "VALUES('m1','org','root','organization_admin','active',?,?)",
-        (now, now),
-    )
-    connection.execute(
-        "INSERT INTO events(id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,"
-        "location,delivery_mode,description,status,created_at_ms,updated_at_ms) "
-        "VALUES('ev','org','E',?,?,'UTC','X','virtual','D','active',?,?)",
-        (now + 10, now + 20, now, now),
-    )
-    connection.execute(
-        "INSERT INTO identity_invitations(id,organization_id,event_id,normalized_email,"
-        "email,role,status,invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms) "
-        "VALUES('inv','org','ev','h@x.t','h@x.t','event_admin','pending','root',?,?,?)",
-        (now + 99_999, now, now),
-    )
-    connection.execute(
-        "INSERT INTO authentication_challenges(id,normalized_email,token_hash,purpose,"
-        "provisioning_context,redirect_path,expires_at_ms,created_at_ms,organization_id,"
-        "event_id,invitation_id) "
-        "VALUES('ch','h@x.t',?,'sign_in','invitation','/admin',?,?,'org','ev','inv')",
-        (b"t" * 32, now + 99_999, now),
-    )
-    connection.commit()
-
-    connection.executescript(target.read_text(encoding="utf-8"))
-
-    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
-    assert tuple(
-        connection.execute(
-            "SELECT role,status FROM identity_invitations WHERE id='inv'"
-        ).fetchone()
-    ) == ("event_admin", "pending")
-    assert connection.execute(
-        "SELECT invitation_id FROM authentication_challenges WHERE id='ch'"
-    ).fetchone()[0] == "inv"
-    # The widened CHECK now admits organization_admin invitations.
-    connection.execute(
-        "INSERT INTO identity_invitations(id,organization_id,event_id,normalized_email,"
-        "email,role,status,invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms) "
-        "VALUES('inv2','org','ev','o@x.t','o@x.t','organization_admin','pending','root',?,?,?)",
-        (2_000_000, 1_100_000, 1_100_000),
-    )
-    connection.close()
-
-
 def test_reactivation_never_restores_revoked_roles_in_sql() -> None:
     """Both membership upserts demote a revoked row to member on reactivation."""
     access = (
@@ -593,6 +751,9 @@ def test_reactivation_never_restores_revoked_roles_in_sql() -> None:
 
 
 def _seed_events(connection, count: int, *, start: int = 1_900_000_000_000) -> None:
+    owner_user_id = connection.execute(
+        "SELECT owner_user_id FROM owned_resources WHERE resource_type='organization'"
+    ).fetchone()[0]
     for index in range(count):
         connection.execute(
             "INSERT INTO events(id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,"
@@ -605,6 +766,13 @@ def _seed_events(connection, count: int, *, start: int = 1_900_000_000_000) -> N
                 start + index * 60_000,
                 start + index * 60_000 + 1,
             ),
+        )
+        connection.execute(
+            "INSERT INTO owned_resources"
+            "(id,resource_type,created_by_user_id,owner_user_id,status,"
+            "created_at_ms,updated_at_ms) "
+            "VALUES(?,'event',?,?,'active',1,1)",
+            (f"seed-event-{index:03d}", owner_user_id, owner_user_id),
         )
     connection.commit()
 
@@ -833,6 +1001,9 @@ def _seed_speaker_graph(connection) -> None:
     """One person speaking (with proposals) at two events, one person without
     any proposal: unique-people count must be exactly 1."""
     organization_id = connection.execute("SELECT id FROM organizations").fetchone()[0]
+    owner_user_id = connection.execute(
+        "SELECT owner_user_id FROM owned_resources WHERE id=?", (organization_id,)
+    ).fetchone()[0]
     now = 1_500_000
     for suffix in ("a", "b"):
         connection.execute(
@@ -841,6 +1012,13 @@ def _seed_speaker_graph(connection) -> None:
             "VALUES(?,?,?,?,?,'UTC','Online','virtual','D','active',?,?)",
             (f"spk-event-{suffix}", organization_id, f"Speaker event {suffix}",
              1_910_000_000_000, 1_910_000_000_001, now, now),
+        )
+        connection.execute(
+            """INSERT INTO owned_resources
+               (id,resource_type,created_by_user_id,owner_user_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES(?,'event',?,?,'active',?,?)""",
+            (f"spk-event-{suffix}", owner_user_id, owner_user_id, now, now),
         )
     connection.execute(
         "INSERT INTO people(id,organization_id,display_name,created_at_ms,updated_at_ms) "
@@ -921,7 +1099,7 @@ def test_metrics_speaker_queries_use_the_speaker_index() -> None:
 
     connection = sqlite3.connect(":memory:")
     connection.execute("PRAGMA foreign_keys=ON")
-    for migration in sorted((PROJECT_ROOT / "migrations").glob("*.sql")):
+    for migration in MIGRATIONS:
         connection.executescript(migration.read_text(encoding="utf-8"))
     plan = " ".join(
         str(value)

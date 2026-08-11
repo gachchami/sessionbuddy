@@ -13,9 +13,8 @@ from sessionbuddy.cfp.router import (
 )
 from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.db.types import utc_now_ms
+from tests.schema import MIGRATIONS
 from tests.speaker_operations.test_asset_boundary import AsyncSqlite
-
-MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
 
 
 def request_for(database: AsyncSqlite) -> Request:

@@ -29,7 +29,9 @@ class Default(WorkerEntrypoint):
     async def fetch(self, request):
         return await asgi.fetch(app, request, self.env)
 
-    async def scheduled(self, _controller):
+    async def scheduled(self, _controller, _environment=None, _context=None):
+        # Workerd forwards the JavaScript-style env and ctx arguments to Python
+        # scheduled handlers, while WorkerEntrypoint also exposes them on self.
         result = await dispatch_stuck_deliveries(
             self.env.DB,
             self.env.COMMUNICATION_QUEUE,

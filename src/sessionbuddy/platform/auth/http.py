@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 
-from sessionbuddy.platform.authorization import Permission, ResourceContext, authorize
+from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, authorize
 from sessionbuddy.platform.authorization.types import Actor
 from sessionbuddy.platform.db.types import utc_now_ms
 
@@ -26,6 +26,7 @@ NON_DISCLOSING_DENIAL_REASONS = frozenset(
         "tenant_membership_required",
         "ownership_required",
         "assignment_required",
+        "resource_access_required",
     }
 )
 
@@ -102,6 +103,27 @@ async def authenticate_request(request: Request) -> AuthenticatedContext:
     authenticated = AuthenticatedContext(result.actor, result.session_id)
     request.state.authenticated_context = authenticated
     return authenticated
+
+
+async def require_document_persona(request: Request, persona: Persona) -> None:
+    """Reject an authenticated session using the wrong active persona.
+
+    Anonymous visitors may still receive a portal shell that presents its
+    sign-in state. Protected API calls remain independently authenticated.
+    """
+    if not (
+        request.cookies.get("__Host-session")
+        or request.cookies.get("sessionbuddy-local")
+    ):
+        return
+    try:
+        authenticated = await authenticate_request(request)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return
+        raise
+    if authenticated.actor.active_persona is not persona:
+        raise HTTPException(status_code=403)
 
 
 def guard_mutation(

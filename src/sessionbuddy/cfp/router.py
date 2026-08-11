@@ -41,6 +41,7 @@ from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 from .models import (
+    AdminPublishedFormView,
     CfpWorkspaceView,
     CoSpeakerInvitationCreated,
     CoSpeakerInvitationView,
@@ -461,7 +462,7 @@ def _validate_cfp_deadline(closes_at_ms: int | None, event_starts_at_ms: int) ->
 
 @cfp_router.post(
     "/api/v1/admin/events/{event_id}/cfp/publish",
-    response_model=PublishedFormView,
+    response_model=AdminPublishedFormView,
     status_code=201,
     operation_id="publishCallForSpeakersForm",
     tags=["forms"],
@@ -471,7 +472,7 @@ async def publish_form(
     request: Request,
     body: FormPublish,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> PublishedFormView:
+) -> AdminPublishedFormView:
     await authenticate_request(request)
     key = _idempotency_key(idempotency_key)
     db = _db(request)
@@ -603,7 +604,7 @@ async def publish_form(
 
 @cfp_router.patch(
     "/api/v1/admin/events/{event_id}/cfp",
-    response_model=PublishedFormView,
+    response_model=AdminPublishedFormView,
     operation_id="updatePublishedCallForSpeakersForm",
     tags=["forms"],
 )
@@ -611,7 +612,7 @@ async def update_published_form(
     event_id: str,
     request: Request,
     body: FormUpdate,
-) -> PublishedFormView:
+) -> AdminPublishedFormView:
     db = _db(request)
     current = row_mapping(
         await db.prepare(
@@ -677,8 +678,8 @@ async def update_published_form(
                SET version=version+1,slug=?1,welcome_text=?2,schema_json=?3,
                    opens_at_ms=?4,closes_at_ms=?5,submission_limit=?6,
                    success_title=?7,success_message=?8,redirect_to_portal=?9,
-                   updated_at_ms=?10
-               WHERE id=?11 AND event_id=?12 AND status='published' AND version=?13"""
+                   confirmation_subject=?10,confirmation_body=?11,updated_at_ms=?12
+               WHERE id=?13 AND event_id=?14 AND status='published' AND version=?15"""
         ).bind(
             body.slug,
             body.welcome_text,
@@ -689,6 +690,8 @@ async def update_published_form(
             body.success_title,
             body.success_message,
             int(body.redirect_to_portal),
+            body.confirmation_subject,
+            body.confirmation_body,
             now,
             form_id,
             event_id,
@@ -737,7 +740,8 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
                       e.name AS event_name,e.starts_at_ms AS event_starts_at_ms,
                       e.ends_at_ms AS event_ends_at_ms,e.time_zone AS event_time_zone,
                       e.location AS event_location,e.delivery_mode AS event_delivery_mode,
-                      e.website_url AS event_website_url,e.accent_color,e.logo_url,e.cover_image_url,
+                      e.website_url AS event_website_url,e.accent_color,e.logo_url,
+                      e.cover_image_url,
                       COUNT(s.id) AS submissions_received
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
@@ -1885,6 +1889,101 @@ async def update_submission(
     return await _editable_submission_by_id(db, submission_id)
 
 
+@cfp_router.post(
+    "/api/v1/forms/{slug}/submissions/{submission_id}/withdraw",
+    response_model=PrivateSubmissionView,
+    operation_id="withdrawMyCallForSpeakersSubmission",
+    tags=["submissions"],
+)
+async def withdraw_submission(
+    slug: str,
+    submission_id: str,
+    request: Request,
+) -> PrivateSubmissionView:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT s.organization_id,s.event_id,s.status,s.submitter_user_id
+               FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
+               WHERE s.id=?1 AND f.slug=?2 LIMIT 1"""
+        )
+        .bind(submission_id, slug)
+        .first()
+    )
+    if row is None or str(row["submitter_user_id"] or "") != authenticated.actor.user_id:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(row["organization_id"]),
+            str(row["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    if row["status"] == "withdrawn":
+        return await _private_submission_by_id(db, submission_id, editable=False)
+    if row["status"] != "submitted":
+        raise HTTPException(status_code=409, detail="Only a submitted proposal can be withdrawn.")
+    blocked = await db.prepare(
+        """SELECT 1 AS found
+           WHERE EXISTS(SELECT 1 FROM evaluation_assignments WHERE submission_id=?1)
+              OR EXISTS(SELECT 1 FROM evaluations e JOIN evaluation_assignments a
+                        ON a.id=e.assignment_id WHERE a.submission_id=?1)
+              OR EXISTS(SELECT 1 FROM submission_decisions WHERE submission_id=?1)
+           LIMIT 1"""
+    ).bind(submission_id).first("found")
+    if blocked is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This proposal can no longer be withdrawn because review has started.",
+        )
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE submissions SET status='withdrawn',version=version+1,updated_at_ms=?1
+               WHERE id=?2 AND submitter_user_id=?3 AND status='submitted'
+                 AND NOT EXISTS(SELECT 1 FROM evaluation_assignments
+                                WHERE submission_id=?2)
+                 AND NOT EXISTS(SELECT 1 FROM submission_decisions
+                                WHERE submission_id=?2)"""
+        ).bind(now, submission_id, authenticated.actor.user_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO submission_write_guards
+               (id,submission_id,applied_changes,created_at_ms)
+               VALUES(?1,?2,changes(),?3)"""
+        ).bind(new_id(), submission_id, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="submission.withdraw",
+            target_type="submission",
+            target_id=submission_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+            metadata={},
+        )
+    )
+    try:
+        await _execute(request, batch)
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This proposal can no longer be withdrawn because review has started.",
+        ) from exc
+    return await _private_submission_by_id(db, submission_id, editable=False)
+
+
 @cfp_router.patch(
     "/api/v1/admin/submissions/{submission_id}",
     response_model=SubmissionView,
@@ -2039,21 +2138,32 @@ async def create_submission(
     if form is None:
         raise HTTPException(status_code=404)
     now = utc_now_ms()
-    submissions_received = int(
-        await db.prepare(
-            """SELECT COUNT(*) AS count_value FROM submissions
-               WHERE form_id=?1 AND status='submitted'"""
-        )
-        .bind(form["id"])
-        .first("count_value")
-        or 0
-    )
-    accepting, _ = _form_availability(form, submissions_received, now)
+    accepting, _ = _form_availability(form, 0, now)
     if not accepting:
         raise HTTPException(status_code=409)
+    submitter_user_id = authenticated.actor.user_id
+    submission_limit = (
+        int(form["submission_limit"])
+        if form.get("submission_limit") is not None
+        else None
+    )
+    if submission_limit is not None:
+        speaker_submissions = int(
+            await db.prepare(
+                """SELECT COUNT(*) AS count_value FROM submissions
+                   WHERE form_id=?1 AND submitter_user_id=?2 AND status='submitted'"""
+            )
+            .bind(form["id"], submitter_user_id)
+            .first("count_value")
+            or 0
+        )
+        if speaker_submissions >= submission_limit:
+            raise HTTPException(
+                status_code=409,
+                detail="You have reached the proposal limit for this Call for Proposals.",
+            )
     schema = json.loads(str(form["schema_json"]))
     _validate_submission_schema(schema, body)
-    submitter_user_id = authenticated.actor.user_id
     user_email = (
         await db.prepare("SELECT normalized_email FROM users WHERE id=?1")
         .bind(submitter_user_id)
@@ -2155,6 +2265,17 @@ async def create_submission(
             new_id(), form["organization_id"], form["event_id"], submitter_user_id, now
         )
     )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES(?1,'speaker','active',?2,?2,
+                 CASE WHEN EXISTS(SELECT 1 FROM user_roles
+                                  WHERE user_id=?1 AND status='active') THEN 0 ELSE 1 END)
+               ON CONFLICT(user_id,role) DO UPDATE SET status='active',
+                 revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+        ).bind(submitter_user_id, now)
+    )
     if person is None:
         batch.add_statement(
             db.prepare(
@@ -2182,7 +2303,7 @@ async def create_submission(
                SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                       ?11, 'submitted', ?12, ?12, ?12, ?13, ?14, ?15
                WHERE (SELECT COUNT(*) FROM submissions
-                      WHERE form_id=?4 AND status='submitted')
+                      WHERE form_id=?4 AND submitter_user_id=?11 AND status='submitted')
                      < COALESCE((SELECT submission_limit FROM call_for_speaker_forms
                                  WHERE id=?4), 1000001)"""
         ).bind(
@@ -2573,16 +2694,18 @@ def _blob(value: object) -> bytes:
     return converted if isinstance(converted, bytes) else bytes(converted)
 
 
-async def _form_by_id(db, form_id: str) -> PublishedFormView:
+async def _form_by_id(db, form_id: str) -> AdminPublishedFormView:
     row = row_mapping(
         await db.prepare(
             """SELECT f.id,f.event_id,f.version,f.slug,f.welcome_text,
                       f.schema_json,f.opens_at_ms,f.closes_at_ms,f.submission_limit,
                       f.success_title,f.success_message,f.redirect_to_portal,
+                      f.confirmation_subject,f.confirmation_body,
                       e.name AS event_name,e.starts_at_ms AS event_starts_at_ms,
                       e.ends_at_ms AS event_ends_at_ms,e.time_zone AS event_time_zone,
                       e.location AS event_location,e.delivery_mode AS event_delivery_mode,
-                      e.website_url AS event_website_url,e.accent_color,e.logo_url,e.cover_image_url,
+                      e.website_url AS event_website_url,e.accent_color,e.logo_url,
+                      e.cover_image_url,
                       COUNT(s.id) AS submissions_received
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
@@ -2594,7 +2717,15 @@ async def _form_by_id(db, form_id: str) -> PublishedFormView:
     )
     if row is None:
         raise HTTPException(status_code=404)
-    return _published_form_view(row, utc_now_ms())
+    confirmation_subject = row.pop("confirmation_subject")
+    confirmation_body = row.pop("confirmation_body")
+    return AdminPublishedFormView.model_validate(
+        _published_form_view(row, utc_now_ms()).model_dump()
+        | {
+            "confirmation_subject": confirmation_subject,
+            "confirmation_body": confirmation_body,
+        }
+    )
 
 
 async def _submission_by_id(db, submission_id: str) -> SubmissionView:
@@ -2625,20 +2756,29 @@ async def _submission_by_id(db, submission_id: str) -> SubmissionView:
 
 
 async def _editable_submission_by_id(db, submission_id: str) -> PrivateSubmissionView:
+    return await _private_submission_by_id(db, submission_id, editable=True)
+
+
+async def _private_submission_by_id(
+    db, submission_id: str, *, editable: bool
+) -> PrivateSubmissionView:
     submission = await _submission_by_id(db, submission_id)
-    return PrivateSubmissionView.model_validate({**submission.model_dump(), "editable": True})
+    return PrivateSubmissionView.model_validate(
+        {**submission.model_dump(), "editable": editable}
+    )
 
 
 def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[bool, str]:
+    # Kept in the signature because callers also use the total as a public
+    # activity metric. The configured limit is per authenticated speaker and
+    # is therefore enforced by create_submission, not on this public view.
+    del submissions_received
     opens_at = int(row["opens_at_ms"]) if row.get("opens_at_ms") is not None else None
     closes_at = int(row["closes_at_ms"]) if row.get("closes_at_ms") is not None else None
-    limit = int(row["submission_limit"]) if row.get("submission_limit") is not None else None
     if opens_at is not None and now_ms < opens_at:
         return False, "Applications have not opened yet."
     if closes_at is not None and now_ms >= closes_at:
         return False, "Applications are closed."
-    if limit is not None and submissions_received >= limit:
-        return False, "This Call for Proposals has reached its submission limit."
     return True, "Applications are open."
 
 

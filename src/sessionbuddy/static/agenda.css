@@ -50,7 +50,7 @@
   color: #59667c;
 }
 .revision strong {
-  font-size: 1.25rem;
+  font-size: 1.375rem;
 }
 .agenda-toolbar {
   display: flex;
@@ -65,8 +65,8 @@
 .agenda-toolbar h2 {
   margin: 0 0 .55rem;
   color: #59667c;
-  font-size: .78rem;
-  font-weight: 750;
+  font-size: .75rem;
+  font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -115,7 +115,7 @@
   border-color: #3159d9;
   background: #e9eeff;
   color: #274aa9;
-  font-weight: 750;
+  font-weight: 700;
 }
 .segmented input:focus-visible + span {
   outline: 3px solid #e69b00;
@@ -132,11 +132,11 @@
 }
 .agenda-tools summary {
   cursor: pointer;
-  font-weight: 750;
+  font-weight: 700;
 }
 .tool-grid {
   display: grid;
-  grid-template-columns: minmax(16rem,1.25fr) repeat(2,minmax(12rem,1fr));
+  grid-template-columns: minmax(16rem,1.25fr) repeat(3,minmax(12rem,1fr));
   gap: 1.5rem;
   margin-top: 1.25rem;
 }
@@ -145,7 +145,7 @@
   padding-left: 1.5rem;
 }
 .tool-grid h2 {
-  font-size: 1.05rem;
+  font-size: 1rem;
 }
 .tool-grid form {
   display: grid;
@@ -172,6 +172,77 @@
 }
 .resource-list button {
   padding: .4rem .6rem;
+}
+.label-create-form {
+  grid-template-columns: minmax(0,1fr) auto auto;
+  align-items: end;
+}
+.label-create-form label {
+  margin: 0;
+}
+.label-create-form input[type=color] {
+  width: 3rem;
+  min-height: 2.75rem;
+  padding: .2rem;
+}
+.label-resource,
+.resource-actions,
+.label-chip-list,
+.label-choice {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.resource-actions,
+.label-chip-list {
+  flex-wrap: wrap;
+}
+.label-swatch {
+  width: .8rem;
+  height: .8rem;
+  flex: 0 0 auto;
+  border: 1px solid rgb(10 20 35 / 18%);
+  border-radius: 50%;
+  background: var(--label-color);
+}
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.55rem;
+  padding: .18rem .5rem;
+  border: 1px solid color-mix(in srgb,var(--label-color) 45%,white);
+  border-radius: 999px;
+  background: color-mix(in srgb,var(--label-color) 12%,white);
+  color: #27354d;
+  font-size: .75rem;
+  font-weight: 700;
+}
+.label-fieldset {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #dce1eb;
+  border-radius: .7rem;
+}
+.label-fieldset .help {
+  margin-top: 0;
+}
+.label-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+}
+.label-choice {
+  min-height: 2.75rem;
+  margin: 0;
+  padding: .45rem .65rem;
+  border: 1px solid #cfd6e3;
+  border-radius: .6rem;
+  background: white;
+  cursor: pointer;
+}
+.label-choice:has(input:checked) {
+  border-color: #3159d9;
+  background: #edf2ff;
 }
 .panel {
   padding: 1.25rem;
@@ -202,7 +273,7 @@
   border-radius: 999px;
   background: #e9eeff;
   color: #274aa9;
-  font-weight: 750;
+  font-weight: 700;
 }
 .session-list {
   display: grid;
@@ -264,7 +335,7 @@
   list-style: none;
 }
 .scheduled-meta {
-  font-size: .88rem;
+  font-size: .875rem;
 }
 .conflict {
   margin: 1rem 0;
@@ -304,6 +375,16 @@ dialog::backdrop {
 dialog form {
   padding: 1.4rem;
 }
+.confirmation-dialog {
+  width: min(32rem,calc(100% - 2rem));
+}
+.confirmation-dialog h2 {
+  margin-bottom: .65rem;
+}
+.confirmation-dialog .actions {
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
 .dialog-heading {
   display: flex;
   justify-content: space-between;
@@ -312,7 +393,7 @@ dialog form {
 .icon-button {
   width: 2.75rem;
   padding: 0;
-  font-size: 1.5rem;
+  font-size: 1.375rem;
 }
 .preview-state {
   padding: .7rem;
@@ -371,6 +452,12 @@ dialog form {
     grid-column: auto;
     border-left: 0;
     padding-left: 0;
+  }
+  .label-create-form {
+    grid-template-columns: 1fr auto;
+  }
+  .label-create-form button {
+    grid-column: 1/-1;
   }
   .segmented {
     display: grid;

@@ -1,16 +1,15 @@
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+from tests.schema import MIGRATIONS
 
 
 @pytest.fixture
 def db():
     connection = sqlite3.connect(":memory:")
     connection.execute("PRAGMA foreign_keys=ON")
-    for migration in sorted((ROOT / "migrations").glob("*.sql")):
+    for migration in MIGRATIONS:
         connection.executescript(migration.read_text())
     connection.execute("INSERT INTO organizations VALUES ('org','Org','active',1,1,1,NULL)")
     connection.execute(

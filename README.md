@@ -148,8 +148,8 @@ Lighthouse, and a Wrangler dry run. No remote deployment is performed.
 
 - Full Python suite: **535 tests passing** (HTTP-level journeys for identity,
   multi-organizer administration, staged CFP uploads, evaluation, scheduling,
-  and release readiness), with `ruff` clean and migration-ledger/baseline
-  parity enforced (`scripts/build_baseline_migration.py --check`).
+  and release readiness), with `ruff` clean and canonical baseline validation
+  enforced (`scripts/validate_baseline_migration.py`).
 - Browser/Axe: 44 checks across desktop Chrome and Pixel 7 profiles, including
   authenticated admin, access, evaluator, speaker, onboarding, and agenda pages.
 - Large-database release smoke: 10,000 submissions, 2,000 speakers, 50,000

@@ -1,121 +1,180 @@
 import pytest
 
-from sessionbuddy.platform.authorization.policy import ROLE_GRANTS, authorize
-from sessionbuddy.platform.authorization.types import Actor, Permission, ResourceContext, Role
+from sessionbuddy.platform.authorization.policy import authorize
+from sessionbuddy.platform.authorization.types import (
+    Actor,
+    Permission,
+    Persona,
+    ResourceContext,
+    ResourceGrant,
+    Role,
+)
 
 ORG, OTHER_ORG, EVENT, OTHER_EVENT = "org-a", "org-b", "event-a", "event-b"
 
 
-def actor(role: Role, *, org: str = ORG, event: str | None = EVENT) -> Actor:
-    if role is Role.ORGANIZATION_ADMIN:
-        return Actor("user-a", organization_roles={org: frozenset({role})})
-    assert event
-    return Actor("user-a", event_roles={(org, event): frozenset({role})})
-
-
-@pytest.mark.parametrize("role", list(Role))
-@pytest.mark.parametrize("permission", list(Permission))
-def test_permission_matrix_is_closed_and_deny_by_default(
-    role: Role, permission: Permission
-) -> None:
-    subject = actor(role)
-    context = ResourceContext(ORG, EVENT, "user-a", True, True)
-    assert authorize(subject, permission, context).allowed is (permission in ROLE_GRANTS[role])
-
-
-@pytest.mark.parametrize("role", list(Role))
-def test_changing_organization_or_event_never_grants_access(role: Role) -> None:
-    subject = actor(role)
-    assert not authorize(
-        subject, Permission.DASHBOARD_READ, ResourceContext(OTHER_ORG, EVENT)
-    ).allowed
-    if role is not Role.ORGANIZATION_ADMIN:
-        assert not authorize(
-            subject, Permission.DASHBOARD_READ, ResourceContext(ORG, OTHER_EVENT)
-        ).allowed
-
-
-def test_speaker_cannot_change_owner_identifier() -> None:
-    subject = actor(Role.SPEAKER)
-    decision = authorize(
-        subject, Permission.SPEAKER_ASSET_REPLACE_OWN, ResourceContext(ORG, EVENT, "other")
+def organizer(*resources: str, grants: dict[str, frozenset[ResourceGrant]] | None = None) -> Actor:
+    return Actor(
+        "user-a",
+        active_persona=Persona.ORGANIZER,
+        owned_resource_ids=frozenset(resources),
+        resource_grants=grants or {},
     )
-    assert not decision.allowed
-    assert decision.reason == "ownership_required"
+
+
+def reviewer(*, assigned: bool = True) -> tuple[Actor, ResourceContext]:
+    roles = {(ORG, EVENT): frozenset({Role.EVALUATOR})} if assigned else {}
+    return (
+        Actor("user-a", active_persona=Persona.REVIEWER, event_roles=roles),
+        ResourceContext(ORG, EVENT, evaluator_assigned=assigned, evaluation_round_open=True),
+    )
+
+
+def speaker(*, owner: str = "user-a", assigned: bool = True) -> tuple[Actor, ResourceContext]:
+    roles = {(ORG, EVENT): frozenset({Role.SPEAKER})} if assigned else {}
+    return (
+        Actor("user-a", active_persona=Persona.SPEAKER, event_roles=roles),
+        ResourceContext(ORG, EVENT, resource_owner_user_id=owner),
+    )
 
 
 @pytest.mark.parametrize(
     "permission",
     [
-        Permission.SPEAKER_ASSET_READ_OWN,
-        Permission.SPEAKER_ASSET_UPLOAD_OWN,
-        Permission.SPEAKER_ASSET_REPLACE_OWN,
+        Permission.EVENT_MANAGE,
+        Permission.FORM_MANAGE,
+        Permission.SUBMISSION_MANAGE,
+        Permission.SPEAKER_MANAGE,
+        Permission.AGENDA_MANAGE,
+        Permission.COMMUNICATION_SEND,
+        Permission.DASHBOARD_READ,
     ],
 )
-def test_speaker_asset_permissions_require_ownership(permission: Permission) -> None:
-    subject = actor(Role.SPEAKER)
-    own = authorize(subject, permission, ResourceContext(ORG, EVENT, subject.user_id))
-    foreign = authorize(subject, permission, ResourceContext(ORG, EVENT, "another-user"))
-    assert own.allowed
-    assert (foreign.allowed, foreign.reason) == (False, "ownership_required")
+def test_organizer_owner_can_use_organizer_artifacts(permission: Permission) -> None:
+    assert authorize(organizer(EVENT), permission, ResourceContext(ORG, EVENT)).allowed
 
 
-@pytest.mark.parametrize(
-    "permission",
-    [Permission.SPEAKER_ASSET_READ_OWN, Permission.SPEAKER_ASSET_UPLOAD_OWN],
-)
-def test_staff_roles_do_not_inherit_speaker_own_permissions(permission: Permission) -> None:
-    assert not authorize(
-        actor(Role.ORGANIZATION_ADMIN), permission, ResourceContext(ORG, EVENT, "user-a")
-    ).allowed
-    assert not authorize(
-        actor(Role.EVENT_ADMIN), permission, ResourceContext(ORG, EVENT, "user-a")
-    ).allowed
-
-
-def test_evaluator_needs_assignment_and_open_round() -> None:
-    subject = actor(Role.EVALUATOR)
-    missing = authorize(subject, Permission.EVALUATION_SAVE, ResourceContext(ORG, EVENT))
-    closed = authorize(
-        subject, Permission.EVALUATION_SAVE, ResourceContext(ORG, EVENT, evaluator_assigned=True)
+def test_speaker_active_persona_cannot_use_owned_organizer_artifact() -> None:
+    subject = Actor(
+        "user-a",
+        active_persona=Persona.SPEAKER,
+        owned_resource_ids=frozenset({EVENT}),
+        event_roles={(ORG, EVENT): frozenset({Role.SPEAKER})},
     )
-    allowed = authorize(
-        subject,
+    decision = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
+    assert (decision.allowed, decision.reason) == (False, "permission_not_granted")
+
+
+def test_reviewer_active_persona_cannot_use_owned_organizer_artifact() -> None:
+    subject = Actor(
+        "user-a",
+        active_persona=Persona.REVIEWER,
+        owned_resource_ids=frozenset({EVENT}),
+        event_roles={(ORG, EVENT): frozenset({Role.EVALUATOR})},
+    )
+    assert not authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT)).allowed
+
+
+def test_organizer_requires_exact_resource_ownership_or_grant() -> None:
+    subject = organizer(EVENT)
+    allowed = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
+    foreign = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, OTHER_EVENT))
+    assert allowed.allowed
+    assert (foreign.allowed, foreign.reason) == (False, "resource_access_required")
+
+
+def test_label_management_requires_the_exact_label_resource() -> None:
+    label_id = "label-a"
+    context = ResourceContext(ORG, EVENT, resource_id=label_id)
+    denied = authorize(organizer(EVENT), Permission.LABEL_MANAGE, context)
+    assert (denied.allowed, denied.reason) == (False, "resource_access_required")
+    assert authorize(organizer(EVENT, label_id), Permission.LABEL_MANAGE, context).allowed
+
+
+@pytest.mark.parametrize("grant", [ResourceGrant.EDIT, ResourceGrant.MANAGE])
+def test_explicit_edit_or_manage_grant_authorizes_organizer(grant: ResourceGrant) -> None:
+    subject = organizer(grants={EVENT: frozenset({grant})})
+    assert authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT)).allowed
+
+
+def test_view_grant_does_not_authorize_mutating_organizer_permission() -> None:
+    subject = organizer(grants={EVENT: frozenset({ResourceGrant.VIEW})})
+    decision = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
+    assert (decision.allowed, decision.reason) == (False, "resource_access_required")
+
+
+def test_only_owner_or_manage_grant_can_delegate_resource_access() -> None:
+    context = ResourceContext(ORG, EVENT)
+
+    assert authorize(
+        organizer(EVENT), Permission.RESOURCE_ACCESS_MANAGE, context
+    ).allowed
+    assert authorize(
+        organizer(grants={EVENT: frozenset({ResourceGrant.MANAGE})}),
+        Permission.RESOURCE_ACCESS_MANAGE,
+        context,
+    ).allowed
+    editor = authorize(
+        organizer(grants={EVENT: frozenset({ResourceGrant.EDIT})}),
+        Permission.RESOURCE_ACCESS_MANAGE,
+        context,
+    )
+    assert (editor.allowed, editor.reason) == (False, "resource_access_required")
+
+
+def test_organization_ownership_does_not_cascade_to_event() -> None:
+    subject = organizer(ORG)
+    assert authorize(subject, Permission.ORGANIZATION_MANAGE, ResourceContext(ORG)).allowed
+    event = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
+    assert (event.allowed, event.reason) == (False, "resource_access_required")
+
+
+def test_speaker_permissions_require_active_assignment_and_ownership() -> None:
+    subject, own = speaker()
+    assert authorize(subject, Permission.SPEAKER_ASSET_UPLOAD_OWN, own).allowed
+    foreign = ResourceContext(ORG, EVENT, resource_owner_user_id="other")
+    assert (
+        authorize(subject, Permission.SPEAKER_ASSET_UPLOAD_OWN, foreign).reason
+        == "ownership_required"
+    )
+    unassigned, context = speaker(assigned=False)
+    assert (
+        authorize(unassigned, Permission.SPEAKER_ASSET_UPLOAD_OWN, context).reason
+        == "assignment_required"
+    )
+
+
+def test_reviewer_needs_assignment_and_open_round() -> None:
+    subject, context = reviewer()
+    assert authorize(subject, Permission.EVALUATION_SAVE, context).allowed
+    closed = ResourceContext(ORG, EVENT, evaluator_assigned=True)
+    assert authorize(subject, Permission.EVALUATION_SAVE, closed).reason == "lifecycle_forbidden"
+    unassigned, missing = reviewer(assigned=False)
+    assert (
+        authorize(unassigned, Permission.EVALUATION_SAVE, missing).reason
+        == "assignment_required"
+    )
+
+
+def test_organizer_cannot_submit_a_review_without_reviewer_persona() -> None:
+    decision = authorize(
+        organizer(EVENT),
         Permission.EVALUATION_SAVE,
         ResourceContext(ORG, EVENT, evaluator_assigned=True, evaluation_round_open=True),
     )
-    assert (missing.reason, closed.reason, allowed.allowed) == (
-        "assignment_required",
-        "lifecycle_forbidden",
-        True,
-    )
-
-
-def test_admin_cannot_save_evaluation_without_separate_assignment() -> None:
-    subject = actor(Role.ORGANIZATION_ADMIN)
-    assert not authorize(subject, Permission.EVALUATION_SAVE, ResourceContext(ORG, EVENT)).allowed
-
-
-def test_only_organizers_can_send_event_communications() -> None:
-    context = ResourceContext(ORG, EVENT)
-    assert authorize(actor(Role.ORGANIZATION_ADMIN), Permission.COMMUNICATION_SEND, context).allowed
-    assert authorize(actor(Role.EVENT_ADMIN), Permission.COMMUNICATION_SEND, context).allowed
-    assert not authorize(actor(Role.EVALUATOR), Permission.COMMUNICATION_SEND, context).allowed
-    assert not authorize(actor(Role.SPEAKER), Permission.COMMUNICATION_SEND, context).allowed
+    assert (decision.allowed, decision.reason) == (False, "permission_not_granted")
 
 
 def test_inactive_actor_and_absent_resource_are_safe_denials() -> None:
     inactive = Actor(
-        "user-a", active=False, organization_roles={ORG: frozenset({Role.ORGANIZATION_ADMIN})}
+        "user-a", active=False, active_persona=Persona.ORGANIZER,
+        owned_resource_ids=frozenset({EVENT}),
     )
     assert (
         authorize(inactive, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT)).reason
         == "inactive_principal"
     )
-    active = actor(Role.ORGANIZATION_ADMIN)
-    assert (
-        authorize(
-            active, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT, resource_exists=False)
-        ).reason
-        == "resource_not_found"
-    )
+    assert authorize(
+        organizer(EVENT), Permission.EVENT_MANAGE,
+        ResourceContext(ORG, EVENT, resource_exists=False),
+    ).reason == "resource_not_found"

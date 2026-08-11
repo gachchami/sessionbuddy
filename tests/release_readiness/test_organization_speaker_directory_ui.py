@@ -57,3 +57,11 @@ def test_speaker_cards_share_one_person_profile_route() -> None:
         "${encodeURIComponent(selection.person.person_id)}`)"
     )
     assert legacy_redirect in script
+
+
+def test_speaker_directory_reads_named_resource_permissions_not_deleted_roles() -> None:
+    script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
+
+    assert "item.roles" not in script
+    assert "item.permissions || []" in script
+    assert '["owner", "edit", "manage"].includes(permission)' in script

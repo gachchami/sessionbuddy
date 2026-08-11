@@ -143,7 +143,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'id="date-time-preview"' in text
     assert "showModal()" in javascript
     assert 'form.elements.delivery_mode.value = ""' in javascript
-    assert 'createStatus === "active" && endsAt <= Date.now()' in javascript
+    assert 'intendedStatus === "active" && endsAt <= Date.now()' in javascript
     assert "Update the event dates before activating." in javascript
     assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
     assert "zonedDateTimeToMillis" in javascript

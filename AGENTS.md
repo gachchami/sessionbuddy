@@ -20,9 +20,12 @@ Organize work by capability, not delivery waves:
 homepage. Do not add tenant, identity, submission, speaker, incident, or secret
 data to its public response models.
 
-Applied files under `migrations/` are an immutable D1 ledger. Never rename,
-renumber, or edit a migration that may have been applied. Add a new migration
-for every schema change.
+SessionBuddy currently supports fresh installations only. The rebased
+`migrations_baseline/0001_baseline.sql` file is the complete canonical schema;
+do not add an incremental migration ledger or a compatibility upgrade path.
+After a baseline schema change, purge and recreate every development database
+before deployment, then prove a first apply and a repeat no-op apply. Do not
+run a changed baseline against a data-bearing database.
 
 ## Working model
 
@@ -119,4 +122,3 @@ Before handing off a change:
 5. Regenerate embedded assets and OpenAPI artifacts when their sources change.
 6. Run `git diff --check` and report any verification that could not be run.
 7. Update `docs/product-status.md` when capability or release status changes.
-

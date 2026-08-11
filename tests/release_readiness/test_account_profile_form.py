@@ -32,6 +32,14 @@ def test_profile_password_is_optional_matched_and_never_repopulated() -> None:
     assert "profile.password" not in javascript
 
 
+def test_profile_password_configuration_failure_has_an_actionable_recovery() -> None:
+    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+
+    assert "error.status === 503 && values.password" in javascript
+    assert "Leave both password fields blank to save the rest of your profile now" in javascript
+    assert "ask the administrator to check password configuration" in javascript
+
+
 def test_profile_access_section_selects_a_default_account_role() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
@@ -68,3 +76,16 @@ def test_profile_load_is_quiet_and_mobile_layout_is_single_column() -> None:
     assert ".account-link-fields .form-grid { grid-template-columns: 1fr; }" in mobile
     assert ".account-headshot .actions > .account-headshot__choose" in mobile
     assert ".account-headshot .actions > button { flex: 0 0 auto; }" in mobile
+
+
+def test_setup_display_name_is_a_reviewable_profile_draft() -> None:
+    markup = (STATIC / "account.html").read_text(encoding="utf-8")
+    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+
+    assert "profile.display_name.trim().split(/\\s+/)" in javascript
+    assert 'id="name-draft-help" class="help" hidden' in markup
+    assert "Nothing changes until you save your profile." in markup
+    assert markup.count('aria-describedby="name-draft-help"') == 2
+    assert 'byId("name-draft-help").hidden = !inferredNameDraft' in javascript
+    assert "Review the suggested name fields" in javascript
+    assert "inferredNameDraft = true" in javascript

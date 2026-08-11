@@ -14,16 +14,21 @@ def test_events_page_only_switches_organization() -> None:
     assert 'id="edit-organization"' not in page
     assert 'id="organization-dialog"' not in page
     assert 'byId("organization").addEventListener("change"' in script
+    assert '["owner", "manage"].includes(permission)' in script
+    assert 'includes("organization_admin")' not in script
+    assert 'values.status === "archived"' in script
+    assert 'body.status = state.editingDraft ? intendedStatus : values.status' in script
     assert 'organization-form' not in script
 
 
-def test_account_page_exposes_settings_only_to_organization_admins() -> None:
+def test_account_page_exposes_settings_only_to_organization_owners_or_managers() -> None:
     page = (STATIC / "account.html").read_text(encoding="utf-8")
     script = (STATIC / "account.js").read_text(encoding="utf-8")
 
     assert 'id="organization-settings"' in page
     assert 'id="organization-settings-list"' in page
-    assert 'includes("organization_admin")' in script
+    assert '["owner", "manage"].includes(permission)' in script
+    assert 'includes("organization_admin")' not in script
     update_path = (
         "/api/v1/admin/organizations/"
         "${encodeURIComponent(form.dataset.organizationId)}"

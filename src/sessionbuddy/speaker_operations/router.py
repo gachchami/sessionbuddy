@@ -16,10 +16,11 @@ from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     guard_mutation,
+    require_document_persona,
     require_permission,
     secret,
 )
-from sessionbuddy.platform.authorization import Permission, ResourceContext
+from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
@@ -130,6 +131,7 @@ async def _asset_versions_by_asset(
 
 @speaker_operations_router.get("/speaker", response_class=HTMLResponse, include_in_schema=False)
 async def speaker_page(request: Request) -> Response:
+    await require_document_persona(request, Persona.SPEAKER)
     return _product_asset(request, "speaker_portal.html", "text/html")
 
 
@@ -619,7 +621,7 @@ async def get_speaker_portal(
                           COALESCE((SELECT d.decision FROM submission_decisions d
                             WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
                               AND d.submission_id=s.id
-                            ORDER BY d.decided_at_ms DESC,d.id DESC LIMIT 1),'submitted') AS status
+                            ORDER BY d.decided_at_ms DESC,d.id DESC LIMIT 1),s.status) AS status
                    FROM submission_speakers ss
                    JOIN submissions s
                      ON s.organization_id = ss.organization_id

@@ -18,6 +18,16 @@ dev = [
   "workers-py",
   "workers-runtime-sdk",
 ]
+# Only needed to regenerate assets/logo derivatives; not required to run or test
+# the application. See scripts/build_logo_assets.py.
+logo = [
+  "cairosvg>=2.7,<3",
+  "pillow>=10,<12",
+]
+fixture-assets = [
+  "pillow>=10,<12",
+  "reportlab>=4.4,<5",
+]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"

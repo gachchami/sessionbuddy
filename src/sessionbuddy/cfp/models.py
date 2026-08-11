@@ -235,7 +235,7 @@ class FormPublish(FormSettings):
     )
 
 
-class FormUpdate(FormSettings):
+class FormUpdate(FormPublish):
     version: int = Field(ge=1)
 
 
@@ -273,13 +273,18 @@ class PublishedFormView(BaseModel):
     redirect_to_portal: bool = True
 
 
+class AdminPublishedFormView(PublishedFormView):
+    confirmation_subject: str = Field(min_length=1, max_length=200)
+    confirmation_body: str = Field(min_length=1, max_length=4000)
+
+
 class CfpWorkspaceView(BaseModel):
     model_config = ConfigDict(extra="forbid")
     organization_id: str
     event_id: str
     event_name: str
     event_starts_at_ms: int
-    published_form: PublishedFormView | None = None
+    published_form: AdminPublishedFormView | None = None
 
 
 class CoSpeakerInput(BaseModel):

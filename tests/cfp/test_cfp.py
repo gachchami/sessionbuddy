@@ -15,6 +15,7 @@ from sessionbuddy.cfp.models import (
     SubmissionCreate,
 )
 from sessionbuddy.cfp.router import (
+    _form_availability,
     _published_form_view,
     _timed_first,
     _validate_cfp_deadline,
@@ -421,6 +422,31 @@ def test_published_form_uses_default_accent_for_pre_branding_events() -> None:
     assert "program_id" not in form.model_dump()
 
 
+def test_proposal_limit_is_per_speaker_not_a_global_cfp_cap() -> None:
+    accepting, message = _form_availability(
+        {
+            "opens_at_ms": None,
+            "closes_at_ms": None,
+            "submission_limit": 3,
+        },
+        submissions_received=30,
+        now_ms=1,
+    )
+
+    assert accepting is True
+    assert message == "Applications are open."
+
+    source = (
+        Path(__file__).parents[2] / "src" / "sessionbuddy" / "cfp" / "router.py"
+    ).read_text(encoding="utf-8")
+    create = source.split("async def create_submission", 1)[1].split(
+        "SUBMISSIONS_PAGE_LIMIT", 1
+    )[0]
+    assert "WHERE form_id=?1 AND submitter_user_id=?2 AND status='submitted'" in create
+    assert "WHERE form_id=?4 AND submitter_user_id=?11 AND status='submitted'" in create
+    assert "You have reached the proposal limit for this Call for Proposals." in create
+
+
 async def test_admin_routes_require_authentication_outside_local() -> None:
     environment = SimpleNamespace(
         APP_ENV="development",
@@ -531,6 +557,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         setup = await client.get("/setup")
         setup_css = await client.get("/setup/assets/setup.css")
         setup_js = await client.get("/setup/assets/setup.js")
+        auth_link_confirm_js = await client.get("/auth/assets/auth-link-confirm.js")
         access = await client.get("/admin/events/22222222-2222-4222-8222-222222222222/access")
         events = await client.get("/admin/events")
         events_js = await client.get("/admin/events/assets/events.js")
@@ -546,6 +573,9 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     }
     assert sign_in.status_code == access.status_code == events.status_code == 200
     assert setup.status_code == setup_css.status_code == setup_js.status_code == 200
+    assert auth_link_confirm_js.status_code == 200
+    assert auth_link_confirm_js.headers["content-type"].startswith("text/javascript")
+    assert "form.requestSubmit()" in auth_link_confirm_js.text
     assert "Create the first organization and administrator" in setup.text
     assert {
         admin_home.status_code,

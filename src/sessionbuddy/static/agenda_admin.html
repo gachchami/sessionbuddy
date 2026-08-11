@@ -6,13 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Agenda editor · SessionBuddy</title>
     <link rel="stylesheet" href="/product/assets/product.css?v=57" type="text/css">
-    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=3" type="text/css">
+    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=5" type="text/css">
     <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19" type="text/css">
     <script src="/app-shell/assets/api-client.js?v=2" defer type="text/javascript">
 </script>
     <script src="/app-shell/assets/app-shell.js?v=22" defer type="text/javascript">
 </script>
-    <script src="/admin/agenda/assets/agenda.js?v=4" defer type="text/javascript">
+    <script src="/admin/agenda/assets/agenda.js?v=6" defer type="text/javascript">
 </script>
   </head>
   <body class="app-body workflow-page workflow-page--agenda">
@@ -96,6 +96,16 @@
               </form>
               <ul id="track-list" class="resource-list"></ul>
             </section>
+            <section aria-labelledby="labels-title">
+              <h2 id="labels-title">Label management</h2>
+              <p class="help">Labels belong to this event and help attendees scan the program.</p>
+              <form id="label-form" class="label-create-form">
+                <label><span>Label name</span><input name="name" maxlength="80" placeholder="Beginner" required></label>
+                <label><span>Color</span><input name="color" type="color" value="#2563EB" required></label>
+                <button type="submit">Add label</button>
+              </form>
+              <ul id="label-list" class="resource-list"></ul>
+            </section>
           </div>
         </details>
         <div class="agenda-layout">
@@ -146,10 +156,15 @@
           <div id="editor-errors" class="conflict" role="alert" tabindex="-1" hidden="">
             <strong>Review this schedule change.</strong>
             <ul></ul>
-          </div><input name="item_id" type="hidden"><input name="session_id" type="hidden"><input name="version" type="hidden"><input name="content_version" type="hidden">
+          </div><input name="item_id" type="hidden"><input name="session_id" type="hidden"><input name="version" type="hidden"><input name="content_version" type="hidden"><input name="label_version" type="hidden">
           <label>Session title<input name="title" maxlength="200" required></label>
           <label>Abstract<textarea name="abstract" rows="5" maxlength="5000" required></textarea></label>
           <label>Public content status<select name="content_status"><option value="draft">Draft — hidden from the public schedule</option><option value="approved">Approved — visible after agenda publication</option></select></label>
+          <fieldset class="label-fieldset">
+            <legend>Session labels</legend>
+            <p class="help">Choose up to 20 labels. Create reusable labels under Schedule tools.</p>
+            <div id="session-labels" class="label-choices"></div>
+          </fieldset>
           <p id="editor-time-zone" class="help">Start and end times use the event time zone: <strong data-event-time-zone>Loading…</strong>.</p>
           <div class="form-grid">
             <label>Starts<input name="start_at" type="datetime-local" required="" aria-describedby="editor-time-zone"></label><label>Ends<input name="end_at" type="datetime-local" required="" aria-describedby="editor-time-zone"></label><label>Room<select name="room_id" required="">
@@ -165,6 +180,38 @@
           <details><summary>Content history</summary><ul id="content-history" class="resource-list"><li class="help">No changes recorded yet.</li></ul></details>
           <div class="actions">
             <button id="unschedule-item" class="danger secondary" type="button" hidden>Move to unscheduled</button><button id="cancel-editor" class="secondary" type="button">Cancel</button><button id="save-item" type="submit">Save to draft</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="label-editor" class="confirmation-dialog" aria-labelledby="label-editor-title">
+        <form id="label-editor-form">
+          <input name="label_id" type="hidden"><input name="version" type="hidden">
+          <p class="eyebrow">Event taxonomy</p>
+          <h2 id="label-editor-title">Edit label</h2>
+          <label>Label name<input name="name" maxlength="80" required></label>
+          <label>Color<input name="color" type="color" required></label>
+          <div class="actions">
+            <button id="cancel-label-edit" class="secondary" type="button">Cancel</button><button type="submit">Save label</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="publish-dialog" class="confirmation-dialog" aria-labelledby="publish-dialog-title" aria-describedby="publish-dialog-summary publish-dialog-notice">
+        <form id="publish-form">
+          <p class="eyebrow">
+            Public schedule
+          </p>
+          <h2 id="publish-dialog-title">
+            Publish this agenda?
+          </h2>
+          <p id="publish-dialog-summary">
+            Scheduled sessions will become publicly visible.
+          </p>
+          <p id="publish-dialog-notice" class="help">
+            Calendar updates will be emailed to speakers. Sessions with draft content remain hidden until their content is approved.
+          </p>
+          <p id="publish-dialog-draft-note" class="preview-state" hidden></p>
+          <div class="actions">
+            <button id="cancel-publish" class="secondary" type="button">Cancel</button><button id="confirm-publish" type="submit">Publish agenda</button>
           </div>
         </form>
       </dialog>

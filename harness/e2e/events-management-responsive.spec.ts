@@ -20,7 +20,7 @@ test("Events table and save failures stay usable on mobile", async ({ page }) =>
       default_role: "organizer",
       organization_id: organizationId,
       organization_name: "AIEngineer",
-      organization_access: [{ organization_id: organizationId, roles: ["organization_admin"] }],
+      organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }],
       event_access: [],
     }),
   }));
@@ -58,12 +58,25 @@ test("Events table and save failures stay usable on mobile", async ({ page }) =>
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ name: "AIEngineer Event 1 copy" }) });
   });
   await page.route(`**/api/v1/admin/organizations/${organizationId}/events`, async (route) => {
-    expect(route.request().postDataJSON()).toMatchObject({ status: "active" });
+    expect(route.request().postDataJSON()).toMatchObject({
+      status: "active",
+      logo_url: "/event-branding/test-logo.png",
+    });
     await new Promise((resolve) => setTimeout(resolve, 1_200));
     await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({
       error: { code: "service_unavailable", message: "Event service is temporarily unavailable." },
       request_id: "request-1",
     }) });
+  });
+  await page.route(`**/api/v1/admin/organizations/${organizationId}/event-assets/logo`, async (route) => {
+    expect(route.request().headers()["content-type"]).toBe("image/png");
+    expect(route.request().headers()["x-csrf-token"]).toBe("csrf");
+    expect(route.request().postDataBuffer()).toEqual(Buffer.from("event-logo"));
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ asset_url: "/event-branding/test-logo.png", kind: "logo" }),
+    });
   });
 
   await page.goto("/admin/events");
@@ -103,6 +116,12 @@ test("Events table and save failures stay usable on mobile", async ({ page }) =>
   await dialog.locator(".advanced-settings > summary").click();
   await dialog.getByLabel(/Event website/).fill("https://aiengineer.example/summit-2027");
   await dialog.getByLabel(/Accent color/).fill("#ffff00");
+  const logo = dialog.getByRole("button", { name: "Event logo", exact: true });
+  await expect(logo).toHaveAttribute("type", "file");
+  await logo.setInputFiles({ name: "event-logo.png", mimeType: "image/png", buffer: Buffer.from("event-logo") });
+  await expect(dialog.locator("#event-logo-status")).toHaveText("Ready to upload.");
+  await dialog.getByRole("button", { name: "Upload", exact: true }).first().click();
+  await expect(dialog.locator("#event-logo-status")).toHaveText("Uploaded.");
   await expect(dialog.locator("#public-brand-preview-title")).toHaveText("AIEngineer Summit 2027");
   await expect(dialog.locator("#public-brand-preview-date")).toContainText("Oct 12, 2027");
   await expect(dialog.locator("#public-brand-preview-location")).toContainText("Bengaluru");
@@ -112,7 +131,7 @@ test("Events table and save failures stay usable on mobile", async ({ page }) =>
     return style.borderTopColor;
   });
   expect(previewColor).toBe("rgb(255, 255, 0)");
-  const save = dialog.getByRole("button", { name: "Create event", exact: true });
+  const save = dialog.getByRole("button", { name: "Create active event", exact: true });
   await save.click();
   await expect(dialog.locator("#event-dialog-status")).toContainText("Reference: request-1");
   await expect(save).toBeEnabled();
@@ -126,7 +145,7 @@ test("newer event searches cannot be replaced by a slower older response", async
       authenticated: true, user_id: "user", email: "organizer@example.com", display_name: "User Zero",
       profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
       default_role: "organizer", organization_id: organizationId, organization_name: "AIEngineer",
-      organization_access: [{ organization_id: organizationId, roles: ["organization_admin"] }], event_access: [],
+      organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }], event_access: [],
     }),
   }));
   await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
@@ -153,4 +172,60 @@ test("newer event searches cannot be replaced by a slower older response", async
   await page.waitForTimeout(500);
   await expect(page.getByRole("heading", { name: "Older result" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Newer result" })).toBeVisible();
+});
+
+test("an archived event keeps its past dates when an organizer saves changes", async ({ page }) => {
+  const historicalEvent = {
+    id: "historical-event",
+    organization_id: organizationId,
+    name: "AIEngineer Archive 2025",
+    status: "archived",
+    version: 4,
+    starts_at_ms: Date.UTC(2025, 5, 3, 3, 30),
+    ends_at_ms: Date.UTC(2025, 5, 4, 11, 30),
+    time_zone: "Asia/Kolkata",
+    delivery_mode: "in_person",
+    location: "Bengaluru",
+    description: "A completed conference retained for the public archive.",
+    proposal_count: 12,
+  };
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      authenticated: true, user_id: "user", email: "organizer@example.com", display_name: "User Zero",
+      profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
+      default_role: "organizer", organization_id: organizationId, organization_name: "AIEngineer",
+      organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }], event_access: [],
+    }),
+  }));
+  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1 }] }),
+  }));
+  await page.route(`**/api/v1/admin/organizations/${organizationId}/events?*`, (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: [historicalEvent], next_cursor: null }),
+  }));
+  await page.route("**/api/v1/admin/events/historical-event", async (route) => {
+    expect(route.request().method()).toBe("PATCH");
+    expect(route.request().postDataJSON()).toMatchObject({
+      status: "archived",
+      starts_at_ms: historicalEvent.starts_at_ms,
+      ends_at_ms: historicalEvent.ends_at_ms,
+      version: 4,
+    });
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ ...historicalEvent, name: "AIEngineer Historical Archive", version: 5 }),
+    });
+  });
+
+  await page.goto("/admin/events");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit AIEngineer Archive 2025" });
+  await expect(dialog.getByLabel("End date")).toHaveValue("2025-06-04");
+  await expect(dialog.getByLabel("Status")).toHaveValue("archived");
+  await dialog.getByLabel(/Event name/).fill("AIEngineer Historical Archive");
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.locator("#status")).toHaveText("Event updated.");
 });

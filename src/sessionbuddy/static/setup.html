@@ -6,9 +6,9 @@
   <meta name="robots" content="noindex,nofollow">
   <title>Set up SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=57">
-  <link rel="stylesheet" href="/setup/assets/setup.css?v=4">
+  <link rel="stylesheet" href="/setup/assets/setup.css?v=6">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/setup/assets/setup.js?v=4" defer></script>
+  <script src="/setup/assets/setup.js?v=6" defer></script>
 </head>
 <body class="setup-body setup-page">
   <a class="skip-link" href="#main">Skip to setup</a>
@@ -25,7 +25,7 @@
       </ol>
     </section>
 
-    <section class="setup-card setup-form-surface" aria-labelledby="form-title">
+    <section id="setup-card" class="setup-card setup-form-surface" aria-labelledby="form-title">
       <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Checking this instance…</div>
       <form id="setup-form" aria-labelledby="form-title" hidden>
         <p class="eyebrow">Initial setup</p>
@@ -34,8 +34,11 @@
           <input name="organization_name" autocomplete="organization" maxlength="200" required>
         </label>
         <div class="form-grid">
-          <label><span class="field-label">Administrator name <span class="required-marker" aria-hidden="true">*</span></span>
-            <input name="admin_name" autocomplete="name" maxlength="200" placeholder="Your full name" required>
+          <label><span class="field-label">Administrator first name <span class="required-marker" aria-hidden="true">*</span></span>
+            <input name="admin_first_name" autocomplete="given-name" maxlength="100" required>
+          </label>
+          <label><span class="field-label">Administrator last name <span class="required-marker" aria-hidden="true">*</span></span>
+            <input name="admin_last_name" autocomplete="family-name" maxlength="100" required>
           </label>
           <label><span class="field-label">Administrator email <span class="required-marker" aria-hidden="true">*</span></span>
             <input name="admin_email" type="email" autocomplete="email" maxlength="320" placeholder="you@example.com" required>
@@ -52,6 +55,14 @@
         </label>
         <button id="complete-setup" type="submit">Complete setup</button>
       </form>
+      <div id="setup-complete" class="setup-complete" tabindex="-1" hidden>
+        <p class="eyebrow">Setup complete</p>
+        <h2 id="setup-complete-title">Check your email.</h2>
+        <p id="setup-complete-message"></p>
+        <p class="setup-complete-email"><strong id="setup-complete-email"></strong></p>
+        <p id="setup-complete-help" class="help"></p>
+        <a id="setup-complete-recovery" class="button secondary" href="/sign-in?redirect=%2Fadmin" hidden>Request a new sign-in link</a>
+      </div>
     </section>
   </main>
 </body>

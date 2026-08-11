@@ -59,11 +59,11 @@
         : values.duplicate_source_event_id ? "Resume event duplication" : "Resume event creation";
       state.editingDraft = Boolean(values.event_id && values.status === "draft");
       byId("save-event").textContent = values.event_id
-        ? (state.editingDraft ? "Activate event" : "Save changes")
+        ? "Save changes"
         : "Create active event";
       byId("save-event-draft").hidden = Boolean(values.event_id && !state.editingDraft);
       byId("creation-action-note").hidden = Boolean(values.event_id && !state.editingDraft);
-      byId("event-status-label").hidden = !values.event_id || state.editingDraft;
+      byId("event-status-label").hidden = !values.event_id;
       updateDateTimePreview();
       openEventDialog();
       setDialogStatus("Your entries were restored after signing in again.");
@@ -95,12 +95,10 @@
     byId("event-form").setAttribute("aria-busy", String(submitting));
     byId("save-event-draft").textContent = submitting && state.submitTargetStatus === "draft" ? "Saving draft…" : "Save draft";
     byId("save-event").textContent = submitting
-      ? (editing && !state.editingDraft
+      ? (editing
           ? "Saving changes…"
-          : state.editingDraft && state.submitTargetStatus === "active"
-            ? "Activating event…"
-            : state.submitTargetStatus === "active" ? "Creating event…" : "Create active event")
-      : (editing ? (state.editingDraft ? "Activate event" : "Save changes") : "Create active event");
+          : state.submitTargetStatus === "active" ? "Creating event…" : "Create active event")
+      : (editing ? "Save changes" : "Create active event");
     byId("cancel-event-edit").disabled = submitting;
     byId("close-event-dialog").disabled = submitting;
     updateSaveAvailability();
@@ -410,10 +408,10 @@
     form.elements.status.value = event.status;
     state.editingDraft = event.status === "draft";
     byId("event-form-heading").textContent = `Edit ${event.name}`;
-    byId("save-event").textContent = state.editingDraft ? "Activate event" : "Save changes";
+    byId("save-event").textContent = "Save changes";
     byId("save-event-draft").hidden = !state.editingDraft;
     byId("creation-action-note").hidden = !state.editingDraft;
-    byId("event-status-label").hidden = state.editingDraft;
+    byId("event-status-label").hidden = false;
     byId("event-autosave-state").textContent = state.editingDraft
       ? "Drafts autosave in this browser"
       : "Live event changes are not autosaved";
@@ -638,12 +636,13 @@
     byId("event-form").elements.email_sender_name.placeholder = state.emailDefaults.name;
     byId("event-form").elements.email_reply_to.placeholder = state.emailDefaults.address;
     byId("event-email-default").textContent = `Blank uses ${defaultIdentity}.`;
-    // Creating events needs organization-wide management OF THE SELECTED
-    // organization; a user can be organization admin of one org and only an
-    // event admin of another, so track the exact ids.
+    // Creating events needs exact management of the selected organization.
+    // Resource permissions are separate from account personas and do not
+    // cascade from any other organization.
     state.adminOrganizationIds = new Set(
       (session.organization_access || [])
-        .filter((item) => (item.roles || []).includes("organization_admin"))
+        .filter((item) => (item.permissions || []).some((permission) =>
+          ["owner", "manage"].includes(permission)))
         .map((item) => item.organization_id)
     );
     const result = await api("/api/v1/admin/organizations");
@@ -840,7 +839,12 @@
     const eventId = values.event_id;
     const duplicateSourceId = values.duplicate_source_event_id;
     const createStatus = event.submitter?.value === "draft" ? "draft" : "active";
-    state.submitTargetStatus = createStatus;
+    const intendedStatus = eventId
+      ? state.editingDraft
+        ? values.status === "archived" ? "archived" : createStatus
+        : values.status
+      : createStatus;
+    state.submitTargetStatus = intendedStatus;
     if (state.submitting) return;
     try {
       for (const name of ["website_url"]) {
@@ -857,7 +861,7 @@
         updateDateTimePreview();
         return;
       }
-      if (createStatus === "active" && endsAt <= Date.now()) {
+      if (intendedStatus === "active" && endsAt <= Date.now()) {
         form.elements.end_date.setCustomValidity("Update the event dates before activating.");
         form.elements.end_date.setAttribute("aria-invalid", "true");
         form.elements.end_date.reportValidity();
@@ -886,7 +890,7 @@
       if (!eventId) body.status = createStatus;
       if (eventId) {
         body.version = Number(values.version);
-        body.status = state.editingDraft ? createStatus : values.status;
+        body.status = state.editingDraft ? intendedStatus : values.status;
       }
       if (form.elements.logo_file.files[0] || form.elements.cover_file.files[0]) {
         setDialogStatus(`Upload the selected logo or cover before ${eventId ? "saving changes" : "creating the event"}.`, true);
@@ -913,8 +917,10 @@
         }
       );
       sessionStorage.removeItem(eventDraftKey());
-      setStatus(eventId && state.editingDraft && createStatus === "active"
-        ? "Event activated."
+      setStatus(eventId && state.editingDraft && intendedStatus === "archived"
+        ? "Event archived."
+        : eventId && state.editingDraft && intendedStatus === "active"
+          ? "Event activated."
         : eventId && !state.editingDraft
           ? "Event updated."
           : createStatus === "draft" ? "Draft saved." : "Event created.");

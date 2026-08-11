@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.auth import authenticate_request, generate_token, hash_token
 from sessionbuddy.platform.auth.http import require_permission
-from sessionbuddy.platform.authorization import Permission, ResourceContext
+from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, ResourceGrant
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
@@ -421,7 +421,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
 async def list_organization_speakers(
     organization_id: str, request: Request
 ) -> OrganizationSpeakerList:
-    await require_permission(
+    authenticated = await require_permission(
         request,
         Permission.ORGANIZATION_MANAGE,
         ResourceContext(organization_id),
@@ -449,9 +449,22 @@ async def list_organization_speakers(
                LEFT JOIN users u ON u.id=p.user_id
                WHERE p.organization_id=?1 AND p.archived_at_ms IS NULL
                  AND e.status!='archived' AND es.status!='withdrawn'
+                 AND (
+                   EXISTS(SELECT 1 FROM owned_resources owned
+                     WHERE owned.id=es.event_id AND owned.resource_type='event'
+                       AND owned.status='active' AND owned.owner_user_id=?2)
+                   OR EXISTS(SELECT 1 FROM resource_access_grants grant_access
+                     JOIN owned_resources granted_resource
+                       ON granted_resource.id=grant_access.resource_id
+                      AND granted_resource.resource_type='event'
+                      AND granted_resource.status='active'
+                     WHERE grant_access.resource_id=es.event_id
+                       AND grant_access.user_id=?2 AND grant_access.status='active'
+                       AND grant_access.permission IN ('edit','manage'))
+                 )
                ORDER BY p.display_name,p.id,e.starts_at_ms DESC,e.id,es.id LIMIT 5000"""
         )
-        .bind(organization_id)
+        .bind(organization_id, authenticated.actor.user_id)
         .all()
     )
     people: dict[str, OrganizationSpeaker] = {}
@@ -567,11 +580,15 @@ async def _speaker_profile_page(
             (
                 row
                 for row in participation_rows
-                if authenticated.actor.organization_roles.get(
-                    str(person["organization_id"]), frozenset()
-                )
-                or authenticated.actor.event_roles.get(
-                    (str(person["organization_id"]), str(row["event_id"])), frozenset()
+                if authenticated.actor.active_persona is Persona.ORGANIZER
+                and (
+                    str(row["event_id"]) in authenticated.actor.owned_resource_ids
+                    or bool(
+                        authenticated.actor.resource_grants.get(
+                            str(row["event_id"]), frozenset()
+                        )
+                        & {ResourceGrant.EDIT, ResourceGrant.MANAGE}
+                    )
                 )
             ),
             None,

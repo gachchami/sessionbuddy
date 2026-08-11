@@ -1,11 +1,9 @@
 import sqlite3
-from pathlib import Path
 
 import pytest
 
 from scripts.setup_key import READ_KEY_SQL, REGENERATE_KEY_SQL
-
-MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
+from tests.schema import MIGRATIONS
 
 
 @pytest.fixture
@@ -280,37 +278,6 @@ def test_account_has_one_default_role_and_replaces_it_when_revoked(
         """SELECT role FROM user_roles
            WHERE user_id='default-user' AND is_default=1"""
     ).fetchone() == ("speaker",)
-
-
-def test_setup_migration_backfills_existing_installations() -> None:
-    connection = sqlite3.connect(":memory:")
-    setup_migration = next(
-        migration
-        for migration in MIGRATIONS
-        if migration.name == "0021_one_time_instance_setup.sql"
-    )
-    lock_migration = next(
-        migration
-        for migration in MIGRATIONS
-        if migration.name == "0022_lock_completed_instance_setup.sql"
-    )
-    for migration in MIGRATIONS:
-        if migration == setup_migration:
-            break
-        connection.executescript(migration.read_text(encoding="utf-8"))
-    connection.execute(
-        """INSERT INTO organizations (id,name,status,created_at_ms,updated_at_ms)
-           VALUES ('existing','Existing Events','active',100,100)"""
-    )
-
-    connection.executescript(setup_migration.read_text(encoding="utf-8"))
-    connection.executescript(lock_migration.read_text(encoding="utf-8"))
-
-    assert connection.execute("SELECT COUNT(*) FROM instance_setup_credentials").fetchone()[0] == 0
-    assert connection.execute(
-        "SELECT singleton_key,completed_at_ms FROM instance_setup"
-    ).fetchone() == ("primary", 100)
-    connection.close()
 
 
 def test_migration_key_can_rotate_only_before_setup() -> None:

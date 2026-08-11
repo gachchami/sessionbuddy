@@ -287,6 +287,58 @@
       ],
       "runbook": "docs/debugging-runbook.md#agenda"
     },
+    "GET /api/v1/admin/events/{event_id}/labels": {
+      "owner": "agenda",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-list-event-labels",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#agenda"
+    },
+    "POST /api/v1/admin/events/{event_id}/labels": {
+      "owner": "agenda",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-create-event-label",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#agenda"
+    },
+    "PATCH /api/v1/admin/events/{event_id}/labels/{label_id}": {
+      "owner": "agenda",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-update-event-label",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#agenda"
+    },
+    "PUT /api/v1/admin/events/{event_id}/sessions/{session_id}/labels": {
+      "owner": "agenda",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "admin-assign-session-labels",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#agenda"
+    },
     "POST /api/v1/admin/events/{event_id}/agenda/auto-schedule": {
       "owner": "agenda",
       "slo": {
@@ -729,6 +781,136 @@
       ],
       "runbook": "docs/debugging-runbook.md#identity"
     },
+    "GET /api/v1/admin/events/{event_id}/access-grants": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 400,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-list-resource-access-grants",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/admin/events/{event_id}/access-grants": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-create-resource-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "PATCH /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-update-resource-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "DELETE /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 400,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-revoke-resource-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/access-grants": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 400,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-list-organization-access-grants",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/access-grants": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-create-organization-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "PATCH /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-update-organization-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "DELETE /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 400,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-revoke-organization-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/ownership-recovery/events": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-list-ownership-recovery-events",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
+    "POST /api/v1/admin/events/{event_id}/ownership-transfers": {
+      "owner": "identity",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "identity-transfer-event-ownership",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#identity"
+    },
     "POST /api/v1/admin/events/{event_id}/invitations": {
       "owner": "identity",
       "slo": {
@@ -1050,6 +1232,19 @@
         "error_rate_max": 0.001
       },
       "benchmark": "cfp-update-owned-submission",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "POST /api/v1/forms/{slug}/submissions/{submission_id}/withdraw": {
+      "owner": "program-management",
+      "slo": {
+        "p95_ms": 400,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "cfp-withdraw-owned-submission",
       "dashboards": [
         "release-health",
         "api-explorer"
@@ -1687,6 +1882,24 @@
     }
   },
   "pages": {
+    "/docs": {
+      "owner": "platform-operations",
+      "classification": "synthetic/local",
+      "journeys": [
+        "browse-read-only-api-contract"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
     "/engine-room": {
       "owner": "platform-operations",
       "classification": "synthetic/local",

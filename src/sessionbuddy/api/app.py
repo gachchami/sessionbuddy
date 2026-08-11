@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 
 from sessionbuddy.api.errors import ErrorDetail, ErrorEnvelope
 from sessionbuddy.api.models import ApiHealthResponse, HealthResponse
+from sessionbuddy.api.openapi_contract import OPENAPI_JSON
 from sessionbuddy.cfp import cfp_router
 from sessionbuddy.communications.d1 import communications_service
 from sessionbuddy.communications.router import create_communications_router
@@ -34,7 +35,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url=None,
     redoc_url=None,
-    openapi_url="/api/v1/openapi.json",
+    openapi_url=None,
 )
 
 # Starlette executes the last-added middleware first. Observability is outermost so it
@@ -51,28 +52,67 @@ app.include_router(scheduling_router)
 app.include_router(competition_router)
 app.include_router(create_communications_router(communications_service))
 
+_OPENAPI_ENVIRONMENTS = frozenset({"local", "development", "preview"})
+
+
+def _has_development_docs(request: Request) -> bool:
+    runtime = request.scope.get("env")
+    app_env = str(getattr(runtime, "APP_ENV", "production")).strip().lower()
+    return app_env in _OPENAPI_ENVIRONMENTS
+
+
+@app.get("/api/v1/openapi.json", include_in_schema=False)
+async def openapi_contract(request: Request) -> Response:
+    if not _has_development_docs(request):
+        raise HTTPException(status_code=404)
+    return Response(
+        OPENAPI_JSON,
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/docs", response_class=HTMLResponse, include_in_schema=False)
+async def api_documentation(request: Request) -> Response:
+    if not _has_development_docs(request):
+        raise HTTPException(status_code=404)
+    return HTMLResponse(
+        embedded_assets.API_DOCS_HTML,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/docs/assets/api-docs.css", include_in_schema=False)
+async def api_documentation_stylesheet(request: Request) -> Response:
+    if not _has_development_docs(request):
+        raise HTTPException(status_code=404)
+    return Response(
+        embedded_assets.API_DOCS_CSS,
+        media_type="text/css",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/docs/assets/api-docs.js", include_in_schema=False)
+async def api_documentation_javascript(request: Request) -> Response:
+    if not _has_development_docs(request):
+        raise HTTPException(status_code=404)
+    return Response(
+        embedded_assets.API_DOCS_JS,
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
+
 
 def _session_home_destination(session) -> str:
-    role = getattr(session, "active_role", None) or getattr(session, "default_role", None)
-    if role is None:
-        event_roles = {
-            str(role)
-            for access in getattr(session, "event_access", [])
-            for role in access.roles
-        }
-        if "event_admin" in event_roles:
-            role = "organizer"
-        elif "evaluator" in event_roles:
-            role = "reviewer"
-        elif "speaker" in event_roles:
-            role = "speaker"
-        elif getattr(session, "organization_access", []):
-            role = "organizer"
-    return {
+    destination = {
         "organizer": "/admin",
         "speaker": "/speaker",
         "reviewer": "/reviews",
-    }.get(role or "", "/account")
+    }.get(getattr(session, "active_role", None) or "")
+    if destination is None:
+        raise HTTPException(status_code=403)
+    return destination
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -95,10 +135,9 @@ async def root(request: Request) -> Response:
             if error.status_code != 401:
                 raise
         else:
+            destination = _session_home_destination(session)
             if not session.profile_complete:
                 destination = "/account?onboarding=1&next=%2F"
-            else:
-                destination = _session_home_destination(session)
             return RedirectResponse(
                 destination,
                 status_code=303,
@@ -249,13 +288,26 @@ async def not_found(request: Request, _exception: Exception) -> Response:
             heading="We could not find that page.",
             message="The link may be outdated, or the page may have moved.",
             primary_label="Open SessionBuddy",
-            primary_href="/admin",
+            primary_href="/",
         )
     return _error_response(request, 404, "resource_not_found", "Resource not found")
 
 
 @app.exception_handler(HTTPException)
-async def http_error(request: Request, exception: HTTPException) -> JSONResponse:
+async def http_error(request: Request, exception: HTTPException) -> Response:
+    if exception.status_code == 403 and _expects_browser_page(request):
+        return _browser_error_response(
+            request,
+            status=403,
+            title="Access denied",
+            heading="This page is not available for your active role.",
+            message=(
+                "Open your active workspace. If another role has access, "
+                "switch roles from the account menu."
+            ),
+            primary_label="Open active workspace",
+            primary_href="/",
+        )
     errors = {
         400: ("invalid_request", "The request could not be processed"),
         401: ("authentication_required", "Authentication is required"),

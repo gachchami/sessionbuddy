@@ -1,4 +1,9 @@
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from sessionbuddy.communications.d1 import D1CommunicationsService
 
 ROOT = Path(__file__).parents[2]
 
@@ -33,6 +38,25 @@ def test_queue_consumer_requires_explicit_local_environment_for_mailpit() -> Non
 
     assert 'app_env == "local" and mailpit_api_url and from_address' in entry
     assert "MailpitProvider(mailpit_api_url, from_address)" in entry
+
+
+@pytest.mark.asyncio
+async def test_local_message_publish_uses_bound_queue_for_mailpit_delivery() -> None:
+    class Queue:
+        def __init__(self) -> None:
+            self.messages = []
+
+        async def send(self, message) -> None:
+            self.messages.append(message)
+
+    queue = Queue()
+    request = SimpleNamespace(scope={"env": SimpleNamespace(
+        APP_ENV="local", DB=object(), COMMUNICATION_QUEUE=queue
+    )})
+
+    await D1CommunicationsService(request)._publish_delivery_requests(["message-1"])
+
+    assert queue.messages == [{"schema_version": 1, "message_id": "message-1"}]
 
 
 def test_auth_links_still_require_https_in_every_environment() -> None:

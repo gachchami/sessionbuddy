@@ -9,7 +9,7 @@ from scripts.release_db_smoke import backup_restore_smoke, schema_digest, valida
 from scripts.seed_large import SeedScale, apply_migrations, seed_large
 
 ROOT = Path(__file__).parents[2]
-MIGRATIONS = ROOT / "migrations"
+MIGRATIONS = ROOT / "migrations_baseline"
 
 
 @pytest.fixture(scope="module")

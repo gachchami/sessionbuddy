@@ -1,7 +1,12 @@
+from types import SimpleNamespace
+
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from httpx import ASGITransport, AsyncClient
 
 from sessionbuddy.platform.auth import access
+from sessionbuddy.platform.auth.http import AuthenticatedContext
+from sessionbuddy.platform.authorization import Actor, Permission, Persona
 from sessionbuddy.platform.db.types import utc_now_ms
 from tests.platform.test_event_branding_flow import Bucket, branding_request
 
@@ -144,7 +149,7 @@ async def test_duplicate_event_creates_only_safe_draft_setup(
     assert replayed.id == duplicated.id
     assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
     assert connection.execute(
-        "SELECT COUNT(*) FROM event_memberships WHERE event_id=? AND role='event_admin'",
+        "SELECT COUNT(*) FROM owned_resources WHERE id=? AND owner_user_id='user-a'",
         (duplicated.id,),
     ).fetchone()[0] == 1
     copied_assets = connection.execute(
@@ -255,6 +260,98 @@ async def test_duplicate_event_rejects_stale_source_without_writing_assets(
         )
     assert stale.value.status_code == 409
 
+    assert set(bucket.objects) == object_keys_before
+    assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == event_count_before
+    assert connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='event.duplicate'"
+    ).fetchone()[0] == 0
+
+
+async def test_duplicate_event_http_denies_org_only_actor_before_private_branding_copy(
+    branding_database, allow_organization_admin, monkeypatch
+) -> None:
+    connection, database = branding_database
+    bucket = Bucket()
+    staged_logo = await access.upload_organization_event_asset(
+        "org-a", "logo", branding_request(database, bucket)
+    )
+    staged_cover = await access.upload_organization_event_asset(
+        "org-a", "cover", branding_request(database, bucket)
+    )
+    now = utc_now_ms()
+    source = await access.create_event(
+        "org-a",
+        access.EventCreate(
+            name="Private brand source",
+            starts_at_ms=now + 86_400_000,
+            ends_at_ms=now + 172_800_000,
+            time_zone="UTC",
+            location="Private venue",
+            delivery_mode="in_person",
+            description="Private source event.",
+            logo_url=staged_logo.asset_url,
+            cover_image_url=staged_cover.asset_url,
+        ),
+        branding_request(database, bucket, b""),
+    )
+    organization_only = AuthenticatedContext(
+        Actor(
+            "user-a",
+            active_persona=Persona.ORGANIZER,
+            owned_resource_ids=frozenset({"org-a"}),
+        ),
+        "session-a",
+    )
+    prepared_sql: list[str] = []
+    original_prepare = database.prepare
+
+    def track_prepare(sql: str):
+        prepared_sql.append(sql)
+        return original_prepare(sql)
+
+    monkeypatch.setattr(database, "prepare", track_prepare)
+
+    async def deny_source_event(request, permission, context, **kwargs):
+        if permission is Permission.ORGANIZATION_MANAGE:
+            return organization_only
+        assert permission is Permission.EVENT_MANAGE
+        assert context.organization_id == "org-a"
+        assert context.event_id == source.id
+        assert not any("logo_url,cover_image_url" in sql for sql in prepared_sql)
+        raise HTTPException(status_code=404)
+
+    monkeypatch.setattr(access, "require_permission", deny_source_event)
+    application = FastAPI()
+
+    @application.middleware("http")
+    async def request_id(request, call_next):
+        request.state.request_id = "duplicate-security-test"
+        return await call_next(request)
+
+    application.include_router(access.access_router)
+
+    async def inject_environment(scope, receive, send):
+        scope["env"] = SimpleNamespace(DB=database, ASSETS=bucket)
+        await application(scope, receive, send)
+
+    object_keys_before = set(bucket.objects)
+    event_count_before = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    body = {
+        **duplicate_body(source, name="Unauthorized copy").model_dump(),
+        "retain_source_logo": True,
+        "retain_source_cover": True,
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=inject_environment), base_url="https://test"
+    ) as client:
+        response = await client.post(
+            f"/api/v1/admin/events/{source.id}/duplicate",
+            headers={"Idempotency-Key": "deny-private-copy-0001"},
+            json=body,
+        )
+
+    assert response.status_code == 404
+    assert not any("logo_url,cover_image_url" in sql for sql in prepared_sql)
     assert set(bucket.objects) == object_keys_before
     assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == event_count_before
     assert connection.execute(

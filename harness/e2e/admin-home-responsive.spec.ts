@@ -17,7 +17,9 @@ test("Organizer Home stays readable at a real phone viewport", async ({ page }) 
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
-      organization_access: [{ organization_id: organizationId, roles: ["organization_admin"] }],
+      organization_id: organizationId,
+      organization_name: "Open Source Summit",
+      organization_access: [{ organization_id: organizationId, organization_name: "Open Source Summit", permissions: ["owner"] }],
       event_access: [],
     }),
   }));

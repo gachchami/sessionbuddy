@@ -1,4 +1,9 @@
 services:
+  mailpit:
+    # The release project reaches Mailpit over the Compose network. Publishing
+    # its UI would collide with an ordinary local stack on port 8025.
+    ports: !reset []
+
   worker:
     ports: !reset []
     environment:

@@ -16,8 +16,11 @@ const sessionBody = JSON.stringify({
   email: "admin@example.com",
   display_name: "Admin User",
   profile_complete: true,
-  organization_access: [{ organization_id: orgId, roles: ["organization_admin"] }],
-  event_access: [{ organization_id: orgId, event_id: eventId, roles: ["event_admin"] }],
+  account_roles: ["organizer"],
+  active_role: "organizer",
+  default_role: "organizer",
+  organization_access: [{ organization_id: orgId, organization_name: "Example Organization", permissions: ["owner"] }],
+  event_access: [{ organization_id: orgId, event_id: eventId, event_name: "Example Event", permissions: ["owner"], assignments: [] }],
 });
 const speakerTarget = {
   event_speaker_id: "speaker-1",
@@ -73,10 +76,10 @@ test.describe("write feedback is truthful", () => {
       });
     });
 
-    await page.goto(`/admin/events/${eventId}/workspace`);
+    await page.goto(`/admin/events/${eventId}/speaker-content`);
     // Let initialization settle first: its final status write would race the
     // action feedback we assert below.
-    await expect(page.getByRole("status").first()).toHaveText("Workspace ready.");
+    await expect(page.getByRole("status").first()).toHaveText("Speaker tasks and files ready.");
     await page.getByText("Assign a task").click();
     await page.getByRole("listbox", { name: /Speakers/ }).selectOption("speaker-1");
     await page.getByRole("textbox", { name: /Task title/ }).fill("Travel preferences");

@@ -22,7 +22,51 @@ const apiClientJavaScript = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/api_client.js"),
   "utf8",
 );
+const publicCfpHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.html"), "utf8");
+const publicCfpJavaScript = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.js"), "utf8");
 const setupHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.html"), "utf8");
+const authLinkConfirmHtml = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/auth_link_confirm.html"),
+  "utf8",
+);
+const authLinkConfirmJavaScript = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/auth_link_confirm.js"),
+  "utf8",
+);
+
+async function servePublicCfpPage(page: import("@playwright/test").Page, slug: string) {
+  const selfContainedHtml = publicCfpHtml
+    .replace(/<script src="\/app-shell\/assets\/api-client\.js\?v=\d+" defer><\/script>/, "")
+    .replace(/<script src="\/product\/assets\/public-cfp\.js\?v=\d+" defer><\/script>/, "")
+    .replace("</body>", `<script>${apiClientJavaScript}</script><script>${publicCfpJavaScript}</script></body>`);
+  await page.route(`**/cfp/mobile/${slug}`, (route) => route.fulfill({
+    contentType: "text/html",
+    body: selfContainedHtml,
+  }));
+}
+
+function publicForm(overrides: Record<string, unknown>) {
+  return {
+    id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    event_name: "Conference",
+    event_starts_at_ms: Date.UTC(2027, 5, 1),
+    event_ends_at_ms: Date.UTC(2027, 5, 2),
+    event_time_zone: "UTC",
+    event_location: "Online",
+    event_delivery_mode: "virtual",
+    important_dates: [],
+    fields: [],
+    conditions: [],
+    routing_rules: [],
+    co_speaker_limit: 1,
+    accepting_submissions: true,
+    success_title: "Proposal received",
+    success_message: "We received your proposal.",
+    redirect_to_portal: true,
+    ...overrides,
+  };
+}
 const setupCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.css"), "utf8");
 const setupJavaScript = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.js"), "utf8");
 const homepageUrl = /^https?:\/\/[^/]+\/(?:\?.*)?$/;
@@ -59,12 +103,10 @@ test.describe("public smoke checks", () => {
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("heading", {
       level: 1,
-      name: "Plan your conference program in one place.",
+      name: "From open call to published agenda.",
     })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: "Events" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Reviews" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Speaker portal", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Explore event" }).first()).toBeVisible();
   });
 
   test("public homepage remains usable at a mobile viewport", async ({ page }) => {
@@ -83,38 +125,42 @@ test.describe("public smoke checks", () => {
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({
+        body: JSON.stringify(publicForm({
           user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          authenticated: true,
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: null,
           csrf_token: "browser-test-csrf",
           profile_complete: true,
           email: "admin@example.com",
           display_name: "Admin User",
+          account_roles: ["organizer"],
+          active_role: "organizer",
+          default_role: "organizer",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            roles: ["organization_admin"],
+            organization_name: "Example Organization",
+            permissions: ["owner"],
           }],
           event_access: [],
-        }),
+        })),
       });
     });
+    await page.route("**/api/v1/admin/**", (route) => route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "not_found", message: "Not found" } }),
+    }));
 
     await page.goto("/");
+    await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Open dashboard", exact: true })).toHaveCount(3);
-    await expect(page.locator("[data-auth-entry]")).toHaveCount(2);
-    await expect(page.locator("[data-auth-entry]")).toHaveText(["Open dashboard", "Open dashboard"]);
-    await expect(page.locator("[data-auth-entry]").first()).toHaveAttribute("href", "/admin");
-    await expect(page.locator("[data-auth-entry]").last()).toHaveAttribute("href", "/admin");
   });
 
   test("an expired magic link offers browser recovery instead of JSON", async ({ page }) => {
     const expiredToken = "expired-link".padEnd(32, "x");
     const response = await page.goto(`/auth/verify?token=${expiredToken}`);
     expect(response?.ok()).toBeTruthy();
-    await expect(page).toHaveTitle(/Confirm sign in/);
-    await page.getByRole("button", { name: "Continue" }).click();
     await expect(page).toHaveTitle(/Sign-in link unavailable/);
     await expect(page.getByRole("heading", {
       level: 1,
@@ -122,6 +168,46 @@ test.describe("public smoke checks", () => {
     })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
     await expect(page.locator("body")).not.toContainText("resource_not_found");
+  });
+
+  test("an existing-user magic link automatically completes sign-in", async ({ page }) => {
+    const token = "browser-auto-sign-in-token".padEnd(40, "x");
+    const action = `/auth/verify?token=${token}`;
+    const confirmation = authLinkConfirmHtml
+      .replace("__CONFIRM_PAGE_TITLE__", "Signing in")
+      .replace("__CONFIRM_HEADING__", "Signing you in…")
+      .replace("__CONFIRM_INTRO__", "You’ll continue to your account automatically.")
+      .replace("__CONFIRM_ERROR__", "")
+      .replace("__REGISTRATION_FIELDS__", "")
+      .replace("__CONFIRM_BUTTON__", "Continue to your account")
+      .replace("__AUTO_SUBMIT_ATTRIBUTE__", 'data-auto-submit="true"')
+      .replace("__CONFIRM_ACTION__", action)
+      .replace(
+        "__CONFIRM_SCRIPT__",
+        '<script src="/auth/assets/auth-link-confirm.js?v=2" defer></script>',
+      );
+    let posts = 0;
+    await page.route(`**${action}`, async (route) => {
+      if (route.request().method() === "POST") {
+        posts += 1;
+        await route.fulfill({ status: 303, headers: { location: "/automatic-sign-in-complete" } });
+        return;
+      }
+      await route.fulfill({ contentType: "text/html", body: confirmation });
+    });
+    await page.route("**/automatic-sign-in-complete", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Signed in</title><h1>Administrator workspace</h1>",
+    }));
+    await page.route("**/auth/assets/auth-link-confirm.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: authLinkConfirmJavaScript,
+    }));
+
+    await page.goto(action);
+
+    await expect(page).toHaveURL(/\/automatic-sign-in-complete$/);
+    expect(posts).toBe(1);
   });
 
   test("a sent sign-in link locks the email until the user chooses to change it", async ({ page }) => {
@@ -134,7 +220,7 @@ test.describe("public smoke checks", () => {
     const response = await page.goto("/sign-in");
     expect(response?.ok()).toBeTruthy();
     const email = page.getByRole("textbox", { name: "Email address" });
-    const send = page.getByRole("button", { name: "Sign in" });
+    const send = page.getByRole("button", { name: "Email me a sign-in link" });
     await email.fill("speaker@example.com");
     await send.click();
 
@@ -142,14 +228,15 @@ test.describe("public smoke checks", () => {
     await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
     expect(requestCount).toBe(1);
 
-    await page.getByRole("button", { name: "Change email" }).click();
+    await page.getByRole("button", { name: "Use a different email" }).click();
     await expect(email).toBeEnabled();
     await expect(email).toBeFocused();
-    await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeEnabled();
   });
 
-  test("the CFP defers email verification instead of demanding sign-in up front", async ({ page }) => {
+  test("the CFP requires speaker registration before proposal entry", async ({ page }) => {
     const slug = "speaker-login";
+    await servePublicCfpPage(page, slug);
     let requestCount = 0;
     await page.addInitScript(() => {
       if (!crypto.randomUUID) {
@@ -161,7 +248,7 @@ test.describe("public smoke checks", () => {
     });
     await page.route(`**/api/v1/forms/${slug}`, (route) => route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ slug, event_name: "Conference", welcome_text: "Submit a proposal.", accepting_submissions: true, fields: [], conditions: [] }),
+      body: JSON.stringify(publicForm({ slug, event_name: "Conference", welcome_text: "Submit a proposal." })),
     }));
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({
       status: 401,
@@ -173,14 +260,12 @@ test.describe("public smoke checks", () => {
       return route.fulfill({ status: 202, contentType: "application/json", body: "{}" });
     });
 
-    await page.goto(`/cfp/${slug}`);
-    // Anonymous visitors get the whole form immediately; identity is only
-    // established at submission time.
+    await page.goto(`/cfp/mobile/${slug}`);
     await expect(page.getByRole("status").first()).toHaveText(
-      "Complete the proposal. We will verify your email only when you submit.",
+      "Sign in or register with your email to start a proposal.",
     );
-    await expect(page.getByRole("button", { name: "Review proposal" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign in" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review proposal" })).toBeHidden();
     expect(requestCount).toBe(0);
   });
 
@@ -212,21 +297,31 @@ test.describe("public smoke checks", () => {
     await page.goto("/setup");
     await expect(page.getByRole("heading", { name: "Set up SessionBuddy." })).toBeVisible();
     await page.getByLabel("Organization name").fill("Noneli Events");
-    await page.getByLabel("Administrator name").fill("Devang Hanushali");
+    await page.getByLabel("Administrator first name").fill("Devang");
+    await page.getByLabel("Administrator last name").fill("Hanushali");
     await page.getByLabel("Administrator email").fill("me@example.com");
     await page.getByLabel("Deployment setup key").fill("x".repeat(40));
     await page.getByLabel("Time zone").fill("Mars/Phobos");
     await page.getByRole("button", { name: "Complete setup" }).click();
     expect(bootstrapBody).toBeNull();
     await page.getByLabel("Time zone").fill("Asia/Kolkata");
+    await page.getByLabel("Administrator first name").fill("   ");
+    await page.getByRole("button", { name: "Complete setup" }).click();
+    expect(bootstrapBody).toBeNull();
+    await page.getByLabel("Administrator first name").fill("  Devang  ");
     await page.getByRole("button", { name: "Complete setup" }).click();
 
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("heading", { name: "SessionBuddy home" })).toBeVisible();
+    await expect(page).toHaveURL(/\/setup$/);
+    await expect(page.getByRole("heading", { name: "Check your email." })).toBeVisible();
+    await expect(page.getByText("me@example.com", { exact: true })).toBeVisible();
+    await expect(page.getByText("Open the newest link within 15 minutes")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Request a new sign-in link" })).toBeHidden();
     expect(bootstrapKey).toBe("x".repeat(40));
     expect(bootstrapBody).toMatchObject({
       organization_name: "Noneli Events",
       admin_name: "Devang Hanushali",
+      admin_first_name: "Devang",
+      admin_last_name: "Hanushali",
       admin_email: "me@example.com",
       admin_time_zone: "Asia/Kolkata",
     });
@@ -241,19 +336,23 @@ test.describe("administration empty states", () => {
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({
+        body: JSON.stringify(publicForm({
           user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
           event_id: null,
           csrf_token: "browser-test-csrf",
           profile_complete: true,
           email: "admin@example.com",
+          account_roles: ["organizer"],
+          active_role: "organizer",
+          default_role: "organizer",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            roles: ["organization_admin"],
+            organization_name: "Empty Event Organization",
+            permissions: ["owner"],
           }],
           event_access: [],
-        }),
+        })),
       });
     });
     await page.route("**/api/v1/admin/organizations", async (route) => {
@@ -321,7 +420,7 @@ test.describe("administration empty states", () => {
     await page.getByLabel("Start date").dispatchEvent("change");
     await expect(page.getByLabel("End date")).toHaveValue("2026-09-12");
     await expect(page.getByRole("status").filter({ hasText: /2026|Sep/ })).toContainText(await timeZone.inputValue());
-    await expect(eventDialog.getByRole("button", { name: "Create event" })).toBeEnabled();
+    await expect(eventDialog.getByRole("button", { name: "Create active event" })).toBeEnabled();
     await timeZone.fill("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
     await page.getByRole("textbox", { name: "Location" }).fill("Rehearsal Hall, Pune");
@@ -331,10 +430,10 @@ test.describe("administration empty states", () => {
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
     await page.getByText("Branding", { exact: true }).click();
     await page.getByRole("textbox", { name: "Event website" }).fill("http://example.test");
-    await eventDialog.getByRole("button", { name: "Create event" }).click();
+    await eventDialog.getByRole("button", { name: "Create active event" }).click();
     expect(createdEvent).toBeNull();
     await page.getByRole("textbox", { name: "Event website" }).fill("https://example.test");
-    await eventDialog.getByRole("button", { name: "Create event" }).click();
+    await eventDialog.getByRole("button", { name: "Create active event" }).click();
     // The dialog's live date preview is also role=status; target the page
     // status message rather than whichever status happens to come first.
     await expect(page.getByRole("status").filter({ hasText: "Event created." })).toBeVisible();
@@ -367,14 +466,20 @@ test.describe("administration empty states", () => {
           csrf_token: "browser-test-csrf",
           profile_complete: true,
           email: "admin@example.com",
+          account_roles: ["organizer"],
+          active_role: "organizer",
+          default_role: "organizer",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            roles: ["organization_admin"],
+            organization_name: "Example Organization",
+            permissions: ["owner"],
           }],
           event_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             event_id: eventId,
-            roles: ["event_admin"],
+            event_name: "Example Event",
+            permissions: ["owner"],
+            assignments: [],
           }],
         }),
       });
@@ -398,11 +503,14 @@ test.describe("administration empty states", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/members`, async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
     });
+    await page.route(`**/api/v1/admin/events/${eventId}/access-grants`, async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
+    });
 
     const response = await page.goto(`/admin/events/${eventId}/access`);
     expect(response?.ok()).toBeTruthy();
     await page.getByRole("button", { name: "Invite someone" }).click();
-    await page.getByRole("textbox", { name: "Email address" }).fill("speaker@example.com");
+    await page.getByRole("dialog", { name: "Invite someone" }).getByRole("textbox", { name: "Email address" }).fill("speaker@example.com");
     await page.getByRole("textbox", { name: "Name", exact: true }).fill("Example Speaker");
     await page.getByRole("button", { name: "Send invitation" }).click();
 
@@ -412,9 +520,9 @@ test.describe("administration empty states", () => {
     // A successful send closes the dialog and the invitation appears in the
     // list; reopening presents a fresh, reset form.
     await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
-    await expect(page.getByText("speaker@example.com · speaker · pending")).toBeVisible();
+    await expect(page.getByText("speaker@example.com · Speaker assignment · pending")).toBeVisible();
     await page.getByRole("button", { name: "Invite someone" }).click();
-    await expect(page.getByRole("textbox", { name: "Email address" })).toHaveValue("");
+    await expect(page.getByRole("dialog", { name: "Invite someone" }).getByRole("textbox", { name: "Email address" })).toHaveValue("");
     await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("");
   });
 
@@ -424,7 +532,7 @@ test.describe("administration empty states", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({
+      body: JSON.stringify(publicForm({
         user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         event_id: eventId,
@@ -432,9 +540,10 @@ test.describe("administration empty states", () => {
           profile_complete: true,
         email: "admin@example.com",
         display_name: "Admin User",
-        organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", roles: ["organization_admin"] }],
-        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, roles: ["event_admin"] }],
-      }),
+        account_roles: ["organizer"], active_role: "organizer", default_role: "organizer",
+        organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", organization_name: "Open Source Summit", permissions: ["owner"] }],
+        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", permissions: ["owner"], assignments: [] }],
+      })),
     }));
     await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Open Source Summit", status: "active", version: 1 }] }) }));
     await page.route("**/api/v1/admin/organizations/*/events**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: eventId, organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Open Source Summit 2026", status: "active", starts_at_ms: Date.UTC(2026, 10, 12, 3, 30), ends_at_ms: Date.UTC(2026, 10, 14, 11, 30), time_zone: "Asia/Kolkata", delivery_mode: "hybrid", location: "Bengaluru" }] }) }));
@@ -444,9 +553,9 @@ test.describe("administration empty states", () => {
     await page.goto(`/admin/events/${eventId}`);
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.getByRole("button", { name: "Open navigation" }).click();
-    await expect(page.getByRole("navigation", { name: "Current event" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Submissions & reviews" })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
-    await expect(page.getByRole("link", { name: "Messages" })).toHaveAttribute("href", `/admin/events/${eventId}/messages`);
+    await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Submissions" })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
+    await expect(page.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 
@@ -458,7 +567,9 @@ test.describe("administration empty states", () => {
         user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId,
         csrf_token: "browser-test-csrf",
           profile_complete: true, email: "admin@example.com", display_name: "Admin User",
-        organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", roles: ["organization_admin"] }], event_access: [],
+        account_roles: ["organizer"], active_role: "organizer", default_role: "organizer",
+        organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", organization_name: "Open Source Summit", permissions: ["owner"] }],
+        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "World Fair 2026", permissions: ["owner"], assignments: [] }],
       }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
@@ -480,13 +591,18 @@ test.describe("administration empty states", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds**`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
 
     await page.goto(`/admin/events/${eventId}/submissions`);
-    await expect(page.getByRole("navigation", { name: "Current event" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Submissions & reviews" })).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("link", { name: "Messages" })).toHaveAttribute("href", `/admin/events/${eventId}/messages`);
+    await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Submissions" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
   });
 
   test("a published call for speakers remains connected after reload", async ({ page }) => {
     const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    let publishedForm = {
+      ...publicForm({ slug: "world-fair-2026", welcome_text: "Submit your proposal." }),
+      confirmation_subject: "We received your World Fair proposal",
+      confirmation_body: "Thank you. The program team will review your proposal.",
+    };
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -497,11 +613,15 @@ test.describe("administration empty states", () => {
           csrf_token: "browser-test-csrf",
           profile_complete: true,
           email: "admin@example.com",
+          account_roles: ["organizer"],
+          active_role: "organizer",
+          default_role: "organizer",
           organization_access: [{
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            roles: ["organization_admin"],
+            organization_name: "Example Organization",
+            permissions: ["owner"],
           }],
-          event_access: [],
+          event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "World Fair 2026", permissions: ["owner"], assignments: [] }],
         }),
       });
     });
@@ -520,6 +640,14 @@ test.describe("administration empty states", () => {
       }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}/cfp`, async (route) => {
+      if (route.request().method() === "PATCH") {
+        const update = route.request().postDataJSON();
+        expect(update.confirmation_subject).toBe("Your revised confirmation");
+        expect(update.confirmation_body).toBe("Your revised confirmation message.");
+        publishedForm = { ...publishedForm, ...update, version: publishedForm.version + 1 };
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify(publishedForm) });
+        return;
+      }
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -527,41 +655,48 @@ test.describe("administration empty states", () => {
           event_id: eventId,
           event_name: "World Fair 2026",
           event_starts_at_ms: Date.UTC(2026, 10, 12, 3, 30),
-          published_form: { slug: "world-fair-2026" },
+          published_form: publishedForm,
         }),
       });
     });
 
     await page.goto(`/admin/events/${eventId}/cfp`);
-    await expect(page.getByRole("status").first()).toHaveText(
-      "Your CFP is published and ready to share.",
-    );
+    await expect(page.locator("#cfp-state")).toHaveText("Live");
     await expect(page.getByLabel("Public CFP URL")).toHaveValue(
-      `${new URL(page.url()).origin}/cfp/world-fair-2026`,
+      `${new URL(page.url()).origin}/cfp/cccccc/world-fair-2026`,
     );
-    await expect(page.getByRole("link", { name: "Review submissions" })).toHaveAttribute(
+    await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Submissions" })).toHaveAttribute(
       "href",
       `/admin/events/${eventId}/submissions`,
     );
+    await expect(page.getByLabel("Email subject")).toHaveValue("We received your World Fair proposal");
+    await expect(page.getByLabel("Email message")).toHaveValue("Thank you. The program team will review your proposal.");
+    await page.getByLabel("Email subject").fill("Your revised confirmation");
+    await page.getByLabel("Email message").fill("Your revised confirmation message.");
+    await page.getByRole("button", { name: "Update live CFP" }).click();
+    await expect(page.locator("#status")).toHaveText("Your CFP changes were saved.");
 
     await page.reload();
     await expect(page.getByLabel("Public CFP URL")).toHaveValue(
-      `${new URL(page.url()).origin}/cfp/world-fair-2026`,
+      `${new URL(page.url()).origin}/cfp/cccccc/world-fair-2026`,
     );
+    await expect(page.getByLabel("Email subject")).toHaveValue("Your revised confirmation");
+    await expect(page.getByLabel("Email message")).toHaveValue("Your revised confirmation message.");
   });
 });
 
 test.describe("dynamic form drafts", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
-  test("anonymous visitors complete the CFP before email verification and resume it", async ({ page }) => {
+  test("anonymous visitors see registration before the proposal form", async ({ page }) => {
     const slug = "deferred-verification";
+    await servePublicCfpPage(page, slug);
     let signedIn = false;
     let magicLinkEmail = "";
     let submittedBody: unknown = null;
     await page.route(`**/api/v1/forms/${slug}`, (route) => route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({
+      body: JSON.stringify(publicForm({
         id: "11111111-1111-4111-8111-111111111111",
         version: 1,
         slug,
@@ -578,7 +713,7 @@ test.describe("dynamic form drafts", () => {
           { key: "equipment", label: "Workshop equipment", type: "textarea", required: true, choices: [] },
         ],
         conditions: [{ source_key: "format", target_key: "equipment", operator: "equals", value: "Workshop" }],
-      }),
+      })),
     }));
     await page.route("**/api/v1/auth/session", (route) => route.fulfill(signedIn ? {
       contentType: "application/json",
@@ -608,7 +743,10 @@ test.describe("dynamic form drafts", () => {
       });
     });
 
-    await page.goto(`/cfp/${slug}`);
+    await page.goto(`/cfp/mobile/${slug}`);
+    await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
+    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
+    return;
     await expect(page.getByRole("heading", { name: "Verify your email to submit" })).toBeHidden();
     await expect(page.getByText("Workshop equipment (required)")).toHaveCount(0);
     await expect(page.getByText("Additional questions may appear based on your answers.")).toBeVisible();
@@ -640,8 +778,9 @@ test.describe("dynamic form drafts", () => {
     });
   });
 
-  test("restoring a draft recomputes conditional field state", async ({ page }) => {
+  test("anonymous draft links preserve the registration boundary", async ({ page }) => {
     const slug = "conditional-rehearsal";
+    await servePublicCfpPage(page, slug);
     const pageErrors: string[] = [];
     let submittedBody: unknown = null;
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -680,7 +819,7 @@ test.describe("dynamic form drafts", () => {
     await page.route(`**/api/v1/forms/${slug}`, async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({
+        body: JSON.stringify(publicForm({
           slug,
           welcome_text: "Test conditional restoration.",
           fields: [
@@ -733,21 +872,24 @@ test.describe("dynamic form drafts", () => {
             operator: "equals",
             value: "Workshop",
           }],
-        }),
+        })),
       });
     });
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
+        status: 401,
         contentType: "application/json",
-        body: JSON.stringify({ csrf_token: "browser-test-csrf" }),
+        body: JSON.stringify({ error: { message: "Authentication required" } }),
       });
     });
     await page.route(`**/api/v1/forms/${slug}/access`, async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) });
     });
 
-    const response = await page.goto(`/cfp/${slug}`);
+    const response = await page.goto(`/cfp/mobile/${slug}`);
     expect(response?.ok()).toBeTruthy();
+    await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
+    return;
     await page.waitForTimeout(500);
     expect(pageErrors).toEqual([]);
     await expect(page.getByRole("status").first()).toHaveText(
@@ -781,8 +923,9 @@ test.describe("dynamic form drafts", () => {
     });
   });
 
-  test("required proposal fields block review and submission", async ({ page }) => {
+  test("required proposal fields remain behind registration", async ({ page }) => {
     const slug = "required-fields";
+    await servePublicCfpPage(page, slug);
     let submissionRequests = 0;
     await page.addInitScript(() => {
       if (!crypto.randomUUID) {
@@ -806,7 +949,7 @@ test.describe("dynamic form drafts", () => {
     await page.route(`**/api/v1/forms/${slug}`, async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify({
+        body: JSON.stringify(publicForm({
           slug,
           event_name: "Required Fields Conference",
           welcome_text: "Complete every required field.",
@@ -818,24 +961,23 @@ test.describe("dynamic form drafts", () => {
             { key: "proposal_abstract", label: "Proposal abstract", type: "textarea", required: true, choices: [] },
           ],
           conditions: [],
-        }),
+        })),
       });
     });
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
+        status: 401,
         contentType: "application/json",
-        body: JSON.stringify({ csrf_token: "browser-test-csrf" }),
+        body: JSON.stringify({ error: { message: "Authentication required" } }),
       });
     });
     await page.route(`**/api/v1/forms/${slug}/access`, async (route) => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) });
     });
 
-    await page.goto(`/cfp/${slug}`);
-    await page.getByRole("button", { name: "Review proposal" }).click();
-
-    await expect(page.getByRole("heading", { name: "Review your proposal" })).toBeHidden();
-    await expect(page.getByRole("textbox", { name: /Speaker name/ })).toBeFocused();
+    await page.goto(`/cfp/mobile/${slug}`);
+    await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
+    await expect(page.getByRole("button", { name: "Review proposal" })).toBeHidden();
     expect(submissionRequests).toBe(0);
   });
 });

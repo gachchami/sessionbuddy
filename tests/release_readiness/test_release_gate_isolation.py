@@ -15,6 +15,13 @@ def test_release_gate_uses_disposable_d1_state_and_isolated_compose_project() ->
     assert script.count("npm run worker:migrate") == 2
     assert "INSERT INTO instance_setup" in script
     assert script.index("INSERT INTO instance_setup") < script.index("up --detach worker")
-    assert "ports: !reset []" in override
+    assert override.count("ports: !reset []") == 2
+    assert "mailpit:" in override
     assert "--persist-to" in override
     assert "name: sessionbuddy_wrangler-config" in override
+
+
+def test_release_gate_rejects_noncanonical_fixture_assets() -> None:
+    script = (ROOT / "scripts/release_gate.sh").read_text()
+
+    assert "npm run fixtures:check-assets" in script

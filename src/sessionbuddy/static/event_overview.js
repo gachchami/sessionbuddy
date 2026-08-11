@@ -44,7 +44,6 @@
     }
     const organizations = (await api("/api/v1/admin/organizations")).data;
     const organization = organizations.find((item) => item.id === selected.organization_id);
-    if (!organization) throw new Error("This event is not available to your account.");
     const settle = (promise) => promise
       .then((value) => ({ ok: true, value }))
       .catch((error) => ({ ok: false, status: Number(error && error.status) || 0 }));
@@ -88,7 +87,7 @@
             : "Draft · no sessions yet";
     const degraded = !submissionsState.ok || !roundState.ok || agendaFailed;
     document.title = `${selected.name} · SessionBuddy`;
-    byId("organization-name").textContent = organization.name;
+    byId("organization-name").textContent = organization?.name || "Event workspace";
     byId("event-name").textContent = selected.name;
     byId("event-summary").textContent = `${formatRange(selected)} · ${selected.delivery_mode.replace("_", " ")}${selected.location ? ` · ${selected.location}` : ""}`;
     byId("event-status").textContent = selected.status === "active" ? "Active event" : `${selected.status} event`;

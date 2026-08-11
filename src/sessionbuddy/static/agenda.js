@@ -24,6 +24,16 @@
   };
   const key = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 
+  function labelChips(labels = []) {
+    const list = make("div", undefined, "label-chip-list");
+    labels.forEach((label) => {
+      const chip = make("span", label.name, "label-chip");
+      chip.style.setProperty("--label-color", label.color);
+      list.append(chip);
+    });
+    return list;
+  }
+
   async function api(path, options = {}) {
     return window.SessionBuddyApi.request(path, options);
   }
@@ -145,6 +155,7 @@
       }`,
     );
     node.append(make("h3", item.title));
+    if (item.labels?.length) node.append(labelChips(item.labels));
     if (scheduled) {
       node.append(
         make(
@@ -197,6 +208,33 @@
     };
     renderList("room", state.model.rooms);
     renderList("track", state.model.tracks);
+    const labelList = byId("label-list");
+    labelList.replaceChildren();
+    if (!state.model.labels.length) {
+      labelList.append(make("li", "No labels", "help"));
+    }
+    state.model.labels.forEach((label) => {
+      const item = make("li");
+      const identity = make("span", undefined, "label-resource");
+      const swatch = make("span", undefined, "label-swatch");
+      swatch.style.setProperty("--label-color", label.color);
+      identity.append(swatch, make("span", label.name));
+      item.append(identity);
+      if (label.can_manage) {
+        const actions = make("span", undefined, "resource-actions");
+        const edit = make("button", "Edit", "secondary");
+        edit.type = "button";
+        edit.setAttribute("aria-label", `Edit ${label.name}`);
+        edit.addEventListener("click", () => openLabelEditor(label));
+        const archive = make("button", "Archive", "secondary");
+        archive.type = "button";
+        archive.setAttribute("aria-label", `Archive ${label.name}`);
+        archive.addEventListener("click", () => saveLabel(label, "archived"));
+        actions.append(edit, archive);
+        item.append(actions);
+      }
+      labelList.append(item);
+    });
     const autoForm = byId("auto-schedule-form");
     if (!autoForm.elements.start_at.value) {
       autoForm.elements.start_at.value = localInput(state.model.event.starts_at_ms);
@@ -409,6 +447,27 @@
     values.forEach((value) => select.add(new Option(value.name, value.id)));
     select.value = selected || "";
   }
+  function renderLabelChoices(item) {
+    const root = byId("session-labels");
+    root.replaceChildren();
+    if (!state.model.labels.length) {
+      root.append(make("p", "No labels exist for this event yet.", "help"));
+      return;
+    }
+    const selected = new Set(item.label_ids || []);
+    state.model.labels.forEach((label) => {
+      const wrapper = make("label", undefined, "label-choice");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "session_label";
+      input.value = label.id;
+      input.checked = selected.has(label.id);
+      const swatch = make("span", undefined, "label-swatch");
+      swatch.style.setProperty("--label-color", label.color);
+      wrapper.append(input, swatch, make("span", label.name));
+      root.append(wrapper);
+    });
+  }
   async function loadContentHistory(item) {
     const list = byId("content-history");
     list.replaceChildren(make("li", "Loading history…", "help"));
@@ -483,10 +542,12 @@
     form.elements.session_id.value = item.session_id;
     form.elements.version.value = item.version || 0;
     form.elements.content_version.value = item.content_version || 1;
+    form.elements.label_version.value = item.label_version || 1;
     form.elements.title.value = item.title;
     form.elements.abstract.value = item.abstract || "";
     window.SessionBuddyApi.refreshCharacterCounters(form);
     form.elements.content_status.value = item.content_status || "draft";
+    renderLabelChoices(item);
     form.elements.start_at.value = item.start_at_ms
       ? localInput(item.start_at_ms)
       : "";
@@ -536,6 +597,32 @@
       abstract: content.abstract,
       content_status: content.content_status,
       content_version: content.version,
+    });
+  }
+  async function saveLabels(item) {
+    const form = byId("editor-form");
+    const labelIds = [...form.querySelectorAll('input[name="session_label"]:checked')]
+      .map((input) => input.value);
+    const before = [...(item.label_ids || [])].sort();
+    const after = [...labelIds].sort();
+    if (before.length === after.length && before.every((value, index) => value === after[index])) {
+      return;
+    }
+    const result = await api(
+      `/api/v1/admin/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(item.session_id)}/labels`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+        body: JSON.stringify({
+          label_ids: labelIds,
+          version: Number(form.elements.label_version.value),
+        }),
+      },
+    );
+    Object.assign(item, {
+      labels: result.labels,
+      label_ids: result.labels.map((label) => label.id),
+      label_version: result.version,
     });
   }
   function formCandidate() {
@@ -649,6 +736,36 @@
       status(error.message || `The ${label} could not be archived.`, true);
     }
   }
+  function openLabelEditor(label) {
+    const form = byId("label-editor-form");
+    form.elements.label_id.value = label.id;
+    form.elements.version.value = label.version;
+    form.elements.name.value = label.name;
+    form.elements.color.value = label.color;
+    byId("label-editor").showModal();
+  }
+  async function saveLabel(label, nextStatus = "active") {
+    try {
+      await api(
+        `/api/v1/admin/events/${encodeURIComponent(eventId)}/labels/${encodeURIComponent(label.id)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+          body: JSON.stringify({
+            name: label.name,
+            color: label.color,
+            status: nextStatus,
+            version: label.version,
+          }),
+        },
+      );
+      byId("label-editor").close();
+      await load(false);
+      status(nextStatus === "archived" ? "Label archived." : "Label saved.");
+    } catch (error) {
+      status(error.message || "The label could not be saved.", true);
+    }
+  }
   ["room", "track"].forEach((kind) => {
     byId(`${kind}-form`).addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -679,6 +796,40 @@
       }
     });
   });
+  byId("label-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/labels`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+        body: JSON.stringify({ name: form.elements.name.value, color: form.elements.color.value }),
+      });
+      form.reset();
+      form.elements.color.value = "#2563EB";
+      await load(false);
+      status("Label added.");
+    } catch (error) {
+      status(error.message || "The label could not be added.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  byId("label-editor-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    await saveLabel({
+      id: form.elements.label_id.value,
+      version: Number(form.elements.version.value),
+      name: form.elements.name.value,
+      color: form.elements.color.value,
+    });
+  });
+  byId("cancel-label-edit").addEventListener("click", () => byId("label-editor").close());
   byId("auto-schedule-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -768,16 +919,23 @@
     "click",
     () => load().catch(() => status("Agenda could not be refreshed.", true)),
   );
-  byId("publish").addEventListener("click", async () => {
+  byId("publish").addEventListener("click", () => {
+    const scheduled = state.model?.items.length || 0;
+    const hiddenDrafts = state.model?.items.filter((item) => item.content_status !== "approved").length || 0;
+    byId("publish-dialog-summary").textContent =
+      `${scheduled} scheduled session${scheduled === 1 ? "" : "s"} will become publicly visible.`;
+    byId("publish-dialog-draft-note").hidden = hiddenDrafts === 0;
+    byId("publish-dialog-draft-note").textContent = hiddenDrafts
+      ? `${hiddenDrafts} session${hiddenDrafts === 1 ? " has" : "s have"} draft content and will remain hidden.`
+      : "";
+    byId("publish-dialog").showModal();
+  });
+  byId("cancel-publish").addEventListener("click", () => byId("publish-dialog").close());
+  byId("publish-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
     const button = byId("publish");
     const hiddenDrafts = state.model.items.filter((item) => item.content_status !== "approved").length;
-    const scheduled = state.model.items.length;
-    if (
-      !window.confirm(
-        `Publish this agenda? ${scheduled} session${scheduled === 1 ? "" : "s"} become${scheduled === 1 ? "s" : ""} publicly visible and calendar updates are emailed to speakers.`,
-      )
-    )
-      return;
+    byId("publish-dialog").close();
     button.disabled = true;
     status("Publishing agenda…");
     try {
@@ -832,6 +990,7 @@
         return;
       }
       await saveContent(state.selected);
+      await saveLabels(state.selected);
       optimistic(candidate);
       byId("editor").close();
       render();

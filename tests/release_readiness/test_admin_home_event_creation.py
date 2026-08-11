@@ -42,10 +42,11 @@ def test_canonical_events_route_opens_its_complete_form_from_the_hash() -> None:
     assert "openEventDialog();" in script
 
 
-def test_home_only_offers_creation_to_organization_administrators() -> None:
+def test_home_only_offers_creation_to_organization_owners_or_managers() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
     assert 'href="/admin/events#event-form" hidden' in page
-    assert 'access.roles.includes("organization_admin")' in script
+    assert '["owner", "manage"].includes(permission)' in script
+    assert 'access.roles.includes("organization_admin")' not in script
     assert 'byId("new-event").hidden = state.organizations.length === 0' in script

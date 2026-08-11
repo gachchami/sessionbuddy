@@ -6,7 +6,6 @@ missing rows at page boundaries (including ties on submitted_at_ms).
 """
 
 import sqlite3
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,8 +16,7 @@ from sessionbuddy.cfp.router import (
     _submissions_cursor,
     _submissions_next_cursor,
 )
-
-MIGRATIONS = sorted((Path(__file__).resolve().parents[2] / "migrations").glob("0*.sql"))
+from tests.schema import MIGRATIONS
 
 
 def _request(csrf_key: str = "c" * 32):

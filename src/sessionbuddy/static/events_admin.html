@@ -118,15 +118,13 @@
             <div class="image-upload-grid">
               <section class="image-upload image-upload--logo" aria-labelledby="event-logo-label">
                 <div class="image-upload__header"><span class="image-upload__title"><strong id="event-logo-label">Event logo</strong><span class="optional">Optional</span></span><small id="event-logo-help">PNG, JPG or WebP · 2 MB</small></div>
-                <input id="event-logo-file" class="visually-hidden-file" name="logo_file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="event-logo-help event-logo-filename">
-                <div class="image-upload__actions"><label class="button secondary image-upload__button" for="event-logo-file">Choose logo</label><button id="upload-event-logo" class="secondary image-upload__submit" type="button" disabled>Upload</button></div>
+                <div class="image-upload__actions"><input id="event-logo-file" class="image-upload__file" name="logo_file" type="file" accept="image/png,image/jpeg,image/webp" aria-labelledby="event-logo-label" aria-describedby="event-logo-help event-logo-filename"><button id="upload-event-logo" class="secondary image-upload__submit" type="button" disabled>Upload</button></div>
                 <div id="event-logo-preview-frame" class="image-upload__preview image-upload__preview--logo" hidden><img id="event-logo-preview" class="event-logo" alt="Selected event logo"><span id="event-logo-filename"></span></div>
                 <p id="event-logo-status" class="image-upload__status" aria-live="polite"></p>
               </section>
               <section class="image-upload image-upload--cover" aria-labelledby="event-cover-label">
                 <div class="image-upload__header"><span class="image-upload__title"><strong id="event-cover-label">Event cover</strong><span class="optional">Optional</span></span><small id="event-cover-help">16:9 · 1600 × 900 · 2 MB</small></div>
-                <input id="event-cover-file" class="visually-hidden-file" name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="event-cover-help event-cover-filename">
-                <div class="image-upload__actions"><label class="button secondary image-upload__button" for="event-cover-file">Choose cover</label><button id="upload-event-cover" class="secondary image-upload__submit" type="button" disabled>Upload</button></div>
+                <div class="image-upload__actions"><input id="event-cover-file" class="image-upload__file" name="cover_file" type="file" accept="image/png,image/jpeg,image/webp" aria-labelledby="event-cover-label" aria-describedby="event-cover-help event-cover-filename"><button id="upload-event-cover" class="secondary image-upload__submit" type="button" disabled>Upload</button></div>
                 <div id="event-cover-preview-frame" class="image-upload__preview image-upload__preview--cover" hidden><img id="event-cover-preview" class="event-cover-image" alt="Selected event cover"><span id="event-cover-filename"></span></div>
                 <p id="event-cover-status" class="image-upload__status" aria-live="polite"></p>
               </section>

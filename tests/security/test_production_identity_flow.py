@@ -1,14 +1,12 @@
 import re
 import sqlite3
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from sessionbuddy.api.app import app
-
-MIGRATIONS = sorted((Path(__file__).parents[2] / "migrations").glob("*.sql"))
+from tests.schema import MIGRATIONS
 
 
 class SQLiteStatement:
@@ -209,6 +207,8 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
             json={
                 "organization_name": "Example Events",
                 "admin_name": "Asha Rao",
+                "admin_first_name": "Asha",
+                "admin_last_name": "Rao",
                 "admin_email": "asha@example.com",
                 "admin_job_title": "Event director",
                 "admin_company": "Example Events",
@@ -231,10 +231,17 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
             "SELECT COUNT(*) FROM instance_setup_credentials"
         ).fetchone()[0] == 0
         user = connection.execute(
-            """SELECT display_name,job_title,company,time_zone FROM users
+            """SELECT first_name,last_name,display_name,job_title,company,time_zone FROM users
                WHERE normalized_email='asha@example.com'"""
         ).fetchone()
-        assert tuple(user) == ("Asha Rao", "Event director", "Example Events", "Asia/Kolkata")
+        assert tuple(user) == (
+            "Asha",
+            "Rao",
+            "Asha Rao",
+            "Event director",
+            "Example Events",
+            "Asia/Kolkata",
+        )
 
         assert (
             await client.post(
@@ -366,11 +373,15 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
             },
         )
         user_id = created.json()["admin_user_id"]
-        connection.executemany(
+        connection.execute(
+            "UPDATE user_roles SET is_default=0 WHERE user_id=? AND role='organizer'",
+            (user_id,),
+        )
+        connection.execute(
             """INSERT INTO user_roles
                (user_id,role,status,created_at_ms,updated_at_ms,is_default)
-               VALUES(?,?,'active',1,1,?)""",
-            [(user_id, "organizer", 0), (user_id, "speaker", 1)],
+               VALUES(?,'speaker','active',1,1,1)""",
+            (user_id,),
         )
         connection.commit()
 
@@ -398,6 +409,51 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
         assert switched.status_code == 200
         assert switched.json()["active_role"] == "organizer"
         assert switched.json()["default_role"] == "speaker"
+        organization_id = created.json()["organization_id"]
+        event = await client.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={
+                "name": "Persona Boundary",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_000_001_000,
+                    "time_zone": "UTC",
+                    "delivery_mode": "virtual",
+                    "location": "Online",
+                    "description": "Active-persona authorization test.",
+            },
+        )
+        assert event.status_code == 201
+        speaker_session = await client.put(
+            "/api/v1/session/active-role",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={"role": "speaker"},
+        )
+        assert speaker_session.status_code == 200
+        denied_while_speaker = await client.patch(
+            f"/api/v1/admin/events/{event.json()['id']}",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={
+                "name": "Must not change",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_000_001_000,
+                "time_zone": "UTC",
+                "delivery_mode": "virtual",
+                "location": "Online",
+                "description": "Active-persona authorization test.",
+                "status": "active",
+                "version": 1,
+            },
+        )
+        assert denied_while_speaker.status_code == 403
+        assert connection.execute(
+            "SELECT name FROM events WHERE id=?", (event.json()["id"],)
+        ).fetchone()["name"] == "Persona Boundary"
+        await client.put(
+            "/api/v1/session/active-role",
+            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+            json={"role": "organizer"},
+        )
         changed_default = await client.put(
             "/api/v1/account/default-role",
             headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
@@ -415,6 +471,61 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
             json={"role": "reviewer"},
         )
         assert denied.status_code == 403
+
+
+async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        created = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Strict Roles",
+                "admin_name": "Strict Owner",
+                "admin_email": "strict@example.com",
+            },
+        )
+        assert created.status_code == 200
+        await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "strict@example.com", "redirect_path": "/"},
+        )
+        token = _token(connection, "strict@example.com")
+        verified = await client.post(
+            f"/auth/verify?token={token}",
+            follow_redirects=False,
+        )
+        assert verified.status_code == 303
+        assert verified.headers["location"] == "/admin"
+
+        connection.execute("DELETE FROM session_active_roles")
+        connection.commit()
+        session = await client.get("/api/v1/auth/session")
+        home = await client.get("/", follow_redirects=False)
+        assert session.status_code == 403
+        assert home.status_code == 403
+        assert "location" not in home.headers
+
+    async with _client(environment) as fresh_client:
+        await fresh_client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "strict@example.com", "redirect_path": "/"},
+        )
+        token = _token(connection, "strict@example.com")
+        connection.execute(
+            "UPDATE user_roles SET is_default=0 WHERE user_id=?",
+            (created.json()["admin_user_id"],),
+        )
+        connection.commit()
+        session_count = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        refused = await fresh_client.post(
+            f"/auth/verify?token={token}",
+            follow_redirects=False,
+        )
+        assert refused.status_code == 403
+        assert connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == session_count
 
 
 async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
@@ -435,6 +546,9 @@ async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
         assert created.status_code == 200
 
         connection.execute("DELETE FROM audit_events")
+        connection.execute("DELETE FROM resource_access_grants")
+        connection.execute("DELETE FROM resource_ownership_transfers")
+        connection.execute("DELETE FROM owned_resources")
         connection.execute("DELETE FROM organization_memberships")
         connection.execute("DELETE FROM users")
         connection.execute("DELETE FROM organizations")
@@ -539,9 +653,11 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert verified.headers["location"] == "/admin/events"
         session = (await admin.get("/api/v1/auth/session")).json()
         assert session["email"] == "admin@example.com"
-        assert session["organization_access"] == [
-            {"organization_id": organization_id, "roles": ["organization_admin"]}
-        ]
+        assert session["organization_access"] == [{
+            "organization_id": organization_id,
+            "organization_name": "Integration Events",
+            "permissions": ["owner"],
+        }]
         assert session["event_access"] == []
         csrf = session["csrf_token"]
         mutation_headers = {"origin": "https://test", "x-csrf-token": csrf}
@@ -577,7 +693,9 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             {
                 "organization_id": organization_id,
                 "event_id": event_id,
-                "roles": ["event_admin"],
+                "event_name": "Speaker Summit",
+                "permissions": ["owner"],
+                "assignments": [],
             }
         ]
         assert (await admin.get(f"/api/v1/admin/events/{event_id}/agenda")).status_code == 404
@@ -697,14 +815,14 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "slug": "speaker-summit",
                 "welcome_text": "Share your session.",
                 "closes_at_ms": 1_899_913_600_000,
+                "confirmation_subject": "Speaker Summit received your proposal",
+                "confirmation_body": "Thank you for proposing a session to Speaker Summit.",
             },
         )
         assert draft_publish.status_code in {409, 422}
-        assert draft_publish.json()["error"]["message"] == (
-            "Activate the event before publishing its CFP."
-        )
+        assert draft_publish.json()["error"]["code"] == "conflict"
         assert connection.execute(
-            "SELECT COUNT(*) FROM cfp_forms WHERE event_id=?", (event_id,)
+                "SELECT COUNT(*) FROM call_for_speaker_forms WHERE event_id=?", (event_id,)
         ).fetchone()[0] == 0
 
         activated = await admin.patch(
@@ -733,6 +851,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "slug": "speaker-summit",
                 "welcome_text": "Share your session.",
                 "closes_at_ms": 1_899_913_600_000,
+                "confirmation_subject": "Speaker Summit received your proposal",
+                "confirmation_body": "Thank you for proposing a session to Speaker Summit.",
             },
         )
         assert published.status_code == 201
@@ -741,6 +861,16 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert live_workspace.json()["organization_id"] == organization_id
         assert live_workspace.json()["event_id"] == event_id
         assert live_workspace.json()["published_form"]["slug"] == "speaker-summit"
+        assert live_workspace.json()["published_form"]["confirmation_subject"] == (
+            "Speaker Summit received your proposal"
+        )
+        assert live_workspace.json()["published_form"]["confirmation_body"] == (
+            "Thank you for proposing a session to Speaker Summit."
+        )
+        public_form = await admin.get("/api/v1/forms/speaker-summit")
+        assert public_form.status_code == 200
+        assert "confirmation_subject" not in public_form.json()
+        assert "confirmation_body" not in public_form.json()
         published_form = live_workspace.json()["published_form"]
         update_payload = {
             "version": published_form["version"],
@@ -755,6 +885,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "success_title": published_form["success_title"],
             "success_message": published_form["success_message"],
             "redirect_to_portal": published_form["redirect_to_portal"],
+            "confirmation_subject": "Your revised proposal was received",
+            "confirmation_body": "Thank you. The revised program team message is saved.",
         }
         updated_form = await admin.patch(
             f"/api/v1/admin/events/{event_id}/cfp",
@@ -764,6 +896,17 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert updated_form.status_code == 200
         assert updated_form.json()["version"] == published_form["version"] + 1
         assert updated_form.json()["welcome_text"] == "Share your revised session proposal."
+        assert updated_form.json()["confirmation_subject"] == "Your revised proposal was received"
+        assert updated_form.json()["confirmation_body"] == (
+            "Thank you. The revised program team message is saved."
+        )
+        reloaded_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
+        assert reloaded_workspace.json()["published_form"]["confirmation_subject"] == (
+            "Your revised proposal was received"
+        )
+        reloaded_public_form = await admin.get("/api/v1/forms/speaker-summit")
+        assert "confirmation_subject" not in reloaded_public_form.json()
+        assert "confirmation_body" not in reloaded_public_form.json()
         stale_form = await admin.patch(
             f"/api/v1/admin/events/{event_id}/cfp",
             headers=mutation_headers,
@@ -823,8 +966,49 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert submission.status_code == 201
         assert (await speaker.get("/api/v1/forms/speaker-summit/draft")).json() is None
+        withdrawal_candidate = await speaker.post(
+            "/api/v1/forms/speaker-summit/submissions",
+            headers={
+                **speaker_headers,
+                "idempotency-key": "withdrawal-candidate-integration-2026",
+                "x-public-session-id": "public-session-withdrawal-2026",
+            },
+            json={
+                "speaker_name": "Integration Speaker",
+                "speaker_email": "speaker@example.com",
+                "proposal_title": "Proposal to withdraw",
+                "proposal_abstract": "A proposal used to verify safe withdrawal.",
+            },
+        )
+        assert withdrawal_candidate.status_code == 201
+        withdrawal_path = (
+            "/api/v1/forms/speaker-summit/submissions/"
+            f"{withdrawal_candidate.json()['id']}/withdraw"
+        )
+        withdrawn = await speaker.post(withdrawal_path, headers=speaker_headers, json={})
+        assert withdrawn.status_code == 200
+        assert withdrawn.json()["status"] == "withdrawn"
+        assert withdrawn.json()["editable"] is False
+        repeated_withdrawal = await speaker.post(
+            withdrawal_path, headers=speaker_headers, json={}
+        )
+        assert repeated_withdrawal.status_code == 200
+        assert repeated_withdrawal.json()["status"] == "withdrawn"
+        assert connection.execute(
+            """SELECT COUNT(*) FROM audit_events
+               WHERE action='submission.withdraw' AND target_id=?""",
+            (withdrawal_candidate.json()["id"],),
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            """SELECT COUNT(*) FROM evaluation_assignments
+               WHERE submission_id=?""",
+            (withdrawal_candidate.json()["id"],),
+        ).fetchone()[0] == 0
         portal = await speaker.get("/api/v1/speaker/portal")
-        assert [item["id"] for item in portal.json()["submissions"]] == [submission.json()["id"]]
+        portal_submissions = {item["id"]: item for item in portal.json()["submissions"]}
+        assert portal_submissions[submission.json()["id"]]["status"] == "submitted"
+        assert portal_submissions[withdrawal_candidate.json()["id"]]["status"] == "withdrawn"
+        assert portal_submissions[withdrawal_candidate.json()["id"]]["editable"] is False
         person_id = connection.execute(
             "SELECT id FROM people WHERE user_id=?",
             (speaker_session["user_id"],),
@@ -849,12 +1033,67 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "origin": "https://test",
             "x-csrf-token": session["csrf_token"],
         }
+        forbidden_withdrawal = await admin_again.post(
+            withdrawal_path, headers=headers, json={}
+        )
+        assert forbidden_withdrawal.status_code == 404
         managed_profile = await admin_again.get(
             f"/api/v1/speaker-profiles/{person_id}"
         )
         assert managed_profile.status_code == 200
         assert managed_profile.json()["can_edit"] is False
         assert managed_profile.json()["email"] == ""
+        connection.execute(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,version,
+                created_at_ms,updated_at_ms)
+               VALUES ('review-block-member',?,?,?,'evaluator','active',1,900,900)""",
+            (organization_id, event_id, session["user_id"]),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_rounds
+               (id,organization_id,event_id,name,rubric_json,status,
+                created_at_ms,updated_at_ms,closed_at_ms)
+               VALUES ('review-block-round',?,?,'Initial review','{}','open',900,900,NULL)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_assignments
+               (id,organization_id,event_id,round_id,submission_id,
+                evaluator_user_id,status,created_at_ms,updated_at_ms)
+               VALUES
+                 ('review-block-assignment',?,?,'review-block-round',?,?,'assigned',900,900)""",
+            (organization_id, event_id, submission.json()["id"], session["user_id"]),
+        )
+        connection.commit()
+        async with _client(environment) as speaker_after_review:
+            await speaker_after_review.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "speaker@example.com", "redirect_path": "/speaker"},
+            )
+            await speaker_after_review.post(
+                f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
+                follow_redirects=False,
+            )
+            reviewed_session = (
+                await speaker_after_review.get("/api/v1/auth/session")
+            ).json()
+            blocked_withdrawal = await speaker_after_review.post(
+                "/api/v1/forms/speaker-summit/submissions/"
+                f"{submission.json()['id']}/withdraw",
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": reviewed_session["csrf_token"],
+                },
+                json={},
+            )
+            assert blocked_withdrawal.status_code == 409
+            assert blocked_withdrawal.json()["error"]["code"] == "conflict"
+        connection.execute(
+            "DELETE FROM evaluation_assignments WHERE id='review-block-assignment'"
+        )
+        connection.execute("DELETE FROM evaluation_rounds WHERE id='review-block-round'")
+        connection.execute("DELETE FROM event_memberships WHERE id='review-block-member'")
         connection.execute(
             """INSERT INTO evaluation_rounds
                (id,organization_id,event_id,name,rubric_json,status,
@@ -1042,7 +1281,6 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         "SELECT role,status FROM event_memberships WHERE event_id=? ORDER BY role", (event_id,)
     ).fetchall()
     assert [(row["role"], row["status"]) for row in members] == [
-        ("event_admin", "active"),
         ("speaker", "revoked"),
     ]
     assert connection.execute(
@@ -1067,6 +1305,12 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert (
             await returning_speaker.post(
                 f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
+                data={
+                    "first_name": "Returning",
+                    "last_name": "Speaker",
+                    "password": "a private returning speaker passphrase",
+                    "password_confirmation": "a private returning speaker passphrase",
+                },
                 follow_redirects=False,
             )
         ).status_code == 303
@@ -1218,7 +1462,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
         "SELECT role FROM event_memberships WHERE event_id=? AND status='active' ORDER BY role",
         (event_id,),
     ).fetchall()
-    assert [row["role"] for row in roles] == ["event_admin", "speaker"]
+    assert [row["role"] for row in roles] == ["speaker"]
     audit = connection.execute(
         "SELECT action,target_id FROM audit_events WHERE action='identity.invitation.accept'"
     ).fetchone()
@@ -1291,7 +1535,7 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
         event_access = next(
             access for access in cfp_session["event_access"] if access["event_id"] == event_id
         )
-        assert event_access["roles"] == ["event_admin"]
+        assert event_access["permissions"] == ["owner"]
         cfp_headers = {"origin": "https://test", "x-csrf-token": cfp_session["csrf_token"]}
         draft = await client.put(
             "/api/v1/forms/admin-speaker/draft",
@@ -1318,5 +1562,12 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
         event_access = next(
             access for access in cfp_session["event_access"] if access["event_id"] == event_id
         )
-        assert event_access["roles"] == ["event_admin", "speaker"]
+        assert event_access["permissions"] == ["owner"]
+        assert event_access["assignments"] == ["speaker"]
+        switched = await client.put(
+            "/api/v1/session/active-role",
+            headers={"origin": "https://test", "x-csrf-token": cfp_session["csrf_token"]},
+            json={"role": "speaker"},
+        )
+        assert switched.status_code == 200
         assert (await client.get("/api/v1/speaker/portal")).status_code == 200
