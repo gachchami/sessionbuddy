@@ -734,7 +734,10 @@ async def get_form(slug: str, request: Request) -> PublishedFormView:
             """SELECT f.id, f.event_id, f.version, f.slug, f.welcome_text,
                       f.schema_json, f.opens_at_ms, f.closes_at_ms, f.submission_limit,
                       f.success_title, f.success_message, f.redirect_to_portal,
-                      e.name AS event_name,e.accent_color,e.logo_url,e.cover_image_url,
+                      e.name AS event_name,e.starts_at_ms AS event_starts_at_ms,
+                      e.ends_at_ms AS event_ends_at_ms,e.time_zone AS event_time_zone,
+                      e.location AS event_location,e.delivery_mode AS event_delivery_mode,
+                      e.website_url AS event_website_url,e.accent_color,e.logo_url,e.cover_image_url,
                       COUNT(s.id) AS submissions_received
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id
@@ -2576,7 +2579,10 @@ async def _form_by_id(db, form_id: str) -> PublishedFormView:
             """SELECT f.id,f.event_id,f.version,f.slug,f.welcome_text,
                       f.schema_json,f.opens_at_ms,f.closes_at_ms,f.submission_limit,
                       f.success_title,f.success_message,f.redirect_to_portal,
-                      e.name AS event_name,e.accent_color,e.logo_url,e.cover_image_url,
+                      e.name AS event_name,e.starts_at_ms AS event_starts_at_ms,
+                      e.ends_at_ms AS event_ends_at_ms,e.time_zone AS event_time_zone,
+                      e.location AS event_location,e.delivery_mode AS event_delivery_mode,
+                      e.website_url AS event_website_url,e.accent_color,e.logo_url,e.cover_image_url,
                       COUNT(s.id) AS submissions_received
                FROM call_for_speaker_forms f
                JOIN events e ON e.organization_id=f.organization_id AND e.id=f.event_id

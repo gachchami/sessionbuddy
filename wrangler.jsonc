@@ -93,9 +93,10 @@
   "vars": {
     "APP_ENV": "local",
     "APP_VERSION": "development",
-    "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787",
+    "ALLOWED_ORIGINS": "http://127.0.0.1:8787,http://localhost:8787,https://localhost:8443,https://perceived-dark-helena-hours.trycloudflare.com",
     "MALWARE_SCAN_MODE": "required",
-    "PUBLIC_BASE_URL": "http://localhost:8787",
+    "PUBLIC_BASE_URL": "https://perceived-dark-helena-hours.trycloudflare.com",
+    "MAILPIT_API_URL": "http://mailpit:8025",
     "RESEND_FROM_ADDRESS": "SessionBuddy Local <events@example.test>",
     "SCANNER_URL": "http://scanner:8080"
   },

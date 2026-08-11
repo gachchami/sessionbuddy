@@ -56,10 +56,6 @@ STATIC_LONG_TEXT_LIMITS = {
     ("events_admin.html", "description"): 2000,
     ("speaker_directory.html", "biography"): 5000,
     ("speaker_messages.html", "body_text"): 10000,
-    ("speaker_portal.html", "biography"): 5000,
-    ("speaker_portal.html", "headshot-comment"): 1000,
-    ("speaker_portal.html", "slides-comment"): 1000,
-    ("speaker_portal.html", "document-comment"): 1000,
 }
 
 
@@ -108,12 +104,6 @@ def test_shared_counter_is_live_accessible_and_handles_dynamic_controls() -> Non
     assert "installCharacterCounters(node);" in client
     assert "refreshCharacterCounters: formValidation.installCharacterCounters" in client
     assert "of ${control.maxLength.toLocaleString()} characters" in client
-
-    biography = (STATIC / "speaker_portal.html").read_text(encoding="utf-8")
-    assert 'data-character-counter="manual"' in biography
-    assert 'id="biography-count"' in biography
-    assert 'class="help character-counter" aria-live="polite"' in biography
-
 
 def test_dynamic_javascript_and_react_textareas_match_api_limits() -> None:
     public_cfp = (STATIC / "public_cfp.js").read_text(encoding="utf-8")

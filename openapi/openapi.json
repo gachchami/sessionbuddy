@@ -5315,14 +5315,85 @@
             ],
             "title": "Description Html"
           },
+          "event_delivery_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Delivery Mode"
+          },
+          "event_ends_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Ends At Ms"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
+          },
+          "event_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Location"
           },
           "event_name": {
             "default": "Event",
             "title": "Event Name",
             "type": "string"
+          },
+          "event_starts_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Starts At Ms"
+          },
+          "event_time_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Time Zone"
+          },
+          "event_website_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Website Url"
           },
           "fields": {
             "items": {
@@ -6148,6 +6219,17 @@
             "title": "State",
             "type": "string"
           },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
           "uploaded_at_ms": {
             "title": "Uploaded At Ms",
             "type": "integer"
@@ -6289,6 +6371,30 @@
         "title": "SpeakerMessageSendRequest",
         "type": "object"
       },
+      "SpeakerNotificationView": {
+        "additionalProperties": false,
+        "properties": {
+          "delivered_at_ms": {
+            "title": "Delivered At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "subject": {
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "delivered_at_ms"
+        ],
+        "title": "SpeakerNotificationView",
+        "type": "object"
+      },
       "SpeakerPortalView": {
         "additionalProperties": false,
         "properties": {
@@ -6303,8 +6409,33 @@
             "title": "Event Speaker Id",
             "type": "string"
           },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerEventView"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerNotificationView"
+            },
+            "title": "Notifications",
+            "type": "array"
+          },
           "profile": {
             "$ref": "#/components/schemas/SpeakerProfileView"
+          },
+          "public_profile_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Profile Url"
           },
           "submissions": {
             "items": {
@@ -6327,6 +6458,7 @@
         },
         "required": [
           "event",
+          "events",
           "event_speaker_id",
           "profile",
           "tasks",
@@ -6523,6 +6655,10 @@
       "SpeakerSubmissionView": {
         "additionalProperties": false,
         "properties": {
+          "answers": {
+            "title": "Answers",
+            "type": "object"
+          },
           "editable": {
             "default": false,
             "title": "Editable",
@@ -6536,20 +6672,41 @@
             "title": "Id",
             "type": "string"
           },
+          "proposal_abstract": {
+            "title": "Proposal Abstract",
+            "type": "string"
+          },
           "proposal_title": {
             "title": "Proposal Title",
+            "type": "string"
+          },
+          "speaker_email": {
+            "title": "Speaker Email",
+            "type": "string"
+          },
+          "speaker_name": {
+            "title": "Speaker Name",
             "type": "string"
           },
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
           "id",
+          "speaker_name",
+          "speaker_email",
           "proposal_title",
+          "proposal_abstract",
+          "answers",
           "status",
-          "form_slug"
+          "form_slug",
+          "version"
         ],
         "title": "SpeakerSubmissionView",
         "type": "object"
@@ -7409,6 +7566,67 @@
           "data"
         ],
         "title": "SubmissionList",
+        "type": "object"
+      },
+      "SubmissionRegistration": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "first_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password",
+            "type": "string"
+          },
+          "password_confirmation": {
+            "maxLength": 128,
+            "minLength": 15,
+            "title": "Password Confirmation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "password",
+          "password_confirmation"
+        ],
+        "title": "SubmissionRegistration",
         "type": "object"
       },
       "SubmissionUpdate": {
@@ -12062,6 +12280,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmissionRegistration"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Registration"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -13949,6 +14184,25 @@
     "/api/v1/speaker/portal": {
       "get": {
         "operationId": "getSpeakerPortal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "event_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Id"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13959,6 +14213,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Get Speaker Portal",

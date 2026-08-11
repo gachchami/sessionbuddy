@@ -4,23 +4,33 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Submit a proposal · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=51">
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/product/assets/public-cfp.js?v=19" defer></script>
+  <script src="/product/assets/public-cfp.js?v=24" defer></script>
 </head>
 <body class="public-body cfp-public-page">
   <a class="skip-link" href="#main">Skip to proposal form</a>
-  <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span id="brand-name">SessionBuddy</span></a><img id="event-logo" class="event-logo" alt="" hidden></div></header>
   <main id="main" class="shell page public-flow-shell" tabindex="-1">
-    <img id="event-cover" class="event-cover-image" alt="" hidden>
-    <div class="page-heading public-event-hero"><div><p class="eyebrow">Call for Proposals</p><h1 id="title">Submit a proposal</h1><div id="welcome" class="lede rich-description">Loading the published form…</div></div></div>
-    <section id="important-dates" class="important-dates" aria-labelledby="important-dates-title" hidden><h2 id="important-dates-title">Important dates</h2><ol id="important-dates-list"></ol></section>
-    <ol class="step-indicator" aria-label="Submission progress"><li id="step-details" aria-current="step">1 · Proposal</li><li id="step-review">2 · Review</li><li id="step-done">3 · Complete</li></ol>
-    <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div>
-    <section id="call-details" class="card flow-context-card" hidden aria-labelledby="call-details-title"><h2 id="call-details-title">Before you start</h2><p id="call-deadline"></p><p>The form asks for:</p><ul id="call-fields"></ul><p id="call-conditional-note" class="help" hidden>Additional questions may appear based on your answers.</p></section>
-    <section id="closed-card" class="card" hidden><h2>Submissions are not open</h2><p id="availability"></p></section>
-    <section id="sign-in-card" class="card flow-auth-card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><h2 id="sign-in-title">Verify your email to submit</h2><p>Your proposal is safely stored in this browser. Enter the proposal email to request a secure one-time link.</p><form id="sign-in-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button>Send verification link</button></form></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Open the link in this browser. Your completed proposal will be restored for final submission. The link expires in 15 minutes.</p></div></section>
-    <section id="proposal-card" class="card flow-form-card" hidden aria-labelledby="title">
+    <section id="event-public-header" class="public-brand-preview__card cfp-event-header" aria-labelledby="event-title">
+      <div class="public-brand-preview__header"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><b>SessionBuddy</b></a><span class="public-brand-preview__logo"><img id="event-logo" alt="" hidden><b id="event-monogram">EV</b></span></div>
+      <div class="public-brand-preview__cover"><img id="event-cover" alt="" hidden><span id="event-cover-empty">Event cover</span></div>
+      <div class="public-brand-preview__body"><h1 id="event-title">Event</h1><p id="event-dates"></p><p id="event-location"></p><a id="event-website" target="_blank" rel="noopener" hidden></a></div>
+    </section>
+    <div class="page-heading public-event-hero"><div><p class="eyebrow">Call for Proposals</p><h2 id="title">Submit a proposal</h2><p id="welcome" class="lede">Loading the published form…</p></div></div>
+    <section id="cfp-brief" class="cfp-brief" aria-labelledby="cfp-brief-title" hidden><div class="cfp-brief__heading"><p class="eyebrow">About this call</p><h2 id="cfp-brief-title">What we’re looking for</h2></div><div id="cfp-brief-content" class="rich-description cfp-brief__content"></div></section>
+    <div class="cfp-application-layout">
+      <aside class="cfp-application-context" aria-label="Call details">
+        <section id="call-details" class="flow-context-card" hidden aria-labelledby="call-details-title"><p class="eyebrow">At a glance</p><h2 id="call-details-title">Plan your proposal</h2><dl class="cfp-call-facts"><div><dt>Deadline</dt><dd id="call-deadline"></dd></div><div><dt>Time to complete</dt><dd id="call-time-estimate"></dd></div></dl><p id="call-conditional-note" class="cfp-conditional-note" hidden>Additional questions may appear based on your answers.</p></section>
+        <section id="important-dates" class="important-dates" aria-labelledby="important-dates-title" hidden><h2 id="important-dates-title">Important dates</h2><ol id="important-dates-list"></ol></section>
+        <p class="cfp-save-note"><strong>Take your time.</strong> You can save a draft before reviewing and submitting.</p>
+      </aside>
+      <div class="cfp-application-main">
+        <ol class="step-indicator" aria-label="Submission progress"><li id="step-details" aria-current="step"><span>1</span> Proposal</li><li id="step-review"><span>2</span> Review</li><li id="step-done"><span>3</span> Complete</li></ol>
+        <div id="status" class="status" role="status" aria-live="polite" tabindex="-1">Loading…</div>
+        <section id="closed-card" class="card" hidden><h2>Submissions are not open</h2><p id="availability"></p></section>
+        <section id="sign-in-card" class="card flow-auth-card" hidden aria-labelledby="sign-in-title"><div id="cfp-sign-in-entry"><p class="eyebrow">Speaker access</p><h2 id="sign-in-title">Sign in</h2><p>Already have an account? Use your email and password.</p><form id="sign-in-form"><label for="cfp-sign-in-email">Email address</label><input id="cfp-sign-in-email" name="email" type="email" autocomplete="email" maxlength="320" placeholder="you@example.com" required><label for="cfp-sign-in-password">Password</label><input id="cfp-sign-in-password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button id="cfp-password-sign-in">Sign in</button><div class="auth-choice" aria-hidden="true"><span>New speaker?</span></div><button id="cfp-send-sign-in-link" class="secondary" type="button">Create account</button></form><p class="cfp-auth-note">We’ll email a one-time link. It also signs you in if you already have an account without a password.</p></div><div id="cfp-sign-in-sent" class="auth-confirmation" tabindex="-1" hidden><div class="auth-confirmation__icon" aria-hidden="true">✓</div><h2>Check your email</h2><p id="cfp-sent-message"></p><p>Open the link in this browser to continue. It expires in 15 minutes.</p><button id="cfp-change-sign-in-email" class="secondary" type="button">Use a different email</button></div></section>
+        <section id="proposal-card" class="card flow-form-card" hidden aria-labelledby="proposal-form-title">
+      <div class="cfp-form-heading"><p class="eyebrow">Your application</p><h2 id="proposal-form-title">Proposal details</h2><p>Fields marked <span class="required-marker" aria-hidden="true">*</span> are required.</p></div>
       <form id="proposal-form">
         <div id="dynamic-fields"></div>
         <fieldset id="co-speakers"><legend>Co-speakers <span class="optional">Optional</span></legend><p class="help">Add anyone presenting this proposal with you. Each person receives their own invitation.</p><div id="co-speaker-rows"></div><button id="add-co-speaker" class="secondary" type="button">Add co-speaker</button><section id="co-speaker-invitations" class="co-speaker-invitations" aria-labelledby="co-speaker-invitations-title" hidden><h3 id="co-speaker-invitations-title">Invitation status</h3><div id="co-speaker-invitation-list"></div></section></fieldset>
@@ -28,7 +38,9 @@
         <div class="actions"><button id="save-draft" class="secondary" type="button">Save draft</button><button id="back-to-form" class="secondary" type="button" hidden>Back</button><button id="review-proposal" type="button">Review proposal</button><button id="submit-proposal" type="submit" hidden>Confirm submission</button></div>
       </form>
       <section id="receipt" class="result" role="status" aria-live="polite" tabindex="-1"></section>
-    </section>
+        </section>
+      </div>
+    </div>
   </main>
 </body>
 </html>

@@ -136,3 +136,12 @@ def test_asset_slot_versions_by_speaker_session_and_kind_not_task_id() -> None:
     assert "COALESCE(task_id" not in slot_query
     assert "AND kind = ?5" in slot_query
     assert "COALESCE(submission_id, '') = COALESCE(?6, '')" in source
+
+
+def test_speaker_portal_supports_explicit_multi_event_selection() -> None:
+    source = (
+        Path(__file__).parents[2] / "src/sessionbuddy/speaker_operations/router.py"
+    ).read_text()
+    assert "event_id: str | None = Query" in source
+    assert "(?2 IS NULL OR es.event_id = ?2)" in source
+    assert "events=[" in source

@@ -113,6 +113,29 @@
     );
   }
 
+  function syncEventTrackField() {
+    const index = state.fields.findIndex((field) => field.key === "track");
+    if (!state.eventTracks.length) {
+      if (index >= 0) state.fields.splice(index, 1);
+      return;
+    }
+    const trackField = {
+      key: "track",
+      type: "select",
+      label: "Track",
+      help_text: "Choose the event track that best fits this proposal.",
+      placeholder: "",
+      required: true,
+      choices: [...state.eventTracks],
+      blind_visible: true
+    };
+    if (index >= 0) state.fields[index] = { ...state.fields[index], ...trackField };
+    else {
+      const sessionTypeIndex = state.fields.findIndex((field) => field.key === "session_type");
+      state.fields.splice(sessionTypeIndex >= 0 ? sessionTypeIndex + 1 : state.fields.length, 0, trackField);
+    }
+  }
+
   function setStatus(message, kind = "") {
     const variant = kind === true ? "error" : kind;
     byId("status").textContent = message;
@@ -140,8 +163,9 @@
   function syncDescription() {
     const editor = byId("cfp-description-editor");
     const text = editor.textContent.replace(/\s+/g, " ").trim();
+    const opening = editor.innerText.split(/\n+/).map((line) => line.trim()).find(Boolean) || text;
     byId("publish-form").elements.description_html.value = richTextMarkup(editor);
-    byId("publish-form").elements.welcome_text.value = text.slice(0, 1000);
+    byId("publish-form").elements.welcome_text.value = opening.slice(0, 1000);
   }
 
   function renderImportantDates() {
@@ -174,9 +198,10 @@
     return state.importantDates.filter((date) => date.label.trim() && Number.isFinite(date.at_ms));
   }
 
-  function inputLabel(text, input) {
+  function inputLabel(text, input, help = "") {
     const label = make("label", text);
     label.append(input);
+    if (help) label.append(make("small", help));
     return label;
   }
 
@@ -342,8 +367,6 @@
     standardProposalFields.forEach((standard) => {
       if (!state.fields.some((field) => field.key === standard.key)) state.fields.push(structuredClone(standard));
     });
-    const trackField = state.fields.find((field) => field.key === "track");
-    if (trackField && state.eventTracks.length) trackField.choices = [...state.eventTracks];
     state.routingRules = structuredClone(form.routing_rules || []);
     const editor = byId("publish-form");
     editor.elements.slug.value = form.slug;
@@ -483,24 +506,58 @@
           inputLabel("Help text", textInput("field_help", field.help_text || ""))
         );
       } else {
+        keyInput.type = "hidden";
+        const requiredLabel = make("label");
+        requiredLabel.className = "check-label";
+        requiredLabel.append(required, make("span", "Required"));
+        const blindVisibleLabel = make("label");
+        blindVisibleLabel.className = "check-label";
+        blindVisibleLabel.append(blindVisible, make("span", "Show in blind review"));
+        const choicesLabel = inputLabel(
+          "Answer choices",
+          choices,
+          "Enter at least two choices, separated by commas."
+        );
+        const syncChoiceVisibility = () => {
+          choicesLabel.hidden = !["select", "multiselect"].includes(type.value);
+        };
+        type.addEventListener("change", syncChoiceVisibility);
+        syncChoiceVisibility();
         editorBody.append(
-          inputLabel("Field key", keyInput),
-          inputLabel("Label", textInput("field_label", field.label, true)),
-          inputLabel("Type", type),
-          inputLabel("Required", required),
-          inputLabel("Show to reviewers in blind rounds", blindVisible),
-          inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
-          inputLabel("Help text", textInput("field_help", field.help_text || "")),
-          inputLabel("Choices (comma separated)", choices)
+          keyInput,
+          inputLabel("Question", textInput("field_label", field.label, true), "This is the prompt speakers will see."),
+          inputLabel("Answer format", type),
+          requiredLabel,
+          blindVisibleLabel,
+          inputLabel("Placeholder text", textInput("field_placeholder", field.placeholder || ""), "Optional example shown inside an empty answer."),
+          inputLabel("Instructions for speakers", textInput("field_help", field.help_text || ""), "Optional guidance shown below the question."),
+          choicesLabel
         );
       }
       if (!system) {
-        editorBody.append(
-          make("p", "Optional display condition"),
-          inputLabel("Show when field key", conditionSource),
+        const conditionQuestion = document.createElement("select");
+        conditionQuestion.name = "condition_source";
+        conditionQuestion.add(new Option("Choose a previous question", ""));
+        state.fields.forEach((candidate) => {
+          if (candidate.key !== field.key) conditionQuestion.add(new Option(candidate.label, candidate.key));
+        });
+        conditionQuestion.value = field.condition?.source_key || "";
+        operator.options[0].textContent = "is";
+        operator.options[1].textContent = "is not";
+        conditionSource.remove();
+        const advanced = make("details");
+        advanced.className = "question-advanced";
+        advanced.open = Boolean(field.condition?.source_key);
+        const advancedSummary = make("summary", "Display rules (optional)");
+        const advancedBody = make("div");
+        advancedBody.append(
+          make("p", "Show this question only when a speaker gives a particular answer to another question."),
+          inputLabel("Previous question", conditionQuestion),
           inputLabel("Comparison", operator),
-          inputLabel("Value", conditionValue)
+          inputLabel("Answer", conditionValue)
         );
+        advanced.append(advancedSummary, advancedBody);
+        editorBody.append(advanced);
         const remove = make("button", "Remove field");
         remove.type = "button";
         remove.className = "secondary";
@@ -573,7 +630,6 @@
     const custom = outlineButton("Custom questions", "questions", "custom");
     custom.append(make("small", String(customCount)));
     const availability = outlineButton("Availability", "availability", "availability");
-    availability.classList.add("cfp-outline-item--settings-start");
     const nodes = [
       outlineButton("Description", "basics", "basics"), proposal, custom,
       outlineButton("Co-speakers", "co-speakers", "co-speakers"),
@@ -587,9 +643,11 @@
   function selectOutline(selection, focus = true) {
     state.selectedOutline = selection;
     const [kind, rawIndex] = selection.split(":");
-    const sectionName = ["proposal", "custom"].includes(kind) ? "questions" : kind;
+    const sectionName = ["proposal", "custom", "question"].includes(kind) ? "questions" : kind;
     document.querySelectorAll(".cfp-editor-section").forEach((section) => { section.hidden = section.id !== `cfp-${sectionName}`; });
-    document.querySelectorAll(".cfp-outline-item").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.selection === selection)));
+    const outlineSelection = kind === "question" ? "custom" : selection;
+    document.querySelectorAll(".cfp-outline-item").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.selection === outlineSelection)));
+    const activeOutline = document.querySelector('.cfp-outline-item[aria-pressed="true"]');
     const allQuestionCards = [...byId("form-fields").querySelectorAll(".question-card")];
     const questionCards = [...byId("form-fields").querySelectorAll(".question-card[data-index]")];
     allQuestionCards.forEach((card) => {
@@ -609,7 +667,8 @@
     byId("cfp-selection-preview").hidden = true;
     document.querySelectorAll(".cfp-editor-section").forEach((section) => { if (!section.hidden) section.removeAttribute("aria-hidden"); });
     if (selectedField) questionCards[Number(rawIndex)]?.querySelector("details")?.setAttribute("open", "");
-    if (focus) document.querySelector(`.cfp-outline-item[data-selection="${selection}"]`)?.focus();
+    if (focus) activeOutline?.focus({ preventScroll: true });
+    activeOutline?.scrollIntoView({ block: "nearest", inline: "center" });
   }
 
   function readFields() {
@@ -801,7 +860,8 @@
       const choices = card.elements.field_choices;
       choices.setCustomValidity("");
       if (["select", "multiselect"].includes(field.type)) {
-        if (field.choices.length < 2) choices.setCustomValidity("Choice fields need at least two choices.");
+        const minimumChoices = field.key === "track" ? 1 : 2;
+        if (field.choices.length < minimumChoices) choices.setCustomValidity(`Choice fields need at least ${minimumChoices === 1 ? "one choice" : "two choices"}.`);
         else if (new Set(field.choices).size !== field.choices.length) choices.setCustomValidity("Choices must be unique.");
       }
       const source = card.elements.condition_source;
@@ -943,6 +1003,8 @@
         slug.value = readableSlug.slice(0, 80);
         restoreLocalDraft();
       }
+      syncEventTrackField();
+      renderFields();
       syncAvailabilityLimits(byId("publish-form"));
       renderWorkspace();
       setStatus(state.publishedForm ? "" : "Configure and publish the proposal form.");

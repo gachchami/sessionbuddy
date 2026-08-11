@@ -36,7 +36,8 @@ def test_events_page_uses_an_operational_management_layout() -> None:
     assert 'name="retain_source_cover"' in page
     assert "function duplicateEvent(event)" in script
     assert 'id="save-event-draft"' in page
-    assert "Drafts stay private until activated." in page
+    assert "Save a private draft, or create the event as active." in page
+    assert ">Create active event</button>" in page
     assert 'if (!eventId) body.status = createStatus' in script
     assert 'event.submitter?.value === "draft"' in script
     assert 'state.editingDraft = event.status === "draft"' in script

@@ -51,6 +51,7 @@ from .models import (
     SpeakerAssetVersionView,
     SpeakerAssetView,
     SpeakerEventView,
+    SpeakerNotificationView,
     SpeakerPortalView,
     SpeakerProfileUpdate,
     SpeakerProfileView,
@@ -493,7 +494,7 @@ async def get_admin_onboarding_dashboard(
     )
 
 
-async def _speaker_row(request: Request):
+async def _speaker_row(request: Request, event_id: str | None = None):
     authenticated = await authenticate_request(request)
     row = row_mapping(
         await _timed_first(
@@ -515,10 +516,11 @@ async def _speaker_row(request: Request):
                     AND em.user_id = p.user_id AND em.role = 'speaker'
                     AND em.status = 'active'
                    WHERE p.user_id = ?1 AND p.archived_at_ms IS NULL
+                     AND (?2 IS NULL OR es.event_id = ?2)
                      AND es.status IN ('onboarding', 'complete')
                    ORDER BY es.last_activity_at_ms DESC, es.id DESC LIMIT 1"""
             )
-            .bind(authenticated.actor.user_id),
+            .bind(authenticated.actor.user_id, event_id),
         )
     )
     if row is None:
@@ -557,9 +559,42 @@ def _profile(row) -> SpeakerProfileView:
     operation_id="getSpeakerPortal",
     tags=["speaker-portal"],
 )
-async def get_speaker_portal(request: Request) -> SpeakerPortalView:
-    _, row = await _speaker_row(request)
+async def get_speaker_portal(
+    request: Request, event_id: str | None = Query(default=None, max_length=100)
+) -> SpeakerPortalView:
+    authenticated, row = await _speaker_row(request, event_id)
     db = _db(request)
+    event_rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT e.id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,
+                          es.organization_id,p.user_id
+                   FROM people p
+                   JOIN event_speakers es
+                     ON es.organization_id=p.organization_id AND es.person_id=p.id
+                   JOIN events e
+                     ON e.organization_id=es.organization_id AND e.id=es.event_id
+                   JOIN event_memberships em
+                     ON em.organization_id=es.organization_id AND em.event_id=es.event_id
+                    AND em.user_id=p.user_id AND em.role='speaker' AND em.status='active'
+                   WHERE p.user_id=?1 AND p.archived_at_ms IS NULL
+                     AND es.status IN ('onboarding','complete')
+                   ORDER BY e.starts_at_ms DESC,e.id DESC LIMIT 100"""
+            ).bind(authenticated.actor.user_id),
+        )
+    )
+    for event_row in event_rows:
+        await require_permission(
+            request,
+            Permission.SPEAKER_PROFILE_READ_OWN,
+            ResourceContext(
+                str(event_row["organization_id"]),
+                str(event_row["id"]),
+                resource_owner_user_id=str(event_row["user_id"]),
+            ),
+            mutation=False,
+        )
     tasks = result_rows(
         await _timed_all(
             request,
@@ -578,7 +613,9 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
         await _timed_all(
             request,
             db.prepare(
-                """SELECT s.id, s.proposal_title,f.slug AS form_slug,
+                """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
+                          s.proposal_abstract,s.answers_json,s.version,s.submitter_user_id,
+                          f.slug AS form_slug,
                           COALESCE((SELECT d.decision FROM submission_decisions d
                             WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
                               AND d.submission_id=s.id
@@ -592,6 +629,23 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
                      AND ss.event_speaker_id = ?3
                    ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 25"""
             ).bind(row["organization_id"], row["event_id"], row["event_speaker_id"]),
+        )
+    )
+    notifications = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT id,subject,delivered_at_ms
+                   FROM communication_messages
+                   WHERE organization_id=?1 AND event_id=?2
+                     AND recipient_user_id=?3 AND status='delivered'
+                     AND delivered_at_ms IS NOT NULL
+                   ORDER BY delivered_at_ms DESC,id DESC LIMIT 20"""
+            ).bind(
+                row["organization_id"],
+                row["event_id"],
+                authenticated.actor.user_id,
+            ),
         )
     )
     task_views = [
@@ -624,18 +678,51 @@ async def get_speaker_portal(request: Request) -> SpeakerPortalView:
             ends_at_ms=int(row["ends_at_ms"]),
             time_zone=str(row["time_zone"]),
         ),
+        events=[
+            SpeakerEventView(
+                id=str(event_row["id"]),
+                name=str(event_row["name"]),
+                starts_at_ms=int(event_row["starts_at_ms"]),
+                ends_at_ms=int(event_row["ends_at_ms"]),
+                time_zone=str(event_row["time_zone"]),
+            )
+            for event_row in event_rows
+        ],
         event_speaker_id=str(row["event_speaker_id"]),
+        public_profile_url=(
+            f"/events/{quote(str(row['event_id']))}/speakers"
+            f"?speaker={quote(str(row['event_speaker_id']))}"
+            if str(row["selection_status"]) == "accepted"
+            else None
+        ),
         profile=_profile(row),
         tasks=task_views,
         submissions=[
             SpeakerSubmissionView(
                 id=str(submission["id"]),
+                speaker_name=str(submission["speaker_name"]),
+                speaker_email=str(submission["speaker_email"]),
                 proposal_title=str(submission["proposal_title"]),
+                proposal_abstract=str(submission["proposal_abstract"]),
+                answers=json.loads(str(submission["answers_json"])),
                 status=str(submission["status"]),
                 form_slug=str(submission["form_slug"]),
-                editable=str(submission["status"]) == "submitted",
+                version=int(submission["version"]),
+                editable=(
+                    str(submission["status"]) == "submitted"
+                    and str(submission["submitter_user_id"] or "")
+                    == authenticated.actor.user_id
+                ),
             )
             for submission in submissions
+        ],
+        notifications=[
+            SpeakerNotificationView(
+                id=str(notification["id"]),
+                subject=str(notification["subject"]),
+                delivered_at_ms=int(notification["delivered_at_ms"]),
+            )
+            for notification in notifications
         ],
         completed_tasks=sum(task.state == "completed" for task in task_views),
         total_tasks=len(task_views),
@@ -1099,7 +1186,8 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
             request,
             _db(request)
             .prepare(
-                """SELECT a.id,a.kind,av.original_filename,av.content_type,av.byte_size,
+                """SELECT a.id,a.kind,a.submission_id,av.original_filename,
+                          av.content_type,av.byte_size,
                           av.generation,av.uploaded_at_ms,av.version_comment,
                           (SELECT COUNT(*) FROM speaker_asset_versions history
                            WHERE history.asset_id=a.id AND history.scan_state IN
@@ -1127,6 +1215,7 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
             SpeakerAssetView(
                 id=str(row["id"]),
                 kind=str(row["kind"]),
+                submission_id=(str(row["submission_id"]) if row["submission_id"] else None),
                 filename=str(row["original_filename"]),
                 content_type=str(row["content_type"]),
                 byte_size=int(row["byte_size"]),

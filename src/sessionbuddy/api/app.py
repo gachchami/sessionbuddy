@@ -52,6 +52,29 @@ app.include_router(competition_router)
 app.include_router(create_communications_router(communications_service))
 
 
+def _session_home_destination(session) -> str:
+    role = getattr(session, "active_role", None) or getattr(session, "default_role", None)
+    if role is None:
+        event_roles = {
+            str(role)
+            for access in getattr(session, "event_access", [])
+            for role in access.roles
+        }
+        if "event_admin" in event_roles:
+            role = "organizer"
+        elif "evaluator" in event_roles:
+            role = "reviewer"
+        elif "speaker" in event_roles:
+            role = "speaker"
+        elif getattr(session, "organization_access", []):
+            role = "organizer"
+    return {
+        "organizer": "/admin",
+        "speaker": "/speaker",
+        "reviewer": "/reviews",
+    }.get(role or "", "/account")
+
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root(request: Request) -> Response:
     environment = request.scope.get("env")
@@ -75,11 +98,7 @@ async def root(request: Request) -> Response:
             if not session.profile_complete:
                 destination = "/account?onboarding=1&next=%2F"
             else:
-                destination = {
-                    "organizer": "/admin",
-                    "speaker": "/speaker",
-                    "reviewer": "/reviews",
-                }.get(session.active_role or "", "/account")
+                destination = _session_home_destination(session)
             return RedirectResponse(
                 destination,
                 status_code=303,

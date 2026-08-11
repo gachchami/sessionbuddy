@@ -8,6 +8,7 @@ from sessionbuddy.cfp.staged_uploads import purge_expired_staged_assets
 from sessionbuddy.communications.runtime import (
     D1DeliveryRepository,
     DeliveryEnvelope,
+    MailpitProvider,
     ReminderEnvelope,
     ResendProvider,
     consume_delivery,
@@ -109,9 +110,27 @@ class Default(WorkerEntrypoint):
                 message.ack()
                 continue
             try:
+                app_env = str(getattr(self.env, "APP_ENV", "production")).strip().lower()
+                mailpit_api_url = str(getattr(self.env, "MAILPIT_API_URL", "")).strip()
                 api_key = str(getattr(self.env, "RESEND_API_KEY", ""))
                 from_address = str(getattr(self.env, "RESEND_FROM_ADDRESS", ""))
-                if not api_key or not from_address:
+                if app_env == "local" and mailpit_api_url and from_address:
+                    provider = MailpitProvider(mailpit_api_url, from_address)
+                    acknowledged = await consume_delivery(
+                        body,
+                        D1DeliveryRepository(self.env.DB),
+                        provider,
+                        utc_now_ms(),
+                    )
+                elif api_key and from_address:
+                    provider = ResendProvider(api_key, from_address)
+                    acknowledged = await consume_delivery(
+                        body,
+                        D1DeliveryRepository(self.env.DB),
+                        provider,
+                        utc_now_ms(),
+                    )
+                else:
                     # A retry can never succeed without provider credentials;
                     # park the durable row as a permanent failure instead of
                     # burning Worker CPU on a retry storm.
@@ -127,14 +146,6 @@ class Default(WorkerEntrypoint):
                     )
                     acknowledged = await park_unconfigured_delivery(
                         body, D1DeliveryRepository(self.env.DB), utc_now_ms()
-                    )
-                else:
-                    provider = ResendProvider(api_key, from_address)
-                    acknowledged = await consume_delivery(
-                        body,
-                        D1DeliveryRepository(self.env.DB),
-                        provider,
-                        utc_now_ms(),
                     )
             except Exception as error:  # noqa: BLE001 - queue boundary
                 # The old bare handler swallowed every failure silently; the

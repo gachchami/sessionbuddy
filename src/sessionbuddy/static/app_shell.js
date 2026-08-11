@@ -197,7 +197,7 @@
         button.setAttribute("aria-pressed", String(isActive));
         if (isActive) button.setAttribute("aria-disabled", "true");
         const scope = choice.role === "speaker"
-          ? "Speaker portal"
+          ? "Speaker home"
           : ["reviewer", "evaluator"].includes(choice.role)
             ? "Assigned reviews"
             : choice.role === "organizer"
@@ -288,7 +288,7 @@
       if (location.pathname.includes("/submissions")) return "Submissions";
       return "Overview";
     }
-    return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker portal", account: "Account" }[section] || "Home";
+    return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker home", account: "Account" }[section] || "Home";
   }
 
   function eventNav(eventId) {
@@ -347,6 +347,7 @@
     const roles = roleSet(session);
     const organizer = roles.has("organizer");
     const section = currentSection();
+    const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker");
     if (location.pathname.startsWith("/admin") && !organizer) {
       if (roles.has("reviewer")) location.replace("/reviews");
       else if (roles.has("speaker")) location.replace("/speaker");
@@ -358,6 +359,7 @@
     const globalOrganizerWorkspace = organizerWorkspace && !currentEventId;
     document.body.classList.add("sb-shell-authenticated");
     document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace);
+    document.body.classList.toggle("sb-shell-single", singleSpeakerWorkspace);
 
     const sidebar = make("aside", undefined, "sb-sidebar");
     sidebar.id = "workspace-navigation";
@@ -443,8 +445,19 @@
         topbarBrand.append(topbarMark, make("strong", "SessionBuddy"));
         topbar.append(menuButton, topbarBrand, globalNav, accountMenu(session, roles));
       }
+    } else if (singleSpeakerWorkspace) {
+      const speakerBrand = link("", "/speaker");
+      speakerBrand.className = "sb-global-brand";
+      speakerBrand.append(brandMark(), make("strong", "SessionBuddy"));
+      topbar.append(speakerBrand, accountMenu(session, roles));
     } else {
       topbar.append(menuButton, crumb, accountMenu(session, roles));
+    }
+
+    if (singleSpeakerWorkspace) {
+      shell.className = "sb-app-shell sb-app-shell--single";
+      shell.replaceChildren(topbar);
+      return;
     }
 
     const backdrop = make("button", undefined, "sb-nav-backdrop");

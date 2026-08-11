@@ -5,8 +5,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Agenda editor · SessionBuddy</title>
-    <link rel="stylesheet" href="/product/assets/product.css?v=23" type="text/css">
-    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=2" type="text/css">
+    <link rel="stylesheet" href="/product/assets/product.css?v=57" type="text/css">
+    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=3" type="text/css">
     <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19" type="text/css">
     <script src="/app-shell/assets/api-client.js?v=2" defer type="text/javascript">
 </script>
@@ -49,17 +49,20 @@
       </section>
       <div id="agenda-workspace" hidden="">
         <section class="agenda-toolbar workflow-toolbar" aria-labelledby="view-title">
-          <div>
+          <div class="agenda-toolbar__view">
             <h2 id="view-title">
-              View
+              Schedule view
             </h2>
+            <fieldset>
+              <legend class="sr-only">Agenda view</legend>
+              <div class="segmented">
+                <label><input type="radio" name="view" value="list" checked><span>List</span></label><label><input type="radio" name="view" value="day"><span>Day</span></label><label><input type="radio" name="view" value="week"><span>Week</span></label><label><input type="radio" name="view" value="track"><span>Track</span></label><label><input type="radio" name="view" value="room"><span>Room</span></label>
+              </div>
+            </fieldset>
           </div>
-          <fieldset>
-            <legend class="sr-only">Agenda view</legend>
-            <div class="segmented">
-              <label><input type="radio" name="view" value="list" checked><span>List</span></label><label><input type="radio" name="view" value="day"><span>Day</span></label><label><input type="radio" name="view" value="week"><span>Week</span></label><label><input type="radio" name="view" value="track"><span>Track</span></label><label><input type="radio" name="view" value="room"><span>Room</span></label>
-            </div>
-          </fieldset><button id="refresh" class="secondary" type="button">Refresh</button><a id="published-link" class="button secondary" href="#" target="_blank" rel="noopener">Open public schedule</a><button id="publish" type="button">Publish agenda</button>
+          <div class="agenda-toolbar__actions">
+            <button id="refresh" class="secondary" type="button">Refresh</button><a id="published-link" class="button secondary" href="#" target="_blank" rel="noopener">Public schedule</a><button id="publish" type="button">Publish agenda</button>
+          </div>
         </section>
         <details class="panel agenda-tools workflow-action">
           <summary>Schedule tools</summary>

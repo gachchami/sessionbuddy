@@ -1,6 +1,7 @@
 """FastAPI integration for opaque sessions, CSRF, and centralized RBAC."""
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request
 
@@ -55,7 +56,15 @@ def secret(request: Request, name: str) -> bytes:
 
 def allowed_origins(request: Request) -> frozenset[str]:
     raw = str(getattr(environment(request), "ALLOWED_ORIGINS", ""))
-    return frozenset(value.strip() for value in raw.split(",") if value.strip())
+    configured = {value.strip() for value in raw.split(",") if value.strip()}
+    # The public URL is the origin used by links we issue. Treat it as a
+    # first-class configured origin so temporary preview/tunnel URLs cannot
+    # send speakers to a page whose authenticated forms are then rejected.
+    public_base = str(getattr(environment(request), "PUBLIC_BASE_URL", "")).strip()
+    parts = urlsplit(public_base)
+    if parts.scheme in {"http", "https"} and parts.netloc:
+        configured.add(f"{parts.scheme}://{parts.netloc}")
+    return frozenset(configured)
 
 
 async def require_permission(

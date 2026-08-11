@@ -5,6 +5,7 @@ const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const programId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const assignmentId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+const responsiveBuilderEventId = "c1f89ba5-5013-4419-af7d-fd622af9803f";
 
 const organizerSession = {
   authenticated: true,
@@ -135,6 +136,77 @@ test.describe("form validation and workflow wiring", () => {
     await expect(page.locator("#status")).toHaveText("Your CFP was published successfully.");
     expect(publishWrites).toBe(1);
     expect(publishedBody).toMatchObject({ slug: "conference-2030" });
+  });
+
+  test("CFP builder keeps every section usable at narrow mobile widths", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/sign-in?redirect=${encodeURIComponent(`/admin/events/${responsiveBuilderEventId}/cfp`)}`);
+    await page.getByLabel("Email").fill("user0@example.test");
+    await page.getByLabel("Password").fill("user0-local-password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/events/${responsiveBuilderEventId}/cfp$`));
+    await page.getByRole("button", { name: /^Custom questions/ }).click();
+    await page.getByRole("button", { name: /Add custom question/ }).click();
+    await expect(page.locator('.question-card:not([hidden]) input[name="field_label"]')).toBeVisible();
+    const selectedCustomQuestions = page.getByRole("button", { name: /^Custom questions/ });
+    await expect(selectedCustomQuestions).toHaveAttribute("aria-pressed", "true");
+    expect(await selectedCustomQuestions.evaluate((element) => {
+      const item = element.getBoundingClientRect();
+      const nav = element.closest("nav")!.getBoundingClientRect();
+      return item.left >= nav.left - 1 && item.right <= nav.right + 1;
+    })).toBe(true);
+
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(page.locator("#publish-form")).toBeVisible();
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      const liveUrlLayout = await page.locator("#cfp-live-bar").evaluate((element) => {
+        const address = element.querySelector(".cfp-live-bar__address")!.getBoundingClientRect();
+        const actions = element.querySelector(".cfp-live-bar__actions")!.getBoundingClientRect();
+        const bar = element.getBoundingClientRect();
+        return {
+          fits: bar.left >= 0 && bar.right <= window.innerWidth,
+          actionsBelowAddress: actions.top >= address.bottom - 1,
+        };
+      });
+      expect(liveUrlLayout, `live URL should stack cleanly at ${width}px`).toEqual({ fits: true, actionsBelowAddress: true });
+
+      for (const name of ["Description", "Proposal details", "Custom questions", "Co-speakers", "Confirmation", "Availability"]) {
+        const section = page.getByRole("button", { name: new RegExp(`^${name}`) });
+        await section.click();
+        await expect(section).toHaveAttribute("aria-pressed", "true");
+        const alignment = await section.evaluate((element) => {
+          const item = element.getBoundingClientRect();
+          const nav = element.closest("nav")!.getBoundingClientRect();
+          return { left: item.left >= nav.left - 1, right: item.right <= nav.right + 1 };
+        });
+        expect(alignment, `${name} should be fully visible at ${width}px`).toEqual({ left: true, right: true });
+      }
+
+      await page.getByRole("button", { name: /^Custom questions/ }).click();
+      const customQuestion = page.locator(".question-card:not(.question-card--system)").last();
+      await expect(customQuestion).toBeVisible();
+      const customQuestionFits = await customQuestion.evaluate((element) => {
+        const card = element.getBoundingClientRect();
+        const editor = element.closest("#publish-form")!.getBoundingClientRect();
+        return card.left >= editor.left - 1 && card.right <= editor.right + 1;
+      });
+      expect(customQuestionFits, `custom question should fit at ${width}px`).toBe(true);
+      await expect(customQuestion.locator('input[name="field_key"]')).toBeHidden();
+      await expect(customQuestion.locator('input[name="field_label"]')).toBeVisible();
+      await customQuestion.getByLabel("Answer format").selectOption("text");
+      await expect(customQuestion.getByLabel("Answer choices")).toBeHidden();
+      await customQuestion.getByLabel("Answer format").selectOption("select");
+      await expect(customQuestion.getByLabel("Answer choices")).toBeVisible();
+    }
+
+    await expect(page.locator("#publish-result")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Availability/ })).toHaveCSS("border-left-width", "0px");
+    const actionButtons = page.locator(".cfp-editor-actions button").filter({ visible: true });
+    for (let index = 0; index < await actionButtons.count(); index += 1) {
+      const height = await actionButtons.nth(index).evaluate((element) => element.getBoundingClientRect().height);
+      expect(height).toBeGreaterThanOrEqual(40);
+    }
   });
 
   test("review round and evaluator forms block incomplete payloads", async ({ page }) => {

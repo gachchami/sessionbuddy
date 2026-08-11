@@ -10,7 +10,7 @@ from email.headerregistry import Address
 from email.utils import parseaddr
 from html import escape
 from typing import Literal
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -676,6 +676,22 @@ class AccountProfileUpdate(BaseModel):
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
             raise ValueError("profile URLs must be HTTPS URLs without credentials")
         return value
+
+
+class SubmissionRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    job_title: str | None = Field(default=None, max_length=200)
+    company: str | None = Field(default=None, max_length=200)
+    password: str = Field(min_length=15, max_length=128)
+    password_confirmation: str = Field(min_length=15, max_length=128)
+
+    @model_validator(mode="after")
+    def matching_password(self) -> "SubmissionRegistration":
+        if self.password != self.password_confirmation:
+            raise ValueError("password confirmation does not match")
+        return self
 
 
 def _valid_redirect(value: str) -> bool:
@@ -3499,7 +3515,12 @@ async def password_sign_in(
 
 
 @access_router.get("/api/v1/auth/verify", response_model=SessionCreated, tags=["authentication"])
-async def verify_magic_link(token: str, request: Request, response: Response) -> SessionCreated:
+async def verify_magic_link(
+    token: str,
+    request: Request,
+    response: Response,
+    registration: SubmissionRegistration | None = None,
+) -> SessionCreated:
     if len(token) < 32:
         raise HTTPException(status_code=404)
     db, now = database(request), utc_now_ms()
@@ -3516,7 +3537,9 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
     if challenge is None:
         raise HTTPException(status_code=404)
     try:
-        return await _finish_magic_link_sign_in(db, request, response, challenge, now)
+        return await _finish_magic_link_sign_in(
+            db, request, response, challenge, now, registration=registration
+        )
     except BaseException:
         # Consume-on-success: if provisioning or session creation fails after
         # the atomic consumption above, restore the challenge so the link is
@@ -3537,7 +3560,13 @@ async def verify_magic_link(token: str, request: Request, response: Response) ->
 
 
 async def _finish_magic_link_sign_in(
-    db, request: Request, response: Response, challenge, now: int
+    db,
+    request: Request,
+    response: Response,
+    challenge,
+    now: int,
+    *,
+    registration: SubmissionRegistration | None = None,
 ) -> SessionCreated:
     user_id = challenge["user_id"]
     if challenge["invitation_id"] is not None:
@@ -3670,14 +3699,85 @@ async def _finish_magic_link_sign_in(
             .first()
         )
         user_id = str(existing_user["id"]) if existing_user is not None else new_id()
+        existing_credential = None
+        if existing_user is not None:
+            existing_credential = row_mapping(
+                await db.prepare(
+                    "SELECT user_id FROM password_credentials "
+                    "WHERE user_id=?1 AND status='active' LIMIT 1"
+                )
+                .bind(user_id)
+                .first()
+            )
         batch = CommandBatch(db)
-        if existing_user is None:
+        if existing_user is None or existing_credential is None:
+            if registration is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Complete registration before signing in.",
+                )
+            try:
+                verifier = hash_password(
+                    registration.password, secret(request, "PASSWORD_PEPPER")
+                )
+            except PasswordPolicyError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            display_name = f"{registration.first_name} {registration.last_name}".strip()
+            if existing_user is None:
+                batch.add_statement(
+                    db.prepare(
+                        """INSERT INTO users
+                       (id,email,normalized_email,status,email_verified_at_ms,first_name,last_name,
+                        display_name,job_title,company,profile_completed_at_ms,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?2,'active',?3,?4,?5,?6,?7,?8,?3,?3,?3)"""
+                    ).bind(
+                        user_id,
+                        challenge["normalized_email"],
+                        now,
+                        registration.first_name,
+                        registration.last_name,
+                        display_name,
+                        registration.job_title or None,
+                        registration.company or None,
+                    )
+                )
+            else:
+                batch.add_statement(
+                    db.prepare(
+                        """UPDATE users SET first_name=?1,last_name=?2,display_name=?3,
+                           job_title=?4,company=?5,profile_completed_at_ms=?6,
+                           email_verified_at_ms=COALESCE(email_verified_at_ms,?6),updated_at_ms=?6
+                           WHERE id=?7"""
+                    ).bind(
+                        registration.first_name,
+                        registration.last_name,
+                        display_name,
+                        registration.job_title or None,
+                        registration.company or None,
+                        now,
+                        user_id,
+                    )
+                )
             batch.add_statement(
                 db.prepare(
-                    """INSERT INTO users
-                       (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,?2,'active',?3,?3,?3)"""
-                ).bind(user_id, challenge["normalized_email"], now)
+                    """INSERT INTO password_credentials
+                       (user_id,verifier_phc,pepper_version,status,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,1,'active',?3,?3)"""
+                ).bind(user_id, verifier, now)
+            )
+            batch.audit(
+                AuditEvent(
+                    actor_type="user",
+                    actor_user_id=user_id,
+                    action="account.registration.complete",
+                    target_type="user",
+                    target_id=user_id,
+                    result="succeeded",
+                    correlation_id=request.state.request_id,
+                    occurred_at_ms=now,
+                    organization_id=str(challenge["organization_id"]),
+                    event_id=str(challenge["event_id"]),
+                )
             )
             await batch.execute()
     if user_id is None:
@@ -3790,6 +3890,107 @@ async def _add_speaker_profile(
         )
 
 
+async def _requires_submission_registration(request: Request, token: str) -> dict | None:
+    if len(token) < 32:
+        return None
+    db, now = database(request), utc_now_ms()
+    challenge = row_mapping(
+        await db.prepare(
+            """SELECT normalized_email,provisioning_context FROM authentication_challenges
+               WHERE token_hash=?1 AND consumed_at_ms IS NULL AND expires_at_ms>?2 LIMIT 1"""
+        ).bind(hash_token(token), now).first()
+    )
+    if challenge is None or challenge["provisioning_context"] != "submission":
+        return None
+    existing = row_mapping(
+        await db.prepare("SELECT id FROM users WHERE normalized_email=?1 LIMIT 1")
+        .bind(challenge["normalized_email"])
+        .first()
+    )
+    if existing is None:
+        return challenge
+    credential = row_mapping(
+        await db.prepare(
+            "SELECT user_id FROM password_credentials WHERE user_id=?1 AND status='active' LIMIT 1"
+        )
+        .bind(existing["id"])
+        .first()
+    )
+    return challenge if credential is None else None
+
+
+def _magic_link_page(
+    *,
+    action: str,
+    registration_email: str | None = None,
+    error: str | None = None,
+    values: dict[str, str] | None = None,
+) -> str:
+    page = _asset("auth_link_confirm.html")
+    values = values or {}
+    if registration_email is None:
+        replacements = {
+            "__CONFIRM_PAGE_TITLE__": "Signing in",
+            "__CONFIRM_HEADING__": "Signing you in…",
+            "__CONFIRM_INTRO__": "You’ll return to your proposal automatically.",
+            "__CONFIRM_ERROR__": "",
+            "__REGISTRATION_FIELDS__": "",
+            "__CONFIRM_BUTTON__": "Continue to your proposal",
+            "__AUTO_SUBMIT_ATTRIBUTE__": 'data-auto-submit="true"',
+            "__CONFIRM_SCRIPT__": (
+                '<script src="/product/assets/auth_link_confirm.js?v=1" defer></script>'
+            ),
+        }
+    else:
+        def field(name: str) -> str:
+            return escape(values.get(name, ""), quote=True)
+
+        fields = "".join(
+            (
+                '<div class="auth-verified-email"><span>Verified email</span>',
+                f"<strong>{escape(registration_email)}</strong></div>",
+                '<div class="form-grid auth-registration-grid">',
+                '<label>First name<input name="first_name" autocomplete="given-name" ',
+                f'maxlength="100" value="{field("first_name")}" required></label>',
+                '<label>Last name<input name="last_name" autocomplete="family-name" ',
+                f'maxlength="100" value="{field("last_name")}" required></label>',
+                '<label>Job title <span class="optional">Optional</span>',
+                '<input name="job_title" autocomplete="organization-title" ',
+                f'maxlength="200" value="{field("job_title")}"></label>',
+                '<label>Company or team <span class="optional">Optional</span>',
+                '<input name="company" autocomplete="organization" ',
+                f'maxlength="200" value="{field("company")}"></label></div>',
+                '<label>Choose a password<input name="password" type="password" ',
+                'autocomplete="new-password" minlength="15" maxlength="128" ',
+                'aria-describedby="registration-password-help" required></label>',
+                '<label>Confirm password<input name="password_confirmation" type="password" ',
+                'autocomplete="new-password" minlength="15" maxlength="128" ',
+                'aria-describedby="registration-password-help" required></label>',
+                '<p id="registration-password-help" class="help">',
+                "Use at least 15 characters.</p>",
+            )
+        )
+        replacements = {
+            "__CONFIRM_PAGE_TITLE__": "Finish registration",
+            "__CONFIRM_HEADING__": "Create your speaker account",
+            "__CONFIRM_INTRO__": (
+                "Your email is verified. Add your details to finish registration, "
+                "then return to your proposal."
+            ),
+            "__CONFIRM_ERROR__": (
+                f'<div class="status error" role="alert">{escape(error)}</div>' if error else ""
+            ),
+            "__REGISTRATION_FIELDS__": fields,
+            "__CONFIRM_BUTTON__": "Create account and continue",
+            "__AUTO_SUBMIT_ATTRIBUTE__": "",
+            "__CONFIRM_SCRIPT__": "",
+        }
+    replacements["__CONFIRM_ACTION__"] = escape(action, quote=True)
+    for marker, value in replacements.items():
+        page = page.replace(marker, value)
+    return page
+
+
 @access_router.get("/auth/verify", include_in_schema=False)
 async def magic_link_interstitial(token: str = "", *, request: Request) -> Response:
     """Render a confirm step instead of consuming the single-use token on GET.
@@ -3808,16 +4009,72 @@ async def magic_link_interstitial(token: str = "", *, request: Request) -> Respo
             headers={"Cache-Control": "no-store"},
         )
     action = f"/auth/verify?token={quote(token)}"
-    page = _asset("auth_link_confirm.html").replace("__CONFIRM_ACTION__", escape(action))
+    registration = await _requires_submission_registration(request, token)
+    page = _magic_link_page(
+        action=action,
+        registration_email=(
+            str(registration["normalized_email"]) if registration is not None else None
+        ),
+    )
     return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 @access_router.post("/auth/verify", include_in_schema=False)
 async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> Response:
     cookie_response = Response()
+    registration_challenge = await _requires_submission_registration(request, token)
+    registration = None
+    submitted_values: dict[str, str] = {}
+    if registration_challenge is not None:
+        if len(await request.body()) > 4096:
+            raise HTTPException(status_code=413)
+        parsed = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+        submitted_values = {key: values[-1] for key, values in parsed.items()}
+        try:
+            registration = SubmissionRegistration(
+                first_name=submitted_values.get("first_name", ""),
+                last_name=submitted_values.get("last_name", ""),
+                job_title=submitted_values.get("job_title") or None,
+                company=submitted_values.get("company") or None,
+                password=submitted_values.get("password", ""),
+                password_confirmation=submitted_values.get("password_confirmation", ""),
+            )
+        except ValueError:
+            page = _magic_link_page(
+                action=f"/auth/verify?token={quote(token)}",
+                registration_email=str(registration_challenge["normalized_email"]),
+                error="Enter your name and matching passwords of at least 15 characters.",
+                values=submitted_values,
+            )
+            return Response(
+                page,
+                media_type="text/html",
+                status_code=422,
+                headers={"Cache-Control": "no-store"},
+            )
     try:
-        session = await verify_magic_link(token, request, cookie_response)
+        session = await verify_magic_link(
+            token, request, cookie_response, registration=registration
+        )
     except HTTPException as exception:
+        if exception.status_code == 422 and registration_challenge is not None:
+            detail = (
+                str(exception.detail)
+                if isinstance(exception.detail, str)
+                else "Check your registration details."
+            )
+            page = _magic_link_page(
+                action=f"/auth/verify?token={quote(token)}",
+                registration_email=str(registration_challenge["normalized_email"]),
+                error=detail,
+                values=submitted_values,
+            )
+            return Response(
+                page,
+                media_type="text/html",
+                status_code=422,
+                headers={"Cache-Control": "no-store"},
+            )
         if exception.status_code != 404:
             raise
         return Response(

@@ -77,6 +77,26 @@ async def test_incomplete_profile_root_redirects_to_account_onboarding(
     assert response.headers["location"] == "/account?onboarding=1&next=%2F"
 
 
+async def test_event_only_speaker_root_redirects_to_speaker_portal(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def session(_request):
+        return SimpleNamespace(
+            profile_complete=True,
+            active_role=None,
+            default_role=None,
+            organization_access=[],
+            event_access=[SimpleNamespace(roles=["speaker"])],
+        )
+
+    monkeypatch.setattr(api_app_module, "current_access_session", session)
+    client.cookies.set("sessionbuddy-local", "test-session")
+    response = await client.get("/", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/speaker"
+
+
 async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:
     response = await client.get("/landing/assets/landing.css")
 

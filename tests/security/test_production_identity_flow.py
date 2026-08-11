@@ -153,6 +153,7 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
         assert requested.status_code == 202
+        assert requested.json() == {"accepted": True}
         token = _token(connection, "admin@example.com")
         connection.execute(
             "UPDATE authentication_challenges SET created_at_ms=0,expires_at_ms=1"

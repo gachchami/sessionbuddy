@@ -1,4 +1,37 @@
 services:
+  mailpit:
+    image: axllent/mailpit:v1.30.0
+    ports:
+      - "8025:8025"
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SEND_API_AUTH_ACCEPT_ANY: "true"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  https:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "8443:8443"
+    volumes:
+      - caddy-data:/data
+    command:
+      [
+        "caddy",
+        "reverse-proxy",
+        "--from",
+        "https://localhost:8443",
+        "--to",
+        "http://worker:8787",
+        "--internal-certs",
+      ]
+    depends_on:
+      worker:
+        condition: service_healthy
+
   clamav:
     image: clamav/clamav:1.4.5-debian13-slim
     healthcheck:
@@ -47,6 +80,8 @@ services:
     depends_on:
       scanner:
         condition: service_healthy
+      mailpit:
+        condition: service_healthy
     command: ["npm", "run", "worker:dev", "--", "--ip", "0.0.0.0", "--port", "8787"]
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/health"]
@@ -70,6 +105,7 @@ services:
     command: ["sh", "-lc", "npm ci && npx playwright test"]
 
 volumes:
+  caddy-data:
   node-modules:
   python-venv:
   tool-cache:

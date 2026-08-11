@@ -7,13 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class _RichTextSanitizer(HTMLParser):
-    allowed = {"p", "br", "strong", "em", "ul", "ol", "li", "a"}
+    allowed = {"p", "br", "strong", "em", "ul", "ol", "li", "a", "h2", "h3", "blockquote"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "div":
+            self.parts.append("<p>")
+            return
         if tag not in self.allowed:
             return
         if tag == "a":
@@ -26,6 +29,9 @@ class _RichTextSanitizer(HTMLParser):
         self.parts.append(f"<{tag}>")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "div":
+            self.parts.append("</p>")
+            return
         if tag in self.allowed and tag != "br":
             self.parts.append(f"</{tag}>")
 
@@ -66,7 +72,8 @@ class FormFieldDefinition(BaseModel):
 
     @model_validator(mode="after")
     def validate_choices(self) -> "FormFieldDefinition":
-        if self.type in {"select", "multiselect"} and len(self.choices) < 2:
+        minimum_choices = 1 if self.key == "track" else 2
+        if self.type in {"select", "multiselect"} and len(self.choices) < minimum_choices:
             raise ValueError("choice fields require at least two choices")
         if self.type not in {"select", "multiselect"} and self.choices:
             raise ValueError("only select and multiselect fields accept choices")
@@ -237,6 +244,12 @@ class PublishedFormView(BaseModel):
     id: str
     event_id: str
     event_name: str = "Event"
+    event_starts_at_ms: int | None = None
+    event_ends_at_ms: int | None = None
+    event_time_zone: str | None = None
+    event_location: str | None = None
+    event_delivery_mode: Literal["in_person", "virtual", "hybrid"] | None = None
+    event_website_url: str | None = None
     accent_color: str = "#3159d9"
     logo_url: str | None = None
     cover_image_url: str | None = None

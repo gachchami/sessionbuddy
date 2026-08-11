@@ -70,6 +70,46 @@
     if (!container.textContent.trim()) container.textContent = fallback || "";
   }
 
+  function renderCallBrief(form) {
+    const section = byId("cfp-brief");
+    const content = byId("cfp-brief-content");
+    if (!form.description_html) {
+      section.hidden = true;
+      return;
+    }
+    renderRichText(content, form.description_html, "");
+    const briefText = content.textContent.replace(/\s+/g, " ").trim();
+    const welcomeText = String(form.welcome_text || "").replace(/\s+/g, " ").trim();
+    section.hidden = !briefText || briefText === welcomeText;
+  }
+
+  function renderEventHeader(form) {
+    byId("event-public-header").style.setProperty("--event-preview-accent", form.accent_color || "#3159d9");
+    byId("event-title").textContent = form.event_name || "Event";
+    byId("event-monogram").textContent = (form.event_name || "EV").slice(0, 2).toUpperCase();
+    if (form.event_starts_at_ms && form.event_ends_at_ms) {
+      const start = new Date(form.event_starts_at_ms);
+      const end = new Date(form.event_ends_at_ms);
+      const timeZone = form.event_time_zone || "UTC";
+      const year = (date) => date.toLocaleDateString("en", { year: "numeric", timeZone });
+      const sameYear = year(start) === year(end);
+      const startLabel = start.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone, ...(sameYear ? {} : { year: "numeric" }) });
+      const endLabel = end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone });
+      byId("event-dates").textContent = `${startLabel} – ${endLabel}`;
+    }
+    const delivery = String(form.event_delivery_mode || "").replaceAll("_", " ");
+    byId("event-location").textContent = [form.event_location, delivery].filter(Boolean).join(" · ");
+    try {
+      const website = new URL(form.event_website_url || "");
+      if (["https:", "http:"].includes(website.protocol)) {
+        const link = byId("event-website");
+        link.href = website.toString();
+        link.textContent = website.hostname;
+        link.hidden = false;
+      }
+    } catch (_) { /* website is optional */ }
+  }
+
   function renderImportantDates(dates) {
     const section = byId("important-dates");
     const list = byId("important-dates-list");
@@ -83,16 +123,13 @@
   }
 
   function renderCallDetails(form) {
-    const dates = [];
-    if (form.opens_at_ms) dates.push(`Opens ${new Date(form.opens_at_ms).toLocaleString()}`);
-    if (form.closes_at_ms) dates.push(`Closes ${new Date(form.closes_at_ms).toLocaleString()}`);
-    byId("call-deadline").textContent = dates.length
-      ? `${dates.join(" · ")}. Times are shown in your local time zone.`
-      : "The organizer has not set a closing date.";
+    byId("call-deadline").textContent = form.closes_at_ms
+      ? new Date(form.closes_at_ms).toLocaleString()
+      : "No closing date set";
     const conditionalTargets = new Set((form.conditions || []).map((condition) => condition.target_key));
-    byId("call-fields").replaceChildren(...form.fields.filter((field) => !conditionalTargets.has(field.key)).map((field) =>
-      make("li", `${field.label}${field.required ? " (required)" : ""}`)
-    ));
+    const visibleFields = form.fields.filter((field) => !conditionalTargets.has(field.key));
+    const effort = visibleFields.reduce((minutes, field) => minutes + (field.type === "textarea" ? 3 : ["file", "image"].includes(field.type) ? 2 : 1), 0);
+    byId("call-time-estimate").textContent = `${Math.max(5, Math.ceil(effort / 5) * 5)}–${Math.max(10, Math.ceil(effort / 5) * 5 + 5)} minutes`;
     byId("call-conditional-note").hidden = conditionalTargets.size === 0;
     byId("call-details").hidden = false;
   }
@@ -251,7 +288,6 @@
   async function reloadSubmissions(selectedId) {
     const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
     state.submissions = mine.data || [];
-    renderExistingSubmissions();
     const selected = state.submissions.find((submission) => submission.id === selectedId);
     if (selected) chooseSubmission(selected);
   }
@@ -452,37 +488,6 @@
     );
   }
 
-  function renderExistingSubmissions() {
-    const card = byId("proposal-card");
-    card.querySelector(".existing-submissions")?.remove();
-    if (!state.submissions.length) return;
-    const section = make("section", undefined, "existing-submissions");
-    section.append(make("h2", "Your proposals"), make("p", "Open a proposal you submitted or were listed on."));
-    for (const submission of state.submissions) {
-      const action = submission.editable ? "Edit" : "View";
-      const button = make("button", `${action} “${submission.proposal_title}”`, "secondary");
-      button.type = "button";
-      button.addEventListener("click", () => chooseSubmission(submission));
-      section.append(button);
-    }
-    const another = make("button", "Start another proposal", "secondary");
-    another.type = "button";
-    another.addEventListener("click", () => {
-      state.editingSubmission = null;
-      state.viewingSubmission = null;
-      for (const control of byId("proposal-form").elements) control.disabled = false;
-      byId("proposal-form").reset();
-      resetProposalFiles();
-      byId("co-speaker-rows").replaceChildren();
-      byId("co-speaker-invitations").hidden = true;
-      lockSignedInEmail();
-      byId("submit-proposal").textContent = "Confirm submission";
-      setStatus("Starting a new proposal. This will create a separate submission.");
-    });
-    section.append(another);
-    card.prepend(section);
-  }
-
   function renderReview() {
     const list = byId("review-list");
     list.replaceChildren();
@@ -580,15 +585,16 @@
   async function load() {
     try {
       state.form = await api(`/api/v1/forms/${encodeURIComponent(slug)}`);
-      renderRichText(byId("welcome"), state.form.description_html, state.form.welcome_text);
+      byId("welcome").textContent = state.form.welcome_text;
+      renderEventHeader(state.form);
+      renderCallBrief(state.form);
       renderImportantDates(state.form.important_dates);
       if (state.form.event_name) {
-        byId("brand-name").textContent = state.form.event_name;
-        byId("title").textContent = `Submit to ${state.form.event_name}`;
+        document.title = `Call for Proposals · ${state.form.event_name}`;
       }
       if (state.form.accent_color) document.documentElement.style.setProperty("--blue", state.form.accent_color);
       if (state.form.logo_url) { byId("event-logo").src = state.form.logo_url; byId("event-logo").hidden = false; }
-      if (state.form.cover_image_url) { byId("event-cover").src = state.form.cover_image_url; byId("event-cover").alt = `${state.form.event_name} cover`; byId("event-cover").hidden = false; }
+      if (state.form.cover_image_url) { byId("event-cover").src = state.form.cover_image_url; byId("event-cover").alt = `${state.form.event_name} cover`; byId("event-cover").hidden = false; byId("event-cover-empty").hidden = true; }
       renderFields(state.form.fields || [], state.form.conditions || []);
       renderCallDetails(state.form);
       byId("co-speakers").hidden = (state.form.co_speaker_limit ?? 1) === 0;
@@ -598,7 +604,6 @@
         setStatus(state.form.availability_message);
         return;
       }
-      byId("proposal-card").hidden = false;
       const saved = browserDraft();
       try {
         const session = await api("/api/v1/auth/session");
@@ -614,33 +619,50 @@
           if (![401, 403, 404].includes(error.status)) throw error;
           state.submissions = [];
         }
-        renderExistingSubmissions();
         const requested = new URLSearchParams(location.search).get("submission_id");
         const selected = state.submissions.find((submission) => submission.id === requested);
+        byId("proposal-card").hidden = false;
+        byId("sign-in-card").hidden = true;
         if (selected) chooseSubmission(selected);
         else if (restored) {
           lockSignedInEmail();
           const needsFiles = (restored.fileNames || []).length > 0;
-          showReview(Boolean(restored.readyToSubmit) && !needsFiles);
+          const readyToReview = Boolean(restored.readyToSubmit)
+            && !needsFiles
+            && byId("proposal-form").checkValidity();
+          showReview(readyToReview);
           setStatus(needsFiles
             ? "Email verified. Your answers were restored; reattach the selected files before continuing."
-            : restored.readyToSubmit
-              ? "Email verified. Submitting your proposal now…"
+            : readyToReview
+              ? "Email verified. Review your restored proposal, then confirm submission."
             : "Your proposal was restored from this browser.", "success");
           // Keep the restored proposal on the review step. Email verification
           // proves identity, but the speaker still explicitly confirms the
           // final submission.
         }
         else {
-          setStatus(state.submissions.length ? "Choose an existing proposal to edit, or start another one." : "Start your first proposal below.");
+          setStatus("Start a new proposal below.");
           await loadDraft();
         }
       } catch (error) {
-        if (error.status !== 401) throw error;
+        if (![401, 403].includes(error.status)) throw error;
         state.authenticated = false;
+        const signedInWithoutSpeakerAccess = error.status === 403;
+        const email = byId("proposal-form").elements.namedItem("speaker_email");
+        if (signedInWithoutSpeakerAccess && email) {
+          email.readOnly = false;
+          email.removeAttribute("aria-describedby");
+          byId("signed-in-email-help")?.remove();
+        }
+        byId("proposal-card").hidden = true;
+        byId("sign-in-card").hidden = false;
+        const signInEmail = byId("sign-in-form").elements.email;
+        if (saved?.ownerEmail) signInEmail.value = saved.ownerEmail;
         setStatus(saved
-          ? "A recent draft is saved in this browser. Verify its proposal email to restore it."
-          : "Complete the proposal. We will verify your email only when you submit.");
+          ? "A recent draft is waiting in this browser. Sign in with its proposal email to restore it."
+          : signedInWithoutSpeakerAccess
+            ? "This organizer account cannot submit proposals. Sign in with a speaker email to continue."
+            : "Sign in or register with your email to start a proposal.");
       }
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   }
@@ -649,14 +671,47 @@
     event.preventDefault();
     const form = event.currentTarget;
     const email = String(new FormData(form).get("email") || "").trim();
+    const password = String(new FormData(form).get("password") || "");
     const proposalEmail = byId("proposal-form").elements.namedItem("speaker_email");
     if (proposalEmail) proposalEmail.value = email;
-    const button = form.querySelector("button");
+    const passwordButton = byId("cfp-password-sign-in");
+    const linkButton = byId("cfp-send-sign-in-link");
     form.elements.email.disabled = true;
-    button.disabled = true;
-    button.textContent = "Sending…";
+    form.elements.password.disabled = true;
+    passwordButton.disabled = true;
+    linkButton.disabled = true;
+    passwordButton.textContent = "Signing in…";
     try {
-      saveBrowserDraft(true);
+      // Account creation only preserves progress. It must never mark a blank or
+      // partially completed proposal as ready for the review step.
+      saveBrowserDraft(false);
+      const session = await api("/api/v1/auth/password/sign-in", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password, redirect_path: location.pathname }) });
+      location.assign(session.redirect_path || location.pathname);
+    } catch (error) {
+      form.elements.email.disabled = false;
+      form.elements.password.disabled = false;
+      passwordButton.disabled = false;
+      linkButton.disabled = false;
+      passwordButton.textContent = "Sign in";
+      setStatus(error.status === 401 ? "Email or password is incorrect. Try again or request a sign-in link." : window.SessionBuddyApi.message(error, "We could not sign you in. Try again."), "error");
+    }
+  });
+
+  byId("cfp-send-sign-in-link").addEventListener("click", async () => {
+    const form = byId("sign-in-form");
+    if (!form.elements.email.reportValidity()) return;
+    const email = String(form.elements.email.value || "").trim();
+    const proposalEmail = byId("proposal-form").elements.namedItem("speaker_email");
+    if (proposalEmail) proposalEmail.value = email;
+    const passwordButton = byId("cfp-password-sign-in");
+    const linkButton = byId("cfp-send-sign-in-link");
+    form.elements.email.disabled = true;
+    form.elements.password.disabled = true;
+    passwordButton.disabled = true;
+    linkButton.disabled = true;
+    linkButton.textContent = "Creating account…";
+    try {
+      saveBrowserDraft(false);
       await api("/api/v1/auth/magic-links", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, form_slug: slug, redirect_path: location.pathname }) });
       byId("cfp-sent-message").textContent = `We sent a sign-in link to ${email}.`;
       byId("cfp-sign-in-entry").hidden = true;
@@ -665,10 +720,26 @@
       setStatus("Check your email for the one-time sign-in link. It expires in 15 minutes.", "success");
     } catch (error) {
       form.elements.email.disabled = false;
-      button.disabled = false;
-      button.textContent = "Send verification link";
+      form.elements.password.disabled = false;
+      passwordButton.disabled = false;
+      linkButton.disabled = false;
+      linkButton.textContent = "Create account";
       setStatus(window.SessionBuddyApi.message(error, "We could not send the sign-in link. Try again."), "error");
     }
+  });
+  byId("cfp-change-sign-in-email").addEventListener("click", () => {
+    const form = byId("sign-in-form");
+    byId("cfp-sign-in-sent").hidden = true;
+    byId("cfp-sign-in-entry").hidden = false;
+    form.elements.email.disabled = false;
+    form.elements.password.disabled = false;
+    byId("cfp-password-sign-in").disabled = false;
+    byId("cfp-send-sign-in-link").disabled = false;
+    byId("cfp-send-sign-in-link").textContent = "Create account";
+    form.elements.password.value = "";
+    form.elements.email.focus();
+    form.elements.email.select();
+    setStatus("");
   });
   byId("add-co-speaker").addEventListener("click", () => {
     if (byId("co-speaker-rows").children.length < (state.form?.co_speaker_limit ?? 1)) addCoSpeakerRow({}, true);
@@ -765,7 +836,6 @@
       form.hidden = true;
       byId("call-details").hidden = true;
       byId("sign-in-card").hidden = true;
-      byId("proposal-card").querySelector(".existing-submissions")?.remove();
       const receipt = byId("receipt");
       receipt.className = "empty-state";
       receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));

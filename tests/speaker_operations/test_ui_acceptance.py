@@ -43,11 +43,8 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     javascript = source("speaker_portal.js")
     html = source("speaker_portal.html")
     for section in (
-        'id="overview"',
         'id="tasks"',
         'id="submissions"',
-        'id="profile"',
-        'id="assets"',
     ):
         assert section in html
     assert 'completion.state === "rejected"' in javascript
@@ -56,16 +53,17 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert "object_key" not in javascript
     assert "innerHTML" not in javascript
     assert 'url.hostname.endsWith(".r2.cloudflarestorage.com")' in javascript
-    assert 'id="linkedin"' in html
-    assert 'id="social-link"' in html
-    assert '[values.website, values.linkedin, values.social_link]' in javascript
-    assert 'const socialHosts = ["twitter.com", "x.com", "bsky.app"' in javascript
+    assert 'id="profile"' not in html
+    assert 'id="welcome-name"' in html
+    assert 'id="public-profile-link"' in html
+    assert 'task.destination_path === "#profile"' in javascript
+    assert 'return "/account"' in javascript
     assert 'Completed (${completed.length})' in javascript
-    assert html.count('name="version_comment"') == 3
-    assert html.count('maxlength="1000"') >= 3
+    assert html.count('name="version_comment"') == 0
+    assert 'createUploadForm("slides", submission.id)' in javascript
+    assert 'createUploadForm("supporting_document", submission.id)' in javascript
+    assert "form.dataset.submissionId || null" in javascript
     assert "version_comment: versionComment" in javascript
-    assert "/versions/${encodeURIComponent(version.id)}/download-grants" in javascript
-    assert "version.version_comment" in javascript
 
 
 def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:

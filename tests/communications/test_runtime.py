@@ -10,6 +10,7 @@ from sessionbuddy.communications.runtime import (
     DeliveryClaim,
     DeliveryEnvelope,
     DispatchResult,
+    MailpitProvider,
     ProviderResult,
     ReminderEnvelope,
     ReminderWorkflow,
@@ -145,6 +146,35 @@ class Response:
 
     async def json(self):
         return {"id": "resend-id"}
+
+
+class MailpitResponse:
+    status = 200
+
+    async def json(self):
+        return {"ID": "mailpit-id"}
+
+
+@pytest.mark.asyncio
+async def test_mailpit_adapter_uses_local_http_api_and_preserves_email_content() -> None:
+    captured = {}
+
+    async def fetcher(url, **options):
+        captured.update(url=url, **options)
+        return MailpitResponse()
+
+    result = await MailpitProvider(
+        "http://mailpit:8025", "SessionBuddy Local <events@example.test>", fetcher=fetcher
+    ).send(claim())
+
+    assert result == ProviderResult(True, "mailpit-id")
+    assert captured["url"] == "http://mailpit:8025/api/v1/send"
+    payload = json.loads(captured["body"])
+    assert payload["From"] == {"Email": "events@example.test", "Name": "SessionBuddy Local"}
+    assert payload["To"] == [{"Email": "private@example.test"}]
+    assert payload["Subject"] == "Subject"
+    assert payload["HTML"] == "<p>Body</p>"
+    assert payload["Headers"]["X-SessionBuddy-Delivery-Key"] == "key"
 
 
 @pytest.mark.asyncio

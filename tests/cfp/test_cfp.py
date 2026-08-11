@@ -8,7 +8,12 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
-from sessionbuddy.cfp.models import FormPublish, PrivateSubmissionView, SubmissionCreate
+from sessionbuddy.cfp.models import (
+    FormFieldDefinition,
+    FormPublish,
+    PrivateSubmissionView,
+    SubmissionCreate,
+)
 from sessionbuddy.cfp.router import (
     _published_form_view,
     _timed_first,
@@ -24,16 +29,32 @@ def test_cfp_description_sanitizes_rich_text_and_keeps_important_dates() -> None
         slug="event-cfp",
         welcome_text="Safe fallback",
         description_html=(
-            '<p>Hello <strong>speaker</strong><script>alert(1)</script>'
+            '<h2>What we want</h2><p>Hello <strong>speaker</strong><script>alert(1)</script>'
             '<a href="javascript:alert(2)">bad link</a></p>'
         ),
         important_dates=[{"label": "Wave 1 decisions", "at_ms": 1_900_000_000_000}],
     )
 
     assert form.description_html == (
-        "<p>Hello <strong>speaker</strong>alert(1)<a>bad link</a></p>"
+        "<h2>What we want</h2><p>Hello <strong>speaker</strong>alert(1)<a>bad link</a></p>"
     )
     assert form.important_dates[0].label == "Wave 1 decisions"
+
+
+def test_cfp_description_preserves_contenteditable_block_boundaries() -> None:
+    form = FormPublish(
+        slug="event-cfp",
+        welcome_text="Welcome",
+        description_html="<div>Opening summary</div><div>Session formats</div>",
+        fields=[
+            {"key": "speaker_name", "type": "text", "label": "Name", "required": True},
+            {"key": "speaker_email", "type": "email", "label": "Email", "required": True},
+            {"key": "proposal_title", "type": "text", "label": "Title", "required": True},
+            {"key": "proposal_abstract", "type": "textarea", "label": "Abstract", "required": True},
+        ],
+    )
+
+    assert form.description_html == "<p>Opening summary</p><p>Session formats</p>"
 
 
 class CloudflareFirstStatement:
@@ -189,9 +210,9 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
         Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js"
     ).read_text()
     assert "const editable = submission.editable === true" in public_script
-    assert 'const action = submission.editable ? "Edit" : "View"' in public_script
     assert "Only the primary submitter can make changes." in public_script
     assert "state.submissions.find((submission) => submission.id === requested)" in public_script
+    assert 'make("h2", "Your proposals")' not in public_script
     assert 'make("a", "View your proposal", "button")' in public_script
     assert "?submission_id=${encodeURIComponent(submission.id)}" in public_script
 
@@ -210,6 +231,25 @@ def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() 
     assert 'make("p", "Role: Co-speaker"' in script
     assert "if (state.editingSubmission)" in script
     assert 'method: "PATCH"' in script
+
+
+def test_public_cfp_offers_password_and_email_link_sign_in() -> None:
+    static = Path(__file__).parents[2] / "src/sessionbuddy/static"
+    page = (static / "public_cfp.html").read_text()
+    script = (static / "public_cfp.js").read_text()
+
+    assert 'name="password" type="password" autocomplete="current-password"' in page
+    assert 'id="cfp-password-sign-in"' in page
+    assert 'id="cfp-send-sign-in-link"' in page
+    assert '"/api/v1/auth/password/sign-in"' in script
+    assert '"/api/v1/auth/magic-links"' in script
+
+
+def test_public_cfp_formats_event_dates_in_the_event_time_zone() -> None:
+    script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
+
+    assert 'const timeZone = form.event_time_zone || "UTC"' in script
+    assert 'year: "numeric", timeZone' in script
 
 
 def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
@@ -254,15 +294,33 @@ def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:
     _validate_submission_schema(schema, submission)
 
 
+def test_track_question_accepts_an_event_with_one_track() -> None:
+    field = FormFieldDefinition(
+        key="track",
+        type="select",
+        label="Track",
+        required=True,
+        choices=["Main stage"],
+    )
+
+    assert field.choices == ("Main stage",)
+
+
 def test_public_cfp_defers_authentication_until_final_submission() -> None:
     script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
     page = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.html").read_text()
 
     assert 'byId("proposal-card").hidden = false' in script
     assert "saveBrowserDraft(true)" in script
+    assert "saveBrowserDraft(false)" in script
+    assert 'byId("proposal-form").checkValidity()' in script
+    assert "Email verified. Review your restored proposal, then confirm submission." in script
     assert "form_slug: slug, redirect_path: location.pathname" in script
     assert "if (!state.authenticated)" in script
-    assert "Verify your email to submit" in page
+    assert '<h2 id="sign-in-title">Sign in</h2>' in page
+    assert 'for="cfp-sign-in-email"' in page
+    assert 'id="cfp-sign-in-email" name="email"' in page
+    assert 'id="cfp-send-sign-in-link" class="secondary" type="button">Create account' in page
     assert "Sign in to submit" not in page
 
 
@@ -501,7 +559,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "All events" in events.text
     assert "Edit organization name" not in events.text
     assert "Organization settings" in account.text
-    assert "Create event" in events.text
+    assert "Create active event" in events.text
     assert "data-auth-shell" in events.text
     assert "Call for Proposals" in admin.text
     assert "Share your CFP" in admin.text

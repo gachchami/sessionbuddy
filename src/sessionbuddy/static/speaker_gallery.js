@@ -74,6 +74,12 @@
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; }
     if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
     state.speakers = body.data; render();
+    const requested = new URLSearchParams(location.search).get("speaker");
+    const selected = state.speakers.find((speaker) => speaker.id === requested);
+    if (selected) {
+      const role = [selected.job_title, selected.company].filter(Boolean).join(" · ");
+      openProfile(selected, role);
+    }
   }
   byId("speaker-search").addEventListener("input", render);
   if (galleryLayout) {

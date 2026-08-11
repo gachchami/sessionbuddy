@@ -61,21 +61,10 @@ def test_public_form_and_portal_expose_errors_and_progress_accessibly() -> None:
     assert 'id="status"' in cfp and 'tabindex="-1"' in cfp
     assert 'byId("status").focus()' in cfp_js
     assert 'role="status" aria-live="polite"' in cfp
-    for error_id in (
-        "display-name-error",
-        "job-title-error",
-        "company-error",
-        "location-error",
-        "website-error",
-        "biography-error",
-    ):
-        assert error_id in portal
-        assert (
-            f'aria-describedby="{error_id}"' in portal
-            or error_id in portal.split('aria-describedby="', 1)[1]
-        )
-    assert 'role="alert" tabindex="-1"' in portal
-    assert 'aria-label="Headshot upload progress"' in portal
+    assert 'aria-labelledby="tasks-title"' in portal
+    assert 'aria-labelledby="submissions-title"' in portal
+    assert 'id="profile"' not in portal
+    assert 'id="public-profile-link"' in portal
 
 
 def test_landing_page_has_semantic_navigation_and_role_entry_points() -> None:

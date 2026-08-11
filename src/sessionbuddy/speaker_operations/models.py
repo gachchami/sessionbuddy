@@ -78,9 +78,14 @@ class SpeakerSubmissionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
+    speaker_name: str
+    speaker_email: str
     proposal_title: str
+    proposal_abstract: str
+    answers: dict[str, object]
     status: str
     form_slug: str
+    version: int
     editable: bool = False
 
 
@@ -94,14 +99,25 @@ class SpeakerEventView(BaseModel):
     time_zone: str
 
 
+class SpeakerNotificationView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    subject: str
+    delivered_at_ms: int
+
+
 class SpeakerPortalView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event: SpeakerEventView
+    events: list[SpeakerEventView]
     event_speaker_id: str
+    public_profile_url: str | None = None
     profile: SpeakerProfileView
     tasks: list[SpeakerTaskView]
     submissions: list[SpeakerSubmissionView]
+    notifications: list[SpeakerNotificationView] = Field(default_factory=list)
     completed_tasks: int
     total_tasks: int
 
@@ -187,6 +203,7 @@ class SpeakerAssetView(BaseModel):
 
     id: str
     kind: Literal["headshot", "slides", "supporting_document"]
+    submission_id: str | None = None
     filename: str
     content_type: str
     byte_size: int

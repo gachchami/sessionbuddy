@@ -1,14 +1,36 @@
 import hashlib
+from types import SimpleNamespace
 
 import pytest
+from starlette.requests import Request
 
 from sessionbuddy.platform.auth.cookies import sign_session_cookie, verify_session_cookie
 from sessionbuddy.platform.auth.csrf import issue_csrf_token, verify_csrf_token
+from sessionbuddy.platform.auth.http import allowed_origins
 from sessionbuddy.platform.auth.models import CookiePolicy, SessionPolicy
 from sessionbuddy.platform.auth.redirects import is_allowed_redirect
 from sessionbuddy.platform.auth.request_guard import guard_cookie_mutation
 from sessionbuddy.platform.auth.sessions import SessionRecord, validate_session
 from sessionbuddy.platform.auth.tokens import generate_token, hash_token, normalize_email
+
+
+def test_public_base_url_is_always_an_allowed_mutation_origin() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+            "env": SimpleNamespace(
+                ALLOWED_ORIGINS="https://console.example.test",
+                PUBLIC_BASE_URL="https://preview.example.test/path",
+            ),
+        }
+    )
+
+    assert allowed_origins(request) == frozenset(
+        {"https://console.example.test", "https://preview.example.test"}
+    )
 
 
 def test_email_normalization_is_conservative() -> None:

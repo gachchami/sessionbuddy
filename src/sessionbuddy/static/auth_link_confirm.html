@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Confirm sign in · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=23">
+  <title>__CONFIRM_PAGE_TITLE__ · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
 </head>
 <body class="auth-body auth-error-page">
   <a class="skip-link" href="#main">Skip to confirmation</a>
@@ -15,13 +15,17 @@
     </div>
   </header>
   <main id="main" class="auth-main auth-error-shell" tabindex="-1">
-    <section class="auth-card auth-error-card">
-      <h1>Almost signed in</h1>
-      <p class="auth-intro">Select continue to finish signing in to SessionBuddy. This link works once and expires 15 minutes after it was sent.</p>
-      <form method="post" action="__CONFIRM_ACTION__">
-        <button class="button" type="submit">Continue</button>
+    <section class="auth-card auth-error-card auth-registration-card">
+      <p class="eyebrow">Speaker access</p>
+      <h1>__CONFIRM_HEADING__</h1>
+      <p class="auth-intro">__CONFIRM_INTRO__</p>
+      __CONFIRM_ERROR__
+      <form method="post" action="__CONFIRM_ACTION__" __AUTO_SUBMIT_ATTRIBUTE__>
+        __REGISTRATION_FIELDS__
+        <button class="button" type="submit">__CONFIRM_BUTTON__</button>
       </form>
     </section>
   </main>
+  __CONFIRM_SCRIPT__
 </body>
 </html>

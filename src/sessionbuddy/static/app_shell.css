@@ -265,6 +265,10 @@
 .sb-shell-global .sb-topbar { left: 0; min-height: 4.5rem; padding: 0 clamp(1.25rem, 3vw, 3rem); border-color: #e9e5f2; background: rgba(255,255,255,.96); }
 .sb-shell-global .sb-topbar .sb-global-brand { font-size: 1.05rem; font-weight: 800; }
 .sb-shell-global .sb-topbar .sb-account { margin-left: auto; }
+.sb-shell-single .sb-topbar { left: 0; min-height: 4.5rem; padding: 0 clamp(1rem, 3vw, 2rem); background: rgba(255,255,255,.96); }
+.sb-shell-single .sb-topbar .sb-global-brand { flex: 0 0 auto; font-size: 1rem; font-weight: 800; }
+.sb-shell-single .sb-topbar .sb-topbar__title { padding-left: 1rem; border-left: 1px solid #dfe4ec; }
+.sb-shell-single .sb-topbar .sb-account { margin-left: auto; }
 .app-body.sb-shell-authenticated.sb-shell-global > main.shell {
   width: min(90rem, 100%);
   margin-inline: auto;
@@ -273,6 +277,11 @@
   width: min(90rem, 100%);
   margin-inline: auto;
 }
+.app-body.sb-shell-authenticated.sb-shell-single > main.shell {
+  width: min(76rem, calc(100% - 2rem));
+  margin-inline: auto;
+}
+.app-body.sb-shell-authenticated.sb-shell-single > #root { margin-left: 0; }
 
 .app-body.sb-shell-authenticated > main.shell {
   width: auto;
@@ -302,6 +311,7 @@
   .sb-topbar__brand-space { display: none; }
   .sb-sidebar__mobile-global { display: block; }
   .sb-topbar { left: 0; padding-inline: 1rem; }
+  .sb-shell-single .sb-topbar__title { display: none; }
   .sb-menu-button {
     width: 2.65rem;
     height: 2.65rem;

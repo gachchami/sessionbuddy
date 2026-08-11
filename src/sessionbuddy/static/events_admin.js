@@ -60,7 +60,7 @@
       state.editingDraft = Boolean(values.event_id && values.status === "draft");
       byId("save-event").textContent = values.event_id
         ? (state.editingDraft ? "Activate event" : "Save changes")
-        : "Create event";
+        : "Create active event";
       byId("save-event-draft").hidden = Boolean(values.event_id && !state.editingDraft);
       byId("creation-action-note").hidden = Boolean(values.event_id && !state.editingDraft);
       byId("event-status-label").hidden = !values.event_id || state.editingDraft;
@@ -99,8 +99,8 @@
           ? "Saving changes…"
           : state.editingDraft && state.submitTargetStatus === "active"
             ? "Activating event…"
-            : state.submitTargetStatus === "active" ? "Creating event…" : "Create event")
-      : (editing ? (state.editingDraft ? "Activate event" : "Save changes") : "Create event");
+            : state.submitTargetStatus === "active" ? "Creating event…" : "Create active event")
+      : (editing ? (state.editingDraft ? "Activate event" : "Save changes") : "Create active event");
     byId("cancel-event-edit").disabled = submitting;
     byId("close-event-dialog").disabled = submitting;
     updateSaveAvailability();
@@ -342,7 +342,7 @@
     byId("cancel-event-edit").disabled = false;
     byId("close-event-dialog").disabled = false;
     byId("event-form-heading").textContent = "Create an event";
-    byId("save-event").textContent = "Create event";
+    byId("save-event").textContent = "Create active event";
     byId("save-event-draft").hidden = false;
     byId("save-event-draft").textContent = "Save draft";
     byId("creation-action-note").hidden = false;
@@ -458,7 +458,7 @@
     }
     window.SessionBuddyApi.refreshCharacterCounters(form);
     byId("event-form-heading").textContent = `Duplicate ${event.name}`;
-    byId("save-event").textContent = "Create event";
+    byId("save-event").textContent = "Create active event";
     byId("save-event-draft").hidden = false;
     byId("creation-action-note").hidden = false;
     updateDateTimePreview();

@@ -54,7 +54,7 @@
 }
 .agenda-toolbar {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem;
@@ -63,7 +63,12 @@
   background: white;
 }
 .agenda-toolbar h2 {
-  margin: .1rem 0;
+  margin: 0 0 .55rem;
+  color: #59667c;
+  font-size: .78rem;
+  font-weight: 750;
+  letter-spacing: .06em;
+  text-transform: uppercase;
 }
 .agenda-toolbar fieldset {
   margin: 0;
@@ -91,6 +96,20 @@
   border: 1px solid #aeb8ca;
   border-radius: .5rem;
   cursor: pointer;
+}
+.agenda-toolbar__view {
+  min-width: 0;
+}
+.agenda-toolbar__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-left: auto;
+}
+.agenda-toolbar__actions :is(button,.button) {
+  min-height: 2.75rem;
+  white-space: nowrap;
 }
 .segmented input:checked + span {
   border-color: #3159d9;
@@ -329,8 +348,7 @@ dialog form {
 }
 @media (max-width:48rem) {
   .agenda-header,
-  .agenda-hero,
-  .agenda-toolbar {
+  .agenda-hero {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -355,11 +373,31 @@ dialog form {
     padding-left: 0;
   }
   .segmented {
-    flex-wrap: nowrap;
-    max-width: calc(100vw - 4rem);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(max-content,1fr));
+    width: 100%;
     overflow-x: auto;
   }
-  .agenda-toolbar > button {
+  .segmented span {
+    justify-content: center;
+    padding-inline: .7rem;
+  }
+  .agenda-toolbar {
+    display: grid;
+    gap: .85rem;
+    padding: .85rem;
+  }
+  .agenda-toolbar__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    margin: 0;
+  }
+  .agenda-toolbar__actions :is(button,.button) {
+    width: 100%;
+  }
+  .agenda-toolbar__actions #publish {
+    grid-column: 1 / -1;
     width: 100%;
   }
   .form-grid {

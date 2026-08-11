@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { csrf: "", portal: null, version: null };
+  const state = { csrf: "", portal: null, assets: [] };
   const uploadRules = {
     headshot: { max: 5 * 1024 * 1024, types: new Set(["image/jpeg", "image/png", "image/webp"]) },
     slides: { max: 50 * 1024 * 1024, types: new Set(["application/pdf", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.oasis.opendocument.presentation"]) },
@@ -13,6 +13,12 @@
     if (className) node.className = className;
     return node;
   };
+  function idempotencyKey() {
+    if (typeof crypto.randomUUID === "function") return `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
 
   function setStatus(message, kind = "") {
     const status = byId("status");
@@ -56,12 +62,21 @@
 
   function taskDestination(task) {
     // Only same-page destinations are accepted; arbitrary API-provided URLs are never used.
-    if (["#profile", "#tasks", "#submissions", "#assets"].includes(task.destination_path)) {
+    if (task.destination_path === "#profile") return "/account";
+    if (task.destination_path === "#assets") return "#submissions";
+    if (["#tasks", "#submissions"].includes(task.destination_path)) {
       return task.destination_path;
     }
-    if (["profile", "biography"].includes(task.task_type)) return "#profile";
-    if (["headshot", "slides", "supporting_document"].includes(task.task_type)) return "#assets";
+    if (["profile", "biography"].includes(task.task_type)) return "/account";
+    if (task.task_type === "headshot") return "/account";
+    if (["slides", "supporting_document"].includes(task.task_type)) return "#submissions";
     return "#tasks";
+  }
+
+  function portalPath(eventId = state.portal?.event?.id) {
+    return eventId
+      ? `/api/v1/speaker/portal?event_id=${encodeURIComponent(eventId)}`
+      : "/api/v1/speaker/portal";
   }
 
   function customTaskForm(task) {
@@ -102,10 +117,10 @@
       try {
         await api(`/api/v1/speaker/tasks/${encodeURIComponent(task.id)}/response`, {
           method: "POST",
-          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
           body: JSON.stringify({ answers: values, version: task.version })
         });
-        const portal = await api("/api/v1/speaker/portal");
+        const portal = await api(portalPath());
         renderPortal(portal);
         announceOnboardingChange();
         setStatus("Task completed.", "success");
@@ -122,7 +137,7 @@
     list.replaceChildren();
     const outstanding = tasks.filter((task) => !["completed", "waived"].includes(task.state));
     byId("task-count").textContent = String(outstanding.length);
-    if (!outstanding.length) list.append(make("li", "You’re all caught up. There are no outstanding tasks.", "empty"));
+    if (!outstanding.length) list.append(make("li", "No actions due.", "empty"));
     outstanding.forEach((task) => {
       const item = make("li", undefined, "item-card");
       const heading = make("h3", task.title);
@@ -175,72 +190,170 @@
         make("h3", submission.proposal_title),
         make("p", submission.status.replaceAll("_", " "), `state-badge${submission.status === "accepted" ? " success" : ""}`)
       );
-      if (submission.editable && submission.form_slug) {
-        const edit = make("a", "Edit proposal", "button secondary");
-        const eventKey = state.portal.event.id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
-        edit.href = `/cfp/${eventKey}/${encodeURIComponent(submission.form_slug)}?submission_id=${encodeURIComponent(submission.id)}`;
+      if (submission.editable) {
+        const edit = make("button", "Edit proposal", "secondary");
+        edit.type = "button";
+        edit.addEventListener("click", () => {
+          document.querySelectorAll(".proposal-editor").forEach((editor) => editor.remove());
+          const editor = make("form", undefined, "proposal-editor");
+          const titleLabel = make("label", "Proposal title");
+          const title = document.createElement("input");
+          title.name = "proposal_title";
+          title.maxLength = 300;
+          title.required = true;
+          title.value = submission.proposal_title;
+          titleLabel.append(title);
+          const abstractLabel = make("label", "Proposal abstract");
+          const abstract = document.createElement("textarea");
+          abstract.name = "proposal_abstract";
+          abstract.rows = 7;
+          abstract.maxLength = 5000;
+          abstract.required = true;
+          abstract.value = submission.proposal_abstract;
+          abstractLabel.append(abstract);
+          const actions = make("div", undefined, "actions");
+          const cancel = make("button", "Cancel", "secondary");
+          cancel.type = "button";
+          cancel.addEventListener("click", () => editor.remove());
+          const save = make("button", "Save changes");
+          save.type = "submit";
+          actions.append(cancel, save);
+          editor.append(titleLabel, abstractLabel, actions);
+          editor.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            if (!editor.reportValidity()) return;
+            save.disabled = true;
+            save.textContent = "Saving…";
+            try {
+              const updated = await api(`/api/v1/forms/${encodeURIComponent(submission.form_slug)}/submissions/${encodeURIComponent(submission.id)}`, {
+                method: "PATCH",
+                headers: {
+                  "content-type": "application/json",
+                  "x-csrf-token": state.csrf,
+                  "idempotency-key": idempotencyKey()
+                },
+                body: JSON.stringify({
+                  speaker_name: submission.speaker_name,
+                  speaker_email: submission.speaker_email,
+                  proposal_title: title.value.trim(),
+                  proposal_abstract: abstract.value.trim(),
+                  answers: {
+                    ...submission.answers,
+                    proposal_title: title.value.trim(),
+                    proposal_abstract: abstract.value.trim()
+                  },
+                  version: submission.version
+                })
+              });
+              Object.assign(submission, updated);
+              renderSubmissions(submissions);
+              setStatus("Proposal changes saved.", "success");
+            } catch (error) {
+              setStatus(error.status === 409
+                ? "This proposal changed elsewhere. Reload the portal and try again."
+                : window.SessionBuddyApi.message(error, "The proposal could not be saved."), "error");
+              save.disabled = false;
+              save.textContent = "Save changes";
+            }
+          });
+          item.append(editor);
+          title.focus();
+        });
         item.append(edit);
       }
+      const files = document.createElement("details");
+      files.className = "session-files";
+      files.append(make("summary", "Files"));
+      const saved = make("ul", undefined, "session-file-list");
+      const sessionAssets = state.assets.filter((asset) => asset.submission_id === submission.id);
+      if (!sessionAssets.length) saved.append(make("li", "No files uploaded for this session.", "empty"));
+      sessionAssets.forEach((asset) => saved.append(make("li", `${asset.kind === "slides" ? "Slides" : "Document"}: ${asset.filename}`)));
+      const uploads = make("div", undefined, "session-upload-grid");
+      uploads.append(
+        createUploadForm("slides", submission.id),
+        createUploadForm("supporting_document", submission.id)
+      );
+      files.append(saved, uploads);
+      item.append(files);
       list.append(item);
     });
   }
 
-  function fillSubmissionChoices(submissions) {
-    ["slides-submission", "document-submission"].forEach((id) => {
-      const select = byId(id);
-      const selected = select.value;
-      select.replaceChildren(new Option("Choose a session", ""));
-      submissions.forEach((submission) => select.add(new Option(submission.proposal_title, submission.id)));
-      if ([...select.options].some((option) => option.value === selected)) select.value = selected;
-    });
-  }
-
-  function fillProfile(profile) {
-    const form = byId("profile-form");
-    ["display_name", "job_title", "company", "location", "biography"].forEach((name) => {
-      form.elements[name].value = profile[name] || "";
-    });
-    const links = profile.links || [];
-    form.elements.linkedin.value = links.find((value) => { try { return new URL(value).hostname.toLowerCase().endsWith("linkedin.com"); } catch (_) { return false; } }) || "";
-    const remaining = links.filter((value) => value !== form.elements.linkedin.value);
-    const socialHosts = ["twitter.com", "x.com", "bsky.app", "mastodon.social", "threads.net", "instagram.com", "facebook.com"];
-    form.elements.social_link.value = remaining.find((value) => {
-      try {
-        const host = new URL(value).hostname.toLowerCase().replace(/^www\./, "");
-        return socialHosts.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
-      } catch (_) { return false; }
-    }) || "";
-    form.elements.website.value = remaining.find((value) => value !== form.elements.social_link.value) || "";
-    state.version = profile.version;
-    updateBiographyCount();
-    clearErrors();
-    byId("stale-warning").hidden = true;
+  function createUploadForm(kind, submissionId) {
+    const slides = kind === "slides";
+    const form = make("form", undefined, "session-upload-card");
+    form.dataset.kind = kind;
+    form.dataset.submissionId = submissionId;
+    const title = slides ? "Slides" : "Supporting document";
+    const fileLabel = make("label", `Choose ${slides ? "slides" : "document"}`);
+    const file = document.createElement("input");
+    file.name = "file"; file.type = "file"; file.required = true;
+    file.accept = slides
+      ? "application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation"
+      : "application/pdf";
+    fileLabel.append(file);
+    const commentLabel = make("label", "What changed?");
+    const comment = document.createElement("textarea");
+    comment.name = "version_comment"; comment.rows = 2; comment.minLength = 1; comment.maxLength = 1000; comment.required = true;
+    commentLabel.append(comment);
+    const button = make("button", `Upload ${slides ? "slides" : "document"}`);
+    button.type = "submit";
+    const progress = document.createElement("progress");
+    progress.max = 100; progress.value = 0; progress.hidden = true; progress.setAttribute("aria-label", `${title} upload progress`);
+    const status = make("p", "", "upload-status"); status.setAttribute("role", "status");
+    form.append(make("h4", title), fileLabel, commentLabel, button, progress, status);
+    bindUploadForm(form);
+    return form;
   }
 
   function renderPortal(portal) {
     state.portal = portal;
     const event = portal.event;
-    byId("portal-title").textContent = `Welcome, ${portal.profile.display_name || "speaker"}`;
+    byId("welcome-name").textContent = portal.profile.display_name || "speaker";
+    const publicProfile = byId("public-profile-link");
+    publicProfile.hidden = !portal.public_profile_url;
+    if (portal.public_profile_url) publicProfile.href = portal.public_profile_url;
+    byId("event-current").textContent = event.name;
+    const eventOptions = byId("event-options");
+    eventOptions.replaceChildren();
+    (portal.events || [event]).forEach((available) => {
+      const option = make("button", undefined, "event-menu__option");
+      option.type = "button";
+      option.dataset.eventId = available.id;
+      option.setAttribute("role", "menuitemradio");
+      option.setAttribute("aria-checked", String(available.id === event.id));
+      const copy = make("span");
+      copy.append(make("strong", available.name), make("small", formatDate(available.starts_at_ms, available.time_zone)));
+      option.append(copy, make("span", available.id === event.id ? "✓" : "", "event-menu__check"));
+      option.addEventListener("click", () => selectEvent(available.id));
+      eventOptions.append(option);
+    });
     const eventDates = `${formatDate(event.starts_at_ms, event.time_zone)}–${formatDate(event.ends_at_ms, event.time_zone)}`;
     byId("event-summary").textContent = `${event.name} · ${eventDates}`;
-    byId("event-timezone").textContent = `All deadlines shown in ${event.time_zone}.`;
     const tasks = portal.tasks || [];
-    const completed = portal.completed_tasks;
-    const total = portal.total_tasks;
-    byId("progress-count").textContent = `${completed} of ${total} complete`;
-    byId("progress").max = Math.max(total, 1);
-    byId("progress").value = completed;
-    const upcoming = tasks.filter((task) => task.state === "open" && task.due_at_ms !== null)
-      .sort((left, right) => left.due_at_ms - right.due_at_ms)[0];
-    byId("next-deadline").textContent = upcoming
-      ? `Next: ${upcoming.title}, ${formatDate(upcoming.due_at_ms, event.time_zone)} · ${event.time_zone}`
-      : "No upcoming deadline.";
     renderTasks(tasks, event.time_zone);
     renderSubmissions(portal.submissions || []);
-    fillSubmissionChoices(portal.submissions || []);
-    fillProfile(portal.profile);
+    renderNotifications(portal.notifications || [], event.time_zone);
     byId("auth-state").hidden = true;
     byId("portal").hidden = false;
+  }
+
+  function renderNotifications(notifications, timezone) {
+    const list = byId("notification-list");
+    list.replaceChildren();
+    byId("notification-count").textContent = String(notifications.length);
+    if (!notifications.length) {
+      list.append(make("li", "No updates from this event yet.", "empty"));
+      return;
+    }
+    notifications.forEach((notification) => {
+      const item = document.createElement("li");
+      item.append(
+        make("strong", notification.subject),
+        make("time", formatDate(notification.delivered_at_ms, timezone))
+      );
+      list.append(item);
+    });
   }
 
   function announceOnboardingChange() {
@@ -251,53 +364,13 @@
     channel.close();
   }
 
-  function clearErrors() {
-    byId("error-summary").hidden = true;
-    byId("error-summary").querySelector("ul").replaceChildren();
-    byId("profile-form").querySelectorAll("[aria-invalid]").forEach((field) => field.removeAttribute("aria-invalid"));
-    byId("profile-form").querySelectorAll(".field-error").forEach((node) => { node.textContent = ""; });
-  }
-
-  function showErrors(errors) {
-    clearErrors();
-    const summary = byId("error-summary");
-    const list = summary.querySelector("ul");
-    errors.forEach(({ field, message }) => {
-      const input = byId(field.replaceAll("_", "-"));
-      if (!input) return;
-      input.setAttribute("aria-invalid", "true");
-      const error = byId(`${field.replaceAll("_", "-")}-error`);
-      if (error) error.textContent = message;
-      const link = make("a", message); link.href = `#${input.id}`;
-      const item = document.createElement("li"); item.append(link); list.append(item);
-    });
-    summary.hidden = false;
-    summary.focus();
-  }
-
-  function clientErrors(values) {
-    const errors = [];
-    if (!values.display_name.trim()) errors.push({ field: "display_name", message: "Enter your name." });
-    if (!values.biography.trim()) errors.push({ field: "biography", message: "Enter your biography." });
-    for (const field of ["website", "linkedin", "social_link"]) {
-      if (!values[field]) continue;
-      try {
-        const url = new URL(values[field]);
-        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-      } catch (_) { errors.push({ field, message: "Enter a complete HTTP or HTTPS address." }); }
-    }
-    return errors;
-  }
-
   async function load() {
     setStatus("Checking your secure session…");
     try {
       const session = await api("/api/v1/session");
       state.csrf = session.csrf_token;
-      const portal = await api("/api/v1/speaker/portal");
-      renderPortal(portal);
-      await Promise.all([loadAssets(), loadResources()]);
-      setStatus("Your speaker portal is ready.", "success");
+      await loadEvent();
+      setStatus("Speaker details are ready.", "success");
     } catch (error) {
       if (error.status === 401 || error.status === 404) {
         byId("portal").hidden = true;
@@ -309,70 +382,33 @@
     }
   }
 
-  byId("profile-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const button = byId("save-profile");
-    const values = Object.fromEntries(new FormData(event.currentTarget));
-    const errors = clientErrors(values);
-    values.links = [values.website, values.linkedin, values.social_link].filter(Boolean);
-    delete values.website;
-    delete values.linkedin;
-    delete values.social_link;
-    if (errors.length) { showErrors(errors); return; }
-    clearErrors();
-    button.disabled = true;
-    button.textContent = "Saving…";
-    try {
-      const profile = await api("/api/v1/speaker/profile", {
-        method: "PATCH",
-        headers: {
-          "content-type": "application/json", "x-csrf-token": state.csrf,
-          "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`
-        },
-        body: JSON.stringify({ ...values, version: state.version })
-      });
-      fillProfile(profile);
-      const portal = await api("/api/v1/speaker/portal");
-      renderPortal(portal);
-      announceOnboardingChange();
-      setStatus("Profile saved. Related onboarding tasks are up to date.", "success");
-    } catch (error) {
-      if (error.status === 409 || error.status === 412) {
-        byId("stale-warning").hidden = false;
-        byId("stale-warning").focus?.();
-        setStatus("Your profile was not saved because a newer version exists.", "error");
-      } else if (error.status === 401) {
-        byId("portal").hidden = true; byId("auth-state").hidden = false;
-        setStatus("Your session ended before the profile could be saved.", "error");
-      } else if (error.status === 422 && error.details.length) {
-        showErrors(error.details.map((detail) => ({ field: detail.field || detail.loc?.at(-1), message: detail.message || "Check this field." })));
-        setStatus("Your profile has errors. Nothing was saved.", "error");
-      } else {
-        setStatus("We couldn’t save your profile. Your entries remain on this page.", "error");
-      }
-    } finally {
-      button.disabled = false;
-      button.textContent = "Save profile";
-    }
-  });
+  async function loadEvent(eventId = "") {
+    state.assets = [];
+    const portal = await api(portalPath(eventId));
+    renderPortal(portal);
+    await Promise.all([loadAssets(), loadResources()]);
+  }
 
-  byId("reload-profile").addEventListener("click", async () => {
+  async function selectEvent(eventId) {
+    byId("event-menu").open = false;
+    if (eventId === state.portal?.event?.id) return;
+    setStatus("Loading event…");
     try {
-      const portal = await api("/api/v1/speaker/portal");
-      renderPortal(portal);
-      setStatus("Latest profile loaded. Review it before saving.");
-    } catch (_) { setStatus("We couldn’t reload the latest profile.", "error"); }
+      await loadEvent(eventId);
+      setStatus("Speaker details are ready.", "success");
+    } catch (error) {
+      setStatus(window.SessionBuddyApi.message(error, "This event could not be loaded."), "error");
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const menu = byId("event-menu");
+    if (menu.open && !menu.contains(event.target)) menu.open = false;
   });
 
   byId("speaker-sign-in").addEventListener("click", () => {
     location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
   });
-
-  function updateBiographyCount() {
-    const length = byId("biography").value.length;
-    byId("biography-count").textContent = `${length.toLocaleString()} of 5,000 characters`;
-  }
-  byId("biography").addEventListener("input", updateBiographyCount);
 
   function safeUploadUrl(value) {
     try {
@@ -437,12 +473,13 @@
     const container = byId("resource-list");
     try {
       const result = await api("/api/v1/speaker/resources");
-      byId("resource-count").textContent = String(result.data.length);
-      if (!result.data.length) {
+      const resources = result.data.filter((resource) => resource.event_id === state.portal?.event?.id);
+      byId("resource-count").textContent = String(resources.length);
+      if (!resources.length) {
         container.replaceChildren(make("p", "No resources have been published yet.", "empty"));
         return;
       }
-      const cards = result.data.map((resource) => {
+      const cards = resources.map((resource) => {
         const details = make("details", undefined, "resource-card");
         details.append(make("summary", resource.title));
         if (resource.summary) details.append(make("p", resource.summary, "help"));
@@ -467,82 +504,22 @@
   }
 
   async function loadAssets() {
-    const status = byId("asset-status");
     try {
       const eventId = state.portal?.event?.id;
       if (!eventId) throw new Error("Speaker event is unavailable.");
       const result = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets`);
       const assets = result.data || [];
-      const list = byId("asset-list"); list.replaceChildren();
-      if (!assets.length) list.append(make("li", "No clean assets uploaded yet.", "empty"));
-      async function downloadVersion(asset, version, button) {
-        button.disabled = true;
-        try {
-          const grant = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(version.id)}/download-grants`, {
-            method: "POST",
-            headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
-            body: "{}"
-          });
-          let response;
-          await api("/api/v1/assets/download", {
-            method: "POST",
-            headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
-            body: JSON.stringify({ token: grant.token })
-          }, { expectJson: false, onResponse: (received) => { response = received; } });
-          const url = URL.createObjectURL(await response.blob());
-          const link = document.createElement("a");
-          link.href = url; link.download = version.filename; link.click();
-          setTimeout(() => URL.revokeObjectURL(url), 1000);
-          status.textContent = `${version.filename} downloaded.`;
-        } catch (error) {
-          status.textContent = window.SessionBuddyApi.message(error, "The file could not be downloaded.");
-          status.classList.add("error");
-        } finally { button.disabled = false; }
-      }
-      assets.forEach((asset) => {
-        const item = document.createElement("li");
-        if (asset.kind === "headshot") {
-          const preview = document.createElement("img");
-          preview.src = `/api/v1/public/events/${encodeURIComponent(eventId)}/speakers/${encodeURIComponent(state.portal.event_speaker_id)}/headshot`;
-          preview.alt = "Current headshot"; preview.loading = "lazy"; preview.className = "asset-preview";
-          preview.addEventListener("error", () => preview.remove());
-          item.append(preview);
-        }
-        item.append(
-          make("strong", asset.filename),
-          make("span", `${asset.state.replaceAll("_", " ")} · version ${asset.generation} of ${asset.version_count}`),
-          make("p", asset.version_comment, "help"),
-        );
-        if (asset.versions?.length) {
-          const details = document.createElement("details");
-          details.append(make("summary", `${asset.versions.length} saved versions`));
-          const history = document.createElement("ol");
-          asset.versions.forEach((version) => {
-            const versionItem = document.createElement("li");
-            versionItem.append(
-              make("strong", `Version ${version.generation} · ${version.filename}`),
-              make("span", `${version.state} · ${new Date(version.uploaded_at_ms).toLocaleString()}`),
-              make("p", version.version_comment, "help"),
-            );
-            const button = make("button", "Download", "secondary");
-            button.type = "button";
-            button.addEventListener("click", () => downloadVersion(asset, version, button));
-            versionItem.append(button);
-            history.append(versionItem);
-          });
-          details.append(history); item.append(details);
-        }
-        list.append(item);
-      });
-      status.textContent = `${assets.length} current clean asset${assets.length === 1 ? "" : "s"}.`;
-      status.classList.remove("error");
+      state.assets = assets;
+      renderSubmissions(state.portal?.submissions || []);
     } catch (_) {
-      status.textContent = "Current assets could not be loaded. Uploads are unavailable until this reconnects.";
-      status.classList.add("error");
+      state.assets = [];
+      renderSubmissions(state.portal?.submissions || []);
+      setStatus("Session files could not be loaded. Uploads are temporarily unavailable.", "error");
     }
   }
 
-  document.querySelectorAll(".upload-card").forEach((form) => form.addEventListener("submit", async (event) => {
+  function bindUploadForm(form) {
+    form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const kind = form.dataset.kind;
     const file = form.elements.file.files[0];
@@ -565,9 +542,9 @@
       if (!eventId) throw new Error("Speaker event is unavailable.");
       const authorization = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/upload-authorizations`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
         body: JSON.stringify({
-          kind, submission_id: form.elements.submission_id?.value || null,
+          kind, submission_id: form.dataset.submissionId || null,
           task_id: taskForKind(kind), filename: file.name, content_type: file.type,
           byte_size: file.size, checksum_sha256: await checksum(file),
           version_comment: versionComment
@@ -579,7 +556,7 @@
       await uploadFile(uploadUrl, authorization.method, safeUploadHeaders(authorization.headers, file.type), file, progress);
       status.textContent = "Upload received. Starting safety checks…";
       const completion = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/upload-intents/${encodeURIComponent(authorization.intent_id)}/complete`, {
-        method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }, body: "{}"
+        method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() }, body: "{}"
       });
       progress.value = 100;
       if (completion.state === "rejected") {
@@ -594,12 +571,14 @@
       form.elements.version_comment.value = "";
       window.SessionBuddyApi.refreshCharacterCounters(form);
       await loadAssets();
-      const portal = await api("/api/v1/speaker/portal"); renderPortal(portal);
+      const portal = await api(portalPath()); renderPortal(portal);
       announceOnboardingChange();
     } catch (error) {
       status.textContent = window.SessionBuddyApi.message(error, "Upload failed. Choose the file and try again.");
       status.classList.add("error");
     } finally { button.disabled = false; }
-  }));
+    });
+  }
+
   load();
 })();

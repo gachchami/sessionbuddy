@@ -57,6 +57,18 @@ def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     assert 'navLink("My reviews", "/reviews"' in javascript
 
 
+def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    assert 'const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker")' in javascript
+    assert 'shell.replaceChildren(topbar);' in javascript
+    assert 'speakerBrand = link("", "/speaker")' in javascript
+    assert 'document.body.classList.toggle("sb-shell-single", singleSpeakerWorkspace)' in javascript
+    assert ".sb-shell-single .sb-topbar {" in stylesheet
+    assert ".app-body.sb-shell-authenticated.sb-shell-single > main.shell" in stylesheet
+
+
 def test_account_navigation_exposes_one_active_role_and_role_switching() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
@@ -86,6 +98,15 @@ def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
     assert 'mark.src = "/landing/assets/sessionbuddy-favicon.svg"' in javascript
     assert 'nav.append(navLink("People", "/admin/speakers"' in javascript
     assert 'globalNav.append(navLink("People", "/admin/speakers"' in javascript
+
+
+def test_single_speaker_shell_has_no_redundant_page_heading() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    branch = javascript.split("} else if (singleSpeakerWorkspace) {", 1)[1].split(
+        "} else {", 1
+    )[0]
+    assert "crumb" not in branch
+    assert "topbar.append(speakerBrand, accountMenu(session, roles));" in branch
 
 
 def test_landing_uses_one_role_aware_dashboard_entry() -> None:

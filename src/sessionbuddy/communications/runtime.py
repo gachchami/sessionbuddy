@@ -495,6 +495,68 @@ class ResendProvider:
         )
 
 
+class MailpitProvider:
+    """Local-only email delivery through Mailpit's HTTP send API."""
+
+    def __init__(self, api_url: str, from_address: str, *, fetcher=None) -> None:
+        if not api_url or not from_address:
+            raise ValueError("Mailpit configuration is required")
+        sender_name, sender_email = parseaddr(from_address)
+        if not sender_email or "@" not in sender_email:
+            raise ValueError("Mailpit from address is invalid")
+        self.api_url = api_url.rstrip("/")
+        self.sender_name = sender_name
+        self.sender_email = sender_email
+        self.fetcher = fetcher
+
+    async def send(self, claim: DeliveryClaim) -> ProviderResult:
+        fetcher = self.fetcher
+        if fetcher is None:
+            from workers import fetch
+
+            fetcher = fetch
+        sender_name = claim.sender_name or self.sender_name
+        payload: dict[str, object] = {
+            "From": {"Email": self.sender_email, "Name": sender_name},
+            "To": [{"Email": claim.recipient_email}],
+            "Subject": claim.subject,
+            "HTML": claim.html_body,
+            "Headers": {"X-SessionBuddy-Delivery-Key": claim.deterministic_key},
+        }
+        if claim.reply_to_email is not None:
+            payload["ReplyTo"] = [{"Email": claim.reply_to_email}]
+        if claim.calendar_ics is not None:
+            payload["Attachments"] = [
+                {
+                    "Filename": "session.ics",
+                    "ContentType": "text/calendar; charset=utf-8",
+                    "Content": b64encode(claim.calendar_ics.encode()).decode(),
+                }
+            ]
+        try:
+            response = await fetcher(
+                f"{self.api_url}/api/v1/send",
+                method="POST",
+                headers={"content-type": "application/json"},
+                body=json.dumps(payload, separators=(",", ":")),
+            )
+        except Exception:
+            return ProviderResult(False, retryable=True, error_code="provider_unavailable")
+        if 200 <= int(response.status) < 300:
+            try:
+                response_payload = to_python(await response.json())
+                provider_id = str(response_payload["ID"])
+            except Exception:
+                return ProviderResult(False, retryable=True, error_code="invalid_response")
+            return ProviderResult(True, provider_message_id=provider_id)
+        retryable = int(response.status) >= 500
+        return ProviderResult(
+            False,
+            retryable=retryable,
+            error_code="provider_unavailable" if retryable else "provider_rejected",
+        )
+
+
 async def park_unconfigured_delivery(
     raw: str | bytes | Mapping[str, object] | object,
     repository: DeliveryRepository,

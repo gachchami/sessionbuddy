@@ -106,6 +106,7 @@ def _environment(connection: sqlite3.Connection, **overrides):
         "DB": SQLiteD1(connection),
         "SESSION_HMAC_KEY": "s" * 32,
         "CSRF_HMAC_KEY": "c" * 32,
+        "PASSWORD_PEPPER": "p" * 32,
         "UPLOAD_HMAC_KEY": "u" * 32,
         "RATE_LIMIT_HMAC_KEY": "r" * 32,
         "AUTH_RATE_LIMITER": AllowingRateLimiter(),
@@ -160,7 +161,18 @@ async def _sign_in(client: AsyncClient, connection: sqlite3.Connection, email: s
     )
     assert requested.status_code == 202
     token = _magic_token(connection, email)
-    confirmed = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
+    confirmed = await client.post(
+        f"/auth/verify?token={token}",
+        data={
+            "first_name": "Test",
+            "last_name": "Speaker",
+            "job_title": "Engineer",
+            "company": "Example",
+            "password": "a private speaker passphrase",
+            "password_confirmation": "a private speaker passphrase",
+        },
+        follow_redirects=False,
+    )
     assert confirmed.status_code == 303
     session = await client.get("/api/v1/auth/session")
     assert session.status_code == 200
@@ -897,12 +909,27 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         assert "<style>" not in page.text
         assert '<link rel="stylesheet" href="/product/assets/product.css' in page.text
         assert 'method="post"' in page.text
-        assert ">Continue</button>" in page.text
+        assert "Create your speaker account" in page.text
+        assert 'name="first_name"' in page.text
+        assert 'name="password_confirmation"' in page.text
         assert connection.execute(
             "SELECT consumed_at_ms FROM authentication_challenges"
         ).fetchone()[0] is None
 
-        confirmed = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
+        incomplete = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
+        assert incomplete.status_code == 422
+        assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+
+        confirmed = await client.post(
+            f"/auth/verify?token={token}",
+            data={
+                "first_name": "Test",
+                "last_name": "Speaker",
+                "password": "a private speaker passphrase",
+                "password_confirmation": "a private speaker passphrase",
+            },
+            follow_redirects=False,
+        )
         assert confirmed.status_code == 303
         assert confirmed.headers["location"] == "/cfp/event-cfp"
         assert connection.execute(
@@ -911,6 +938,122 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
 
         replayed = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
         assert replayed.status_code == 404
+
+
+async def test_existing_speaker_magic_link_auto_continues(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    async with _client(environment) as client:
+        await _sign_in(client, connection, "returning-speaker@example.test")
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={
+                "email": "returning-speaker@example.test",
+                "form_slug": "event-cfp",
+                "redirect_path": "/cfp/event-cfp",
+            },
+        )
+        assert requested.status_code == 202
+        token = _magic_token(connection, "returning-speaker@example.test")
+
+        page = await client.get(f"/auth/verify?token={token}")
+        assert page.status_code == 200
+        assert "Signing you in…" in page.text
+        assert 'data-auto-submit="true"' in page.text
+        assert 'auth_link_confirm.js?v=1' in page.text
+        assert "Create your speaker account" not in page.text
+        assert connection.execute(
+            "SELECT consumed_at_ms FROM authentication_challenges "
+            "WHERE normalized_email=? ORDER BY created_at_ms DESC LIMIT 1",
+            ("returning-speaker@example.test",),
+        ).fetchone()[0] is None
+
+
+async def test_passwordless_speaker_must_finish_registration(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    now = utc_now_ms()
+    connection.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
+           VALUES(?,?,?,?,?,?,?)""",
+        (
+            "legacy-passwordless-speaker",
+            "legacy-speaker@example.test",
+            "legacy-speaker@example.test",
+            "active",
+            now,
+            now,
+            now,
+        ),
+    )
+    connection.commit()
+
+    async with _client(environment) as client:
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={
+                "email": "legacy-speaker@example.test",
+                "form_slug": "event-cfp",
+                "redirect_path": "/cfp/event-cfp",
+            },
+        )
+        assert requested.status_code == 202
+        token = _magic_token(connection, "legacy-speaker@example.test")
+
+        page = await client.get(f"/auth/verify?token={token}")
+        assert page.status_code == 200
+        assert "Create your speaker account" in page.text
+        assert 'name="password_confirmation"' in page.text
+        assert "Signing you in…" not in page.text
+
+        completed = await client.post(
+            f"/auth/verify?token={token}",
+            data={
+                "first_name": "Legacy",
+                "last_name": "Speaker",
+                "job_title": "Engineer",
+                "company": "Example",
+                "password": "a private speaker passphrase",
+                "password_confirmation": "a private speaker passphrase",
+            },
+            follow_redirects=False,
+        )
+        assert completed.status_code == 303
+        assert completed.headers["location"] == "/cfp/event-cfp"
+
+    profile = connection.execute(
+        "SELECT first_name,last_name,profile_completed_at_ms FROM users WHERE id=?",
+        ("legacy-passwordless-speaker",),
+    ).fetchone()
+    assert profile[0:2] == ("Legacy", "Speaker")
+    assert profile[2] is not None
+    assert connection.execute(
+        "SELECT COUNT(*) FROM password_credentials WHERE user_id=? AND status='active'",
+        ("legacy-passwordless-speaker",),
+    ).fetchone()[0] == 1
+
+
+async def test_local_https_magic_link_is_queued_for_local_mail_inbox(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    environment.PUBLIC_BASE_URL = "https://localhost:8443"
+
+    async with _client(environment) as client:
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={
+                "email": "local-speaker@example.test",
+                "form_slug": "event-cfp",
+                "redirect_path": "/cfp/event-cfp",
+            },
+        )
+
+    assert requested.status_code == 202
+    message = connection.execute(
+        "SELECT html_body,status FROM communication_messages WHERE recipient_email=?",
+        ("local-speaker@example.test",),
+    ).fetchone()
+    assert message is not None
+    assert 'href="https://localhost:8443/auth/verify?token=' in message[0]
+    assert message[1] == "queued"
 
 
 def test_magic_link_confirmation_page_is_packaged_and_csp_safe() -> None:
@@ -922,8 +1065,13 @@ def test_magic_link_confirmation_page_is_packaged_and_csp_safe() -> None:
     assert "<style>" not in page
     assert 'style="' not in page
     assert '__CONFIRM_ACTION__' in page
+    assert '__REGISTRATION_FIELDS__' in page
+    assert '__AUTO_SUBMIT_ATTRIBUTE__' in page
+    assert '__CONFIRM_SCRIPT__' in page
     assert '<meta name="robots" content="noindex">' in page
     assert '_asset("auth_link_confirm.html")' in access
+    assert 'data-auto-submit="true"' in access
+    assert 'auth_link_confirm.js?v=1' in access
     interstitial = access.split("magic_link_interstitial", 1)[1].split("@access_router", 1)[0]
     assert "<style>" not in interstitial
     # Consume-on-success: a failed sign-in restores the challenge it consumed.
@@ -952,16 +1100,11 @@ def test_public_cfp_resets_file_state_between_proposals() -> None:
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
 
     assert "function resetProposalFiles()" in script
-    # Every proposal transition resets the per-proposal file state: opening or
-    # restoring a proposal (chooseSubmission covers both), starting another
-    # proposal, and closing the completed form after submission.
-    assert script.count("resetProposalFiles();") >= 3
+    # Opening/restoring a proposal and closing the completed form both reset
+    # per-proposal file state.
+    assert script.count("resetProposalFiles();") >= 2
     choose = script.split("function chooseSubmission", 1)[1].split("function ", 1)[0]
     assert "resetProposalFiles();" in choose
-    another = script.split('make("button", "Start another proposal"', 1)[1].split(
-        "section.append", 1
-    )[0]
-    assert "resetProposalFiles();" in another
     submit_success = script.split("clearBrowserDraft();", 1)[1].split("} catch", 1)[0]
     assert "resetProposalFiles();" in submit_success
     assert "state.existingFiles" in script
@@ -978,7 +1121,7 @@ def test_public_cfp_uploads_through_the_staged_endpoint() -> None:
     assert "/api/v1/speaker/events/" not in script.split("function uploadAnswer", 1)[1].split(
         "async function uploadFiles", 1
     )[0]
-    assert "public-cfp.js?v=19" in page
+    assert "public-cfp.js?v=24" in page
 
 
 def test_sbek_helper_completes_the_confirmation_page() -> None:
