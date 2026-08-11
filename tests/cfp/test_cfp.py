@@ -19,6 +19,23 @@ from sessionbuddy.cfp.router import (
 from sessionbuddy.console.models import BrowserTelemetryPayload
 
 
+def test_cfp_description_sanitizes_rich_text_and_keeps_important_dates() -> None:
+    form = FormPublish(
+        slug="event-cfp",
+        welcome_text="Safe fallback",
+        description_html=(
+            '<p>Hello <strong>speaker</strong><script>alert(1)</script>'
+            '<a href="javascript:alert(2)">bad link</a></p>'
+        ),
+        important_dates=[{"label": "Wave 1 decisions", "at_ms": 1_900_000_000_000}],
+    )
+
+    assert form.description_html == (
+        "<p>Hello <strong>speaker</strong>alert(1)<a>bad link</a></p>"
+    )
+    assert form.important_dates[0].label == "Wave 1 decisions"
+
+
 class CloudflareFirstStatement:
     def __init__(self) -> None:
         self.calls: list[tuple[object, ...]] = []
@@ -114,7 +131,29 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     assert "toLocalInput(state.eventStartsAtMs - 1)" in script
     assert "The Call for Proposals must close before the event starts." in script
     assert 'summaryIdentity.append(make("strong", field.label))' in script
-    assert 'if (!core) summaryIdentity.append(make("small", field.key))' in script
+    assert 'if (!system) summaryIdentity.append(make("small", field.key))' in script
+
+
+def test_form_co_speaker_limit_defaults_to_one_and_is_enforced() -> None:
+    form = FormPublish(slug="speaker-limit", welcome_text="Welcome")
+    assert form.co_speaker_limit == 1
+
+    submission = SubmissionCreate(
+        speaker_name="Primary",
+        speaker_email="primary@example.test",
+        proposal_title="Proposal",
+        proposal_abstract="Abstract",
+        co_speakers=[
+            {"display_name": "One", "email": "one@example.test"},
+            {"display_name": "Two", "email": "two@example.test"},
+        ],
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_submission_schema(
+            {"fields": [field.model_dump() for field in form.fields], "co_speaker_limit": 1},
+            submission,
+        )
+    assert exc_info.value.status_code == 422
 
 
 def test_private_submission_access_distinguishes_primary_and_co_speaker() -> None:
@@ -478,7 +517,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "conditions" in admin_js.text
     assert "/admin/events/${encodeURIComponent(event.id)}" in events_js.text
     assert 'button("Edit"' in events_js.text
-    assert 'page_template: "/cfp/{slug}"' in public_js.text
+    assert 'page_template: "/cfp/{event_key}/{slug}"' in public_js.text
     assert "const form = event.currentTarget" in public_js.text
     assert "event.currentTarget.querySelectorAll" not in public_js.text
     assert 'page_template: "/admin/events/{event_id}/submissions"' in submissions_source

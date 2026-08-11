@@ -3,18 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Speaker messages · SessionBuddy</title>
+  <title>Speakers · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=23">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=15">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=18" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
   <script src="/admin/speakers/assets/messages.js?v=4" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--messages">
   <a class="skip-link" href="#main">Skip to speaker messages</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
-    <div class="page-heading workflow-hero"><div><p class="eyebrow">Communication</p><h1>Speaker messages</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" href="#">View speakers</a></div>
+    <div class="page-heading workflow-hero"><div><p class="eyebrow">Messages</p><h1>Speakers</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" hidden href="#">View speakers</a></div>
+    <div data-speaker-hub-tabs></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading speakers…</div>
     <div class="message-workspace">
       <section class="card workflow-stage workflow-stage--recipients" aria-labelledby="recipients-title">

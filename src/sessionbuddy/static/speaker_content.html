@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Speakers · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=38">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
+  <script src="/admin/speaker-content/assets/speaker-content.js?v=1" defer></script>
+</head>
+<body class="app-body workflow-page workflow-page--speaker-content">
+  <a class="skip-link" href="#main">Skip to speaker tasks and files</a>
+  <header data-auth-shell></header>
+  <main id="main" class="shell page workflow-shell" tabindex="-1">
+    <div class="page-heading workflow-hero">
+      <div><p class="eyebrow">Tasks &amp; files</p><h1>Speakers</h1><p class="lede">Assign follow-up tasks, collect deliverables, and publish portal resources.</p></div>
+    </div>
+    <div data-speaker-hub-tabs></div>
+    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
+    <section class="grid workspace-grid workflow-grid" aria-label="Speaker tasks, files, and resources">
+      <article class="card workflow-stage workflow-stage--tasks" aria-labelledby="task-title">
+        <div class="section-heading"><div><p class="eyebrow">Follow-up</p><h2 id="task-title">Custom speaker task</h2></div></div>
+        <p class="help">Assign a request or a short form to one accepted speaker.</p>
+        <details class="action-disclosure"><summary>Assign a task</summary><form id="task-form">
+          <label>Speakers<select name="event_speaker_id" id="speaker-target" multiple size="6" required></select><small>Select one or more accepted speakers.</small></label>
+          <label>Task title<input name="title" maxlength="200" required></label>
+          <label>Instructions<textarea name="help_text" maxlength="2000"></textarea></label>
+          <p id="task-time-zone-context" class="help">Due date uses the event time zone: <strong id="task-time-zone">Loading…</strong>.</p>
+          <label>Due date <span class="optional">Optional</span><input name="due_at" type="datetime-local" aria-describedby="task-time-zone-context"></label>
+          <fieldset><legend>Optional response field</legend><label>Question label<input name="field_label" maxlength="200" placeholder="e.g. Dietary requirements"></label><div class="form-grid"><label>Answer type<select name="field_type"><option value="text">Short text</option><option value="textarea">Long text</option><option value="url">URL</option><option value="checkbox">Confirmation</option></select></label><label class="check-label"><input name="field_required" type="checkbox"> Required</label></div></fieldset>
+          <button>Assign task</button>
+        </form></details>
+      </article>
+      <article class="card workflow-stage workflow-stage--resources" aria-labelledby="resource-title">
+        <div class="section-heading"><div><p class="eyebrow">Portal content</p><h2 id="resource-title">Resources &amp; wiki</h2></div><span id="resource-count" class="badge">0</span></div>
+        <p class="help">Publish guides, venue notes, or an approved video/document embed to the speaker portal.</p>
+        <details class="action-disclosure"><summary>Add a resource</summary><form id="resource-form">
+          <label>Title<input name="title" maxlength="200" required></label>
+          <label>URL slug<input name="slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80" placeholder="speaker-guide" required></label>
+          <label>Summary<input name="summary" maxlength="500"></label>
+          <label>Page content<textarea name="body_text" maxlength="20000" placeholder="Write the instructions speakers need…"></textarea></label>
+          <label>Approved embed URL <span class="optional">Optional</span><input name="embed_url" type="url" placeholder="https://docs.google.com/…"><small>Google Docs, Drive, Calendar, YouTube, or Vimeo.</small></label>
+          <div class="form-grid"><label>Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label>Order<input name="sort_order" type="number" value="0" min="-1000" max="1000"></label></div>
+          <button>Publish resource</button>
+        </form></details>
+        <ul id="resource-list" class="item-list" aria-label="Event resources" aria-live="polite"></ul>
+      </article>
+      <article class="card wide workflow-stage workflow-stage--files" aria-labelledby="files-title">
+        <div class="section-heading"><div><p class="eyebrow">Deliverables</p><h2 id="files-title">Speaker files</h2></div><span id="file-count" class="badge">0</span></div>
+        <p class="help">Current safety-checked uploads from every accepted speaker. Version counts include replaced files.</p>
+        <ul id="file-list" class="item-list" aria-label="Speaker files" aria-live="polite"><li class="empty workflow-empty-state">Loading files&hellip;</li></ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

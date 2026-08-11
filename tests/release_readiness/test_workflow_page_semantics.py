@@ -13,6 +13,7 @@ def test_event_workflow_pages_expose_consistent_page_and_stage_hooks() -> None:
         "admin_submissions.html": "workflow-page--submissions",
         "agenda_admin.html": "workflow-page--agenda",
         "event_workspace.html": "workflow-page--resources",
+        "speaker_content.html": "workflow-page--speaker-content",
         "speaker_messages.html": "workflow-page--messages",
     }
 
@@ -27,7 +28,7 @@ def test_event_workflow_pages_expose_consistent_page_and_stage_hooks() -> None:
 def test_workflow_loading_and_empty_states_are_announced_without_alert_noise() -> None:
     submissions = source("admin_submissions.html")
     agenda = source("agenda_admin.html")
-    resources = source("event_workspace.html")
+    resources = source("speaker_content.html")
     messages = source("speaker_messages.html")
 
     assert 'id="submissions" aria-live="polite"' in submissions
@@ -46,14 +47,16 @@ def test_workflow_loading_and_empty_states_are_announced_without_alert_noise() -
 def test_each_complex_workflow_region_has_an_accessible_name() -> None:
     cfp = source("admin_programs.html")
     submissions = source("admin_submissions.html")
-    resources = source("event_workspace.html")
+    publish = source("event_workspace.html")
+    resources = source("speaker_content.html")
     messages = source("speaker_messages.html")
 
     assert 'aria-labelledby="cfp-builder-title"' in cfp
     assert 'id="cfp-builder-title"' in cfp
     assert 'aria-labelledby="submission-list-title"' in submissions
     assert 'aria-labelledby="rounds-title"' in submissions
-    assert 'aria-label="Event resources and publishing tools"' in resources
+    assert 'aria-label="Publishing tools"' in publish
+    assert 'aria-label="Speaker tasks, files, and resources"' in resources
     assert 'aria-labelledby="recipients-title"' in messages
     assert 'aria-labelledby="compose-title"' in messages
     assert 'aria-labelledby="history-title"' in messages

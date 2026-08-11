@@ -1724,6 +1724,24 @@
       ],
       "runbook": "docs/debugging-runbook.md#page-regression"
     },
+    "/cfp/{event_key}/{slug}": {
+      "owner": "program-management",
+      "classification": "public",
+      "journeys": [
+        "public-submit-proposal"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
     "/reviews": {
       "owner": "evaluation",
       "classification": "synthetic/local",
@@ -2251,6 +2269,24 @@
       "classification": "authenticated",
       "journeys": [
         "view-person-profile"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/admin/events/{event_id}/speaker-content": {
+      "owner": "platform",
+      "classification": "authenticated",
+      "journeys": [
+        "speaker-operations"
       ],
       "web_vitals": {
         "lcp_p75_ms": 2500,

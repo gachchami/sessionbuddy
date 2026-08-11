@@ -245,6 +245,7 @@
       document.body.dataset.eventId = eventId;
       window.dispatchEvent(new Event("sessionbuddy:event-context"));
       byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
+      byId("cfp-workspace-link").hidden = false;
       const evaluatorResult = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators`);
       state.evaluators = evaluatorResult.data;
       const evaluatorChoices = byId("evaluators");

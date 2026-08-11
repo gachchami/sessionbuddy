@@ -6,11 +6,69 @@
     { key: "proposal_title", type: "text", label: "Proposal title", required: true, choices: [] },
     { key: "proposal_abstract", type: "textarea", label: "Proposal abstract", required: true, choices: [] }
   ];
-  const state = { context: null, csrf: null, eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, fields: structuredClone(coreFields), routingRules: [] };
+  const standardProposalFields = [
+    { key: "session_type", type: "select", label: "Session type", required: true, choices: ["Talk", "Workshop", "Panel", "Lightning talk"] },
+    { key: "track", type: "select", label: "Track", required: false, choices: [] },
+    { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] },
+    { key: "preferred_duration", type: "select", label: "Preferred duration", required: true, choices: ["15 minutes", "30 minutes", "45 minutes", "60 minutes", "90 minutes"] }
+  ];
+  const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
   const key = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  const draftKey = () => `sessionbuddy:cfp-draft:${state.userId || "unknown"}:${state.context?.event_id || "unknown"}`;
+
+  function clearValidation() {
+    const form = byId("publish-form");
+    form.querySelectorAll(".field-error").forEach((node) => node.remove());
+    form.querySelectorAll('[aria-invalid="true"]').forEach((node) => node.removeAttribute("aria-invalid"));
+    byId("cfp-validation-summary").hidden = true;
+    byId("cfp-validation-list").replaceChildren();
+    document.querySelectorAll(".cfp-outline-item.has-errors").forEach((button) => button.classList.remove("has-errors"));
+  }
+
+  function showValidation(errors) {
+    clearValidation();
+    const summary = byId("cfp-validation-summary");
+    const list = byId("cfp-validation-list");
+    errors.forEach(({ field, message }, index) => {
+      const id = field.id || `cfp-invalid-${index + 1}`;
+      field.id = id;
+      field.setAttribute("aria-invalid", "true");
+      const error = document.createElement("small");
+      error.className = "field-error";
+      error.id = `${id}-error`;
+      error.textContent = message;
+      field.setAttribute("aria-describedby", [field.getAttribute("aria-describedby"), error.id].filter(Boolean).join(" "));
+      const host = field.closest("label, .slug-field, .question-editor__body, .routing-rule") || field;
+      host.insertAdjacentElement("afterend", error);
+      const section = field.closest(".cfp-editor-section");
+      const sectionLink = section && document.querySelector(`.cfp-outline-item[data-section="${section.id.replace("cfp-", "")}"]`);
+      sectionLink?.classList.add("has-errors");
+      const details = field.closest("details");
+      if (details) details.open = true;
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.textContent = message;
+      link.href = `#${id}`;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        const questionCard = field.closest(".question-card");
+        const questionIndex = questionCard ? [...byId("form-fields").querySelectorAll(".question-card:not(.question-card--system)")].indexOf(questionCard) : -1;
+        selectOutline(questionIndex >= 0 ? `question:${questionIndex}` : section.id.replace("cfp-", ""), false);
+        if (details) details.open = true;
+        field.focus();
+        field.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+      item.append(link);
+      list.append(item);
+    });
+    summary.hidden = false;
+    summary.querySelector("strong").textContent = `Fix ${errors.length} ${errors.length === 1 ? "field" : "fields"} before continuing`;
+    summary.focus();
+  }
 
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
@@ -66,6 +124,54 @@
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  function richTextMarkup(node) {
+    const serializer = new XMLSerializer();
+    return [...node.childNodes].map((child) => serializer.serializeToString(child)).join("");
+  }
+
+  function setRichText(node, markup, fallback = "") {
+    const documentNode = new DOMParser().parseFromString(markup || "", "text/html");
+    node.replaceChildren(...[...documentNode.body.childNodes].map((child) => document.importNode(child, true)));
+    if (!node.textContent.trim() && fallback) node.textContent = fallback;
+  }
+
+  function syncDescription() {
+    const editor = byId("cfp-description-editor");
+    const text = editor.textContent.replace(/\s+/g, " ").trim();
+    byId("publish-form").elements.description_html.value = richTextMarkup(editor);
+    byId("publish-form").elements.welcome_text.value = text.slice(0, 1000);
+  }
+
+  function renderImportantDates() {
+    const rows = byId("important-date-rows");
+    rows.replaceChildren(...state.importantDates.map((date, index) => {
+      const row = make("div");
+      row.className = "important-date-row";
+      const label = make("label", "Label");
+      const labelInput = make("input");
+      labelInput.value = date.label || "";
+      labelInput.maxLength = 120;
+      labelInput.addEventListener("input", () => { state.importantDates[index].label = labelInput.value; });
+      label.append(labelInput);
+      const when = make("label", "Date");
+      const whenInput = make("input");
+      whenInput.type = "datetime-local";
+      whenInput.value = toLocalInput(date.at_ms);
+      whenInput.addEventListener("input", () => { state.importantDates[index].at_ms = toEpoch(whenInput.value); });
+      when.append(whenInput);
+      const remove = make("button", "Remove");
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.addEventListener("click", () => { state.importantDates.splice(index, 1); renderImportantDates(); });
+      row.append(label, when, remove);
+      return row;
+    }));
+  }
+
+  function readImportantDates() {
+    return state.importantDates.filter((date) => date.label.trim() && Number.isFinite(date.at_ms));
   }
 
   function inputLabel(text, input) {
@@ -164,12 +270,20 @@
     const publishButton = publishForm.querySelector('button[type="submit"], button:not([type])');
     const eventIsActive = state.eventStatus === "active";
     publishButton.disabled = !state.context || (!published && !eventIsActive);
-    publishButton.textContent = published ? "Save changes" : "Publish CFP";
+    publishButton.textContent = published ? "Update live CFP" : "Publish CFP";
     byId("publish-action-label").textContent = !eventIsActive
       ? "Event draft"
-      : published ? "Published CFP" : "Ready to publish?";
+      : published ? "Unpublished changes" : "Draft";
     byId("published-note").hidden = !published;
+    byId("cfp-page-meta").textContent = `${Math.max(0, state.fields.length - 2)} proposal fields · ${!eventIsActive ? "Event draft" : published ? cfpAvailability(published) : "Draft"}`;
+    const liveProposalCount = (published?.fields || []).filter((field) => proposalFieldKeys.has(field.key)).length;
+    byId("cfp-page-meta").textContent = published && liveProposalCount !== Math.max(0, state.fields.length - 2)
+      ? `${Math.max(0, state.fields.length - 2)} draft fields · ${liveProposalCount} live`
+      : byId("cfp-page-meta").textContent;
+    byId("cfp-autosave-state").textContent = published ? "Live changes are never autosaved" : byId("cfp-autosave-state").textContent;
     byId("publish-settings").hidden = Boolean(published) && !state.editing;
+    byId("cfp-notification-settings").hidden = Boolean(published) && !state.editing;
+    byId("cfp-summary").hidden = false;
     byId("edit-cfp").hidden = !published || state.editing;
     byId("cancel-cfp-edit").hidden = !published;
     const savedState = byId("cfp-saved-state");
@@ -177,6 +291,8 @@
     if (published && !savedState.textContent) savedState.textContent = "Saved";
     byId("publish-result").textContent = !eventIsActive
       ? "Activate the event before publishing its CFP."
+      : published && state.editing
+      ? "Nothing changes publicly until you update the live CFP."
       : published
       ? "Published. Use the CFP link above, then review proposals as they arrive."
       : "Complete the form settings below, then publish.";
@@ -188,6 +304,7 @@
     empty.hidden = Boolean(published) && eventIsActive;
     badge.className = `badge${published ? " success" : ""}`;
     badge.textContent = !eventIsActive ? "Event draft" : published ? cfpAvailability(published) : "Not published";
+    byId("cfp-live-bar").hidden = !published || !eventIsActive;
     if (!eventIsActive) {
       empty.textContent = "Activate the event to make its CFP public.";
       return;
@@ -196,7 +313,13 @@
       empty.textContent = "Configure and publish the proposal form below to get a shareable link.";
       return;
     }
-    const publicUrl = `${location.origin}/cfp/${published.slug}`;
+    const eventKey = state.context.event_id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
+    const publicUrl = `${location.origin}/cfp/${eventKey}/${published.slug}`;
+    byId("cfp-live-bar").hidden = false;
+    byId("cfp-live-url").textContent = publicUrl;
+    byId("cfp-live-url").href = publicUrl;
+    byId("cfp-live-url-prefix").textContent = `${location.origin}/cfp/`;
+    byId("copy-cfp-header").hidden = false;
     byId("cfp-url").value = publicUrl;
     byId("open-cfp-url").href = publicUrl;
     byId("review-submissions").href = `/admin/events/${encodeURIComponent(state.context.event_id)}/submissions`;
@@ -216,13 +339,22 @@
       ...field,
       condition: conditions.get(field.key)
     }));
+    standardProposalFields.forEach((standard) => {
+      if (!state.fields.some((field) => field.key === standard.key)) state.fields.push(structuredClone(standard));
+    });
+    const trackField = state.fields.find((field) => field.key === "track");
+    if (trackField && state.eventTracks.length) trackField.choices = [...state.eventTracks];
     state.routingRules = structuredClone(form.routing_rules || []);
     const editor = byId("publish-form");
     editor.elements.slug.value = form.slug;
-    if (form.welcome_text) editor.elements.welcome_text.value = form.welcome_text;
+    setRichText(byId("cfp-description-editor"), form.description_html, form.welcome_text);
+    syncDescription();
+    state.importantDates = structuredClone(form.important_dates || []);
+    renderImportantDates();
     editor.elements.opens_at.value = toLocalInput(form.opens_at_ms);
     editor.elements.closes_at.value = toLocalInput(form.closes_at_ms);
     editor.elements.submission_limit.value = form.submission_limit || "";
+    editor.elements.co_speaker_limit.value = form.co_speaker_limit ?? 1;
     if (form.success_title) editor.elements.success_title.value = form.success_title;
     if (form.success_message) editor.elements.success_message.value = form.success_message;
     if (form.confirmation_subject) editor.elements.confirmation_subject.value = form.confirmation_subject;
@@ -239,22 +371,26 @@
     const list = byId("form-fields");
     list.replaceChildren();
     state.fields.forEach((field, index) => {
-      const core = index < coreFields.length;
+      const system = ["speaker_name", "speaker_email"].includes(field.key) || proposalFieldKeys.has(field.key);
       const card = make("fieldset");
       card.className = "question-card";
       card.dataset.index = String(index);
-      const legend = make("legend", core ? `Required field: ${field.key}` : `Custom field ${index - 3}`);
+      const legend = make("legend", system ? `System field: ${field.key}` : `Custom field: ${field.key}`);
       legend.className = "sr-only";
       const editor = make("details");
       editor.className = "question-editor";
-      editor.open = !core;
+      editor.open = !system;
       const editorSummary = make("summary");
       const summaryIdentity = make("span");
       summaryIdentity.append(make("strong", field.label));
-      if (!core) summaryIdentity.append(make("small", field.key));
+      if (!system) summaryIdentity.append(make("small", field.key));
       const summaryMeta = make("span");
       summaryMeta.className = "question-editor__meta";
-      if (!core) {
+      if (system) {
+        const systemBadge = make("span", "System");
+        systemBadge.className = "badge";
+        summaryMeta.append(systemBadge);
+      } else {
         const typeNames = { text: "Short answer", textarea: "Long answer", email: "Email", url: "URL", phone: "Phone", select: "Single choice", multiselect: "Multiple choice", checkbox: "Checkbox", file: "File", image: "Image" };
         const typeBadge = make("span", typeNames[field.type] || "Question");
         typeBadge.className = "badge";
@@ -265,12 +401,41 @@
         requiredBadge.className = "required-marker";
         summaryMeta.append(requiredBadge);
       }
+      if (!["speaker_name", "speaker_email"].includes(field.key)) {
+        const orderControls = make("span");
+        orderControls.className = "question-order-controls";
+        const move = (direction) => {
+          readFields();
+          const current = state.fields.findIndex((item) => item.key === field.key);
+          const target = current + direction;
+          if (target < 2 || target >= state.fields.length) return;
+          [state.fields[current], state.fields[target]] = [state.fields[target], state.fields[current]];
+          renderFields();
+          selectOutline(proposalFieldKeys.has(field.key) ? "proposal" : "custom", false);
+          state.dirty = true;
+          queueLocalDraft();
+        };
+        const up = make("button", "↑");
+        up.type = "button";
+        up.className = "question-order-button";
+        up.setAttribute("aria-label", `Move ${field.label} up`);
+        up.disabled = index <= 2;
+        up.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); move(-1); });
+        const down = make("button", "↓");
+        down.type = "button";
+        down.className = "question-order-button";
+        down.setAttribute("aria-label", `Move ${field.label} down`);
+        down.disabled = index === state.fields.length - 1;
+        down.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); move(1); });
+        orderControls.append(up, down);
+        summaryMeta.append(orderControls);
+      }
       editorSummary.append(summaryIdentity, summaryMeta);
       const editorBody = make("div");
       editorBody.className = "question-editor__body";
       const keyInput = textInput("field_key", field.key, true);
       keyInput.pattern = "[a-z][a-z0-9_]*";
-      keyInput.readOnly = core;
+      keyInput.readOnly = system;
       const type = document.createElement("select");
       type.name = "field_type";
       [
@@ -280,12 +445,12 @@
         ["File upload", "file"], ["Image upload", "image"]
       ].forEach(([label, value]) => type.add(new Option(label, value)));
       type.value = field.type;
-      if (core) type.disabled = true;
+      if (system) type.disabled = true;
       const required = document.createElement("input");
       required.type = "checkbox";
       required.name = "field_required";
       required.checked = field.required;
-      required.disabled = core;
+      required.disabled = system;
       const blindVisible = document.createElement("input");
       blindVisible.type = "checkbox";
       blindVisible.name = "field_blind_visible";
@@ -301,11 +466,17 @@
       operator.add(new Option("equals", "equals"));
       operator.add(new Option("does not equal", "not_equals"));
       operator.value = field.condition?.operator || "equals";
-      if (core) {
+      if (system) {
         keyInput.type = "hidden";
+        type.hidden = true;
+        required.hidden = true;
+        blindVisible.hidden = true;
         choices.type = "hidden";
         editorBody.append(
           keyInput,
+          type,
+          required,
+          blindVisible,
           choices,
           inputLabel("Question label", textInput("field_label", field.label, true)),
           inputLabel("Placeholder", textInput("field_placeholder", field.placeholder || "")),
@@ -323,7 +494,7 @@
           inputLabel("Choices (comma separated)", choices)
         );
       }
-      if (!core) {
+      if (!system) {
         editorBody.append(
           make("p", "Optional display condition"),
           inputLabel("Show when field key", conditionSource),
@@ -367,7 +538,7 @@
         coSpeakerBody.append(
           make(
             "p",
-            "Speakers may add up to 10 co-speakers. Each person receives an invitation to accept or decline and complete their own profile."
+            "Each co-speaker receives an invitation to accept or decline and complete their own profile."
           )
         );
         coSpeakerDetails.append(coSpeakerSummary, coSpeakerBody);
@@ -375,6 +546,70 @@
         list.append(coSpeakers);
       }
     });
+    renderOutline();
+  }
+
+  function outlineButton(label, section, selection) {
+    const button = make("button");
+    button.type = "button";
+    button.className = "cfp-outline-item";
+    button.dataset.section = section;
+    button.dataset.selection = selection;
+    button.setAttribute("aria-pressed", String(state.selectedOutline === selection));
+    const text = make("span", label);
+    text.className = "cfp-outline-label";
+    button.append(text);
+    button.addEventListener("click", () => selectOutline(selection));
+    return button;
+  }
+
+  function renderOutline() {
+    const items = byId("cfp-outline-items");
+    if (!items) return;
+    const proposalCount = state.fields.filter((field) => proposalFieldKeys.has(field.key)).length;
+    const customCount = state.fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key) && !proposalFieldKeys.has(field.key)).length;
+    const proposal = outlineButton("Proposal details", "questions", "proposal");
+    proposal.append(make("small", String(proposalCount)));
+    const custom = outlineButton("Custom questions", "questions", "custom");
+    custom.append(make("small", String(customCount)));
+    const availability = outlineButton("Availability", "availability", "availability");
+    availability.classList.add("cfp-outline-item--settings-start");
+    const nodes = [
+      outlineButton("Description", "basics", "basics"), proposal, custom,
+      outlineButton("Co-speakers", "co-speakers", "co-speakers"),
+      outlineButton("Confirmation", "confirmation", "confirmation"),
+      availability
+    ];
+    items.replaceChildren(...nodes);
+    selectOutline(state.selectedOutline, false);
+  }
+
+  function selectOutline(selection, focus = true) {
+    state.selectedOutline = selection;
+    const [kind, rawIndex] = selection.split(":");
+    const sectionName = ["proposal", "custom"].includes(kind) ? "questions" : kind;
+    document.querySelectorAll(".cfp-editor-section").forEach((section) => { section.hidden = section.id !== `cfp-${sectionName}`; });
+    document.querySelectorAll(".cfp-outline-item").forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.selection === selection)));
+    const allQuestionCards = [...byId("form-fields").querySelectorAll(".question-card")];
+    const questionCards = [...byId("form-fields").querySelectorAll(".question-card[data-index]")];
+    allQuestionCards.forEach((card) => {
+      const field = state.fields[Number(card.dataset.index)];
+      card.hidden = kind === "proposal" ? !field || !proposalFieldKeys.has(field.key)
+        : kind === "custom" ? !field || ["speaker_name", "speaker_email"].includes(field.key) || proposalFieldKeys.has(field.key)
+        : kind === "question" && card.dataset.index !== rawIndex;
+    });
+    byId("cfp-questions").classList.toggle("cfp-editor-section--single-question", ["question", "proposal"].includes(kind));
+    byId("cfp-questions").classList.toggle("cfp-editor-section--custom", kind === "custom");
+    const customCount = state.fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key) && !proposalFieldKeys.has(field.key)).length;
+    byId("cfp-custom-empty").hidden = kind !== "custom" || customCount > 0;
+    const selectedField = kind === "question" ? state.fields[Number(rawIndex)] : null;
+    const titles = { basics: "Description", proposal: "Proposal details", custom: "Custom questions", "co-speakers": "Co-speakers", availability: "Availability", confirmation: "Confirmation" };
+    byId("cfp-selection-title").textContent = selectedField?.label || titles[kind] || "Form";
+    byId("cfp-selection-context").textContent = kind === "availability" ? "Form setting" : `${titles[kind] || "Proposal"} screen`;
+    byId("cfp-selection-preview").hidden = true;
+    document.querySelectorAll(".cfp-editor-section").forEach((section) => { if (!section.hidden) section.removeAttribute("aria-hidden"); });
+    if (selectedField) questionCards[Number(rawIndex)]?.querySelector("details")?.setAttribute("open", "");
+    if (focus) document.querySelector(`.cfp-outline-item[data-selection="${selection}"]`)?.focus();
   }
 
   function readFields() {
@@ -382,13 +617,14 @@
     const conditions = [];
     byId("form-fields").querySelectorAll("fieldset").forEach((card, index) => {
       const keyValue = card.elements.field_key.value.trim();
-      const type = card.elements.field_type?.value || coreFields[index].type;
+      const type = card.elements.field_type?.value || "text";
       const choices = card.elements.field_choices.value.split(",").map((value) => value.trim()).filter(Boolean);
       const field = {
         key: keyValue,
         type,
         label: card.elements.field_label.value.trim(),
-        required: index < coreFields.length || card.elements.field_required.checked,
+        required: ["speaker_name", "speaker_email", "proposal_title", "proposal_abstract"].includes(keyValue)
+          || Boolean(card.elements.field_required?.checked),
         help_text: card.elements.field_help.value.trim(),
         placeholder: card.elements.field_placeholder.value.trim(),
         choices: ["select", "multiselect"].includes(type) ? choices : [],
@@ -479,7 +715,65 @@
     return state.routingRules;
   }
 
+  function draftSnapshot() {
+    const form = byId("publish-form");
+    syncDescription();
+    const values = Object.fromEntries([...new FormData(form)].filter(([, value]) => typeof value === "string"));
+    values.redirect_to_portal = form.elements.redirect_to_portal.checked;
+    const schema = readFields();
+    return { values, fields: schema.fields, conditions: schema.conditions, routing_rules: readRoutingRules(), important_dates: readImportantDates(), saved_at_ms: Date.now() };
+  }
+
+  function saveLocalDraft() {
+    if (state.publishedForm || !state.context) return;
+    sessionStorage.setItem(draftKey(), JSON.stringify(draftSnapshot()));
+    byId("cfp-autosave-state").textContent = "Draft saved in this browser";
+  }
+
+  function queueLocalDraft() {
+    if (state.publishedForm) return;
+    byId("cfp-autosave-state").textContent = "Saving draft…";
+    clearTimeout(state.draftTimer);
+    state.draftTimer = setTimeout(saveLocalDraft, 500);
+  }
+
+  function restoreLocalDraft() {
+    if (state.publishedForm) return false;
+    const raw = sessionStorage.getItem(draftKey());
+    if (!raw) return false;
+    try {
+      const draft = JSON.parse(raw);
+      const form = byId("publish-form");
+      Object.entries(draft.values || {}).forEach(([name, value]) => {
+        const field = form.elements[name];
+        if (!field) return;
+        if (field.type === "checkbox") field.checked = Boolean(value);
+        else field.value = String(value);
+      });
+      setRichText(byId("cfp-description-editor"), draft.values?.description_html, draft.values?.welcome_text);
+      syncDescription();
+      if (Array.isArray(draft.fields) && draft.fields.length >= coreFields.length) {
+        state.fields = draft.fields.map((field) => ({ ...field }));
+        for (const condition of draft.conditions || []) {
+          const target = state.fields.find((field) => field.key === condition.target_key);
+          if (target) target.condition = { source_key: condition.source_key, operator: condition.operator, value: condition.value };
+        }
+      }
+      state.routingRules = Array.isArray(draft.routing_rules) ? draft.routing_rules : [];
+      state.importantDates = Array.isArray(draft.important_dates) ? draft.important_dates : [];
+      renderFields();
+      renderRoutingRules();
+      renderImportantDates();
+      byId("cfp-autosave-state").textContent = "Draft restored from this browser";
+      return true;
+    } catch (_) {
+      sessionStorage.removeItem(draftKey());
+      return false;
+    }
+  }
+
   function validatePublishForm(form) {
+    clearValidation();
     const opens = form.elements.opens_at;
     const closes = form.elements.closes_at;
     opens.setCustomValidity(""); closes.setCustomValidity("");
@@ -499,8 +793,11 @@
 
     const schema = readFields();
     const keys = new Set(schema.fields.map((field) => field.key));
+    const keyCounts = schema.fields.reduce((counts, field) => counts.set(field.key, (counts.get(field.key) || 0) + 1), new Map());
     byId("form-fields").querySelectorAll("fieldset").forEach((card, index) => {
       const field = schema.fields[index];
+      const keyInput = card.elements.field_key;
+      keyInput.setCustomValidity(keyCounts.get(field.key) > 1 ? "Use a unique field key." : "");
       const choices = card.elements.field_choices;
       choices.setCustomValidity("");
       if (["select", "multiselect"].includes(field.type)) {
@@ -515,6 +812,8 @@
           (source.value.trim() ? value : source).setCustomValidity("Complete both parts of the display condition.");
         } else if (source.value.trim() && !keys.has(source.value.trim())) {
           source.setCustomValidity("Use the key of an existing question.");
+        } else if (source.value.trim() && source.value.trim() === field.key) {
+          source.setCustomValidity("A question cannot depend on itself.");
         }
       }
     });
@@ -529,16 +828,58 @@
         card.elements.routing_destination.setCustomValidity("Choose an active track from this event.");
       }
     });
-    return form.reportValidity();
+    const dependencies = new Map(schema.conditions.map((condition) => [condition.target_key, condition.source_key]));
+    for (const [target] of dependencies) {
+      const visited = new Set([target]);
+      let source = dependencies.get(target);
+      while (source && dependencies.has(source)) {
+        if (visited.has(source)) {
+          const index = schema.fields.findIndex((field) => field.key === target);
+          const input = byId("form-fields").querySelectorAll("fieldset")[index]?.elements.condition_source;
+          input?.setCustomValidity("This display condition creates a circular dependency.");
+          break;
+        }
+        visited.add(source);
+        source = dependencies.get(source);
+      }
+    }
+    const errors = [...form.querySelectorAll(":invalid")]
+      .filter((field) => field.type !== "hidden")
+      .map((field) => ({ field, message: field.validationMessage || "Check this field." }));
+    if (errors.length) showValidation(errors);
+    return errors.length === 0;
   }
 
   function installBuilder() {
     const publish = byId("publish-form");
+    byId("cfp-description-editor").addEventListener("input", syncDescription);
+    document.querySelectorAll("[data-rich-command]").forEach((button) => button.addEventListener("click", () => {
+      byId("cfp-description-editor").focus();
+      const command = button.dataset.richCommand;
+      const value = command === "createLink" ? prompt("Link URL (https://)") : null;
+      if (command !== "createLink" || value) document.execCommand(command, false, value);
+      syncDescription();
+    }));
+    byId("add-important-date").addEventListener("click", () => {
+      state.importantDates.push({ label: "", at_ms: null });
+      renderImportantDates();
+      state.dirty = true;
+      queueLocalDraft();
+      byId("important-date-rows").querySelector(".important-date-row:last-child input")?.focus();
+    });
+    renderImportantDates();
     publish.addEventListener("input", (event) => {
       event.target.setCustomValidity?.("");
+      event.target.removeAttribute?.("aria-invalid");
+      const describedBy = (event.target.getAttribute?.("aria-describedby") || "").split(/\s+/).filter(Boolean);
+      describedBy.filter((id) => id.endsWith("-error")).forEach((id) => byId(id)?.remove());
+      event.target.setAttribute?.("aria-describedby", describedBy.filter((id) => !id.endsWith("-error")).join(" "));
+      state.dirty = true;
       if (state.publishedForm) {
         byId("publish-action-label").textContent = "Unsaved changes";
-        byId("publish-result").textContent = "Save when you are ready.";
+        byId("publish-result").textContent = "Nothing changes publicly until you update the live CFP.";
+      } else {
+        queueLocalDraft();
       }
     });
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
@@ -547,6 +888,9 @@
       readFields();
       state.fields.push({ key: `question_${state.fields.length - 3}`, type: "text", label: "New question", required: false, choices: [] });
       renderFields();
+      selectOutline(`question:${state.fields.length - 1}`);
+      state.dirty = true;
+      queueLocalDraft();
     });
     renderFields();
     byId("add-routing").textContent = "+ Add rule";
@@ -554,13 +898,26 @@
       readRoutingRules();
       state.routingRules.push({ source_key: "", operator: "equals", value: "", category: "", track: "", review_queue: "" });
       renderRoutingRules();
+      state.dirty = true;
+      queueLocalDraft();
     });
     renderRoutingRules();
+    byId("cfp-notification-settings").addEventListener("input", (event) => {
+      event.target.setCustomValidity?.("");
+      state.dirty = true;
+      if (state.publishedForm) {
+        byId("publish-action-label").textContent = "Unsaved changes";
+        byId("publish-result").textContent = "Nothing changes publicly until you update the live CFP.";
+      } else {
+        queueLocalDraft();
+      }
+    });
   }
 
   async function restoreSession() {
     try {
       const session = await api("/api/v1/auth/session");
+      state.userId = session.user_id;
       const eventId = eventIdFromPage(session);
       if (!eventId) throw new Error("Choose an event before opening its Call for Proposals.");
       state.csrf = session.csrf_token;
@@ -573,23 +930,22 @@
       state.eventStatus = currentEvent.status;
       state.eventTimeZone = currentEvent.time_zone;
       byId("cfp-time-zone").textContent = state.eventTimeZone;
-      byId("cfp-slug-prefix").textContent = `${location.host}/cfp/`;
       await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
-      state.editing = !state.publishedForm;
+      state.editing = true;
       if (state.publishedForm) loadPublishedSettings(state.publishedForm);
       else {
         const slug = byId("publish-form").elements.slug;
-        slug.value = state.eventName.toLowerCase()
+        const readableSlug = state.eventName.toLowerCase()
           .normalize("NFKD")
           .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "") || `event-${eventId.slice(0, 8)}`;
+          .replace(/^-|-$/g, "") || "event";
+        slug.value = readableSlug.slice(0, 80);
+        restoreLocalDraft();
       }
       syncAvailabilityLimits(byId("publish-form"));
-      byId("manage-access").href = `/admin/events/${encodeURIComponent(eventId)}/access`;
-      byId("manage-access").hidden = false;
       renderWorkspace();
-      setStatus(state.publishedForm ? "Your CFP is published and ready to share." : "Configure and publish the proposal form.");
+      setStatus(state.publishedForm ? "" : "Configure and publish the proposal form.");
     } catch (error) {
       if (error.status === 401) {
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
@@ -605,9 +961,16 @@
     const submitButton = formElement.querySelector('button[type="submit"], button:not([type])');
     if (formElement.getAttribute("aria-busy") === "true") return;
     const updating = Boolean(state.publishedForm);
-    const idleLabel = updating ? "Save changes" : "Publish CFP";
+    const idleLabel = updating ? "Update live CFP" : "Publish CFP";
     let completed = false;
     try {
+      syncDescription();
+      if (!formElement.elements.welcome_text.value) {
+        selectOutline("basics", false);
+        setStatus("Add a CFP description before publishing.", true);
+        byId("cfp-description-editor").focus();
+        return;
+      }
       if (!validatePublishForm(formElement)) return;
       formElement.setAttribute("aria-busy", "true");
       submitButton.disabled = true;
@@ -620,11 +983,14 @@
       const payload = {
         slug: values.slug,
         welcome_text: values.welcome_text,
+        description_html: values.description_html || null,
+        important_dates: readImportantDates(),
         ...schema,
         routing_rules: routingRules,
         opens_at_ms: toEpoch(values.opens_at),
         closes_at_ms: toEpoch(values.closes_at),
         submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
+        co_speaker_limit: Number(values.co_speaker_limit),
         success_title: values.success_title,
         success_message: values.success_message,
         redirect_to_portal: formElement.elements.redirect_to_portal.checked
@@ -646,6 +1012,9 @@
       );
       state.publishedForm = form;
       state.editing = false;
+      state.dirty = false;
+      sessionStorage.removeItem(draftKey());
+      clearValidation();
       renderWorkspace();
       completed = true;
       submitButton.textContent = updating ? "Saved ✓" : "Published ✓";
@@ -656,23 +1025,28 @@
       setStatus(updating ? "Your CFP changes were saved." : "Your CFP was published successfully.", "success");
     } catch (error) {
       const message = error.code === "slug_conflict"
-        ? "That public slug is already in use. Choose another."
+        ? "That public URL is already taken. Add a year, city, or short code to make it unique."
         : error.code === "stale_conflict"
           ? "This CFP changed while you were editing it. Reload the page, review the latest version, and try again."
           : window.SessionBuddyApi.message(error);
       setStatus(message, true);
+      if (error.code === "slug_conflict") {
+        selectOutline("public-link", false);
+        formElement.elements.slug.focus();
+      }
     } finally {
       formElement.setAttribute("aria-busy", "false");
       submitButton.disabled = !state.context;
       if (!completed) submitButton.textContent = idleLabel;
       else window.setTimeout(() => {
-        if (formElement.getAttribute("aria-busy") !== "true") submitButton.textContent = "Save changes";
+        if (formElement.getAttribute("aria-busy") !== "true") submitButton.textContent = "Update live CFP";
       }, 1800);
     }
   });
 
   byId("edit-cfp").addEventListener("click", () => {
     state.editing = true;
+    state.dirty = false;
     renderWorkspace();
     byId("cfp-builder-title").focus?.();
     byId("publish-settings").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -682,6 +1056,7 @@
     if (!state.publishedForm) return;
     loadPublishedSettings(state.publishedForm);
     state.editing = false;
+    state.dirty = false;
     renderWorkspace();
     setStatus("No changes were made.");
     byId("cfp-link-title").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -700,6 +1075,145 @@
       input.focus();
       input.select();
       byId("copy-result").textContent = "Select the URL and copy it manually.";
+    }
+  });
+
+  byId("copy-cfp-header").addEventListener("click", () => byId("copy-cfp-url").click());
+
+  function renderPreview() {
+    const form = byId("publish-form");
+    const values = Object.fromEntries(new FormData(form));
+    const fields = readFields().fields;
+    const content = byId("cfp-preview-content");
+    content.replaceChildren();
+    const header = document.createElement("header");
+    const eventName = document.createElement("p");
+    eventName.className = "eyebrow";
+    eventName.textContent = state.eventName || "Event";
+    const title = document.createElement("h1");
+    title.textContent = "Call for Proposals";
+    const welcome = document.createElement("p");
+    welcome.className = "lede";
+    welcome.textContent = String(values.welcome_text || "Add a welcome message.");
+    header.append(eventName, title, welcome);
+    const previewForm = document.createElement("div");
+    previewForm.className = "cfp-preview-form";
+    const visibleFields = fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key));
+    visibleFields.forEach((field) => {
+      const label = document.createElement("label");
+      const labelText = document.createElement("span");
+      labelText.textContent = `${field.label || "Untitled question"}${field.required ? " *" : ""}`;
+      let control;
+      if (field.type === "textarea") control = document.createElement("textarea");
+      else if (["select", "multiselect"].includes(field.type)) {
+        control = document.createElement("select");
+        control.add(new Option("Choose an option", ""));
+        (field.choices || []).forEach((choice) => control.add(new Option(choice, choice)));
+      } else {
+        control = document.createElement("input");
+        control.type = ["email", "url", "phone"].includes(field.type) ? (field.type === "phone" ? "tel" : field.type) : "text";
+      }
+      control.disabled = true;
+      control.placeholder = field.placeholder || "";
+      label.append(labelText, control);
+      if (field.help_text) {
+        const help = document.createElement("small");
+        help.textContent = field.help_text;
+        label.append(help);
+      }
+      previewForm.append(label);
+    });
+    const submit = document.createElement("button");
+    submit.type = "button";
+    submit.disabled = true;
+    submit.textContent = "Submit proposal";
+    previewForm.append(submit);
+    content.append(header, previewForm);
+  }
+
+  byId("preview-cfp").addEventListener("click", () => {
+    renderPreview();
+    document.querySelectorAll(".cfp-editor-section").forEach((section) => { section.hidden = true; });
+    byId("cfp-form-outline").hidden = true;
+    byId("cfp-selection-heading").hidden = true;
+    byId("cfp-editor-actions").hidden = true;
+    byId("cfp-notification-settings").hidden = true;
+    byId("cfp-selection-preview").hidden = false;
+    byId("close-cfp-preview").focus();
+  });
+  byId("close-cfp-preview").addEventListener("click", () => {
+    byId("cfp-form-outline").hidden = false;
+    byId("cfp-selection-heading").hidden = false;
+    byId("cfp-editor-actions").hidden = false;
+    byId("cfp-notification-settings").hidden = false;
+    selectOutline(state.selectedOutline, false);
+    byId("preview-cfp").focus();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.publishedForm || !state.dirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  byId("edit-cfp").addEventListener("click", () => byId("cfp-share-dialog").close());
+  function setLiveUrlEditing(editing) {
+    byId("cfp-live-url").hidden = editing;
+    byId("cfp-live-url-editor").hidden = !editing;
+    byId("copy-cfp-header").hidden = editing;
+    byId("configure-url-header").hidden = editing;
+    byId("save-url-header").hidden = !editing;
+    byId("cancel-url-header").hidden = !editing;
+    if (editing) {
+      byId("cfp-live-slug").value = state.publishedForm?.slug || "";
+      byId("cfp-live-slug").focus();
+      byId("cfp-live-slug").select();
+    }
+  }
+
+  byId("configure-url-header").addEventListener("click", () => setLiveUrlEditing(true));
+  byId("cancel-url-header").addEventListener("click", () => setLiveUrlEditing(false));
+  byId("save-url-header").addEventListener("click", async () => {
+    const input = byId("cfp-live-slug");
+    if (!input.reportValidity() || !state.publishedForm) return;
+    const button = byId("save-url-header");
+    button.disabled = true;
+    button.textContent = "Saving…";
+    try {
+      const current = state.publishedForm;
+      const updated = await api(`/api/v1/admin/events/${encodeURIComponent(state.context.event_id)}/cfp`, {
+        method: "PATCH",
+        headers: admin(),
+        body: JSON.stringify({
+          version: current.version,
+          slug: input.value.trim(),
+          welcome_text: current.welcome_text,
+          description_html: current.description_html || null,
+          important_dates: current.important_dates || [],
+          fields: current.fields,
+          conditions: current.conditions || [],
+          routing_rules: current.routing_rules || [],
+          opens_at_ms: current.opens_at_ms,
+          closes_at_ms: current.closes_at_ms,
+          submission_limit: current.submission_limit,
+          co_speaker_limit: current.co_speaker_limit ?? 1,
+          success_title: current.success_title,
+          success_message: current.success_message,
+          redirect_to_portal: current.redirect_to_portal
+        })
+      });
+      state.publishedForm = updated;
+      byId("publish-form").elements.slug.value = updated.slug;
+      setLiveUrlEditing(false);
+      renderWorkspace();
+      setStatus("");
+    } catch (error) {
+      setStatus(error.code === "slug_conflict"
+        ? "That public URL is already taken. Add a year, city, or short code."
+        : window.SessionBuddyApi.message(error), true);
+      input.focus();
+    } finally {
+      button.disabled = false;
+      button.textContent = "Save URL";
     }
   });
 

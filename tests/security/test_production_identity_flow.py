@@ -1281,7 +1281,11 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
         assert published.status_code == 201
         assert (await client.get("/api/v1/speaker/portal")).status_code == 404
 
-        assert (await client.get("/cfp/admin-speaker")).status_code == 200
+        legacy_cfp = await client.get("/cfp/admin-speaker", follow_redirects=False)
+        assert legacy_cfp.status_code == 308
+        event_key = event_id.replace("-", "")[:6]
+        assert legacy_cfp.headers["location"] == f"/cfp/{event_key}/admin-speaker"
+        assert (await client.get(legacy_cfp.headers["location"])).status_code == 200
         cfp_session = (await client.get("/api/v1/auth/session")).json()
         event_access = next(
             access for access in cfp_session["event_access"] if access["event_id"] == event_id

@@ -66,6 +66,8 @@ ASSETS = {
     "schedule.js": "SCHEDULE_JS",
     "schedule.css": "SCHEDULE_CSS",
     "event_workspace.html": "EVENT_WORKSPACE_HTML",
+    "speaker_content.html": "SPEAKER_CONTENT_HTML",
+    "speaker_content.js": "SPEAKER_CONTENT_JS",
     "event_workspace.js": "EVENT_WORKSPACE_JS",
     "speaker_gallery.html": "SPEAKER_GALLERY_HTML",
     "speaker_gallery.js": "SPEAKER_GALLERY_JS",

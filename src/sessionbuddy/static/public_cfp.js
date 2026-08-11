@@ -1,7 +1,10 @@
 (() => {
   "use strict";
   const byId = (id) => document.getElementById(id);
-  const slug = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+  const pathParts = location.pathname.split("/").filter(Boolean);
+  const slug = decodeURIComponent(pathParts.pop() || "");
+  const eventKey = pathParts.at(-1) || "";
+  const publicFormPath = `/cfp/${encodeURIComponent(eventKey)}/${encodeURIComponent(slug)}`;
   const browserSessionId = () => {
     if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -39,7 +42,7 @@
     const navigation = performance.getEntriesByType("navigation")[0];
     const width = innerWidth;
     window.__sessionbuddyTelemetryDraft = {
-      schema_version: 1, page_template: "/cfp/{slug}", navigation_type: navigation?.type || "unknown",
+      schema_version: 1, page_template: "/cfp/{event_key}/{slug}", navigation_type: navigation?.type || "unknown",
       device_class: width < 640 ? "mobile" : width < 1024 ? "tablet" : "desktop", sampled: false,
       lcp_ms: null, inp_ms: null, cls: null, ttfb_ms: navigation?.responseStart ?? null, fcp_ms: null,
       route_transition_ms: null, critical_api_ms: Math.max(0, performance.now() - started),
@@ -59,6 +62,24 @@
     if (text !== undefined) node.textContent = text;
     if (className) node.className = className;
     return node;
+  }
+
+  function renderRichText(container, markup, fallback) {
+    const parsed = new DOMParser().parseFromString(markup || "", "text/html");
+    container.replaceChildren(...[...parsed.body.childNodes].map((child) => document.importNode(child, true)));
+    if (!container.textContent.trim()) container.textContent = fallback || "";
+  }
+
+  function renderImportantDates(dates) {
+    const section = byId("important-dates");
+    const list = byId("important-dates-list");
+    const sorted = [...(dates || [])].sort((left, right) => left.at_ms - right.at_ms);
+    list.replaceChildren(...sorted.map((date) => {
+      const item = make("li");
+      item.append(make("strong", date.label), make("time", new Date(date.at_ms).toLocaleString()));
+      return item;
+    }));
+    section.hidden = sorted.length === 0;
   }
 
   function renderCallDetails(form) {
@@ -200,7 +221,8 @@
     const primaryEmail = String(form.elements.namedItem("speaker_email")?.value || "").trim().toLowerCase();
     const rows = [...byId("co-speaker-rows").querySelectorAll(".co-speaker-row")];
     const seen = new Set();
-    let valid = rows.length <= 10;
+    const limit = state.form?.co_speaker_limit ?? 1;
+    let valid = rows.length <= limit;
     for (const row of rows) {
       const email = row.querySelector('[name="co_speaker_email"]');
       const normalized = email.value.trim().toLowerCase();
@@ -214,7 +236,7 @@
       }
       if (normalized) seen.add(normalized);
     }
-    byId("add-co-speaker").disabled = rows.length >= 10;
+    byId("add-co-speaker").disabled = rows.length >= limit;
     return valid;
   }
 
@@ -558,7 +580,8 @@
   async function load() {
     try {
       state.form = await api(`/api/v1/forms/${encodeURIComponent(slug)}`);
-      byId("welcome").textContent = state.form.welcome_text;
+      renderRichText(byId("welcome"), state.form.description_html, state.form.welcome_text);
+      renderImportantDates(state.form.important_dates);
       if (state.form.event_name) {
         byId("brand-name").textContent = state.form.event_name;
         byId("title").textContent = `Submit to ${state.form.event_name}`;
@@ -568,6 +591,7 @@
       if (state.form.cover_image_url) { byId("event-cover").src = state.form.cover_image_url; byId("event-cover").alt = `${state.form.event_name} cover`; byId("event-cover").hidden = false; }
       renderFields(state.form.fields || [], state.form.conditions || []);
       renderCallDetails(state.form);
+      byId("co-speakers").hidden = (state.form.co_speaker_limit ?? 1) === 0;
       if (state.form.accepting_submissions === false) {
         byId("closed-card").hidden = false;
         byId("availability").textContent = state.form.availability_message;
@@ -647,7 +671,7 @@
     }
   });
   byId("add-co-speaker").addEventListener("click", () => {
-    if (byId("co-speaker-rows").children.length < 10) addCoSpeakerRow({}, true);
+    if (byId("co-speaker-rows").children.length < (state.form?.co_speaker_limit ?? 1)) addCoSpeakerRow({}, true);
     validateCoSpeakers(byId("proposal-form"));
   });
 
@@ -746,7 +770,7 @@
       receipt.className = "empty-state";
       receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
       const proposalLink = make("a", "View your proposal", "button");
-      proposalLink.href = `/cfp/${encodeURIComponent(slug)}?submission_id=${encodeURIComponent(submission.id)}`;
+      proposalLink.href = `${publicFormPath}?submission_id=${encodeURIComponent(submission.id)}`;
       receipt.append(proposalLink);
       if (state.form.redirect_to_portal) {
         const link = make("a", "Open speaker portal", "button secondary");

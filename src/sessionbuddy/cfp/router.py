@@ -10,7 +10,7 @@ from time import perf_counter
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
@@ -332,9 +332,51 @@ async def admin_submissions_page(event_id: str, request: Request) -> HTMLRespons
     return _product_page(request, "admin_submissions.html")
 
 
-@cfp_router.get("/cfp/{slug}", response_class=HTMLResponse, include_in_schema=False)
-async def public_cfp_page(slug: str) -> HTMLResponse:
+def _public_event_key(event_id: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", event_id.casefold())[:6]
+
+
+@cfp_router.get(
+    "/cfp/{event_key}/{slug}", response_class=HTMLResponse, include_in_schema=False
+)
+async def public_cfp_page(event_key: str, slug: str, request: Request) -> HTMLResponse:
+    event_id = await (
+        _db(request)
+        .prepare(
+            """SELECT event_id FROM call_for_speaker_forms
+               WHERE slug=?1 AND status='published' LIMIT 1"""
+        )
+        .bind(slug)
+        .first("event_id")
+    )
+    if event_id is None or _public_event_key(str(event_id)) != event_key.casefold():
+        raise HTTPException(status_code=404)
     return HTMLResponse(_asset("public_cfp.html"), headers={"Cache-Control": "no-store"})
+
+
+@cfp_router.get("/cfp/{slug}", response_class=Response, include_in_schema=False)
+async def legacy_public_cfp_page(slug: str, request: Request) -> Response:
+    try:
+        db = _db(request)
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            return HTMLResponse(_asset("public_cfp.html"), headers={"Cache-Control": "no-store"})
+        raise
+    event_id = await (
+        db
+        .prepare(
+            """SELECT event_id FROM call_for_speaker_forms
+               WHERE slug=?1 AND status='published' LIMIT 1"""
+        )
+        .bind(slug)
+        .first("event_id")
+    )
+    if event_id is None:
+        raise HTTPException(status_code=404)
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        f"/cfp/{_public_event_key(str(event_id))}/{slug}{query}", status_code=308
+    )
 
 
 @cfp_router.get("/product/assets/product.css", response_class=Response, include_in_schema=False)
@@ -516,6 +558,9 @@ async def publish_form(
                     "fields": [field.model_dump() for field in body.fields],
                     "conditions": [condition.model_dump() for condition in body.conditions],
                     "routing_rules": [rule.model_dump() for rule in body.routing_rules],
+                    "co_speaker_limit": body.co_speaker_limit,
+                    "description_html": body.description_html,
+                    "important_dates": [date.model_dump() for date in body.important_dates],
                 },
                 separators=(",", ":"),
             ),
@@ -619,6 +664,9 @@ async def update_published_form(
             "fields": [field.model_dump() for field in body.fields],
             "conditions": [condition.model_dump() for condition in body.conditions],
             "routing_rules": [rule.model_dump() for rule in body.routing_rules],
+            "co_speaker_limit": body.co_speaker_limit,
+            "description_html": body.description_html,
+            "important_dates": [date.model_dump() for date in body.important_dates],
         },
         separators=(",", ":"),
     )
@@ -2276,7 +2324,8 @@ async def create_submission(
         )
     )
     proposal_url = (
-        f"{str(request.base_url).rstrip('/')}/cfp/{escape(str(form['slug']))}"
+        f"{str(request.base_url).rstrip('/')}/cfp/"
+        f"{_public_event_key(str(form['event_id']))}/{escape(str(form['slug']))}"
         f"?submission_id={escape(submission_id)}"
     )
     confirmation_html = (
@@ -2784,6 +2833,14 @@ def _request_source(request: Request) -> str:
 
 
 def _validate_submission_schema(schema: dict[str, object], body: SubmissionCreate) -> None:
+    co_speaker_limit = schema.get("co_speaker_limit", 1)
+    if not isinstance(co_speaker_limit, int) or not 0 <= co_speaker_limit <= 10:
+        raise HTTPException(status_code=409)
+    if len(body.co_speakers) > co_speaker_limit:
+        raise HTTPException(
+            status_code=422,
+            detail=f"This form allows up to {co_speaker_limit} co-speakers.",
+        )
     raw_fields = schema.get("fields", [])
     if not isinstance(raw_fields, list):
         raise HTTPException(status_code=409)

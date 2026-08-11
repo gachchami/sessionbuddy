@@ -25,6 +25,7 @@ STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
         ("access_admin.html", "access_admin.js"),
         ("admin_onboarding.html", "admin_onboarding.js"),
         ("event_workspace.html", "event_workspace.js"),
+        ("speaker_content.html", "speaker_content.js"),
         ("agenda_admin.html", "agenda.js"),
         ("schedule.html", "schedule.js"),
         ("speaker_gallery.html", "speaker_gallery.js"),
@@ -82,13 +83,13 @@ def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
 
 
 def test_custom_speaker_task_retries_reuse_idempotency_keys() -> None:
-    script = (STATIC / "event_workspace.js").read_text()
+    script = (STATIC / "speaker_content.js").read_text()
     assert "taskMutation" in script
     assert "the same request will not be duplicated" in script
 
 
 def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> None:
-    script = (STATIC / "event_workspace.js").read_text()
+    script = (STATIC / "speaker_content.js").read_text()
     assert "version.version_comment" in script
     assert "/versions/${encodeURIComponent(version.id)}/download-grants" in script
     assert "link.download = version.filename" in script

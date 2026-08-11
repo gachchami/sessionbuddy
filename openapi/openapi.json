@@ -3713,6 +3713,13 @@
             ],
             "title": "Closes At Ms"
           },
+          "co_speaker_limit": {
+            "default": 1,
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Co Speaker Limit",
+            "type": "integer"
+          },
           "conditions": {
             "default": [],
             "items": {
@@ -3735,6 +3742,18 @@
             "minLength": 1,
             "title": "Confirmation Subject",
             "type": "string"
+          },
+          "description_html": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Html"
           },
           "fields": {
             "default": [
@@ -3785,6 +3804,15 @@
             "maxItems": 100,
             "minItems": 1,
             "title": "Fields",
+            "type": "array"
+          },
+          "important_dates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ImportantDate"
+            },
+            "maxItems": 12,
+            "title": "Important Dates",
             "type": "array"
           },
           "opens_at_ms": {
@@ -3947,6 +3975,13 @@
             ],
             "title": "Closes At Ms"
           },
+          "co_speaker_limit": {
+            "default": 1,
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Co Speaker Limit",
+            "type": "integer"
+          },
           "conditions": {
             "default": [],
             "items": {
@@ -3955,6 +3990,18 @@
             "maxItems": 200,
             "title": "Conditions",
             "type": "array"
+          },
+          "description_html": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Html"
           },
           "fields": {
             "default": [
@@ -4005,6 +4052,15 @@
             "maxItems": 100,
             "minItems": 1,
             "title": "Fields",
+            "type": "array"
+          },
+          "important_dates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ImportantDate"
+            },
+            "maxItems": 12,
+            "title": "Important Dates",
             "type": "array"
           },
           "opens_at_ms": {
@@ -4122,6 +4178,28 @@
           }
         },
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "ImportantDate": {
+        "additionalProperties": false,
+        "properties": {
+          "at_ms": {
+            "minimum": 0.0,
+            "title": "At Ms",
+            "type": "integer"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "at_ms"
+        ],
+        "title": "ImportantDate",
         "type": "object"
       },
       "IntegrationTokenCreate": {
@@ -5202,6 +5280,11 @@
             ],
             "title": "Closes At Ms"
           },
+          "co_speaker_limit": {
+            "default": 1,
+            "title": "Co Speaker Limit",
+            "type": "integer"
+          },
           "conditions": {
             "default": [],
             "items": {
@@ -5220,6 +5303,17 @@
               }
             ],
             "title": "Cover Image Url"
+          },
+          "description_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Html"
           },
           "event_id": {
             "title": "Event Id",
@@ -5240,6 +5334,14 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "important_dates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ImportantDate"
+            },
+            "title": "Important Dates",
+            "type": "array"
           },
           "logo_url": {
             "anyOf": [

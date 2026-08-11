@@ -1,7 +1,45 @@
 from email.headerregistry import Address
+from html import escape
+from html.parser import HTMLParser
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class _RichTextSanitizer(HTMLParser):
+    allowed = {"p", "br", "strong", "em", "ul", "ol", "li", "a"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in self.allowed:
+            return
+        if tag == "a":
+            href = next((value for name, value in attrs if name == "href"), None)
+            if href and href.startswith(("https://", "http://", "mailto:")):
+                self.parts.append(f'<a href="{escape(href, quote=True)}" rel="noopener">')
+                return
+            self.parts.append("<a>")
+            return
+        self.parts.append(f"<{tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.allowed and tag != "br":
+            self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(escape(data))
+
+
+def _sanitize_rich_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    parser = _RichTextSanitizer()
+    parser.feed(value)
+    cleaned = "".join(parser.parts).strip()
+    return cleaned or None
 
 
 class FormFieldDefinition(BaseModel):
@@ -85,10 +123,18 @@ def _validate_email_address(value: str) -> str:
     return value
 
 
+class ImportantDate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    label: str = Field(min_length=1, max_length=120)
+    at_ms: int = Field(ge=0)
+
+
 class FormSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     slug: str = Field(min_length=3, max_length=80, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     welcome_text: str = Field(min_length=1, max_length=1000)
+    description_html: str | None = Field(default=None, max_length=10_000)
+    important_dates: tuple[ImportantDate, ...] = Field(default=(), max_length=12)
     fields: tuple[FormFieldDefinition, ...] = Field(
         default=DEFAULT_FORM_FIELDS, min_length=1, max_length=100
     )
@@ -97,11 +143,18 @@ class FormSettings(BaseModel):
     opens_at_ms: int | None = Field(default=None, ge=0)
     closes_at_ms: int | None = Field(default=None, ge=0)
     submission_limit: int | None = Field(default=None, ge=1, le=1_000_000)
+    co_speaker_limit: int = Field(default=1, ge=0, le=10)
     success_title: str = Field(default="Proposal received", min_length=1, max_length=200)
     success_message: str = Field(
         default="We sent a confirmation to your email address.", min_length=1, max_length=2000
     )
     redirect_to_portal: bool = True
+
+    @field_validator("description_html", mode="before")
+    @classmethod
+    def sanitize_description(cls, value: object) -> str | None:
+        return _sanitize_rich_text(str(value)) if value is not None else None
+
     @model_validator(mode="after")
     def validate_schema(self) -> "FormSettings":
         keys = [field.key for field in self.fields]
@@ -190,12 +243,15 @@ class PublishedFormView(BaseModel):
     version: int
     slug: str
     welcome_text: str
+    description_html: str | None = None
+    important_dates: tuple[ImportantDate, ...] = ()
     fields: tuple[FormFieldDefinition, ...]
     conditions: tuple[FormCondition, ...] = ()
     routing_rules: tuple[FormRoutingRule, ...] = ()
     opens_at_ms: int | None = None
     closes_at_ms: int | None = None
     submission_limit: int | None = None
+    co_speaker_limit: int = 1
     submissions_received: int = 0
     accepting_submissions: bool = True
     availability_message: str = "Applications are open."

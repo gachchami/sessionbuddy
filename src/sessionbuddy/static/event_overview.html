@@ -4,33 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=24">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=15">
+  <link rel="stylesheet" href="/product/assets/product.css?v=26">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=18" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=9" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=12" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--event-overview is-loading">
   <a class="skip-link" href="#main">Skip to event overview</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <div class="page-heading event-overview-heading organizer-hero organizer-hero--event">
-      <div><p id="organization-name" class="eyebrow"></p><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div>
-      <div id="event-actions" class="actions" hidden><a id="public-schedule" class="button secondary" href="#">View public page</a></div>
-    </div>
-    <div id="status" class="status status-compact" role="status" aria-live="polite">Loading event…</div>
-    <section class="metric-strip organizer-metrics" aria-label="Event summary">
-      <article><span>Status</span><strong id="event-status">—</strong></article>
-      <article><span>Speakers</span><strong id="speaker-count">—</strong></article>
-      <article><span>Time zone</span><strong id="event-time-zone">—</strong></article>
+    <section class="event-command-header" aria-labelledby="event-name">
+      <div class="event-command-header__copy"><p id="organization-name" class="eyebrow"></p><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p><div class="event-command-header__meta" aria-label="Event details"><span id="event-status">—</span><span id="event-time-zone">—</span></div></div>
+      <div id="event-actions" class="event-command-header__actions" hidden><a id="public-schedule" class="button secondary" href="#">View public page</a></div>
     </section>
-    <section id="next-step" class="next-step-card organizer-callout" aria-labelledby="next-step-title">
-      <div><p class="eyebrow">Recommended next step</p><h2 id="next-step-title">Finish your Call for Proposals</h2><p id="next-step-summary" class="result">Publish the form so speakers can start submitting proposals.</p></div>
-      <a id="next-step-action" class="button" href="#">Open Call for Proposals</a>
+    <div id="status" class="status event-overview-status" role="status" aria-live="polite">Loading event…</div>
+    <section class="event-overview-now organizer-callout" aria-labelledby="next-step-title">
+      <div id="next-step" class="event-next-step"><p class="eyebrow">Up next</p><h2 id="next-step-title">Finish your Call for Proposals</h2><p id="next-step-summary" class="result">Publish the form so speakers can start submitting proposals.</p><a id="next-step-action" class="button" href="#">Open Call for Proposals</a></div>
+      <dl class="event-signal-list organizer-metrics" aria-label="Program snapshot">
+        <div><dt>Proposals</dt><dd id="proposal-count">—</dd><small id="proposal-note">Loading</small></div>
+        <div><dt>Speakers</dt><dd id="speaker-count">—</dd><small>In this event</small></div>
+        <div><dt>Agenda</dt><dd id="agenda-count">—</dd><small id="agenda-note">Loading</small></div>
+      </dl>
     </section>
-    <section aria-labelledby="workflow-title" class="directory-section workflow-section organizer-section organizer-section--workflow">
-      <div class="section-heading"><div><p class="eyebrow">Program lifecycle</p><h2 id="workflow-title">Move the program forward</h2><p class="section-summary">The current stage is emphasized; completed and upcoming work stays visible without competing for attention.</p></div></div>
-      <div id="event-tools" class="workflow-grid"></div>
+    <section aria-labelledby="workflow-title" class="event-program-rail organizer-section organizer-section--workflow">
+      <div class="section-heading"><h2 id="workflow-title">Program status</h2></div>
+      <ol id="event-tools" class="event-stage-list"></ol>
     </section>
   </main>
 </body>

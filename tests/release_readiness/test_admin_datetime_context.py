@@ -45,8 +45,8 @@ def test_evaluation_round_dates_use_the_event_time_zone() -> None:
 
 
 def test_speaker_task_due_date_uses_the_event_time_zone() -> None:
-    page = (STATIC / "event_workspace.html").read_text(encoding="utf-8")
-    script = (STATIC / "event_workspace.js").read_text(encoding="utf-8")
+    page = (STATIC / "speaker_content.html").read_text(encoding="utf-8")
+    script = (STATIC / "speaker_content.js").read_text(encoding="utf-8")
 
     assert 'id="task-time-zone-context"' in page
     assert 'aria-describedby="task-time-zone-context"' in page

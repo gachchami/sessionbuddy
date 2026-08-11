@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=32">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=15">
+  <link rel="stylesheet" href="/product/assets/product.css?v=33">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=18" defer></script>
-  <script src="/admin/events/assets/events.js?v=30" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
+  <script src="/admin/events/assets/events.js?v=31" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--events">
   <a class="skip-link" href="#main">Skip to event management</a>
@@ -136,6 +136,7 @@
         <label id="event-status-label" hidden>Status<select name="status"><option value="draft">Draft</option><option value="active">Active</option><option value="archived">Archived</option></select></label>
         <div class="dialog-actions">
           <span id="creation-action-note" class="dialog-actions__note">Drafts stay private until activated.</span>
+          <span id="event-autosave-state" class="dialog-actions__note" role="status" aria-live="polite"></span>
           <button id="cancel-event-edit" type="button" class="secondary">Cancel</button>
           <button id="save-event-draft" type="submit" class="secondary" value="draft">Save draft</button>
           <button id="save-event" type="submit" value="active">Create event</button>

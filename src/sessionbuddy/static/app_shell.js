@@ -37,6 +37,7 @@
       external: ["M14 4h6v6", "M20 4 11 13", "M18 13v7H4V6h7"],
       account: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
       chevron: ["m9 18 6-6-6-6"],
+      collapse: ["m14 18-6-6 6-6", "M20 4v16"],
       check: ["m5 12 4 4L19 6"],
       logout: ["M10 17l5-5-5-5", "M15 12H3", "M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"]
     };
@@ -54,6 +55,8 @@
 
   function navLink(label, href, iconName, current = false) {
     const node = link("", href, current);
+    node.setAttribute("aria-label", label);
+    node.title = label;
     node.append(icon(iconName), make("span", label));
     return node;
   }
@@ -274,54 +277,70 @@
 
   function pageLabel(section, eventId) {
     if (eventId) {
-      if (location.pathname.includes("/speakers")) return "Event speakers";
-      if (location.pathname.includes("/messages")) return "Speaker messages";
+      if (location.pathname.includes("/speakers")) return "Speakers";
+      if (location.pathname.includes("/speaker-content")) return "Speakers";
+      if (location.pathname.includes("/messages")) return "Speakers";
+      if (location.pathname.includes("/onboarding")) return "Speakers";
       if (location.pathname.includes("/access")) return "Team & access";
-      if (location.pathname.includes("/onboarding")) return "Speaker onboarding";
-      if (location.pathname.includes("/workspace")) return "Resources & publishing";
+      if (location.pathname.includes("/workspace")) return "Publish";
       if (location.pathname.includes("/agenda")) return "Agenda";
       if (location.pathname.endsWith("/cfp")) return "Call for Proposals";
-      if (location.pathname.includes("/submissions")) return "Submissions & reviews";
-      return "Event overview";
+      if (location.pathname.includes("/submissions")) return "Submissions";
+      return "Overview";
     }
-    return { home: "Home", events: "Events", speakers: "Speakers", reviews: "Reviews", speaker: "Speaker portal", account: "Account" }[section] || "Home";
-  }
-
-  function eventSection(label) {
-    return make("p", label, "sb-sidebar__section");
+    return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker portal", account: "Account" }[section] || "Home";
   }
 
   function eventNav(eventId) {
     const group = make("div", undefined, "sb-sidebar__group sb-sidebar__event");
-    group.append(make("p", "Current event", "sb-sidebar__label"));
     const nav = make("nav", undefined, "sb-sidebar__nav");
-    nav.setAttribute("aria-label", "Current event");
+    nav.setAttribute("aria-label", "Event navigation");
     const encoded = encodeURIComponent(eventId);
     const prefix = `/admin/events/${encoded}`;
+    // One flat list in the program's real order; every label is the page's
+    // canonical name, used identically in the page heading and the topbar.
     const items = [
-      ["", "Overview", prefix, "overview"],
-      ["Plan", "Call for Proposals", `${prefix}/cfp`, "form"],
-      ["Plan", "Submissions & reviews", `${prefix}/submissions`, "review"],
-      ["Plan", "Agenda", `${prefix}/agenda`, "agenda"],
-      ["People", "Team & invitations", `${prefix}/access`, "access"],
-      ["People", "Speakers", `${prefix}/speakers`, "mic"],
-      ["People", "Messages", `${prefix}/messages`, "resource"],
-      ["People", "Onboarding", `${prefix}/onboarding`, "tasks"],
-      ["Publish", "Resources & embeds", `${prefix}/workspace`, "resource"],
-      ["Publish", "Public schedule", `/events/${encoded}/schedule`, "external"]
+      ["Overview", prefix, "overview", [prefix]],
+      ["Call for Proposals", `${prefix}/cfp`, "form", [`${prefix}/cfp`]],
+      ["Submissions", `${prefix}/submissions`, "review", [`${prefix}/submissions`]],
+      ["Speakers", `${prefix}/speakers`, "mic", [
+        `${prefix}/speakers`,
+        `${prefix}/onboarding`,
+        `${prefix}/speaker-content`,
+        `${prefix}/messages`
+      ]],
+      ["Agenda", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
+      ["Publish", `${prefix}/workspace`, "external", [`${prefix}/workspace`]],
+      ["Team & access", `${prefix}/access`, "access", [`${prefix}/access`]]
     ];
-    let section = null;
-    for (const [groupLabel, label, href, iconName] of items) {
-      if (groupLabel && groupLabel !== section) {
-        nav.append(eventSection(groupLabel));
-        section = groupLabel;
-      }
-      const target = new URL(href, location.origin);
-      const current = target.pathname === location.pathname && target.search === location.search;
+    for (const [label, href, iconName, matches] of items) {
+      const current = matches.some((path) => (
+        location.pathname === path || (path !== prefix && location.pathname.startsWith(`${path}/`))
+      ));
       nav.append(navLink(label, href, iconName, current));
     }
     group.append(nav);
     return group;
+  }
+
+  function speakerHubTabs(eventId) {
+    const mount = document.querySelector("[data-speaker-hub-tabs]");
+    if (!mount) return;
+    if (!eventId) { mount.replaceChildren(); return; }
+    const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
+    const nav = make("nav", undefined, "sb-hub-tabs");
+    nav.setAttribute("aria-label", "Speaker areas");
+    const tabs = [
+      ["Directory", `${prefix}/speakers`],
+      ["Onboarding", `${prefix}/onboarding`],
+      ["Tasks & files", `${prefix}/speaker-content`],
+      ["Messages", `${prefix}/messages`]
+    ];
+    for (const [label, href] of tabs) {
+      const current = location.pathname === href || location.pathname.startsWith(`${href}/`);
+      nav.append(link(label, href, current));
+    }
+    mount.replaceChildren(nav);
   }
 
   function renderShell(session) {
@@ -383,6 +402,7 @@
       if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
       if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
+    speakerHubTabs(organizerWorkspace ? currentEventId : "");
     if (organizerWorkspace && currentEventId) {
       if (administersEventDirectly(session, currentEventId)) {
         sidebar.append(eventNav(currentEventId));
@@ -504,7 +524,10 @@
         const details = [event.location, event.delivery_mode.replaceAll("_", " ")].filter(Boolean).join(" · ");
         card.append(make("p", details || "Event details coming soon."));
         const actions = make("div", undefined, "public-event-actions");
-        if (event.cfp_slug) actions.append(link("Call for Proposals →", `/cfp/${encodeURIComponent(event.cfp_slug)}`));
+        if (event.cfp_slug) {
+          const eventKey = event.id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
+          actions.append(link("Call for Proposals →", `/cfp/${eventKey}/${encodeURIComponent(event.cfp_slug)}`));
+        }
         if (event.schedule_published) actions.append(link("Schedule →", `/events/${encodeURIComponent(event.id)}/schedule`));
         if (event.speaker_count) actions.append(link("Speakers →", `/events/${encodeURIComponent(event.id)}/speakers`));
         if (!actions.children.length) actions.append(make("span", "Program details coming soon.", "role-label"));

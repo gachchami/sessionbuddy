@@ -123,6 +123,24 @@ async def event_workspace_js() -> Response:
 
 
 @competition_router.get(
+    "/admin/events/{event_id}/speaker-content",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def speaker_content_page(event_id: str) -> HTMLResponse:
+    return HTMLResponse(_asset("speaker_content.html"), headers={"Cache-Control": "no-store"})
+
+
+@competition_router.get(
+    "/admin/speaker-content/assets/speaker-content.js",
+    response_class=Response,
+    include_in_schema=False,
+)
+async def speaker_content_js() -> Response:
+    return Response(_asset("speaker_content.js"), media_type="text/javascript")
+
+
+@competition_router.get(
     "/events/{event_id}/speakers", response_class=HTMLResponse, include_in_schema=False
 )
 @competition_router.get(

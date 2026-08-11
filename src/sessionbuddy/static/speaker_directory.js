@@ -326,10 +326,15 @@
     populateEventFilter();
 
     if (eventScoped && activeEvent) {
-      byId("page-title").textContent = `${activeEvent.name} speakers`;
-      byId("page-summary").textContent = `Manage speaker participation in ${activeEvent.name}.`;
+      byId("page-title").textContent = "Speakers";
+      byId("page-summary").textContent = `Speaker participation in ${activeEvent.name}.`;
+      byId("invite-speaker").textContent = "Invite speakers";
       byId("invite-speaker").href = `/admin/events/${encodeURIComponent(activeEvent.id)}/access`;
       byId("event-filter-field").hidden = true;
+      document.title = "Speakers · SessionBuddy";
+    } else {
+      byId("page-title").textContent = "People";
+      document.title = "People · SessionBuddy";
     }
     if (selectedSpeakerId) {
       const selection = findEventSpeaker(selectedSpeakerId);

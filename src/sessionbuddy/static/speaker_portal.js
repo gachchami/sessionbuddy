@@ -177,7 +177,8 @@
       );
       if (submission.editable && submission.form_slug) {
         const edit = make("a", "Edit proposal", "button secondary");
-        edit.href = `/cfp/${encodeURIComponent(submission.form_slug)}?submission_id=${encodeURIComponent(submission.id)}`;
+        const eventKey = state.portal.event.id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
+        edit.href = `/cfp/${eventKey}/${encodeURIComponent(submission.form_slug)}?submission_id=${encodeURIComponent(submission.id)}`;
         item.append(edit);
       }
       list.append(item);

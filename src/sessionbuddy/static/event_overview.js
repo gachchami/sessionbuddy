@@ -7,27 +7,21 @@
 
   const api = (path) => window.SessionBuddyApi.request(path);
 
-  function tool(number, title, description, href, state = "Open", phase = "upcoming") {
-    const card = document.createElement("article");
-    card.className = `workflow-card organizer-card organizer-workflow-card organizer-workflow-card--${phase}`;
-    const meta = document.createElement("div");
-    meta.className = "workflow-card__meta";
-    const step = document.createElement("span"); step.textContent = String(number).padStart(2, "0");
-    const badge = document.createElement("span"); badge.className = "badge"; badge.textContent = state;
-    meta.append(step, badge);
+  function tool(title, href, state = "Open", phase = "upcoming") {
+    const card = document.createElement("li");
+    card.className = `event-stage event-stage--${phase}${state === "Unavailable" ? " event-stage--unavailable" : ""}`;
+    const step = document.createElement("span");
+    step.className = "event-stage__marker";
+    step.setAttribute("aria-hidden", "true");
     const heading = document.createElement("h3");
     const anchor = document.createElement("a");
     anchor.href = href;
     anchor.textContent = title;
     heading.append(anchor);
-    const summary = document.createElement("p");
-    summary.className = "result";
-    summary.textContent = description;
-    const open = document.createElement("a");
-    open.href = href;
-    open.className = "entity-card__action";
-    open.textContent = phase === "current" ? `Continue ${title} →` : `View ${title} →`;
-    card.append(meta, heading, summary, open);
+    const badge = document.createElement("span");
+    badge.className = "event-stage__state";
+    badge.textContent = state;
+    card.append(step, heading, badge);
     return card;
   }
 
@@ -97,32 +91,44 @@
     byId("organization-name").textContent = organization.name;
     byId("event-name").textContent = selected.name;
     byId("event-summary").textContent = `${formatRange(selected)} · ${selected.delivery_mode.replace("_", " ")}${selected.location ? ` · ${selected.location}` : ""}`;
-    byId("event-status").textContent = selected.status === "active" ? "In progress" : selected.status;
+    byId("event-status").textContent = selected.status === "active" ? "Active event" : `${selected.status} event`;
     byId("speaker-count").textContent = String(speakers.length);
     byId("event-time-zone").textContent = selected.time_zone;
     byId("public-schedule").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
-    const nextHref = cfpLive ? reviewPath : `${prefix}/cfp`;
+    const nextHref = !cfpLive || submissionCount === 0 ? `${prefix}/cfp` : reviewPath;
     byId("event-actions").hidden = false;
-    byId("next-step-title").textContent = cfpLive ? "Review incoming proposals" : "Publish your Call for Proposals";
-    byId("next-step-summary").textContent = cfpLive
-      ? "Your form is live. Review proposals and prepare the evaluation round."
-      : "Create the public form that speakers will use to send proposals.";
+    byId("next-step-title").textContent = !cfpLive
+      ? "Publish your Call for Proposals"
+      : submissionCount === 0
+        ? "Bring in the first proposal"
+        : "Review incoming proposals";
+    byId("next-step-summary").textContent = !cfpLive
+      ? "Finish the public form so speakers can start submitting."
+      : submissionCount === 0
+        ? "Your call is live and ready to share. No proposals have arrived yet."
+        : `${plural(submissionCount, "proposal")} ${submissionCount === 1 ? "is" : "are"} ready for review and evaluation.`;
     byId("next-step-action").href = nextHref;
-    byId("next-step-action").textContent = cfpLive ? "Open submissions" : "Set up the form";
-    const currentStep = !cfpLive ? 1 : !roundState.ok || !roundState.value ? 2 : speakers.length === 0 ? 3 : agendaMissing || (agenda && agendaItems === 0) ? 4 : 5;
+    byId("next-step-action").textContent = !cfpLive ? "Set up the form" : submissionCount === 0 ? "Open Call for Proposals" : "Open submissions";
+    byId("proposal-count").textContent = submissionsState.ok ? String(submissionCount) : "—";
+    byId("proposal-note").textContent = submissionsState.ok ? (cfpLive ? "Call is live" : "Call not published") : "Unavailable";
+    byId("agenda-count").textContent = agendaFailed ? "—" : String(agendaItems);
+    byId("agenda-note").textContent = agendaFailed ? "Unavailable" : agendaPublished ? "Published" : agendaMissing ? "Not started" : "Draft";
+    const currentStep = !cfpLive || submissionCount === 0 ? 1 : !roundState.ok || !roundState.value ? 2 : speakers.length === 0 ? 3 : agendaMissing || (agenda && agendaItems === 0) ? 4 : 5;
     const phase = (step) => step < currentStep ? "complete" : step === currentStep ? "current" : "upcoming";
+    // The stage list mirrors the event sidebar: same five program pages, same
+    // canonical names, same order.
     byId("event-tools").replaceChildren(
-      tool(1, "Call for Proposals", "Manage the form and its public link.", `${prefix}/cfp`, cfpLive ? "Live" : "Not published", phase(1)),
-      tool(2, "Review & decide", "Evaluate submissions and choose the program.", reviewPath, reviewBadge, phase(2)),
-      tool(3, "Prepare speakers", "Invite people and track onboarding work.", `${prefix}/onboarding`, plural(speakers.length, "speaker"), phase(3)),
-      tool(4, "Build the agenda", "Place accepted sessions and resolve conflicts.", `${prefix}/agenda`, agendaBadge, phase(4)),
-      tool(5, "Publish", "Share the schedule, speaker pages, and embeds.", `${prefix}/workspace`, agendaFailed ? "Unavailable" : agendaPublished ? "Live" : "Waiting", phase(5))
+      tool("Call for Proposals", `${prefix}/cfp`, cfpLive ? "Live" : "Not published", phase(1)),
+      tool("Submissions", reviewPath, reviewBadge, phase(2)),
+      tool("Speakers", `${prefix}/speakers`, plural(speakers.length, "speaker"), phase(3)),
+      tool("Agenda", `${prefix}/agenda`, agendaBadge, phase(4)),
+      tool("Publish", `${prefix}/workspace`, agendaFailed ? "Unavailable" : agendaPublished ? "Live" : "Waiting", phase(5))
     );
     document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
-      ? `${selected.name} loaded, but some live counts are unavailable right now. Refresh to retry.`
-      : `${selected.name} is ready.`;
+      ? "Some program information is unavailable. Refresh to try again."
+      : "";
   }
 
   initialize().catch((error) => {

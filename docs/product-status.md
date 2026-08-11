@@ -28,10 +28,12 @@ production ignore the setting.
 Implemented: program creation, browser-managed text, choice, checkbox, phone,
 URL, image, and document questions; conditional display and answer-based
 routing; open/close times and submission limits; branded public CFP rendering;
+richer CFP descriptions with safe formatting; public important-date milestones;
 review-before-submit; confirmation email copy; authenticated speaker
 registration; versioned drafts; owned submissions; admin submission listing;
 tenant scoping; authenticated writes; and a persistent event-scoped CFP link
-with copy, open, and submission-review actions. CFP-scoped sign-in grants the
+using `/cfp/{event_key}/{slug}`, with legacy-link redirects plus copy, open, and
+submission-review actions. CFP-scoped sign-in grants the
 speaker role for that event even when the email already belongs to an administrator,
 and organizers can inspect the complete proposal, routing, and custom answers.
 

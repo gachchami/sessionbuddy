@@ -2,7 +2,7 @@
   "use strict";
 
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventOrder: "upcoming", eventSearch: "", eventsRequestId: 0, submitting: false, editingDraft: false, submitTargetStatus: "active", createMutation: null, emailDefaults: null };
+  const state = { csrf: "", userId: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventOrder: "upcoming", eventSearch: "", eventsRequestId: 0, submitting: false, editingDraft: false, submitTargetStatus: "active", createMutation: null, emailDefaults: null, draftTimer: null };
   const logoRules = { "image/jpeg": 2 * 1024 * 1024, "image/png": 2 * 1024 * 1024, "image/webp": 2 * 1024 * 1024 };
   const timeZoneAliases = new Map([
     ["Asia/Calcutta", "Asia/Kolkata"],
@@ -16,7 +16,7 @@
   ]);
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
-  const eventDraftKey = "sessionbuddy:event-form-draft";
+  const eventDraftKey = () => `sessionbuddy:event-form-draft:${state.userId || "unknown"}`;
   const mutationToken = () => {
     const bytes = crypto.getRandomValues(new Uint8Array(32));
     return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -27,11 +27,25 @@
     for (const [name, value] of new FormData(form)) {
       if (typeof value === "string") values[name] = value;
     }
-    sessionStorage.setItem(eventDraftKey, JSON.stringify(values));
+    sessionStorage.setItem(eventDraftKey(), JSON.stringify(values));
+  }
+
+  function queueEventDraft(form) {
+    const editingActive = Boolean(form.elements.event_id.value) && !state.editingDraft;
+    if (editingActive) {
+      byId("event-autosave-state").textContent = "Live event changes are not autosaved";
+      return;
+    }
+    byId("event-autosave-state").textContent = "Saving draft…";
+    clearTimeout(state.draftTimer);
+    state.draftTimer = setTimeout(() => {
+      preserveEventDraft(form);
+      byId("event-autosave-state").textContent = "Draft saved in this browser";
+    }, 500);
   }
 
   function restoreEventDraft() {
-    const raw = sessionStorage.getItem(eventDraftKey);
+    const raw = sessionStorage.getItem(eventDraftKey());
     if (!raw) return false;
     try {
       const values = JSON.parse(raw);
@@ -53,9 +67,10 @@
       updateDateTimePreview();
       openEventDialog();
       setDialogStatus("Your entries were restored after signing in again.");
+      byId("event-autosave-state").textContent = "Draft restored from this browser";
       return true;
     } catch (_) {
-      sessionStorage.removeItem(eventDraftKey);
+      sessionStorage.removeItem(eventDraftKey());
       return false;
     }
   }
@@ -331,6 +346,7 @@
     byId("save-event-draft").hidden = false;
     byId("save-event-draft").textContent = "Save draft";
     byId("creation-action-note").hidden = false;
+    byId("event-autosave-state").textContent = "Drafts autosave in this browser";
     byId("event-status-label").hidden = true;
     const advanced = form.querySelector(".advanced-settings");
     if (advanced) advanced.open = false;
@@ -398,6 +414,9 @@
     byId("save-event-draft").hidden = !state.editingDraft;
     byId("creation-action-note").hidden = !state.editingDraft;
     byId("event-status-label").hidden = state.editingDraft;
+    byId("event-autosave-state").textContent = state.editingDraft
+      ? "Drafts autosave in this browser"
+      : "Live event changes are not autosaved";
     updateDateTimePreview();
     setPublicPreviewImage("logo", event.logo_url || "");
     setPublicPreviewImage("cover", event.cover_image_url || "");
@@ -609,6 +628,7 @@
 
   async function initialize() {
     const session = await api("/api/v1/auth/session");
+    state.userId = session.user_id;
     state.csrf = session.csrf_token;
     state.emailDefaults = {
       name: session.default_email_sender_name || "SessionBuddy",
@@ -692,6 +712,7 @@
     if (event.target.validity?.valid) event.target.removeAttribute("aria-invalid");
     updateDateTimePreview();
     updatePublicBrandPreview();
+    queueEventDraft(event.currentTarget);
   });
   byId("event-form").addEventListener("invalid", (event) => {
     event.target.setAttribute("aria-invalid", "true");
@@ -891,7 +912,7 @@
           body: JSON.stringify(body)
         }
       );
-      sessionStorage.removeItem(eventDraftKey);
+      sessionStorage.removeItem(eventDraftKey());
       setStatus(eventId && state.editingDraft && createStatus === "active"
         ? "Event activated."
         : eventId && !state.editingDraft

@@ -169,6 +169,7 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
         "admin_submissions.html",
         "admin_onboarding.html",
         "event_workspace.html",
+        "speaker_content.html",
         "agenda_admin.html",
         "speaker_directory.html",
         "event_overview.html",
@@ -186,8 +187,16 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
     assert '"Home"' in shell
     assert '"Events"' in shell
     assert '"People"' in shell
-    for section in ('"Plan"', '"People"', '"Publish"'):
-        assert section in shell
+    for label in (
+        '"Overview"',
+        '"Call for Proposals"',
+        '"Submissions"',
+        '"Speakers"',
+        '"Agenda"',
+        '"Publish"',
+        '"Team & access"',
+    ):
+        assert label in shell
     assert '"Account settings"' in shell
     assert '"Sign out"' in shell
 

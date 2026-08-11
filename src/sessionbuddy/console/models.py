@@ -87,7 +87,7 @@ class BrowserTelemetryPayload(BaseModel):
     page_template: Literal[
         "/engine-room",
         "/admin/events/{event_id}/cfp",
-        "/cfp/{slug}",
+        "/cfp/{event_key}/{slug}",
         "/admin/events/{event_id}/submissions",
         "/reviews",
         "/admin/evaluation-rounds/{round_id}",
