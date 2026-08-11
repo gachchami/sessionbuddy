@@ -14,7 +14,11 @@ from sessionbuddy.agenda import (
     queue_calendar_changes,
 )
 from sessionbuddy.console import embedded_assets
-from sessionbuddy.platform.auth.http import authenticate_request, require_permission
+from sessionbuddy.platform.auth.http import (
+    authenticate_request,
+    require_document_persona,
+    require_permission,
+)
 from sessionbuddy.platform.authorization import (
     Permission,
     Persona,
@@ -30,17 +34,39 @@ from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mappi
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
 from .models import (
+    AdminAgendaView,
     AgendaAutoSchedule,
+    AgendaAutoScheduleResult,
     AgendaCandidate,
+    AgendaConflictView,
+    AgendaEventView,
+    AgendaItemView,
+    AgendaPreviewView,
     AgendaPublish,
+    AgendaPublishView,
     AgendaResourceCreate,
     AgendaResourceUpdate,
+    AgendaResourceView,
+    AgendaRevisionView,
+    AgendaScheduledItemView,
     AgendaSetup,
+    AgendaUnscheduledSessionView,
+    AutoScheduledAgendaView,
     EventLabelCreate,
     EventLabelList,
     EventLabelUpdate,
     EventLabelView,
     EventTrackList,
+    EventTrackView,
+    PublicScheduleEventView,
+    PublicScheduleItemView,
+    PublicScheduleView,
+    PublishedAgendaRevisionView,
+    ScheduleEventView,
+    ScheduleItemView,
+    ScheduleLabelView,
+    ScheduleRevisionView,
+    ScheduleView,
     SessionLabelAssignmentUpdate,
     SessionLabelAssignmentView,
 )
@@ -99,6 +125,7 @@ def _product_asset(request: Request, name: str, media_type: str) -> Response:
 
 @scheduling_router.get("/admin/events/{event_id}/agenda", include_in_schema=False)
 async def agenda_page(event_id: str, request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return _product_asset(request, "agenda_admin.html", "text/html")
 
 
@@ -218,24 +245,31 @@ def _can_manage_event(actor, event_id: str) -> bool:
     )
 
 
-async def _event_label_rows(db, organization_id: str, event_id: str, actor) -> list[dict]:
+def _label_view(row: dict, actor, event_id: str) -> EventLabelView:
+    return EventLabelView(
+        id=str(row["id"]),
+        name=str(row["name"]),
+        color=str(row["color"]),
+        status=str(row["status"]),
+        version=int(row["version"]),
+        can_manage=_can_manage_resource(actor, str(row["id"]))
+        or _can_manage_event(actor, event_id),
+    )
+
+
+async def _event_label_rows(
+    db, organization_id: str, event_id: str, actor, *, status: str = "active"
+) -> list[EventLabelView]:
     rows = result_rows(
         await db.prepare(
             """SELECT id,name,color,status,version FROM event_labels
-               WHERE organization_id=?1 AND event_id=?2 AND status='active'
+               WHERE organization_id=?1 AND event_id=?2 AND status=?3
                ORDER BY lower(name),id"""
         )
-        .bind(organization_id, event_id)
+        .bind(organization_id, event_id, status)
         .all()
     )
-    return [
-        {
-            **row,
-            "can_manage": _can_manage_resource(actor, str(row["id"]))
-            or _can_manage_event(actor, event_id),
-        }
-        for row in rows
-    ]
+    return [_label_view(row, actor, event_id) for row in rows]
 
 
 async def _attach_session_labels(
@@ -275,7 +309,61 @@ async def _attach_session_labels(
         session["label_ids"] = [str(label["id"]) for label in assigned]
 
 
-async def _agenda_model(db, event, revision, actor) -> dict[str, object]:
+def _agenda_label(row: dict) -> EventLabelView:
+    return EventLabelView(
+        id=str(row["id"]),
+        name=str(row["name"]),
+        color=str(row["color"]),
+        status=str(row["status"]),
+        version=int(row["version"]),
+        can_manage=bool(row["can_manage"]),
+    )
+
+
+def _agenda_resource(row: dict) -> AgendaResourceView:
+    return AgendaResourceView(
+        id=str(row["id"]),
+        name=str(row["name"]),
+        status=str(row["status"]),
+        version=int(row["version"]),
+    )
+
+
+def _scheduled_item(row: dict) -> AgendaScheduledItemView:
+    return AgendaScheduledItemView(
+        id=str(row["id"]),
+        session_id=str(row["session_id"]),
+        title=str(row["title"]),
+        abstract=str(row["abstract"]),
+        content_status=str(row["content_status"]),
+        content_version=int(row["content_version"]),
+        label_version=int(row["label_version"]),
+        start_at_ms=int(row["start_at_ms"]),
+        end_at_ms=int(row["end_at_ms"]),
+        room_id=str(row["room_id"]),
+        room_name=str(row["room_name"]),
+        track_id=str(row["track_id"]) if row["track_id"] is not None else None,
+        track_name=str(row["track_name"]) if row["track_name"] is not None else None,
+        version=int(row["version"]),
+        labels=[_agenda_label(label) for label in row["labels"]],
+        label_ids=[str(label_id) for label_id in row["label_ids"]],
+    )
+
+
+def _unscheduled_item(row: dict) -> AgendaUnscheduledSessionView:
+    return AgendaUnscheduledSessionView(
+        session_id=str(row["session_id"]),
+        title=str(row["title"]),
+        abstract=str(row["abstract"]),
+        content_status=str(row["content_status"]),
+        content_version=int(row["content_version"]),
+        label_version=int(row["label_version"]),
+        labels=[_agenda_label(label) for label in row["labels"]],
+        label_ids=[str(label_id) for label_id in row["label_ids"]],
+    )
+
+
+async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
     organization_id, event_id = str(event["organization_id"]), str(event["id"])
     published_revision = row_mapping(
         await db.prepare(
@@ -333,29 +421,70 @@ async def _agenda_model(db, event, revision, actor) -> dict[str, object]:
         .bind(organization_id, event_id)
         .all()
     )
+    archived_rooms = result_rows(
+        await db.prepare(
+            """SELECT id,name,status,version FROM event_rooms
+               WHERE organization_id=?1 AND event_id=?2 AND status='archived'
+               ORDER BY name"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
+    archived_tracks = result_rows(
+        await db.prepare(
+            """SELECT id,name,status,version FROM event_tracks
+               WHERE organization_id=?1 AND event_id=?2 AND status='archived'
+               ORDER BY name"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    )
     labels = await _event_label_rows(db, organization_id, event_id, actor)
+    archived_labels = await _event_label_rows(
+        db, organization_id, event_id, actor, status="archived"
+    )
     await _attach_session_labels(db, organization_id, event_id, items, actor)
     await _attach_session_labels(db, organization_id, event_id, unscheduled, actor)
-    return {
-        "event": {
-            key: event[key] for key in ("id", "name", "time_zone", "starts_at_ms", "ends_at_ms")
-        },
-        "revision": {
-            "id": revision["id"],
-            "version": revision["version"],
-            "state": revision["status"],
-        },
-        "published_revision": published_revision,
-        "items": items,
-        "unscheduled_sessions": unscheduled,
-        "rooms": rooms,
-        "tracks": tracks,
-        "labels": labels,
-    }
+    return AdminAgendaView(
+        event=AgendaEventView(
+            id=str(event["id"]),
+            name=str(event["name"]),
+            time_zone=str(event["time_zone"]),
+            starts_at_ms=int(event["starts_at_ms"]),
+            ends_at_ms=int(event["ends_at_ms"]),
+        ),
+        revision=AgendaRevisionView(
+            id=str(revision["id"]),
+            version=int(revision["version"]),
+            state=str(revision["status"]),
+        ),
+        published_revision=(
+            PublishedAgendaRevisionView(
+                id=str(published_revision["id"]),
+                revision_number=int(published_revision["revision_number"]),
+                version=int(published_revision["version"]),
+            )
+            if published_revision is not None
+            else None
+        ),
+        items=[_scheduled_item(item) for item in items],
+        unscheduled_sessions=[_unscheduled_item(item) for item in unscheduled],
+        rooms=[_agenda_resource(room) for room in rooms],
+        tracks=[_agenda_resource(track) for track in tracks],
+        labels=labels,
+        archived_rooms=[_agenda_resource(room) for room in archived_rooms],
+        archived_tracks=[_agenda_resource(track) for track in archived_tracks],
+        archived_labels=archived_labels,
+        can_manage_resource_lifecycle=_can_manage_event(actor, event_id),
+    )
 
 
-@scheduling_router.get("/api/v1/admin/events/{event_id}/agenda", tags=["agenda"])
-async def get_admin_agenda(event_id: str, request: Request) -> dict[str, object]:
+@scheduling_router.get(
+    "/api/v1/admin/events/{event_id}/agenda",
+    response_model=AdminAgendaView,
+    tags=["agenda"],
+)
+async def get_admin_agenda(event_id: str, request: Request) -> AdminAgendaView:
     event, auth = await _event_scope(
         request, event_id, Permission.AGENDA_MANAGE, mutation=False
     )
@@ -367,6 +496,7 @@ async def get_admin_agenda(event_id: str, request: Request) -> dict[str, object]
 
 @scheduling_router.post(
     "/api/v1/admin/events/{event_id}/agenda/setup",
+    response_model=AdminAgendaView,
     status_code=201,
     tags=["agenda"],
 )
@@ -375,7 +505,7 @@ async def setup_admin_agenda(
     request: Request,
     body: AgendaSetup,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, object]:
+) -> AdminAgendaView:
     event, auth = await _event_scope(
         request, event_id, Permission.AGENDA_MANAGE, mutation=True
     )
@@ -476,7 +606,7 @@ async def _create_agenda_resource(
     body: AgendaResourceCreate,
     *,
     resource: str,
-) -> dict[str, object]:
+) -> AdminAgendaView:
     event, auth = await _event_scope(
         request, event_id, Permission.AGENDA_MANAGE, mutation=True
     )
@@ -540,7 +670,7 @@ async def _update_agenda_resource(
     body: AgendaResourceUpdate,
     *,
     resource: str,
-) -> dict[str, object]:
+) -> AdminAgendaView:
     event, auth = await _event_scope(
         request, event_id, Permission.AGENDA_MANAGE, mutation=True
     )
@@ -555,10 +685,11 @@ async def _update_agenda_resource(
     )
     if row is None:
         raise HTTPException(status_code=404)
-    if body.status == "archived":
+    if body.status == "archived" or str(row["status"]) == "archived":
         # Rooms and tracks belong to the event. Archiving either one is an
-        # exact event-owner/manager operation, even though editors may keep
-        # performing ordinary agenda work.
+        # exact event-owner/manager operation. Restoring one is the other side
+        # of the same lifecycle boundary, even though editors may keep doing
+        # ordinary agenda work.
         auth = await require_permission(
             request,
             Permission.RESOURCE_ACCESS_MANAGE,
@@ -617,28 +748,38 @@ async def _update_agenda_resource(
     return await _agenda_model(db, event, revision, auth.actor)
 
 
-@scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/rooms", tags=["agenda"])
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/agenda/rooms",
+    response_model=AdminAgendaView,
+    tags=["agenda"],
+)
 async def create_agenda_room(
     event_id: str, request: Request, body: AgendaResourceCreate
-) -> dict[str, object]:
+) -> AdminAgendaView:
     return await _create_agenda_resource(event_id, request, body, resource="room")
 
 
 @scheduling_router.patch(
-    "/api/v1/admin/events/{event_id}/agenda/rooms/{room_id}", tags=["agenda"]
+    "/api/v1/admin/events/{event_id}/agenda/rooms/{room_id}",
+    response_model=AdminAgendaView,
+    tags=["agenda"],
 )
 async def update_agenda_room(
     event_id: str, room_id: str, request: Request, body: AgendaResourceUpdate
-) -> dict[str, object]:
+) -> AdminAgendaView:
     return await _update_agenda_resource(
         event_id, room_id, request, body, resource="room"
     )
 
 
-@scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/tracks", tags=["agenda"])
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/agenda/tracks",
+    response_model=AdminAgendaView,
+    tags=["agenda"],
+)
 async def create_agenda_track(
     event_id: str, request: Request, body: AgendaResourceCreate
-) -> dict[str, object]:
+) -> AdminAgendaView:
     return await _create_agenda_resource(event_id, request, body, resource="track")
 
 
@@ -661,29 +802,30 @@ async def list_event_tracks(event_id: str, request: Request) -> EventTrackList:
         .bind(str(event["organization_id"]), event_id)
         .all()
     )
-    return EventTrackList(event_id=event_id, data=tracks)
-
-
-@scheduling_router.patch(
-    "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}", tags=["agenda"]
-)
-async def update_agenda_track(
-    event_id: str, track_id: str, request: Request, body: AgendaResourceUpdate
-) -> dict[str, object]:
-    return await _update_agenda_resource(
-        event_id, track_id, request, body, resource="track"
+    return EventTrackList(
+        event_id=event_id,
+        data=[
+            EventTrackView(
+                id=str(track["id"]),
+                name=str(track["name"]),
+                status=str(track["status"]),
+                version=int(track["version"]),
+            )
+            for track in tracks
+        ],
     )
 
 
-def _label_view(row: dict, actor, event_id: str) -> EventLabelView:
-    return EventLabelView(
-        id=str(row["id"]),
-        name=str(row["name"]),
-        color=str(row["color"]),
-        status=str(row["status"]),
-        version=int(row["version"]),
-        can_manage=_can_manage_resource(actor, str(row["id"]))
-        or _can_manage_event(actor, event_id),
+@scheduling_router.patch(
+    "/api/v1/admin/events/{event_id}/agenda/tracks/{track_id}",
+    response_model=AdminAgendaView,
+    tags=["agenda"],
+)
+async def update_agenda_track(
+    event_id: str, track_id: str, request: Request, body: AgendaResourceUpdate
+) -> AdminAgendaView:
+    return await _update_agenda_resource(
+        event_id, track_id, request, body, resource="track"
     )
 
 
@@ -1002,7 +1144,7 @@ async def assign_session_labels(
     return SessionLabelAssignmentView(
         session_id=session_id,
         version=body.version + 1,
-        labels=payload[0]["labels"],
+        labels=[_agenda_label(label) for label in payload[0]["labels"]],
     )
 
 
@@ -1015,14 +1157,17 @@ def _agenda_date(timestamp_ms: int, time_zone: str) -> str:
 
 
 @scheduling_router.post(
-    "/api/v1/admin/events/{event_id}/agenda/auto-schedule", tags=["agenda"]
+    "/api/v1/admin/events/{event_id}/agenda/auto-schedule",
+    response_model=AutoScheduledAgendaView,
+    response_model_exclude_unset=True,
+    tags=["agenda"],
 )
 async def auto_schedule_agenda(
     event_id: str,
     request: Request,
     body: AgendaAutoSchedule,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, object]:
+) -> AutoScheduledAgendaView:
     event, auth = await _event_scope(
         request, event_id, Permission.AGENDA_MANAGE, mutation=True
     )
@@ -1044,7 +1189,8 @@ async def auto_schedule_agenda(
     if replay is not None:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
-        return await _agenda_model(db, event, revision, auth.actor)
+        agenda = await _agenda_model(db, event, revision, auth.actor)
+        return AutoScheduledAgendaView.model_validate(agenda.model_dump())
     rooms = result_rows(
         await db.prepare(
             """SELECT id FROM event_rooms WHERE organization_id=?1 AND event_id=?2
@@ -1209,12 +1355,14 @@ async def auto_schedule_agenda(
         await batch.execute()
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
-    model = await _agenda_model(db, event, revision, auth.actor)
-    model["auto_schedule"] = {
-        "scheduled_count": len(planned),
-        "remaining_count": len(sessions) - len(planned),
-    }
-    return model
+    agenda = await _agenda_model(db, event, revision, auth.actor)
+    return AutoScheduledAgendaView(
+        **agenda.model_dump(),
+        auto_schedule=AgendaAutoScheduleResult(
+            scheduled_count=len(planned),
+            remaining_count=len(sessions) - len(planned),
+        ),
+    )
 
 
 async def _slot(request: Request, event, revision, body: AgendaCandidate) -> AgendaSlot:
@@ -1241,22 +1389,30 @@ async def _slot(request: Request, event, revision, body: AgendaCandidate) -> Age
     )
 
 
-def _conflict_view(conflicts) -> list[dict[str, object]]:
+def _conflict_view(conflicts) -> list[AgendaConflictView]:
     messages = {
         "room": "The room is already in use during this time.",
         "speaker": "A speaker is already scheduled during this time.",
         "track": "This exclusive track already has a session during this time.",
     }
     return [
-        {"code": item.kind, "message": messages[item.kind], "conflicting_item_id": item.item_id}
+        AgendaConflictView(
+            code=item.kind,
+            message=messages[item.kind],
+            conflicting_item_id=str(item.item_id),
+        )
         for item in conflicts
     ]
 
 
-@scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/preview", tags=["agenda"])
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/agenda/preview",
+    response_model=AgendaPreviewView,
+    tags=["agenda"],
+)
 async def preview_agenda(
     event_id: str, request: Request, body: AgendaCandidate
-) -> dict[str, object]:
+) -> AgendaPreviewView:
     event, _ = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     revision = await _revision(_db(request), str(event["organization_id"]), event_id)
     if revision is None:
@@ -1267,10 +1423,12 @@ async def preview_agenda(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422) from exc
-    return {"valid": not conflicts, "conflicts": _conflict_view(conflicts)}
+    return AgendaPreviewView(valid=not conflicts, conflicts=_conflict_view(conflicts))
 
 
-async def _saved_item(db, organization_id: str, event_id: str, item_id: str):
+async def _saved_item(
+    db, organization_id: str, event_id: str, item_id: str
+) -> AgendaItemView:
     row = row_mapping(
         await db.prepare(
             """SELECT ai.id,ai.accepted_session_id AS session_id,s.proposal_title AS title,
@@ -1286,7 +1444,18 @@ async def _saved_item(db, organization_id: str, event_id: str, item_id: str):
     )
     if row is None:
         raise HTTPException(status_code=404)
-    return row
+    return AgendaItemView(
+        id=str(row["id"]),
+        session_id=str(row["session_id"]),
+        title=str(row["title"]),
+        start_at_ms=int(row["start_at_ms"]),
+        end_at_ms=int(row["end_at_ms"]),
+        room_id=str(row["room_id"]),
+        room_name=str(row["room_name"]),
+        track_id=str(row["track_id"]) if row["track_id"] is not None else None,
+        track_name=str(row["track_name"]) if row["track_name"] is not None else None,
+        version=int(row["version"]),
+    )
 
 
 async def _save_item(
@@ -1295,7 +1464,7 @@ async def _save_item(
     body: AgendaCandidate,
     key_value: str | None,
     item_id: str | None,
-):
+) -> AgendaItemView:
     event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     revision = await _revision(db, organization_id, event_id)
@@ -1421,33 +1590,40 @@ async def _save_item(
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
     row = await _saved_item(db, organization_id, event_id, saved_id)
-    if item_id is not None and int(row["version"]) != body.version + 1:
+    if item_id is not None and row.version != body.version + 1:
         raise HTTPException(status_code=409)
     return row
 
 
 @scheduling_router.post(
-    "/api/v1/admin/events/{event_id}/agenda/items", status_code=201, tags=["agenda"]
+    "/api/v1/admin/events/{event_id}/agenda/items",
+    response_model=AgendaItemView,
+    status_code=201,
+    tags=["agenda"],
 )
 async def create_agenda_item(
     event_id: str,
     request: Request,
     body: AgendaCandidate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
+) -> AgendaItemView:
     if body.item_id is not None:
         raise HTTPException(status_code=400)
     return await _save_item(event_id, request, body, idempotency_key, None)
 
 
-@scheduling_router.patch("/api/v1/admin/events/{event_id}/agenda/items/{item_id}", tags=["agenda"])
+@scheduling_router.patch(
+    "/api/v1/admin/events/{event_id}/agenda/items/{item_id}",
+    response_model=AgendaItemView,
+    tags=["agenda"],
+)
 async def move_agenda_item(
     event_id: str,
     item_id: str,
     request: Request,
     body: AgendaCandidate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
+) -> AgendaItemView:
     return await _save_item(event_id, request, body, idempotency_key, item_id)
 
 
@@ -1555,10 +1731,63 @@ async def unschedule_agenda_item(
     return Response(status_code=204)
 
 
-@scheduling_router.post("/api/v1/admin/events/{event_id}/agenda/publish", tags=["agenda"])
-async def publish_agenda(event_id: str, request: Request, body: AgendaPublish) -> dict[str, object]:
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/agenda/publish",
+    response_model=AgendaPublishView,
+    tags=["agenda"],
+)
+async def publish_agenda(
+    event_id: str,
+    request: Request,
+    body: AgendaPublish,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> AgendaPublishView:
     event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
+    key = _key(idempotency_key)
+    route = "POST /api/v1/admin/events/{event_id}/agenda/publish"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"event_id": event_id, "body": body.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id
+               FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND organization_id=?4 AND event_id=?5 AND state='completed'"""
+        )
+        .bind(
+            auth.actor.user_id,
+            route,
+            hashlib.sha256(key.encode()).digest(),
+            organization_id,
+            event_id,
+        )
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        replayed_draft_id = str(replay["response_resource_id"])
+        replayed_draft = row_mapping(
+            await db.prepare(
+                """SELECT id FROM schedule_revisions
+                   WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
+            )
+            .bind(replayed_draft_id, organization_id, event_id)
+            .first()
+        )
+        if replayed_draft is None:
+            raise HTTPException(status_code=409)
+        return AgendaPublishView(
+            published_revision_id=body.revision_id,
+            published_version=body.version + 1,
+            draft_revision_id=replayed_draft_id,
+        )
     draft = await _revision(db, organization_id, event_id)
     if (
         draft is None
@@ -1594,7 +1823,17 @@ async def publish_agenda(event_id: str, request: Request, body: AgendaPublish) -
     for row in speaker_rows:
         by_item.setdefault(str(row["agenda_item_id"]), []).append(str(row["event_speaker_id"]))
     now, next_revision_id = utc_now_ms(), new_id()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
     batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
     batch.add_statement(
         db.prepare(
             """UPDATE schedule_revisions SET status='superseded',version=version+1,
@@ -1685,6 +1924,13 @@ async def publish_agenda(event_id: str, request: Request, body: AgendaPublish) -
             metadata={"item_count": len(item_rows)},
         )
     )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="schedule_revision",
+        resource_id=next_revision_id,
+        completed_at_ms=now,
+    )
     try:
         await batch.execute()
     except PersistenceError as exc:
@@ -1734,15 +1980,50 @@ async def publish_agenda(event_id: str, request: Request, body: AgendaPublish) -
             # Publication already committed durable sync intent. A consumer can
             # safely replay it using deterministic calendar keys.
             continue
-    return {
-        "published_revision_id": body.revision_id,
-        "published_version": body.version + 1,
-        "draft_revision_id": next_revision_id,
-    }
+    return AgendaPublishView(
+        published_revision_id=body.revision_id,
+        published_version=body.version + 1,
+        draft_revision_id=next_revision_id,
+    )
 
 
-@scheduling_router.get("/api/v1/events/{event_id}/schedule", tags=["agenda"])
-async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
+def _schedule_label(row: dict) -> ScheduleLabelView:
+    return ScheduleLabelView(
+        id=str(row["id"]),
+        name=str(row["name"]),
+        color=str(row["color"]),
+    )
+
+
+def _schedule_item(row: dict) -> ScheduleItemView:
+    return ScheduleItemView(
+        id=str(row["id"]),
+        session_id=str(row["session_id"]),
+        title=str(row["title"]),
+        start_at_ms=int(row["start_at_ms"]),
+        end_at_ms=int(row["end_at_ms"]),
+        room_name=str(row["room_name"]),
+        track_name=str(row["track_name"]) if row["track_name"] is not None else None,
+        speaker_names=str(row["speaker_names"]),
+        labels=[_schedule_label(label) for label in row["labels"]],
+        label_ids=[str(label_id) for label_id in row["label_ids"]],
+    )
+
+
+def _public_schedule_item(row: dict) -> PublicScheduleItemView:
+    item = _schedule_item(row)
+    return PublicScheduleItemView(
+        **item.model_dump(),
+        description=str(row["description"]),
+    )
+
+
+@scheduling_router.get(
+    "/api/v1/events/{event_id}/schedule",
+    response_model=ScheduleView,
+    tags=["agenda"],
+)
+async def get_schedule(event_id: str, request: Request) -> ScheduleView:
     db = _db(request)
     event = row_mapping(
         await db.prepare(
@@ -1791,21 +2072,29 @@ async def get_schedule(event_id: str, request: Request) -> dict[str, object]:
     await _attach_session_labels(
         _db(request), str(event["organization_id"]), event_id, items
     )
-    return {
-        "event": {"id": event["id"], "name": event["name"], "time_zone": event["time_zone"]},
-        "revision": {
-            "id": revision["id"],
-            "version": revision["version"],
-            "revision_number": revision["revision_number"],
-        },
-        "items": items,
-    }
+    return ScheduleView(
+        event=ScheduleEventView(
+            id=str(event["id"]),
+            name=str(event["name"]),
+            time_zone=str(event["time_zone"]),
+        ),
+        revision=ScheduleRevisionView(
+            id=str(revision["id"]),
+            version=int(revision["version"]),
+            revision_number=int(revision["revision_number"]),
+        ),
+        items=[_schedule_item(item) for item in items],
+    )
 
 
-@scheduling_router.get("/api/v1/public/events/{event_id}/schedule", tags=["public-program"])
+@scheduling_router.get(
+    "/api/v1/public/events/{event_id}/schedule",
+    response_model=PublicScheduleView,
+    tags=["public-program"],
+)
 async def get_public_schedule(
     event_id: str, request: Request, response: Response
-) -> dict[str, object]:
+) -> PublicScheduleView:
     response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
     db = _db(request)
     event = row_mapping(
@@ -1821,19 +2110,31 @@ async def get_public_schedule(
         raise HTTPException(status_code=404)
     revision = await _revision(db, str(event["organization_id"]), event_id, "published")
     if revision is None:
-        return {
-            "event": {
-                "id": event["id"],
-                "name": event["name"],
-                "time_zone": event["time_zone"],
-                "accent_color": event["accent_color"],
-                "logo_url": event["logo_url"],
-                "cover_image_url": event["cover_image_url"],
-                "website_url": event["website_url"],
-            },
-            "revision": None,
-            "items": [],
-        }
+        return PublicScheduleView(
+            event=PublicScheduleEventView(
+                id=str(event["id"]),
+                name=str(event["name"]),
+                time_zone=str(event["time_zone"]),
+                accent_color=(
+                    str(event["accent_color"])
+                    if event["accent_color"] is not None
+                    else None
+                ),
+                logo_url=str(event["logo_url"]) if event["logo_url"] is not None else None,
+                cover_image_url=(
+                    str(event["cover_image_url"])
+                    if event["cover_image_url"] is not None
+                    else None
+                ),
+                website_url=(
+                    str(event["website_url"])
+                    if event["website_url"] is not None
+                    else None
+                ),
+            ),
+            revision=None,
+            items=[],
+        )
     items = result_rows(
         await db.prepare(
             """SELECT ai.id,ac.id AS session_id,s.proposal_title AS title,
@@ -1853,20 +2154,28 @@ async def get_public_schedule(
         .all()
     )
     await _attach_session_labels(db, str(event["organization_id"]), event_id, items)
-    return {
-        "event": {
-            "id": event["id"],
-            "name": event["name"],
-            "time_zone": event["time_zone"],
-            "accent_color": event["accent_color"],
-            "logo_url": event["logo_url"],
-            "cover_image_url": event["cover_image_url"],
-            "website_url": event["website_url"],
-        },
-        "revision": {
-            "id": revision["id"],
-            "version": revision["version"],
-            "revision_number": revision["revision_number"],
-        },
-        "items": items,
-    }
+    return PublicScheduleView(
+        event=PublicScheduleEventView(
+            id=str(event["id"]),
+            name=str(event["name"]),
+            time_zone=str(event["time_zone"]),
+            accent_color=(
+                str(event["accent_color"]) if event["accent_color"] is not None else None
+            ),
+            logo_url=str(event["logo_url"]) if event["logo_url"] is not None else None,
+            cover_image_url=(
+                str(event["cover_image_url"])
+                if event["cover_image_url"] is not None
+                else None
+            ),
+            website_url=(
+                str(event["website_url"]) if event["website_url"] is not None else None
+            ),
+        ),
+        revision=ScheduleRevisionView(
+            id=str(revision["id"]),
+            version=int(revision["version"]),
+            revision_number=int(revision["revision_number"]),
+        ),
+        items=[_public_schedule_item(item) for item in items],
+    )

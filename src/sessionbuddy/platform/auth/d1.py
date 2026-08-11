@@ -76,13 +76,10 @@ class D1AuthorizationFacts:
             await self._db.prepare(
                 """WITH principal AS (
                      SELECT u.id AS user_id, u.status AS user_status,
-                            COALESCE(active.role, default_role.role) AS active_persona
+                            active.role AS active_persona
                      FROM sessions s
                      JOIN users u ON u.id = s.user_id
                      LEFT JOIN session_active_roles active ON active.session_id=s.id
-                     LEFT JOIN user_roles default_role
-                       ON default_role.user_id=u.id AND default_role.status='active'
-                      AND default_role.is_default=1
                      WHERE s.id = ?1
                    ), organization_facts AS (
                      SELECT p.user_id, p.user_status, om.organization_id, om.role

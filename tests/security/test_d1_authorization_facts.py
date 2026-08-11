@@ -117,6 +117,19 @@ async def test_actor_facts_load_active_persona_ownership_and_exact_grants() -> N
     }
 
 
+async def test_actor_facts_do_not_restore_default_role_when_active_role_is_missing() -> None:
+    connection = authorization_connection()
+    try:
+        actor = await D1AuthorizationFacts(SQLiteDatabase(connection)).actor_for_session(
+            "session-a"
+        )
+
+        assert actor is not None
+        assert actor.active_persona is None
+    finally:
+        connection.close()
+
+
 class SQLiteStatement:
     def __init__(self, connection: sqlite3.Connection, query: str) -> None:
         self.connection = connection

@@ -105,6 +105,8 @@ class SpeakerNotificationView(BaseModel):
     id: str
     subject: str
     delivered_at_ms: int
+    body_text: str
+    links: list[str] = Field(default_factory=list)
 
 
 class SpeakerPortalView(BaseModel):

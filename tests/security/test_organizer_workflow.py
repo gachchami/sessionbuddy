@@ -54,8 +54,10 @@ async def _bootstrap_admin(client, connection: sqlite3.Connection):
            WHERE recipient_email='root@example.com'
            ORDER BY queued_at_ms DESC,id DESC LIMIT 1"""
     ).fetchone()
-    token = re.search(r"/auth/verify\?token=([^\"<]+)", row[0]).group(1)
-    confirmed = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
+    token = re.search(r"/auth/verify#token=([^\"<]+)", row[0]).group(1)
+    confirmed = await client.post(
+        "/auth/verify", data={"token": token}, follow_redirects=False
+    )
     assert confirmed.status_code == 303
     session = (await client.get("/api/v1/auth/session")).json()
     organization_id = session["organization_access"][0]["organization_id"]
@@ -240,7 +242,8 @@ async def test_event_editor_cannot_promote_own_access_over_http(
             )
             assert requested.status_code == 202
             signed_in = await editor.post(
-                f"/auth/verify?token={_token(connection, 'editor@example.com')}",
+                "/auth/verify",
+                data={"token": _token(connection, "editor@example.com")},
                 follow_redirects=False,
             )
             assert signed_in.status_code == 303
@@ -276,7 +279,8 @@ async def test_event_editor_cannot_promote_own_access_over_http(
             )
             assert invited.status_code == 201, invited.text
             accepted = await editor.post(
-                f"/auth/verify?token={_token(connection, 'editor@example.com')}",
+                "/auth/verify",
+                data={"token": _token(connection, "editor@example.com")},
                 follow_redirects=False,
             )
             assert accepted.status_code == 303, accepted.text
@@ -313,7 +317,7 @@ async def test_draft_can_store_past_dates_but_active_creation_and_activation_can
 
         active = await root.post(url, headers=_mutation(csrf), json=past_event)
         assert active.status_code == 422, active.text
-        assert active.json()["error"]["code"] == "request_failed"
+        assert active.json()["error"]["code"] == "validation_failed"
 
         draft = await root.post(
             url,
@@ -329,7 +333,7 @@ async def test_draft_can_store_past_dates_but_active_creation_and_activation_can
             json={**past_event, "status": "active", "version": 1},
         )
         assert activation.status_code == 422, activation.text
-        assert activation.json()["error"]["code"] == "request_failed"
+        assert activation.json()["error"]["code"] == "validation_failed"
 
         stored = connection.execute(
             "SELECT status,version FROM events WHERE id=?", (draft.json()["id"],)
@@ -345,7 +349,9 @@ async def _accept_invitation(client, connection, email: str) -> dict[str, object
     read it from the queued invitation email like a real invitee would.
     """
     confirmed = await client.post(
-        f"/auth/verify?token={_token(connection, email)}", follow_redirects=False
+        "/auth/verify",
+        data={"token": _token(connection, email)},
+        follow_redirects=False,
     )
     assert confirmed.status_code == 303, confirmed.text
     session = await client.get("/api/v1/auth/session")

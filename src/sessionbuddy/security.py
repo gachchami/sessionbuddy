@@ -50,13 +50,25 @@ class SecurityHeadersMiddleware:
                     scope.get("env"), path
                 )
                 headers["X-Content-Type-Options"] = "nosniff"
-                headers["Referrer-Policy"] = "no-referrer"
+                # Chromium derives a form submission's Origin from the
+                # document referrer policy. `no-referrer` turns the explicit
+                # same-origin magic-link confirmation POST into `Origin:
+                # null`, which our login-CSRF boundary must reject. The token
+                # has already been removed from the fragment before the user
+                # submits, so same-origin disclosure is both sufficient and
+                # narrowly scoped to this confirmation document.
+                headers["Referrer-Policy"] = (
+                    "same-origin" if path == "/auth/verify" else "no-referrer"
+                )
                 headers["Permissions-Policy"] = (
                     "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
                 )
+                headers["Strict-Transport-Security"] = (
+                    "max-age=31536000; includeSubDomains"
+                )
                 if not path.startswith("/embeds/"):
                     headers["X-Frame-Options"] = "DENY"
-                if path.startswith("/api/"):
+                if path.startswith("/api/") and "cache-control" not in headers:
                     headers["Cache-Control"] = "no-store"
             await send(message)
 

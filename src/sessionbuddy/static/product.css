@@ -10,13 +10,31 @@
   --surface: #ffffff;
   --surface-soft: #f8fafc;
   --navy: #182230;
-  --blue: #6d4aff;
-  --blue-dark: #5834d4;
-  --purple: #8b3ff5;
-  --sky: #5d8cff;
-  --danger: #b42318;
-  --success: #19724b;
-  --focus: #2563eb;
+  --action-primary: #6d4aff;
+  --action-primary-hover: #5834d4;
+  --action-accent-start: #8b3ff5;
+  --action-accent-end: #5d8cff;
+  --focus-ring: #2563eb;
+  --status-info-border: #bfdbfe;
+  --status-info-surface: #eff6ff;
+  --status-info-text: #274aa9;
+  --status-danger: #b42318;
+  --status-danger-border: #f5c7c1;
+  --status-danger-surface: #fff1ef;
+  --status-danger-text: #7a271a;
+  --status-success: #19724b;
+  --status-success-border: #bbe2ce;
+  --status-success-surface: #edf9f2;
+  --status-success-text: #17603f;
+  --status-warning: #b35f00;
+  /* Compatibility aliases for component styles not yet migrated to semantic tokens. */
+  --blue: var(--action-primary);
+  --blue-dark: var(--action-primary-hover);
+  --purple: var(--action-accent-start);
+  --sky: var(--action-accent-end);
+  --danger: var(--status-danger);
+  --success: var(--status-success);
+  --focus: var(--focus-ring);
   --shadow: 0 1px 2px rgba(16, 24, 40, .04);
 }
 
@@ -34,6 +52,7 @@ h2 { margin: 0 0 .65rem; font-size: clamp(1.25rem, 2vw, 1.55rem); }
 h3 { margin: 0 0 .5rem; font-size: 1.125rem; }
 .skeleton-text { display: inline-block; min-width: 10rem; color: transparent; border-radius: .35rem; background: #e8ebf0; user-select: none; }
 small, .help, .optional { color: var(--muted); font-weight: 500; }
+.muted { color: var(--muted); }
 .required-marker { width: fit-content; color: var(--danger); font-size: .75rem; font-weight: 800; line-height: 1; }
 .field-label { display: flex; align-items: baseline; gap: .35rem; }
 .required-marker-group { white-space: nowrap; }
@@ -90,12 +109,12 @@ fieldset fieldset { background: white; }
 .branding-fields input { height: 2.75rem; }
 .branding-fields input[type="color"] { padding: .3rem; }
 
-button, .button { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; max-width: 100%; padding: .65rem .95rem; border: 1px solid transparent; border-radius: .62rem; background: linear-gradient(135deg, var(--purple), var(--sky)); color: white; font: inherit; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; transition: background .15s, transform .15s, box-shadow .15s; box-shadow: 0 .3rem .8rem rgba(109,74,255,.14); }
-button:hover, .button:hover { background: var(--blue-dark); }
+button, .button { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; max-width: 100%; padding: .65rem .95rem; border: 1px solid transparent; border-radius: .62rem; background: linear-gradient(135deg, var(--action-accent-start), var(--action-accent-end)); color: white; font: inherit; font-weight: 700; text-align: center; text-decoration: none; cursor: pointer; transition: background .15s, transform .15s, box-shadow .15s; box-shadow: 0 .3rem .8rem rgba(109,74,255,.14); }
+button:hover, .button:hover { background: var(--action-primary-hover); }
 button:active, .button:active { transform: translateY(1px); }
 button.secondary, .button.secondary { border-color: #ddd9e8; background: white; color: #443867; box-shadow: none; }
 button.secondary:hover, .button.secondary:hover { background: #f9fafb; }
-button.danger, .button.danger { background: var(--danger); }
+button.danger, .button.danger { background: var(--status-danger); }
 button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .48; transform: none; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
 .inline-form { display: flex; align-items: end; gap: .75rem; flex-wrap: wrap; }
@@ -104,9 +123,9 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .status { margin: .75rem 0 1.25rem; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: .875rem; line-height: 1.5; }
 .status:empty { display: none; }
 .status-compact:not(.error) { margin: .2rem 0 1.4rem; }
-.status.error, .error { color: var(--danger); }
-.status.error { padding: .75rem .85rem; border: 1px solid #f5c7c1; background: #fff1ef; }
-.status.success { padding: .75rem .85rem; border: 1px solid #bbe2ce; background: #edf9f2; color: #17603f; }
+.status.error, .error { color: var(--status-danger); }
+.status.error { padding: .75rem .85rem; border: 1px solid var(--status-danger-border); background: var(--status-danger-surface); }
+.status.success { padding: .75rem .85rem; border: 1px solid var(--status-success-border); background: var(--status-success-surface); color: var(--status-success-text); }
 .badge, .state-badge { display: inline-flex; align-items: center; width: fit-content; padding: .28rem .6rem; border-radius: 99rem; background: #eeeaff; color: #5c3bc7; font-size: .75rem; font-weight: 800; letter-spacing: .02em; }
 .badge.success, .state-badge.success { background: #ddf4e8; color: #17603f; }
 .state-badge.overdue { background: #fee5e2; color: #9f2016; }
@@ -174,11 +193,15 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-editor-section { scroll-margin-top: 5rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--line); background: white; }
 .cfp-editor-section > label { margin: .85rem 0; }
 .cfp-editor-section textarea { min-height: 5.5rem; }
+.rich-text-field { margin: .85rem 0; }
+.rich-text-field > .field-label { color: #344054; font-size: .875rem; font-weight: 600; }
+.rich-text-field > .help { margin: .25rem 0 0; }
 .rich-text-toolbar { display: flex; gap: .25rem; margin-top: .4rem; padding: .35rem; border: 1px solid #d0d5dd; border-bottom: 0; border-radius: .55rem .55rem 0 0; background: #f8f9fb; }
 .rich-text-toolbar button { min-width: 2rem; min-height: 1.9rem; padding: .25rem .45rem; font-size: .75rem; }
 .rich-text-editor { min-height: 9rem; padding: .75rem; overflow-y: auto; border: 1px solid #d0d5dd; border-radius: 0 0 .55rem .55rem; background: white; color: var(--ink); font-size: .875rem; line-height: 1.55; }
 .rich-text-editor:empty::before { color: #98a2b3; content: attr(data-placeholder); pointer-events: none; }
 .rich-text-editor:focus { outline: 3px solid rgba(37,99,235,.13); border-color: var(--focus); }
+.cfp-link-dialog { width: min(32rem, calc(100% - 2rem)); }
 .important-dates-editor { margin-top: 1.35rem; }
 #important-date-rows { display: grid; gap: .55rem; margin-bottom: .65rem; }
 .important-date-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(12rem,.8fr) auto; align-items: end; gap: .55rem; }
@@ -592,7 +615,26 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .routing-rule :is(input, select, button) { min-height: 2.55rem; margin: 0; }
 .routing-rule__word { color: var(--muted); font-size: .875rem; font-weight: 700; white-space: nowrap; }
 .routing-rule__remove { width: 2.55rem; padding: 0; color: var(--danger); font-size: 1.375rem; }
-.access-layout { display: grid; grid-template-columns: 1.15fr .85fr; gap: 1rem; margin-top: 1.5rem; align-items: start; }
+/* minmax(0, …) keeps a long unbreakable value (an email address) from forcing
+   the track wider than the container; the margin reset stops `.card + .card`
+   from stacking a stray offset on top of the grid gap. */
+.access-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 1rem; margin-top: 1.5rem; align-items: start; }
+.access-layout > .card { margin-top: 0; }
+.access-layout > #ownership-panel { grid-column: 1 / -1; }
+.organizer-access-list__item { display: grid; gap: .55rem; }
+.organizer-access-list__primary { min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.organizer-access-list__summary { display: block; min-width: 0; overflow-wrap: anywhere; }
+.organizer-access-list__actions { gap: .5rem; }
+.organizer-access-list__actions :is(button, .button) { min-height: 2.15rem; padding: .35rem .7rem; font-size: .75rem; }
+.organizer-access-list__actions select { min-height: 2.15rem; margin: 0; padding: .3rem .55rem; font-size: .75rem; }
+.organizer-access-list__meta { min-width: 0; overflow-wrap: anywhere; }
+/* Both labels share one grid cell, so the button is always as wide as the
+   longer of them and swapping states never resizes the row. */
+.confirm-button { display: inline-grid; place-items: center; }
+.confirm-button__label { grid-area: 1 / 1; }
+.confirm-button[data-confirming="false"] > .confirm-button__label + .confirm-button__label,
+.confirm-button[data-confirming="true"] > .confirm-button__label:first-child { visibility: hidden; }
+.confirm-button[data-confirming="true"] { border-color: var(--status-danger, #b42318); color: var(--status-danger, #b42318); }
 .action-disclosure { margin-top: 1rem; border: 1px solid var(--line); border-radius: .65rem; background: #fafbfc; }
 .action-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 1rem; color: #344054; font-size: .875rem; font-weight: 800; cursor: pointer; list-style: none; }
 .action-disclosure > summary::-webkit-details-marker { display: none; }
@@ -882,7 +924,7 @@ body.embedded .page { width: 100%; padding: .75rem; }
 [hidden] { display: none !important; }
 [aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(180,35,24,.12); }
 form.validation-attempted :is(input, textarea, select):invalid { border-color: var(--danger); background: #fffafa; box-shadow: 0 0 0 2px rgba(180,35,24,.12); }
-:where(a, button, input, textarea, select, summary):focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+:where(a, button, input, textarea, select, summary):focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 
 @media (max-width: 58rem) {
   .speaker-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -923,7 +965,8 @@ form.validation-attempted :is(input, textarea, select):invalid { border-color: v
   .dialog-actions { margin-inline: -1.15rem; padding-inline: 1.15rem; }
   .copy-row { grid-template-columns: 1fr; }
   .copy-row > button, .copy-row > .button { width: 100%; }
-  .access-layout { grid-template-columns: 1fr; }
+  .access-layout { grid-template-columns: minmax(0, 1fr); }
+  .organizer-access-list__actions > button, .organizer-access-list__actions > .button { flex: 0 1 auto; }
   .next-step-card { align-items: stretch; flex-direction: column; gap: 1rem; }
   .workflow-card { grid-template-columns: 2.25rem minmax(0,1fr); align-items: start; }
   .workflow-card .result, .workflow-card .entity-card__action { grid-column: 2; }

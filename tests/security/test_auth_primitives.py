@@ -6,7 +6,7 @@ from starlette.requests import Request
 
 from sessionbuddy.platform.auth.cookies import sign_session_cookie, verify_session_cookie
 from sessionbuddy.platform.auth.csrf import issue_csrf_token, verify_csrf_token
-from sessionbuddy.platform.auth.http import allowed_origins
+from sessionbuddy.platform.auth.http import allowed_origins, session_cookie_value
 from sessionbuddy.platform.auth.models import CookiePolicy, SessionPolicy
 from sessionbuddy.platform.auth.redirects import is_allowed_redirect
 from sessionbuddy.platform.auth.request_guard import guard_cookie_mutation
@@ -31,6 +31,23 @@ def test_public_base_url_is_always_an_allowed_mutation_origin() -> None:
     assert allowed_origins(request) == frozenset(
         {"https://console.example.test", "https://preview.example.test"}
     )
+
+
+def test_only_local_runtime_accepts_the_non_host_session_cookie() -> None:
+    def request_for(app_env: str) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [(b"cookie", b"sessionbuddy-local=planted-session")],
+                "env": SimpleNamespace(APP_ENV=app_env),
+            }
+        )
+
+    assert session_cookie_value(request_for("local")) == "planted-session"
+    assert session_cookie_value(request_for("development")) is None
+    assert session_cookie_value(request_for("production")) is None
 
 
 def test_email_normalization_is_conservative() -> None:

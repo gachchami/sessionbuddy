@@ -90,8 +90,10 @@ test.describe("write feedback is truthful", () => {
     await expect(page.getByText("could not be completed")).toHaveCount(0);
   });
 
-  test("sending a bulk message reports queued recipients, not an error", async ({ page }) => {
-    await mockCommonRoutes(page);
+  for (const width of [390, 1280]) {
+    test(`bulk message confirmation is explicit at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await mockCommonRoutes(page);
     // NOTE: in Playwright globs "?" is a single-character wildcard — a
     // "communications?**" pattern can also match /communications/speakers/*.
     // A URL predicate keeps the history mock scoped to the history endpoint.
@@ -131,9 +133,16 @@ test.describe("write feedback is truthful", () => {
     await page.getByRole("button", { name: /Preview/ }).click();
     await expect(page.getByRole("status").first()).toHaveText("Preview ready for 1 recipient.");
     await page.getByRole("button", { name: /^Send/ }).click();
+    const confirmation = page.getByRole("dialog", { name: "Send messages?" });
+    await expect(confirmation).toBeVisible();
+    await expect(confirmation).toContainText("1 personalized email will be queued.");
+    await expect(confirmation).toContainText("queued immediately and cannot be recalled");
+    expect(sendPosts).toBe(0);
+    await confirmation.getByRole("button", { name: "Queue emails" }).click();
 
     await expect(page.getByRole("status").first()).toHaveText("1 message queued.");
     expect(sendPosts).toBe(1);
-    await expect(page.getByText("could not be completed")).toHaveCount(0);
-  });
+      await expect(page.getByText("could not be completed")).toHaveCount(0);
+    });
+  }
 });

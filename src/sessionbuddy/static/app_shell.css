@@ -1,4 +1,9 @@
-:root { --sb-sidebar-width: 13.75rem; --sb-violet: #6d4aff; --sb-purple: #8b3ff5; --sb-sky: #5d8cff; }
+:root {
+  --sb-sidebar-width: 13.75rem;
+  --action-primary: #6d4aff;
+  --focus-ring: #2563eb;
+  --status-danger: #b42318;
+}
 
 .sb-app-shell {
   min-height: 0;
@@ -92,14 +97,14 @@
 }
 .sb-sidebar__nav a > span { min-width: 0; text-align: left; }
 .sb-sidebar__nav a:hover { background: #f2f4f7; color: #182230; }
-.sb-sidebar__nav a[aria-current="page"] { background: linear-gradient(90deg, #f0ebff, #edf3ff); color: #5b35d5; box-shadow: inset 3px 0 var(--sb-violet); }
+.sb-sidebar__nav a[aria-current="page"] { background: linear-gradient(90deg, #f0ebff, #edf3ff); color: #5b35d5; box-shadow: inset 3px 0 var(--action-primary); }
 .sb-nav-icon { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 .sb-hub-tabs { display: flex; gap: .15rem; margin: 0 0 1.1rem; border-bottom: 1px solid #e4e7ec; overflow-x: auto; }
 .sb-hub-tabs a { padding: .55rem .85rem; color: #667085; font-size: .875rem; font-weight: 600; text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
 .sb-hub-tabs a:hover { color: #182230; }
-.sb-hub-tabs a[aria-current="page"] { color: #5b35d5; border-bottom-color: var(--sb-violet); }
-.sb-hub-tabs a:focus-visible { outline: 2px solid var(--sb-violet); outline-offset: -2px; border-radius: .35rem; }
+.sb-hub-tabs a[aria-current="page"] { color: #5b35d5; border-bottom-color: var(--action-primary); }
+.sb-hub-tabs a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; border-radius: .35rem; }
 
 
 .sb-topbar {
@@ -197,9 +202,9 @@
 .sb-role-option__copy { min-width: 0; display: grid; gap: .1rem; }
 .sb-role-option__copy strong { font-size: .875rem; font-weight: 700; }
 .sb-role-option__copy small { overflow: hidden; color: #667085; font-size: .75rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.sb-role-option__check { width: 1.25rem; height: 1.25rem; display: grid; place-items: center; border-radius: 50%; background: #6d4aff; color: white; }
+.sb-role-option__check { width: 1.25rem; height: 1.25rem; display: grid; place-items: center; border-radius: 50%; background: var(--action-primary); color: white; }
 .sb-role-option__check .sb-nav-icon { width: .76rem; height: .76rem; stroke-width: 2.4; }
-.sb-role-option__status { display: inline-flex; align-items: center; gap: .35rem; color: #6d4aff; font-size: .75rem; font-weight: 700; }
+.sb-role-option__status { display: inline-flex; align-items: center; gap: .35rem; color: var(--action-primary); font-size: .75rem; font-weight: 700; }
 .sb-visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; clip-path: inset(50%) !important; }
 .sb-account__menu a,
 .sb-account__sign-out {
@@ -224,8 +229,8 @@
 .sb-account__menu a:hover,
 .sb-account__sign-out:hover { background: #edf1f7; color: #172033; }
 .sb-account summary:focus-visible,
-.sb-account__menu :where(a, button):focus-visible { outline: 3px solid rgba(109,74,255,.28); outline-offset: 2px; }
-.sb-account__sign-out { margin-top: .18rem; border-top: 1px solid #e3e8f0; border-radius: 0 0 .45rem .45rem; color: #b42318; }
+.sb-account__menu :where(a, button):focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.sb-account__sign-out { margin-top: .18rem; border-top: 1px solid #e3e8f0; border-radius: 0 0 .45rem .45rem; color: var(--status-danger); }
 .sb-nav-backdrop { display: none; }
 
 .sb-global-brand {
@@ -253,7 +258,7 @@
   text-decoration: none;
   white-space: nowrap;
 }
-.sb-global-nav a::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--sb-violet); content: ""; opacity: 0; transform: scaleX(.45); transition: opacity .16s ease, transform .16s ease; }
+.sb-global-nav a::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--action-primary); content: ""; opacity: 0; transform: scaleX(.45); transition: opacity .16s ease, transform .16s ease; }
 .sb-global-nav a:hover { color: #5b35d5; }
 .sb-global-nav a[aria-current="page"] { color: #5b35d5; }
 .sb-global-nav a[aria-current="page"]::after { opacity: 1; transform: scaleX(1); }

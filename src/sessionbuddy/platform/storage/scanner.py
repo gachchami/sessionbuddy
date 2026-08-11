@@ -16,7 +16,7 @@ class ScanResult:
 
 
 def malware_scan_disabled(environment: object | None) -> bool:
-    """Allow an explicit scanner bypass only in non-production environments."""
+    """Allow an explicit bypass in local and isolated development environments."""
     if environment is None:
         return False
     app_env = str(getattr(environment, "APP_ENV", "production")).strip().lower()

@@ -122,6 +122,23 @@ def test_only_owner_or_manage_grant_can_delegate_resource_access() -> None:
     assert (editor.allowed, editor.reason) == (False, "resource_access_required")
 
 
+def test_organization_edit_grant_is_not_organization_management_authority() -> None:
+    context = ResourceContext(ORG)
+    editor = authorize(
+        organizer(grants={ORG: frozenset({ResourceGrant.EDIT})}),
+        Permission.ORGANIZATION_MANAGE,
+        context,
+    )
+    manager = authorize(
+        organizer(grants={ORG: frozenset({ResourceGrant.MANAGE})}),
+        Permission.ORGANIZATION_MANAGE,
+        context,
+    )
+
+    assert (editor.allowed, editor.reason) == (False, "resource_access_required")
+    assert manager.allowed
+
+
 def test_organization_ownership_does_not_cascade_to_event() -> None:
     subject = organizer(ORG)
     assert authorize(subject, Permission.ORGANIZATION_MANAGE, ResourceContext(ORG)).allowed

@@ -68,6 +68,14 @@ def allowed_origins(request: Request) -> frozenset[str]:
     return frozenset(configured)
 
 
+def session_cookie_value(request: Request) -> str | None:
+    """Read only the cookie name valid for this runtime environment."""
+    app_env = str(getattr(environment(request), "APP_ENV", "production")).strip().lower()
+    if app_env == "local":
+        return request.cookies.get("sessionbuddy-local")
+    return request.cookies.get("__Host-session")
+
+
 async def require_permission(
     request: Request,
     permission: Permission,
@@ -89,7 +97,7 @@ async def authenticate_request(request: Request) -> AuthenticatedContext:
     cached = getattr(request.state, "authenticated_context", None)
     if isinstance(cached, AuthenticatedContext):
         return cached
-    cookie = request.cookies.get("__Host-session") or request.cookies.get("sessionbuddy-local")
+    cookie = session_cookie_value(request)
     db = database(request)
     result = await authenticate_session(
         cookie_value=cookie,
@@ -111,10 +119,7 @@ async def require_document_persona(request: Request, persona: Persona) -> None:
     Anonymous visitors may still receive a portal shell that presents its
     sign-in state. Protected API calls remain independently authenticated.
     """
-    if not (
-        request.cookies.get("__Host-session")
-        or request.cookies.get("sessionbuddy-local")
-    ):
+    if not session_cookie_value(request):
         return
     try:
         authenticated = await authenticate_request(request)

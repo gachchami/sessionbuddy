@@ -87,7 +87,7 @@ def branding_request(database: AsyncSqlite, bucket: Bucket, body: bytes = PNG) -
             "env": SimpleNamespace(
                 DB=database,
                 ASSETS=bucket,
-                APP_ENV="development",
+                APP_ENV="local",
                 MALWARE_SCAN_MODE="disabled",
             ),
         },
@@ -358,9 +358,9 @@ async def test_event_branding_matrix_is_consistent_across_public_views(
         branding_request(database, bucket, b""),
         Response(),
     )
-    assert public_schedule["event"]["logo_url"] == expected["logo"]
-    assert public_schedule["event"]["cover_image_url"] == expected["cover"]
-    assert public_schedule["event"]["website_url"] == website_url
+    assert public_schedule.event.logo_url == expected["logo"]
+    assert public_schedule.event.cover_image_url == expected["cover"]
+    assert public_schedule.event.website_url == website_url
 
     public_gallery = await public_speakers(
         created.id, branding_request(database, bucket, b"")

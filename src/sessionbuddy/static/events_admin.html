@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Events · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=57">
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
@@ -39,10 +39,11 @@
           <label class="event-search"><span class="sr-only">Search events</span><input id="event-search" type="search" placeholder="Search events…" autocomplete="off"></label>
         </div>
       </div>
-      <div class="event-table-frame">
-        <div class="event-table-header" aria-hidden="true"><span>Event</span><span>Date</span><span>Status</span><span>CFP</span><span>Actions</span></div>
-        <div id="event-list" class="event-management-list" role="table" aria-label="Events"><p class="empty">Loading your events…</p></div>
+      <div class="event-table-frame" role="table" aria-label="Events">
+        <div role="rowgroup"><div class="event-table-header" role="row"><span role="columnheader">Event</span><span role="columnheader">Date</span><span role="columnheader">Status</span><span role="columnheader">CFP</span><span role="columnheader">Actions</span></div></div>
+        <div id="event-list" class="event-management-list" role="rowgroup"></div>
       </div>
+      <p id="event-list-empty" class="empty" role="status" aria-live="polite">Loading your events…</p>
       <div class="event-list-footer"><button id="load-more-events" class="secondary" type="button" hidden>Load more events</button></div>
     </section>
 
@@ -139,6 +140,15 @@
           <button id="save-event-draft" type="submit" class="secondary" value="draft">Save draft</button>
           <button id="save-event" type="submit" value="active">Create active event</button>
         </div>
+      </form>
+    </dialog>
+    <dialog id="event-archive-dialog" class="confirmation-dialog" aria-labelledby="event-archive-title" aria-describedby="event-archive-consequence event-archive-restore">
+      <form id="event-archive-form">
+        <p class="eyebrow">Event lifecycle</p>
+        <h2 id="event-archive-title">Archive this active event?</h2>
+        <p id="event-archive-consequence">The event will disappear from active and public event listings. Its proposals, agenda, and speaker records are retained.</p>
+        <p id="event-archive-restore" class="help">You can find it under Past events and restore it by editing the event status.</p>
+        <div class="actions"><button id="cancel-event-archive" class="secondary" type="button">Cancel</button><button id="confirm-event-archive" class="danger" type="submit">Archive event</button></div>
       </form>
     </dialog>
   </main>

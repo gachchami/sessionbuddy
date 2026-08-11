@@ -294,10 +294,10 @@
       if (location.pathname.includes("/messages")) return "Speakers";
       if (location.pathname.includes("/onboarding")) return "Speakers";
       if (location.pathname.includes("/access")) return "Team & access";
-      if (location.pathname.includes("/workspace")) return "Publish";
+      if (location.pathname.includes("/workspace")) return "Share & integrations";
       if (location.pathname.includes("/agenda")) return "Agenda";
       if (location.pathname.endsWith("/cfp")) return "Call for Proposals";
-      if (location.pathname.includes("/submissions")) return "Submissions";
+      if (location.pathname.includes("/submissions")) return "Proposals";
       return "Overview";
     }
     return { home: "Home", events: "Events", speakers: "People", reviews: "Reviews", speaker: "Speaker home", account: "Account" }[section] || "Home";
@@ -314,15 +314,15 @@
     const items = [
       ["Overview", prefix, "overview", [prefix]],
       ["Call for Proposals", `${prefix}/cfp`, "form", [`${prefix}/cfp`]],
-      ["Submissions", `${prefix}/submissions`, "review", [`${prefix}/submissions`]],
+      ["Proposals", `${prefix}/submissions`, "review", [`${prefix}/submissions`]],
       ["Speakers", `${prefix}/speakers`, "mic", [
         `${prefix}/speakers`,
         `${prefix}/onboarding`,
         `${prefix}/speaker-content`,
         `${prefix}/messages`
       ]],
-      ["Agenda", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
-      ["Publish", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
+      ["Agenda & publish", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
+      ["Share & integrations", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
     ];
     // Access administration needs owner/manage on this exact event. An `edit`
     // grantee reaches every page above and is refused this one, so offering it
@@ -617,16 +617,21 @@
 
   async function renderPublicEvents() {
     if (!publicEvents) return;
+    publicEvents.setAttribute("aria-busy", "true");
     try {
       const response = await window.SessionBuddyApi.request("/api/v1/public/events");
       publicEvents.replaceChildren();
       if (!response.data.length) {
-        publicEvents.append(make("p", "No public events are available yet.", "public-events-empty"));
+        const empty = make("p", "No public events are available yet.", "public-events-empty");
+        empty.setAttribute("role", "status");
+        publicEvents.append(empty);
         return;
       }
       for (const event of response.data) {
-        const card = make("article", undefined, "role-card");
-        card.append(make("span", new Date(event.starts_at_ms).toLocaleDateString(), "role-label"), make("h3", event.name));
+        const card = make("article", undefined, "public-event-card");
+        const date = make("time", new Date(event.starts_at_ms).toLocaleDateString());
+        date.dateTime = new Date(event.starts_at_ms).toISOString();
+        card.append(date, make("h3", event.name));
         const details = [event.location, event.delivery_mode.replaceAll("_", " ")].filter(Boolean).join(" · ");
         card.append(make("p", details || "Event details coming soon."));
         const actions = make("div", undefined, "public-event-actions");
@@ -640,7 +645,11 @@
         card.append(actions); publicEvents.append(card);
       }
     } catch (_) {
-      publicEvents.replaceChildren(make("p", "Public events could not be loaded.", "public-events-empty"));
+      const error = make("p", "Public events could not be loaded. Try again later.", "public-events-empty");
+      error.setAttribute("role", "alert");
+      publicEvents.replaceChildren(error);
+    } finally {
+      publicEvents.setAttribute("aria-busy", "false");
     }
   }
 

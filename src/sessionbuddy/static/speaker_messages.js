@@ -11,6 +11,7 @@
   let messageMutation = null;
   let messageCursor = null;
   let mergeTarget = null;
+  let eventTimeZone = "";
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function idempotencyKey() {
@@ -22,6 +23,15 @@
   function setStatus(message, error = false) {
     byId("status").textContent = message;
     byId("status").classList.toggle("error", error);
+  }
+
+  function eventTime(value) {
+    try {
+      const formatted = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium", timeStyle: "short", timeZone: eventTimeZone
+      }).format(new Date(value));
+      return `${formatted} · Event time (${eventTimeZone})`;
+    } catch (_) { return "Date unavailable"; }
   }
 
   function selectedIds() {
@@ -82,7 +92,7 @@
     }
     result.data.forEach((message) => {
       const row = document.createElement("tr");
-      [message.recipient_email, message.subject, message.status, new Date(message.updated_at_ms).toLocaleString()].forEach((value) => {
+      [message.recipient_email, message.subject, message.status, eventTime(message.updated_at_ms)].forEach((value) => {
         const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
       });
       body.append(row);
@@ -159,29 +169,27 @@
       setStatus(`Preview ready for ${result.recipients.length} recipient${result.recipients.length === 1 ? "" : "s"}.`);
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
   });
-  byId("message-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!previewedMessage) return;
-    // Capture the form NOW: event.currentTarget is null after any await, and
-    // touching it then throws — which used to convert a SUCCESSFUL send into
-    // a red failure banner (the eval run's false-negative feedback bug).
-    const form = event.currentTarget;
-    const button = byId("send-message"); button.disabled = true;
+  async function sendPreviewedMessage() {
+    const form = byId("message-form");
+    const button = byId("send-message");
+    const message = previewedMessage;
+    if (!message) return;
+    button.disabled = true;
     try {
-      const fingerprint = JSON.stringify(previewedMessage);
+      const fingerprint = JSON.stringify(message);
       if (!messageMutation || messageMutation.fingerprint !== fingerprint) messageMutation = { fingerprint, key: idempotencyKey() };
-      const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/communications/speakers/send`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf, "idempotency-key": messageMutation.key }, body: JSON.stringify({ ...previewedMessage, confirmed: true }) });
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/communications/speakers/send`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf, "idempotency-key": messageMutation.key }, body: JSON.stringify({ ...message, confirmed: true }) });
       form.reset();
       document.querySelectorAll('input[name="speaker_recipient"]').forEach((input) => { input.checked = false; });
       invalidatePreview();
-      await loadMessageHistory();
+      try { await loadMessageHistory(); } catch (_) { /* The accepted send remains successful. */ }
       setStatus(`${result.message_ids.length} message${result.message_ids.length === 1 ? "" : "s"} queued.`);
     } catch (error) {
       try {
         const history = await loadMessageHistory();
-        const selected = new Set(previewedMessage.event_speaker_ids);
+        const selected = new Set(message.event_speaker_ids);
         const expectedEmails = new Set(speakers.filter((speaker) => selected.has(speaker.event_speaker_id)).map((speaker) => speaker.email));
-        const delivered = history.filter((message) => message.subject === previewedMessage.subject && expectedEmails.has(message.recipient_email));
+        const delivered = history.filter((item) => item.subject === message.subject && expectedEmails.has(item.recipient_email));
         if (expectedEmails.size && new Set(delivered.map((message) => message.recipient_email)).size === expectedEmails.size) {
           form.reset();
           document.querySelectorAll('input[name="speaker_recipient"]').forEach((input) => { input.checked = false; });
@@ -193,6 +201,24 @@
       setStatus(`${window.SessionBuddyApi.message(error)} You can safely retry; already queued recipients will not be duplicated.`, true);
       button.disabled = false;
     }
+  }
+
+  byId("message-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!previewedMessage) return;
+    const count = previewedMessage.event_speaker_ids.length;
+    byId("confirm-message-count").textContent = `${count} personalized email${count === 1 ? "" : "s"} will be queued.`;
+    byId("confirm-message-subject").textContent = `Subject: ${previewedMessage.subject}`;
+    byId("confirm-message-send").showModal();
+  });
+  byId("cancel-message-send").addEventListener("click", () => byId("confirm-message-send").close("cancel"));
+  byId("confirm-message-send").addEventListener("close", () => byId("send-message").focus());
+  byId("confirm-message-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const confirm = byId("confirm-message-send-button");
+    confirm.disabled = true;
+    byId("confirm-message-send").close("confirmed");
+    try { await sendPreviewedMessage(); } finally { confirm.disabled = false; }
   });
   byId("load-older-messages").addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -203,6 +229,10 @@
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");
     const session = await api("/api/v1/auth/session"); csrf = session.csrf_token;
+    const event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    if (!event?.time_zone) throw new Error("The event time zone could not be loaded.");
+    eventTimeZone = event.time_zone;
+    byId("message-time-zone").textContent = eventTimeZone;
     byId("speaker-directory").href = `/admin/events/${encodeURIComponent(eventId)}/speakers`;
     speakers = (await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)).data.filter((speaker) => speaker.selection_status !== "invited");
     renderRecipients();

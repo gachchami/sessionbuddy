@@ -10,7 +10,13 @@ from sessionbuddy.api.app import app
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as value:
+    async def inject_environment(scope, receive, send):
+        scope["env"] = SimpleNamespace(APP_ENV="local")
+        await app(scope, receive, send)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=inject_environment), base_url="http://test"
+    ) as value:
         yield value
 
 
@@ -169,7 +175,6 @@ async def test_openapi_contains_engine_room_and_cfp_routes(
         "/api/v1/account/profile",
         "/api/v1/auth/magic-links",
         "/api/v1/auth/session",
-        "/api/v1/auth/verify",
         "/api/v1/admin/events/{event_id}/invitations",
         "/api/v1/admin/events/{event_id}/invitations/{invitation_id}",
         "/api/v1/admin/events/{event_id}/members",

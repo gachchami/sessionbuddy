@@ -74,17 +74,27 @@ test.describe("account profile responsive design", () => {
         data: [{ id: organizationId, name: "Example Events", status: "active", version: 1 }],
       }),
     }));
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/access-grants**`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: [{ user_id: session.user_id, email: session.email, permission: "owner", status: "active" }],
+      }),
+    }));
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/ownership-recovery/events**`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [], next_cursor: null }),
+    }));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/account");
     await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    await expect(page.locator("#workspace-navigation")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
+    await expect(page.locator("#workspace-navigation")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await expect(page.getByRole("link", { name: "SessionBuddy" })).toBeVisible();
     await expect(page.getByText("Your account is up to date.")).toHaveCount(0);
     await expect(page.getByText("Nothing changes until you save your profile.")).toBeHidden();
-    await expect(page.getByRole("navigation", { name: "Workspace navigation" })).toBeHidden();
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
     await expect(page.getByRole("radio", { name: /Organizer/ })).toBeChecked();
     await expect(page.getByRole("button", { name: "Save default role" })).toBeDisabled();
 
@@ -171,20 +181,25 @@ test.describe("account profile responsive design", () => {
         data: [{ id: organizationId, name: "Example Events", status: "active", version: 1 }],
       }),
     }));
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/access-grants**`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: [{ user_id: session.user_id, email: session.email, permission: "owner", status: "active" }],
+      }),
+    }));
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/ownership-recovery/events**`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [], next_cursor: null }),
+    }));
 
     await page.goto("/account?onboarding=1&next=%2Fadmin");
 
-    await expect(page.locator("#workspace-navigation")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
+    await expect(page.locator("#workspace-navigation")).toHaveCount(1);
     await expect(page.getByRole("link", { name: "SessionBuddy" })).toBeVisible();
-    const mainMargins = await page.locator("main").evaluate((node) => {
-      const style = getComputedStyle(node);
-      return [Number.parseFloat(style.marginLeft), Number.parseFloat(style.marginRight)];
-    });
-    expect(Math.abs(mainMargins[0] - mainMargins[1])).toBeLessThanOrEqual(1);
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
     await expect(page.getByLabel("First name")).toHaveValue("Devang");
     await expect(page.getByLabel("Last name")).toHaveValue("Hanushali");
-    await expect(page.getByRole("status")).toContainText(
+    await expect(page.locator("#status")).toContainText(
       "Review the suggested name fields",
     );
     await expect(page.getByText("Nothing changes until you save your profile.")).toBeVisible();

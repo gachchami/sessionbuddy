@@ -9,7 +9,9 @@ Set these non-secret values under the target Wrangler environment:
 - `APP_ENV`: `development`, `staging`, or `production`.
 - `PUBLIC_BASE_URL`: the exact HTTPS origin used in email links.
 - `ALLOWED_ORIGINS`: the same origin, or a comma-separated allowlist for a separate frontend.
-- `MALWARE_SCAN_MODE`: `disabled` works only in `local` or `development`; staging and production fail closed.
+- `MALWARE_SCAN_MODE`: `disabled` works only in explicit `local` or
+  `development` environments. Preview, staging, production, and unknown
+  environments fail closed and require scanning.
 - `RESEND_FROM_ADDRESS`: the verified sender shown to recipients.
 - `SCANNER_URL`: required when malware scanning is enabled.
 - `SKIP_PROFILE_ONBOARDING`: when `true`, local and development magic links
@@ -18,6 +20,17 @@ Set these non-secret values under the target Wrangler environment:
   production. Use it only for disposable automated-evaluation environments.
 - `CLOUDFLARE_ACCOUNT_ID` and `R2_BUCKET_NAME`: non-secret identifiers used to
   generate direct-upload URLs.
+
+Every deployed environment must also bind the checked-in Cloudflare rate-limit
+namespaces. `SPEAKER_UPLOAD_AUTH_RATE_LIMITER` permits three new speaker upload
+authorizations per user/event each minute, and `HEADSHOT_UPLOAD_RATE_LIMITER`
+permits three synchronous account-headshot scans per user each minute. Missing
+bindings fail closed with 503.
+Magic-link delivery uses two independent namespaces:
+`MAGIC_LINK_RECIPIENT_RATE_LIMITER` permits three requests per normalized
+recipient each minute regardless of source address, while
+`MAGIC_LINK_SOURCE_RATE_LIMITER` permits ten requests per source each minute
+regardless of recipient. Password sign-in continues to use `AUTH_RATE_LIMITER`.
 
 Install secrets through the Docker-managed Wrangler environment (change `dev` for another environment):
 
@@ -101,6 +114,12 @@ sending the administrator through the homepage or another sign-in request. An
 event is intentionally optional; the initial administrator
 creates the first event from the empty-state UI.
 
+Sign-in and invitation emails place the single-use bearer token in the URL
+fragment (`/auth/verify#token=...`). Fragments are not sent to the Worker or in
+HTTP referrers. The confirmation page removes the fragment from browser history,
+copies it into a hidden same-origin form field, and waits for an explicit click;
+the token is redeemed only from the POST body after exact-Origin validation.
+
 Completion is also recorded by an atomic, singleton D1 marker. The marker is
 claimed in the same transaction as the first organization and administrator,
 so concurrent setup attempts cannot both succeed. It is independent of business
@@ -109,7 +128,11 @@ The database rejects changing or deleting this marker through normal SQL.
 
 ## Development deployment with scanning disabled
 
-The checked-in `dev` environment sets `MALWARE_SCAN_MODE` to `disabled`. Uploads are marked `clean` with reason `development_bypass`, and an audit event records the bypass. The same value is rejected in staging and production.
+The checked-in `dev` environment explicitly sets `APP_ENV=development` and
+`MALWARE_SCAN_MODE=disabled`, so development uploads bypass malware scanning.
+This is an accepted risk for the isolated development Worker and must never be
+copied into preview, staging, or production. Those environments require a real,
+reachable scanner endpoint and `SCANNER_HMAC_KEY`.
 
 Confirm `PUBLIC_BASE_URL` and `ALLOWED_ORIGINS` contain the exact Worker origin,
 then run:

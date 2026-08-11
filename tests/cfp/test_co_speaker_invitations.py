@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, Request
 
+from sessionbuddy.cfp.models import CoSpeakerInput
 from sessionbuddy.cfp.router import (
     _co_speaker_expiry,
+    _reconcile_co_speakers,
     accept_co_speaker_invitation,
     decline_co_speaker_invitation,
     get_co_speaker_invitation,
@@ -146,6 +148,51 @@ async def test_accept_is_single_use_and_creates_relationships(
     assert reused.value.status_code == 404
 
 
+async def test_accept_cannot_restore_revoked_organizer_authority(
+    invitation_database,
+) -> None:
+    connection, database = invitation_database
+    now = utc_now_ms()
+    token = "former-admin-co-speaker-token-with-thirty-two-chars"  # noqa: S105
+    connection.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,created_at_ms,updated_at_ms)
+           VALUES('former-admin','co@example.test','co@example.test','active',?,?)""",
+        (now, now),
+    )
+    connection.execute(
+        """INSERT INTO organization_memberships
+           (id,organization_id,user_id,role,status,revoked_at_ms,created_at_ms,updated_at_ms)
+           VALUES('former-org-admin','org','former-admin','organization_admin','revoked',?,?,?)""",
+        (now, now, now),
+    )
+    connection.execute(
+        """INSERT INTO event_memberships
+           (id,organization_id,event_id,user_id,role,status,revoked_at_ms,
+            created_at_ms,updated_at_ms)
+           VALUES('former-event-admin','org','event','former-admin','event_admin','revoked',?,?,?)""",
+        (now, now, now),
+    )
+    seed_invitation(connection, token)
+
+    accepted = await accept_co_speaker_invitation(token, request_for(database))
+
+    assert accepted.invitation_status == "accepted"
+    assert tuple(connection.execute(
+        """SELECT role,status FROM organization_memberships
+           WHERE organization_id='org' AND user_id='former-admin'"""
+    ).fetchone()) == ("member", "active")
+    memberships = connection.execute(
+        """SELECT role,status FROM event_memberships
+           WHERE organization_id='org' AND event_id='event' AND user_id='former-admin'
+           ORDER BY role"""
+    ).fetchall()
+    assert [tuple(row) for row in memberships] == [
+        ("event_admin", "revoked"),
+        ("speaker", "active"),
+    ]
+
+
 async def test_decline_consumes_token_without_creating_an_account(
     invitation_database,
 ) -> None:
@@ -163,6 +210,49 @@ async def test_decline_consumes_token_without_creating_an_account(
     assert connection.execute(
         "SELECT COUNT(*) FROM users WHERE normalized_email='co@example.test'"
     ).fetchone()[0] == 0
+
+
+async def test_removed_co_speaker_readd_uses_stable_identity_and_next_message_version(
+    invitation_database,
+) -> None:
+    connection, database = invitation_database
+    token = "removed-token-with-at-least-thirty-two-characters"  # noqa: S105
+    seed_invitation(connection, token)
+    connection.execute(
+        """UPDATE submission_contributors SET invitation_status='removed',
+                  invitation_token_hash=NULL,invitation_expires_at_ms=NULL
+           WHERE id='co-speaker'"""
+    )
+    queued: list[dict[str, object]] = []
+
+    class Queue:
+        async def send(self, message: dict[str, object]) -> None:
+            queued.append(message)
+
+    request = request_for(database)
+    request.scope["env"].COMMUNICATION_QUEUE = Queue()
+    await _reconcile_co_speakers(
+        request,
+        submission_id="submission",
+        organization_id="org",
+        event_id="event",
+        invitation_deadline_ms=utc_now_ms() + 3_600_000,
+        proposal_title="Proposal",
+        primary_name="Owner",
+        desired=[CoSpeakerInput(display_name="Co Speaker", email="co@example.test")],
+        actor_user_id="owner",
+    )
+
+    contributor = connection.execute(
+        """SELECT id,invitation_status,invitation_version
+           FROM submission_contributors WHERE normalized_email='co@example.test'"""
+    ).fetchone()
+    assert tuple(contributor) == ("co-speaker", "pending", 2)
+    message = connection.execute(
+        "SELECT id,deterministic_key FROM communication_messages"
+    ).fetchone()
+    assert message["deterministic_key"] == "co-speaker:co-speaker:v2"
+    assert queued == [{"schema_version": 1, "message_id": message["id"]}]
 
 
 def test_owner_lifecycle_routes_preserve_contributors_and_never_target_primary() -> None:
@@ -186,6 +276,11 @@ def test_owner_lifecycle_routes_preserve_contributors_and_never_target_primary()
     assert "invitation_status!='removed'" in reconcile
     assert "ON CONFLICT(submission_id,normalized_email) DO UPDATE" in reconcile
     assert "invitation_version=submission_contributors.invitation_version+1" in reconcile
+    assert 'f"co-speaker:{contributor_id}:v{invitation_version}"' in reconcile
+    assert "all_existing_by_email.get(normalized)" in reconcile
     assert "ss.role='primary'" in reconcile
     assert "submission.co_speaker.invite" in reconcile
     assert "submission.co_speaker.remove" in reconcile
+
+    assert router.count('"cfp.co_speaker.email", limit=20, window_seconds=3_600') == 2
+    assert "for _normalized_email in desired_emails" in router

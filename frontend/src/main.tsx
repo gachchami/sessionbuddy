@@ -434,7 +434,7 @@ function ReviewWorkspace() {
             {assignment.answers.length > 0 && (
               <details className="answers" open>
                 <summary>
-                  Full submission ({assignment.answers.length} answer
+                  Full proposal ({assignment.answers.length} answer
                   {assignment.answers.length === 1 ? "" : "s"})
                 </summary>
                 <dl>
@@ -790,7 +790,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       <section className="hero">
         <h1>{results?.round_name || "Round progress"}</h1>
         <p>
-          Monitor completion, resolve conflicts, and decide which sessions move
+          Monitor completion, resolve conflicts, and decide which proposals move
           forward.
         </p>
       </section>
@@ -867,7 +867,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             <a
               href={`/admin/events/${encodeURIComponent(results.event_id)}/submissions`}
             >
-              Submissions
+              Proposals
             </a>
             <a
               href={`/admin/events/${encodeURIComponent(results.event_id)}/onboarding`}
@@ -1034,8 +1034,8 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               </section>
             </>
           )}
-          <h2>Submission results</h2>
-          <section className="grid" aria-label="Submission results">
+          <h2>Proposal results</h2>
+          <section className="grid" aria-label="Proposal results">
             {results.submissions.map((submission) => {
               const complete =
                 submission.assigned_count > 0 &&

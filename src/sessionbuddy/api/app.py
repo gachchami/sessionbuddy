@@ -24,6 +24,7 @@ from sessionbuddy.platform.auth.access import (
 from sessionbuddy.platform.auth.access import (
     current_session as current_access_session,
 )
+from sessionbuddy.platform.auth.http import session_cookie_value
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
@@ -125,9 +126,7 @@ async def root(request: Request) -> Response:
             status_code=303,
             headers={"Cache-Control": "no-store"},
         )
-    session_cookie = request.cookies.get("__Host-session") or request.cookies.get(
-        "sessionbuddy-local"
-    )
+    session_cookie = session_cookie_value(request)
     if session_cookie:
         try:
             session = await current_access_session(request)
@@ -215,12 +214,15 @@ def _error_response(
     code: str,
     message: str,
     headers: dict[str, str] | None = None,
+    *,
+    field: str | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> JSONResponse:
     response_headers = _failure_headers(request)
     if headers:
         response_headers.update(headers)
     envelope = ErrorEnvelope(
-        error=ErrorDetail(code=code, message=message),
+        error=ErrorDetail(code=code, message=message, field=field, metadata=metadata),
         request_id=request.state.request_id,
     )
     return JSONResponse(
@@ -316,12 +318,19 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
         409: ("conflict", "The request conflicts with current state"),
         413: ("payload_too_large", "The request body is too large"),
         415: ("unsupported_media_type", "The media type is not supported"),
+        422: ("validation_failed", "The request could not be processed"),
         429: ("rate_limited", "Too many requests"),
         503: ("dependency_unavailable", "A required dependency is unavailable"),
     }
     code, message = errors.get(
         exception.status_code, ("request_failed", "The request could not be processed")
     )
+    if (
+        exception.status_code < 500
+        and isinstance(exception.detail, str)
+        and exception.detail.strip()
+    ):
+        message = exception.detail.strip()
     return _error_response(
         request,
         exception.status_code,
@@ -332,12 +341,25 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error(request: Request, _exception: RequestValidationError) -> JSONResponse:
+async def validation_error(request: Request, exception: RequestValidationError) -> JSONResponse:
+    details: list[dict[str, str]] = []
+    for error in exception.errors():
+        location = [str(part) for part in error.get("loc", ()) if part not in {"body"}]
+        details.append(
+            {
+                "field": ".".join(location) or "request",
+                "message": str(error.get("msg", "Invalid value")),
+                "type": str(error.get("type", "validation_error")),
+            }
+        )
+    first = details[0] if details else None
     return _error_response(
         request,
         422,
         "validation_failed",
-        "The request could not be processed",
+        first["message"] if first else "The request could not be processed",
+        field=first["field"] if first else None,
+        metadata={"details": details} if details else None,
     )
 
 

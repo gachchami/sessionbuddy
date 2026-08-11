@@ -1,8 +1,10 @@
 import hashlib
 import hmac
 import json
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+import re
+from base64 import urlsafe_b64encode
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from time import perf_counter
 from typing import Literal
 from urllib.parse import quote, urlparse
@@ -33,6 +35,8 @@ from sessionbuddy.platform.db.d1 import (
     to_python,
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
+from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 from sessionbuddy.platform.storage import (
     ScanResult,
     malware_scan_disabled,
@@ -67,6 +71,82 @@ from .models import (
 from .scanner_adapter import SignedScannerAdapter
 
 speaker_operations_router = APIRouter()
+
+
+class _SpeakerMessageParser(HTMLParser):
+    """Reduce delivered email HTML to text plus explicitly safe web links."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.links: list[str] = []
+        self.blocked_depth = 0
+
+    @staticmethod
+    def safe_link(value: object) -> str | None:
+        try:
+            parsed = urlparse(str(value))
+        except ValueError:
+            return None
+        if (
+            parsed.scheme not in {"https", "http"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            return None
+        return parsed.geturl()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style"}:
+            self.blocked_depth += 1
+            return
+        if self.blocked_depth:
+            return
+        if tag in {"br", "p", "div", "li", "h1", "h2", "h3"}:
+            self.parts.append("\n")
+        if tag == "a":
+            href = next((value for name, value in attrs if name == "href"), None)
+            safe = self.safe_link(href)
+            if safe and safe not in self.links and len(self.links) < 20:
+                self.links.append(safe)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"} and self.blocked_depth:
+            self.blocked_depth -= 1
+            return
+        if self.blocked_depth:
+            return
+        if tag in {"p", "div", "li", "h1", "h2", "h3"}:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.blocked_depth:
+            self.parts.append(data)
+
+
+def _speaker_message_content(value: object) -> tuple[str, list[str]]:
+    parser = _SpeakerMessageParser()
+    parser.feed(str(value))
+    text = re.sub(r"[ \t]+", " ", "".join(parser.parts))
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    for candidate in re.findall(r"https?://[^\s<>\"']+", text):
+        safe = parser.safe_link(candidate.rstrip(".,;:!?)"))
+        if safe and safe not in parser.links and len(parser.links) < 20:
+            parser.links.append(safe)
+    return text, parser.links
+
+
+def _speaker_notification_view(row) -> SpeakerNotificationView:
+    body_text, links = _speaker_message_content(row["html_body"])
+    return SpeakerNotificationView(
+        id=str(row["id"]),
+        subject=str(row["subject"]),
+        delivered_at_ms=int(row["delivered_at_ms"]),
+        body_text=body_text,
+        links=links,
+    )
 
 
 def _asset(name: str) -> str:
@@ -155,6 +235,7 @@ async def speaker_js(request: Request) -> Response:
     include_in_schema=False,
 )
 async def admin_onboarding_page(event_id: str, request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return _product_asset(request, "admin_onboarding.html", "text/html")
 
 
@@ -200,40 +281,23 @@ def _cursor(
     state: str,
     task_type: str | None,
 ) -> tuple[int, int, str, int] | None:
-    if value is None:
+    decoded = decode_signed_cursor(
+        request,
+        value,
+        scope={"event": event_id, "state": state, "task_type": task_type},
+        position_fields={"as_of", "due", "id"},
+    )
+    if decoded is None:
         return None
-    try:
-        encoded_payload, encoded_signature = value.split(".", 1)
-        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
-        signature = urlsafe_b64decode(encoded_signature + "=" * (-len(encoded_signature) % 4))
-        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-        if not hmac.compare_digest(signature, expected):
-            raise ValueError
-        decoded = json.loads(payload.decode())
-        if not isinstance(decoded, dict) or decoded != {
-            "as_of": decoded.get("as_of"),
-            "due": decoded.get("due"),
-            "event": event_id,
-            "exp": decoded.get("exp"),
-            "id": decoded.get("id"),
-            "state": state,
-            "task_type": task_type,
-            "v": 1,
-        }:
-            raise ValueError
-        values = (decoded["due"], decoded["id"], decoded["as_of"], decoded["exp"])
-        if (
-            not isinstance(values[0], int)
-            or not isinstance(values[1], str)
-            or len(values[1]) > 100
-            or not isinstance(values[2], int)
-            or not isinstance(values[3], int)
-            or values[3] < utc_now_ms()
-        ):
-            raise ValueError
-        return values
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, KeyError) as exc:
-        raise HTTPException(status_code=400) from exc
+    values = (decoded["due"], decoded["id"], decoded["as_of"], decoded["exp"])
+    if (
+        type(values[0]) is not int
+        or not isinstance(values[1], str)
+        or len(values[1]) > 100
+        or type(values[2]) is not int
+    ):
+        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
+    return values
 
 
 def _next_cursor(
@@ -246,26 +310,15 @@ def _next_cursor(
     task_id: str,
     as_of: int,
 ) -> str:
-    payload = json.dumps(
-        {
+    return encode_signed_cursor(
+        request,
+        scope={"event": event_id, "state": state, "task_type": task_type},
+        position={
             "as_of": as_of,
             "due": due_at_ms if due_at_ms is not None else 9_223_372_036_854_775_807,
-            "event": event_id,
-            "exp": as_of + 15 * 60 * 1000,
             "id": task_id,
-            "state": state,
-            "task_type": task_type,
-            "v": 1,
         },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-    return ".".join(
-        (
-            urlsafe_b64encode(payload).decode().rstrip("="),
-            urlsafe_b64encode(signature).decode().rstrip("="),
-        )
+        expires_at_ms=as_of + 15 * 60 * 1000,
     )
 
 
@@ -637,7 +690,7 @@ async def get_speaker_portal(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT id,subject,delivered_at_ms
+                """SELECT id,subject,html_body,delivered_at_ms
                    FROM communication_messages
                    WHERE organization_id=?1 AND event_id=?2
                      AND recipient_user_id=?3 AND status='delivered'
@@ -718,14 +771,7 @@ async def get_speaker_portal(
             )
             for submission in submissions
         ],
-        notifications=[
-            SpeakerNotificationView(
-                id=str(notification["id"]),
-                subject=str(notification["subject"]),
-                delivered_at_ms=int(notification["delivered_at_ms"]),
-            )
-            for notification in notifications
-        ],
+        notifications=[_speaker_notification_view(notification) for notification in notifications],
         completed_tasks=sum(task.state == "completed" for task in task_views),
         total_tasks=len(task_views),
     )
@@ -813,7 +859,7 @@ async def complete_custom_speaker_task(
     db = _db(request)
     replay = row_mapping(
         await db.prepare(
-            """SELECT request_fingerprint FROM idempotency_records
+            """SELECT request_fingerprint,response_resource_id FROM idempotency_records
                WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
                  AND state='completed'"""
         )
@@ -824,14 +870,23 @@ async def complete_custom_speaker_task(
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
         current = row_mapping(
-            await db.prepare("SELECT id,state,response_json,version FROM speaker_tasks WHERE id=?1")
-            .bind(task_id)
+            await db.prepare(
+                """SELECT id,state,response_json,version FROM speaker_tasks
+                   WHERE id=?1 AND organization_id=?2 AND event_id=?3
+                     AND event_speaker_id=?4 AND task_type='custom' LIMIT 1"""
+            )
+            .bind(
+                str(replay["response_resource_id"]),
+                speaker["organization_id"],
+                speaker["event_id"],
+                speaker["event_speaker_id"],
+            )
             .first()
         )
         if current is None or current["response_json"] is None:
             raise HTTPException(status_code=409)
         return SpeakerTaskResponseView(
-            id=task_id,
+            id=str(current["id"]),
             response=json.loads(str(current["response_json"])),
             version=int(current["version"]),
         )
@@ -1051,6 +1106,56 @@ ASSET_RULES = {
     ),
     "supporting_document": ({"application/pdf"}, 20 * 1024 * 1024),
 }
+_SPEAKER_UPLOAD_PENDING_LIMIT = 3
+_SPEAKER_UPLOAD_STORAGE_LIMIT_BYTES = 250 * 1024 * 1024
+
+
+async def _enforce_speaker_upload_quota(
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    event_speaker_id: str,
+    requested_bytes: int,
+    now_ms: int,
+) -> None:
+    pending = row_mapping(
+        await db.prepare(
+            """SELECT COUNT(*) AS pending_count,
+                      COALESCE(SUM(ui.expected_byte_size),0) AS pending_bytes
+               FROM upload_intents ui
+               JOIN speaker_asset_versions av
+                 ON av.organization_id=ui.organization_id
+                AND av.event_id=ui.event_id AND av.id=ui.asset_version_id
+               WHERE ui.organization_id=?1 AND ui.event_id=?2
+                 AND ui.event_speaker_id=?3 AND ui.consumed_at_ms IS NULL
+                 AND ui.expires_at_ms>?4 AND av.scan_state='pending_upload'"""
+        )
+        .bind(organization_id, event_id, event_speaker_id, now_ms)
+        .first()
+    )
+    stored_bytes = int(
+        await db.prepare(
+            """SELECT COALESCE(SUM(byte_size),0) AS stored_bytes
+               FROM speaker_asset_versions
+               WHERE organization_id=?1 AND event_id=?2 AND event_speaker_id=?3
+                 AND scan_state!='pending_upload'"""
+        )
+        .bind(organization_id, event_id, event_speaker_id)
+        .first("stored_bytes")
+    )
+    if pending is None:
+        raise HTTPException(status_code=503)
+    if int(pending["pending_count"]) >= _SPEAKER_UPLOAD_PENDING_LIMIT:
+        raise HTTPException(status_code=429, headers={"Retry-After": "600"})
+    if (
+        stored_bytes + int(pending["pending_bytes"]) + requested_bytes
+        > _SPEAKER_UPLOAD_STORAGE_LIMIT_BYTES
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Speaker asset storage quota exceeded for this event.",
+        )
 
 
 def _bucket(request: Request):
@@ -1120,7 +1225,8 @@ async def _authorization_view(
             request,
             _db(request)
             .prepare(
-                """SELECT ui.id, ui.expected_content_type, ui.expires_at_ms,
+                """SELECT ui.id, ui.expected_content_type, ui.expected_byte_size,
+                          ui.expires_at_ms,
                           av.object_key
                    FROM upload_intents ui
                    JOIN speaker_asset_versions av
@@ -1154,6 +1260,7 @@ async def _authorization_view(
             access_key_id=required[2],
             secret_access_key=required[3],
             content_type=content_type,
+            content_length=int(row["expected_byte_size"]),
             now=datetime.now(UTC),
             expires_seconds=max(1, (int(row["expires_at_ms"]) - utc_now_ms()) // 1000),
         )
@@ -1595,6 +1702,24 @@ async def authorize_speaker_upload(
         intent_id = str(replay["response_resource_id"])
         return await _authorization_view(request, intent_id, _upload_token(request, intent_id))
 
+    await enforce_rate_limit(
+        request,
+        binding_name="SPEAKER_UPLOAD_AUTH_RATE_LIMITER",
+        policy=RateLimitPolicy(
+            "speaker.asset.upload_authorize", limit=3, window_seconds=60
+        ),
+        subject=f"{authenticated.actor.user_id}:{event_id}",
+    )
+    now = utc_now_ms()
+    await _enforce_speaker_upload_quota(
+        db,
+        organization_id=str(speaker["organization_id"]),
+        event_id=event_id,
+        event_speaker_id=str(speaker["event_speaker_id"]),
+        requested_bytes=body.byte_size,
+        now_ms=now,
+    )
+
     slot = row_mapping(
         await db.prepare(
             """SELECT id FROM speaker_assets WHERE organization_id = ?1 AND event_id = ?2
@@ -1621,7 +1746,6 @@ async def authorize_speaker_upload(
     )
     intent_id, version_id = new_id(), new_id()
     upload_token = _upload_token(request, intent_id)
-    now = utc_now_ms()
     expires = now + 10 * 60 * 1000
     record = IdempotencyRecord(
         principal_key=authenticated.actor.user_id,

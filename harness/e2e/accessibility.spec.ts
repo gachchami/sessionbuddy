@@ -37,9 +37,10 @@ test.describe("MVP experience accessibility", () => {
   test("expired-link recovery has no automatically detectable serious violations", async ({ page }) => {
     const expiredToken = "expired-link".padEnd(32, "x");
     const responsePromise = page.waitForResponse((response) =>
-      response.url().includes("/auth/verify?") && response.request().method() === "POST",
+      response.url().endsWith("/auth/verify") && response.request().method() === "POST",
     );
-    await page.goto(`/auth/verify?token=${expiredToken}`);
+    await page.goto(`/auth/verify#token=${expiredToken}`);
+    await page.getByRole("button", { name: "Continue to your account" }).click();
     const response = await responsePromise;
     expect(response.status()).toBe(404);
     await expect(page.locator("main")).toBeVisible();

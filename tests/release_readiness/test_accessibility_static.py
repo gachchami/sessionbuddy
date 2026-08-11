@@ -131,7 +131,8 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert "form.validation-attempted" in stylesheet
     assert 'classList.add("validation-attempted")' in javascript
     assert 'setAttribute("aria-invalid", "true")' in javascript
-    assert "--danger: #b42318" in stylesheet
+    assert "--status-danger: #b42318" in stylesheet
+    assert "--danger: var(--status-danger)" in stylesheet
     assert 'value="Asia/Kolkata"' not in text
     assert '<option value="" selected disabled>Select a format</option>' in text
     assert 'aria-describedby="time-zone-help"' in text
@@ -179,10 +180,11 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
     for label in (
         '"Overview"',
         '"Call for Proposals"',
-        '"Submissions"',
+        '"Proposals"',
         '"Speakers"',
         '"Agenda"',
-        '"Publish"',
+        '"Agenda & publish"',
+        '"Share & integrations"',
         '"Team & access"',
     ):
         assert label in shell

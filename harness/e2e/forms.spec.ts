@@ -312,12 +312,15 @@ test.describe("form validation and workflow wiring", () => {
 
     await page.goto(`/admin/events/${eventId}/submissions`);
     await page.getByRole("button", { name: "Read proposal" }).click();
-    const detail = page.getByRole("dialog", { name: "Submission details" });
+    const detail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(detail).toContainText("speaker@example.com");
     await expect(detail).toContainText("Platform");
     await expect(detail).toContainText("Audience level");
     await expect(detail).toContainText("Intermediate");
     await detail.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Select eligible" }).click();
+    await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
     await page.getByText("Open a new evaluation round", { exact: true }).click();
     await page.getByLabel("Minimum rating").fill("5");
     await page.getByLabel("Maximum rating").fill("5");
@@ -520,7 +523,7 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByLabel("Rooms").fill("Main stage");
     await page.getByLabel(/Tracks/).fill("General");
     await page.getByRole("button", { name: "Create agenda" }).click();
-    await expect(page.getByRole("button", { name: "Schedule", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Schedule A proposal", exact: true })).toBeVisible();
     expect(setupWrites).toBe(1);
     await page.getByText("Schedule tools", { exact: true }).click();
     const labelForm = page.locator("#label-form");
@@ -529,8 +532,8 @@ test.describe("form validation and workflow wiring", () => {
     await labelForm.getByRole("button", { name: "Add label" }).click();
     await expect(page.getByText("Beginner", { exact: true }).first()).toBeVisible();
     expect(labelWrites).toBe(1);
-    await page.getByRole("button", { name: "Schedule", exact: true }).click();
-    const editor = page.getByRole("dialog", { name: "Schedule session" });
+    await page.getByRole("button", { name: "Schedule A proposal", exact: true }).click();
+    const editor = page.getByRole("dialog", { name: "Schedule A proposal" });
     await editor.getByLabel("Beginner").check();
     await editor.getByLabel("Starts").fill("2030-03-20T09:00");
     await editor.getByLabel("Ends").fill("2030-03-20T10:00");

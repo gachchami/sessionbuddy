@@ -2,7 +2,7 @@
   "use strict";
 
   const byId = (id) => document.getElementById(id);
-  const state = { csrf: "", userId: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventOrder: "upcoming", eventSearch: "", eventsRequestId: 0, submitting: false, editingDraft: false, submitTargetStatus: "active", createMutation: null, emailDefaults: null, draftTimer: null };
+  const state = { csrf: "", userId: "", organizationId: "", organizations: new Map(), events: new Map(), eventFilter: "all", eventOrder: "upcoming", eventSearch: "", eventsRequestId: 0, submitting: false, editingDraft: false, submitTargetStatus: "active", createMutation: null, emailDefaults: null, draftTimer: null, adminEventIds: new Set(), archiveConfirmedEventId: "" };
   const logoRules = { "image/jpeg": 2 * 1024 * 1024, "image/png": 2 * 1024 * 1024, "image/webp": 2 * 1024 * 1024 };
   const timeZoneAliases = new Map([
     ["Asia/Calcutta", "Asia/Kolkata"],
@@ -406,6 +406,8 @@
     }
     form.elements.website_url.value = event.website_url || "";
     form.elements.status.value = event.status;
+    const archiveOption = form.elements.status.querySelector('option[value="archived"]');
+    if (archiveOption) archiveOption.disabled = !state.adminEventIds.has(event.id);
     state.editingDraft = event.status === "draft";
     byId("event-form-heading").textContent = `Edit ${event.name}`;
     byId("save-event").textContent = "Save changes";
@@ -558,13 +560,12 @@
     list.replaceChildren(...events.map(eventItem));
     byId("event-count").textContent = `${events.length}${state.nextCursor ? "+" : ""}`;
     byId("load-more-events").hidden = !state.nextCursor;
+    const empty = byId("event-list-empty");
+    empty.hidden = events.length > 0;
     if (!events.length) {
-      const empty = document.createElement("p");
-      empty.className = "empty";
       if (state.eventSearch) empty.textContent = `No events match “${state.eventSearch}”. Try another search.`;
       else if (state.eventFilter !== "all") empty.textContent = `No ${state.eventFilter === "draft" ? "draft" : state.eventFilter} events in this view.`;
       else empty.textContent = "No events yet. Create your first event.";
-      list.append(empty);
     }
   }
 
@@ -644,6 +645,12 @@
         .filter((item) => (item.permissions || []).some((permission) =>
           ["owner", "manage"].includes(permission)))
         .map((item) => item.organization_id)
+    );
+    state.adminEventIds = new Set(
+      (session.event_access || [])
+        .filter((item) => (item.permissions || []).some((permission) =>
+          ["owner", "manage"].includes(permission)))
+        .map((item) => item.event_id)
     );
     const result = await api("/api/v1/admin/organizations");
     state.organizations = new Map(result.data.map((organization) => [organization.id, organization]));
@@ -842,8 +849,16 @@
     const intendedStatus = eventId
       ? state.editingDraft
         ? values.status === "archived" ? "archived" : createStatus
-        : values.status
+        : values.status || state.events.get(eventId)?.status
       : createStatus;
+    const currentEvent = eventId ? state.events.get(eventId) : null;
+    if (currentEvent?.status === "active" && intendedStatus === "archived" && state.archiveConfirmedEventId !== eventId) {
+      byId("event-archive-title").textContent = `Archive ${currentEvent.name}?`;
+      byId("event-archive-dialog").dataset.eventId = eventId;
+      byId("event-archive-dialog").showModal();
+      return;
+    }
+    state.archiveConfirmedEventId = "";
     state.submitTargetStatus = intendedStatus;
     if (state.submitting) return;
     try {
@@ -890,7 +905,7 @@
       if (!eventId) body.status = createStatus;
       if (eventId) {
         body.version = Number(values.version);
-        body.status = state.editingDraft ? intendedStatus : values.status;
+        body.status = intendedStatus;
       }
       if (form.elements.logo_file.files[0] || form.elements.cover_file.files[0]) {
         setDialogStatus(`Upload the selected logo or cover before ${eventId ? "saving changes" : "creating the event"}.`, true);
@@ -917,9 +932,9 @@
         }
       );
       sessionStorage.removeItem(eventDraftKey());
-      setStatus(eventId && state.editingDraft && intendedStatus === "archived"
+      setStatus(eventId && currentEvent?.status !== "archived" && intendedStatus === "archived"
         ? "Event archived."
-        : eventId && state.editingDraft && intendedStatus === "active"
+        : eventId && currentEvent?.status === "archived" && intendedStatus === "active"
           ? "Event activated."
         : eventId && !state.editingDraft
           ? "Event updated."
@@ -958,6 +973,22 @@
   byId("event-dialog").addEventListener("cancel", (event) => {
     event.preventDefault();
     closeEventDialog();
+  });
+  byId("event-archive-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const dialog = byId("event-archive-dialog");
+    state.archiveConfirmedEventId = dialog.dataset.eventId || "";
+    dialog.close();
+    byId("event-form").requestSubmit(byId("save-event"));
+  });
+  byId("cancel-event-archive").addEventListener("click", () => {
+    state.archiveConfirmedEventId = "";
+    byId("event-archive-dialog").close();
+  });
+  byId("event-archive-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    state.archiveConfirmedEventId = "";
+    byId("event-archive-dialog").close();
   });
 
   populateTimeZones();

@@ -1,16 +1,14 @@
 """Production passwordless access and one-time tenant bootstrap."""
 
-import binascii
 import hashlib
 import hmac
 import json
 import re
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from email.headerregistry import Address
 from email.utils import parseaddr
 from html import escape
 from typing import Literal
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -28,6 +26,7 @@ from sessionbuddy.platform.db.d1 import (
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
+from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 from sessionbuddy.platform.storage import malware_scan_disabled
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
@@ -35,10 +34,12 @@ from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
 from .http import (
+    allowed_origins,
     authenticate_request,
     database,
     environment,
     guard_mutation,
+    require_document_persona,
     require_permission,
     secret,
 )
@@ -176,7 +177,8 @@ async def co_speaker_invitation_javascript() -> Response:
 
 
 @access_router.get("/admin", include_in_schema=False)
-async def admin_home_page() -> Response:
+async def admin_home_page(request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return Response(
         _asset("admin_home.html"),
         media_type="text/html",
@@ -190,7 +192,8 @@ async def admin_home_javascript() -> Response:
 
 
 @access_router.get("/admin/events/{event_id}", include_in_schema=False)
-async def event_overview_page(event_id: str) -> Response:
+async def event_overview_page(event_id: str, request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return Response(
         _asset("event_overview.html"),
         media_type="text/html",
@@ -209,8 +212,10 @@ async def event_overview_javascript() -> Response:
     "/admin/events/{event_id}/speakers/{event_speaker_id}", include_in_schema=False
 )
 async def speaker_directory_page(
+    request: Request,
     event_id: str | None = None, event_speaker_id: str | None = None
 ) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return Response(
         _asset("speaker_directory.html"),
         media_type="text/html",
@@ -228,7 +233,8 @@ async def speaker_profile_page(person_id: str) -> Response:
 
 
 @access_router.get("/admin/events/{event_id}/messages", include_in_schema=False)
-async def speaker_messages_page(event_id: str) -> Response:
+async def speaker_messages_page(event_id: str, request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return Response(
         _asset("speaker_messages.html"),
         media_type="text/html",
@@ -261,7 +267,8 @@ async def account_javascript() -> Response:
 
 
 @access_router.get("/admin/events/{event_id}/access", include_in_schema=False)
-async def event_access_page(event_id: str) -> Response:
+async def event_access_page(event_id: str, request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return Response(
         _asset("access_admin.html"),
         media_type="text/html",
@@ -275,7 +282,8 @@ async def event_access_javascript() -> Response:
 
 
 @access_router.get("/admin/events", include_in_schema=False)
-async def events_page() -> Response:
+async def events_page(request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
     return Response(
         _asset("events_admin.html"),
         media_type="text/html",
@@ -1119,6 +1127,12 @@ async def _read_headshot(request: Request) -> tuple[bytes, str, str]:
 async def upload_account_headshot(request: Request) -> Response:
     authenticated = await authenticate_request(request)
     guard_mutation(request, authenticated.session_id, _EVENT_IMAGE_MEDIA_TYPES)
+    await enforce_rate_limit(
+        request,
+        binding_name="HEADSHOT_UPLOAD_RATE_LIMITER",
+        policy=RateLimitPolicy("account.headshot.upload", limit=3, window_seconds=60),
+        subject=authenticated.actor.user_id,
+    )
     body, content_type, extension = await _read_headshot(request)
     environment = request.scope.get("env")
     checksum = hashlib.sha256(body).digest()
@@ -1297,9 +1311,6 @@ async def update_organization(
 EVENTS_PAGE_LIMIT = 50
 EVENT_LIST_VIEWS = frozenset({"all", "active", "draft", "past"})
 EVENT_LIST_ORDERS = frozenset({"recent", "upcoming"})
-_EVENTS_CURSOR_TTL_MS = 15 * 60 * 1000
-
-
 async def _has_event_access_in_organization(db, user_id: str, organization_id: str) -> bool:
     row = row_mapping(
         await db.prepare(
@@ -1459,45 +1470,18 @@ def _events_cursor(
     order: str,
 ) -> tuple[int, str] | None:
     """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
-    if value is None:
+    decoded = decode_signed_cursor(
+        request,
+        value,
+        scope={"org": organization_id, "order": order, "q": search, "view": view},
+        position_fields={"id", "starts"},
+    )
+    if decoded is None:
         return None
-    try:
-        encoded_payload, encoded_signature = value.split(".", 1)
-        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
-        signature = urlsafe_b64decode(encoded_signature + "=" * (-len(encoded_signature) % 4))
-        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-        if not hmac.compare_digest(signature, expected):
-            raise ValueError
-        decoded = json.loads(payload.decode())
-        if not isinstance(decoded, dict) or decoded != {
-            "exp": decoded.get("exp"),
-            "id": decoded.get("id"),
-            "org": organization_id,
-            "order": order,
-            "q": search,
-            "starts": decoded.get("starts"),
-            "view": view,
-            "v": 1,
-        }:
-            raise ValueError
-        starts_at, row_id, expires = decoded["starts"], decoded["id"], decoded["exp"]
-        if (
-            not isinstance(starts_at, int)
-            or not isinstance(row_id, str)
-            or len(row_id) > 100
-            or not isinstance(expires, int)
-            or expires < utc_now_ms()
-        ):
-            raise ValueError
-        return starts_at, row_id
-    except (
-        ValueError,
-        binascii.Error,  # subclass of ValueError; listed for clarity
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        KeyError,
-    ) as exc:
-        raise HTTPException(status_code=400) from exc
+    starts_at, row_id = decoded["starts"], decoded["id"]
+    if type(starts_at) is not int or not isinstance(row_id, str) or len(row_id) > 100:
+        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
+    return starts_at, row_id
 
 
 class RecentSpeakerView(BaseModel):
@@ -1739,26 +1723,10 @@ def _events_next_cursor(
     starts_at_ms: int,
     row_id: str,
 ) -> str:
-    payload = json.dumps(
-        {
-            "exp": utc_now_ms() + _EVENTS_CURSOR_TTL_MS,
-            "id": row_id,
-            "org": organization_id,
-            "order": order,
-            "q": search,
-            "starts": starts_at_ms,
-            "view": view,
-            "v": 1,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-    return ".".join(
-        (
-            urlsafe_b64encode(payload).decode().rstrip("="),
-            urlsafe_b64encode(signature).decode().rstrip("="),
-        )
+    return encode_signed_cursor(
+        request,
+        scope={"org": organization_id, "order": order, "q": search, "view": view},
+        position={"id": row_id, "starts": starts_at_ms},
     )
 
 
@@ -3291,7 +3259,7 @@ async def _issue_invitation_link(
         .first("id")
     )
     raw_token, challenge_id, message_id = generate_token(), new_id(), new_id()
-    accept_url = f"{base}/auth/verify?token={raw_token}"
+    accept_url = f"{base}/auth/verify#token={raw_token}"
     batch = CommandBatch(db)
     batch.add_statement(
         db.prepare(
@@ -4158,14 +4126,17 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
         raise HTTPException(status_code=422)
     db = database(request)
     email, normalized = _email(body.email)
-    source = request.headers.get("cf-connecting-ip") or (
-        request.client.host if request.client is not None else "unknown"
+    await enforce_rate_limit(
+        request,
+        binding_name="MAGIC_LINK_SOURCE_RATE_LIMITER",
+        policy=RateLimitPolicy("auth.magic_link.source", limit=10, window_seconds=60),
+        subject=_request_source(request),
     )
     await enforce_rate_limit(
         request,
-        binding_name="AUTH_RATE_LIMITER",
-        policy=RateLimitPolicy("auth.magic_link", limit=10, window_seconds=60),
-        subject=f"{normalized}:{source}",
+        binding_name="MAGIC_LINK_RECIPIENT_RATE_LIMITER",
+        policy=RateLimitPolicy("auth.magic_link.recipient", limit=3, window_seconds=60),
+        subject=normalized,
     )
     user = row_mapping(
         await db.prepare(
@@ -4233,7 +4204,7 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
     base = str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip("/")
     if base.startswith("https://"):
         message_id = new_id()
-        link = f"{base}/auth/verify?token={raw_token}"
+        link = f"{base}/auth/verify#token={raw_token}"
         await (
             db.prepare(
                 """INSERT INTO communication_messages
@@ -4406,8 +4377,24 @@ async def password_sign_in(
     )
 
 
-@access_router.get("/api/v1/auth/verify", response_model=SessionCreated, tags=["authentication"])
-async def verify_magic_link(
+@access_router.get(
+    "/api/v1/auth/verify",
+    status_code=405,
+    response_model=None,
+    tags=["authentication"],
+    include_in_schema=False,
+)
+async def inspect_magic_link_via_api() -> None:
+    """Magic-link redemption is intentionally unavailable over GET.
+
+    Keeping the historical path explicit provides a stable, non-mutating
+    response for old clients and prevents top-level navigations or embedded
+    resources from creating a session.
+    """
+    raise HTTPException(status_code=405, headers={"Allow": "POST"})
+
+
+async def _redeem_magic_link(
     token: str,
     request: Request,
     response: Response,
@@ -4874,24 +4861,31 @@ async def _requires_submission_registration(request: Request, token: str) -> dic
 
 def _magic_link_page(
     *,
-    action: str,
+    token: str,
     registration_email: str | None = None,
     error: str | None = None,
     values: dict[str, str] | None = None,
 ) -> str:
     page = _asset("auth_link_confirm.html")
     values = values or {}
+    token_field = (
+        '<input type="hidden" name="token" autocomplete="off" value="'
+        f'{escape(token, quote=True)}">'
+    )
     if registration_email is None:
+        needs_fragment_transfer = not token
         replacements = {
-            "__CONFIRM_PAGE_TITLE__": "Signing in",
-            "__CONFIRM_HEADING__": "Signing you in…",
-            "__CONFIRM_INTRO__": "You’ll continue to your account automatically.",
+            "__CONFIRM_PAGE_TITLE__": "Confirm sign in",
+            "__CONFIRM_HEADING__": "Continue to your account",
+            "__CONFIRM_INTRO__": "Confirm that you want to sign in to SessionBuddy.",
             "__CONFIRM_ERROR__": "",
-            "__REGISTRATION_FIELDS__": "",
+            "__REGISTRATION_FIELDS__": token_field,
             "__CONFIRM_BUTTON__": "Continue to your account",
-            "__AUTO_SUBMIT_ATTRIBUTE__": 'data-auto-submit="true"',
+            "__AUTO_SUBMIT_ATTRIBUTE__": "",
             "__CONFIRM_SCRIPT__": (
-                '<script src="/auth/assets/auth-link-confirm.js?v=2" defer></script>'
+                '<script src="/auth/assets/auth-link-confirm.js?v=3" defer></script>'
+                if needs_fragment_transfer
+                else ""
             ),
         }
     else:
@@ -4933,56 +4927,50 @@ def _magic_link_page(
             "__CONFIRM_ERROR__": (
                 f'<div class="status error" role="alert">{escape(error)}</div>' if error else ""
             ),
-            "__REGISTRATION_FIELDS__": fields,
+            "__REGISTRATION_FIELDS__": token_field + fields,
             "__CONFIRM_BUTTON__": "Create account and continue",
             "__AUTO_SUBMIT_ATTRIBUTE__": "",
             "__CONFIRM_SCRIPT__": "",
         }
-    replacements["__CONFIRM_ACTION__"] = escape(action, quote=True)
+    replacements["__CONFIRM_ACTION__"] = "/auth/verify"
     for marker, value in replacements.items():
         page = page.replace(marker, value)
     return page
 
 
 @access_router.get("/auth/verify", include_in_schema=False)
-async def magic_link_interstitial(token: str = "", *, request: Request) -> Response:
+async def magic_link_interstitial() -> Response:
     """Render a confirm step instead of consuming the single-use token on GET.
 
     Corporate mail scanners prefetch emailed links; consuming on GET burned the
-    token before the speaker ever clicked. The button posts back to the same
-    path (preserving the token and, through the stored challenge, the requested
-    redirect), which scanners do not follow. The page is a packaged static
-    asset styled by the shared stylesheet so the strict CSP (style-src 'self')
-    never blocks it."""
-    if not token:
-        return Response(
-            _asset("auth_link_error.html"),
-            media_type="text/html",
-            status_code=404,
-            headers={"Cache-Control": "no-store"},
-        )
-    action = f"/auth/verify?token={quote(token)}"
-    registration = await _requires_submission_registration(request, token)
-    page = _magic_link_page(
-        action=action,
-        registration_email=(
-            str(registration["normalized_email"]) if registration is not None else None
-        ),
-    )
+    token before the speaker ever clicked. Email links keep the bearer token in
+    the URL fragment, which browsers do not send in HTTP requests or referrers.
+    A same-origin script removes that fragment from history and transfers it to
+    the body-only form. Redemption still requires an explicit button press and
+    an exact allow-listed Origin."""
+    page = _magic_link_page(token="")
     return Response(page, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 @access_router.post("/auth/verify", include_in_schema=False)
-async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> Response:
+async def verify_magic_link_in_browser(*, request: Request) -> Response:
+    origin = request.headers.get("origin")
+    if origin is None or origin not in allowed_origins(request):
+        raise HTTPException(status_code=403)
+    body = await request.body()
+    if len(body) > 4096:
+        raise HTTPException(status_code=413)
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != (
+        "application/x-www-form-urlencoded"
+    ):
+        raise HTTPException(status_code=415)
+    parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+    submitted_values = {key: values[-1] for key, values in parsed.items()}
+    token = submitted_values.pop("token", "")
     cookie_response = Response()
     registration_challenge = await _requires_submission_registration(request, token)
     registration = None
-    submitted_values: dict[str, str] = {}
     if registration_challenge is not None:
-        if len(await request.body()) > 4096:
-            raise HTTPException(status_code=413)
-        parsed = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
-        submitted_values = {key: values[-1] for key, values in parsed.items()}
         try:
             registration = SubmissionRegistration(
                 first_name=submitted_values.get("first_name", ""),
@@ -4994,7 +4982,7 @@ async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> 
             )
         except ValueError:
             page = _magic_link_page(
-                action=f"/auth/verify?token={quote(token)}",
+                token=token,
                 registration_email=str(registration_challenge["normalized_email"]),
                 error="Enter your name and matching passwords of at least 15 characters.",
                 values=submitted_values,
@@ -5006,7 +4994,7 @@ async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> 
                 headers={"Cache-Control": "no-store"},
             )
     try:
-        session = await verify_magic_link(
+        session = await _redeem_magic_link(
             token, request, cookie_response, registration=registration
         )
     except HTTPException as exception:
@@ -5017,7 +5005,7 @@ async def verify_magic_link_in_browser(token: str = "", *, request: Request) -> 
                 else "Check your registration details."
             )
             page = _magic_link_page(
-                action=f"/auth/verify?token={quote(token)}",
+                token=token,
                 registration_email=str(registration_challenge["normalized_email"]),
                 error=detail,
                 values=submitted_values,

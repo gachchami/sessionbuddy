@@ -16,7 +16,8 @@ def test_events_page_uses_an_operational_management_layout() -> None:
     assert 'id="event-sort"' in page
     assert '<option value="upcoming">Upcoming first</option>' in page
     assert 'class="event-table-header"' in page
-    assert 'class="event-management-list" role="table"' in page
+    assert 'class="event-table-frame" role="table" aria-label="Events"' in page
+    assert 'class="event-management-list" role="rowgroup"' in page
     assert 'item.className = "event-table-row"' in script
     assert 'monogram.className = "event-monogram"' in script
     assert "function visibleEvents()" in script
@@ -41,9 +42,9 @@ def test_events_page_uses_an_operational_management_layout() -> None:
     assert 'if (!eventId) body.status = createStatus' in script
     assert 'event.submitter?.value === "draft"' in script
     assert 'state.editingDraft = event.status === "draft"' in script
-    assert 'body.status = state.editingDraft ? intendedStatus : values.status' in script
+    assert "body.status = intendedStatus" in script
     assert 'state.editingDraft\n        ? values.status === "archived"' in script
-    assert ': values.status\n      : createStatus' in script
+    assert ': values.status || state.events.get(eventId)?.status\n      : createStatus' in script
     assert 'byId("event-status-label").hidden = false' in script
     assert 'values.status === "archived"' in script
     assert '"Event archived."' in script
@@ -128,4 +129,5 @@ def test_home_and_events_use_distinct_event_list_surfaces() -> None:
     events = (STATIC / "events_admin.html").read_text(encoding="utf-8")
 
     assert 'class="organizer-home-event-list"' in home
-    assert 'class="event-management-list" role="table"' in events
+    assert 'class="event-table-frame" role="table" aria-label="Events"' in events
+    assert 'class="event-management-list" role="rowgroup"' in events

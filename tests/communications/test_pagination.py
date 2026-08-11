@@ -42,7 +42,14 @@ async def test_communication_history_uses_stable_cursor_pagination() -> None:
                 f"Subject {number}", "Body", f"history:{number}", number + 1, number + 1,
             ),
         )
-    request = SimpleNamespace(scope={"env": SimpleNamespace(DB=AsyncSqlite(connection))})
+    request = SimpleNamespace(
+        scope={
+            "env": SimpleNamespace(
+                DB=AsyncSqlite(connection),
+                CSRF_HMAC_KEY="communications-cursor-test-key-0000001",
+            )
+        }
+    )
     service = D1CommunicationsService(request)
     service.organization_id = "org-a"
 
@@ -76,7 +83,14 @@ async def test_first_communication_history_page_does_not_bind_an_integer_sentine
             assert "updated_at_ms<?3" not in sql
             return Statement()
 
-    request = SimpleNamespace(scope={"env": SimpleNamespace(DB=Database())})
+    request = SimpleNamespace(
+        scope={
+            "env": SimpleNamespace(
+                DB=Database(),
+                CSRF_HMAC_KEY="communications-cursor-test-key-0000001",
+            )
+        }
+    )
     service = D1CommunicationsService(request)
     service.organization_id = "org-a"
 
@@ -84,3 +98,60 @@ async def test_first_communication_history_page_does_not_bind_an_integer_sentine
 
     assert page.data == []
     assert page.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_communication_history_rejects_tampered_and_cross_event_cursors() -> None:
+    import sqlite3
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event(connection)
+    connection.execute(
+        """INSERT INTO events
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+            delivery_mode,description,status,created_at_ms,updated_at_ms)
+           VALUES ('event-b','org-a','Event b',1000,2000,'UTC','Online','hybrid',
+                   'Test event','active',1000,1000)"""
+    )
+    for number in range(2):
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,queued_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,?,?,?,'queued',?,?)""",
+            (
+                f"message-{number}",
+                "org-a",
+                "event-a",
+                "speaker-a@example.test",
+                f"Subject {number}",
+                "Body",
+                f"history:{number}",
+                number + 1,
+                number + 1,
+            ),
+        )
+    request = SimpleNamespace(
+        scope={
+            "env": SimpleNamespace(
+                DB=AsyncSqlite(connection),
+                CSRF_HMAC_KEY="communications-cursor-test-key-0000001",
+            )
+        }
+    )
+    service = D1CommunicationsService(request)
+    service.organization_id = "org-a"
+    first = await service.statuses("event-a", limit=1)
+    assert first.next_cursor is not None
+
+    with pytest.raises(Exception) as tampered:
+        await service.statuses("event-a", cursor=first.next_cursor[:-1] + "A", limit=1)
+    assert getattr(tampered.value, "status_code", None) == 400
+
+    with pytest.raises(Exception) as cross_event:
+        await service.statuses("event-b", cursor=first.next_cursor, limit=1)
+    assert getattr(cross_event.value, "status_code", None) == 400

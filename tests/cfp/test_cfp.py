@@ -3,11 +3,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
+from sessionbuddy.cfp import router as cfp_routes
 from sessionbuddy.cfp.models import (
     FormFieldDefinition,
     FormPublish,
@@ -21,6 +22,7 @@ from sessionbuddy.cfp.router import (
     _validate_cfp_deadline,
     _validate_draft_schema,
     _validate_submission_schema,
+    create_submission,
 )
 from sessionbuddy.console.models import BrowserTelemetryPayload
 
@@ -212,7 +214,7 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     ).read_text()
     assert "const editable = submission.editable === true" in public_script
     assert "Only the primary submitter can make changes." in public_script
-    assert "state.submissions.find((submission) => submission.id === requested)" in public_script
+    assert "state.submissions.find((submission) => submission.id === selectedId)" in public_script
     assert 'make("h2", "Your proposals")' not in public_script
     assert 'make("a", "View your proposal", "button")' in public_script
     assert "?submission_id=${encodeURIComponent(submission.id)}" in public_script
@@ -540,6 +542,73 @@ async def test_final_cfp_submission_requires_verified_session() -> None:
     assert response.status_code == 401
 
 
+def test_public_submission_uses_csrf_guard_and_server_controlled_rate_limit_key() -> None:
+    source = (
+        Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py"
+    ).read_text(encoding="utf-8")
+    create = source.split("async def create_submission", 1)[1].split(
+        "SUBMISSIONS_PAGE_LIMIT", 1
+    )[0]
+
+    assert "guard_mutation(request, authenticated.session_id)" in create
+    assert 'subject=f"{authenticated.actor.user_id}:{_request_source(request)}"' in create
+    assert 'subject=f"{public_session}:{_request_source(request)}"' not in create
+
+
+async def test_public_submission_guard_and_rate_subject_ignore_rotated_browser_id(
+    monkeypatch,
+) -> None:
+    authenticated = SimpleNamespace(
+        session_id="session-id",
+        actor=SimpleNamespace(user_id="speaker-id"),
+    )
+    guarded: list[str] = []
+    subjects: list[str] = []
+
+    async def authenticate(_request):
+        return authenticated
+
+    async def rate_limit(_request, **kwargs):
+        subjects.append(kwargs["subject"])
+        raise RuntimeError("stop before persistence")
+
+    monkeypatch.setattr(cfp_routes, "authenticate_request", authenticate)
+    monkeypatch.setattr(
+        cfp_routes,
+        "guard_mutation",
+        lambda _request, session_id: guarded.append(session_id),
+    )
+    monkeypatch.setattr(cfp_routes, "enforce_rate_limit", rate_limit)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/forms/example/submissions",
+            "headers": [],
+            "client": ("192.0.2.10", 1234),
+        }
+    )
+    body = SubmissionCreate(
+        speaker_name="Speaker",
+        speaker_email="speaker@example.test",
+        proposal_title="Proposal",
+        proposal_abstract="Abstract",
+    )
+
+    for public_session in ("a" * 16, "b" * 16):
+        with pytest.raises(RuntimeError, match="stop before persistence"):
+            await create_submission(
+                "example",
+                request,
+                body,
+                idempotency_key="i" * 16,
+                public_session=public_session,
+            )
+
+    assert guarded == ["session-id", "session-id"]
+    assert subjects == ["speaker-id:192.0.2.10", "speaker-id:192.0.2.10"]
+
+
 async def test_product_pages_are_separate_safe_surfaces() -> None:
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
     submissions_source = (static / "admin_submissions.js").read_text()
@@ -575,7 +644,9 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert setup.status_code == setup_css.status_code == setup_js.status_code == 200
     assert auth_link_confirm_js.status_code == 200
     assert auth_link_confirm_js.headers["content-type"].startswith("text/javascript")
-    assert "form.requestSubmit()" in auth_link_confirm_js.text
+    assert "form.requestSubmit()" not in auth_link_confirm_js.text
+    assert "window.history.replaceState" in auth_link_confirm_js.text
+    assert 'window.location.hash.slice(1)' in auth_link_confirm_js.text
     assert "Create the first organization and administrator" in setup.text
     assert {
         admin_home.status_code,
@@ -595,7 +666,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "Share your CFP" in admin.text
     assert "data-auth-shell" in admin.text
     assert "Submit a proposal" in public.text
-    assert "Submissions" in submissions.text
+    assert "Proposals" in submissions.text
     assert 'id="submission-detail"' in submissions.text
     for javascript in (admin_js.text, public_js.text, submissions_js.text):
         assert "innerHTML" not in javascript

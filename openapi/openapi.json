@@ -320,6 +320,103 @@
         "title": "ActiveRoleUpdate",
         "type": "object"
       },
+      "AdminAgendaView": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Archived Labels",
+            "type": "array"
+          },
+          "archived_rooms": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Archived Rooms",
+            "type": "array"
+          },
+          "archived_tracks": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Archived Tracks",
+            "type": "array"
+          },
+          "can_manage_resource_lifecycle": {
+            "title": "Can Manage Resource Lifecycle",
+            "type": "boolean"
+          },
+          "event": {
+            "$ref": "#/components/schemas/AgendaEventView"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaScheduledItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "published_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishedAgendaRevisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "$ref": "#/components/schemas/AgendaRevisionView"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Rooms",
+            "type": "array"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "unscheduled_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaUnscheduledSessionView"
+            },
+            "title": "Unscheduled Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "event",
+          "revision",
+          "published_revision",
+          "items",
+          "unscheduled_sessions",
+          "rooms",
+          "tracks",
+          "labels",
+          "archived_rooms",
+          "archived_tracks",
+          "archived_labels",
+          "can_manage_resource_lifecycle"
+        ],
+        "title": "AdminAgendaView",
+        "type": "object"
+      },
       "AdminPublishedFormView": {
         "additionalProperties": false,
         "properties": {
@@ -919,6 +1016,27 @@
         "title": "AgendaAutoSchedule",
         "type": "object"
       },
+      "AgendaAutoScheduleResult": {
+        "additionalProperties": false,
+        "properties": {
+          "remaining_count": {
+            "minimum": 0.0,
+            "title": "Remaining Count",
+            "type": "integer"
+          },
+          "scheduled_count": {
+            "minimum": 0.0,
+            "title": "Scheduled Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scheduled_count",
+          "remaining_count"
+        ],
+        "title": "AgendaAutoScheduleResult",
+        "type": "object"
+      },
       "AgendaCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -996,6 +1114,169 @@
         "title": "AgendaCandidate",
         "type": "object"
       },
+      "AgendaConflictView": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "room",
+              "speaker",
+              "track"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "conflicting_item_id": {
+            "title": "Conflicting Item Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "conflicting_item_id"
+        ],
+        "title": "AgendaConflictView",
+        "type": "object"
+      },
+      "AgendaEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at_ms": {
+            "minimum": 0.0,
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "minimum": 0.0,
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "time_zone",
+          "starts_at_ms",
+          "ends_at_ms"
+        ],
+        "title": "AgendaEventView",
+        "type": "object"
+      },
+      "AgendaItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "end_at_ms": {
+            "minimum": 0.0,
+            "title": "End At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "room_name": {
+            "title": "Room Name",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "start_at_ms": {
+            "minimum": 0.0,
+            "title": "Start At Ms",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "track_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Name"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "title",
+          "start_at_ms",
+          "end_at_ms",
+          "room_id",
+          "room_name",
+          "track_id",
+          "track_name",
+          "version"
+        ],
+        "title": "AgendaItemView",
+        "type": "object"
+      },
+      "AgendaPreviewView": {
+        "additionalProperties": false,
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaConflictView"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "conflicts"
+        ],
+        "title": "AgendaPreviewView",
+        "type": "object"
+      },
       "AgendaPublish": {
         "additionalProperties": false,
         "properties": {
@@ -1016,6 +1297,31 @@
           "version"
         ],
         "title": "AgendaPublish",
+        "type": "object"
+      },
+      "AgendaPublishView": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_revision_id": {
+            "title": "Draft Revision Id",
+            "type": "string"
+          },
+          "published_revision_id": {
+            "title": "Published Revision Id",
+            "type": "string"
+          },
+          "published_version": {
+            "minimum": 1.0,
+            "title": "Published Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "published_revision_id",
+          "published_version",
+          "draft_revision_id"
+        ],
+        "title": "AgendaPublishView",
         "type": "object"
       },
       "AgendaResourceCreate": {
@@ -1058,6 +1364,188 @@
         "title": "AgendaResourceUpdate",
         "type": "object"
       },
+      "AgendaResourceView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "version"
+        ],
+        "title": "AgendaResourceView",
+        "type": "object"
+      },
+      "AgendaRevisionView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "draft",
+              "published",
+              "superseded"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "state"
+        ],
+        "title": "AgendaRevisionView",
+        "type": "object"
+      },
+      "AgendaScheduledItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "title": "Abstract",
+            "type": "string"
+          },
+          "content_status": {
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "title": "Content Status",
+            "type": "string"
+          },
+          "content_version": {
+            "minimum": 1.0,
+            "title": "Content Version",
+            "type": "integer"
+          },
+          "end_at_ms": {
+            "minimum": 0.0,
+            "title": "End At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "label_version": {
+            "minimum": 1.0,
+            "title": "Label Version",
+            "type": "integer"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "room_name": {
+            "title": "Room Name",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "start_at_ms": {
+            "minimum": 0.0,
+            "title": "Start At Ms",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "track_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Name"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "title",
+          "abstract",
+          "content_status",
+          "content_version",
+          "label_version",
+          "start_at_ms",
+          "end_at_ms",
+          "room_id",
+          "room_name",
+          "track_id",
+          "track_name",
+          "version",
+          "labels",
+          "label_ids"
+        ],
+        "title": "AgendaScheduledItemView",
+        "type": "object"
+      },
       "AgendaSetup": {
         "additionalProperties": false,
         "properties": {
@@ -1083,6 +1571,67 @@
           "room_names"
         ],
         "title": "AgendaSetup",
+        "type": "object"
+      },
+      "AgendaUnscheduledSessionView": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "title": "Abstract",
+            "type": "string"
+          },
+          "content_status": {
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "title": "Content Status",
+            "type": "string"
+          },
+          "content_version": {
+            "minimum": 1.0,
+            "title": "Content Version",
+            "type": "integer"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "label_version": {
+            "minimum": 1.0,
+            "title": "Label Version",
+            "type": "integer"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "abstract",
+          "content_status",
+          "content_version",
+          "label_version",
+          "labels",
+          "label_ids"
+        ],
+        "title": "AgendaUnscheduledSessionView",
         "type": "object"
       },
       "AiTriageView": {
@@ -1205,6 +1754,113 @@
           "evaluator_user_id"
         ],
         "title": "AssignmentReassign",
+        "type": "object"
+      },
+      "AutoScheduledAgendaView": {
+        "additionalProperties": false,
+        "properties": {
+          "archived_labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Archived Labels",
+            "type": "array"
+          },
+          "archived_rooms": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Archived Rooms",
+            "type": "array"
+          },
+          "archived_tracks": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Archived Tracks",
+            "type": "array"
+          },
+          "auto_schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgendaAutoScheduleResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "can_manage_resource_lifecycle": {
+            "title": "Can Manage Resource Lifecycle",
+            "type": "boolean"
+          },
+          "event": {
+            "$ref": "#/components/schemas/AgendaEventView"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaScheduledItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/EventLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "published_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishedAgendaRevisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "$ref": "#/components/schemas/AgendaRevisionView"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Rooms",
+            "type": "array"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaResourceView"
+            },
+            "title": "Tracks",
+            "type": "array"
+          },
+          "unscheduled_sessions": {
+            "items": {
+              "$ref": "#/components/schemas/AgendaUnscheduledSessionView"
+            },
+            "title": "Unscheduled Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "event",
+          "revision",
+          "published_revision",
+          "items",
+          "unscheduled_sessions",
+          "rooms",
+          "tracks",
+          "labels",
+          "archived_rooms",
+          "archived_tracks",
+          "archived_labels",
+          "can_manage_resource_lifecycle"
+        ],
+        "title": "AutoScheduledAgendaView",
         "type": "object"
       },
       "BootstrapCreate": {
@@ -5708,6 +6364,189 @@
         "title": "PublicEventSummary",
         "type": "object"
       },
+      "PublicScheduleEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
+          "cover_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Image Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "time_zone",
+          "accent_color",
+          "logo_url",
+          "cover_image_url",
+          "website_url"
+        ],
+        "title": "PublicScheduleEventView",
+        "type": "object"
+      },
+      "PublicScheduleItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "end_at_ms": {
+            "minimum": 0.0,
+            "title": "End At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "room_name": {
+            "title": "Room Name",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "speaker_names": {
+            "title": "Speaker Names",
+            "type": "string"
+          },
+          "start_at_ms": {
+            "minimum": 0.0,
+            "title": "Start At Ms",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "track_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Name"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "title",
+          "start_at_ms",
+          "end_at_ms",
+          "room_name",
+          "track_name",
+          "speaker_names",
+          "labels",
+          "label_ids",
+          "description"
+        ],
+        "title": "PublicScheduleItemView",
+        "type": "object"
+      },
+      "PublicScheduleView": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/PublicScheduleEventView"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicScheduleItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleRevisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event",
+          "revision",
+          "items"
+        ],
+        "title": "PublicScheduleView",
+        "type": "object"
+      },
       "PublicSpeaker": {
         "properties": {
           "biography": {
@@ -5813,6 +6652,32 @@
           "data"
         ],
         "title": "PublicSpeakerGallery",
+        "type": "object"
+      },
+      "PublishedAgendaRevisionView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "version"
+        ],
+        "title": "PublishedAgendaRevisionView",
         "type": "object"
       },
       "PublishedFormView": {
@@ -6606,6 +7471,179 @@
         "title": "SLODefinition",
         "type": "object"
       },
+      "ScheduleEventView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "time_zone"
+        ],
+        "title": "ScheduleEventView",
+        "type": "object"
+      },
+      "ScheduleItemView": {
+        "additionalProperties": false,
+        "properties": {
+          "end_at_ms": {
+            "minimum": 0.0,
+            "title": "End At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleLabelView"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "room_name": {
+            "title": "Room Name",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "speaker_names": {
+            "title": "Speaker Names",
+            "type": "string"
+          },
+          "start_at_ms": {
+            "minimum": 0.0,
+            "title": "Start At Ms",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "track_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Name"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "title",
+          "start_at_ms",
+          "end_at_ms",
+          "room_name",
+          "track_name",
+          "speaker_names",
+          "labels",
+          "label_ids"
+        ],
+        "title": "ScheduleItemView",
+        "type": "object"
+      },
+      "ScheduleLabelView": {
+        "additionalProperties": false,
+        "properties": {
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "color"
+        ],
+        "title": "ScheduleLabelView",
+        "type": "object"
+      },
+      "ScheduleRevisionView": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "revision_number"
+        ],
+        "title": "ScheduleRevisionView",
+        "type": "object"
+      },
+      "ScheduleView": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/ScheduleEventView"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleItemView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/ScheduleRevisionView"
+          }
+        },
+        "required": [
+          "event",
+          "revision",
+          "items"
+        ],
+        "title": "ScheduleView",
+        "type": "object"
+      },
       "SessionContentVersionView": {
         "properties": {
           "abstract": {
@@ -7111,6 +8149,10 @@
       "SpeakerNotificationView": {
         "additionalProperties": false,
         "properties": {
+          "body_text": {
+            "title": "Body Text",
+            "type": "string"
+          },
           "delivered_at_ms": {
             "title": "Delivered At Ms",
             "type": "integer"
@@ -7118,6 +8160,13 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Links",
+            "type": "array"
           },
           "subject": {
             "title": "Subject",
@@ -7127,7 +8176,8 @@
         "required": [
           "id",
           "subject",
-          "delivered_at_ms"
+          "delivered_at_ms",
+          "body_text"
         ],
         "title": "SpeakerNotificationView",
         "type": "object"
@@ -8305,67 +9355,6 @@
         "title": "SubmissionList",
         "type": "object"
       },
-      "SubmissionRegistration": {
-        "additionalProperties": false,
-        "properties": {
-          "company": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Company"
-          },
-          "first_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "First Name",
-            "type": "string"
-          },
-          "job_title": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Job Title"
-          },
-          "last_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Last Name",
-            "type": "string"
-          },
-          "password": {
-            "maxLength": 128,
-            "minLength": 15,
-            "title": "Password",
-            "type": "string"
-          },
-          "password_confirmation": {
-            "maxLength": 128,
-            "minLength": 15,
-            "title": "Password Confirmation",
-            "type": "string"
-          }
-        },
-        "required": [
-          "first_name",
-          "last_name",
-          "password",
-          "password_confirmation"
-        ],
-        "title": "SubmissionRegistration",
-        "type": "object"
-      },
       "SubmissionUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -9364,6 +10353,22 @@
               "title": "Round Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -9788,8 +10793,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Admin Agenda Api V1 Admin Events  Event Id  Agenda Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAgendaView"
                 }
               }
             },
@@ -9857,8 +10861,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Auto Schedule Agenda Api V1 Admin Events  Event Id  Agenda Auto Schedule Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AutoScheduledAgendaView"
                 }
               }
             },
@@ -9925,7 +10928,9 @@
           "201": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaItemView"
+                }
               }
             },
             "description": "Successful Response"
@@ -10068,7 +11073,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaItemView"
+                }
               }
             },
             "description": "Successful Response"
@@ -10119,8 +11126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Preview Agenda Api V1 Admin Events  Event Id  Agenda Preview Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AgendaPreviewView"
                 }
               }
             },
@@ -10155,6 +11161,22 @@
               "title": "Event Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -10172,8 +11194,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Publish Agenda Api V1 Admin Events  Event Id  Agenda Publish Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AgendaPublishView"
                 }
               }
             },
@@ -10225,8 +11246,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Create Agenda Room Api V1 Admin Events  Event Id  Agenda Rooms Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAgendaView"
                 }
               }
             },
@@ -10287,8 +11307,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Update Agenda Room Api V1 Admin Events  Event Id  Agenda Rooms  Room Id  Patch",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAgendaView"
                 }
               }
             },
@@ -10356,8 +11375,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Setup Admin Agenda Api V1 Admin Events  Event Id  Agenda Setup Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAgendaView"
                 }
               }
             },
@@ -10449,8 +11467,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Create Agenda Track Api V1 Admin Events  Event Id  Agenda Tracks Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAgendaView"
                 }
               }
             },
@@ -10511,8 +11528,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Update Agenda Track Api V1 Admin Events  Event Id  Agenda Tracks  Track Id  Patch",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAgendaView"
                 }
               }
             },
@@ -11524,6 +12540,22 @@
             "schema": {
               "title": "Event Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -13731,65 +14763,6 @@
         ]
       }
     },
-    "/api/v1/auth/verify": {
-      "get": {
-        "operationId": "verify_magic_link_api_v1_auth_verify_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "title": "Token",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/SubmissionRegistration"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Registration"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionCreated"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Verify Magic Link",
-        "tags": [
-          "authentication"
-        ]
-      }
-    },
     "/api/v1/bootstrap": {
       "post": {
         "operationId": "bootstrap_tenant_api_v1_bootstrap_post",
@@ -14372,8 +15345,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Schedule Api V1 Events  Event Id  Schedule Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ScheduleView"
                 }
               }
             },
@@ -15089,8 +16061,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Public Schedule Api V1 Public Events  Event Id  Schedule Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/PublicScheduleView"
                 }
               }
             },

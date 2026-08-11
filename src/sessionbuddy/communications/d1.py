@@ -13,6 +13,7 @@ from sessionbuddy.platform.db.commands import (
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 
 from .models import (
     CommunicationStatus,
@@ -28,6 +29,42 @@ from .models import (
     SpeakerMessageSendRequest,
 )
 from .rendering import render_template
+
+
+def _status_cursor(
+    request: Request,
+    value: str | None,
+    *,
+    organization_id: str,
+    event_id: str,
+) -> tuple[int, str] | None:
+    decoded = decode_signed_cursor(
+        request,
+        value,
+        scope={"event": event_id, "organization": organization_id},
+        position_fields={"id", "ts"},
+    )
+    if decoded is None:
+        return None
+    timestamp, row_id = decoded["ts"], decoded["id"]
+    if type(timestamp) is not int or not isinstance(row_id, str) or not 1 <= len(row_id) <= 100:
+        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
+    return timestamp, row_id
+
+
+def _status_next_cursor(
+    request: Request,
+    *,
+    organization_id: str,
+    event_id: str,
+    timestamp: int,
+    row_id: str,
+) -> str:
+    return encode_signed_cursor(
+        request,
+        scope={"event": event_id, "organization": organization_id},
+        position={"id": row_id, "ts": timestamp},
+    )
 
 
 class D1CommunicationsService:
@@ -527,17 +564,13 @@ class D1CommunicationsService:
     ) -> CommunicationStatusList:
         if self.organization_id is None:
             raise HTTPException(status_code=404)
-        before_ms: int | None = None
-        before_id: str | None = None
-        if cursor is not None:
-            timestamp, separator, row_id = cursor.partition(":")
-            try:
-                before_ms = int(timestamp)
-            except ValueError as exc:
-                raise HTTPException(status_code=422) from exc
-            if not separator or before_ms < 0 or not 1 <= len(row_id) <= 100:
-                raise HTTPException(status_code=422)
-            before_id = row_id
+        position = _status_cursor(
+            self.request,
+            cursor,
+            organization_id=self.organization_id,
+            event_id=event_id,
+        )
+        before_ms, before_id = position if position is not None else (None, None)
         if before_ms is None:
             statement = self.db.prepare(
                 """SELECT id,recipient_email,subject,status,attempt_count,
@@ -558,7 +591,13 @@ class D1CommunicationsService:
         next_cursor = None
         if len(rows) > limit and page:
             last = page[-1]
-            next_cursor = f"{int(last['updated_at_ms'])}:{last['id']}"
+            next_cursor = _status_next_cursor(
+                self.request,
+                organization_id=self.organization_id,
+                event_id=event_id,
+                timestamp=int(last["updated_at_ms"]),
+                row_id=str(last["id"]),
+            )
         return CommunicationStatusList(
             data=[CommunicationStatus(**row) for row in page], next_cursor=next_cursor
         )

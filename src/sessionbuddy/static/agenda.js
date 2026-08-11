@@ -14,6 +14,8 @@
     selected: null,
     previewTimer: null,
     previewToken: 0,
+    pendingArchive: null,
+    publishMutation: null,
   };
   const byId = (id) => document.getElementById(id);
   const make = (tag, value, className) => {
@@ -150,8 +152,8 @@
       "aria-label",
       `${item.title}. ${
         scheduled
-          ? "Scheduled session; drag to move or use Edit."
-          : "Unscheduled session; drag to schedule or use Edit."
+          ? "Scheduled session; drag to move or use Edit schedule."
+          : "Unscheduled session; drag to schedule or use Schedule."
       }`,
     );
     node.append(make("h3", item.title));
@@ -170,8 +172,12 @@
       );
     }
     node.append(make("p", item.content_status === "approved" ? "Public content approved" : "Content draft", "help"));
-    const edit = make("button", scheduled ? "Edit" : "Schedule", "secondary");
+    const edit = make("button", scheduled ? "Edit schedule" : "Schedule", "secondary");
     edit.type = "button";
+    edit.setAttribute(
+      "aria-label",
+      `${scheduled ? "Edit schedule for" : "Schedule"} ${item.title}`,
+    );
     edit.addEventListener("click", () => openEditor(item));
     node.append(edit);
     node.addEventListener("dragstart", (event) => {
@@ -189,25 +195,42 @@
     return node;
   }
   function renderResources() {
-    const renderList = (kind, values) => {
+    const renderList = (kind, values, archivedValues = []) => {
       const list = byId(`${kind}-list`);
       list.replaceChildren();
       if (!values.length) {
         list.append(make("li", kind === "room" ? "No rooms" : "No tracks", "help"));
-        return;
-      }
-      values.forEach((value) => {
+      } else values.forEach((value) => {
         const item = make("li");
         item.append(make("span", value.name));
-        const archive = make("button", "Archive", "secondary");
-        archive.type = "button";
-        archive.addEventListener("click", () => updateResource(kind, value));
-        item.append(archive);
+        if (state.model.can_manage_resource_lifecycle) {
+          const archive = make("button", "Archive", "secondary");
+          archive.type = "button";
+          archive.setAttribute("aria-label", `Archive ${value.name}`);
+          archive.addEventListener("click", () => openResourceArchive(kind, value));
+          item.append(archive);
+        }
         list.append(item);
       });
+      const archivedSection = byId(`archived-${kind}-section`);
+      const archivedList = byId(`archived-${kind}-list`);
+      archivedSection.hidden = !archivedValues.length;
+      archivedList.replaceChildren();
+      archivedValues.forEach((value) => {
+        const item = make("li");
+        item.append(make("span", value.name));
+        if (state.model.can_manage_resource_lifecycle) {
+          const restore = make("button", "Restore", "secondary");
+          restore.type = "button";
+          restore.setAttribute("aria-label", `Restore ${value.name}`);
+          restore.addEventListener("click", () => updateResource(kind, value, "active"));
+          item.append(restore);
+        }
+        archivedList.append(item);
+      });
     };
-    renderList("room", state.model.rooms);
-    renderList("track", state.model.tracks);
+    renderList("room", state.model.rooms, state.model.archived_rooms || []);
+    renderList("track", state.model.tracks, state.model.archived_tracks || []);
     const labelList = byId("label-list");
     labelList.replaceChildren();
     if (!state.model.labels.length) {
@@ -226,14 +249,38 @@
         edit.type = "button";
         edit.setAttribute("aria-label", `Edit ${label.name}`);
         edit.addEventListener("click", () => openLabelEditor(label));
-        const archive = make("button", "Archive", "secondary");
-        archive.type = "button";
-        archive.setAttribute("aria-label", `Archive ${label.name}`);
-        archive.addEventListener("click", () => saveLabel(label, "archived"));
-        actions.append(edit, archive);
+        actions.append(edit);
+        if (state.model.can_manage_resource_lifecycle) {
+          const archive = make("button", "Archive", "secondary");
+          archive.type = "button";
+          archive.setAttribute("aria-label", `Archive ${label.name}`);
+          archive.addEventListener("click", () => openResourceArchive("label", label));
+          actions.append(archive);
+        }
         item.append(actions);
       }
       labelList.append(item);
+    });
+    const archivedLabels = state.model.archived_labels || [];
+    const archivedLabelSection = byId("archived-label-section");
+    const archivedLabelList = byId("archived-label-list");
+    archivedLabelSection.hidden = !archivedLabels.length;
+    archivedLabelList.replaceChildren();
+    archivedLabels.forEach((label) => {
+      const item = make("li");
+      const identity = make("span", undefined, "label-resource");
+      const swatch = make("span", undefined, "label-swatch");
+      swatch.style.setProperty("--label-color", label.color);
+      identity.append(swatch, make("span", label.name));
+      item.append(identity);
+      if (state.model.can_manage_resource_lifecycle) {
+        const restore = make("button", "Restore", "secondary");
+        restore.type = "button";
+        restore.setAttribute("aria-label", `Restore ${label.name}`);
+        restore.addEventListener("click", () => saveLabel(label, "active"));
+        item.append(restore);
+      }
+      archivedLabelList.append(item);
     });
     const autoForm = byId("auto-schedule-form");
     if (!autoForm.elements.start_at.value) {
@@ -293,8 +340,6 @@
       ([name, items]) => {
         const section = make("section", undefined, "agenda-group");
         section.dataset.group = name;
-        section.tabIndex = 0;
-        section.setAttribute("aria-label", `${name} drop target`);
         section.append(make("h3", name));
         const list = make("ul", undefined, "agenda-group-list");
         items.sort((a, b) => a.start_at_ms - b.start_at_ms).forEach((item) =>
@@ -567,9 +612,13 @@
       "No track",
     );
     byId("unschedule-item").hidden = !item.id;
+    byId("editor-title").textContent = item.id
+      ? `Edit schedule for ${item.title}`
+      : `Schedule ${item.title}`;
     clearConflicts();
     byId("preview-state").textContent = "Change a field to check conflicts.";
     byId("editor").showModal();
+    form.elements.start_at.focus();
     loadContentHistory(item);
   }
   async function saveContent(item) {
@@ -715,7 +764,18 @@
     byId("timezone").textContent = "No agenda yet";
     status("Add rooms to create this event’s first agenda.");
   }
-  async function updateResource(kind, resource) {
+  function openResourceArchive(kind, resource) {
+    const descriptions = {
+      room: "This room will no longer be available for scheduling. Remove or move every scheduled session from it before archiving.",
+      track: "This track will no longer be available for scheduling. Remove it from every scheduled session before archiving.",
+      label: "This label will no longer be available for sessions. Remove it from every session before archiving.",
+    };
+    state.pendingArchive = { kind, resource };
+    byId("resource-archive-title").textContent = `Archive ${resource.name}?`;
+    byId("resource-archive-consequence").textContent = descriptions[kind];
+    byId("resource-archive-dialog").showModal();
+  }
+  async function updateResource(kind, resource, nextStatus = "archived") {
     const label = kind === "room" ? "room" : "track";
     try {
       state.model = await api(
@@ -726,14 +786,14 @@
             "content-type": "application/json",
             "x-csrf-token": state.csrf,
           },
-          body: JSON.stringify({ status: "archived", version: resource.version }),
+          body: JSON.stringify({ status: nextStatus, version: resource.version }),
         },
       );
       render();
       showConflicts([]);
-      status(`${label[0].toUpperCase()}${label.slice(1)} archived.`);
+      status(`${label[0].toUpperCase()}${label.slice(1)} ${nextStatus === "archived" ? "archived" : "restored"}.`);
     } catch (error) {
-      status(error.message || `The ${label} could not be archived.`, true);
+      status(error.message || `The ${label} could not be ${nextStatus === "archived" ? "archived" : "restored"}.`, true);
     }
   }
   function openLabelEditor(label) {
@@ -761,7 +821,7 @@
       );
       byId("label-editor").close();
       await load(false);
-      status(nextStatus === "archived" ? "Label archived." : "Label saved.");
+      status(nextStatus === "archived" ? "Label archived." : label.status === "archived" ? "Label restored." : "Label saved.");
     } catch (error) {
       status(error.message || "The label could not be saved.", true);
     }
@@ -830,6 +890,24 @@
     });
   });
   byId("cancel-label-edit").addEventListener("click", () => byId("label-editor").close());
+  byId("resource-archive-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const pending = state.pendingArchive;
+    byId("resource-archive-dialog").close();
+    state.pendingArchive = null;
+    if (!pending) return;
+    if (pending.kind === "label") await saveLabel(pending.resource, "archived");
+    else await updateResource(pending.kind, pending.resource, "archived");
+  });
+  byId("cancel-resource-archive").addEventListener("click", () => {
+    state.pendingArchive = null;
+    byId("resource-archive-dialog").close();
+  });
+  byId("resource-archive-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    state.pendingArchive = null;
+    byId("resource-archive-dialog").close();
+  });
   byId("auto-schedule-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -939,6 +1017,13 @@
     button.disabled = true;
     status("Publishing agenda…");
     try {
+      const payload = JSON.stringify({
+        revision_id: state.model.revision.id,
+        version: state.model.revision.version,
+      });
+      if (!state.publishMutation || state.publishMutation.payload !== payload) {
+        state.publishMutation = { payload, key: key() };
+      }
       await api(
         `/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/publish`,
         {
@@ -946,13 +1031,12 @@
           headers: {
             "content-type": "application/json",
             "x-csrf-token": state.csrf,
+            "idempotency-key": state.publishMutation.key,
           },
-          body: JSON.stringify({
-            revision_id: state.model.revision.id,
-            version: state.model.revision.version,
-          }),
+          body: payload,
         },
       );
+      state.publishMutation = null;
       await load(false);
       status(hiddenDrafts
         ? `Agenda published. ${hiddenDrafts} session${hiddenDrafts === 1 ? " remains" : "s remain"} hidden until content is approved.`

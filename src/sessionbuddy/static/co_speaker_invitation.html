@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Co-speaker invitation · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=57">
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/co-speaker-invitations/assets/invitation.js?v=1" defer></script>
 </head>
@@ -27,5 +27,13 @@
       </div>
     </section>
   </main>
+  <dialog id="confirm-decline" class="form-dialog" aria-labelledby="confirm-decline-title" aria-describedby="confirm-decline-consequence">
+    <div class="dialog-heading"><div><p class="eyebrow">Confirm decline</p><h2 id="confirm-decline-title">Decline this invitation?</h2></div></div>
+    <p id="confirm-decline-consequence">You will not be added to this proposal. This invitation link will stop working, and the primary speaker must send a new invitation if you change your mind.</p>
+    <div class="dialog-actions">
+      <button id="cancel-decline" type="button" class="secondary">Keep invitation</button>
+      <button id="confirm-decline-button" type="button">Decline invitation</button>
+    </div>
+  </dialog>
 </body>
 </html>

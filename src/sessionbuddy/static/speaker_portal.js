@@ -60,6 +60,19 @@
     } catch (_) { return "Date unavailable"; }
   }
 
+  function eventTimeLabel(value, timezone) {
+    return `${formatDate(value, timezone)} · Event time (${timezone})`;
+  }
+
+  function safeMessageLink(value) {
+    try {
+      const url = new URL(value);
+      return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password
+        ? url
+        : null;
+    } catch (_) { return null; }
+  }
+
   function taskDestination(task) {
     // Only same-page destinations are accepted; arbitrary API-provided URLs are never used.
     if (task.destination_path === "#profile") return "/account";
@@ -149,7 +162,7 @@
       const stateText = overdue ? "Overdue" : dueSoon ? "Due soon" : "Outstanding";
       meta.append(
         make("span", stateText, `state-badge${overdue ? " overdue" : ""}`),
-        make("span", `Due ${formatDate(task.due_at_ms, timezone)} · ${timezone}`)
+        make("span", `Due ${eventTimeLabel(task.due_at_ms, timezone)}`)
       );
       item.append(heading);
       if (help) item.append(help);
@@ -355,7 +368,7 @@
       option.classList.toggle("is-current", available.id === event.id);
       if (available.id === event.id) option.setAttribute("aria-current", "page");
       const copy = make("span");
-      copy.append(make("strong", available.name), make("small", formatDate(available.starts_at_ms, available.time_zone)));
+      copy.append(make("strong", available.name), make("small", eventTimeLabel(available.starts_at_ms, available.time_zone)));
       option.append(copy, make("span", available.id === event.id ? "Open" : "View", "event-index__state"));
       option.addEventListener("click", () => selectEvent(available.id));
       (available.ends_at_ms < Date.now() ? pastList : activeList).append(option);
@@ -363,10 +376,10 @@
     if (!activeList.children.length) activeList.append(make("p", "No upcoming events.", "empty"));
     if (!pastList.children.length) pastList.append(make("p", "No past events yet.", "empty"));
     const eventDates = `${formatDate(event.starts_at_ms, event.time_zone)}–${formatDate(event.ends_at_ms, event.time_zone)}`;
-    byId("event-summary").textContent = `${event.name} · ${eventDates}`;
+    byId("event-summary").textContent = `${event.name} · ${eventDates} · Event time (${event.time_zone})`;
     byId("task-event-label").textContent = event.name;
     byId("session-event-label").textContent = event.name;
-    byId("notification-event-label").textContent = event.name;
+    byId("notification-event-label").textContent = `${event.name} · Event time (${event.time_zone})`;
     const tasks = portal.tasks || [];
     renderTasks(tasks, event.time_zone);
     renderSubmissions(portal.submissions || []);
@@ -385,10 +398,30 @@
     }
     notifications.forEach((notification) => {
       const item = document.createElement("li");
-      item.append(
+      const detail = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.append(
         make("strong", notification.subject),
-        make("time", formatDate(notification.delivered_at_ms, timezone))
+        make("time", `Delivered ${eventTimeLabel(notification.delivered_at_ms, timezone)}`)
       );
+      const body = make("p", notification.body_text || "Message content is unavailable.", "help");
+      detail.append(summary, body);
+      const safeLinks = (notification.links || []).map(safeMessageLink).filter(Boolean);
+      if (safeLinks.length) {
+        const links = document.createElement("ul");
+        links.className = "notification-links";
+        safeLinks.forEach((url) => {
+          const row = document.createElement("li");
+          const link = make("a", url.href);
+          link.href = url.href;
+          link.target = "_blank";
+          link.rel = "noopener";
+          row.append(link);
+          links.append(row);
+        });
+        detail.append(links);
+      }
+      item.append(detail);
       list.append(item);
     });
   }

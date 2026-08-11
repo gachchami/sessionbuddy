@@ -63,7 +63,10 @@ def _resource_authority(
     if resource_id in actor.owned_resource_ids:
         return True
     grants = actor.resource_grants.get(resource_id, frozenset())
-    if permission is Permission.RESOURCE_ACCESS_MANAGE:
+    if permission in {
+        Permission.RESOURCE_ACCESS_MANAGE,
+        Permission.ORGANIZATION_MANAGE,
+    }:
         return ResourceGrant.MANAGE in grants
     return bool(grants & {ResourceGrant.EDIT, ResourceGrant.MANAGE})
 

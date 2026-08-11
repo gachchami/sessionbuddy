@@ -82,6 +82,13 @@ All retriable creates and action endpoints require `Idempotency-Key`, a 16–255
 - An identical completed retry returns the stored response with `Idempotency-Replayed: true`.
 - Reusing a key with a different request hash returns `409 idempotency_conflict`.
 - A concurrent in-progress duplicate returns `409 idempotency_in_progress` with bounded `Retry-After`.
+
+Fanout actions such as publishing an agenda or adding submissions to an open
+evaluation round store a scoped result and return it for an identical retry;
+the retry must not enqueue calendar changes, assignments, or email again.
+One-time-secret creation is different: only the secret hash is persisted. An
+identical retry returns a stable `409` explaining that the original secret
+cannot be replayed and must not create a second token.
 - Retention is at least 24 hours and longer than the maximum client retry window; scheduled cleanup is indexed and bounded.
 
 D1 prepared statements are mandatory. Cloudflare documents both [parameter binding](https://developers.cloudflare.com/d1/worker-api/prepared-statements/) and rollback behavior for failed [`batch()` transactions](https://developers.cloudflare.com/d1/worker-api/d1-database/).

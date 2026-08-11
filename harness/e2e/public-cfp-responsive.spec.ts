@@ -193,6 +193,30 @@ test.describe("public CFP responsive design", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   });
 
+  test("proposal fields enforce API limits and recover an in-progress browser draft", async ({ page }) => {
+    await servePublicCfp(page, true);
+    await page.goto("/cfp/mobile/responsive-conference");
+
+    const name = page.getByLabel("Speaker name");
+    const email = page.locator('[name="speaker_email"]');
+    const title = page.getByLabel("Proposal title");
+    await expect(name).toHaveAttribute("maxlength", "200");
+    await expect(email).toHaveAttribute("maxlength", "320");
+    await expect(title).toHaveAttribute("maxlength", "200");
+    await name.fill("Draft Speaker");
+    await title.fill("Recovered proposal");
+    await page.waitForTimeout(600);
+
+    const recovery = await page.evaluate(() => {
+      const key = "sessionbuddy:cfp:responsive-conference:draft";
+      const saved = JSON.parse(localStorage.getItem(key) || "null");
+      const unload = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(unload);
+      return { title: saved?.answers?.proposal_title, unloadPrevented: unload.defaultPrevented };
+    });
+    expect(recovery).toEqual({ title: "Recovered proposal", unloadPrevented: true });
+  });
+
   test("speaker registration is a focused single-column phone form", async ({ page }) => {
     const width = 390;
     const registrationFields = `

@@ -1,8 +1,5 @@
-import binascii
 import hashlib
-import hmac
 import json
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from csv import writer
 from datetime import UTC, datetime
 from html import escape
@@ -18,12 +15,12 @@ from sessionbuddy.platform.auth.http import (
     authenticate_request,
     require_document_persona,
     require_permission,
-    secret,
 )
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 
 from .models import (
     AiTriageView,
@@ -61,9 +58,6 @@ evaluation_router = APIRouter()
 
 AI_TRIAGE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 EVALUATION_PAGE_LIMIT = 50
-_EVALUATION_CURSOR_TTL_MS = 15 * 60 * 1000
-
-
 def _evaluation_cursor(
     request: Request,
     value: str | None,
@@ -72,43 +66,18 @@ def _evaluation_cursor(
     scope_id: str,
 ) -> tuple[int, str] | None:
     """Decode a signed keyset cursor scoped to one list and identity."""
-    if value is None:
+    decoded = decode_signed_cursor(
+        request,
+        value,
+        scope={"kind": kind, "scope": scope_id},
+        position_fields={"id", "ts"},
+    )
+    if decoded is None:
         return None
-    try:
-        encoded_payload, encoded_signature = value.split(".", 1)
-        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
-        signature = urlsafe_b64decode(encoded_signature + "=" * (-len(encoded_signature) % 4))
-        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-        if not hmac.compare_digest(signature, expected):
-            raise ValueError
-        decoded = json.loads(payload.decode())
-        if not isinstance(decoded, dict) or decoded != {
-            "exp": decoded.get("exp"),
-            "id": decoded.get("id"),
-            "kind": kind,
-            "scope": scope_id,
-            "ts": decoded.get("ts"),
-            "v": 1,
-        }:
-            raise ValueError
-        timestamp, row_id, expires = decoded["ts"], decoded["id"], decoded["exp"]
-        if (
-            not isinstance(timestamp, int)
-            or not isinstance(row_id, str)
-            or not 1 <= len(row_id) <= 100
-            or not isinstance(expires, int)
-            or expires < utc_now_ms()
-        ):
-            raise ValueError
-        return timestamp, row_id
-    except (
-        ValueError,
-        binascii.Error,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        KeyError,
-    ) as exc:
-        raise HTTPException(status_code=400) from exc
+    timestamp, row_id = decoded["ts"], decoded["id"]
+    if type(timestamp) is not int or not isinstance(row_id, str) or not 1 <= len(row_id) <= 100:
+        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
+    return timestamp, row_id
 
 
 def _evaluation_next_cursor(
@@ -119,24 +88,10 @@ def _evaluation_next_cursor(
     timestamp: int,
     row_id: str,
 ) -> str:
-    payload = json.dumps(
-        {
-            "exp": utc_now_ms() + _EVALUATION_CURSOR_TTL_MS,
-            "id": row_id,
-            "kind": kind,
-            "scope": scope_id,
-            "ts": timestamp,
-            "v": 1,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-    return ".".join(
-        (
-            urlsafe_b64encode(payload).decode().rstrip("="),
-            urlsafe_b64encode(signature).decode().rstrip("="),
-        )
+    return encode_signed_cursor(
+        request,
+        scope={"kind": kind, "scope": scope_id},
+        position={"id": row_id, "ts": timestamp},
     )
 
 
@@ -156,6 +111,7 @@ async def reviews_page(request: Request) -> HTMLResponse:
     include_in_schema=False,
 )
 async def admin_round_page(round_id: str, request: Request) -> HTMLResponse:
+    await require_document_persona(request, Persona.ORGANIZER)
     return HTMLResponse(_asset("app/index.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -823,6 +779,7 @@ async def add_round_submissions(
     round_id: str,
     body: RoundSubmissionAdd,
     request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> RoundSubmissionChange:
     db = _db(request)
     round_row = row_mapping(
@@ -841,6 +798,43 @@ async def add_round_submissions(
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=True,
     )
+    key = _key(idempotency_key)
+    route = "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"round_id": round_id, "body": body.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id
+               FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND organization_id=?4 AND event_id=?5 AND state='completed'"""
+        )
+        .bind(
+            auth.actor.user_id,
+            route,
+            hashlib.sha256(key.encode()).digest(),
+            round_row["organization_id"],
+            round_row["event_id"],
+        )
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        try:
+            result = RoundSubmissionChange.model_validate_json(
+                str(replay["response_resource_id"])
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=409) from exc
+        if result.round_id != round_id:
+            raise HTTPException(status_code=409)
+        return result
     if round_row["status"] != "open":
         raise HTTPException(status_code=409)
     placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
@@ -897,7 +891,17 @@ async def add_round_submissions(
         strategy = "balanced"
     assignment_pairs = _assignment_pairs(new_submission_ids, evaluator_ids, strategy)
     now = utc_now_ms()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
     batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
     for submission_id, evaluator_id in assignment_pairs:
         batch.add_statement(
             db.prepare(
@@ -955,15 +959,25 @@ async def add_round_submissions(
         ),
         base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
         now_ms=now,
-        dedup_suffix=f"{added_digest}:{now}",
+        dedup_suffix=(
+            f"{added_digest}:{hashlib.sha256(key.encode()).hexdigest()[:16]}"
+        ),
     )
-    await batch.execute()
-    await _publish_queued_messages(request, notification_ids)
-    return RoundSubmissionChange(
+    result = RoundSubmissionChange(
         round_id=round_id,
         submission_count=len(new_submission_ids),
         assignment_count=len(assignment_pairs),
     )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_round_submission_change",
+        resource_id=result.model_dump_json(),
+        completed_at_ms=now,
+    )
+    await _execute(request, batch)
+    await _publish_queued_messages(request, notification_ids)
+    return result
 
 
 @evaluation_router.post(
@@ -2006,7 +2020,9 @@ async def export_round_results(round_id: str, request: Request) -> Response:
     )
 
     def safe(value: object) -> object:
-        if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+        if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(
+            ("=", "+", "-", "@")
+        ):
             return f"'{value}"
         return value
 

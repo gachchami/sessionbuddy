@@ -61,7 +61,9 @@ async def _grant_and_sign_in(
     )
     assert requested.status_code == 202
     verified = await principal.post(
-        f"/auth/verify?token={_token(connection, email)}", follow_redirects=False
+        "/auth/verify",
+        data={"token": _token(connection, email)},
+        follow_redirects=False,
     )
     assert verified.status_code == 303
     return (await principal.get("/api/v1/auth/session")).json()["csrf_token"]
@@ -198,6 +200,47 @@ async def test_agenda_editors_can_add_resources_but_cannot_archive_them(
             json={"status": "archived", "version": track["version"]},
         )
         assert (archived_room.status_code, archived_track.status_code) == (200, 200)
+        archived_room_model = archived_room.json()
+        archived_track_model = archived_track.json()
+        room = next(
+            item
+            for item in archived_room_model["archived_rooms"]
+            if item["id"] == room["id"]
+        )
+        track = next(
+            item
+            for item in archived_track_model["archived_tracks"]
+            if item["id"] == track["id"]
+        )
+
+        denied_room_restore = await editor.patch(
+            f"/api/v1/admin/events/{event_id}/agenda/rooms/{room['id']}",
+            headers=_headers(editor_csrf),
+            json={"status": "active", "version": room["version"]},
+        )
+        denied_track_restore = await editor.patch(
+            f"/api/v1/admin/events/{event_id}/agenda/tracks/{track['id']}",
+            headers=_headers(editor_csrf),
+            json={"status": "active", "version": track["version"]},
+        )
+        assert (denied_room_restore.status_code, denied_track_restore.status_code) == (
+            404,
+            404,
+        )
+
+        restored_room = await root.patch(
+            f"/api/v1/admin/events/{event_id}/agenda/rooms/{room['id']}",
+            headers=_headers(root_csrf),
+            json={"status": "active", "version": room["version"]},
+        )
+        restored_track = await root.patch(
+            f"/api/v1/admin/events/{event_id}/agenda/tracks/{track['id']}",
+            headers=_headers(root_csrf),
+            json={"status": "active", "version": track["version"]},
+        )
+        assert (restored_room.status_code, restored_track.status_code) == (200, 200)
+        assert any(item["id"] == room["id"] for item in restored_room.json()["rooms"])
+        assert any(item["id"] == track["id"] for item in restored_track.json()["tracks"])
 
 
 async def test_event_manager_can_archive_orphaned_label_at_cap(

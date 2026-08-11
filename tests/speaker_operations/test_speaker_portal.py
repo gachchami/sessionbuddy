@@ -2,17 +2,22 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
+from sessionbuddy.platform.auth.http import AuthenticatedContext
+from sessionbuddy.platform.authorization import Actor, Persona
 from sessionbuddy.platform.db.types import utc_now_ms
+from sessionbuddy.speaker_operations import router as speaker_router
 from sessionbuddy.speaker_operations.models import SpeakerProfileUpdate, UploadAuthorizationCreate
 from sessionbuddy.speaker_operations.router import (
     _cursor,
     _next_cursor,
     _speaker_asset_version_view,
+    _speaker_message_content,
+    get_speaker_portal,
 )
 
 
@@ -145,3 +150,119 @@ def test_speaker_portal_supports_explicit_multi_event_selection() -> None:
     assert "event_id: str | None = Query" in source
     assert "(?2 IS NULL OR es.event_id = ?2)" in source
     assert "events=[" in source
+
+
+def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
+    static = Path(__file__).parents[2] / "src/sessionbuddy/static"
+    portal = (static / "speaker_portal.js").read_text()
+    content = (static / "speaker_content.js").read_text()
+    messages = (static / "speaker_messages.js").read_text()
+    invitation = (static / "co_speaker_invitation.js").read_text()
+    message_page = (static / "speaker_messages.html").read_text()
+
+    assert "Event time (${timezone})" in portal
+    assert "Event time (${state.timeZone})" in content
+    assert "Event time (${eventTimeZone})" in messages
+    assert "your local time: ${zone}" in invitation
+    assert 'byId("confirm-message-send").showModal()' in messages
+    assert "await sendPreviewedMessage()" in messages
+    assert "personalized emails will be queued immediately" in message_page
+
+
+def test_delivered_message_content_strips_active_markup_and_allowlists_links() -> None:
+    body, links = _speaker_message_content(
+        "<p>Hello speaker.</p><script>alert('no')</script>"
+        '<a href="javascript:alert(1)">Unsafe</a>'
+        '<a href="https://sessionbuddy.example/speaker">Open portal</a>'
+        " Plain https://docs.example.test/guide."
+    )
+
+    assert body == "Hello speaker.\nUnsafeOpen portal Plain https://docs.example.test/guide."
+    assert "alert('no')" not in body
+    assert links == [
+        "https://sessionbuddy.example/speaker",
+        "https://docs.example.test/guide",
+    ]
+
+
+async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypatch) -> None:
+    class Statement:
+        def __init__(self, database, query):
+            self.database = database
+            self.query = query
+            self.values = ()
+
+        def bind(self, *values):
+            self.values = values
+            return self
+
+        async def all(self):
+            if "FROM communication_messages" in self.query:
+                self.database.notification_scope = self.values
+                self.database.notification_query = self.query
+                return {
+                    "results": [{
+                        "id": "message-a",
+                        "subject": "Speaker briefing",
+                        "html_body": '<p>Bring your badge.</p><a href="https://safe.example/brief">Brief</a>',
+                        "delivered_at_ms": 1_700_000_000_000,
+                    }]
+                }
+            return {"results": []}
+
+    class Database:
+        notification_scope = None
+        notification_query = ""
+
+        def prepare(self, query):
+            return Statement(self, query)
+
+    database = Database()
+    row = {
+        "event_speaker_id": "event-speaker-a",
+        "organization_id": "organization-a",
+        "event_id": "event-a",
+        "user_id": "speaker-a",
+        "display_name": "Speaker A",
+        "job_title": "Engineer",
+        "company": "Example",
+        "biography": "Biography",
+        "location": "Remote",
+        "links_json": "[]",
+        "version": 1,
+        "event_name": "Event A",
+        "starts_at_ms": 1_700_000_000_000,
+        "ends_at_ms": 1_700_086_400_000,
+        "time_zone": "America/New_York",
+        "selection_status": "accepted",
+    }
+    authenticated = AuthenticatedContext(
+        actor=Actor(user_id="speaker-a", active_persona=Persona.SPEAKER),
+        session_id="session-a",
+    )
+
+    async def speaker_row(_request, _event_id):
+        return authenticated, row
+
+    async def allow(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(speaker_router, "_speaker_row", speaker_row)
+    monkeypatch.setattr(speaker_router, "require_permission", allow)
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/v1/speaker/portal",
+        "headers": [],
+        "query_string": b"event_id=event-a",
+        "env": SimpleNamespace(DB=database),
+        "state": {"timings": {}},
+    })
+
+    result = await get_speaker_portal(request, "event-a")
+
+    assert database.notification_scope == ("organization-a", "event-a", "speaker-a")
+    assert "recipient_user_id=?3" in database.notification_query
+    assert "status='delivered'" in database.notification_query
+    assert result.notifications[0].body_text == "Bring your badge.\nBrief"
+    assert result.notifications[0].links == ["https://safe.example/brief"]

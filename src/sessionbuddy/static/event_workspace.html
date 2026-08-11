@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Publish · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=57">
+  <title>Share &amp; integrations · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
   <script src="/admin/workspace/assets/workspace.js?v=9" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--resources">
-  <a class="skip-link" href="#main">Skip to publishing tools</a>
+  <a class="skip-link" href="#main">Skip to sharing and integration tools</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
     <div class="page-heading workflow-hero">
-      <div><h1>Publish</h1><p class="lede">What the outside world sees: public pages, embeds, and connected tools.</p></div>
-      <a id="open-embed" class="button secondary" href="#">Open public view</a>
+      <div><h1>Share &amp; integrations</h1><p class="lede">Publish the agenda from Agenda, then share its public pages or connect another platform.</p></div>
+      <div class="actions"><a id="publish-agenda" class="button" href="#">Review &amp; publish agenda</a><a id="open-embed" class="button secondary" href="#">Open public view</a></div>
     </div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
-    <section class="grid workspace-grid workflow-grid" aria-label="Publishing tools">
-      <article class="card wide workflow-stage workflow-stage--public" aria-labelledby="sharing-title"><div class="section-heading"><div><p class="eyebrow">Public event</p><h2 id="sharing-title">Share &amp; embed</h2></div></div><p class="help">Your public event pages are ready to share. Open embed settings only when you need code for another website.</p><details class="action-disclosure workflow-action"><summary>Embed settings</summary><form id="embed-builder"><div class="form-grid"><label>Widget type<select id="embed-type"><option value="schedule">Schedule</option><option value="sessions">Session list</option><option value="speakers">Speaker directory</option><option value="gallery">Speaker gallery</option></select></label><label>Embed title<input id="embed-title" value="Event schedule" maxlength="120"></label></div><div class="form-grid"><label>Minimum height<input id="embed-height" type="number" min="320" max="1600" value="640"></label><label class="check-label"><input id="embed-enabled" type="checkbox" checked> Embed enabled</label></div><label>Public page<input id="embed-url" readonly></label><label>Iframe code<textarea id="embed-code" rows="3" readonly></textarea></label><div class="actions"><button id="copy-embed" class="secondary" type="button">Copy embed</button></div></form></details></article>
+    <section class="grid workspace-grid workflow-grid" aria-label="Sharing and integration tools">
+      <article class="card wide workflow-stage workflow-stage--public" aria-labelledby="sharing-title"><div class="section-heading"><div><p class="eyebrow">Public event</p><h2 id="sharing-title">Share public pages</h2></div></div><p class="help">Agenda publication is controlled from the Agenda page. After publishing, share the public view here or generate code for another website.</p><details class="action-disclosure workflow-action"><summary>Embed snippet preferences</summary><form id="embed-builder"><p class="help">These appearance preferences are saved only in this browser and only change the generated snippet. They do not enable or disable public embeds. Schedule embed availability follows agenda publication.</p><div class="form-grid"><label>Widget type<select id="embed-type"><option value="schedule">Schedule</option><option value="sessions">Session list</option><option value="speakers">Speaker directory</option><option value="gallery">Speaker gallery</option></select></label><label>Embed title<input id="embed-title" value="Event schedule" maxlength="120"></label></div><label>Minimum height<input id="embed-height" type="number" min="320" max="1600" value="640"></label><label>Public page<input id="embed-url" readonly></label><label>Iframe code<textarea id="embed-code" rows="3" readonly></textarea></label><div class="actions"><button id="copy-embed" class="secondary" type="button">Copy embed code</button></div></form></details></article>
       <article class="card wide workflow-stage workflow-stage--integration" aria-labelledby="integration-title">
         <div class="section-heading"><div><p class="eyebrow">One-way integration</p><h2 id="integration-title">Accelevents</h2></div><span class="badge success">Pull feed</span></div>
         <p class="help">Generate a read-only API token. Accelevents can pull accepted speakers and sessions using this event ID; unpublished and rejected content is excluded.</p>

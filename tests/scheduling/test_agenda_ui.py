@@ -21,6 +21,11 @@ def test_admin_supports_all_views_drag_and_keyboard_editor() -> None:
     assert 'dataTransfer.setData("text/plain"' in javascript
     assert 'id="editor"' in html and 'type="datetime-local"' in html
     assert "previewDrop" in javascript and "schedulePreview" in javascript
+    assert "Dragging is optional" in html
+    assert "section.tabIndex = 0" not in javascript
+    assert 'section.setAttribute("aria-label", `${name} drop target`)' not in javascript
+    assert '"Edit schedule for"' in javascript
+    assert 'form.elements.start_at.focus()' in javascript
 
 
 def test_fresh_event_can_create_its_first_agenda_and_rooms() -> None:
@@ -53,6 +58,19 @@ def test_event_labels_are_managed_and_assigned_in_the_agenda() -> None:
     assert "/sessions/${encodeURIComponent(item.session_id)}/labels" in javascript
     assert 'input[name="session_label"]:checked' in javascript
     assert "label.can_manage" in javascript
+
+
+def test_archived_resources_are_confirmed_discoverable_and_restorable() -> None:
+    html, javascript = read("agenda_admin.html"), read("agenda.js")
+    for kind in ("room", "track", "label"):
+        assert f'id="archived-{kind}-section"' in html
+        assert f'id="archived-{kind}-list"' in html
+    assert 'id="resource-archive-dialog"' in html
+    assert 'id="resource-archive-consequence"' in html
+    assert "Remove or move every scheduled session" in javascript
+    assert 'updateResource(kind, value, "active")' in javascript
+    assert 'saveLabel(label, "active")' in javascript
+    assert "can_manage_resource_lifecycle" in javascript
 
 
 def test_publish_uses_an_accessible_in_page_confirmation() -> None:

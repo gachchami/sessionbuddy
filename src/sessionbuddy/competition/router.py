@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.auth import authenticate_request, generate_token, hash_token
-from sessionbuddy.platform.auth.http import require_permission
+from sessionbuddy.platform.auth.http import require_document_persona, require_permission
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, ResourceGrant
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
@@ -111,7 +111,8 @@ async def _managed_event(request: Request, event_id: str, *, mutation: bool):
 @competition_router.get(
     "/admin/events/{event_id}/workspace", response_class=HTMLResponse, include_in_schema=False
 )
-async def event_workspace_page(event_id: str) -> HTMLResponse:
+async def event_workspace_page(event_id: str, request: Request) -> HTMLResponse:
+    await require_document_persona(request, Persona.ORGANIZER)
     return HTMLResponse(_asset("event_workspace.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -127,7 +128,8 @@ async def event_workspace_js() -> Response:
     response_class=HTMLResponse,
     include_in_schema=False,
 )
-async def speaker_content_page(event_id: str) -> HTMLResponse:
+async def speaker_content_page(event_id: str, request: Request) -> HTMLResponse:
+    await require_document_persona(request, Persona.ORGANIZER)
     return HTMLResponse(_asset("speaker_content.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -1129,11 +1131,76 @@ async def create_custom_speaker_task(
     tags=["integrations"],
 )
 async def create_accelevents_token(
-    event_id: str, body: IntegrationTokenCreate, request: Request
+    event_id: str,
+    body: IntegrationTokenCreate,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> IntegrationTokenView:
     event, auth = await _managed_event(request, event_id, mutation=True)
-    db, now, token_id, token = _db(request), utc_now_ms(), new_id(), generate_token()
+    if idempotency_key is None or not 16 <= len(idempotency_key) <= 255:
+        raise HTTPException(status_code=400)
+    route = "POST /api/v1/admin/events/{event_id}/integrations/accelevents/tokens"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"event_id": event_id, "body": body.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    db = _db(request)
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id,state
+               FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND organization_id=?4 AND event_id=?5 LIMIT 1"""
+        )
+        .bind(
+            auth.actor.user_id,
+            route,
+            hashlib.sha256(idempotency_key.encode()).digest(),
+            event["organization_id"],
+            event_id,
+        )
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        stored = row_mapping(
+            await db.prepare(
+                """SELECT id FROM event_integration_tokens
+                   WHERE id=?1 AND organization_id=?2 AND event_id=?3
+                     AND provider='accelevents' LIMIT 1"""
+            )
+            .bind(
+                replay["response_resource_id"],
+                event["organization_id"],
+                event_id,
+            )
+            .first()
+        )
+        if replay["state"] == "completed" and stored is None:
+            raise HTTPException(status_code=409)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This token-generation request already ran. Its secret is shown only in "
+                "the original response and cannot be replayed. Do not regenerate it."
+            ),
+        )
+    now, token_id, token = utc_now_ms(), new_id(), generate_token()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=str(event["organization_id"]),
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
     batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
     batch.add_statement(
         db.prepare(
             """INSERT INTO event_integration_tokens
@@ -1164,7 +1231,23 @@ async def create_accelevents_token(
             metadata={"provider": "accelevents"},
         )
     )
-    await batch.execute()
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="event_integration_token",
+        resource_id=token_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This token-generation request is already in progress or completed. "
+                "Do not regenerate it."
+            ),
+        ) from exc
     return IntegrationTokenView(
         id=token_id, event_id=event_id, label=body.label, token=token, created_at_ms=now
     )

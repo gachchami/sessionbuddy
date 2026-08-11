@@ -113,6 +113,17 @@ async def refresh_session(request: Request, response: Response) -> SessionView:
             authenticated.session_id,
         )
     )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+               SELECT ?1, active.user_id, active.role, active.selected_at_ms
+               FROM session_active_roles active
+               JOIN user_roles assigned
+                 ON assigned.user_id=active.user_id AND assigned.role=active.role
+                AND assigned.status='active'
+               WHERE active.session_id=?2 AND active.user_id=?3"""
+        ).bind(session_id, authenticated.session_id, authenticated.actor.user_id)
+    )
     batch.audit(
         AuditEvent(
             actor_type="user",

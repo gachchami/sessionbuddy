@@ -34,14 +34,47 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     assert "circular dependency" in script
 
 
-def test_only_unpublished_cfp_drafts_autosave() -> None:
+def test_cfp_drafts_and_unsaved_live_edits_have_browser_recovery() -> None:
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
-    assert "if (state.publishedForm || !state.context) return;" in script
-    assert "if (state.publishedForm) return;" in script
-    assert "Live changes are never autosaved" in script
+    assert "if (!state.context) return;" in script
+    assert "form_version: state.publishedForm?.version ?? null" in script
+    assert "Unsaved live changes backed up in this browser" in script
+    assert "restoreLocalDraft();" in script
+    assert "if (error.status === 401)" in script
+    assert "saveLocalDraft();" in script
     assert "Update live CFP" in script
     assert "state.userId" in script
+
+
+def test_published_cfp_edit_action_is_outside_the_closed_share_dialog() -> None:
+    page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
+
+    page_heading = page.split('id="main"', 1)[1].split('id="cfp-share-dialog"', 1)[0]
+    dialog = page.split('id="cfp-share-dialog"', 1)[1].split("</dialog>", 1)[0]
+    assert 'id="edit-cfp"' in page_heading
+    assert 'id="edit-cfp"' not in dialog
+
+
+def test_cfp_rich_text_editor_is_named_and_link_dialog_is_keyboard_safe() -> None:
+    page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
+    script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
+
+    assert 'id="cfp-description-label"' in page
+    assert 'id="cfp-description-help"' in page
+    assert 'aria-labelledby="cfp-description-label"' in page
+    assert 'aria-describedby="cfp-description-help"' in page
+    assert 'id="cfp-link-dialog"' in page
+    assert 'aria-labelledby="cfp-link-dialog-title"' in page
+    assert 'aria-describedby="cfp-link-dialog-help"' in page
+    assert 'id="cfp-link-error"' in page
+    assert 'role="alert"' in page
+    assert "prompt(" not in script
+    assert 'dialog.addEventListener("close"' in script
+    assert "trigger?.focus()" in script
+    assert '["https:", "http:"].includes(url.protocol)' in script
+    assert 'link.href = url.href' in script
+    assert "pendingLinkRange.surroundContents(link)" in script
 
 
 def test_event_autosave_is_limited_to_new_or_draft_events() -> None:

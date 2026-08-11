@@ -127,6 +127,7 @@ def test_async_handlers_cover_every_queue_cron_and_workflow_entrypoint() -> None
     consumer_functions = (
         "dispatch_stuck_deliveries",
         "purge_expired_staged_assets",
+        "purge_expired_speaker_uploads",
         "consume_scan_job",
         "consume_reminder",
         "consume_delivery",

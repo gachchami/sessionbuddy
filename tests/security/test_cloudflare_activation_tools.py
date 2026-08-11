@@ -23,18 +23,52 @@ ROOT = Path(__file__).parents[2]
 def test_development_cloudflare_config_has_no_deployment_failures() -> None:
     environment, variables = load_environment(ROOT / "wrangler.jsonc", "dev")
     checks = static_configuration_checks(environment, variables)
+    rate_limits = {
+        binding["name"]: binding["simple"] for binding in environment["ratelimits"]
+    }
 
     assert not [check for check in checks if check.state == "FAIL"]
     assert variables["PUBLIC_BASE_URL"] in variables["ALLOWED_ORIGINS"].split(",")
     assert variables["CLOUDFLARE_ACCOUNT_ID"]
     assert variables["R2_BUCKET_NAME"] == "sessionbuddy-assets-development"
     assert any(
-        check.label == "malware scanning" and "development-only bypass" in check.detail
+        check.label == "malware scanning"
+        and check.state == "PASS"
+        and check.detail == "explicit development bypass"
         for check in checks
     )
     assert any(
         check.label == "Cloudflare Containers" and check.state == "PASS" for check in checks
     )
+    assert rate_limits["SPEAKER_UPLOAD_AUTH_RATE_LIMITER"] == {"limit": 3, "period": 60}
+    assert rate_limits["HEADSHOT_UPLOAD_RATE_LIMITER"] == {"limit": 3, "period": 60}
+    assert rate_limits["MAGIC_LINK_RECIPIENT_RATE_LIMITER"] == {
+        "limit": 3,
+        "period": 60,
+    }
+    assert rate_limits["MAGIC_LINK_SOURCE_RATE_LIMITER"] == {"limit": 10, "period": 60}
+
+
+def test_deployed_development_can_explicitly_disable_scanning() -> None:
+    environment, variables = load_environment(ROOT / "wrangler.jsonc", "dev")
+    variables["MALWARE_SCAN_MODE"] = "disabled"
+    checks = static_configuration_checks(environment, variables)
+
+    malware = next(check for check in checks if check.label == "malware scanning")
+    assert malware.state == "PASS"
+    assert malware.detail == "explicit development bypass"
+
+
+def test_staging_cannot_inherit_the_development_scanner_bypass() -> None:
+    environment, variables = load_environment(ROOT / "wrangler.jsonc", "dev")
+    environment["vars"]["APP_ENV"] = "staging"
+    variables["APP_ENV"] = "staging"
+    variables["MALWARE_SCAN_MODE"] = "disabled"
+    checks = static_configuration_checks(environment, variables)
+
+    malware = next(check for check in checks if check.label == "malware scanning")
+    assert malware.state == "FAIL"
+    assert "outside development" in malware.detail
 
 
 def test_activation_preflight_distinguishes_core_and_provider_secrets() -> None:

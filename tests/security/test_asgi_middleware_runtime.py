@@ -63,9 +63,12 @@ async def test_pure_asgi_middleware_preserves_streaming_headers_state_and_teleme
     assert response.headers["x-request-id"] == "streaming-request"
     assert response.headers["server-timing"].startswith("app;dur=")
     assert "db;dur=1.2" in response.headers["server-timing"]
-    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["cache-control"] == "public, max-age=300"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["strict-transport-security"] == (
+        "max-age=31536000; includeSubDomains"
+    )
     assert len(events) == 1
     assert events[0]["request_id"] == "streaming-request"
     assert events[0]["route"] == "/api/v1/stream/{item_id}"
@@ -106,6 +109,9 @@ async def test_pure_asgi_middleware_applies_headers_and_completion_to_error_resp
     assert response.headers["x-request-id"] == "failed-request"
     assert response.headers["server-timing"].startswith("app;dur=")
     assert response.headers["cache-control"] == "no-store"
+    assert response.headers["strict-transport-security"] == (
+        "max-age=31536000; includeSubDomains"
+    )
     assert response.headers["content-security-policy"].startswith("default-src 'self'")
     assert len(events) == 1
     assert events[0]["level"] == "error"
@@ -157,3 +163,19 @@ async def test_embed_response_remains_frameable_without_x_frame_options() -> Non
     assert response.status_code == 200
     assert "x-frame-options" not in response.headers
     assert "frame-ancestors *" in response.headers["content-security-policy"]
+
+
+async def test_magic_link_confirmation_preserves_same_origin_for_csrf_check() -> None:
+    async def document_app(_scope, _receive, send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"confirm"})
+
+    async with AsyncClient(
+        transport=ASGITransport(app=SecurityHeadersMiddleware(document_app)),
+        base_url="http://test",
+    ) as client:
+        confirmation = await client.get("/auth/verify")
+        ordinary = await client.get("/sign-in")
+
+    assert confirmation.headers["referrer-policy"] == "same-origin"
+    assert ordinary.headers["referrer-policy"] == "no-referrer"

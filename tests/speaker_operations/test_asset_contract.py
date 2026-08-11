@@ -1,5 +1,6 @@
 import hashlib
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -13,6 +14,8 @@ from sessionbuddy.platform.storage import (
 )
 from sessionbuddy.speaker_operations.models import UploadAuthorizationCreate
 
+PROJECT_ROOT = Path(__file__).parents[2]
+
 
 class _Environment:
     def __init__(self, app_env: str, mode: str) -> None:
@@ -24,6 +27,8 @@ def test_malware_scan_bypass_is_explicit_and_non_production_only() -> None:
     assert malware_scan_disabled(_Environment("development", "disabled"))
     assert malware_scan_disabled(_Environment("local", "disabled"))
     assert not malware_scan_disabled(_Environment("development", "required"))
+    assert not malware_scan_disabled(_Environment("preview", "disabled"))
+    assert not malware_scan_disabled(_Environment("staging", "disabled"))
     assert not malware_scan_disabled(_Environment("production", "disabled"))
     assert not malware_scan_disabled(None)
 
@@ -47,6 +52,7 @@ def test_r2_presigned_put_is_single_object_and_header_bound() -> None:
         access_key_id="access",
         secret_access_key="".join(("test", "-signing", "-material")),
         content_type="application/pdf",
+        content_length=12345,
         now=datetime(2026, 8, 9, tzinfo=UTC),
         expires_seconds=600,
     )
@@ -58,9 +64,17 @@ def test_r2_presigned_put_is_single_object_and_header_bound() -> None:
     assert parsed.path == "/private-assets/private/version/object"
     assert query["X-Amz-Content-Sha256"] == ["UNSIGNED-PAYLOAD"]
     assert query["X-Amz-Expires"] == ["600"]
-    assert query["X-Amz-SignedHeaders"] == ["content-type;host"]
+    assert query["X-Amz-SignedHeaders"] == ["content-length;content-type;host"]
     assert len(query["X-Amz-Signature"][0]) == 64
-    assert headers == {"content-type": "application/pdf"}
+    assert headers == {"content-length": "12345", "content-type": "application/pdf"}
+
+
+def test_speaker_completion_requires_the_exact_authorized_object_size() -> None:
+    router = (
+        PROJECT_ROOT / "src" / "sessionbuddy" / "speaker_operations" / "router.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'int(stored.size) != int(row["expected_byte_size"])' in router
 
 
 def test_scan_request_can_be_signed_from_verified_digest_without_buffering() -> None:

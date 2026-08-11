@@ -18,7 +18,7 @@
     files: new Map(), uploaded: new Map(), existingFiles: new Map(),
     applyConditions: () => {},
     sessionEmail: "", authenticated: false, editingSubmission: null,
-    viewingSubmission: null, submissions: []
+    viewingSubmission: null, submissions: [], draftDirty: false, draftTimer: null
   };
   const browserDraftKey = `sessionbuddy:cfp:${slug}:draft`;
   const BROWSER_DRAFT_TTL_MS = 30 * 60 * 1000;
@@ -199,7 +199,11 @@
         input = document.createElement("input");
         input.type = ["email", "url", "tel"].includes(field.type === "phone" ? "tel" : field.type)
           ? (field.type === "phone" ? "tel" : field.type) : "text";
-        input.maxLength = 500;
+        input.maxLength = field.key === "speaker_email" || field.type === "email"
+          ? 320
+          : ["speaker_name", "proposal_title"].includes(field.key)
+            ? 200
+            : 500;
       }
       input.name = field.key;
       input.id = `field-${field.key}`;
@@ -239,6 +243,7 @@
     const remove = make("button", "Remove", "secondary"); remove.type = "button"; remove.addEventListener("click", () => {
       row.remove();
       validateCoSpeakers(byId("proposal-form"));
+      queueBrowserDraft();
     });
     const actions = make("div", undefined, "co-speaker-row__actions");
     actions.append(role, remove);
@@ -411,6 +416,7 @@
       formVersion: state.form.version,
       answers: answers({ includeUploads: false }),
       coSpeakers: coSpeakers(),
+      submissionId: state.editingSubmission?.id || null,
       fileNames: [...state.files.values()].map((file) => file.name),
       readyToSubmit,
       ownerEmail: normalizedEmail(answers({ includeUploads: false }).speaker_email),
@@ -421,6 +427,18 @@
     return value;
   }
 
+  function queueBrowserDraft() {
+    state.draftDirty = true;
+    clearTimeout(state.draftTimer);
+    state.draftTimer = setTimeout(() => {
+      try {
+        saveBrowserDraft(false);
+      } catch (error) {
+        setStatus(error.message, "error");
+      }
+    }, 500);
+  }
+
   function restoreBrowserDraft(expectedEmail) {
     const saved = browserDraft();
     if (!saved || saved.formVersion !== state.form.version) return null;
@@ -428,6 +446,7 @@
     restoreValues(saved.answers || {});
     byId("co-speaker-rows").replaceChildren();
     (saved.coSpeakers || []).forEach(addCoSpeakerRow);
+    state.draftDirty = true;
     return saved;
   }
 
@@ -610,7 +629,9 @@
         state.authenticated = true;
         state.csrf = session.csrf_token;
         state.sessionEmail = session.email || "";
-        const restored = restoreBrowserDraft(state.sessionEmail);
+        const restored = saved?.submissionId
+          ? null
+          : restoreBrowserDraft(state.sessionEmail);
         lockSignedInEmail();
         try {
           const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
@@ -620,11 +641,17 @@
           state.submissions = [];
         }
         const requested = new URLSearchParams(location.search).get("submission_id");
-        const selected = state.submissions.find((submission) => submission.id === requested);
+        const selectedId = requested || saved?.submissionId;
+        const selected = state.submissions.find((submission) => submission.id === selectedId);
         byId("proposal-card").hidden = false;
         byId("sign-in-card").hidden = true;
-        if (selected) chooseSubmission(selected);
-        else if (restored) {
+        if (selected) {
+          chooseSubmission(selected);
+          if (saved?.submissionId === selected.id && restoreBrowserDraft(state.sessionEmail)) {
+            setStatus("Your unsaved proposal changes were restored from this browser.", "success");
+          }
+        }
+        else if (restored && !saved?.submissionId) {
           lockSignedInEmail();
           const needsFiles = (restored.fileNames || []).length > 0;
           const readyToReview = Boolean(restored.readyToSubmit)
@@ -641,6 +668,9 @@
           // final submission.
         }
         else {
+          if (saved?.submissionId) {
+            try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
+          }
           setStatus("Start a new proposal below.");
           await loadDraft();
         }
@@ -744,6 +774,7 @@
   byId("add-co-speaker").addEventListener("click", () => {
     if (byId("co-speaker-rows").children.length < (state.form?.co_speaker_limit ?? 1)) addCoSpeakerRow({}, true);
     validateCoSpeakers(byId("proposal-form"));
+    queueBrowserDraft();
   });
 
   byId("save-draft").addEventListener("click", async () => {
@@ -767,11 +798,15 @@
         });
         state.editingSubmission = submission;
         state.submissions = state.submissions.map((item) => item.id === submission.id ? submission : item);
+        state.draftDirty = false;
+        try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
         setStatus("Changes saved to this proposal.", "success");
         return;
       }
       const draft = await api(`/api/v1/forms/${encodeURIComponent(slug)}/draft`, { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: JSON.stringify({ answers: answers({ includeUploads: false }), version: state.draftVersion }) });
       state.draftVersion = draft.version;
+      state.draftDirty = false;
+      try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
       setStatus("Draft saved.", "success");
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   });
@@ -786,9 +821,20 @@
     setStatus("Not submitted yet. Review your proposal, then select Confirm submission.");
     byId("review-title").focus?.();
   });
-  byId("proposal-form").addEventListener("invalid", () => {
-    setStatus("Complete the highlighted required fields before continuing.", "error");
+  byId("proposal-form").addEventListener("invalid", (event) => {
+    const label = event.target.closest("label")?.querySelector(".field-label")?.textContent?.replace("*", "").trim()
+      || event.target.name?.replaceAll("_", " ")
+      || "This field";
+    setStatus(`${label}: ${event.target.validationMessage || "check this field."}`, "error");
   }, true);
+  byId("proposal-form").addEventListener("input", queueBrowserDraft);
+  byId("proposal-form").addEventListener("change", queueBrowserDraft);
+  window.addEventListener("beforeunload", (event) => {
+    if (!state.draftDirty) return;
+    try { saveBrowserDraft(false); } catch (_) { /* beforeunload must remain synchronous */ }
+    event.preventDefault();
+    event.returnValue = "";
+  });
   byId("back-to-form").addEventListener("click", () => { showReview(false); setStatus("You can continue editing your proposal."); });
 
   byId("proposal-form").addEventListener("submit", async (event) => {
@@ -849,13 +895,14 @@
       }
       setStatus(state.editingSubmission ? "Proposal updated successfully." : "Proposal submitted successfully.", "success");
       completed = true;
+      state.draftDirty = false;
       button.textContent = state.editingSubmission ? "Saved ✓" : "Submitted ✓";
       receipt.scrollIntoView({ behavior: "smooth", block: "center" });
       receipt.focus({ preventScroll: true });
       clearBrowserDraft();
       resetProposalFiles();
     } catch (error) {
-      setStatus(error.status === 422 ? "A required answer is missing or invalid. Go back and review every required field." : window.SessionBuddyApi.message(error), "error");
+      setStatus(window.SessionBuddyApi.message(error, "Check the highlighted proposal fields and try again."), "error");
       byId("status").focus();
     } finally {
       form.setAttribute("aria-busy", "false");

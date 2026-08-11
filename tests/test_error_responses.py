@@ -1,6 +1,75 @@
-from httpx import ASGITransport, AsyncClient
+import json
 
-from sessionbuddy.api.app import app
+from fastapi import HTTPException
+from fastapi.exceptions import RequestValidationError
+from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
+
+from sessionbuddy.api.app import app, http_error, validation_error
+
+
+def error_request(path: str = "/api/v1/example") -> Request:
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 1234),
+            "server": ("test", 443),
+        }
+    )
+    request.state.request_id = "actionable-error-test"
+    return request
+
+
+async def test_http_exception_preserves_actionable_server_detail() -> None:
+    response = await http_error(
+        error_request(),
+        HTTPException(status_code=409, detail="Applications are closed."),
+    )
+
+    assert json.loads(response.body) == {
+        "error": {"code": "conflict", "message": "Applications are closed."},
+        "request_id": "actionable-error-test",
+    }
+
+
+async def test_validation_error_names_fields_without_echoing_input() -> None:
+    response = await validation_error(
+        error_request(),
+        RequestValidationError(
+            [
+                {
+                    "type": "string_too_long",
+                    "loc": ("body", "proposal_title"),
+                    "msg": "String should have at most 200 characters",
+                    "input": "private proposal text",
+                }
+            ]
+        ),
+    )
+
+    body = json.loads(response.body)
+    assert body["error"] == {
+        "code": "validation_failed",
+        "message": "String should have at most 200 characters",
+        "field": "proposal_title",
+        "metadata": {
+            "details": [
+                {
+                    "field": "proposal_title",
+                    "message": "String should have at most 200 characters",
+                    "type": "string_too_long",
+                }
+            ]
+        },
+    }
+    assert "private proposal text" not in response.body.decode()
 
 
 async def test_browser_navigation_gets_a_real_not_found_page() -> None:

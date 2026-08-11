@@ -22,6 +22,22 @@ const apiClientJavaScript = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/api_client.js"),
   "utf8",
 );
+const eventWorkspaceHtml = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/event_workspace.html"),
+  "utf8",
+);
+const eventWorkspaceJavaScript = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/event_workspace.js"),
+  "utf8",
+);
+const agendaAdminHtml = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/agenda_admin.html"),
+  "utf8",
+);
+const agendaJavaScript = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/agenda.js"),
+  "utf8",
+);
 const publicCfpHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.html"), "utf8");
 const publicCfpJavaScript = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.js"), "utf8");
 const setupHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.html"), "utf8");
@@ -109,6 +125,167 @@ test.describe("public smoke checks", () => {
     await expect(page.getByRole("link", { name: "Explore event" }).first()).toBeVisible();
   });
 
+  test("public homepage discovers an open call from the public events API", async ({ page }) => {
+    await serveConfiguredHomepage(page);
+    await page.route("**/api/v1/public/events", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ data: [{
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Agent Platforms Summit",
+          starts_at_ms: Date.UTC(2027, 5, 1),
+          ends_at_ms: Date.UTC(2027, 5, 2),
+          time_zone: "UTC",
+          location: "Online",
+          delivery_mode: "virtual",
+          cfp_slug: "agent-platforms",
+          schedule_published: false,
+          speaker_count: 0,
+        }] }),
+      });
+    });
+
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { name: "Explore current programs." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Agent Platforms Summit" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Call for Proposals →" })).toHaveAttribute(
+      "href",
+      "/cfp/222222/agent-platforms",
+    );
+    await expect(page.locator("[data-public-events]")).toHaveAttribute("aria-busy", "false");
+  });
+
+  test("sharing tools send organizers to the agenda publication controls", async ({ page }) => {
+    const eventId = "22222222-2222-4222-8222-222222222222";
+    await page.route(`**/admin/events/${eventId}/workspace`, (route) => route.fulfill({
+      contentType: "text/html",
+      body: eventWorkspaceHtml,
+    }));
+    await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: apiClientJavaScript,
+    }));
+    await page.route("**/app-shell/assets/app-shell.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: appShellJavaScript,
+    }));
+    await page.route("**/admin/workspace/assets/workspace.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: eventWorkspaceJavaScript,
+    }));
+    await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        email: "organizer@example.com",
+        display_name: "Example Organizer",
+        profile_complete: true,
+        csrf_token: "browser-test-csrf",
+        account_roles: ["organizer"],
+        active_role: "organizer",
+        default_role: "organizer",
+        organization_access: [],
+        event_access: [{
+          organization_id: "11111111-1111-4111-8111-111111111111",
+          event_id: eventId,
+          event_name: "Agent Platforms Summit",
+          permissions: ["owner"],
+          assignments: [],
+        }],
+      }),
+    }));
+
+    await page.goto(`/admin/events/${eventId}/workspace`);
+
+    await expect(page.getByRole("heading", { name: "Share & integrations" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Review & publish agenda" })).toHaveAttribute(
+      "href",
+      `/admin/events/${eventId}/agenda`,
+    );
+    await expect(page.getByRole("link", { name: "Agenda & publish" })).toHaveAttribute(
+      "href",
+      `/admin/events/${eventId}/agenda`,
+    );
+    await page.getByText("Embed snippet preferences").click();
+    await expect(page.getByText("saved only in this browser")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Embed enabled" })).toHaveCount(0);
+    await expect(page.locator("#embed-code")).toHaveValue(/<iframe/);
+  });
+
+  test("agenda resource archive explains consequences before mutation", async ({ page }) => {
+    const eventId = "22222222-2222-4222-8222-222222222222";
+    let patchRequests = 0;
+    await page.route(`**/admin/events/${eventId}/agenda`, (route) => route.fulfill({
+      contentType: "text/html",
+      body: agendaAdminHtml,
+    }));
+    await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: apiClientJavaScript,
+    }));
+    await page.route("**/app-shell/assets/app-shell.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: appShellJavaScript,
+    }));
+    await page.route("**/admin/agenda/assets/agenda.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: agendaJavaScript,
+    }));
+    await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        email: "organizer@example.com",
+        display_name: "Example Organizer",
+        profile_complete: true,
+        csrf_token: "browser-test-csrf",
+        account_roles: ["organizer"],
+        active_role: "organizer",
+        default_role: "organizer",
+        organization_access: [],
+        event_access: [{
+          organization_id: "11111111-1111-4111-8111-111111111111",
+          event_id: eventId,
+          event_name: "Agent Platforms Summit",
+          permissions: ["owner"],
+          assignments: [],
+        }],
+      }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/agenda`, async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          event: { id: eventId, name: "Agent Platforms Summit", time_zone: "UTC", starts_at_ms: Date.UTC(2027, 5, 1) },
+          revision: { id: "revision-1", version: 1, state: "draft" },
+          published_revision: null,
+          items: [],
+          unscheduled_sessions: [],
+          rooms: [{ id: "room-1", name: "Overflow", status: "active", version: 1 }],
+          tracks: [],
+          labels: [],
+          archived_rooms: [],
+          archived_tracks: [],
+          archived_labels: [],
+          can_manage_resource_lifecycle: true,
+        }),
+      });
+    });
+    await page.route(`**/api/v1/admin/events/${eventId}/agenda/**`, async (route) => {
+      if (route.request().method() === "PATCH") patchRequests += 1;
+      await route.abort();
+    });
+
+    await page.goto(`/admin/events/${eventId}/agenda`);
+    await page.getByText("Schedule tools", { exact: true }).click();
+    await page.getByRole("button", { name: "Archive Overflow" }).click();
+
+    await expect(page.getByRole("dialog", { name: "Archive Overflow?" })).toBeVisible();
+    await expect(page.getByText("Remove or move every scheduled session")).toBeVisible();
+    expect(patchRequests).toBe(0);
+  });
+
   test("public homepage remains usable at a mobile viewport", async ({ page }) => {
     await serveConfiguredHomepage(page);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -159,8 +336,9 @@ test.describe("public smoke checks", () => {
 
   test("an expired magic link offers browser recovery instead of JSON", async ({ page }) => {
     const expiredToken = "expired-link".padEnd(32, "x");
-    const response = await page.goto(`/auth/verify?token=${expiredToken}`);
+    const response = await page.goto(`/auth/verify#token=${expiredToken}`);
     expect(response?.ok()).toBeTruthy();
+    await page.getByRole("button", { name: "Continue to your account" }).click();
     await expect(page).toHaveTitle(/Sign-in link unavailable/);
     await expect(page.getByRole("heading", {
       level: 1,
@@ -170,26 +348,30 @@ test.describe("public smoke checks", () => {
     await expect(page.locator("body")).not.toContainText("resource_not_found");
   });
 
-  test("an existing-user magic link automatically completes sign-in", async ({ page }) => {
+  test("an existing-user magic link removes its fragment and waits for confirmation", async ({ page }) => {
     const token = "browser-auto-sign-in-token".padEnd(40, "x");
-    const action = `/auth/verify?token=${token}`;
+    const action = "/auth/verify";
     const confirmation = authLinkConfirmHtml
-      .replace("__CONFIRM_PAGE_TITLE__", "Signing in")
-      .replace("__CONFIRM_HEADING__", "Signing you in…")
-      .replace("__CONFIRM_INTRO__", "You’ll continue to your account automatically.")
+      .replace("__CONFIRM_PAGE_TITLE__", "Confirm sign in")
+      .replace("__CONFIRM_HEADING__", "Continue to your account")
+      .replace("__CONFIRM_INTRO__", "Confirm that you want to sign in to SessionBuddy.")
       .replace("__CONFIRM_ERROR__", "")
-      .replace("__REGISTRATION_FIELDS__", "")
+      .replace(
+        "__REGISTRATION_FIELDS__",
+        '<input type="hidden" name="token" autocomplete="off" value="">',
+      )
       .replace("__CONFIRM_BUTTON__", "Continue to your account")
-      .replace("__AUTO_SUBMIT_ATTRIBUTE__", 'data-auto-submit="true"')
+      .replace("__AUTO_SUBMIT_ATTRIBUTE__", "")
       .replace("__CONFIRM_ACTION__", action)
       .replace(
         "__CONFIRM_SCRIPT__",
-        '<script src="/auth/assets/auth-link-confirm.js?v=2" defer></script>',
+        '<script src="/auth/assets/auth-link-confirm.js?v=3" defer></script>',
       );
     let posts = 0;
     await page.route(`**${action}`, async (route) => {
       if (route.request().method() === "POST") {
         posts += 1;
+        expect(route.request().postData()).toContain(`token=${encodeURIComponent(token)}`);
         await route.fulfill({ status: 303, headers: { location: "/automatic-sign-in-complete" } });
         return;
       }
@@ -204,8 +386,12 @@ test.describe("public smoke checks", () => {
       body: authLinkConfirmJavaScript,
     }));
 
-    await page.goto(action);
+    await page.goto(`${action}#token=${token}`);
 
+    await expect(page).toHaveURL(/\/auth\/verify$/);
+    expect(page.url()).not.toContain(token);
+    expect(posts).toBe(0);
+    await page.getByRole("button", { name: "Continue to your account" }).click();
     await expect(page).toHaveURL(/\/automatic-sign-in-complete$/);
     expect(posts).toBe(1);
   });
@@ -554,7 +740,7 @@ test.describe("administration empty states", () => {
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.getByRole("button", { name: "Open navigation" }).click();
     await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Submissions" })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
+    await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
     await expect(page.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
@@ -592,7 +778,7 @@ test.describe("administration empty states", () => {
 
     await page.goto(`/admin/events/${eventId}/submissions`);
     await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Submissions" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
   });
 
@@ -665,7 +851,7 @@ test.describe("administration empty states", () => {
     await expect(page.getByLabel("Public CFP URL")).toHaveValue(
       `${new URL(page.url()).origin}/cfp/cccccc/world-fair-2026`,
     );
-    await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Submissions" })).toHaveAttribute(
+    await expect(page.getByRole("navigation", { name: "Event navigation" }).getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute(
       "href",
       `/admin/events/${eventId}/submissions`,
     );

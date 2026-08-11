@@ -51,6 +51,14 @@
       ? timestamp
       : Number.NaN;
   }
+  function eventTime(value) {
+    try {
+      const formatted = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium", timeStyle: "short", timeZone: state.timeZone
+      }).format(new Date(value));
+      return `${formatted} · Event time (${state.timeZone})`;
+    } catch (_) { return "Date unavailable"; }
+  }
   function slug(value) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80); }
   function mutationHeaders() { return { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() }; }
   function approvedEmbed(value) {
@@ -126,7 +134,7 @@
       asset.versions.forEach((version) => {
         const versionItem = document.createElement("li");
         const versionTitle = document.createElement("strong"); versionTitle.textContent = `Version ${version.generation} · ${version.filename}`;
-        const versionMeta = document.createElement("span"); versionMeta.className = "muted"; versionMeta.textContent = `${version.state} · ${fileSize(version.byte_size)} · ${new Date(version.uploaded_at_ms).toLocaleString()}`;
+        const versionMeta = document.createElement("span"); versionMeta.className = "muted"; versionMeta.textContent = `${version.state} · ${fileSize(version.byte_size)} · ${eventTime(version.uploaded_at_ms)}`;
         const comment = document.createElement("p"); comment.className = "help"; comment.textContent = version.version_comment;
         const button = document.createElement("button"); button.type = "button"; button.className = "secondary"; button.textContent = "Download";
         button.addEventListener("click", () => downloadAsset(asset, version, button));

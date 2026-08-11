@@ -14,7 +14,7 @@
   <a class="skip-link" href="#main">Skip to CFP setup</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
-    <div class="page-heading workflow-hero cfp-page-heading"><div class="cfp-page-heading__identity"><h1>Call for Proposals</h1><p id="cfp-page-meta" hidden>Loading form…</p><div id="cfp-live-bar" class="cfp-live-bar" hidden><div class="cfp-live-bar__address"><span class="cfp-live-bar__state"><span aria-hidden="true"></span>Live</span><a id="cfp-live-url" href="#" target="_blank" rel="noopener"></a><span id="cfp-live-url-editor" class="cfp-live-url-editor" hidden><span id="cfp-live-url-prefix"></span><input id="cfp-live-slug" aria-label="Edit public URL slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80"></span></div><div class="cfp-live-bar__actions"><button id="copy-cfp-header" type="button" class="secondary">Copy</button><button id="configure-url-header" type="button" class="secondary">Edit URL</button><button id="save-url-header" type="button" hidden>Save</button><button id="cancel-url-header" type="button" class="secondary" hidden>Cancel</button></div></div></div><button id="preview-cfp" type="button" class="secondary">Preview form</button></div>
+    <div class="page-heading workflow-hero cfp-page-heading"><div class="cfp-page-heading__identity"><h1>Call for Proposals</h1><p id="cfp-page-meta" hidden>Loading form…</p><div id="cfp-live-bar" class="cfp-live-bar" hidden><div class="cfp-live-bar__address"><span class="cfp-live-bar__state"><span aria-hidden="true"></span>Live</span><a id="cfp-live-url" href="#" target="_blank" rel="noopener"></a><span id="cfp-live-url-editor" class="cfp-live-url-editor" hidden><span id="cfp-live-url-prefix"></span><input id="cfp-live-slug" aria-label="Edit public URL slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80"></span></div><div class="cfp-live-bar__actions"><button id="copy-cfp-header" type="button" class="secondary">Copy</button><button id="configure-url-header" type="button" class="secondary">Edit URL</button><button id="save-url-header" type="button" hidden>Save</button><button id="cancel-url-header" type="button" class="secondary" hidden>Cancel</button></div></div></div></div><button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button><button id="preview-cfp" type="button" class="secondary">Preview form</button></div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
     <dialog id="cfp-share-dialog" class="submission-dialog" aria-labelledby="cfp-link-title">
     <section id="cfp-summary" class="cfp-link-card workflow-summary-card" aria-labelledby="cfp-link-title">
@@ -23,7 +23,6 @@
         <div class="cfp-summary-actions">
           <span id="cfp-saved-state" class="save-state" role="status" aria-live="polite" hidden></span>
           <span id="cfp-state" class="badge">Not published</span>
-          <button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button>
           <form method="dialog"><button class="secondary" type="submit">Close</button></form>
         </div>
       </div>
@@ -67,7 +66,7 @@
           </div>
           <section id="cfp-basics" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Description</h3><p>Explain what you are looking for and show speakers the important dates.</p></div></div>
-            <label>CFP description<div class="rich-text-toolbar" role="toolbar" aria-label="Description formatting"><button type="button" class="secondary" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button><button type="button" class="secondary" data-rich-command="italic" aria-label="Italic"><em>I</em></button><button type="button" class="secondary" data-rich-command="insertUnorderedList">Bullets</button><button type="button" class="secondary" data-rich-command="createLink">Link</button></div><div id="cfp-description-editor" class="rich-text-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="Tell speakers what kinds of proposals you are looking for."></div><textarea name="description_html" maxlength="10000" hidden></textarea><input name="welcome_text" type="hidden" required></label>
+            <div class="rich-text-field"><span id="cfp-description-label" class="field-label">CFP description</span><p id="cfp-description-help" class="help">Describe the sessions you want. Select text before adding a link.</p><div class="rich-text-toolbar" role="toolbar" aria-label="Description formatting"><button type="button" class="secondary" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button><button type="button" class="secondary" data-rich-command="italic" aria-label="Italic"><em>I</em></button><button type="button" class="secondary" data-rich-command="insertUnorderedList">Bullets</button><button type="button" class="secondary" data-rich-command="createLink">Link</button></div><div id="cfp-description-editor" class="rich-text-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="cfp-description-label" aria-describedby="cfp-description-help" data-placeholder="Tell speakers what kinds of proposals you are looking for."></div><textarea name="description_html" maxlength="10000" hidden></textarea><input name="welcome_text" type="hidden"></div>
             <fieldset class="important-dates-editor"><legend>Important dates <span class="optional">Optional</span></legend><p class="help">Add acceptance waves, final decisions, or other milestones speakers should know.</p><div id="important-date-rows"></div><button id="add-important-date" type="button" class="secondary">Add date</button></fieldset>
             <input name="slug" type="hidden">
           </section>
@@ -98,6 +97,14 @@
         </form>
       </div>
     </section>
+    <dialog id="cfp-link-dialog" class="form-dialog cfp-link-dialog" aria-labelledby="cfp-link-dialog-title" aria-describedby="cfp-link-dialog-help">
+      <div class="dialog-heading"><div><p class="eyebrow">Description link</p><h2 id="cfp-link-dialog-title">Add a link</h2><p id="cfp-link-dialog-help" class="result">Enter a complete web address beginning with https:// or http://.</p></div></div>
+      <form id="cfp-link-form" novalidate>
+        <label>Web address<input id="cfp-link-url" name="url" type="url" inputmode="url" autocomplete="url" maxlength="2048" placeholder="https://example.com" aria-describedby="cfp-link-error" required></label>
+        <p id="cfp-link-error" class="dialog-status error" role="alert" aria-live="assertive"></p>
+        <div class="dialog-actions"><button id="cancel-cfp-link" type="button" class="secondary">Cancel</button><button type="submit">Add link</button></div>
+      </form>
+    </dialog>
     <section id="cfp-notification-settings" class="card cfp-notification-settings" aria-labelledby="cfp-notification-title">
       <div class="section-heading"><div><p class="eyebrow">After submission</p><h2 id="cfp-notification-title">Confirmation email</h2></div></div>
       <p class="help">Sent to the primary speaker after a proposal is submitted.</p>

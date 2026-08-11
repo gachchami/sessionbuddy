@@ -18,11 +18,14 @@ def presign_r2_put(
     access_key_id: str,
     secret_access_key: str,
     content_type: str,
+    content_length: int,
     now: datetime,
     expires_seconds: int = 600,
 ) -> tuple[str, dict[str, str]]:
     if not 1 <= expires_seconds <= 3600:
         raise ValueError("upload expiry must be between 1 and 3600 seconds")
+    if content_length < 1:
+        raise ValueError("upload content length must be positive")
     moment = now.astimezone(UTC)
     date = moment.strftime("%Y%m%d")
     timestamp = moment.strftime("%Y%m%dT%H%M%SZ")
@@ -35,17 +38,19 @@ def presign_r2_put(
         "X-Amz-Credential": f"{access_key_id}/{scope}",
         "X-Amz-Date": timestamp,
         "X-Amz-Expires": str(expires_seconds),
-        "X-Amz-SignedHeaders": "content-type;host",
+        "X-Amz-SignedHeaders": "content-length;content-type;host",
     }
     canonical_query = urlencode(sorted(query.items()), quote_via=quote)
-    canonical_headers = f"content-type:{content_type}\nhost:{host}\n"
+    canonical_headers = (
+        f"content-length:{content_length}\ncontent-type:{content_type}\nhost:{host}\n"
+    )
     canonical_request = "\n".join(
         (
             "PUT",
             path,
             canonical_query,
             canonical_headers,
-            "content-type;host",
+            "content-length;content-type;host",
             "UNSIGNED-PAYLOAD",
         )
     )
@@ -64,5 +69,5 @@ def presign_r2_put(
     signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
     return (
         f"https://{host}{path}?{canonical_query}&X-Amz-Signature={signature}",
-        {"content-type": content_type},
+        {"content-length": str(content_length), "content-type": content_type},
     )

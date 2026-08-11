@@ -6,6 +6,41 @@ from tests.security.test_production_identity_flow import (
 )
 
 
+async def test_auto_schedule_replay_keeps_its_established_wire_shape(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, _organization_id, event_id = await _admin(client, connection)
+        headers = {"origin": "https://test", "x-csrf-token": csrf}
+        assert (
+            await client.post(
+                f"/api/v1/admin/events/{event_id}/agenda/setup",
+                headers={**headers, "idempotency-key": "typed-agenda-setup"},
+                json={"room_names": ["Main stage"], "track_names": []},
+            )
+        ).status_code == 201
+        request = {
+            "headers": {**headers, "idempotency-key": "typed-auto-schedule"},
+            "json": {"session_minutes": 45, "gap_minutes": 15, "room_ids": []},
+        }
+        first = await client.post(
+            f"/api/v1/admin/events/{event_id}/agenda/auto-schedule", **request
+        )
+        replay = await client.post(
+            f"/api/v1/admin/events/{event_id}/agenda/auto-schedule", **request
+        )
+
+    assert first.status_code == 200
+    assert first.json()["auto_schedule"] == {
+        "scheduled_count": 0,
+        "remaining_count": 0,
+    }
+    assert replay.status_code == 200
+    assert "auto_schedule" not in replay.json()
+    assert set(replay.json()) == set(first.json()) - {"auto_schedule"}
+
+
 async def test_event_labels_are_owned_assignable_and_public(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
@@ -72,6 +107,20 @@ async def test_event_labels_are_owned_assignable_and_public(
             json={"room_names": ["Main stage"], "track_names": ["General"]},
         )
         assert setup.status_code == 201, setup.text
+        assert set(setup.json()) == {
+            "event",
+            "revision",
+            "published_revision",
+            "items",
+            "unscheduled_sessions",
+            "rooms",
+            "tracks",
+            "labels",
+            "archived_rooms",
+            "archived_tracks",
+            "archived_labels",
+            "can_manage_resource_lifecycle",
+        }
         assigned = await client.put(
             f"/api/v1/admin/events/{event_id}/sessions/{session_id}/labels",
             headers=headers,
@@ -100,6 +149,16 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert agenda.status_code == 200
         assert agenda.json()["labels"] == [label]
         assert agenda.json()["unscheduled_sessions"][0]["label_ids"] == [label["id"]]
+        assert set(agenda.json()["unscheduled_sessions"][0]) == {
+            "session_id",
+            "title",
+            "abstract",
+            "content_status",
+            "content_version",
+            "label_version",
+            "labels",
+            "label_ids",
+        }
 
         room_id = setup.json()["rooms"][0]["id"]
         revision_id = setup.json()["revision"]["id"]
@@ -124,9 +183,30 @@ async def test_event_labels_are_owned_assignable_and_public(
         connection.commit()
         public = await client.get(f"/api/v1/public/events/{event_id}/schedule")
         assert public.status_code == 200, public.text
+        assert set(public.json()) == {"event", "revision", "items"}
+        assert set(public.json()["items"][0]) == {
+            "id",
+            "session_id",
+            "title",
+            "description",
+            "start_at_ms",
+            "end_at_ms",
+            "room_name",
+            "track_name",
+            "speaker_names",
+            "labels",
+            "label_ids",
+        }
         assert public.json()["items"][0]["labels"] == [
             {"id": label["id"], "name": "Beginner friendly", "color": "#2563EB"}
         ]
+        # This test publishes by directly changing the fixture revision rather
+        # than using the publish workflow, which would create the next draft.
+        connection.execute(
+            "UPDATE schedule_revisions SET status='draft',published_at_ms=NULL WHERE id=?",
+            (revision_id,),
+        )
+        connection.commit()
 
         in_use = await client.patch(
             f"{labels_url}/{label['id']}",
@@ -159,8 +239,37 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert archived.json()["status"] == "archived"
         assert (await client.get(labels_url)).json()["data"] == []
         assert connection.execute(
+            "SELECT status FROM events WHERE id=?", (event_id,)
+        ).fetchone()[0] == "active"
+        assert connection.execute(
+            "SELECT status FROM owned_resources WHERE id=?", (event_id,)
+        ).fetchone()[0] == "active"
+        session_after_archive = await client.get("/api/v1/auth/session")
+        assert session_after_archive.status_code == 200, session_after_archive.text
+        assert any(
+            access["event_id"] == event_id
+            for access in session_after_archive.json()["event_access"]
+        )
+        archived_agenda = await client.get(f"/api/v1/admin/events/{event_id}/agenda")
+        assert archived_agenda.status_code == 200, archived_agenda.text
+        archived_label = archived_agenda.json()["archived_labels"][0]
+        assert archived_label["id"] == label["id"]
+        restored = await client.patch(
+            f"{labels_url}/{label['id']}",
+            headers=headers,
+            json={
+                "name": label["name"],
+                "color": label["color"],
+                "status": "active",
+                "version": archived_label["version"],
+            },
+        )
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["status"] == "active"
+        assert (await client.get(labels_url)).json()["data"][0]["id"] == label["id"]
+        assert connection.execute(
             "SELECT status FROM owned_resources WHERE id=?", (label["id"],)
-        ).fetchone()[0] == "archived"
+        ).fetchone()[0] == "active"
         query_plan = " ".join(
             str(row[3])
             for row in connection.execute(

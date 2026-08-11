@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=57">
+  <title>Speaker messages · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=58">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=22" defer></script>
@@ -14,7 +14,7 @@
   <a class="skip-link" href="#main">Skip to speaker messages</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
-    <div class="page-heading workflow-hero"><div><p class="eyebrow">Messages</p><h1>Speakers</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" hidden href="#">View speakers</a></div>
+    <div class="page-heading workflow-hero"><div><p class="eyebrow">Messages</p><h1>Speaker messages</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" hidden href="#">View speakers</a></div>
     <div data-speaker-hub-tabs></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading speakers…</div>
     <div class="message-workspace">
@@ -36,7 +36,15 @@
       </section>
     </div>
     <section id="message-preview" class="card workflow-stage workflow-stage--preview" hidden aria-labelledby="preview-title"><h2 id="preview-title">Message preview</h2><div id="message-preview-content" class="public-link" aria-live="polite"></div></section>
-    <section class="directory-section workflow-stage workflow-stage--history" aria-labelledby="history-title"><div class="section-heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Recent delivery activity for this event.</p></div></div><div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Updated</th></tr></thead><tbody id="message-history" aria-live="polite"><tr><td class="workflow-empty-state" colspan="4">Loading messages…</td></tr></tbody></table></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
+    <section class="directory-section workflow-stage workflow-stage--history" aria-labelledby="history-title"><div class="section-heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Recent delivery activity for this event. Times use the event time zone: <strong id="message-time-zone">Loading…</strong>.</p></div></div><div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Updated (event time)</th></tr></thead><tbody id="message-history" aria-live="polite"><tr><td class="workflow-empty-state" colspan="4">Loading messages…</td></tr></tbody></table></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
   </main>
+  <dialog id="confirm-message-send" class="form-dialog" aria-labelledby="confirm-message-title" aria-describedby="confirm-message-consequence">
+    <div class="dialog-heading"><div><p class="eyebrow">Final check</p><h2 id="confirm-message-title">Send messages?</h2><p id="confirm-message-count" class="result"></p></div></div>
+    <form id="confirm-message-form">
+      <p id="confirm-message-subject"></p>
+      <p id="confirm-message-consequence" class="dialog-status">The personalized emails will be queued immediately and cannot be recalled from SessionBuddy.</p>
+      <div class="dialog-actions"><button id="cancel-message-send" type="button" class="secondary">Go back</button><button id="confirm-message-send-button" type="submit">Queue emails</button></div>
+    </form>
+  </dialog>
 </body>
 </html>

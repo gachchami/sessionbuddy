@@ -47,7 +47,8 @@ async def _admin(client, connection: sqlite3.Connection) -> tuple[str, str, str]
     )
     assert requested.status_code == 202
     verified = await client.post(
-        f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+        "/auth/verify",
+        data={"token": _token(connection, "admin@example.com")},
         follow_redirects=False,
     )
     assert verified.status_code == 303

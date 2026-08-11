@@ -71,9 +71,13 @@ def test_public_invitation_page_uses_token_detail_and_response_endpoints() -> No
 
     assert 'id="accept-invitation"' in page
     assert 'id="decline-invitation"' in page
+    assert 'id="confirm-decline"' in page
+    assert "primary speaker must send a new invitation" in page
     assert 'content="noindex,nofollow"' in page
     assert "/api/v1/co-speaker-invitations/${encodeURIComponent(token)}" in script
     assert 'respond("accept")' in script
     assert 'respond("decline")' in script
+    assert 'declineDialog.showModal()' in script
+    assert 'declineDialog.addEventListener("close"' in script
     assert '"/co-speaker-invitations/{token}"' in routes
     assert '"/co-speaker-invitations/assets/invitation.js"' in routes

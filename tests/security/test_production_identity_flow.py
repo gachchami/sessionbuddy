@@ -1,3 +1,4 @@
+import hashlib
 import re
 import sqlite3
 from types import SimpleNamespace
@@ -70,6 +71,22 @@ class AllowingRateLimiter:
         return {"success": True}
 
 
+class DenyingRateLimiter:
+    async def limit(self, options: dict[str, str]) -> dict[str, bool]:
+        assert options["key"].startswith("account.headshot.upload:")
+        return {"success": False}
+
+
+class RecordingRateLimiter:
+    def __init__(self, *, allowed: bool = True) -> None:
+        self.keys: list[str] = []
+        self.allowed = allowed
+
+    async def limit(self, options: dict[str, str]) -> dict[str, bool]:
+        self.keys.append(options["key"])
+        return {"success": self.allowed}
+
+
 class CapturingQueue:
     def __init__(self) -> None:
         self.messages: list[dict[str, object]] = []
@@ -85,7 +102,7 @@ def _token(connection: sqlite3.Connection, email: str) -> str:
         (email,),
     ).fetchone()
     assert row is not None
-    match = re.search(r"/auth/verify\?token=([^\"<]+)", row[0])
+    match = re.search(r"/auth/verify#token=([^\"<]+)", row[0])
     assert match is not None
     return match.group(1)
 
@@ -115,6 +132,10 @@ def production_environment():
         RATE_LIMIT_HMAC_KEY="r" * 32,
         AUTH_RATE_LIMITER=AllowingRateLimiter(),
         PUBLIC_RATE_LIMITER=AllowingRateLimiter(),
+        SPEAKER_UPLOAD_AUTH_RATE_LIMITER=AllowingRateLimiter(),
+        HEADSHOT_UPLOAD_RATE_LIMITER=AllowingRateLimiter(),
+        MAGIC_LINK_RECIPIENT_RATE_LIMITER=AllowingRateLimiter(),
+        MAGIC_LINK_SOURCE_RATE_LIMITER=AllowingRateLimiter(),
         PUBLIC_BASE_URL="https://test",
         ALLOWED_ORIGINS="https://test",
         COMMUNICATION_QUEUE=queue,
@@ -123,12 +144,17 @@ def production_environment():
     connection.close()
 
 
-def _client(environment) -> AsyncClient:
+def _client(environment, *, origin: str | None = "https://test") -> AsyncClient:
     async def inject_environment(scope, receive, send):
         scope["env"] = environment
         await app(scope, receive, send)
 
-    return AsyncClient(transport=ASGITransport(app=inject_environment), base_url="https://test")
+    headers = {} if origin is None else {"origin": origin}
+    return AsyncClient(
+        transport=ASGITransport(app=inject_environment),
+        base_url="https://test",
+        headers=headers,
+    )
 
 
 async def test_expired_browser_magic_link_has_html_recovery_without_changing_api_contract(
@@ -158,7 +184,7 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
         )
         connection.commit()
 
-        browser = await client.post(f"/auth/verify?token={token}")
+        browser = await client.post("/auth/verify", data={"token": token})
         assert browser.status_code == 404
         assert browser.headers["content-type"].startswith("text/html")
         assert browser.headers["cache-control"] == "no-store"
@@ -167,24 +193,214 @@ async def test_expired_browser_magic_link_has_html_recovery_without_changing_api
         assert token not in browser.text
 
         api = await client.get(f"/api/v1/auth/verify?token={token}")
-        assert api.status_code == 404
+        assert api.status_code == 405
         assert api.headers["content-type"].startswith("application/json")
-        assert api.json()["error"] == {
-            "code": "resource_not_found",
-            "message": "Resource not found",
-        }
+        assert api.headers["allow"] == "POST"
+        assert connection.execute(
+            "SELECT consumed_at_ms FROM authentication_challenges"
+        ).fetchone()[0] is None
 
 
-async def test_missing_browser_magic_link_token_has_same_recovery_page(
+async def test_magic_link_redemption_rejects_cross_site_and_missing_origins(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        bootstrap = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Origin Guard Events",
+                "admin_name": "Admin",
+                "admin_email": "admin@example.com",
+            },
+        )
+        assert bootstrap.status_code == 200
+        assert (
+            await client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "admin@example.com", "redirect_path": "/admin"},
+            )
+        ).status_code == 202
+        token = _token(connection, "admin@example.com")
+
+        api_get = await client.get(f"/api/v1/auth/verify?token={token}")
+        assert api_get.status_code == 405
+        assert api_get.headers["allow"] == "POST"
+
+        query_only = await client.post(
+            f"/auth/verify?token={token}",
+            data={"unused": "value"},
+            follow_redirects=False,
+        )
+        assert query_only.status_code == 404
+        assert "set-cookie" not in query_only.headers
+
+        cross_site = await client.post(
+            "/auth/verify",
+            data={"token": token},
+            headers={"origin": "https://attacker.example"},
+            follow_redirects=False,
+        )
+        assert cross_site.status_code == 403
+        assert "set-cookie" not in cross_site.headers
+
+        async with _client(environment, origin=None) as no_origin_client:
+            missing_origin = await no_origin_client.post(
+                "/auth/verify", data={"token": token}, follow_redirects=False
+            )
+        assert missing_origin.status_code == 403
+        assert "set-cookie" not in missing_origin.headers
+        assert connection.execute(
+            "SELECT consumed_at_ms FROM authentication_challenges WHERE token_hash=?",
+            (hashlib.sha256(token.encode()).digest(),),
+        ).fetchone()[0] is None
+
+        confirmed = await client.post(
+            "/auth/verify", data={"token": token}, follow_redirects=False
+        )
+        assert confirmed.status_code == 303
+        assert "set-cookie" in confirmed.headers
+
+
+async def test_account_headshot_scan_is_rate_limited_before_body_or_scanner_work(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        assert (
+            await client.post(
+                "/api/v1/bootstrap",
+                headers={"x-bootstrap-token": _deployment_key(connection)},
+                json={
+                    "organization_name": "Headshot Events",
+                    "admin_name": "Admin",
+                    "admin_email": "admin@example.com",
+                },
+            )
+        ).status_code == 200
+        assert (
+            await client.post(
+                "/api/v1/auth/magic-links",
+                json={"email": "admin@example.com", "redirect_path": "/account"},
+            )
+        ).status_code == 202
+        assert (
+            await client.post(
+                "/auth/verify",
+                data={"token": _token(connection, "admin@example.com")},
+                follow_redirects=False,
+            )
+        ).status_code == 303
+        session = (await client.get("/api/v1/auth/session")).json()
+        environment.HEADSHOT_UPLOAD_RATE_LIMITER = DenyingRateLimiter()
+
+        refused = await client.put(
+            "/api/v1/account/headshot",
+            content=b"not read because the limiter denies first",
+            headers={
+                "content-type": "image/png",
+                "x-csrf-token": session["csrf_token"],
+            },
+        )
+
+    assert refused.status_code == 429
+    assert refused.headers["retry-after"] == "60"
+
+
+async def test_magic_link_recipient_and_source_limits_use_independent_keys(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    recipient = RecordingRateLimiter()
+    source = RecordingRateLimiter()
+    environment.MAGIC_LINK_RECIPIENT_RATE_LIMITER = recipient
+    environment.MAGIC_LINK_SOURCE_RATE_LIMITER = source
+    async with _client(environment) as client:
+        assert (
+            await client.post(
+                "/api/v1/bootstrap",
+                headers={"x-bootstrap-token": _deployment_key(connection)},
+                json={
+                    "organization_name": "Rate Limit Events",
+                    "admin_name": "Admin",
+                    "admin_email": "admin@example.com",
+                },
+            )
+        ).status_code == 200
+        for ip_address in ("192.0.2.10", "192.0.2.11"):
+            response = await client.post(
+                "/api/v1/auth/magic-links",
+                headers={"cf-connecting-ip": ip_address},
+                json={"email": "admin@example.com", "redirect_path": "/admin"},
+            )
+            assert response.status_code == 202
+
+    assert len(recipient.keys) == 2
+    assert recipient.keys[0] == recipient.keys[1]
+    assert recipient.keys[0].startswith("auth.magic_link.recipient:")
+    assert len(source.keys) == 2
+    assert source.keys[0] != source.keys[1]
+    assert all(key.startswith("auth.magic_link.source:") for key in source.keys)
+    assert all("admin@example.com" not in key for key in recipient.keys)
+
+
+async def test_either_magic_link_limit_can_refuse_delivery(production_environment) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        assert (
+            await client.post(
+                "/api/v1/bootstrap",
+                headers={"x-bootstrap-token": _deployment_key(connection)},
+                json={
+                    "organization_name": "Rate Limit Events",
+                    "admin_name": "Admin",
+                    "admin_email": "admin@example.com",
+                },
+            )
+        ).status_code == 200
+
+        denied_source = RecordingRateLimiter(allowed=False)
+        untouched_recipient = RecordingRateLimiter()
+        environment.MAGIC_LINK_SOURCE_RATE_LIMITER = denied_source
+        environment.MAGIC_LINK_RECIPIENT_RATE_LIMITER = untouched_recipient
+        source_refused = await client.post(
+            "/api/v1/auth/magic-links",
+            headers={"cf-connecting-ip": "192.0.2.20"},
+            json={"email": "admin@example.com", "redirect_path": "/admin"},
+        )
+        assert source_refused.status_code == 429
+        assert source_refused.headers["retry-after"] == "60"
+        assert len(denied_source.keys) == 1
+        assert untouched_recipient.keys == []
+
+        allowed_source = RecordingRateLimiter()
+        denied_recipient = RecordingRateLimiter(allowed=False)
+        environment.MAGIC_LINK_SOURCE_RATE_LIMITER = allowed_source
+        environment.MAGIC_LINK_RECIPIENT_RATE_LIMITER = denied_recipient
+        recipient_refused = await client.post(
+            "/api/v1/auth/magic-links",
+            headers={"cf-connecting-ip": "192.0.2.21"},
+            json={"email": "admin@example.com", "redirect_path": "/admin"},
+        )
+        assert recipient_refused.status_code == 429
+        assert recipient_refused.headers["retry-after"] == "60"
+        assert len(allowed_source.keys) == 1
+        assert len(denied_recipient.keys) == 1
+
+
+async def test_magic_link_get_renders_fragment_transfer_without_a_server_token(
     production_environment,
 ) -> None:
     _connection, _queue, environment = production_environment
     async with _client(environment) as client:
         response = await client.get("/auth/verify")
 
-    assert response.status_code == 404
+    assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
-    assert ">Sign in</a>" in response.text
+    assert '<form method="post" action="/auth/verify"' in response.text
+    assert 'name="token" autocomplete="off" value=""' in response.text
+    assert 'auth-link-confirm.js?v=3' in response.text
 
 
 async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
@@ -251,7 +467,8 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         ).status_code == 202
         assert (
             await client.post(
-                f"/auth/verify?token={_token(connection, 'asha@example.com')}",
+                "/auth/verify",
+                data={"token": _token(connection, "asha@example.com")},
                 follow_redirects=False,
             )
         ).status_code == 303
@@ -312,7 +529,8 @@ async def test_profile_can_create_password_and_password_sign_in_keeps_magic_link
         )
         assert (
             await client.post(
-                f"/auth/verify?token={_token(connection, 'password@example.com')}",
+                "/auth/verify",
+                data={"token": _token(connection, "password@example.com")},
                 follow_redirects=False,
             )
         ).status_code == 303
@@ -392,7 +610,8 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
             )
         ).status_code == 202
         verified = await client.post(
-            f"/auth/verify?token={_token(connection, 'roles@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "roles@example.com")},
             follow_redirects=False,
         )
         assert verified.status_code == 303
@@ -494,7 +713,8 @@ async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
         )
         token = _token(connection, "strict@example.com")
         verified = await client.post(
-            f"/auth/verify?token={token}",
+            "/auth/verify",
+            data={"token": token},
             follow_redirects=False,
         )
         assert verified.status_code == 303
@@ -521,7 +741,8 @@ async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
         connection.commit()
         session_count = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         refused = await fresh_client.post(
-            f"/auth/verify?token={token}",
+            "/auth/verify",
+            data={"token": token},
             follow_redirects=False,
         )
         assert refused.status_code == 403
@@ -646,7 +867,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert requested.status_code == 202
         verified = await admin.post(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
             follow_redirects=False,
         )
         assert verified.status_code == 303
@@ -713,7 +935,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert [track["name"] for track in agenda.json()["tracks"]] == ["General"]
         empty_publish = await admin.post(
             f"/api/v1/admin/events/{event_id}/agenda/publish",
-            headers=mutation_headers,
+            headers={**mutation_headers, "idempotency-key": "empty-agenda-publish-2026"},
             json={
                 "revision_id": agenda.json()["revision"]["id"],
                 "version": agenda.json()["revision"]["version"],
@@ -922,7 +1144,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert requested.status_code == 202
         verified = await speaker.post(
-            f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "speaker@example.com")},
             follow_redirects=False,
         )
         assert verified.status_code == 303
@@ -1024,7 +1247,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
         await admin_again.post(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
             follow_redirects=False,
         )
         session = (await admin_again.get("/api/v1/auth/session")).json()
@@ -1072,7 +1296,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 json={"email": "speaker@example.com", "redirect_path": "/speaker"},
             )
             await speaker_after_review.post(
-                f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
+                "/auth/verify",
+                data={"token": _token(connection, "speaker@example.com")},
                 follow_redirects=False,
             )
             reviewed_session = (
@@ -1304,8 +1529,9 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert requested.status_code == 202
         assert (
             await returning_speaker.post(
-                f"/auth/verify?token={_token(connection, 'speaker@example.com')}",
+                "/auth/verify",
                 data={
+                    "token": _token(connection, "speaker@example.com"),
                     "first_name": "Returning",
                     "last_name": "Speaker",
                     "password": "a private returning speaker passphrase",
@@ -1341,7 +1567,8 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
         verified = await client.post(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
             follow_redirects=False,
         )
         assert verified.status_code == 303
@@ -1449,7 +1676,8 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
         )
         assert invitation.status_code == 201
         accepted = await client.post(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
             follow_redirects=False,
         )
         assert accepted.status_code == 303
@@ -1509,7 +1737,8 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
             json={"email": "admin@example.com", "redirect_path": "/admin/events"},
         )
         await client.post(
-            f"/auth/verify?token={_token(connection, 'admin@example.com')}",
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
             follow_redirects=False,
         )
         session = (await client.get("/api/v1/auth/session")).json()

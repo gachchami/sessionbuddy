@@ -105,21 +105,33 @@ migrations, R2, Queues/DLQs, Workflow binding, core secret bindings, deployment,
 health checks, browser-route checks, desktop/mobile API-failure recovery checks,
 and the anonymous identity boundary.
 
+Direct speaker and CFP uploads now bind the declared byte size into their R2
+PUT signatures. Speaker uploads additionally enforce authorization rate limits,
+three live pending intents, a 250 MiB retained-storage budget per speaker/event,
+and scheduled cleanup of expired pending objects. Synchronous account-headshot
+scans have their own three-per-minute per-user limiter.
+
+Magic-link requests now apply independent per-recipient and per-source limits.
+Issued sign-in and invitation links keep bearer tokens in URL fragments, remove
+them from browser history client-side, and redeem them only through the existing
+explicit, exact-Origin, body-only confirmation POST.
+
 The isolated Cloudflare development rehearsal is complete. Resend and direct-R2
 credentials are configured. On 2026-08-16 the development D1 database, R2 bucket,
 queues/DLQs, and reminder workflow were backed up where applicable, purged, and
 recreated; the Worker was redeployed from the rebased canonical baseline while
-all seven secret bindings were preserved. Remote activation now has 23 passing
-checks, no pending activation, and the first administrator is bootstrapped.
+all seven secret bindings were preserved. That rehearsal had 23 passing checks,
+no pending activation, and the first administrator was bootstrapped. Malware
+scanning is explicitly bypassed on this isolated development deployment.
 The application no longer contains synthetic identities or data-seeding endpoints, and
 fresh instances begin with no organizations, events, or speakers. Live organization/event
 edits, invitation creation/revocation/acceptance, speaker ownership, conditional
 draft restore and submission, and a direct R2 upload all pass. The run exposed
 three integration defects—an asynchronous invitation reset, conditional draft and
 submission-payload handling, and CSP blocking R2—and each is fixed, covered by a
-regression, and deployed. The development environment intentionally bypasses
-malware scanning; staging and production reject that bypass and require a scanner
-endpoint/secret. No Cloudflare Container is configured. Applied D1 migration
+regression, and deployed. The checked-in development configuration explicitly
+allows the development-only malware-scan bypass; preview, staging, production,
+and unknown environments still fail closed. No Cloudflare Container is configured. Applied D1 migration
 ledger contains only the single canonical baseline migration.
 
 The requirement-by-requirement evidence and the remaining authenticated

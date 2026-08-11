@@ -105,9 +105,13 @@ def static_configuration_checks(environment: dict, variables: dict[str, str]) ->
     )
     scan_mode = variables.get("MALWARE_SCAN_MODE", "required")
     if scan_mode == "disabled" and app_environment not in {"local", "development"}:
-        checks.append(Check("FAIL", "malware scanning", "bypass is forbidden outside development"))
+        checks.append(
+            Check("FAIL", "malware scanning", "bypass is forbidden outside development")
+        )
     elif scan_mode == "disabled":
-        checks.append(Check("PASS", "malware scanning", "explicit development-only bypass"))
+        checks.append(
+            Check("PASS", "malware scanning", f"explicit {app_environment} bypass")
+        )
     elif not variables.get("SCANNER_URL"):
         checks.append(Check("PENDING", "malware scanning", "SCANNER_URL is required"))
     else:

@@ -2,7 +2,6 @@ import hashlib
 import hmac
 import json
 import re
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import UTC, datetime
 from email.headerregistry import Address
 from html import escape
@@ -20,8 +19,13 @@ from sessionbuddy.platform.auth import (
     hash_token,
     normalize_email,
 )
-from sessionbuddy.platform.auth.http import guard_mutation, require_permission, secret
-from sessionbuddy.platform.authorization import Permission, ResourceContext
+from sessionbuddy.platform.auth.http import (
+    guard_mutation,
+    require_document_persona,
+    require_permission,
+    secret,
+)
+from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import (
     AuditEvent,
     CommandBatch,
@@ -36,6 +40,7 @@ from sessionbuddy.platform.db.d1 import (
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
+from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
@@ -109,6 +114,47 @@ def _co_speaker_expiry(now: int, closes_at_ms: object) -> int:
     return min(expiry, int(closes_at_ms)) if closes_at_ms is not None else expiry
 
 
+async def _guard_new_co_speaker_invitations(
+    request: Request,
+    *,
+    actor_user_id: str,
+    event_id: str,
+    desired,
+    submission_id: str | None = None,
+) -> None:
+    """Bound invitation email creation before any related submission mutation."""
+    desired_emails = {normalize_email(item.email) for item in desired}
+    if not desired_emails:
+        return
+    if submission_id is not None:
+        active_rows = result_rows(
+            await _db(request)
+            .prepare(
+                """SELECT normalized_email FROM submission_contributors
+                   WHERE submission_id=?1 AND invitation_status!='removed'"""
+            )
+            .bind(submission_id)
+            .all()
+        )
+        desired_emails.difference_update(
+            str(row["normalized_email"]) for row in active_rows
+        )
+        if not desired_emails:
+            return
+    subject = f"{actor_user_id}:{event_id}:{_request_source(request)}"
+    # Charge each new recipient, not merely each HTTP request: one request may
+    # contain the form's full ten-address co-speaker allowance.
+    for _normalized_email in desired_emails:
+        await enforce_rate_limit(
+            request,
+            binding_name="PUBLIC_RATE_LIMITER",
+            policy=RateLimitPolicy(
+                "cfp.co_speaker.email", limit=20, window_seconds=3_600
+            ),
+            subject=subject,
+        )
+
+
 async def _owned_co_speaker_context(
     request: Request, slug: str, submission_id: str, co_speaker_id: str
 ):
@@ -160,21 +206,25 @@ async def _reconcile_co_speakers(
     db, now = _db(request), utc_now_ms()
     existing = result_rows(
         await db.prepare(
-            """SELECT id,normalized_email,user_id,invitation_status
-               FROM submission_contributors WHERE submission_id=?1
-                 AND invitation_status!='removed'"""
+            """SELECT id,normalized_email,user_id,invitation_status,invitation_version
+               FROM submission_contributors WHERE submission_id=?1"""
         )
         .bind(submission_id)
         .all()
     )
     desired_by_email = {normalize_email(item.email): item for item in desired}
-    existing_by_email = {str(row["normalized_email"]): row for row in existing}
-    if not desired_by_email and not existing_by_email:
+    all_existing_by_email = {str(row["normalized_email"]): row for row in existing}
+    active_existing_by_email = {
+        email: row
+        for email, row in all_existing_by_email.items()
+        if row["invitation_status"] != "removed"
+    }
+    if not desired_by_email and not active_existing_by_email:
         # Nothing to reconcile; an empty command batch is not executable.
         return
     batch = CommandBatch(db)
     queued: list[str] = []
-    for normalized, current in existing_by_email.items():
+    for normalized, current in active_existing_by_email.items():
         contributor = desired_by_email.get(normalized)
         if contributor is not None:
             batch.add_statement(
@@ -225,9 +275,14 @@ async def _reconcile_co_speakers(
             )
         )
     for normalized, contributor in desired_by_email.items():
-        if normalized in existing_by_email:
+        if normalized in active_existing_by_email:
             continue
-        contributor_id, token, message_id = new_id(), generate_token(), new_id()
+        prior = all_existing_by_email.get(normalized)
+        contributor_id = str(prior["id"]) if prior is not None else new_id()
+        invitation_version = (
+            int(prior["invitation_version"]) + 1 if prior is not None else 1
+        )
+        token, message_id = generate_token(), new_id()
         expires_at = _co_speaker_expiry(now, invitation_deadline_ms)
         if expires_at <= now:
             raise HTTPException(status_code=409, detail="Applications are closed.")
@@ -265,14 +320,9 @@ async def _reconcile_co_speakers(
                 f"Invitation to co-present {proposal_title}",
                 f'<p>{escape(primary_name)} invited you to co-present.</p>'
                 f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
-                f"co-speaker:{contributor_id}:v1", now,
+                f"co-speaker:{contributor_id}:v{invitation_version}", now,
             )
         )
-        prior = await db.prepare(
-            "SELECT id FROM submission_contributors WHERE submission_id=?1 AND normalized_email=?2"
-        ).bind(submission_id, normalized).first("id")
-        if prior is not None:
-            contributor_id = str(prior)
         batch.audit(
             AuditEvent(
                 actor_type="user", actor_user_id=actor_user_id,
@@ -321,6 +371,7 @@ def _product_page(request: Request, asset: str) -> HTMLResponse:
     include_in_schema=False,
 )
 async def admin_event_cfp_page(event_id: str, request: Request) -> HTMLResponse:
+    await require_document_persona(request, Persona.ORGANIZER)
     return _product_page(request, "admin_programs.html")
 
 
@@ -330,6 +381,7 @@ async def admin_event_cfp_page(event_id: str, request: Request) -> HTMLResponse:
     include_in_schema=False,
 )
 async def admin_submissions_page(event_id: str, request: Request) -> HTMLResponse:
+    await require_document_persona(request, Persona.ORGANIZER)
     return _product_page(request, "admin_submissions.html")
 
 
@@ -1169,6 +1221,14 @@ async def resend_co_speaker_invitation(
     )
     if row["invitation_status"] == "accepted":
         raise HTTPException(status_code=409)
+    await enforce_rate_limit(
+        request,
+        binding_name="PUBLIC_RATE_LIMITER",
+        policy=RateLimitPolicy("cfp.co_speaker.email", limit=20, window_seconds=3_600),
+        subject=(
+            f"{authenticated.actor.user_id}:{row['event_id']}:{_request_source(request)}"
+        ),
+    )
     db, now = _db(request), utc_now_ms()
     token, message_id = generate_token(), new_id()
     expires_at = _co_speaker_expiry(now, row["closes_at_ms"])
@@ -1364,7 +1424,7 @@ async def _staged_authorization_view(
     row = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT id, object_key, content_type, created_at_ms
+            """SELECT id, object_key, content_type, byte_size, created_at_ms
                FROM cfp_staged_assets WHERE id=?1 LIMIT 1"""
         )
         .bind(staged_id)
@@ -1394,6 +1454,7 @@ async def _staged_authorization_view(
             access_key_id=required[2],
             secret_access_key=required[3],
             content_type=content_type,
+            content_length=int(row["byte_size"]),
             now=datetime.now(UTC),
             expires_seconds=STAGED_UPLOAD_URL_TTL_MS // 1000,
         )
@@ -1766,6 +1827,13 @@ async def update_submission(
     )
     if normalized_email is None or normalize_email(body.speaker_email) != str(normalized_email):
         raise HTTPException(status_code=422)
+    await _guard_new_co_speaker_invitations(
+        request,
+        actor_user_id=authenticated.actor.user_id,
+        event_id=str(row["event_id"]),
+        desired=body.co_speakers,
+        submission_id=submission_id,
+    )
     schema = json.loads(str(row["schema_json"]))
     # Preserve previously uploaded file answers: an edit that does not
     # re-attach a file must never clobber the stored upload reference.
@@ -2024,6 +2092,13 @@ async def update_submission_as_organizer(
         is not None
     ):
         raise HTTPException(status_code=409, detail="A decided proposal cannot be edited.")
+    await _guard_new_co_speaker_invitations(
+        request,
+        actor_user_id=authenticated.actor.user_id,
+        event_id=str(row["event_id"]),
+        desired=body.co_speakers,
+        submission_id=submission_id,
+    )
     schema = json.loads(str(row["schema_json"]))
     _validate_submission_schema(schema, body)
     routing = _route_submission(schema, body.answers)
@@ -2115,13 +2190,14 @@ async def create_submission(
     key = _idempotency_key(idempotency_key)
     if public_session is None or not 16 <= len(public_session) <= 128:
         raise HTTPException(status_code=400)
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
     await enforce_rate_limit(
         request,
         binding_name="PUBLIC_RATE_LIMITER",
         policy=RateLimitPolicy("public.submit", limit=50, window_seconds=60),
-        subject=f"{public_session}:{_request_source(request)}",
+        subject=f"{authenticated.actor.user_id}:{_request_source(request)}",
     )
-    authenticated = await authenticate_request(request)
     db = _db(request)
     form = row_mapping(
         await db.prepare(
@@ -2137,6 +2213,12 @@ async def create_submission(
     )
     if form is None:
         raise HTTPException(status_code=404)
+    await _guard_new_co_speaker_invitations(
+        request,
+        actor_user_id=authenticated.actor.user_id,
+        event_id=str(form["event_id"]),
+        desired=body.co_speakers,
+    )
     now = utc_now_ms()
     accepting, _ = _form_availability(form, 0, now)
     if not accepting:
@@ -2496,67 +2578,28 @@ async def create_submission(
 
 
 SUBMISSIONS_PAGE_LIMIT = 100
-_SUBMISSIONS_CURSOR_TTL_MS = 15 * 60 * 1000
-
-
 def _submissions_cursor(
     request: Request, value: str | None, *, event_id: str
 ) -> tuple[int, str] | None:
     """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
-    if value is None:
+    decoded = decode_signed_cursor(
+        request, value, scope={"event": event_id}, position_fields={"id", "sub"}
+    )
+    if decoded is None:
         return None
-    try:
-        encoded_payload, encoded_signature = value.split(".", 1)
-        payload = urlsafe_b64decode(encoded_payload + "=" * (-len(encoded_payload) % 4))
-        signature = urlsafe_b64decode(
-            encoded_signature + "=" * (-len(encoded_signature) % 4)
-        )
-        expected = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-        if not hmac.compare_digest(signature, expected):
-            raise ValueError
-        decoded = json.loads(payload.decode())
-        if not isinstance(decoded, dict) or decoded != {
-            "event": event_id,
-            "exp": decoded.get("exp"),
-            "id": decoded.get("id"),
-            "sub": decoded.get("sub"),
-            "v": 1,
-        }:
-            raise ValueError
-        submitted_at, row_id, expires = decoded["sub"], decoded["id"], decoded["exp"]
-        if (
-            not isinstance(submitted_at, int)
-            or not isinstance(row_id, str)
-            or len(row_id) > 100
-            or not isinstance(expires, int)
-            or expires < utc_now_ms()
-        ):
-            raise ValueError
-        return submitted_at, row_id
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, KeyError) as exc:
-        raise HTTPException(status_code=400) from exc
+    submitted_at, row_id = decoded["sub"], decoded["id"]
+    if type(submitted_at) is not int or not isinstance(row_id, str) or len(row_id) > 100:
+        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
+    return submitted_at, row_id
 
 
 def _submissions_next_cursor(
     request: Request, *, event_id: str, submitted_at_ms: int, row_id: str
 ) -> str:
-    payload = json.dumps(
-        {
-            "event": event_id,
-            "exp": utc_now_ms() + _SUBMISSIONS_CURSOR_TTL_MS,
-            "id": row_id,
-            "sub": submitted_at_ms,
-            "v": 1,
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    signature = hmac.digest(secret(request, "CSRF_HMAC_KEY"), payload, "sha256")
-    return ".".join(
-        (
-            urlsafe_b64encode(payload).decode().rstrip("="),
-            urlsafe_b64encode(signature).decode().rstrip("="),
-        )
+    return encode_signed_cursor(
+        request,
+        scope={"event": event_id},
+        position={"id": row_id, "sub": submitted_at_ms},
     )
 
 

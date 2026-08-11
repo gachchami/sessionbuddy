@@ -47,7 +47,7 @@ def test_workflow_loading_and_empty_states_are_announced_without_alert_noise() -
 def test_each_complex_workflow_region_has_an_accessible_name() -> None:
     cfp = source("admin_programs.html")
     submissions = source("admin_submissions.html")
-    publish = source("event_workspace.html")
+    sharing = source("event_workspace.html")
     resources = source("speaker_content.html")
     messages = source("speaker_messages.html")
 
@@ -55,7 +55,8 @@ def test_each_complex_workflow_region_has_an_accessible_name() -> None:
     assert 'id="cfp-builder-title"' in cfp
     assert 'aria-labelledby="submission-list-title"' in submissions
     assert 'aria-labelledby="rounds-title"' in submissions
-    assert 'aria-label="Publishing tools"' in publish
+    assert 'aria-label="Sharing and integration tools"' in sharing
+    assert 'id="publish-agenda"' in sharing
     assert 'aria-label="Speaker tasks, files, and resources"' in resources
     assert 'aria-labelledby="recipients-title"' in messages
     assert 'aria-labelledby="compose-title"' in messages

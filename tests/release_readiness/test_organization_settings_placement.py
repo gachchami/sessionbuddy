@@ -17,7 +17,7 @@ def test_events_page_only_switches_organization() -> None:
     assert '["owner", "manage"].includes(permission)' in script
     assert 'includes("organization_admin")' not in script
     assert 'values.status === "archived"' in script
-    assert 'body.status = state.editingDraft ? intendedStatus : values.status' in script
+    assert "body.status = intendedStatus" in script
     assert 'organization-form' not in script
 
 

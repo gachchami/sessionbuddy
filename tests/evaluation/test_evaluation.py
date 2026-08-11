@@ -82,7 +82,7 @@ def test_round_workspaces_support_late_submissions_and_audited_force_close() -> 
     root = Path(__file__).parents[2]
     submissions = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
     reviews = (root / "frontend/src/main.tsx").read_text()
-    assert "Add selected submissions to open round" in submissions
+    assert "Add selected proposals to open round" in submissions
     assert "/submissions`" in submissions
     assert "Organizer closed the round before every review was final." in reviews
 

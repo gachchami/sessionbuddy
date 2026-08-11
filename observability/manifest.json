@@ -1002,19 +1002,6 @@
       ],
       "runbook": "docs/debugging-runbook.md#identity"
     },
-    "GET /api/v1/auth/verify": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-magic-link-verify",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
     "GET /api/v1/auth/session": {
       "owner": "identity",
       "slo": {
@@ -2539,6 +2526,18 @@
       ],
       "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
     },
+    "cron:scheduled:speaker-pending-upload-purge": {
+      "owner": "speaker-onboarding",
+      "kind": "cron",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)",
+      "handler": "src/entry.py::Default.scheduled -> purge_expired_speaker_uploads",
+      "success_signal": "structured log event speaker_pending_upload_purge, level info",
+      "alert_condition": "speaker_pending_upload_purge at level error (R2 delete failures)",
+      "dashboards": [
+        "release-health"
+      ],
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+    },
     "queue:asset-scan": {
       "owner": "speaker-onboarding",
       "kind": "queue",
@@ -2589,6 +2588,9 @@
     }
   },
   "excluded_routes": {
+    "/api/v1/auth/verify": {
+      "reason": "Legacy GET compatibility guard returns 405 only and is intentionally excluded from the published API contract; POST /auth/verify owns redemption telemetry."
+    },
     "/api/v1/cfp/uploads/{staged_id}/content": {
       "reason": "Local-development-only staged upload sink (APP_ENV=local); never deployed behind production traffic."
     },

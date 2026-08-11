@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Agenda editor · SessionBuddy</title>
-    <link rel="stylesheet" href="/product/assets/product.css?v=57" type="text/css">
+    <link rel="stylesheet" href="/product/assets/product.css?v=58" type="text/css">
     <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=5" type="text/css">
     <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19" type="text/css">
     <script src="/app-shell/assets/api-client.js?v=2" defer type="text/javascript">
@@ -87,6 +87,7 @@
                 <button type="submit">Add</button>
               </form>
               <ul id="room-list" class="resource-list"></ul>
+              <details id="archived-room-section" hidden><summary>Archived rooms</summary><ul id="archived-room-list" class="resource-list"></ul></details>
             </section>
             <section aria-labelledby="tracks-title">
               <h2 id="tracks-title">Track management</h2>
@@ -95,6 +96,7 @@
                 <button type="submit">Add</button>
               </form>
               <ul id="track-list" class="resource-list"></ul>
+              <details id="archived-track-section" hidden><summary>Archived tracks</summary><ul id="archived-track-list" class="resource-list"></ul></details>
             </section>
             <section aria-labelledby="labels-title">
               <h2 id="labels-title">Label management</h2>
@@ -105,6 +107,7 @@
                 <button type="submit">Add label</button>
               </form>
               <ul id="label-list" class="resource-list"></ul>
+              <details id="archived-label-section" hidden><summary>Archived labels</summary><ul id="archived-label-list" class="resource-list"></ul></details>
             </section>
           </div>
         </details>
@@ -114,7 +117,7 @@
               Unscheduled sessions
             </h2>
             <p class="help">
-              Drag a session into a group, or select Edit to schedule it with the keyboard form.
+              Use Schedule on an unscheduled session, or Edit schedule on a scheduled session, to make every change with the keyboard. Dragging is optional.
             </p>
             <ul id="unscheduled" class="session-list" aria-live="polite">
               <li class="workflow-empty-state">Loading sessions&hellip;
@@ -192,6 +195,17 @@
           <label>Color<input name="color" type="color" required></label>
           <div class="actions">
             <button id="cancel-label-edit" class="secondary" type="button">Cancel</button><button type="submit">Save label</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="resource-archive-dialog" class="confirmation-dialog" aria-labelledby="resource-archive-title" aria-describedby="resource-archive-consequence">
+        <form id="resource-archive-form">
+          <p class="eyebrow">Agenda resource</p>
+          <h2 id="resource-archive-title">Archive this resource?</h2>
+          <p id="resource-archive-consequence"></p>
+          <p class="help">It will move to the archived list and can be restored later.</p>
+          <div class="actions">
+            <button id="cancel-resource-archive" class="secondary" type="button">Cancel</button><button id="confirm-resource-archive" class="danger" type="submit">Archive resource</button>
           </div>
         </form>
       </dialog>

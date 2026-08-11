@@ -114,6 +114,10 @@ def _environment(connection: sqlite3.Connection, **overrides):
         "PUBLIC_RATE_LIMITER": AllowingRateLimiter(),
         "CFP_UPLOAD_AUTH_RATE_LIMITER": AllowingRateLimiter(),
         "CFP_UPLOAD_POLL_RATE_LIMITER": AllowingRateLimiter(),
+        "SPEAKER_UPLOAD_AUTH_RATE_LIMITER": AllowingRateLimiter(),
+        "HEADSHOT_UPLOAD_RATE_LIMITER": AllowingRateLimiter(),
+        "MAGIC_LINK_RECIPIENT_RATE_LIMITER": AllowingRateLimiter(),
+        "MAGIC_LINK_SOURCE_RATE_LIMITER": AllowingRateLimiter(),
         "PUBLIC_BASE_URL": "https://test",
         "ALLOWED_ORIGINS": "https://test",
         "COMMUNICATION_QUEUE": queue,
@@ -140,7 +144,11 @@ def _client(environment) -> AsyncClient:
         scope["env"] = environment
         await app(scope, receive, send)
 
-    return AsyncClient(transport=ASGITransport(app=inject_environment), base_url="https://test")
+    return AsyncClient(
+        transport=ASGITransport(app=inject_environment),
+        base_url="https://test",
+        headers={"origin": "https://test"},
+    )
 
 
 def _magic_token(connection: sqlite3.Connection, email: str) -> str:
@@ -150,7 +158,7 @@ def _magic_token(connection: sqlite3.Connection, email: str) -> str:
         (email,),
     ).fetchone()
     assert row is not None
-    match = re.search(r"/auth/verify\?token=([^\"<]+)", row[0])
+    match = re.search(r"/auth/verify#token=([^\"<]+)", row[0])
     assert match is not None
     return match.group(1)
 
@@ -163,8 +171,9 @@ async def _sign_in(client: AsyncClient, connection: sqlite3.Connection, email: s
     assert requested.status_code == 202
     token = _magic_token(connection, email)
     confirmed = await client.post(
-        f"/auth/verify?token={token}",
+        "/auth/verify",
         data={
+            "token": token,
             "first_name": "Test",
             "last_name": "Speaker",
             "job_title": "Engineer",
@@ -743,6 +752,10 @@ async def test_scan_gating_honors_malware_scan_mode(cfp_environment) -> None:
         assert authorized.status_code == 201, authorized.text
         authorization = authorized.json()
         assert authorization["upload_url"].startswith("https://")
+        assert authorization["headers"] == {
+            "content-length": str(len(body)),
+            "content-type": "application/pdf",
+        }
         staged_id = authorization["staged_id"]
         object_key = connection.execute(
             "SELECT object_key FROM cfp_staged_assets WHERE id=?", (staged_id,)
@@ -904,26 +917,34 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         assert requested.status_code == 202
         token = _magic_token(connection, "speaker@example.test")
 
-        page = await client.get(f"/auth/verify?token={token}")
+        page = await client.get(f"/auth/verify#token={token}")
         assert page.status_code == 200
         assert page.headers["cache-control"] == "no-store"
         assert "<style>" not in page.text
         assert '<link rel="stylesheet" href="/product/assets/product.css' in page.text
         assert 'method="post"' in page.text
-        assert "Create your speaker account" in page.text
-        assert 'name="first_name"' in page.text
-        assert 'name="password_confirmation"' in page.text
+        assert "Continue to your account" in page.text
+        assert 'name="first_name"' not in page.text
+        assert 'name="password_confirmation"' not in page.text
+        assert 'auth-link-confirm.js?v=3' in page.text
+        assert token not in page.text
         assert connection.execute(
             "SELECT consumed_at_ms FROM authentication_challenges"
         ).fetchone()[0] is None
 
-        incomplete = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
+        incomplete = await client.post(
+            "/auth/verify", data={"token": token}, follow_redirects=False
+        )
         assert incomplete.status_code == 422
+        assert "Create your speaker account" in incomplete.text
+        assert 'name="first_name"' in incomplete.text
+        assert 'name="password_confirmation"' in incomplete.text
         assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
 
         confirmed = await client.post(
-            f"/auth/verify?token={token}",
+            "/auth/verify",
             data={
+                "token": token,
                 "first_name": "Test",
                 "last_name": "Speaker",
                 "password": "a private speaker passphrase",
@@ -937,11 +958,13 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
             "SELECT consumed_at_ms FROM authentication_challenges"
         ).fetchone()[0] is not None
 
-        replayed = await client.post(f"/auth/verify?token={token}", follow_redirects=False)
+        replayed = await client.post(
+            "/auth/verify", data={"token": token}, follow_redirects=False
+        )
         assert replayed.status_code == 404
 
 
-async def test_existing_speaker_magic_link_auto_continues(cfp_environment) -> None:
+async def test_existing_speaker_magic_link_requires_confirmation(cfp_environment) -> None:
     connection, environment = cfp_environment
     async with _client(environment) as client:
         await _sign_in(client, connection, "returning-speaker@example.test")
@@ -956,17 +979,24 @@ async def test_existing_speaker_magic_link_auto_continues(cfp_environment) -> No
         assert requested.status_code == 202
         token = _magic_token(connection, "returning-speaker@example.test")
 
-        page = await client.get(f"/auth/verify?token={token}")
+        page = await client.get(f"/auth/verify#token={token}")
         assert page.status_code == 200
-        assert "Signing you in…" in page.text
-        assert 'data-auto-submit="true"' in page.text
-        assert 'auth-link-confirm.js?v=2' in page.text
+        assert "Continue to your account" in page.text
+        assert 'data-auto-submit="true"' not in page.text
+        assert '<form method="post" action="/auth/verify"' in page.text
+        assert f'value="{token}"' not in page.text
+        assert 'auth-link-confirm.js?v=3' in page.text
         assert "Create your speaker account" not in page.text
         assert connection.execute(
             "SELECT consumed_at_ms FROM authentication_challenges "
             "WHERE normalized_email=? ORDER BY created_at_ms DESC LIMIT 1",
             ("returning-speaker@example.test",),
         ).fetchone()[0] is None
+        confirmed = await client.post(
+            "/auth/verify", data={"token": token}, follow_redirects=False
+        )
+        assert confirmed.status_code == 303
+        assert confirmed.headers["location"] == "/cfp/event-cfp"
 
 
 async def test_passwordless_speaker_must_finish_registration(cfp_environment) -> None:
@@ -1000,15 +1030,17 @@ async def test_passwordless_speaker_must_finish_registration(cfp_environment) ->
         assert requested.status_code == 202
         token = _magic_token(connection, "legacy-speaker@example.test")
 
-        page = await client.get(f"/auth/verify?token={token}")
+        page = await client.get(f"/auth/verify#token={token}")
         assert page.status_code == 200
-        assert "Create your speaker account" in page.text
-        assert 'name="password_confirmation"' in page.text
+        assert "Continue to your account" in page.text
+        assert 'name="password_confirmation"' not in page.text
+        assert 'auth-link-confirm.js?v=3' in page.text
         assert "Signing you in…" not in page.text
 
         completed = await client.post(
-            f"/auth/verify?token={token}",
+            "/auth/verify",
             data={
+                "token": token,
                 "first_name": "Legacy",
                 "last_name": "Speaker",
                 "job_title": "Engineer",
@@ -1053,12 +1085,13 @@ async def test_local_https_magic_link_is_queued_for_local_mail_inbox(cfp_environ
         ("local-speaker@example.test",),
     ).fetchone()
     assert message is not None
-    assert 'href="https://localhost:8443/auth/verify?token=' in message[0]
+    assert 'href="https://localhost:8443/auth/verify#token=' in message[0]
     assert message[1] == "queued"
 
 
-def test_magic_link_confirmation_page_is_packaged_and_csp_safe() -> None:
+def test_magic_link_confirmation_page_is_packaged_csp_safe_and_not_automatic() -> None:
     page = (STATIC / "auth_link_confirm.html").read_text(encoding="utf-8")
+    helper = (STATIC / "auth_link_confirm.js").read_text(encoding="utf-8")
     access = (
         PROJECT_ROOT / "src" / "sessionbuddy" / "platform" / "auth" / "access.py"
     ).read_text(encoding="utf-8")
@@ -1071,8 +1104,13 @@ def test_magic_link_confirmation_page_is_packaged_and_csp_safe() -> None:
     assert '__CONFIRM_SCRIPT__' in page
     assert '<meta name="robots" content="noindex">' in page
     assert '_asset("auth_link_confirm.html")' in access
-    assert 'data-auto-submit="true"' in access
-    assert 'auth-link-confirm.js?v=2' in access
+    assert 'data-auto-submit="true"' not in access
+    assert 'replacements["__CONFIRM_ACTION__"] = "/auth/verify"' in access
+    assert 'type="hidden" name="token"' in access
+    assert "window.location.hash" in helper
+    assert 'window.history.replaceState(null, "", window.location.pathname)' in helper
+    assert "requestSubmit" not in helper
+    assert "fetch(" not in helper
     interstitial = access.split("magic_link_interstitial", 1)[1].split("@access_router", 1)[0]
     assert "<style>" not in interstitial
     # Consume-on-success: a failed sign-in restores the challenge it consumed.

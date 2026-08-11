@@ -20,6 +20,7 @@ from sessionbuddy.communications.runtime import ReminderWorkflow as _ReminderWor
 from sessionbuddy.platform.db.d1 import to_python
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.speaker_operations.asset_boundary import consume_scan_job
+from sessionbuddy.speaker_operations.purge import purge_expired_speaker_uploads
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 ReminderWorkflow = _ReminderWorkflow
@@ -53,6 +54,21 @@ class Default(WorkerEntrypoint):
                     "publish_failures": result.publish_failures,
                     "exhausted": result.exhausted,
                     "oldest_pending_age_ms": result.oldest_pending_age_ms,
+                },
+                separators=(",", ":"),
+            )
+        )
+        speaker_purge = await purge_expired_speaker_uploads(
+            self.env.DB, self.env.ASSETS, utc_now_ms()
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "speaker_pending_upload_purge",
+                    "level": "error" if speaker_purge.delete_failures else "info",
+                    "deleted_rows": speaker_purge.deleted_rows,
+                    "deleted_objects": speaker_purge.deleted_objects,
+                    "delete_failures": speaker_purge.delete_failures,
                 },
                 separators=(",", ":"),
             )

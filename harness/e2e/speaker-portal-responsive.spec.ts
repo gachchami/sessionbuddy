@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
 const html = readFileSync(resolve(staticRoot, "speaker_portal.html"), "utf8");
@@ -59,6 +60,8 @@ const portal = {
     id: "notification-responsive",
     subject: "Slides are due Friday",
     delivered_at_ms: Date.UTC(2026, 9, 10),
+    body_text: "Please upload your slides. The original email is not required.",
+    links: ["https://sessionbuddy.test/speaker", "javascript:alert(1)"],
   }],
   submissions: [{
     id: "submission-responsive",
@@ -152,6 +155,10 @@ test.describe("speaker portal responsive design", () => {
       await expect(page.getByRole("link", { name: "Public profile" })).toBeVisible();
       await expect(page.locator(".session-files")).toHaveCount(1);
       await expect(page.locator("#notification-list")).toContainText("Slides are due Friday");
+      await page.locator("#notification-list summary").click();
+      await expect(page.locator("#notification-list")).toContainText("The original email is not required.");
+      await expect(page.locator('#notification-list a[href="https://sessionbuddy.test/speaker"]')).toHaveCount(1);
+      await expect(page.locator('#notification-list a[href^="javascript:"]')).toHaveCount(0);
       await expect(page.locator("#profile")).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Speaker portal" })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -159,6 +166,17 @@ test.describe("speaker portal responsive design", () => {
         getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
     });
   }
+
+  test("delivered message recovery is accessible", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await servePortal(page);
+    await page.goto("/speaker");
+    await page.locator("#notification-list summary").click();
+
+    await expect(page.locator("#notification-list")).toContainText("Event time (America/New_York)");
+    const results = await new AxeBuilder({ page }).include("#notifications").analyze();
+    expect(results.violations).toEqual([]);
+  });
 
   test("proposal editing stays inside the speaker portal", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });

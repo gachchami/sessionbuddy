@@ -12,6 +12,12 @@
     event_admin: "Can manage this event",
     organization_admin: "Can manage this organization"
   }[value] || value.replaceAll("_", " "));
+  const statusTone = (value) => ({
+    active: "success",
+    accepted: "success",
+    revoked: "overdue",
+    expired: "overdue"
+  }[value] || "");
   function item(text) {
     const node = document.createElement("li");
     node.className = "organizer-access-list__item";
@@ -21,16 +27,68 @@
     node.append(summary);
     return node;
   }
+  // A row is an identity (the email) plus secondary facts. Keeping them in
+  // separate elements lets a long address wrap on its own line instead of
+  // dragging the role and status off the edge of the card with it.
+  function accessRow(primary, meta = []) {
+    const node = document.createElement("li");
+    node.className = "organizer-access-list__item";
+    const identity = document.createElement("span");
+    identity.className = "organizer-access-list__primary";
+    identity.textContent = primary;
+    node.append(identity);
+    const entries = meta.filter((entry) => entry && entry.text);
+    if (entries.length) {
+      const line = document.createElement("span");
+      line.className = "item-meta organizer-access-list__meta";
+      for (const entry of entries) {
+        const part = document.createElement("span");
+        if (entry.tone !== undefined) part.className = `state-badge ${entry.tone}`.trim();
+        part.textContent = entry.text;
+        line.append(part);
+      }
+      node.append(line);
+    }
+    return node;
+  }
+  // Controls belong in their own flex row so they wrap as a group and keep a
+  // consistent gap, rather than flowing inline behind the summary text.
+  function rowActions(node, ...controls) {
+    const actions = document.createElement("div");
+    actions.className = "actions organizer-access-list__actions";
+    actions.append(...controls);
+    node.append(actions);
+    return actions;
+  }
   function destructiveButton(label, confirmLabel, action) {
     // Removing access is destructive: require a second, explicit click and
     // surface failures instead of silently doing nothing.
+    // Both labels stay in the layout (the hidden one is only made invisible),
+    // so the button is sized to the wider of the two and the row does not
+    // reflow when it switches into its confirm state. The visible confirm text
+    // is kept short for that reason; the full sentence — "Select again to
+    // revoke" — is carried on aria-label, which the visible text is a prefix
+    // of, so the accessible name still matches what is on screen.
     const button = document.createElement("button");
-    button.className = "secondary";
-    button.textContent = label;
+    button.className = "secondary confirm-button";
+    const idleLabel = document.createElement("span");
+    idleLabel.className = "confirm-button__label";
+    idleLabel.textContent = label;
+    const confirmingLabel = document.createElement("span");
+    confirmingLabel.className = "confirm-button__label";
+    confirmingLabel.textContent = "Select again";
+    button.append(idleLabel, confirmingLabel);
+    const setConfirming = (confirming) => {
+      button.dataset.confirming = confirming ? "true" : "false";
+      idleLabel.setAttribute("aria-hidden", confirming ? "true" : "false");
+      confirmingLabel.setAttribute("aria-hidden", confirming ? "false" : "true");
+      if (confirming) button.setAttribute("aria-label", confirmLabel);
+      else button.removeAttribute("aria-label");
+    };
+    setConfirming(false);
     button.addEventListener("click", async () => {
       if (button.dataset.confirming !== "true") {
-        button.dataset.confirming = "true";
-        button.textContent = confirmLabel;
+        setConfirming(true);
         return;
       }
       button.disabled = true;
@@ -41,14 +99,10 @@
         byId("status").textContent = window.SessionBuddyApi.message(error);
         byId("status").focus();
         button.disabled = false;
-        button.dataset.confirming = "false";
-        button.textContent = label;
+        setConfirming(false);
       }
     });
-    button.addEventListener("blur", () => {
-      button.dataset.confirming = "false";
-      button.textContent = label;
-    });
+    button.addEventListener("blur", () => setConfirming(false));
     return button;
   }
   function resetOwnershipConfirmation() {
@@ -98,7 +152,10 @@
     ]);
     const invitationList = byId("invitation-list"); invitationList.replaceChildren();
     for (const invitation of invitations.data) {
-      const node = item(`${invitation.email} · ${accessLabel(invitation.role)} · ${invitation.status}`);
+      const node = accessRow(invitation.email, [
+        { text: accessLabel(invitation.role) },
+        { text: invitation.status, tone: statusTone(invitation.status) }
+      ]);
       if (invitation.status === "pending") {
         const resend = document.createElement("button"); resend.className = "secondary"; resend.textContent = "Send again";
         resend.addEventListener("click", async () => {
@@ -111,7 +168,7 @@
         });
         const button = destructiveButton("Revoke", "Select again to revoke", () =>
           api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}`, { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf } }));
-        node.append(" ", resend, " ", button);
+        rowActions(node, resend, button);
       }
       invitationList.append(node);
     }
@@ -119,18 +176,26 @@
     byId("invitation-count").textContent = String(invitations.data.filter((entry) => entry.status === "pending").length);
     const memberList = byId("member-list"); memberList.replaceChildren();
     for (const member of members.data) {
-      const node = item(`${member.email} · ${accessLabel(member.role)} · ${member.status}`);
+      const node = accessRow(member.email, [
+        { text: accessLabel(member.role) },
+        { text: member.status, tone: statusTone(member.status) }
+      ]);
       if (member.status === "active" && member.user_id !== session.user_id) {
         const button = destructiveButton("Revoke assignment", "Select again to revoke", () =>
           api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/members/${encodeURIComponent(member.user_id)}/roles/${encodeURIComponent(member.role)}`, { method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf } }));
-        node.append(" ", button);
+        rowActions(node, button);
       }
       memberList.append(node);
     }
+    // Without this the panel renders as an empty card with no explanation of
+    // whether it is still loading, broken, or genuinely empty.
+    if (!members.data.length) memberList.append(item("No members yet. Invitations appear here once they are accepted."));
     byId("member-count").textContent = String(members.data.length);
     const grantList = byId("grant-list"); grantList.replaceChildren();
     for (const grant of grants.data) {
-      const node = item(`${grant.email} · ${grant.permission === "owner" ? "Owner" : `Can ${grant.permission}`}`);
+      const node = accessRow(grant.email, [
+        { text: grant.permission === "owner" ? "Owner" : `Can ${grant.permission}`, tone: grant.permission === "owner" ? "success" : undefined }
+      ]);
       if (grant.permission !== "owner" && grant.user_id !== session.user_id) {
         const permission = document.createElement("select");
         permission.setAttribute("aria-label", `Permission for ${grant.email}`);
@@ -153,7 +218,7 @@
           api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/access-grants/${encodeURIComponent(grant.user_id)}`, {
             method: "DELETE", headers: { "content-type": "application/json", "x-csrf-token": csrf }
           }));
-        node.append(" ", permission, " ", revoke);
+        rowActions(node, permission, revoke);
       }
       grantList.append(node);
     }

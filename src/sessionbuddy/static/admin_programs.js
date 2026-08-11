@@ -19,6 +19,8 @@
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
   const key = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
   const draftKey = () => `sessionbuddy:cfp-draft:${state.userId || "unknown"}:${state.context?.event_id || "unknown"}`;
+  let pendingLinkRange = null;
+  let linkDialogTrigger = null;
 
   function clearValidation() {
     const form = byId("publish-form");
@@ -305,7 +307,9 @@
     byId("cfp-page-meta").textContent = published && liveProposalCount !== Math.max(0, state.fields.length - 2)
       ? `${Math.max(0, state.fields.length - 2)} draft fields · ${liveProposalCount} live`
       : byId("cfp-page-meta").textContent;
-    byId("cfp-autosave-state").textContent = published ? "Live changes are never autosaved" : byId("cfp-autosave-state").textContent;
+    if (published && !state.dirty) {
+      byId("cfp-autosave-state").textContent = "Unsaved live changes are backed up in this browser";
+    }
     byId("publish-settings").hidden = Boolean(published) && !state.editing;
     byId("cfp-notification-settings").hidden = Boolean(published) && !state.editing;
     byId("cfp-summary").hidden = false;
@@ -780,28 +784,39 @@
     const values = Object.fromEntries([...new FormData(form)].filter(([, value]) => typeof value === "string"));
     values.redirect_to_portal = form.elements.redirect_to_portal.checked;
     const schema = readFields();
-    return { values, fields: schema.fields, conditions: schema.conditions, routing_rules: readRoutingRules(), important_dates: readImportantDates(), saved_at_ms: Date.now() };
+    return { values, fields: schema.fields, conditions: schema.conditions, routing_rules: readRoutingRules(), important_dates: readImportantDates(), form_version: state.publishedForm?.version ?? null, saved_at_ms: Date.now() };
   }
 
   function saveLocalDraft() {
-    if (state.publishedForm || !state.context) return;
-    sessionStorage.setItem(draftKey(), JSON.stringify(draftSnapshot()));
-    byId("cfp-autosave-state").textContent = "Draft saved in this browser";
+    if (!state.context) return;
+    try {
+      sessionStorage.setItem(draftKey(), JSON.stringify(draftSnapshot()));
+    } catch (_) {
+      byId("cfp-autosave-state").textContent = "Browser recovery is unavailable";
+      return;
+    }
+    byId("cfp-autosave-state").textContent = state.publishedForm
+      ? "Unsaved live changes backed up in this browser"
+      : "Draft saved in this browser";
   }
 
   function queueLocalDraft() {
-    if (state.publishedForm) return;
-    byId("cfp-autosave-state").textContent = "Saving draft…";
+    byId("cfp-autosave-state").textContent = state.publishedForm
+      ? "Backing up unsaved live changes…"
+      : "Saving draft…";
     clearTimeout(state.draftTimer);
     state.draftTimer = setTimeout(saveLocalDraft, 500);
   }
 
   function restoreLocalDraft() {
-    if (state.publishedForm) return false;
     const raw = sessionStorage.getItem(draftKey());
     if (!raw) return false;
     try {
       const draft = JSON.parse(raw);
+      if (state.publishedForm && draft.form_version !== state.publishedForm.version) {
+        sessionStorage.removeItem(draftKey());
+        return false;
+      }
       const form = byId("publish-form");
       Object.entries(draft.values || {}).forEach(([name, value]) => {
         const field = form.elements[name];
@@ -823,7 +838,13 @@
       renderFields();
       renderRoutingRules();
       renderImportantDates();
-      byId("cfp-autosave-state").textContent = "Draft restored from this browser";
+      if (state.publishedForm) {
+        state.editing = true;
+        state.dirty = true;
+      }
+      byId("cfp-autosave-state").textContent = state.publishedForm
+        ? "Unsaved live changes restored from this browser"
+        : "Draft restored from this browser";
       return true;
     } catch (_) {
       sessionStorage.removeItem(draftKey());
@@ -910,16 +931,102 @@
     return errors.length === 0;
   }
 
+  function selectedDescriptionRange() {
+    const editor = byId("cfp-description-editor");
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount !== 1 || selection.isCollapsed) return null;
+    const range = selection.getRangeAt(0);
+    return editor.contains(range.commonAncestorContainer) ? range.cloneRange() : null;
+  }
+
+  function openLinkDialog(trigger) {
+    const range = selectedDescriptionRange();
+    if (!range) {
+      setStatus("Select the description text you want to turn into a link.", true);
+      byId("cfp-description-editor").focus();
+      return;
+    }
+    pendingLinkRange = range;
+    linkDialogTrigger = trigger;
+    const dialog = byId("cfp-link-dialog");
+    const input = byId("cfp-link-url");
+    input.value = "";
+    input.setCustomValidity("");
+    byId("cfp-link-error").textContent = "";
+    dialog.showModal();
+    queueMicrotask(() => input.focus());
+  }
+
+  function closeLinkDialog() {
+    if (byId("cfp-link-dialog").open) byId("cfp-link-dialog").close("cancel");
+  }
+
+  function installLinkDialog() {
+    const dialog = byId("cfp-link-dialog");
+    const form = byId("cfp-link-form");
+    const input = byId("cfp-link-url");
+    const error = byId("cfp-link-error");
+    byId("cancel-cfp-link").addEventListener("click", closeLinkDialog);
+    dialog.addEventListener("close", () => {
+      pendingLinkRange = null;
+      const trigger = linkDialogTrigger;
+      linkDialogTrigger = null;
+      trigger?.focus();
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      input.setCustomValidity("");
+      error.textContent = "";
+      let url;
+      try {
+        url = new URL(input.value.trim());
+      } catch (_) {
+        input.setCustomValidity("Enter a complete web address.");
+      }
+      if (url && !["https:", "http:"].includes(url.protocol)) {
+        input.setCustomValidity("Use an https:// or http:// web address.");
+      }
+      if (!input.checkValidity()) {
+        error.textContent = input.validationMessage;
+        input.focus();
+        return;
+      }
+      const editor = byId("cfp-description-editor");
+      if (!pendingLinkRange || !editor.contains(pendingLinkRange.commonAncestorContainer)) {
+        error.textContent = "The selected text is no longer available. Cancel and select it again.";
+        return;
+      }
+      const link = document.createElement("a");
+      link.href = url.href;
+      link.rel = "noopener";
+      try {
+        pendingLinkRange.surroundContents(link);
+      } catch (_) {
+        link.append(pendingLinkRange.extractContents());
+        pendingLinkRange.insertNode(link);
+      }
+      syncDescription();
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      dialog.close("added");
+    });
+  }
+
   function installBuilder() {
     const publish = byId("publish-form");
     byId("cfp-description-editor").addEventListener("input", syncDescription);
-    document.querySelectorAll("[data-rich-command]").forEach((button) => button.addEventListener("click", () => {
-      byId("cfp-description-editor").focus();
+    document.querySelectorAll("[data-rich-command]").forEach((button) => {
+      button.addEventListener("mousedown", (event) => event.preventDefault());
+      button.addEventListener("click", () => {
       const command = button.dataset.richCommand;
-      const value = command === "createLink" ? prompt("Link URL (https://)") : null;
-      if (command !== "createLink" || value) document.execCommand(command, false, value);
+      if (command === "createLink") {
+        openLinkDialog(button);
+        return;
+      }
+      byId("cfp-description-editor").focus();
+      document.execCommand(command, false, null);
       syncDescription();
-    }));
+      });
+    });
     byId("add-important-date").addEventListener("click", () => {
       state.importantDates.push({ label: "", at_ms: null });
       renderImportantDates();
@@ -938,9 +1045,8 @@
       if (state.publishedForm) {
         byId("publish-action-label").textContent = "Unsaved changes";
         byId("publish-result").textContent = "Nothing changes publicly until you update the live CFP.";
-      } else {
-        queueLocalDraft();
       }
+      queueLocalDraft();
     });
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
     const add = byId("add-field");
@@ -968,9 +1074,8 @@
       if (state.publishedForm) {
         byId("publish-action-label").textContent = "Unsaved changes";
         byId("publish-result").textContent = "Nothing changes publicly until you update the live CFP.";
-      } else {
-        queueLocalDraft();
       }
+      queueLocalDraft();
     });
   }
 
@@ -993,7 +1098,10 @@
       await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
       state.editing = true;
-      if (state.publishedForm) loadPublishedSettings(state.publishedForm);
+      if (state.publishedForm) {
+        loadPublishedSettings(state.publishedForm);
+        restoreLocalDraft();
+      }
       else {
         const slug = byId("publish-form").elements.slug;
         const readableSlug = state.eventName.toLowerCase()
@@ -1084,6 +1192,11 @@
       byId("cfp-saved-state").hidden = false;
       setStatus(updating ? "Your CFP changes were saved." : "Your CFP was published successfully.", "success");
     } catch (error) {
+      if (error.status === 401) {
+        saveLocalDraft();
+        location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        return;
+      }
       const message = error.code === "slug_conflict"
         ? "That public URL is already taken. Add a year, city, or short code to make it unique."
         : error.code === "stale_conflict"
@@ -1117,6 +1230,7 @@
     loadPublishedSettings(state.publishedForm);
     state.editing = false;
     state.dirty = false;
+    sessionStorage.removeItem(draftKey());
     renderWorkspace();
     setStatus("No changes were made.");
     byId("cfp-link-title").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1279,6 +1393,7 @@
     }
   });
 
+  installLinkDialog();
   installBuilder();
   renderWorkspace();
   restoreSession();
