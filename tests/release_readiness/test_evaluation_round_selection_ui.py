@@ -13,8 +13,11 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert 'id="configure-round" type="button" disabled' in markup
     assert "Accepted and rejected proposals are already decided" in markup
     assert "selection.checked = false" in javascript
-    assert "selection.checked = item.status === \"submitted\"" not in javascript
-    assert 'selection.addEventListener("change", updateSelectedCount)' in javascript
+    assert 'selection.checked = item.status === "submitted"' not in javascript
+    assert (
+        'selection.addEventListener("change", () => { updateSelectedCount(); '
+        "markRoundFormDirty(); });"
+    ) in javascript
     assert "item.evaluation_round_name" in javascript
     assert "`In ${item.evaluation_round_name}`" in javascript
     assert ': "Already decided"' in javascript
@@ -37,13 +40,27 @@ def test_round_history_distinguishes_work_by_status() -> None:
 
     assert 'class="round-ledger"' in markup
     assert "Open my assigned reviews" not in markup
-    assert 'summary>Create an evaluation round</summary>' in markup
+    assert "summary>Create an evaluation round</summary>" in markup
     assert 'round.status === "draft" ? "View draft"' in javascript
     assert 'round.status === "closed" ? "View results"' in javascript
     assert ': "Manage round"' in javascript
     assert 'openDraft.textContent = "Start review"' in javascript
+    assert 'editDraft.textContent = "Edit draft"' in javascript
+    assert "async function editDraftRound(round)" in javascript
+    assert 'method: editingRoundId ? "PUT" : "POST"' in javascript
     assert 'eyebrow.textContent = "Current round"' in javascript
     assert 'link.textContent = "Manage decisions"' in javascript
     assert 'add.id = "add-selected-to-round"' in javascript
     assert ': "Select proposals to add"' in javascript
     assert "addToRound.disabled = count === 0" in javascript
+
+
+def test_draft_round_configuration_has_read_and_update_contracts() -> None:
+    router = Path("src/sessionbuddy/evaluation/router.py").read_text()
+
+    assert '"/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft"' in router
+    assert "async def get_draft_evaluation_round" in router
+    assert "async def update_draft_evaluation_round" in router
+    assert 'AND event_id=?3 AND status="draft"' not in router
+    assert "AND event_id=?3 AND status='draft'" in router
+    assert 'action="evaluation_round.update"' in router

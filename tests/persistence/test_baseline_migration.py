@@ -67,13 +67,15 @@ def test_rebased_baseline_contains_the_complete_fresh_install_schema() -> None:
                    WHERE type='table' AND name NOT LIKE 'sqlite_%'"""
             ).fetchall()
         }
-        assert len(tables) == 76
+        assert len(tables) == 78
         assert {
             "owned_resources",
             "resource_access_grants",
             "resource_ownership_transfers",
             "event_labels",
             "accepted_session_labels",
+            "evaluation_round_submissions",
+            "evaluation_round_evaluators",
         } <= tables
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:

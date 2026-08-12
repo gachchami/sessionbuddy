@@ -391,13 +391,19 @@ async def get_admin_onboarding_dashboard(
                 request,
                 db.prepare(
                     f"""SELECT
-                     SUM(CASE WHEN t.state IN ('completed','waived')
+                     SUM(CASE WHEN t.event_speaker_id IS NOT NULL
+                         AND t.state IN ('completed','waived')
                          THEN 1 ELSE 0 END) AS complete,
-                     SUM(CASE WHEN t.state = 'open' THEN 1 ELSE 0 END) AS incomplete,
-                     SUM(CASE WHEN t.state = 'open' AND t.due_at_ms < ?3
+                     SUM(CASE WHEN t.event_speaker_id IS NOT NULL
+                         AND t.state = 'open' THEN 1 ELSE 0 END) AS incomplete,
+                     SUM(CASE WHEN t.event_speaker_id IS NOT NULL
+                         AND t.state = 'open' AND t.due_at_ms < ?3
                          THEN 1 ELSE 0 END) AS overdue,
-                     SUM(CASE WHEN t.state = 'open' AND t.due_at_ms >= ?3
+                     SUM(CASE WHEN t.event_speaker_id IS NOT NULL
+                         AND t.state = 'open' AND t.due_at_ms >= ?3
                          AND t.due_at_ms <= ?4 THEN 1 ELSE 0 END) AS due_soon
+                     ,SUM(CASE WHEN t.pending_invitation_id IS NOT NULL
+                         AND t.state='open' THEN 1 ELSE 0 END) AS awaiting_acceptance
                    FROM speaker_tasks t
                    WHERE t.organization_id = ?1 AND t.event_id = ?2
                      AND (?5 IS NULL OR t.task_type = ?5)
@@ -457,7 +463,9 @@ async def get_admin_onboarding_dashboard(
             db.prepare(
                 f"""SELECT t.id AS task_id, t.task_type, t.title AS task_title, t.state,
                            t.due_at_ms, t.updated_at_ms, es.id AS event_speaker_id,
-                           es.last_activity_at_ms, p.display_name,
+                           i.id AS invitation_id,
+                           COALESCE(es.last_activity_at_ms,i.updated_at_ms) AS last_activity_at_ms,
+                           COALESCE(p.display_name,i.display_name,i.email) AS display_name,
                            COALESCE(
                              -- Prefer the ACCEPTED submission; fall back to newest.
                              (SELECT s.proposal_title FROM submission_speakers ss
@@ -465,24 +473,28 @@ async def get_admin_onboarding_dashboard(
                                 AND s.event_id = ss.event_id AND s.id = ss.submission_id
                                JOIN accepted_sessions ac ON ac.organization_id = s.organization_id
                                 AND ac.event_id = s.event_id AND ac.submission_id = s.id
-                               WHERE ss.organization_id = es.organization_id
-                                 AND ss.event_id = es.event_id
-                                 AND ss.event_speaker_id = es.id
+                               WHERE ss.organization_id = t.organization_id
+                                 AND ss.event_id = t.event_id
+                                 AND ss.event_speaker_id = t.event_speaker_id
                                ORDER BY ac.created_at_ms DESC, ac.id DESC LIMIT 1),
                              (SELECT s.proposal_title FROM submission_speakers ss
                                JOIN submissions s ON s.organization_id = ss.organization_id
                                 AND s.event_id = ss.event_id AND s.id = ss.submission_id
-                               WHERE ss.organization_id = es.organization_id
-                                 AND ss.event_id = es.event_id
-                                 AND ss.event_speaker_id = es.id
+                               WHERE ss.organization_id = t.organization_id
+                                 AND ss.event_id = t.event_id
+                                 AND ss.event_speaker_id = t.event_speaker_id
                                ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 1), '')
                              AS proposal_title
                     FROM speaker_tasks t
-                    JOIN event_speakers es ON es.organization_id = t.organization_id
+                    LEFT JOIN event_speakers es ON es.organization_id = t.organization_id
                      AND es.event_id = t.event_id AND es.id = t.event_speaker_id
-                    JOIN people p ON p.organization_id = es.organization_id
+                    LEFT JOIN people p ON p.organization_id = es.organization_id
                      AND p.id = es.person_id
+                    LEFT JOIN identity_invitations i ON i.organization_id=t.organization_id
+                     AND i.event_id=t.event_id AND i.id=t.pending_invitation_id
+                     AND i.role='speaker' AND i.status='pending'
                     WHERE t.organization_id = ?1 AND t.event_id = ?2
+                      AND (es.id IS NOT NULL OR i.id IS NOT NULL)
                       AND {state_sql}
                       AND (?4 IS NULL OR t.task_type = ?4)
                       AND (?7 IS NULL OR COALESCE(t.due_at_ms, 9223372036854775807) > ?7
@@ -495,7 +507,8 @@ async def get_admin_onboarding_dashboard(
     page = rows[:limit]
     row_views = []
     for row in page:
-        row_state = str(row["state"])
+        is_invited = row["invitation_id"] is not None
+        row_state = "awaiting_acceptance" if is_invited else str(row["state"])
         due_at = int(row["due_at_ms"]) if row["due_at_ms"] is not None else None
         if row_state == "open" and due_at is not None:
             if due_at < now:
@@ -504,7 +517,11 @@ async def get_admin_onboarding_dashboard(
                 row_state = "due_soon"
         row_views.append(
             OnboardingRow(
-                event_speaker_id=str(row["event_speaker_id"]),
+                event_speaker_id=(str(row["event_speaker_id"])
+                                  if row["event_speaker_id"] is not None else None),
+                invitation_id=(str(row["invitation_id"])
+                               if row["invitation_id"] is not None else None),
+                recipient_state="invited" if is_invited else "active",
                 display_name=str(row["display_name"]),
                 proposal_title=str(row["proposal_title"]),
                 task_id=str(row["task_id"]),
@@ -539,6 +556,7 @@ async def get_admin_onboarding_dashboard(
             incomplete=count(summary, "incomplete"),
             overdue=count(summary, "overdue"),
             due_soon=count(summary, "due_soon"),
+            awaiting_acceptance=count(summary, "awaiting_acceptance"),
             submitted=count(secondary, "submitted"),
             accepted=count(secondary, "accepted"),
             rejected=count(secondary, "rejected"),

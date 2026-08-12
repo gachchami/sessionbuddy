@@ -422,7 +422,7 @@ test.describe("form validation and workflow wiring", () => {
       id: assignmentId, round_id: "11111111-1111-4111-8111-111111111111", round_name: "Initial review",
       submission_id: assignmentId, proposal_title: "A proposal", proposal_abstract: "Abstract", speaker_name: "Speaker",
       rating_min: 1, rating_max: 5, recommendations: ["accept", "reject"], evaluator_guidance: "", evaluation_state: "not_started",
-      criteria: [], criterion_scores: {}, blind_review: false, review_closes_at_ms: null,
+      criteria: [], criterion_responses: {}, blind_review: false, review_closes_at_ms: null,
       rating: null, recommendation: null, internal_comment: "", comment_required: false,
       answers: [], hidden_answer_count: 0,
     };
@@ -541,6 +541,132 @@ test.describe("form validation and workflow wiring", () => {
     await expect(detail.getByRole("button", { name: "Reject without review" })).toBeVisible();
   });
 
+  test("the reviewer lookup cannot veto the round form, and saving keeps it usable", async ({ page }) => {
+    // Regression, from an eval run that burned 50 turns and hit its cap: the reviewer
+    // lookup box lives inside #round-form, and clicking "Add reviewer" while it was
+    // empty called setCustomValidity() on it. Since the round form's submit ends in
+    // reportValidity(), that permanently vetoed "Save draft round" for a field that is
+    // not part of the round payload -- and the only feedback was a native validation
+    // bubble, which is absent from the accessibility tree. The empty box is the state
+    // the handler itself leaves behind after a successful add, so this is one stray
+    // click away at all times.
+    await polyfillUuid(page);
+    await mockSession(page);
+    let roundPosts = 0;
+    const roundNames: string[] = [];
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ id: eventId, time_zone: "UTC" }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ published_form: null }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluators?email=*`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [{ user_id: userId, display_name: "Sam Whitfield" }] }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        total: 1,
+        next_cursor: null,
+        data: [{
+          id: assignmentId,
+          speaker_name: "Speaker",
+          speaker_email: "speaker@example.com",
+          proposal_title: "Taming 40-Minute CI",
+          proposal_abstract: "Abstract",
+          status: "submitted",
+          submitted_at_ms: 1_900_000_000_000,
+          routed_category: null,
+          routed_track: null,
+          routed_review_queue: null,
+          answers: {},
+        }],
+      }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
+        return;
+      }
+      roundPosts += 1;
+      roundNames.push(String(route.request().postDataJSON().name));
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: `11111111-1111-4111-8111-00000000000${roundPosts}`,
+          name: "Initial Review",
+          status: "open",
+          assignment_count: 1,
+          evaluator_count: 1,
+        }),
+      });
+    });
+
+    await page.goto(`/admin/events/${eventId}/submissions`);
+    await page.getByRole("checkbox", { name: "Include Taming 40-Minute CI" }).check();
+    await page.getByRole("button", { name: "Configure evaluation round" }).click();
+
+    await page.getByLabel("Reviewer email").fill("sam@example.com");
+    await page.getByRole("button", { name: "Add reviewer" }).click();
+    await expect(page.getByText("Sam Whitfield added to this round.")).toBeVisible();
+
+    // The handler cleared the box. Clicking again is the stray click that used to be fatal.
+    await page.getByRole("button", { name: "Add reviewer" }).click();
+
+    // The complaint must be on the live status line, not in a native bubble, and it must
+    // not leave the round form invalid.
+    await expect(page.getByText("Enter the reviewer's exact email address.")).toBeVisible();
+    expect(await page.evaluate(() => ({
+      lookupMessage: (document.getElementById("reviewer-email") as HTMLInputElement).validationMessage,
+      roundFormValid: (document.getElementById("round-form") as HTMLFormElement).checkValidity(),
+    }))).toEqual({ lookupMessage: "", roundFormValid: true });
+
+    // The round actually saves.
+    await page.getByRole("button", { name: /Open evaluation round|Save draft round/ }).click();
+    await expect.poll(() => roundPosts).toBe(1);
+
+    // The form is visibly spent and gated. Resetting alone only makes a repeat click file a
+    // DIFFERENT round -- it still files one nobody asked for. An eval agent abandoned a
+    // run rather than risk that. So: a save must be followed by deliberate intent.
+    await expect(page.getByLabel("Round name")).toHaveValue("Initial review");
+    await expect(page.locator('input[name="submission_ids"]:checked')).toHaveCount(0);
+    await expect(page.locator('input[name="evaluator_user_ids"]:checked')).toHaveCount(0);
+    await expect(page.locator("#criteria .criterion-row")).toHaveCount(3);
+    // form.reset() would restore round_status to the markup default "open", but that
+    // option is disabled while another round runs. The select must not sit on it.
+    await expect(page.locator('#round-form [name="round_status"]')).toHaveValue("draft");
+
+    // Save is unavailable immediately after the reset, and says why rather than going
+    // quietly dead.
+    await expect(page.getByRole("button", { name: "Save draft round" })).toBeDisabled();
+    await expect(page.locator("#round-prerequisites")).toHaveText(
+      "Saved. Change a setting, or select proposals or reviewers, to start another round.",
+    );
+
+    // A rapid repeat click cannot slip a second POST through while the first is in flight.
+    await page.evaluate(() => {
+      const button = document.getElementById("open-round") as HTMLButtonElement;
+      button.click(); button.click(); button.click();
+    });
+    await page.waitForTimeout(300);
+    expect(roundPosts).toBe(1);
+
+    // Selecting a proposal is intent, and lifts the gate (a different wire from the
+    // form's own input/change listeners, so both are exercised).
+    await page.locator('input[name="submission_ids"]').first().check();
+    await expect(page.getByRole("button", { name: "Save draft round" })).toBeEnabled();
+
+    // So is editing a field. A deliberate second save then creates a second round.
+    await page.getByLabel("Round name").fill("Final Review");
+    await page.getByRole("button", { name: "Save draft round" }).click();
+    await expect.poll(() => roundPosts).toBe(2);
+    expect(roundNames).toEqual(["Initial review", "Final Review"]);
+  });
+
   test("workspace resource, task, and token forms enforce their contracts", async ({ page }) => {
     await polyfillUuid(page);
     await mockSession(page);
@@ -570,9 +696,9 @@ test.describe("form validation and workflow wiring", () => {
     await resource.getByRole("button", { name: "Publish resource" }).click();
     await expect.poll(() => resourceWrites).toBe(1);
 
-    await page.getByText("Assign a task", { exact: true }).click();
+    await page.getByText("Choose speakers and task details", { exact: true }).click();
     const task = page.locator("#task-form");
-    await task.getByLabel("Speaker").selectOption(assignmentId);
+    await task.locator(`input[name="event_speaker_id"][value="${assignmentId}"]`).check();
     await task.getByLabel("Task title").fill("Confirm requirements");
     await task.getByText("Required", { exact: true }).click();
     await task.getByRole("button", { name: "Assign task" }).click();

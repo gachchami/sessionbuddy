@@ -97,6 +97,20 @@ def db() -> sqlite3.Connection:
                 f"user-{suffix}",
             ),
         )
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES(?,?,?,?, 'active',1,1)""",
+            (f"round-{suffix}", f"submission-{suffix}", f"org-{suffix}", f"event-{suffix}"),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES(?,?,?,?, 'active',1,1)""",
+            (f"round-{suffix}", f"user-{suffix}", f"org-{suffix}", f"event-{suffix}"),
+        )
     yield connection
     connection.close()
 

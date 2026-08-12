@@ -11,6 +11,7 @@ from sessionbuddy.api.app import app
 from sessionbuddy.console.models import BrowserTelemetryPayload
 from sessionbuddy.evaluation.models import (
     ConflictDeclaration,
+    EvaluationCriterion,
     EvaluationRoundCreate,
     EvaluationSave,
     RoundSubmissionAdd,
@@ -76,6 +77,23 @@ def test_evaluation_contracts_are_strict_and_bounded() -> None:
         assignment_strategy="balanced",
     )
     assert round_create.rating_max == 5
+    typed = EvaluationRoundCreate(
+        name="Typed review", rating_min=1, rating_max=5,
+        recommendations=["accept", "reject"], submission_ids=["a" * 36],
+        evaluator_user_ids=["b" * 36], assignment_strategy="all",
+        criteria=[
+            EvaluationCriterion(key="quality", label="Quality", weight=100),
+            EvaluationCriterion(
+                key="track", label="Best track", response_type="select",
+                weight=None, options=["Platform", "AI"],
+            ),
+            EvaluationCriterion(
+                key="notes", label="Evidence", response_type="text",
+                weight=None, required=False,
+            ),
+        ],
+    )
+    assert [criterion.response_type for criterion in typed.criteria] == ["score", "select", "text"]
     with pytest.raises(ValidationError):
         EvaluationRoundCreate(
             name="Invalid",
@@ -383,12 +401,17 @@ def test_draft_evaluations_permit_partial_input() -> None:
     draft = EvaluationSave(state="draft")
     assert draft.rating is None and draft.recommendation is None
 
-    partial = EvaluationSave(state="draft", criterion_scores={"depth": 4})
-    assert partial.criterion_scores == {"depth": 4}
+    partial = EvaluationSave(state="draft", criterion_responses={"depth": 4, "notes": "Clear"})
+    assert partial.criterion_responses == {"depth": 4, "notes": "Clear"}
 
     with pytest.raises(ValidationError):
         EvaluationSave(state="final")
     with pytest.raises(ValidationError):
         EvaluationSave(state="final", rating=5)
+    with pytest.raises(ValidationError):
+        EvaluationSave(
+            state="final", rating=5, recommendation="accept",
+            criterion_responses={"comments": "   "},
+        )
     complete = EvaluationSave(state="final", rating=5, recommendation="accept")
     assert complete.rating == 5

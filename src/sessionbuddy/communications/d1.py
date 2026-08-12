@@ -284,7 +284,22 @@ class D1CommunicationsService:
             row = row_mapping(
                 await self.db.prepare(
                     """SELECT u.id,u.email,p.display_name,e.name AS event_name,
+                              -- Prefer the ACCEPTED submission; fall back to newest.
+                              -- queue_speaker_message renders what it sends from this same
+                              -- query, so a newest-wins title here is not a preview artefact:
+                              -- it is the text mailed to the speaker.
                               COALESCE((SELECT s.proposal_title
+                                FROM submission_speakers ss JOIN submissions s
+                                  ON s.organization_id=ss.organization_id
+                                 AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                                JOIN accepted_sessions ac
+                                  ON ac.organization_id=s.organization_id
+                                 AND ac.event_id=s.event_id AND ac.submission_id=s.id
+                                WHERE ss.organization_id=es.organization_id
+                                  AND ss.event_id=es.event_id
+                                  AND ss.event_speaker_id=es.id
+                                ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+                               (SELECT s.proposal_title
                                 FROM submission_speakers ss JOIN submissions s
                                   ON s.organization_id=ss.organization_id
                                  AND s.event_id=ss.event_id AND s.id=ss.submission_id

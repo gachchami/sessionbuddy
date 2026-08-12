@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -220,6 +221,9 @@ def test_repository_wrangler_configs_share_the_dev_database() -> None:
     main = (root / "wrangler.jsonc").read_text(encoding="utf-8")
     activity = (root / "wrangler.activity.jsonc").read_text(encoding="utf-8")
 
-    expected = '"database_id": "354db973-1dcf-4059-ae86-8c9e2c5ea36f"'
-    assert expected in main
-    assert expected in activity
+    database_id_pattern = r'"database_id": "([0-9a-f-]{36})"'
+    main_ids = re.findall(database_id_pattern, main)
+    activity_ids = re.findall(database_id_pattern, activity)
+
+    assert main_ids[-1] == activity_ids[-1]
+    assert main_ids[-1] != "00000000-0000-0000-0000-000000000000"

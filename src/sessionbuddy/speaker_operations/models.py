@@ -135,7 +135,9 @@ class SpeakerPortalView(BaseModel):
 
     event: SpeakerEventView
     events: list[SpeakerEventView]
-    event_speaker_id: str
+    event_speaker_id: str | None = None
+    invitation_id: str | None = None
+    recipient_state: Literal["active", "invited"] = "active"
     public_profile_url: str | None = None
     profile: SpeakerProfileView
     tasks: list[SpeakerTaskView]
@@ -153,6 +155,7 @@ class OnboardingSummary(BaseModel):
     incomplete: int
     overdue: int
     due_soon: int
+    awaiting_acceptance: int
     submitted: int
     accepted: int
     rejected: int
@@ -163,13 +166,17 @@ class OnboardingSummary(BaseModel):
 class OnboardingRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    event_speaker_id: str
+    event_speaker_id: str | None = None
+    invitation_id: str | None = None
+    recipient_state: Literal["active", "invited"] = "active"
     display_name: str
     proposal_title: str
     task_id: str
     task_type: str
     task_title: str
-    state: Literal["open", "completed", "overdue", "due_soon", "waived"]
+    state: Literal[
+        "open", "completed", "overdue", "due_soon", "waived", "awaiting_acceptance"
+    ]
     due_at_ms: int | None
     last_activity_at_ms: int
 

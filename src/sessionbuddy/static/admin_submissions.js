@@ -14,7 +14,13 @@
   const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
-  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null, draftOnly: false };
+  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null, draftOnly: false, editingRoundId: null, pairs: {},
+    // roundSubmitInFlight serialises submits so a double-click cannot issue two POSTs
+    // even if the disabled attribute is bypassed (Enter key, programmatic submit).
+    // roundSaved/roundFormDirty gate the button after a save: resetting the form makes a
+    // repeat click harmless-looking, but it still files a round nobody asked for, so the
+    // next save must follow a deliberate edit.
+    roundSubmitInFlight: false, roundSaved: false, roundFormDirty: false };
   function selectedSubmissionIds() {
     return [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
   }
@@ -29,15 +35,50 @@
       updatePrerequisites();
       return;
     }
+    // Each reviewer owns a row listing the selected proposals, so the organizer can say
+    // "Sam reviews A and B, not C". Adding a reviewer preselects every proposal -- the
+    // common case stays one click -- and unchecking is how you narrow it. The checkboxes
+    // ARE the assignment matrix; roundAssignments() reads them straight back out.
+    const selected = selectedSubmissionIds();
     state.evaluators.forEach((evaluator) => {
+      const row = document.createElement("div");
+      row.className = "reviewer-row";
       const label = document.createElement("label");
+      label.className = "check-label";
       const input = document.createElement("input");
       input.type = "checkbox";
       input.name = "evaluator_user_ids";
       input.value = evaluator.user_id;
-      input.checked = true;
+      input.checked = evaluator.in_round !== false;
       label.append(input, evaluator.display_name);
-      evaluatorChoices.append(label);
+      row.append(label);
+      if (!selected.length) {
+        const hint = document.createElement("p");
+        hint.className = "help";
+        hint.textContent = "Select proposals above to choose which ones this reviewer sees.";
+        row.append(hint);
+      } else {
+        const proposals = document.createElement("div");
+        proposals.className = "reviewer-row__proposals";
+        selected.forEach((submissionId) => {
+          const item = state.submissions.find((entry) => entry.id === submissionId);
+          const pair = document.createElement("label");
+          pair.className = "check-label";
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.dataset.pairEvaluator = evaluator.user_id;
+          box.dataset.pairSubmission = submissionId;
+          // Default on: assigning a new reviewer to everything currently selected is the
+          // behaviour organizers already expect, and unchecking is cheaper than picking.
+          const known = state.pairs && state.pairs[`${submissionId}:${evaluator.user_id}`];
+          box.checked = known === undefined ? true : Boolean(known);
+          box.addEventListener("change", markRoundFormDirty);
+          pair.append(box, item ? item.proposal_title : submissionId);
+          proposals.append(pair);
+        });
+        row.append(proposals);
+      }
+      evaluatorChoices.append(row);
     });
     updatePrerequisites();
   }
@@ -52,7 +93,15 @@
     label.textContent = "Reviewer email";
     const input = document.createElement("input");
     input.id = "reviewer-email";
-    input.type = "email";
+    // Deliberately type="text", not type="email". This lookup box sits INSIDE
+    // #round-form, whose submit ends in form.reportValidity() -- so anything that
+    // can make this field invalid silently blocks "Save draft round" for a field
+    // that contributes nothing to the round payload. A half-typed address in a
+    // box the organizer never submitted must not be able to veto the round.
+    // The format is checked in the click handler instead, and reported on the
+    // status line below, where it is visible to screen readers and automation.
+    input.type = "text";
+    input.inputMode = "email";
     input.autocomplete = "off";
     input.maxLength = 320;
     input.placeholder = "reviewer@example.com";
@@ -73,13 +122,31 @@
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
     choices.before(help, row, status);
+    const reportLookup = (message) => {
+      status.textContent = message;
+      status.classList.add("error");
+      input.focus();
+    };
     button.addEventListener("click", async () => {
-      if (!input.value.trim()) {
-        input.setCustomValidity("Enter the reviewer's exact email address.");
-      } else {
-        input.setCustomValidity("");
+      // Never setCustomValidity() on this field. It is inside #round-form, and a
+      // custom message set here is cleared only by a later successful click on
+      // this same button -- not by typing, not by submitting. One click on "Add
+      // reviewer" with an empty box (which is the state this handler leaves
+      // behind after a successful add) therefore poisons the round form
+      // permanently: every "Save draft round" afterwards fails reportValidity()
+      // with no feedback but a native bubble, which is absent from the
+      // accessibility tree. An eval agent spent 44 clicks and hit its turn cap
+      // on exactly that.
+      const email = input.value.trim();
+      if (!email) {
+        reportLookup("Enter the reviewer's exact email address.");
+        return;
       }
-      if (!input.reportValidity()) return;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        reportLookup("Enter a valid email address, for example reviewer@example.com.");
+        return;
+      }
+      status.classList.remove("error");
       status.textContent = "Checking that Reviewer account…";
       try {
         const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators?email=${encodeURIComponent(input.value.trim())}`);
@@ -89,13 +156,36 @@
           return;
         }
         if (!state.evaluators.some((item) => item.user_id === reviewer.user_id)) state.evaluators.push(reviewer);
+        // Preselect every currently selected proposal for the new reviewer, matching the
+        // API's now-required submission_ids rather than relying on a server-side fan-out.
+        state.pairs = state.pairs || {};
+        for (const submissionId of selectedSubmissionIds()) {
+          state.pairs[`${submissionId}:${reviewer.user_id}`] = true;
+        }
         renderEvaluatorChoices();
+        markRoundFormDirty();
         status.textContent = `${reviewer.display_name} added to this round.`;
         input.value = "";
       } catch (error) {
         status.textContent = window.SessionBuddyApi.message(error, "The Reviewer account could not be checked.");
       }
     });
+  }
+  function markRoundFormDirty() {
+    if (state.roundFormDirty) return;
+    state.roundFormDirty = true;
+    updatePrerequisites();
+  }
+  function roundAssignments() {
+    // The explicit pair list the API now stores verbatim. Returning it means
+    // assignment_strategy is only ever used to seed a NEW round's matrix, never to
+    // regenerate one the organizer has edited.
+    return [...document.querySelectorAll("[data-pair-evaluator]")]
+      .filter((box) => box.checked)
+      .map((box) => ({
+        submission_id: box.dataset.pairSubmission,
+        evaluator_user_id: box.dataset.pairEvaluator,
+      }));
   }
   function updateSelectedCount() {
     const count = selectedSubmissionIds().length;
@@ -110,10 +200,12 @@
     }
   }
   function setEligibleSelection(selected) {
+    // Only ever reached from the Select/Clear buttons, so this is always a user action.
     document.querySelectorAll('input[name="submission_ids"]:not(:disabled)').forEach((input) => {
       input.checked = selected;
     });
     updateSelectedCount();
+    markRoundFormDirty();
   }
   function showRoundError(message) {
     byId("round-disclosure").open = true;
@@ -145,9 +237,47 @@
         ? `Before opening a round: ${missing.join("; ")}. You can still save a draft.`
         : "Choose proposals and reviewers, then open the round.";
     // Drafting is always available; only opening needs a proposal and a reviewer.
-    byId("open-round").disabled = missing.length > 0 && !draftOnly && !isDraftSubmission(byId("round-form"));
+    const blockedByPrerequisites =
+      missing.length > 0 && !draftOnly && !isDraftSubmission(byId("round-form"));
+    const awaitingIntent = state.roundSaved && !state.roundFormDirty;
+    if (awaitingIntent) {
+      prerequisites.textContent =
+        "Saved. Change a setting, or select proposals or reviewers, to start another round.";
+    }
+    byId("open-round").disabled = blockedByPrerequisites || awaitingIntent;
   }
   function addRemoveButton(row) {
+    if (!row.querySelector('[name="criterion_type"]')) {
+      const typeLabel = document.createElement("label");
+      typeLabel.textContent = "Response";
+      const type = document.createElement("select");
+      type.name = "criterion_type";
+      [["score", "Score"], ["select", "Dropdown"], ["text", "Free text"]].forEach(([value, label]) => type.add(new Option(label, value)));
+      typeLabel.append(type);
+      const optionsLabel = document.createElement("label");
+      optionsLabel.textContent = "Choices";
+      optionsLabel.hidden = true;
+      const options = document.createElement("input");
+      options.name = "criterion_options";
+      options.placeholder = "Excellent, Good, Needs work";
+      optionsLabel.append(options);
+      const requiredLabel = document.createElement("label");
+      requiredLabel.className = "check-label";
+      const required = document.createElement("input");
+      required.type = "checkbox"; required.name = "criterion_required"; required.checked = true;
+      requiredLabel.append(required, " Required");
+      const weightLabel = row.querySelector('input[name="criterion_weight"]')?.closest("label");
+      const updateType = () => {
+        const scored = type.value === "score";
+        weightLabel.hidden = !scored;
+        weightLabel.querySelector("input").required = scored;
+        optionsLabel.hidden = type.value !== "select";
+        options.required = type.value === "select";
+      };
+      type.addEventListener("change", updateType);
+      row.append(typeLabel, optionsLabel, requiredLabel);
+      updateType();
+    }
     if (row.querySelector("button")) return;
     const remove = document.createElement("button");
     remove.type = "button"; remove.className = "secondary"; remove.textContent = "Remove";
@@ -191,6 +321,10 @@
       const exportLink = document.createElement("a"); exportLink.className = "round-ledger__export"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
       actions.append(monitor, exportLink);
       if (round.status === "draft") {
+        const editDraft = document.createElement("button");
+        editDraft.type = "button"; editDraft.className = "secondary"; editDraft.textContent = "Edit draft";
+        editDraft.addEventListener("click", () => editDraftRound(round).catch((error) => showRoundError(window.SessionBuddyApi.message(error))));
+        actions.append(editDraft);
         const openDraft = document.createElement("button");
         openDraft.type = "button"; openDraft.textContent = "Start review";
         openDraft.addEventListener("click", () => openDraftRound(round, openDraft));
@@ -198,6 +332,49 @@
       }
       card.append(stateMarker, content, actions); container.append(card);
     }
+  }
+  async function editDraftRound(round) {
+    const draft = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds/${encodeURIComponent(round.id)}/draft`);
+    state.editingRoundId = round.id;
+    const form = byId("round-form");
+    for (const [name, value] of Object.entries({ name: draft.name, rating_min: draft.rating_min, rating_max: draft.rating_max, recommendations: draft.recommendations.join(", "), evaluator_guidance: draft.evaluator_guidance, assignment_strategy: draft.assignment_strategy })) form.elements[name].value = value;
+    form.elements.blind_review.checked = draft.blind_review;
+    form.elements.comment_required.checked = draft.comment_required;
+    form.elements.round_status.value = "draft";
+    form.elements.review_opens_at.value = millisInputValue(draft.review_opens_at_ms);
+    form.elements.review_closes_at.value = millisInputValue(draft.review_closes_at_ms);
+    const criteria = byId("criteria");
+    criteria.replaceChildren();
+    for (const criterion of draft.criteria) {
+      const row = document.createElement("div"); row.className = "form-grid criterion-row";
+      const label = document.createElement("label"); label.textContent = "Criterion";
+      const labelInput = document.createElement("input"); labelInput.name = "criterion_label"; labelInput.required = true; labelInput.maxLength = 120; labelInput.value = criterion.label; label.append(labelInput);
+      const weight = document.createElement("label"); weight.textContent = "Weight";
+      const weightInput = document.createElement("input"); weightInput.name = "criterion_weight"; weightInput.type = "number"; weightInput.min = 1; weightInput.max = 100; weightInput.value = criterion.weight || 1; weight.append(weightInput);
+      row.append(label, weight); addRemoveButton(row); criteria.append(row);
+      row.querySelector('[name="criterion_type"]').value = criterion.response_type;
+      row.querySelector('[name="criterion_options"]').value = (criterion.options || []).join(", ");
+      row.querySelector('[name="criterion_required"]').checked = criterion.required;
+      row.querySelector('[name="criterion_type"]').dispatchEvent(new Event("change"));
+    }
+    document.querySelectorAll('input[name="submission_ids"]').forEach((input) => { input.checked = draft.submission_ids.includes(input.value); });
+    // Restore the stored pairs. Without this the checkboxes would default every reviewer
+    // back to "reviews everything" and the next save would quietly widen the round.
+    state.pairs = {};
+    for (const submissionId of draft.submission_ids) {
+      for (const evaluatorId of draft.evaluator_user_ids) {
+        state.pairs[`${submissionId}:${evaluatorId}`] = false;
+      }
+    }
+    for (const pair of draft.assignments || []) {
+      state.pairs[`${pair.submission_id}:${pair.evaluator_user_id}`] = true;
+    }
+    for (const userId of draft.evaluator_user_ids) if (!state.evaluators.some((item) => item.user_id === userId)) state.evaluators.push({ user_id: userId, display_name: "Existing reviewer" });
+    renderEvaluatorChoices();
+    byId("round-disclosure").open = true;
+    byId("open-round").textContent = "Save draft changes";
+    byId("round-disclosure").scrollIntoView({ block: "start" });
+    updateSelectedCount();
   }
   function showRound(round) {
     const label = document.createElement("div");
@@ -311,6 +488,12 @@
     return Object.fromEntries(parts
       .filter(({ type }) => type !== "literal")
       .map(({ type, value: part }) => [type, Number(part)]));
+  }
+  function millisInputValue(value) {
+    if (!value) return "";
+    const parts = partsInTimeZone(value);
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}`;
   }
   function inputMillis(value) {
     if (!value) return null;
@@ -572,7 +755,7 @@
           selection.value = item.id;
           selection.checked = false;
           selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
-          selection.addEventListener("change", updateSelectedCount);
+          selection.addEventListener("change", () => { updateSelectedCount(); markRoundFormDirty(); });
           selectionCell.append(selection);
         } else {
           const decided = document.createElement("span");
@@ -672,7 +855,9 @@
       : opens !== null && closes !== null && closes <= opens
         ? "Review close must be after review open."
         : "");
-    const weights = [...form.querySelectorAll('input[name="criterion_weight"]')].map((input) => Number(input.value));
+    const weights = [...form.querySelectorAll('.criterion-row')]
+      .filter((row) => row.querySelector('[name="criterion_type"]').value === "score")
+      .map((row) => Number(row.querySelector('[name="criterion_weight"]').value));
     const weightError = weights.reduce((total, value) => total + value, 0) === 100 ? "" : "Criterion weights must total 100.";
     form.querySelector('input[name="criterion_weight"]')?.setCustomValidity(weightError);
     // A draft is a work in progress: it may be saved with no proposals and no reviewers
@@ -691,53 +876,132 @@
     return form.reportValidity();
   }
   byId("round-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  // Any deliberate edit inside the form, or any change to the proposal selection, counts
+  // as intent to build the next round and lifts the post-save gate.
+  byId("round-form").addEventListener("input", markRoundFormDirty);
+  byId("round-form").addEventListener("change", markRoundFormDirty);
   byId("round-form").elements.round_status?.addEventListener("change", updatePrerequisites);
   byId("round-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (state.roundSubmitInFlight) return;
+    // The post-save gate must hold HERE, not only via the button's disabled attribute.
+    // Measured: an Enter keypress never reaches this handler (the disabled default button
+    // absorbs it), but form.requestSubmit() and a dispatched submit event both do, with
+    // roundSaved=true/dirty=false -- and were stopped only incidentally, by validation
+    // failing against a form the reset had just emptied. Incidental is not a guard.
+    if (state.roundSaved && !state.roundFormDirty) return;
+    state.roundSubmitInFlight = true;
     const button = byId("open-round");
     button.disabled = true;
     try {
       if (!validateRound(event.currentTarget)) { button.disabled = false; return; }
       const values = new FormData(event.currentTarget);
       const recommendations = String(values.get("recommendations") || "").split(",").map((choice) => choice.trim()).filter(Boolean);
-      const labels = values.getAll("criterion_label").map((value) => String(value).trim());
-      const weights = values.getAll("criterion_weight").map(Number);
       const usedKeys = new Set();
-      const criteria = labels.map((label, index) => {
+      const criteria = [...event.currentTarget.querySelectorAll(".criterion-row")].map((row, index) => {
+        const label = row.querySelector('[name="criterion_label"]').value.trim();
+        const responseType = row.querySelector('[name="criterion_type"]').value;
         const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32) || `criterion_${index + 1}`;
         let key = /^[a-z]/.test(base) ? base : `criterion_${base}`;
         while (usedKeys.has(key)) key = `${key.slice(0, 36)}_${index + 1}`;
         usedKeys.add(key);
-        return { key, label, weight: weights[index] };
+        const options = row.querySelector('[name="criterion_options"]').value.split(",").map((option) => option.trim()).filter(Boolean);
+        return { key, label, response_type: responseType, required: row.querySelector('[name="criterion_required"]').checked, weight: responseType === "score" ? Number(row.querySelector('[name="criterion_weight"]').value) : null, options: responseType === "select" ? options : [] };
       });
       const roundStatus = isDraftSubmission(event.currentTarget) ? "draft" : "open";
       const reviewOpens = inputMillis(String(values.get("review_opens_at") || ""));
       const reviewCloses = inputMillis(String(values.get("review_closes_at") || ""));
-      const round = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
-        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), status: roundStatus, submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids") })
+      const editingRoundId = state.editingRoundId;
+      const endpoint = editingRoundId ? `/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds/${encodeURIComponent(editingRoundId)}/draft` : `/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`;
+      const headers = { "content-type": "application/json", "x-csrf-token": state.csrf };
+      if (!editingRoundId) headers["idempotency-key"] = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+      const round = await api(endpoint, {
+        method: editingRoundId ? "PUT" : "POST",
+        headers,
+        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), status: roundStatus, submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids"), assignments: roundAssignments() })
       });
+      state.editingRoundId = null;
       byId("status").classList.remove("error");
       byId("status").textContent = round.status === "draft"
         ? `${round.name} saved as a draft with ${round.assignment_count} assignments across ${round.evaluator_count} reviewers. Open it when the current round closes.`
         : `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
       renderRoundHistory([round, ...state.rounds.filter((item) => item.id !== round.id)]);
       if (round.status === "open") showRound(round);
-      else byId("open-round").disabled = false;
+      // Saving must leave the form usable for the NEXT round but empty of this one.
+      // Usable, because preparing round two while round one runs is legal and the
+      // organizer should not have to reload. Empty, because a form still holding the
+      // round it just created is a duplicate one click away, and gives no way to tell
+      // a save from a no-op. resetRoundForm() recomputes the button state too, so it
+      // subsumes the updatePrerequisites() call this replaced.
+      resetRoundForm();
+      byId("status").focus();
     } catch (error) {
       showRoundError(window.SessionBuddyApi.message(error));
       button.disabled = false;
+    } finally {
+      state.roundSubmitInFlight = false;
     }
   });
-  byId("add-criterion").addEventListener("click", () => {
+  function appendCriterionRow(values = {}) {
     const container = byId("criteria");
-    if (container.querySelectorAll(".criterion-row").length >= 8) { byId("status").textContent = "A scorecard can contain up to eight criteria."; return; }
     const row = document.createElement("div"); row.className = "form-grid criterion-row";
     const label = document.createElement("label"); label.textContent = "Criterion"; const name = document.createElement("input"); name.name = "criterion_label"; name.required = true; name.maxLength = 120; label.append(name);
     const weightLabel = document.createElement("label"); weightLabel.textContent = "Weight"; const weight = document.createElement("input"); weight.name = "criterion_weight"; weight.type = "number"; weight.min = "1"; weight.max = "100"; weight.required = true; weightLabel.append(weight);
-    row.append(label, weightLabel); addRemoveButton(row); container.append(row); name.focus();
+    row.append(label, weightLabel); addRemoveButton(row); container.append(row);
+    name.value = values.label ?? "";
+    weight.value = values.weight ?? "";
+    if (values.type) {
+      row.querySelector('[name="criterion_type"]').value = values.type;
+      row.querySelector('[name="criterion_options"]').value = values.options ?? "";
+      row.querySelector('[name="criterion_required"]').checked = values.required !== false;
+      row.querySelector('[name="criterion_type"]').dispatchEvent(new Event("change"));
+    }
+    return { row, name };
+  }
+  byId("add-criterion").addEventListener("click", () => {
+    const container = byId("criteria");
+    if (container.querySelectorAll(".criterion-row").length >= 8) { byId("status").textContent = "A scorecard can contain up to eight criteria."; return; }
+    appendCriterionRow().name.focus();
   });
+  // Captured once, after addRemoveButton() has augmented the markup rows, so a reset
+  // restores the scorecard the organizer started from rather than whatever the last
+  // round left behind.
+  const defaultCriteria = [...byId("criteria").querySelectorAll(".criterion-row")].map((row) => ({
+    label: row.querySelector('[name="criterion_label"]').value,
+    weight: row.querySelector('[name="criterion_weight"]').value,
+    type: row.querySelector('[name="criterion_type"]')?.value,
+    options: row.querySelector('[name="criterion_options"]')?.value,
+    required: row.querySelector('[name="criterion_required"]')?.checked,
+  }));
+  // A saved round must leave the form visibly spent. Without this the create form sits
+  // there still holding the round it just created -- same name, same everything, button
+  // enabled -- so one more click silently files a duplicate, and there is no way to tell
+  // a successful save from a no-op because nothing on screen changed. Verified: two
+  // clicks produced two identically named rounds.
+  function resetRoundForm() {
+    const form = byId("round-form");
+    state.editingRoundId = null;
+    state.roundSaved = true;
+    state.roundFormDirty = false;
+    form.reset();
+    byId("criteria").replaceChildren();
+    defaultCriteria.forEach((criterion) => appendCriterionRow(criterion));
+    document.querySelectorAll('input[name="submission_ids"]').forEach((input) => { input.checked = false; });
+    // The reviewer pool is per round. Carrying it over silently gives the next round a
+    // pool the organizer never chose -- which is exactly what happened in the eval run.
+    state.evaluators = [];
+    state.pairs = {};
+    renderEvaluatorChoices();
+    const lookupStatus = byId("reviewer-lookup-status");
+    if (lookupStatus) { lookupStatus.textContent = ""; lookupStatus.classList.remove("error"); }
+    // form.reset() restores round_status to its markup default of "open", but
+    // setDraftOnly() has disabled that option while another round runs -- leaving a
+    // disabled option selected. Put the select back where setDraftOnly() had it.
+    if (state.draftOnly && form.elements.round_status) form.elements.round_status.value = "draft";
+    byId("open-round").textContent = state.draftOnly ? "Save draft round" : "Open evaluation round";
+    updateSelectedCount();
+    updatePrerequisites();
+  }
   installReviewerLookup();
   load();
 })();

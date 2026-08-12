@@ -64,11 +64,23 @@ async def _admin(client, connection: sqlite3.Connection) -> tuple[str, str, str]
 
 
 def _seed_speaker_with_two_submissions(
-    connection: sqlite3.Connection, organization_id: str, event_id: str
+    connection: sqlite3.Connection,
+    organization_id: str,
+    event_id: str,
+    *,
+    speaker_id: str = "speaker-1",
+    person_id: str = "person-1",
+    link_user: bool = False,
 ) -> str:
     """One speaker, two proposals: the ACCEPTED one submitted FIRST, the
     rejected one submitted LATER (the eval-run shape that broke every
-    attribution surface)."""
+    attribution surface).
+
+    `speaker_id` / `person_id` are overridable because the speaker-message
+    endpoints validate `event_speaker_ids` as 36-character UUIDs, so those
+    surfaces cannot be reached with the short literal ids used elsewhere.
+    `link_user` additionally gives the speaker a signed-in identity and an
+    active speaker membership, which the email preview joins against."""
     user_id = connection.execute(
         "SELECT id FROM users WHERE normalized_email='admin@example.com'"
     ).fetchone()[0]
@@ -117,19 +129,44 @@ def _seed_speaker_with_two_submissions(
            VALUES ('accepted-1',?,?,'submission-accepted','decision-accept',3000)""",
         (organization_id, event_id),
     )
+    speaker_user_id = None
+    if link_user:
+        speaker_user_id = f"user-{person_id}"
+        connection.execute(
+            """INSERT INTO users
+               (id,email,normalized_email,status,version,authorization_version,
+                created_at_ms,updated_at_ms,display_name)
+               VALUES (?,'priya@example.com','priya@example.com','active',1,1,
+                       1000,1000,'Priya Raman')""",
+            (speaker_user_id,),
+        )
+        connection.execute(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,version,
+                created_at_ms,updated_at_ms)
+               VALUES (?,?,?,'member','active',1,1000,1000)""",
+            (f"om-{person_id}", organization_id, speaker_user_id),
+        )
+        connection.execute(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,version,
+                created_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,'speaker','active',1,1000,1000)""",
+            (f"em-{person_id}", organization_id, event_id, speaker_user_id),
+        )
     connection.execute(
         """INSERT INTO people
-           (id,organization_id,display_name,created_at_ms,updated_at_ms)
-           VALUES ('person-1',?,'Priya Raman',1000,1000)""",
-        (organization_id,),
+           (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+           VALUES (?,?,?,'Priya Raman',1000,1000)""",
+        (person_id, organization_id, speaker_user_id),
     )
     connection.execute(
         """INSERT INTO event_speakers
            (id,organization_id,event_id,person_id,status,selection_status,
             accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
-           VALUES ('speaker-1',?,?,'person-1','onboarding','accepted',
+           VALUES (?,?,?,?,'onboarding','accepted',
                    3000,3000,1000,1000)""",
-        (organization_id, event_id),
+        (speaker_id, organization_id, event_id, person_id),
     )
     for ssid, sid in (
         ("link-accepted", "submission-accepted"),
@@ -139,19 +176,19 @@ def _seed_speaker_with_two_submissions(
             """INSERT INTO submission_speakers
                (id,organization_id,event_id,submission_id,event_speaker_id,role,
                 snapshot_name,created_at_ms)
-               VALUES (?,?,?,?,'speaker-1','primary','Priya Raman',1000)""",
-            (ssid, organization_id, event_id, sid),
+               VALUES (?,?,?,?,?,'primary','Priya Raman',1000)""",
+            (f"{ssid}-{speaker_id}", organization_id, event_id, sid, speaker_id),
         )
     connection.execute(
         """INSERT INTO speaker_tasks
            (id,organization_id,event_id,event_speaker_id,task_type,title,
             destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
-           VALUES ('task-1',?,?,'speaker-1','profile','Complete bio and profile',
+           VALUES (?,?,?,?,'profile','Complete bio and profile',
                    'profile','open',1900000000000,3000,3000)""",
-        (organization_id, event_id),
+        (f"task-{speaker_id}", organization_id, event_id, speaker_id),
     )
     connection.commit()
-    return "speaker-1"
+    return speaker_id
 
 
 async def test_speaker_surfaces_attribute_the_accepted_submission(
@@ -243,3 +280,169 @@ async def test_speaker_without_accepted_submission_falls_back_to_latest(
         )
         # With nothing accepted, the newest submission is the best signal.
         assert target["proposal_title"] == "Rejected talk"
+
+
+async def test_registered_speaker_can_receive_custom_onboarding_tasks(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection, organization_id, event_id
+        )
+        connection.execute(
+            "UPDATE event_speakers SET selection_status='submitted' WHERE id=?",
+            (speaker_id,),
+        )
+        connection.commit()
+
+        created = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "registered-speaker-task",
+            },
+            json={
+                "event_speaker_id": speaker_id,
+                "submission_id": None,
+                "title": "Confirm availability",
+                "help_text": "Share your arrival time.",
+                "due_at_ms": 1_900_000_000_000,
+                "fields": [],
+            },
+        )
+
+        assert created.status_code == 201, created.text
+        assert created.json()["owner_type"] == "event_speaker"
+        assert created.json()["event_speaker_id"] == speaker_id
+        assert created.json()["invitation_id"] is None
+
+
+async def test_pending_invitation_can_receive_task_before_registration(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        inviter_id = connection.execute("SELECT id FROM users LIMIT 1").fetchone()[0]
+        invitation_id = "77777777-7777-4777-8777-777777777777"
+        now = 1_800_000_000_000
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,display_name)
+               VALUES(?,?,?,?,?,'speaker','pending',?,?,?,?,?)""",
+            (
+                invitation_id, organization_id, event_id, "marcus@example.test",
+                "marcus@example.test", inviter_id, now + 86_400_000, now, now,
+                "Marcus Okafor",
+            ),
+        )
+        connection.commit()
+
+        targets = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
+        assert any(
+            target["event_speaker_id"] == invitation_id
+            and target["selection_status"] == "invited"
+            for target in targets.json()["data"]
+        )
+        created = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks",
+            headers={
+                "origin": "https://test", "x-csrf-token": csrf,
+                "idempotency-key": "pending-speaker-task",
+            },
+            json={
+                "event_speaker_id": invitation_id, "submission_id": None,
+                "title": "Confirm availability", "help_text": "", "fields": [],
+            },
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["owner_type"] == "invitation"
+        assert created.json()["event_speaker_id"] is None
+        assert created.json()["invitation_id"] == invitation_id
+        task = connection.execute(
+            "SELECT event_speaker_id,pending_invitation_id FROM speaker_tasks WHERE id=?",
+            (created.json()["id"],),
+        ).fetchone()
+        assert tuple(task) == (None, invitation_id)
+
+        dashboard = await client.get(
+            f"/api/v1/admin/events/{event_id}/onboarding", params={"limit": 50}
+        )
+        assert dashboard.status_code == 200, dashboard.text
+        invitation_row = next(
+            row for row in dashboard.json()["data"] if row["task_id"] == created.json()["id"]
+        )
+        assert invitation_row["event_speaker_id"] is None
+        assert invitation_row["invitation_id"] == invitation_id
+        assert invitation_row["recipient_state"] == "invited"
+        assert invitation_row["state"] == "awaiting_acceptance"
+        assert dashboard.json()["summary"]["awaiting_acceptance"] == 1
+        assert dashboard.json()["summary"]["incomplete"] == 0
+
+
+SPEAKER_UUID = "11111111-1111-4111-8111-111111111111"
+
+
+async def test_email_directory_and_profile_attribute_the_accepted_submission(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    """The three surfaces the original attribution sweep missed.
+
+    The welcome email is the important one: queue_speaker_message renders what
+    it sends from preview_speaker_message, so a newest-wins title here is not a
+    preview artefact — it is the wrong session name mailed to a real speaker.
+    """
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+
+        # 1. Welcome-email preview — and therefore the send path.
+        preview = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/preview",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={
+                "event_speaker_ids": [speaker_id],
+                "subject": "Welcome to {{event.name}}",
+                "body_text": "We are excited to have you present {{submission.title}}.",
+            },
+        )
+        assert preview.status_code == 200, preview.text
+        recipient = preview.json()["recipients"][0]
+        assert "Accepted talk" in recipient["html_body"], (
+            "the welcome email names the rejected proposal as the speaker's session"
+        )
+        assert "Rejected talk" not in recipient["html_body"]
+
+        # 2. Organization-wide speaker directory.
+        directory = await client.get(
+            f"/api/v1/admin/organizations/{organization_id}/people"
+        )
+        assert directory.status_code == 200, directory.text
+        person = next(
+            row for row in directory.json()["data"]
+            if row["person_id"] == "person-priya"
+        )
+        listed = next(
+            row for row in person["participations"]
+            if row["event_speaker_id"] == speaker_id
+        )
+        assert listed["proposal_title"] == "Accepted talk"
+
+        # 3. Speaker profile page participation list.
+        profile = await client.get("/api/v1/speaker-profiles/person-priya")
+        assert profile.status_code == 200, profile.text
+        participations = profile.json()["participations"]
+        assert participations, profile.text
+        assert all(row["proposal_title"] == "Accepted talk" for row in participations)

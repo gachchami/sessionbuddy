@@ -91,7 +91,9 @@
       const td = make("td", value, index === 1 ? "task-name" : index === 2 && isOverdue(row) ? "overdue" : ""); tr.append(td);
     });
     const action = document.createElement("td");
-    if (["open", "overdue", "due_soon"].includes(row.state)) {
+    if (row.state === "awaiting_acceptance") {
+      action.append(make("span", "Awaiting acceptance", "status-chip status-chip--pending"));
+    } else if (["open", "overdue", "due_soon"].includes(row.state)) {
       const button = make("button", "Send reminder", "compact secondary"); button.type = "button";
       button.addEventListener("click", () => sendReminder(row, button)); action.append(button);
     } else action.append(make("span", row.state === "completed" ? "Completed" : "Waived", "muted"));
@@ -109,7 +111,9 @@
       list.append(make("dt", label), make("dd", value, label === "Due" && isOverdue(row) ? "overdue" : ""));
     });
     item.append(list);
-    if (["open", "overdue", "due_soon"].includes(row.state)) {
+    if (row.state === "awaiting_acceptance") {
+      item.append(make("p", "Awaiting acceptance", "status-chip status-chip--pending"));
+    } else if (["open", "overdue", "due_soon"].includes(row.state)) {
       const reminder = make("button", "Send reminder", "compact secondary"); reminder.type = "button";
       reminder.addEventListener("click", () => sendReminder(row, reminder)); item.append(reminder);
     }
@@ -146,6 +150,7 @@
     byId("count-incomplete").textContent = summary.incomplete;
     byId("count-overdue").textContent = summary.overdue;
     byId("count-due-soon").textContent = summary.due_soon;
+    byId("count-awaiting-acceptance").textContent = summary.awaiting_acceptance;
     const incoming = data.data;
     byId("list-title").textContent = selectedFilters().state === "open" ? "Outstanding tasks" : "Speaker tasks";
     if (!append) {

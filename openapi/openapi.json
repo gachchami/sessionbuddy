@@ -929,11 +929,37 @@
             "title": "Due At Ms"
           },
           "event_speaker_id": {
-            "title": "Event Speaker Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Speaker Id"
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "invitation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Id"
+          },
+          "owner_type": {
+            "enum": [
+              "event_speaker",
+              "invitation"
+            ],
+            "title": "Owner Type",
             "type": "string"
           },
           "state": {
@@ -952,7 +978,7 @@
         },
         "required": [
           "id",
-          "event_speaker_id",
+          "owner_type",
           "title",
           "state",
           "due_at_ms"
@@ -3049,11 +3075,18 @@
             "title": "Criteria",
             "type": "array"
           },
-          "criterion_scores": {
+          "criterion_responses": {
             "additionalProperties": {
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             },
-            "title": "Criterion Scores",
+            "title": "Criterion Responses",
             "type": "object"
           },
           "evaluation_state": {
@@ -3187,17 +3220,46 @@
             "title": "Label",
             "type": "string"
           },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Options",
+            "type": "array"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "response_type": {
+            "default": "score",
+            "enum": [
+              "score",
+              "select",
+              "text"
+            ],
+            "title": "Response Type",
+            "type": "string"
+          },
           "weight": {
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Weight",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
           }
         },
         "required": [
           "key",
-          "label",
-          "weight"
+          "label"
         ],
         "title": "EvaluationCriterion",
         "type": "object"
@@ -3301,6 +3363,20 @@
             ],
             "title": "Assignment Strategy",
             "type": "string"
+          },
+          "assignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RoundAssignment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignments"
           },
           "blind_review": {
             "default": true,
@@ -3588,12 +3664,19 @@
       "EvaluationSave": {
         "additionalProperties": false,
         "properties": {
-          "criterion_scores": {
+          "criterion_responses": {
             "additionalProperties": {
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             },
             "maxProperties": 8,
-            "title": "Criterion Scores",
+            "title": "Criterion Responses",
             "type": "object"
           },
           "internal_comment": {
@@ -3650,12 +3733,19 @@
             "title": "Assignment Id",
             "type": "string"
           },
-          "criterion_scores": {
+          "criterion_responses": {
             "additionalProperties": {
-              "type": "integer"
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             },
             "maxProperties": 8,
-            "title": "Criterion Scores",
+            "title": "Criterion Responses",
             "type": "object"
           },
           "id": {
@@ -5507,6 +5597,12 @@
       "InvitationCreate": {
         "additionalProperties": false,
         "properties": {
+          "biography": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Biography",
+            "type": "string"
+          },
           "company": {
             "default": "",
             "maxLength": 200,
@@ -5560,6 +5656,11 @@
         "properties": {
           "access_url": {
             "title": "Access Url",
+            "type": "string"
+          },
+          "biography": {
+            "default": "",
+            "title": "Biography",
             "type": "string"
           },
           "company": {
@@ -5639,6 +5740,11 @@
       },
       "InvitationView": {
         "properties": {
+          "biography": {
+            "default": "",
+            "title": "Biography",
+            "type": "string"
+          },
           "company": {
             "default": "",
             "title": "Company",
@@ -5854,8 +5960,26 @@
             "title": "Due At Ms"
           },
           "event_speaker_id": {
-            "title": "Event Speaker Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Speaker Id"
+          },
+          "invitation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Id"
           },
           "last_activity_at_ms": {
             "title": "Last Activity At Ms",
@@ -5865,13 +5989,23 @@
             "title": "Proposal Title",
             "type": "string"
           },
+          "recipient_state": {
+            "default": "active",
+            "enum": [
+              "active",
+              "invited"
+            ],
+            "title": "Recipient State",
+            "type": "string"
+          },
           "state": {
             "enum": [
               "open",
               "completed",
               "overdue",
               "due_soon",
-              "waived"
+              "waived",
+              "awaiting_acceptance"
             ],
             "title": "State",
             "type": "string"
@@ -5890,7 +6024,6 @@
           }
         },
         "required": [
-          "event_speaker_id",
           "display_name",
           "proposal_title",
           "task_id",
@@ -5908,6 +6041,10 @@
         "properties": {
           "accepted": {
             "title": "Accepted",
+            "type": "integer"
+          },
+          "awaiting_acceptance": {
+            "title": "Awaiting Acceptance",
             "type": "integer"
           },
           "complete": {
@@ -5948,6 +6085,7 @@
           "incomplete",
           "overdue",
           "due_soon",
+          "awaiting_acceptance",
           "submitted",
           "accepted",
           "rejected",
@@ -7887,6 +8025,30 @@
         "title": "ResourceView",
         "type": "object"
       },
+      "RoundAssignment": {
+        "additionalProperties": false,
+        "description": "One reviewer against one proposal.\n\nThe unit the organizer actually manipulates. Two flat lists plus a strategy could only\ndescribe a matrix, so \"Sam reviews A and B but not C\" was unrepresentable -- adding Sam\nfanned him out across every proposal in the round.",
+        "properties": {
+          "evaluator_user_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Evaluator User Id",
+            "type": "string"
+          },
+          "submission_id": {
+            "maxLength": 36,
+            "minLength": 36,
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "evaluator_user_id"
+        ],
+        "title": "RoundAssignment",
+        "type": "object"
+      },
       "RoundEvaluatorAdd": {
         "additionalProperties": false,
         "properties": {
@@ -7895,10 +8057,20 @@
             "minLength": 36,
             "title": "Evaluator User Id",
             "type": "string"
+          },
+          "submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Submission Ids",
+            "type": "array"
           }
         },
         "required": [
-          "evaluator_user_id"
+          "evaluator_user_id",
+          "submission_ids"
         ],
         "title": "RoundEvaluatorAdd",
         "type": "object"
@@ -8830,8 +9002,15 @@
             "$ref": "#/components/schemas/SpeakerEventView"
           },
           "event_speaker_id": {
-            "title": "Event Speaker Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Speaker Id"
           },
           "events": {
             "items": {
@@ -8839,6 +9018,17 @@
             },
             "title": "Events",
             "type": "array"
+          },
+          "invitation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Id"
           },
           "notifications": {
             "items": {
@@ -8871,6 +9061,15 @@
             ],
             "title": "Public Profile Url"
           },
+          "recipient_state": {
+            "default": "active",
+            "enum": [
+              "active",
+              "invited"
+            ],
+            "title": "Recipient State",
+            "type": "string"
+          },
           "submissions": {
             "items": {
               "$ref": "#/components/schemas/SpeakerSubmissionView"
@@ -8893,7 +9092,6 @@
         "required": [
           "event",
           "events",
-          "event_speaker_id",
           "profile",
           "tasks",
           "submissions",
@@ -9968,6 +10166,11 @@
             "default": "",
             "title": "Internal Reason",
             "type": "string"
+          },
+          "needs_reassignment": {
+            "default": false,
+            "title": "Needs Reassignment",
+            "type": "boolean"
           },
           "proposal_title": {
             "title": "Proposal Title",
@@ -13318,6 +13521,116 @@
           }
         },
         "summary": "Get Current Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft": {
+      "get": {
+        "operationId": "get_draft_evaluation_round_api_v1_admin_events__event_id__evaluation_rounds__round_id__draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundCreate"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Draft Evaluation Round",
+        "tags": [
+          "evaluations"
+        ]
+      },
+      "put": {
+        "operationId": "update_draft_evaluation_round_api_v1_admin_events__event_id__evaluation_rounds__round_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluationRoundCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Draft Evaluation Round",
         "tags": [
           "evaluations"
         ]

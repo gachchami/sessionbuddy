@@ -73,7 +73,7 @@ def test_people_rows_link_activated_users_to_public_profiles() -> None:
     assert "View ${item.display_name}'s public profile" in script
 
 
-def test_private_speaker_edit_route_remains_separate_from_public_profiles() -> None:
+def test_event_speaker_edit_route_remains_separate_from_public_profiles() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
@@ -85,7 +85,27 @@ def test_private_speaker_edit_route_remains_separate_from_public_profiles() -> N
         "location.replace(`/speakers/"
         "${encodeURIComponent(selection.person.person_id)}`)"
     )
-    assert legacy_redirect in script
+    assert legacy_redirect not in script
+    assert "Edit ${item.display_name}'s speaker details" in script
+    assert "showSpeakerDetail(selection.person, selection.participation)" in script
+
+
+def test_event_directory_offers_validated_csv_invitation_import() -> None:
+    page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
+    script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
+
+    assert 'id="import-speakers" class="secondary" type="button" hidden' in page
+    assert 'id="import-speakers-dialog"' in page
+    assert 'accept=".csv,text/csv"' in page
+    assert "function speakerInvitationsFromCsv(text)" in script
+    assert 'headers.includes("display_name") ? "display_name" : "name"' in script
+    assert '!headers.includes("email") || !headers.includes(displayNameHeader)' in script
+    assert "display_name (or name)" in script
+    assert "display_name</strong> (or <strong>name</strong>)" in page
+    assert "rows.length > 500" in script
+    assert "file.size > 1024 * 1024" in script
+    assert "Import and send invitations" in page
+    assert "invitations.length" in script
 
 
 def test_speaker_directory_reads_named_resource_permissions_not_deleted_roles() -> None:

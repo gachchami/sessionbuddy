@@ -18,6 +18,26 @@ def test_speaker_directory_has_no_preload_fallback_action_flash() -> None:
     assert 'byId("role-filter-field").hidden = true' in javascript
     assert "/invitations`" in javascript
     assert 'role" type="hidden" value="speaker"' in html
+    assert 'id="import-speakers"' in html
+    assert "speakerInvitationsFromCsv" in javascript
+
+
+def test_invited_and_registered_speakers_are_eligible_for_custom_tasks() -> None:
+    javascript = source("speaker_content.js")
+    html = source("speaker_content.html")
+
+    assert '["invited", "submitted", "accepted"].includes(item.selection_status)' in javascript
+    assert "Choose one or more invited, registered, or accepted speakers." in html
+    assert 'input.type = "checkbox"' in javascript
+    assert 'input.name = "event_speaker_id"' in javascript
+    assert "Choose at least one invited, registered, or accepted speaker." in javascript
+
+
+def test_manual_speaker_invitation_collects_biography() -> None:
+    html = source("speaker_directory.html")
+    javascript = source("speaker_directory.js")
+    assert '<textarea name="biography"' in html
+    assert "Object.fromEntries(new FormData(form))" in javascript
 
 
 def test_dashboard_reconciles_within_five_seconds_and_after_reconnect() -> None:

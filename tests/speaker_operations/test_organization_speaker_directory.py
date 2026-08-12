@@ -232,3 +232,31 @@ async def test_people_adds_only_exact_org_invited_reviewers(
     assert by_email["reviewer@example.test"].organization_roles == ["Reviewer"]
     assert by_email["reviewer@example.test"].event_associations[0].event_id == "event-a"
     assert "global@example.test" not in by_email
+
+
+async def test_people_includes_pending_speaker_invitations(
+    directory_database, allow_organization_admin
+) -> None:
+    connection, database = directory_database
+    connection.execute(
+        """INSERT INTO organization_memberships
+           (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+           VALUES('pending-admin-membership','org','admin','organization_admin',
+                  'active',1,1)"""
+    )
+    connection.execute(
+        """INSERT INTO identity_invitations
+           (id,organization_id,event_id,normalized_email,email,role,status,
+            invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,display_name)
+           VALUES('speaker-invite','org','event-a','pending@example.test',
+                  'pending@example.test','speaker','pending','admin',999999,1,1,
+                  'Pending Speaker')"""
+    )
+    connection.commit()
+
+    result = await router.list_organization_speakers("org", request_for(database))
+
+    pending = next(item for item in result.data if item.email == "pending@example.test")
+    assert pending.display_name == "Pending Speaker"
+    assert pending.organization_roles == ["Speaker"]
+    assert pending.event_associations[0].status == "pending"

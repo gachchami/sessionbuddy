@@ -826,6 +826,21 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .action-disclosure > summary::after { content: "+"; color: #667085; font-size: 1.125rem; font-weight: 500; }
 .action-disclosure[open] > summary::after { content: "−"; }
 .action-disclosure > form { padding: 0 1rem 1rem; border-top: 1px solid var(--line); }
+.workflow-page--speaker-content .workflow-grid::before { content: none; }
+.workflow-page--speaker-content .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.workflow-page--speaker-content .workflow-stage { min-width: 0; overflow: hidden; }
+.workflow-page--speaker-content .workflow-stage--files { grid-column: 1 / -1; }
+.workflow-page--speaker-content .action-disclosure > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; border-radius: .6rem; }
+.speaker-picker { min-width: 0; margin-top: 1rem; padding: 0; border: 0; }
+.speaker-picker > legend { font-weight: 700; }
+.speaker-picker__options { max-height: 15rem; overflow: auto; display: grid; gap: .45rem; padding: .25rem; border: 1px solid var(--line); border-radius: .65rem; background: white; }
+.speaker-picker__options:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.speaker-picker__option { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: .7rem; margin: 0; padding: .7rem; border-radius: .5rem; cursor: pointer; }
+.speaker-picker__option:hover { background: #f5f3ff; }
+.speaker-picker__option:has(input:checked) { background: #eeebff; box-shadow: inset 3px 0 #7147d8; }
+.speaker-picker__option input { margin-top: .2rem; }
+.speaker-picker__option span, .speaker-picker__option strong, .speaker-picker__option small { min-width: 0; display: block; overflow-wrap: anywhere; }
+.speaker-picker__option small { margin-top: .18rem; color: var(--muted); font-weight: 500; }
 .action-disclosure--card { padding: 0; overflow: hidden; }
 .action-disclosure--card > summary { padding: 1.15rem 1.5rem; background: white; }
 .action-disclosure--card > summary strong { display: block; margin-top: .2rem; color: var(--ink); font-size: 1.125rem; }
@@ -1153,6 +1168,8 @@ form.validation-attempted :is(input, textarea, select):invalid { border-color: v
 
 @media (max-width: 48rem) {
   .grid, .form-grid, .form-grid--four, .integration-grid, .metric-strip, .image-upload-grid { grid-template-columns: 1fr; }
+  .workflow-page--speaker-content .workflow-grid { grid-template-columns: minmax(0, 1fr); }
+  .workflow-page--speaker-content .workflow-stage--files { grid-column: auto; }
   .organizer-home-identity--minimal { grid-template-columns: 1fr; align-items: stretch; }
   .organizer-home-actions { width: 100%; justify-content: stretch; }
   .organizer-home-actions .button { flex: 1 1 0; }

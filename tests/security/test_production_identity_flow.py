@@ -1100,6 +1100,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 "display_name": "Invited Speaker",
                 "job_title": "Engineer",
                 "company": "Example Co",
+                "biography": "Builds dependable systems for event teams.",
             },
         )
         assert invitation.status_code == 201
@@ -1264,6 +1265,9 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         portal = await speaker.get("/api/v1/speaker/portal")
         assert portal.status_code == 200
         assert portal.json()["event"]["id"] == event_id
+        assert portal.json()["profile"]["biography"] == (
+            "Builds dependable systems for event teams."
+        )
         open_call = portal.json()["open_call"]
         assert open_call["slug"] == "speaker-summit"
         assert open_call["accepting_submissions"] is True
@@ -1278,6 +1282,12 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "SELECT id FROM users WHERE normalized_email=?",
             ("speaker@example.com",),
         ).fetchone()[0]
+        connection.execute(
+            "DELETE FROM speaker_tasks WHERE event_speaker_id IN "
+            "(SELECT es.id FROM event_speakers es JOIN people p ON p.id=es.person_id "
+            "WHERE p.user_id=?)",
+            (speaker_user_id,),
+        )
         connection.execute(
             "DELETE FROM event_speakers WHERE person_id IN "
             "(SELECT id FROM people WHERE user_id=?)",
@@ -1711,6 +1721,14 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             (created_round.json()["id"],),
         )
         connection.execute(
+            "DELETE FROM evaluation_round_evaluators WHERE round_id=?",
+            (created_round.json()["id"],),
+        )
+        connection.execute(
+            "DELETE FROM evaluation_round_submissions WHERE round_id=?",
+            (created_round.json()["id"],),
+        )
+        connection.execute(
             "DELETE FROM evaluation_rounds WHERE id=?",
             (created_round.json()["id"],),
         )
@@ -1725,6 +1743,20 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 created_at_ms,updated_at_ms,closed_at_ms)
                VALUES ('review-block-round',?,?,'Initial review','{}','open',900,900,NULL)""",
             (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('review-block-round',?,?,?,'active',900,900)""",
+            (submission.json()["id"], organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('review-block-round',?,?,?,'active',900,900)""",
+            (reviewer_user_id, organization_id, event_id),
         )
         connection.execute(
             """INSERT INTO evaluation_assignments
@@ -1761,6 +1793,12 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             assert blocked_withdrawal.json()["error"]["code"] == "conflict"
         connection.execute(
             "DELETE FROM evaluation_assignments WHERE id='review-block-assignment'"
+        )
+        connection.execute(
+            "DELETE FROM evaluation_round_evaluators WHERE round_id='review-block-round'"
+        )
+        connection.execute(
+            "DELETE FROM evaluation_round_submissions WHERE round_id='review-block-round'"
         )
         connection.execute("DELETE FROM evaluation_rounds WHERE id='review-block-round'")
         connection.execute(

@@ -8,7 +8,47 @@ class EvaluationCriterion(BaseModel):
 
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
     label: str = Field(min_length=1, max_length=120)
-    weight: int = Field(ge=1, le=100)
+    response_type: Literal["score", "select", "text"] = "score"
+    required: bool = True
+    weight: int | None = Field(default=None, ge=1, le=100)
+    options: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def valid_type_configuration(self):
+        if self.response_type == "score":
+            if self.weight is None:
+                raise ValueError("scored criteria require a weight")
+            if self.options:
+                raise ValueError("scored criteria cannot define options")
+        elif self.response_type == "select":
+            if self.weight is not None:
+                raise ValueError("choice criteria cannot define a weight")
+            if not 2 <= len(self.options) <= 20:
+                raise ValueError("choice criteria require 2 to 20 options")
+            if any(not option or len(option) > 120 for option in self.options):
+                raise ValueError("criterion options must contain 1 to 120 characters")
+            if len(set(self.options)) != len(self.options):
+                raise ValueError("criterion options must be unique")
+        elif self.weight is not None or self.options:
+            raise ValueError("text criteria cannot define weights or options")
+        return self
+
+
+class RoundAssignment(BaseModel):
+    """One reviewer against one proposal.
+
+    The unit the organizer actually manipulates. Two flat lists plus a strategy could only
+    describe a matrix, so "Sam reviews A and B but not C" was unrepresentable -- adding Sam
+    fanned him out across every proposal in the round.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    submission_id: str = Field(min_length=36, max_length=36)
+    evaluator_user_id: str = Field(min_length=36, max_length=36)
+
+    def pair(self) -> tuple[str, str]:
+        return (self.submission_id, self.evaluator_user_id)
 
 
 class EvaluationRoundCreate(BaseModel):
@@ -27,6 +67,9 @@ class EvaluationRoundCreate(BaseModel):
     submission_ids: list[str] = Field(default_factory=list, max_length=100)
     evaluator_user_ids: list[str] = Field(default_factory=list, max_length=50)
     assignment_strategy: Literal["all", "balanced"]
+    # None means "generate from assignment_strategy". A list is authoritative and is never
+    # overridden by the strategy -- that is what makes a hand-tailored matrix survive a save.
+    assignments: list[RoundAssignment] | None = None
     status: Literal["draft", "open"] = "open"
 
     @model_validator(mode="after")
@@ -51,14 +94,34 @@ class EvaluationRoundCreate(BaseModel):
             raise ValueError("evaluator_user_ids must be unique")
         if len({criterion.key for criterion in self.criteria}) != len(self.criteria):
             raise ValueError("criteria keys must be unique")
-        if self.criteria and sum(criterion.weight for criterion in self.criteria) != 100:
-            raise ValueError("criteria weights must total 100")
+        scored = [criterion for criterion in self.criteria if criterion.response_type == "score"]
+        if self.criteria and not scored:
+            raise ValueError("a scorecard requires at least one scored criterion")
+        if scored and sum(criterion.weight or 0 for criterion in scored) != 100:
+            raise ValueError("scored criteria weights must total 100")
         if (
             self.review_opens_at_ms is not None
             and self.review_closes_at_ms is not None
             and self.review_closes_at_ms <= self.review_opens_at_ms
         ):
             raise ValueError("review close must be after review open")
+        if self.assignments is not None:
+            pairs = [item.pair() for item in self.assignments]
+            if len(set(pairs)) != len(pairs):
+                raise ValueError("assignments must be unique")
+            submissions, evaluators = set(self.submission_ids), set(self.evaluator_user_ids)
+            if any(submission_id not in submissions for submission_id, _ in pairs):
+                raise ValueError("assignments reference a submission that is not in the round")
+            if any(evaluator_id not in evaluators for _, evaluator_id in pairs):
+                raise ValueError("assignments reference an evaluator that is not in the round")
+            # A proposal nobody reviews can never be decided, so it cannot start reviewing.
+            # Draft rounds may sit half-built; only opening demands full coverage.
+            if self.status == "open":
+                covered = {submission_id for submission_id, _ in pairs}
+                if covered != submissions:
+                    raise ValueError(
+                        "an open round requires every submission to have an assignment"
+                    )
         return self
 
 
@@ -123,7 +186,7 @@ class EvaluationAssignmentView(BaseModel):
     evaluator_guidance: str = ""
     comment_required: bool = False
     criteria: list[EvaluationCriterion] = Field(default_factory=list)
-    criterion_scores: dict[str, int] = Field(default_factory=dict)
+    criterion_responses: dict[str, int | str] = Field(default_factory=dict)
     blind_review: bool = False
     review_closes_at_ms: int | None = None
     evaluation_state: Literal["not_started", "draft", "final"]
@@ -157,6 +220,18 @@ class RoundEvaluatorAdd(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     evaluator_user_id: str = Field(min_length=36, max_length=36)
+    # Required, not optional-meaning-all. An implicit default of "every proposal in the
+    # round" is the behaviour this change exists to remove; the UI preselects them instead,
+    # so the common case stays one click while the payload stays explicit.
+    submission_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def valid_submission_ids(self):
+        if any(len(value) != 36 for value in self.submission_ids):
+            raise ValueError("submission_ids must contain UUIDs")
+        if len(set(self.submission_ids)) != len(self.submission_ids):
+            raise ValueError("submission_ids must be unique")
+        return self
 
 
 class RoundEvaluatorChange(BaseModel):
@@ -252,16 +327,21 @@ class EvaluationSave(BaseModel):
     rating: int | None = Field(default=None, ge=0, le=10)
     recommendation: str | None = Field(default=None, min_length=1, max_length=80)
     internal_comment: str = Field(default="", max_length=5000)
-    criterion_scores: dict[str, int] = Field(default_factory=dict, max_length=8)
+    criterion_responses: dict[str, int | str] = Field(default_factory=dict, max_length=8)
     state: Literal["draft", "final"]
 
     @model_validator(mode="after")
     def validate_final_completeness(self) -> "EvaluationSave":
         if self.state == "final":
-            if self.rating is None and not self.criterion_scores:
+            if self.rating is None and not self.criterion_responses:
                 raise ValueError("final evaluations require a rating")
             if self.recommendation is None:
                 raise ValueError("final evaluations require a recommendation")
+            if any(
+                isinstance(response, str) and not response.strip()
+                for response in self.criterion_responses.values()
+            ):
+                raise ValueError("final criterion responses cannot be blank")
         return self
 
 
@@ -312,6 +392,10 @@ class SubmissionEvaluationResult(BaseModel):
     speaker_name: str
     proposal_title: str
     assigned_count: int
+    # True when an active round member has no live assignment left -- typically a conflict
+    # declared on its only reviewer. Opening a round forbids this state; it can still arise
+    # afterwards, so it is surfaced rather than treated as an impossible condition.
+    needs_reassignment: bool = False
     completed_count: int
     average_rating: float | None
     decision: Literal["accepted", "rejected"] | None

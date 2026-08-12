@@ -333,6 +333,7 @@
       ["Overview", prefix, "overview", [prefix]],
       ["CFP", `${prefix}/cfp`, "form", [`${prefix}/cfp`]],
       ["Proposals", `${prefix}/submissions`, "review", [`${prefix}/submissions`]],
+      ["Rounds", `${prefix}/submissions#rounds-title`, "review", []],
       ["Speakers", `${prefix}/speakers`, "mic", [
         `${prefix}/speakers`,
         `${prefix}/onboarding`,

@@ -386,14 +386,18 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                         COALESCE(
                           -- Prefer the ACCEPTED submission; fall back to newest.
                           (SELECT s.proposal_title FROM submission_speakers ss
-                            JOIN submissions s ON s.id=ss.submission_id
+                            JOIN submissions s ON s.organization_id=ss.organization_id
+                             AND s.event_id=ss.event_id AND s.id=ss.submission_id
                             JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
                              AND ac.event_id=s.event_id AND ac.submission_id=s.id
-                            WHERE ss.event_speaker_id=es.id
+                            WHERE ss.organization_id=es.organization_id
+                             AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
                             ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
                           (SELECT s.proposal_title FROM submission_speakers ss
-                            JOIN submissions s ON s.id=ss.submission_id
-                            WHERE ss.event_speaker_id=es.id
+                            JOIN submissions s ON s.organization_id=ss.organization_id
+                             AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                            WHERE ss.organization_id=es.organization_id
+                             AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
                             ORDER BY s.submitted_at_ms DESC LIMIT 1),
                           'No proposal') AS proposal_title
                  FROM event_speakers es JOIN people p
@@ -441,9 +445,20 @@ async def list_organization_speakers(
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
                       es.id AS event_speaker_id,es.event_id,e.name AS event_name,
                       es.selection_status,
+                      -- Prefer the ACCEPTED submission; fall back to newest.
                       COALESCE((SELECT s.proposal_title FROM submission_speakers ss
-                        JOIN submissions s ON s.id=ss.submission_id
-                        WHERE ss.event_speaker_id=es.id
+                        JOIN submissions s ON s.organization_id=ss.organization_id
+                         AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                        JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
+                         AND ac.event_id=s.event_id AND ac.submission_id=s.id
+                        WHERE ss.organization_id=es.organization_id
+                         AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
+                        ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+                       (SELECT s.proposal_title FROM submission_speakers ss
+                        JOIN submissions s ON s.organization_id=ss.organization_id
+                         AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                        WHERE ss.organization_id=es.organization_id
+                         AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
                         ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 1),
                         'No proposal') AS proposal_title
                FROM people p
@@ -608,9 +623,20 @@ async def _speaker_profile_page(
         await db.prepare(
             """SELECT es.event_id,e.name AS event_name,es.id AS event_speaker_id,
                       es.selection_status,
+                      -- Prefer the ACCEPTED submission; fall back to newest.
                       COALESCE((SELECT s.proposal_title FROM submission_speakers ss
-                        JOIN submissions s ON s.id=ss.submission_id
-                        WHERE ss.event_speaker_id=es.id
+                        JOIN submissions s ON s.organization_id=ss.organization_id
+                         AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                        JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
+                         AND ac.event_id=s.event_id AND ac.submission_id=s.id
+                        WHERE ss.organization_id=es.organization_id
+                         AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
+                        ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+                       (SELECT s.proposal_title FROM submission_speakers ss
+                        JOIN submissions s ON s.organization_id=ss.organization_id
+                         AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                        WHERE ss.organization_id=es.organization_id
+                         AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
                         ORDER BY s.submitted_at_ms DESC,s.id DESC LIMIT 1),
                         'No proposal') AS proposal_title
                FROM event_speakers es JOIN events e
@@ -808,14 +834,19 @@ async def update_admin_speaker(
                       COALESCE(
                         -- Prefer the ACCEPTED submission; fall back to newest.
                         (SELECT s.proposal_title FROM submission_speakers ss
-                          JOIN submissions s ON s.id=ss.submission_id
+                          JOIN submissions s ON s.organization_id=ss.organization_id
+                           AND s.event_id=ss.event_id AND s.id=ss.submission_id
                           JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
                            AND ac.event_id=s.event_id AND ac.submission_id=s.id
-                          WHERE ss.event_speaker_id=es.id
+                          WHERE ss.organization_id=es.organization_id
+                           AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
                           ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
                         (SELECT s.proposal_title FROM submission_speakers ss
-                          JOIN submissions s ON s.id=ss.submission_id
-                          WHERE ss.event_speaker_id=es.id ORDER BY s.submitted_at_ms DESC LIMIT 1),
+                          JOIN submissions s ON s.organization_id=ss.organization_id
+                           AND s.event_id=ss.event_id AND s.id=ss.submission_id
+                          WHERE ss.organization_id=es.organization_id
+                           AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
+                          ORDER BY s.submitted_at_ms DESC LIMIT 1),
                         'No proposal') AS proposal_title
                FROM event_speakers es JOIN people p ON p.organization_id=es.organization_id
                  AND p.id=es.person_id LEFT JOIN users u ON u.id=p.user_id
@@ -1105,7 +1136,10 @@ async def create_custom_speaker_task(
         task_id = str(replay["response_resource_id"])
         row = row_mapping(
             await db.prepare(
-                "SELECT id,event_speaker_id,title,state,due_at_ms FROM speaker_tasks WHERE id=?1"
+                """SELECT id,event_speaker_id,pending_invitation_id AS invitation_id,
+                          CASE WHEN event_speaker_id IS NULL THEN 'invitation'
+                               ELSE 'event_speaker' END AS owner_type,
+                          title,state,due_at_ms FROM speaker_tasks WHERE id=?1"""
             )
             .bind(task_id)
             .first()
@@ -1114,13 +1148,25 @@ async def create_custom_speaker_task(
     owner = row_mapping(
         await db.prepare(
             """SELECT id FROM event_speakers WHERE id=?1 AND organization_id=?2 AND event_id=?3
-               AND selection_status='accepted' LIMIT 1"""
+               AND selection_status IN ('submitted','accepted') LIMIT 1"""
         )
         .bind(body.event_speaker_id, event["organization_id"], event_id)
         .first()
     )
+    pending_invitation_id: str | None = None
     if owner is None:
-        raise HTTPException(status_code=404)
+        pending = row_mapping(
+            await db.prepare(
+                """SELECT id FROM identity_invitations
+                   WHERE id=?1 AND organization_id=?2 AND event_id=?3
+                     AND role='speaker' AND status='pending' AND expires_at_ms>?4 LIMIT 1"""
+            )
+            .bind(body.event_speaker_id, event["organization_id"], event_id, now)
+            .first()
+        )
+        if pending is None:
+            raise HTTPException(status_code=404)
+        pending_invitation_id = str(pending["id"])
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
         organization_id=str(event["organization_id"]),
@@ -1135,14 +1181,16 @@ async def create_custom_speaker_task(
     batch.add_statement(
         db.prepare(
             """INSERT INTO speaker_tasks
-               (id,organization_id,event_id,event_speaker_id,submission_id,task_type,title,
+               (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
+                submission_id,task_type,title,
                 help_text,destination_type,state,due_at_ms,form_schema_json,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,'custom',?6,?7,'custom','open',?8,?9,?10,?10)"""
+               VALUES(?1,?2,?3,?4,?5,?6,'custom',?7,?8,'custom','open',?9,?10,?11,?11)"""
         ).bind(
             task_id,
             event["organization_id"],
             event_id,
-            body.event_speaker_id,
+            body.event_speaker_id if owner is not None else None,
+            pending_invitation_id,
             body.submission_id,
             body.title,
             body.help_text,
@@ -1182,7 +1230,9 @@ async def create_custom_speaker_task(
         raise HTTPException(status_code=409) from exc
     return AdminSpeakerTaskView(
         id=task_id,
-        event_speaker_id=body.event_speaker_id,
+        owner_type="event_speaker" if owner is not None else "invitation",
+        event_speaker_id=body.event_speaker_id if owner is not None else None,
+        invitation_id=pending_invitation_id,
         title=body.title,
         state="open",
         due_at_ms=body.due_at_ms,

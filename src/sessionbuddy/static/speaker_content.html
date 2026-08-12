@@ -21,10 +21,10 @@
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
     <section class="grid workspace-grid workflow-grid" aria-label="Speaker tasks, files, and resources">
       <article class="card workflow-stage workflow-stage--tasks" aria-labelledby="task-title">
-        <div class="section-heading"><div><p class="eyebrow">Follow-up</p><h2 id="task-title">Custom speaker task</h2></div></div>
-        <p class="help">Assign a request or a short form to one accepted speaker.</p>
-        <details class="action-disclosure"><summary>Assign a task</summary><form id="task-form">
-          <label>Speakers<select name="event_speaker_id" id="speaker-target" multiple size="6" required></select><small>Select one or more accepted speakers.</small></label>
+        <div class="section-heading"><div><p class="eyebrow">Follow-up</p><h2 id="task-title">Assign a speaker task</h2></div></div>
+        <p class="help">Send the same request or short form to one or more invited, registered, or accepted speakers.</p>
+        <details class="action-disclosure"><summary>Choose speakers and task details</summary><form id="task-form">
+          <fieldset class="speaker-picker"><legend>Speakers</legend><p id="speaker-target-help" class="help">Choose one or more invited, registered, or accepted speakers.</p><div id="speaker-target" class="speaker-picker__options" aria-describedby="speaker-target-help" tabindex="-1"></div></fieldset>
           <label>Task title<input name="title" maxlength="200" required></label>
           <label>Instructions<textarea name="help_text" maxlength="2000"></textarea></label>
           <p id="task-time-zone-context" class="help">Due date uses the event time zone: <strong id="task-time-zone">Loading…</strong>.</p>

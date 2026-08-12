@@ -670,8 +670,10 @@ test.describe("administration empty states", () => {
         }),
       });
     });
+    const invitationBodies: Array<Record<string, unknown>> = [];
     await page.route(`**/api/v1/admin/events/${eventId}/invitations`, async (route) => {
       if (route.request().method() === "POST") {
+        invitationBodies.push(route.request().postDataJSON());
         await route.fulfill({ status: 201, contentType: "application/json", body: "{}" });
         return;
       }
@@ -703,6 +705,35 @@ test.describe("administration empty states", () => {
     await page.getByRole("button", { name: "Invite speaker" }).click();
     await expect(page.getByRole("dialog", { name: "Invite speaker" }).getByRole("textbox", { name: "Email address" })).toHaveValue("");
     await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("");
+    await page.getByRole("button", { name: "Close speaker invitation" }).click();
+
+    await page.getByRole("button", { name: "Import CSV" }).click();
+    const importDialog = page.getByRole("dialog", { name: "Import speaker invitations" });
+    await importDialog.locator('input[type="file"]').setInputFiles({
+      name: "speakers.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(
+        "email,display_name,job_title,company\n" +
+        "marcus@example.com,Marcus Okafor,Staff Engineer,Example Co\n" +
+        'lee@example.com,"Lee, Morgan",Moderator,Community Guild\n',
+      ),
+    });
+    await importDialog.getByRole("button", { name: "Import and send invitations" }).click();
+    await expect.poll(() => invitationBodies.length).toBe(3);
+    await expect(page.locator("#import-speakers-dialog")).not.toHaveAttribute("open", "");
+    await expect(page.locator("#status")).toHaveText("2 speaker invitations sent.");
+    expect(invitationBodies.slice(-2)).toEqual([
+      {
+        email: "marcus@example.com", display_name: "Marcus Okafor",
+        job_title: "Staff Engineer", company: "Example Co", role: "speaker",
+        expires_in_days: 14,
+      },
+      {
+        email: "lee@example.com", display_name: "Lee, Morgan",
+        job_title: "Moderator", company: "Community Guild", role: "speaker",
+        expires_in_days: 14,
+      },
+    ]);
   });
 
   test("the authenticated event workspace stays navigable on mobile", async ({ page }) => {

@@ -93,7 +93,10 @@ event in that organization.
 
 Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
-records. Acceptance creates the accepted session and only the onboarding work
+records. Scorecards combine weighted numeric criteria with required or optional
+dropdown and free-text responses; only numeric criteria contribute to the
+overall mean. Draft rounds can be reopened and edited before review starts, and
+are directly available from event navigation. Acceptance creates the accepted session and only the onboarding work
 that remains actionable: a biography task when the registered speaker has not
 provided one, a headshot task when no clean headshot exists, and the required
 presentation task. It does not generate a generic supporting-material task;
@@ -122,8 +125,12 @@ allowlisted embeds, public branded speaker galleries, quarantined asset uploads,
 fixed-length R2-to-scanner streaming, asynchronous malware scanning, private
 download grants, cursor-paginated communications, reminders, and admin progress
 views. Pending speaker invitations appear in the event roster without granting
-speaker permissions before acceptance, and public profiles include each
-published session's time, room, and track. A scheduled communication dispatcher
+speaker permissions before acceptance. Registered invited speakers can receive
+onboarding tasks before a proposal is accepted, organizers can edit their
+event-scoped speaker details, and event rosters accept validated CSV invitation
+imports of up to 500 speakers. Speaker and welcome-message attribution prefers
+the accepted session over a newer unrelated proposal. Public profiles include
+each published session's time, room, and track. A scheduled communication dispatcher
 republishes stuck queued messages, retries transient provider failures, and
 recovers abandoned delivery claims with bounded attempts. Organization
 administrators can use an audited Engine Room recovery endpoint to extend the

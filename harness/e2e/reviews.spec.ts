@@ -21,8 +21,19 @@ const reviewerSession = JSON.stringify({
   }],
 });
 
+async function polyfillUuid(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => {
+    if (!crypto.randomUUID) {
+      Object.defineProperty(crypto, "randomUUID", {
+        value: () => "11111111-1111-4111-8111-111111111111",
+      });
+    }
+  });
+}
+
 test.describe("reviewer workspace", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+  test.beforeEach(async ({ page }) => polyfillUuid(page));
 
   test("an evaluator with no assignments gets a clean, useful empty state", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
@@ -56,8 +67,9 @@ test.describe("reviewer workspace", () => {
   test("shows a compact docket and opens one focused scorecard", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));
-    await page.route("**/api/v1/evaluator/assignments**", (route) =>
-      route.fulfill({
+    await page.route("**/api/v1/evaluator/assignments**", (route) => {
+      if (route.request().url().endsWith("/evaluation")) return route.fallback();
+      return route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
           total: 1,
@@ -79,18 +91,19 @@ test.describe("reviewer workspace", () => {
             recommendation: null,
             internal_comment: "",
             criteria: [
-              { key: "relevance", label: "Relevance", weight: 40 },
-              { key: "quality", label: "Quality", weight: 35 },
-              { key: "audience_value", label: "Audience value", weight: 25 },
+              { key: "relevance", label: "Relevance", response_type: "score", required: true, weight: 40, options: [] },
+              { key: "quality", label: "Quality", response_type: "score", required: true, weight: 35, options: [] },
+              { key: "audience_value", label: "Audience value", response_type: "score", required: true, weight: 25, options: [] },
             ],
-            criterion_scores: {},
+            criterion_responses: {},
             blind_review: true,
             review_closes_at_ms: null,
             answers: [{ label: "Track", value: "Platform & Infra" }],
             hidden_answer_count: 3,
           }],
         }),
-      }));
+      });
+    });
 
     await page.goto("/reviews");
 
@@ -100,6 +113,8 @@ test.describe("reviewer workspace", () => {
 
     await page.getByRole("button", { name: "Open review" }).click();
     await expect(page.getByRole("group", { name: "Scorecard" })).toBeVisible();
+    await page.getByRole("button", { name: "Finalize" }).click();
+    await expect(page.getByText("Complete every required scorecard response with a valid value before finalizing.")).toBeVisible();
     await expect(page.getByText("Full proposal (1 answer)")).toBeVisible();
     await expect(page.getByText("Platform & Infra")).not.toBeVisible();
     await page.getByText("Full proposal (1 answer)").click();
@@ -134,7 +149,7 @@ test.describe("reviewer workspace", () => {
             recommendation: "accept",
             internal_comment: "Strong proposal.",
             criteria: [],
-            criterion_scores: {},
+            criterion_responses: {},
             blind_review: true,
             review_closes_at_ms: null,
             answers: [],
@@ -178,7 +193,7 @@ test.describe("reviewer workspace", () => {
       recommendation: null,
       internal_comment: "",
       criteria: [],
-      criterion_scores: {},
+      criterion_responses: {},
       blind_review: true,
       review_closes_at_ms: null,
       answers: [],
@@ -189,12 +204,12 @@ test.describe("reviewer workspace", () => {
 
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));
-    await page.route(`**/api/v1/evaluator/assignments/${firstId}/evaluation`, (route) => {
-      states.one = String(route.request().postDataJSON().state);
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
-    });
-    await page.route("**/api/v1/evaluator/assignments**", (route) =>
-      route.fulfill({
+    await page.route("**/api/v1/evaluator/assignments**", (route) => {
+      if (new URL(route.request().url()).pathname.endsWith(`/${firstId}/evaluation`)) {
+        states.one = String(route.request().postDataJSON().state);
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+      }
+      return route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
           total: 2,
@@ -205,7 +220,8 @@ test.describe("reviewer workspace", () => {
             assignment("two", secondId, "Scaling Postgres"),
           ],
         }),
-      }));
+      });
+    });
 
     await page.goto("/reviews");
     await page.getByRole("button", { name: "Open review" }).first().click();

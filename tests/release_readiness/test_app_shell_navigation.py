@@ -12,11 +12,10 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
     assert "sidebar.append(eventNav(currentEventId" not in javascript
     assert "horizontalEventNav" in javascript
     assert (
-        'document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace)'
-        in javascript
+        'document.body.classList.toggle("sb-shell-global", globalOrganizerWorkspace)' in javascript
     )
     assert 'const globalNav = make("nav", undefined, "sb-global-nav")' in javascript
-    assert 'if (organizationNavigation) {' in javascript
+    assert "if (organizationNavigation) {" in javascript
     assert 'navLink("People", "/admin/people"' in javascript
     assert 'navLink("Events", "/admin/events"' not in javascript
     assert "if (!organizerWorkspace || currentEventId) sidebar.append(brand);" in javascript
@@ -42,9 +41,7 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
     assert ".sb-sidebar__mobile-global { display: none; }" in stylesheet
     assert ".sb-sidebar__mobile-global { display: block; }" in stylesheet
     global_nav_rule = stylesheet.split(".sb-global-nav {", 1)[1].split("}", 1)[0]
-    active_rule = stylesheet.split(
-        '.sb-global-nav a[aria-current="page"] {', 1
-    )[1].split("}", 1)[0]
+    active_rule = stylesheet.split('.sb-global-nav a[aria-current="page"] {', 1)[1].split("}", 1)[0]
     assert "border:" not in global_nav_rule
     assert "border-radius:" not in global_nav_rule
     assert "background:" not in global_nav_rule
@@ -91,7 +88,7 @@ def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
     )
     assert '|| section === "reviews" || !hasSidebarNavigation;' in javascript
     assert '} else if (!hasSidebarNavigation || section === "reviews") {' in javascript
-    assert 'topbar.append(accountBrand, crumb, accountMenu(session, roles));' in javascript
+    assert "topbar.append(accountBrand, crumb, accountMenu(session, roles));" in javascript
     assert "if (topbarOnlyWorkspace) {" in javascript
 
 
@@ -112,7 +109,7 @@ def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert 'const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker")' in javascript
-    assert 'shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));' in javascript
+    assert "shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));" in javascript
     assert 'speakerBrand = link("", "/speaker")' in javascript
     assert 'document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace)' in javascript
     assert ".sb-shell-single .sb-topbar {" in stylesheet
@@ -124,7 +121,7 @@ def test_account_navigation_exposes_one_active_role_and_role_switching() -> None
 
     assert '"/api/v1/session/active-role"' in javascript
     assert "localStorage" not in javascript
-    assert '` · ${roleLabel(active.role)}`' in javascript
+    assert "` · ${roleLabel(active.role)}`" in javascript
 
 
 def test_account_settings_uses_the_global_shell_without_polluting_primary_navigation() -> None:
@@ -132,17 +129,16 @@ def test_account_settings_uses_the_global_shell_without_polluting_primary_naviga
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert (
-        'const globalOrganizerWorkspace = organizerWorkspace || section === "account"'
-        in javascript
+        'const globalOrganizerWorkspace = organizerWorkspace || section === "account"' in javascript
     )
-    assert 'if (globalOrganizerWorkspace) {' in javascript
+    assert "if (globalOrganizerWorkspace) {" in javascript
     assert (
         'globalNav.append(navLink("Account settings", "/account", "account", true))'
         not in javascript
     )
     assert 'globalNav.append(navLink("Speaker portal", "/speaker", "mic"' not in javascript
     assert 'globalNav.append(navLink("My reviews", "/reviews", "review"' not in javascript
-    assert 'topbar.append(topbarBrand, globalNav, accountMenu(session, roles));' in javascript
+    assert "topbar.append(topbarBrand, globalNav, accountMenu(session, roles));" in javascript
     assert 'make("p", "Switch role", "sb-role-switcher__label")' in javascript
     assert 'make("p", "Account", "sb-account__menu-title")' in javascript
     assert 'switcher.setAttribute("role", "group")' in javascript
@@ -185,9 +181,7 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     primary_navigation = landing.split(
         '<nav class="primary-nav" aria-label="Primary navigation">', 1
     )[1].split("</nav>", 1)[0]
-    hero_actions = landing.split('<div class="hero-actions">', 1)[1].split(
-        "</div>", 1
-    )[0]
+    hero_actions = landing.split('<div class="hero-actions">', 1)[1].split("</div>", 1)[0]
     assert "Speaker portal" not in primary_navigation
     assert "Platform status" not in primary_navigation
     assert "Speaker portal" not in hero_actions
@@ -216,9 +210,7 @@ def test_missing_or_unknown_active_role_fails_closed_without_a_destination_guess
     assert "supportedRoles.has(requested)" in active_role
     assert "return roleChoices(session).find" in active_role
 
-    destination = javascript.split("const roleDestination", 1)[1].split(
-        "function sameRole", 1
-    )[0]
+    destination = javascript.split("const roleDestination", 1)[1].split("function sameRole", 1)[0]
     assert 'return "/account"' not in destination
     assert "return null" in destination
 
@@ -234,9 +226,9 @@ def test_missing_or_unknown_active_role_fails_closed_without_a_destination_guess
 def test_organizer_without_manageable_resources_has_no_account_fallback() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    organizer_destination = javascript.split(
-        "function organizerDestination(session)", 1
-    )[1].split("const roleDestination", 1)[0]
+    organizer_destination = javascript.split("function organizerDestination(session)", 1)[1].split(
+        "const roleDestination", 1
+    )[0]
     assert 'return "/admin"' in organizer_destination
     assert "event.event_id" in organizer_destination
     assert 'return "/account"' not in organizer_destination
@@ -350,6 +342,12 @@ def test_event_navigation_matches_the_server_authority_split() -> None:
     assert "item.event_id === eventId && holds(item, ADMIN_PERMISSIONS)" in javascript
     event_nav_call = "eventNav(currentEventId, administersEventDirectly(session, currentEventId))"
     assert event_nav_call in javascript
+
+
+def test_event_navigation_exposes_evaluation_rounds() -> None:
+    javascript = Path("src/sessionbuddy/static/app_shell.js").read_text()
+
+    assert '["Rounds", `${prefix}/submissions#rounds-title`, "review", []]' in javascript
     assert "if (canAdministerAccess) {" in javascript
 
 
@@ -359,8 +357,6 @@ def test_account_menu_dismissal_is_shared_across_shell_layouts() -> None:
     shared_handler = javascript.index("function closeOpenAccount")
     topbar_return = javascript.index('shell.className = "sb-app-shell sb-app-shell--single"')
     assert shared_handler < topbar_return
-    escape_handler = (
-        'if (event.key === "Escape") closeOpenAccount({ restoreFocus: true });'
-    )
+    escape_handler = 'if (event.key === "Escape") closeOpenAccount({ restoreFocus: true });'
     assert escape_handler in javascript
     assert "!openAccount.contains(event.target)" in javascript

@@ -141,6 +141,22 @@ async def test_round_rejection_revokes_outstanding_assignment(
         reviewer_user_id = connection.execute(
             "SELECT id FROM users WHERE normalized_email='decision-reviewer@example.com'"
         ).fetchone()[0]
+        # Round membership must exist before an assignment can reference it: the
+        # assignment foreign keys are composite against these tables.
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('rejection-round','round-submission',?,?,'active',1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('rejection-round',?,?,?,'active',1000,1000)""",
+            (reviewer_user_id, organization_id, event_id),
+        )
         connection.execute(
             """INSERT INTO evaluation_assignments
                (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,
@@ -219,6 +235,22 @@ async def test_draft_round_assignment_does_not_block_direct_rejection(
                (id,organization_id,event_id,name,rubric_json,status,created_at_ms,updated_at_ms)
                VALUES ('draft-round',?,?,'Final review','{}','draft',1000,1000)""",
             (organization_id, event_id),
+        )
+        # Round membership must exist before an assignment can reference it: the
+        # assignment foreign keys are composite against these tables.
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('draft-round','draft-submission',?,?,'active',1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('draft-round',?,?,?,'active',1000,1000)""",
+            (reviewer_user_id, organization_id, event_id),
         )
         connection.execute(
             """INSERT INTO evaluation_assignments
@@ -299,6 +331,21 @@ async def test_draft_round_cannot_record_decisions(
             csrf,
             event_id,
             "draft-decision-reviewer@example.test",
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('draft-decision-round','draft-decision-submission',
+                       ?,?,'active',1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES ('draft-decision-round',?,?,?,'active',1000,1000)""",
+            (reviewer_user_id, organization_id, event_id),
         )
         connection.execute(
             """INSERT INTO evaluation_assignments

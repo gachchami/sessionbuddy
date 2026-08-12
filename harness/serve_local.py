@@ -18,10 +18,24 @@ import argparse
 import sqlite3
 import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 REPO_ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
+# The repository root too: _load_identity_flow_module() below loads
+# tests/security/test_production_identity_flow.py by path, and that module does
+# `from tests.schema import MIGRATIONS`. Without the root on sys.path the `tests`
+# package is unimportable, this script dies at startup, and every Playwright request
+# fails with ERR_CONNECTION_REFUSED -- which reads like a browser problem, not an
+# import problem.
+sys.path.insert(0, str(REPO_ROOT))
+
+# ``harness/tests`` is a regular package and wins over the repository's namespace-style
+# ``tests`` directory during normal import resolution. The production-flow shim imports
+# ``tests.schema``, so register the repository tests namespace explicitly before loading it.
+tests_package = ModuleType("tests")
+tests_package.__path__ = [str(REPO_ROOT / "tests")]
+sys.modules["tests"] = tests_package
 
 import uvicorn  # noqa: E402
 

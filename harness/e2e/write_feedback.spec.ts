@@ -80,8 +80,8 @@ test.describe("write feedback is truthful", () => {
     // Let initialization settle first: its final status write would race the
     // action feedback we assert below.
     await expect(page.getByRole("status").first()).toHaveText("Speaker tasks and files ready.");
-    await page.getByText("Assign a task").click();
-    await page.getByRole("listbox", { name: /Speakers/ }).selectOption("speaker-1");
+    await page.getByText("Choose speakers and task details", { exact: true }).click();
+    await page.locator('input[name="event_speaker_id"][value="speaker-1"]').check();
     await page.getByRole("textbox", { name: /Task title/ }).fill("Travel preferences");
     await page.getByRole("button", { name: "Assign task" }).click();
 

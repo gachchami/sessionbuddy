@@ -70,7 +70,13 @@
     initials.textContent = item.display_name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
     const identity = document.createElement("span");
     const heading = document.createElement("strong");
-    if (item.user_id && item.public_profile_enabled) {
+    if (eventScoped && participations.length && participations[0].selection_status !== "invited") {
+      const profileLink = document.createElement("a");
+      profileLink.href = participationLink(participations[0]);
+      profileLink.textContent = item.display_name;
+      profileLink.setAttribute("aria-label", `Edit ${item.display_name}'s speaker details`);
+      heading.append(profileLink);
+    } else if (item.user_id && item.public_profile_enabled) {
       const profileLink = document.createElement("a");
       profileLink.href = `/people/${encodeURIComponent(item.user_id)}`;
       profileLink.textContent = item.display_name;
@@ -396,6 +402,7 @@
       byId("page-summary").textContent = `Speaker participation in ${activeEvent.name}.`;
       inviteEventId = activeEvent.id;
       byId("invite-speaker").hidden = false;
+      byId("import-speakers").hidden = false;
       byId("event-filter-field").hidden = true;
       byId("status-filter-field").hidden = false;
       byId("organization-filter-field").hidden = true;
@@ -410,10 +417,6 @@
     if (selectedSpeakerId) {
       const selection = findEventSpeaker(selectedSpeakerId);
       if (!selection) throw new Error("This speaker is not available in the selected event.");
-      if (selection.person.person_id) {
-        location.replace(`/speakers/${encodeURIComponent(selection.person.person_id)}`);
-        return;
-      }
       showSpeakerDetail(selection.person, selection.participation);
     }
     renderDirectory();
@@ -446,6 +449,82 @@
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").focus();
+    } finally { button.disabled = false; }
+  });
+
+  function parseCsv(text) {
+    const rows = [];
+    let row = [], field = "", quoted = false;
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index];
+      if (quoted) {
+        if (character === '"' && text[index + 1] === '"') { field += '"'; index += 1; }
+        else if (character === '"') quoted = false;
+        else field += character;
+      } else if (character === '"' && field === "") quoted = true;
+      else if (character === ",") { row.push(field); field = ""; }
+      else if (character === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (character !== "\r") field += character;
+    }
+    if (quoted) throw new Error("The CSV contains an unclosed quoted field.");
+    if (field || row.length) { row.push(field); rows.push(row); }
+    return rows.filter((values) => values.some((value) => value.trim()));
+  }
+
+  function speakerInvitationsFromCsv(text) {
+    const rows = parseCsv(text);
+    if (!rows.length) throw new Error("The CSV file is empty.");
+    const headers = rows.shift().map((value) => value.trim().toLowerCase());
+    const displayNameHeader = headers.includes("display_name") ? "display_name" : "name";
+    if (!headers.includes("email") || !headers.includes(displayNameHeader)) {
+      throw new Error("CSV headers must include email and display_name (or name).");
+    }
+    if (rows.length > 500) throw new Error("Import no more than 500 speakers at a time.");
+    const known = new Set();
+    return rows.map((values, index) => {
+      const value = (name) => String(values[headers.indexOf(name)] || "").trim();
+      const email = value("email");
+      const displayName = value(displayNameHeader);
+      if (!email || !displayName) throw new Error(`Row ${index + 2} needs an email and display_name (or name).`);
+      const normalized = email.toLowerCase();
+      if (known.has(normalized)) throw new Error(`Row ${index + 2} repeats ${email}.`);
+      known.add(normalized);
+      return { email, display_name: displayName, job_title: value("job_title"), company: value("company"), role: "speaker", expires_in_days: 14 };
+    });
+  }
+
+  const importDialog = byId("import-speakers-dialog");
+  byId("import-speakers").addEventListener("click", () => importDialog.showModal());
+  byId("close-speaker-import").addEventListener("click", () => importDialog.close());
+  byId("cancel-speaker-import").addEventListener("click", () => importDialog.close());
+  byId("import-speakers-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = form.elements.speaker_csv.files[0];
+    const button = form.querySelector('button[type="submit"]');
+    const importStatus = byId("speaker-import-status");
+    if (!file || !form.reportValidity()) return;
+    if (file.size > 1024 * 1024) { importStatus.textContent = "Choose a CSV file no larger than 1 MB."; return; }
+    button.disabled = true;
+    try {
+      const invitations = speakerInvitationsFromCsv(await file.text());
+      if (!invitations.length) throw new Error("The CSV has no speaker rows.");
+      for (let index = 0; index < invitations.length; index += 1) {
+        importStatus.textContent = `Sending invitation ${index + 1} of ${invitations.length}…`;
+        await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/invitations`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": csrf },
+          body: JSON.stringify(invitations[index]),
+        });
+      }
+      form.reset();
+      importDialog.close();
+      const organizations = await api("/api/v1/admin/organizations").then((response) => response.data);
+      await loadEventScopedDirectory(Promise.resolve(organizations));
+      renderDirectory();
+      byId("status").textContent = `${invitations.length} speaker invitation${invitations.length === 1 ? "" : "s"} sent.`;
+    } catch (error) {
+      importStatus.textContent = error instanceof Error ? error.message : window.SessionBuddyApi.message(error);
     } finally { button.disabled = false; }
   });
 

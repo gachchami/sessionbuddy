@@ -249,6 +249,19 @@
         "p95_ms": 500
       }
     },
+    "GET /api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft": {
+      "benchmark": "evaluation-get-draft-round",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
     "GET /api/v1/admin/events/{event_id}/evaluation-rounds/current": {
       "benchmark": "evaluation-current-evaluation-round",
       "dashboards": [
@@ -1383,6 +1396,19 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 300
+      }
+    },
+    "PUT /api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft": {
+      "benchmark": "evaluation-update-draft-round",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
       }
     },
     "POST /api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {

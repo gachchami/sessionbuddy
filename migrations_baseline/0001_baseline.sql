@@ -392,6 +392,39 @@ CREATE TABLE communication_templates (
   UNIQUE (organization_id,event_id,id)
 );
 
+-- Round membership is explicit, and separate from the assignment relation between the
+-- two memberships. Inferring membership from evaluation_assignments cannot represent a
+-- selected proposal with no reviewer yet, or a reviewer in the pool with no proposals --
+-- so the last removal silently dropped them from the round entirely.
+-- Lifecycle is a status, not a deletion: revoked assignments stay as audit records and
+-- reference their membership, so a physical delete would be blocked by ON DELETE RESTRICT
+-- for exactly the rows whose history we most want to keep.
+CREATE TABLE evaluation_round_submissions (
+  round_id TEXT NOT NULL,
+  submission_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'removed')),
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (round_id, submission_id),
+  FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE RESTRICT,
+  FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE evaluation_round_evaluators (
+  round_id TEXT NOT NULL,
+  evaluator_user_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'removed')),
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (round_id, evaluator_user_id),
+  FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE RESTRICT,
+  FOREIGN KEY (evaluator_user_id) REFERENCES users(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE evaluation_assignments (
   id TEXT PRIMARY KEY NOT NULL,
   organization_id TEXT NOT NULL,
@@ -404,8 +437,14 @@ CREATE TABLE evaluation_assignments (
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL,
   FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE RESTRICT,
-  FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE RESTRICT,
-  FOREIGN KEY (evaluator_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+  -- Parents are the round memberships, not submissions/users directly: an assignment
+  -- cannot exist for a proposal or reviewer that is not in the round. Note this enforces
+  -- MEMBERSHIP, not ACTIVE membership -- "no assignment against a removed membership" is
+  -- a status rule the FK cannot express, and is enforced in the round diff.
+  FOREIGN KEY (round_id, submission_id)
+    REFERENCES evaluation_round_submissions(round_id, submission_id) ON DELETE RESTRICT,
+  FOREIGN KEY (round_id, evaluator_user_id)
+    REFERENCES evaluation_round_evaluators(round_id, evaluator_user_id) ON DELETE RESTRICT,
   UNIQUE (round_id, submission_id, evaluator_user_id)
 );
 
@@ -459,8 +498,8 @@ CREATE TABLE "evaluations" (
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL,
   finalized_at_ms INTEGER,
-  criterion_scores_json TEXT NOT NULL DEFAULT '{}'
-  CHECK (json_valid(criterion_scores_json)),
+  criterion_responses_json TEXT NOT NULL DEFAULT '{}'
+  CHECK (json_valid(criterion_responses_json)),
   FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE RESTRICT,
   FOREIGN KEY (assignment_id) REFERENCES evaluation_assignments(id) ON DELETE RESTRICT,
   UNIQUE (assignment_id),
@@ -711,6 +750,7 @@ CREATE TABLE "identity_invitations" (
   display_name TEXT NOT NULL DEFAULT '' CHECK(length(display_name) <= 200),
   job_title TEXT NOT NULL DEFAULT '' CHECK(length(job_title) <= 200),
   company TEXT NOT NULL DEFAULT '' CHECK(length(company) <= 200),
+  biography TEXT NOT NULL DEFAULT '' CHECK(length(biography) <= 5000),
   FOREIGN KEY (organization_id,event_id) REFERENCES events(organization_id,id),
   FOREIGN KEY (invited_by_user_id) REFERENCES users(id),
   UNIQUE (organization_id,event_id,normalized_email,role)
@@ -1068,7 +1108,8 @@ CREATE TABLE speaker_tasks (
   id TEXT PRIMARY KEY NOT NULL,
   organization_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
-  event_speaker_id TEXT NOT NULL,
+  event_speaker_id TEXT,
+  pending_invitation_id TEXT,
   submission_id TEXT,
   task_type TEXT NOT NULL
     CHECK (task_type IN ('profile', 'headshot', 'slides', 'supporting_document', 'custom')),
@@ -1087,9 +1128,12 @@ CREATE TABLE speaker_tasks (
   CHECK (response_json IS NULL OR json_valid(response_json)), responded_at_ms INTEGER,
   FOREIGN KEY (organization_id, event_id, event_speaker_id)
     REFERENCES event_speakers(organization_id, event_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (pending_invitation_id)
+    REFERENCES identity_invitations(id) ON DELETE RESTRICT,
   FOREIGN KEY (organization_id, event_id, submission_id)
     REFERENCES submissions(organization_id, event_id, id) ON DELETE RESTRICT,
   UNIQUE (organization_id, event_id, id),
+  CHECK ((event_speaker_id IS NOT NULL) != (pending_invitation_id IS NOT NULL)),
   CHECK ((state = 'completed') = (completed_at_ms IS NOT NULL)),
   CHECK ((state = 'waived') = (waived_at_ms IS NOT NULL)),
   CHECK (completed_at_ms IS NULL OR waived_at_ms IS NULL)

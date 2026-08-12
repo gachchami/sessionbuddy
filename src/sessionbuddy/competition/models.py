@@ -213,7 +213,9 @@ class SpeakerTaskCreate(BaseModel):
 
 class AdminSpeakerTaskView(BaseModel):
     id: str
-    event_speaker_id: str
+    owner_type: Literal["event_speaker", "invitation"]
+    event_speaker_id: str | None = None
+    invitation_id: str | None = None
     title: str
     state: Literal["open", "completed", "waived"]
     due_at_ms: int | None

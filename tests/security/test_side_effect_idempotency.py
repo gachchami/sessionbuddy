@@ -142,6 +142,22 @@ async def test_round_submission_replay_creates_one_assignment_and_email(
                        'open',1000,1000)""",
             (round_id, organization_id, event_id),
         )
+        # Round membership must exist before an assignment can reference it: the
+        # assignment foreign keys are composite against these tables.
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,'active',1000,1000)""",
+            (round_id, seed_submission, organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,'active',1000,1000)""",
+            (round_id, user_id, organization_id, event_id),
+        )
         connection.execute(
             """INSERT INTO evaluation_assignments
                (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,

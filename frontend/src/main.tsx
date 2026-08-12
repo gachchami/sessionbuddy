@@ -17,8 +17,8 @@ type Assignment = {
   rating: number | null;
   recommendation: string | null;
   internal_comment: string;
-  criteria: { key: string; label: string; weight: number }[];
-  criterion_scores: Record<string, number>;
+  criteria: { key: string; label: string; response_type: "score" | "select" | "text"; required: boolean; weight: number | null; options: string[] }[];
+  criterion_responses: Record<string, number | string>;
   blind_review: boolean;
   review_closes_at_ms: number | null;
   answers: { label: string; value: string }[];
@@ -135,12 +135,14 @@ function computePreview(
     return raw === "" ? null : Number(raw);
   }
   let total = 0;
-  for (const criterion of assignment.criteria) {
+  const scored = assignment.criteria.filter((criterion) => criterion.response_type === "score");
+  if (!scored.length) return null;
+  for (const criterion of scored) {
     const raw = String(values[`criterion_${criterion.key}`] ?? "").trim();
     if (raw === "") return null;
-    total += Number(raw) * criterion.weight;
+    if (criterion.response_type === "score") total += Number(raw) * (criterion.weight ?? 0);
   }
-  return Math.round(total / 100);
+  return Math.round(total / scored.reduce((sum, criterion) => sum + (criterion.weight ?? 0), 0));
 }
 
 function ReviewWorkspace() {
@@ -189,7 +191,7 @@ function ReviewWorkspace() {
       hidden_answer_count: assignment.hidden_answer_count ?? 0,
       criteria: assignment.criteria ?? [],
       recommendations: assignment.recommendations ?? [],
-      criterion_scores: assignment.criterion_scores ?? {},
+      criterion_responses: assignment.criterion_responses ?? {},
     }));
     setAssignments((current) => (cursor ? [...current, ...assignments] : assignments));
     setNextCursor(body.next_cursor);
@@ -231,15 +233,17 @@ function ReviewWorkspace() {
     assignment: Assignment,
     state: "draft" | "final",
   ) {
-    if (state === "final") {
-      if (!form.reportValidity()) {
-        setCard(
-          assignment.id,
-          "Choose a valid rating and recommendation before finalizing.",
-        );
-        return;
-      }
-    } else {
+    if (state === "final" && !form.checkValidity()) {
+      form.reportValidity();
+      setCard(
+        assignment.id,
+        assignment.criteria.length
+          ? "Complete every required scorecard response with a valid value before finalizing."
+          : "Choose a valid rating and recommendation before finalizing.",
+      );
+      return;
+    }
+    if (state === "draft") {
       // A review draft must still contain the core score and recommendation;
       // "draft" means editable, not an empty placeholder write.
       if (!form.reportValidity()) {
@@ -273,7 +277,7 @@ function ReviewWorkspace() {
       setCard(assignment.id, "Add the required reviewer comment before finalizing.");
       return;
     }
-    const criterionScores = Object.fromEntries(
+    const criterionResponses = Object.fromEntries(
       assignment.criteria
         .filter(
           (criterion) =>
@@ -281,19 +285,20 @@ function ReviewWorkspace() {
         )
         .map((criterion) => [
           criterion.key,
-          Number(values[`criterion_${criterion.key}`]),
+          criterion.response_type === "score"
+            ? Number(values[`criterion_${criterion.key}`])
+            : String(values[`criterion_${criterion.key}`]),
         ]),
     );
-    const allScored =
-      assignment.criteria.length > 0 &&
-      Object.keys(criterionScores).length === assignment.criteria.length;
+    const scoredCriteria = assignment.criteria.filter((criterion) => criterion.response_type === "score");
+    const allScored = scoredCriteria.length > 0 && scoredCriteria.every((criterion) => criterion.key in criterionResponses);
     const directRating = String(values.rating ?? "").trim();
     const rating = assignment.criteria.length
       ? allScored
         ? Math.round(
-            assignment.criteria.reduce(
+            scoredCriteria.reduce(
               (total, criterion) =>
-                total + criterionScores[criterion.key] * criterion.weight,
+                total + Number(criterionResponses[criterion.key]) * (criterion.weight ?? 0),
               0,
             ) / 100,
           )
@@ -307,7 +312,7 @@ function ReviewWorkspace() {
       headers: mutationHeaders(csrf),
       body: JSON.stringify({
         rating,
-        criterion_scores: criterionScores,
+        criterion_responses: criterionResponses,
         recommendation,
         internal_comment: values.internal_comment,
         state,
@@ -354,6 +359,19 @@ function ReviewWorkspace() {
     save(event.currentTarget, assignment, "final").catch((error) =>
       setCard(assignment.id, errorMessage(error)),
     );
+  }
+  function handleInvalid(
+    event: FormEvent<HTMLFormElement>,
+    assignment: Assignment,
+  ) {
+    const field = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+    if (event.currentTarget.querySelector(":invalid") !== field) return;
+    const message = field.name === "recommendation"
+      ? "Choose a recommendation before finalizing."
+      : field.name === "rating" || field.name.startsWith("criterion_")
+        ? "Complete every required scorecard response with a valid value before finalizing."
+        : "Complete the required review fields before finalizing.";
+    setCard(assignment.id, message);
   }
   function handleFormInput(form: HTMLFormElement, assignment: Assignment) {
     setDirty((current) =>
@@ -517,7 +535,9 @@ function ReviewWorkspace() {
               <aside>{assignment.evaluator_guidance}</aside>
             )}
             <form
+              noValidate
               onSubmit={(event) => finalize(event, assignment)}
+              onInvalidCapture={(event) => handleInvalid(event, assignment)}
               onInput={(event) =>
                 handleFormInput(event.currentTarget, assignment)
               }
@@ -528,18 +548,17 @@ function ReviewWorkspace() {
                   {assignment.criteria.map((criterion) => (
                     <label className="scorecard__criterion" key={criterion.key}>
                       <span>{criterion.label}</span>
-                      <small>{criterion.weight}% of overall score</small>
-                      <input
-                        name={`criterion_${criterion.key}`}
-                        type="number"
-                        min={assignment.rating_min}
-                        max={assignment.rating_max}
-                        defaultValue={
-                          assignment.criterion_scores[criterion.key] ?? ""
-                        }
-                        required
-                        disabled={assignment.evaluation_state === "final"}
-                      />
+                      {criterion.response_type === "score" && <small>{criterion.weight}% of overall score</small>}
+                      {criterion.response_type === "score" ? (
+                        <input name={`criterion_${criterion.key}`} type="number" min={assignment.rating_min} max={assignment.rating_max} defaultValue={assignment.criterion_responses[criterion.key] ?? ""} required={criterion.required} disabled={assignment.evaluation_state === "final"} />
+                      ) : criterion.response_type === "select" ? (
+                        <select name={`criterion_${criterion.key}`} defaultValue={assignment.criterion_responses[criterion.key] ?? ""} required={criterion.required} disabled={assignment.evaluation_state === "final"}>
+                          <option value="">Choose…</option>
+                          {criterion.options.map((option) => <option key={option}>{option}</option>)}
+                        </select>
+                      ) : (
+                        <textarea name={`criterion_${criterion.key}`} rows={4} maxLength={5000} defaultValue={assignment.criterion_responses[criterion.key] ?? ""} required={criterion.required} disabled={assignment.evaluation_state === "final"} />
+                      )}
                     </label>
                   ))}
                 </fieldset>

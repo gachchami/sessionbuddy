@@ -9,7 +9,7 @@
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
   <script src="/admin/people/assets/search.js?v=1" defer></script>
-  <script src="/admin/people/assets/people.js?v=2" defer></script>
+  <script src="/admin/people/assets/people.js?v=3" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
   <a class="skip-link" href="#main">Skip to people</a>
@@ -20,7 +20,10 @@
         <h1 id="page-title">People</h1>
         <p id="page-summary" class="lede">Find people across the organizations you manage.</p>
       </div>
-      <button id="invite-speaker" type="button" hidden>Invite speaker</button>
+      <div class="actions">
+        <button id="import-speakers" class="secondary" type="button" hidden>Import CSV</button>
+        <button id="invite-speaker" type="button" hidden>Invite speaker</button>
+      </div>
     </div>
     <div data-speaker-hub-tabs></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
@@ -56,7 +59,16 @@
     </section>
     <dialog id="invite-speaker-dialog" class="form-dialog organizer-dialog" aria-labelledby="invite-speaker-title">
       <div class="dialog-heading"><div><h2 id="invite-speaker-title">Invite speaker</h2><p class="result">Invite someone to participate as a speaker in this event.</p></div><button id="close-speaker-invite" class="icon-button" type="button" aria-label="Close speaker invitation">×</button></div>
-      <form id="invite-speaker-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Name<input name="display_name" maxlength="200" required></label><div class="form-grid"><label>Job title <span class="optional">Optional</span><input name="job_title" maxlength="200"></label><label>Company <span class="optional">Optional</span><input name="company" maxlength="200"></label></div><input name="role" type="hidden" value="speaker"><input name="expires_in_days" type="hidden" value="14"><div class="dialog-actions"><button id="cancel-speaker-invite" class="secondary" type="button">Cancel</button><button type="submit">Send invitation</button></div></form>
+      <form id="invite-speaker-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Name<input name="display_name" maxlength="200" required></label><div class="form-grid"><label>Job title <span class="optional">Optional</span><input name="job_title" maxlength="200"></label><label>Company <span class="optional">Optional</span><input name="company" maxlength="200"></label></div><label>Biography <span class="optional">Optional</span><textarea name="biography" rows="5" maxlength="5000"></textarea></label><input name="role" type="hidden" value="speaker"><input name="expires_in_days" type="hidden" value="14"><div class="dialog-actions"><button id="cancel-speaker-invite" class="secondary" type="button">Cancel</button><button type="submit">Send invitation</button></div></form>
+    </dialog>
+    <dialog id="import-speakers-dialog" class="form-dialog organizer-dialog" aria-labelledby="import-speakers-title">
+      <div class="dialog-heading"><div><h2 id="import-speakers-title">Import speaker invitations</h2><p class="result">Upload a CSV with <strong>email</strong> and <strong>display_name</strong> (or <strong>name</strong>) columns. Job title and company are optional.</p></div><button id="close-speaker-import" class="icon-button" type="button" aria-label="Close speaker import">×</button></div>
+      <form id="import-speakers-form">
+        <label>CSV file<input name="speaker_csv" type="file" accept=".csv,text/csv" required></label>
+        <p class="help">Up to 500 invitations. Importing sends each speaker their access email.</p>
+        <p id="speaker-import-status" class="status status-compact" role="status" aria-live="polite"></p>
+        <div class="dialog-actions"><button id="cancel-speaker-import" class="secondary" type="button">Cancel</button><button type="submit">Import and send invitations</button></div>
+      </form>
     </dialog>
   </main>
 </body>

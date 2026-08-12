@@ -420,6 +420,7 @@ class InvitationCreate(BaseModel):
     display_name: str = Field(default="", max_length=200)
     job_title: str = Field(default="", max_length=200)
     company: str = Field(default="", max_length=200)
+    biography: str = Field(default="", max_length=5000)
 
     @field_validator("email")
     @classmethod
@@ -436,6 +437,7 @@ class InvitationView(BaseModel):
     display_name: str = ""
     job_title: str = ""
     company: str = ""
+    biography: str = ""
 
 
 class InvitationIssued(InvitationView):
@@ -3537,13 +3539,14 @@ async def create_invitation(
         db.prepare(
             """INSERT INTO identity_invitations
          (id,organization_id,event_id,normalized_email,email,role,status,invited_by_user_id,
-          expires_at_ms,created_at_ms,updated_at_ms,display_name,job_title,company)
-         VALUES(?1,?2,?3,?4,?5,?6,'pending',?7,?8,?9,?9,?10,?11,?12)
+          expires_at_ms,created_at_ms,updated_at_ms,display_name,job_title,company,biography)
+         VALUES(?1,?2,?3,?4,?5,?6,'pending',?7,?8,?9,?9,?10,?11,?12,?13)
          ON CONFLICT(organization_id,event_id,normalized_email,role) DO UPDATE SET
            email=excluded.email,status='pending',invited_by_user_id=excluded.invited_by_user_id,
            expires_at_ms=excluded.expires_at_ms,accepted_at_ms=NULL,revoked_at_ms=NULL,
            updated_at_ms=excluded.updated_at_ms,display_name=excluded.display_name,
-           job_title=excluded.job_title,company=excluded.company"""
+           job_title=excluded.job_title,company=excluded.company,
+           biography=excluded.biography"""
         )
         .bind(
             invitation_id,
@@ -3558,6 +3561,7 @@ async def create_invitation(
             body.display_name,
             body.job_title,
             body.company,
+            body.biography,
         )
         .run()
     )
@@ -3572,6 +3576,30 @@ async def create_invitation(
     if row is None:
         raise HTTPException(status_code=409)
     audit = CommandBatch(db)
+    if body.role == "speaker":
+        default_tasks = (
+            ("profile", "Complete your speaker profile", "profile"),
+            ("headshot", "Upload your headshot", "headshot"),
+            ("slides", "Upload your presentation slides", "slides"),
+        )
+        for task_type, title, destination_type in default_tasks:
+            audit.add_statement(
+                db.prepare(
+                    """INSERT INTO speaker_tasks
+                       (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
+                        task_type,title,help_text,destination_type,state,
+                        form_schema_json,created_at_ms,updated_at_ms)
+                       SELECT ?1,?2,?3,NULL,?4,?5,?6,'',?7,'open','{}',?8,?8
+                       WHERE NOT EXISTS (
+                         SELECT 1 FROM speaker_tasks
+                         WHERE organization_id=?2 AND event_id=?3
+                           AND pending_invitation_id=?4 AND task_type=?5
+                           AND state IN ('open','completed'))"""
+                ).bind(
+                    new_id(), event["organization_id"], event_id, row["id"],
+                    task_type, title, destination_type, now,
+                )
+            )
     audit.audit(
         AuditEvent(
             actor_type="user",
@@ -5105,7 +5133,7 @@ async def _finish_magic_link_sign_in(
         invitation = row_mapping(
             await db.prepare(
                 """SELECT id,organization_id,event_id,email,normalized_email,role,
-                          display_name,job_title,company,invited_by_user_id
+                          display_name,job_title,company,biography,invited_by_user_id
                    FROM identity_invitations WHERE id=?1 AND status='pending'
                      AND expires_at_ms>?2 LIMIT 1"""
             )
@@ -5251,7 +5279,7 @@ async def _finish_magic_link_sign_in(
             ).bind(user_id, persona, now)
         )
         if invitation["role"] == "speaker":
-            await _add_speaker_profile(
+            event_speaker_id = await _add_speaker_profile(
                 batch,
                 db,
                 organization_id=str(invitation["organization_id"]),
@@ -5261,7 +5289,21 @@ async def _finish_magic_link_sign_in(
                 display_name=str(invitation["display_name"] or ""),
                 job_title=str(invitation["job_title"] or ""),
                 company=str(invitation["company"] or ""),
+                biography=str(invitation["biography"] or ""),
                 now=now,
+            )
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE speaker_tasks SET event_speaker_id=?1,pending_invitation_id=NULL,
+                              updated_at_ms=?2,version=version+1
+                       WHERE pending_invitation_id=?3 AND organization_id=?4 AND event_id=?5"""
+                ).bind(
+                    event_speaker_id,
+                    now,
+                    invitation["id"],
+                    invitation["organization_id"],
+                    invitation["event_id"],
+                )
             )
         batch.add_statement(
             db.prepare(
@@ -5450,7 +5492,8 @@ async def _add_speaker_profile(
     display_name: str = "",
     job_title: str = "",
     company: str = "",
-) -> None:
+    biography: str = "",
+) -> str:
     person = row_mapping(
         await db.prepare("SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1")
         .bind(organization_id, user_id)
@@ -5462,19 +5505,29 @@ async def _add_speaker_profile(
         batch.add_statement(
             db.prepare(
                 """INSERT INTO people
-                   (id,organization_id,user_id,display_name,job_title,company,
+                   (id,organization_id,user_id,display_name,job_title,company,biography,
                     created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?6,?7,?7)"""
-            ).bind(person_id, organization_id, user_id, display_name, job_title, company, now)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?8)"""
+            ).bind(
+                person_id,
+                organization_id,
+                user_id,
+                display_name,
+                job_title,
+                company,
+                biography,
+                now,
+            )
         )
-    elif any((display_name, job_title, company)):
+    elif any((display_name, job_title, company, biography)):
         batch.add_statement(
             db.prepare(
                 """UPDATE people SET display_name=COALESCE(NULLIF(?1,''),display_name),
                           job_title=COALESCE(NULLIF(?2,''),job_title),
-                          company=COALESCE(NULLIF(?3,''),company),updated_at_ms=?4,
-                          version=version+1 WHERE id=?5 AND organization_id=?6"""
-            ).bind(display_name, job_title, company, now, person_id, organization_id)
+                          company=COALESCE(NULLIF(?3,''),company),
+                          biography=COALESCE(NULLIF(?4,''),biography),updated_at_ms=?5,
+                          version=version+1 WHERE id=?6 AND organization_id=?7"""
+            ).bind(display_name, job_title, company, biography, now, person_id, organization_id)
         )
     event_speaker = row_mapping(
         await db.prepare(
@@ -5485,14 +5538,18 @@ async def _add_speaker_profile(
         .first()
     )
     if event_speaker is None:
+        event_speaker_id = new_id()
         batch.add_statement(
             db.prepare(
                 """INSERT INTO event_speakers
                    (id,organization_id,event_id,person_id,status,accepted_at_ms,
                     last_activity_at_ms,created_at_ms,updated_at_ms,selection_status)
                    VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
-            ).bind(new_id(), organization_id, event_id, person_id, now)
+            ).bind(event_speaker_id, organization_id, event_id, person_id, now)
         )
+    else:
+        event_speaker_id = str(event_speaker["id"])
+    return event_speaker_id
 
 
 async def _requires_submission_registration(request: Request, token: str) -> dict | None:

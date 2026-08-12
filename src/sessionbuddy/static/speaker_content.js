@@ -151,13 +151,21 @@
   }
   async function loadTargets() {
     const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`);
-    const accepted = body.data.filter((item) => item.selection_status === "accepted");
-    const options = accepted.map((item) => { const option = new Option(`${item.display_name} — ${item.proposal_title}`, item.event_speaker_id); return option; });
+    const available = body.data.filter((item) => ["invited", "submitted", "accepted"].includes(item.selection_status));
+    const options = available.map((item) => {
+      const label = document.createElement("label"); label.className = "speaker-picker__option";
+      const input = document.createElement("input"); input.type = "checkbox"; input.name = "event_speaker_id"; input.value = item.event_speaker_id;
+      const copy = document.createElement("span");
+      const name = document.createElement("strong"); name.textContent = item.display_name;
+      const stateLabel = { invited: "Invitation pending", submitted: "Registered", accepted: "Accepted" }[item.selection_status];
+      const proposal = document.createElement("small"); proposal.textContent = `${stateLabel} · ${item.proposal_title}`;
+      copy.append(name, proposal); label.append(input, copy); return label;
+    });
     byId("speaker-target").replaceChildren(...options);
-    if (!accepted.length) {
-      const option = new Option("No accepted speakers yet", "");
-      option.disabled = true;
-      byId("speaker-target").append(option);
+    if (!available.length) {
+      const empty = document.createElement("p"); empty.className = "empty";
+      empty.textContent = "No invited, registered, or accepted speakers yet.";
+      byId("speaker-target").append(empty);
     }
   }
   byId("resource-form").elements.title.addEventListener("input", (event) => {
@@ -187,6 +195,11 @@
     const data = new FormData(form);
     const values = Object.fromEntries(data);
     const speakerIds = data.getAll("event_speaker_id").filter(Boolean);
+    if (!speakerIds.length) {
+      setStatus("Choose at least one invited, registered, or accepted speaker.", true);
+      byId("speaker-target").focus();
+      return;
+    }
     const label = form.elements.field_label;
     label.setCustomValidity(values.field_required && !String(values.field_label || "").trim() ? "Enter the required response question." : "");
     const dueInput = form.elements.due_at;
