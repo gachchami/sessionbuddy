@@ -604,6 +604,19 @@
         "p95_ms": 300
       }
     },
+    "GET /api/v1/forms/{slug}/submissions/title-match": {
+      "benchmark": "cfp-check-submission-title-match",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
     "GET /api/v1/health": {
       "benchmark": "engine-room-health",
       "dashboards": [

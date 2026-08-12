@@ -10044,6 +10044,41 @@
         "title": "SubmissionList",
         "type": "object"
       },
+      "SubmissionTitleMatch": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "submitted",
+              "withdrawn",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submitted_at_ms": {
+            "title": "Submitted At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "proposal_title",
+          "submitted_at_ms",
+          "status"
+        ],
+        "title": "SubmissionTitleMatch",
+        "type": "object"
+      },
       "SubmissionUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -16612,6 +16647,56 @@
           }
         },
         "summary": "List My Submissions",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/title-match": {
+      "get": {
+        "operationId": "findMyCallForSpeakersSubmissionByTitle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SubmissionTitleMatch"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Findmycallforspeakerssubmissionbytitle"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find My Submission By Title",
         "tags": [
           "submissions"
         ]

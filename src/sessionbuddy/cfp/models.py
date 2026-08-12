@@ -422,6 +422,15 @@ class OwnedSubmissionList(BaseModel):
     data: list[PrivateSubmissionView]
 
 
+class SubmissionTitleMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    proposal_title: str
+    submitted_at_ms: int
+    status: Literal["submitted", "withdrawn", "accepted", "rejected"]
+
+
 class SubmissionDraftUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answers: dict[str, str | list[str] | bool | int | float | None] = Field(max_length=100)

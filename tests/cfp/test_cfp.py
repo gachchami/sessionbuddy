@@ -458,7 +458,7 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     assert "const workspacePath" not in public_script
 
 
-def test_admin_submission_inbox_only_treats_open_rounds_as_current() -> None:
+def test_admin_submission_inbox_links_open_and_closed_rounds_for_decisions() -> None:
     root = Path(__file__).parents[2]
     router = (root / "src/sessionbuddy/cfp/router.py").read_text()
     script = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
@@ -467,12 +467,26 @@ def test_admin_submission_inbox_only_treats_open_rounds_as_current() -> None:
         "@cfp_router", 1
     )[0]
     assert "er.id AS evaluation_round_id" in admin_list
-    assert "candidate.status='open'" in admin_list
-    assert "candidate.status!='draft'" not in admin_list
+    assert "candidate.status!='draft'" in admin_list
+    assert "candidate.status='open'" not in admin_list
     assert "a.status!='revoked'" in admin_list
     assert "item.status === \"submitted\" && item.evaluation_round_id" in script
     assert "Open ${item.evaluation_round_name || \"evaluation round\"} to decide" in script
     assert 'error.code === "round_conflict"' in script
+
+
+def test_duplicate_title_lookup_is_owned_and_not_limited_to_recent_submissions() -> None:
+    router = (
+        Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py"
+    ).read_text()
+    lookup = router.split("async def find_my_submission_by_title", 1)[1].split(
+        "@cfp_router", 1
+    )[0]
+
+    assert "s.submitter_user_id=?2" in lookup
+    assert "lower(trim(s.proposal_title))=lower(trim(?3))" in lookup
+    assert "LIMIT 1" in lookup
+    assert "LIMIT 25" not in lookup
 
 
 def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() -> None:

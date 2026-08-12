@@ -73,6 +73,9 @@ def test_duplicate_titles_warn_inline_without_blocking_and_are_disambiguated() -
     assert 'input.addEventListener("blur"' in cfp_script
     assert "You already have a proposal with this title, submitted" in cfp_script
     assert "You can still use this title." in cfp_script
+    assert "/submissions/title-match?${params}" in cfp_script
+    assert ".trim().toLowerCase()" in cfp_script
+    assert "toLocaleLowerCase" not in cfp_script
     assert "saveSubmissionWithDuplicateWarning" not in cfp_script
     assert "x-allow-duplicate-title" not in cfp_script
     assert "submission.submitted_at_ms" in portal_script
@@ -88,6 +91,7 @@ def test_speaker_portal_editor_preserves_additional_participant_roles() -> None:
     assert 'role.dataset.coSpeakerRole = "true"' in script
     assert "state.form?.participant_roles" in script
     assert 'value = entry.role || "co_speaker"' in script
+    assert 'role: row.querySelector("[data-co-speaker-role]")?.value' in script
     assert 'make("h4", "Additional participants")' in script
 
 

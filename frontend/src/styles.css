@@ -86,7 +86,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 /* The organizer's evaluation desk is deliberately denser than the reviewer UI. */
-.app-body.sb-shell-authenticated > #root > main.round-desk { width: min(74rem, calc(100% - 2rem)); max-width: 74rem; margin-inline: auto; padding-inline: 0; }
+.app-body.sb-shell-authenticated > #root > main.round-desk { width: min(74rem, calc(100% - 2rem)); max-width: 74rem; margin-inline: auto; padding: clamp(2rem, 3vw, 3rem) 0; }
 .round-desk__header { display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--line); }
 .round-desk__header h1 { margin: .2rem 0 .35rem; }
 .round-desk__header p:last-child { margin: 0; color: var(--muted); }
@@ -98,7 +98,7 @@ button.danger-outline:hover { background: #fff5f4; }
 .round-desk__status { min-height: 1.4rem; margin: .7rem 0; color: #475467; font-size: .875rem; }
 .round-desk__status:empty { display: none; }
 .round-desk__links { display: flex; align-items: center; gap: .45rem; margin: 1rem 0 1.25rem; }
-.round-desk__links a { padding: .42rem .6rem; border-radius: .45rem; color: #475467; font-size: .8125rem; font-weight: 700; text-decoration: none; }
+.round-desk__links a { padding: .42rem .6rem; border-radius: .45rem; color: #475467; font-size: .875rem; font-weight: 700; text-decoration: none; }
 .round-desk__links a:hover { background: #eef1f6; color: var(--ink); }
 .round-desk__links a:first-child { margin-right: auto; }
 
@@ -107,8 +107,9 @@ button.danger-outline:hover { background: #fff5f4; }
 .round-progress__summary > div { display: flex; align-items: baseline; gap: .5rem; }
 .round-progress__summary strong { font-size: 1.375rem; letter-spacing: -.03em; }
 .round-progress__summary div span { color: var(--muted); font-size: .875rem; }
-.round-status { margin-left: auto; padding: .3rem .55rem; border-radius: 999px; background: #f2f4f7; color: #475467; font-size: .75rem; font-weight: 700; text-transform: capitalize; }
+.round-status { margin-left: auto; padding: .3rem .55rem; border-radius: 999px; background: #f2f4f7; color: #475467; font-size: .75rem; font-weight: 700; }
 .round-status--open { background: #ecfdf3; color: #067647; }
+.round-status--ready { background: #eef1ff; color: #4938b7; }
 .round-progress__track { height: .35rem; overflow: hidden; background: #eeeafd; }
 .round-progress__track span { display: block; height: 100%; border-radius: 0 999px 999px 0; background: #6d4aff; transition: width .25s ease; }
 
@@ -120,6 +121,11 @@ button.danger-outline:hover { background: #fff5f4; }
 .round-add-reviewer label { margin: 0; }
 .round-add-reviewer select { min-height: 2.5rem; padding-block: .5rem; font-size: 1rem; }
 .round-add-reviewer button { min-height: 2.5rem; padding: .5rem .7rem; font-size: .875rem; }
+.round-add-reviewer-disclosure { margin: 0; padding: 0; border: 0; }
+.round-add-reviewer-disclosure > summary { width: fit-content; margin-left: auto; color: #475467; font-size: .875rem; font-weight: 700; }
+.round-add-reviewer-disclosure[open] { min-width: min(100%, 28rem); padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; background: white; }
+.round-add-reviewer-disclosure[open] > summary { margin-bottom: .7rem; }
+.round-add-reviewer-disclosure .help { margin: .55rem 0 0; max-width: 26rem; }
 .reviewer-list { overflow: hidden; border: 1px solid var(--line); border-radius: .75rem; background: white; }
 .reviewer-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border: 0; border-radius: 0; box-shadow: none; }
 .reviewer-row + .reviewer-row { border-top: 1px solid var(--line); }
@@ -132,6 +138,7 @@ button.danger-outline:hover { background: #fff5f4; }
 .reviewer-row__actions button { white-space: nowrap; }
 
 .sort-control { display: flex; align-items: center; gap: .6rem; margin: 0; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+.sort-control > span { white-space: nowrap; }
 .sort-control select { min-height: 2.5rem; padding-block: .5rem; color: var(--ink); font-size: 1rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .proposal-results { display: grid; gap: .75rem; }
 .proposal-result { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .3rem 1.25rem; padding: 1.1rem 1.2rem; border-radius: .75rem; box-shadow: 0 1px 2px rgba(16,24,40,.03); }
@@ -141,14 +148,19 @@ button.danger-outline:hover { background: #fff5f4; }
 .proposal-result__score { grid-column: 2; grid-row: 2 / span 2; align-self: center; margin: 0; color: var(--muted); font-size: .875rem; white-space: nowrap; }
 .proposal-result__score strong { color: var(--ink); font-size: 1.125rem; }
 .proposal-result > details, .proposal-result > .help, .proposal-result > .confirmation, .proposal-result > .actions, .proposal-result > p:not(.speaker):not(.proposal-result__score) { grid-column: 1 / -1; }
-.proposal-result > details { margin-top: .7rem; padding-top: .7rem; }
+.proposal-result > details { margin-top: .7rem; padding: .65rem .75rem; border: 1px solid #e1e5ec; border-radius: .55rem; background: #fafbfc; }
+.proposal-result > details > summary { width: fit-content; color: #344054; font-size: .875rem; }
+.proposal-result > details > article { margin-top: .65rem; padding: .75rem; border: 0; border-radius: .45rem; box-shadow: none; }
+.proposal-result > details > article p { margin: .35rem 0 0; }
 .proposal-result > .help { margin: .55rem 0 0; }
-.proposal-result__actions { margin-top: .65rem; }
+.proposal-result__actions { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .decision-confirmation { margin-bottom: 0; }
 .decision-confirmation > strong { font-size: 1rem; text-transform: capitalize; }
 .decision-confirmation .optional { font-weight: 500; }
 
 :where(a,button,input,select,textarea,summary):focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+.proposal-result > details > summary:focus-visible,
+.round-add-reviewer-disclosure > summary:focus-visible { outline-width: 2px; outline-offset: 4px; border-radius: .2rem; }
 @media (max-width: 42rem) {
   .toolbar { align-items: stretch; flex-direction: column; }
   .toolbar .actions button { flex: 1; }

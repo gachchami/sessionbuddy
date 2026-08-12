@@ -75,12 +75,21 @@
     });
   }
 
-  function updateDuplicateTitleWarning(input, warning) {
-    const title = input.value.trim().toLocaleLowerCase();
-    const duplicate = state.submissions.find((submission) =>
+  async function updateDuplicateTitleWarning(input, warning, checkServer = true) {
+    const title = input.value.trim().toLowerCase();
+    let duplicate = state.submissions.find((submission) =>
       submission.id !== state.editingSubmission?.id
-      && String(submission.proposal_title || "").trim().toLocaleLowerCase() === title
+      && String(submission.proposal_title || "").trim().toLowerCase() === title
     );
+    if (!duplicate && checkServer && state.authenticated && title) {
+      const params = new URLSearchParams({ title: input.value.trim() });
+      if (state.editingSubmission?.id) params.set("exclude_id", state.editingSubmission.id);
+      try {
+        duplicate = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/title-match?${params}`);
+      } catch (_) {
+        // This warning is advisory; lookup failures must not block a valid proposal.
+      }
+    }
     warning.replaceChildren();
     warning.hidden = !duplicate;
     if (!duplicate) return;
@@ -264,9 +273,9 @@
         warning.hidden = true;
         warning.setAttribute("aria-live", "polite");
         input.setAttribute("aria-describedby", warning.id);
-        input.addEventListener("blur", () => updateDuplicateTitleWarning(input, warning));
+        input.addEventListener("blur", () => { void updateDuplicateTitleWarning(input, warning); });
         input.addEventListener("input", () => {
-          if (!warning.hidden) updateDuplicateTitleWarning(input, warning);
+          if (!warning.hidden) void updateDuplicateTitleWarning(input, warning, false);
         });
         label.append(warning);
       }

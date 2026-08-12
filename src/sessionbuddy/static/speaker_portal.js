@@ -106,7 +106,8 @@
     }
     const coSpeakers = [...form.querySelectorAll(".co-speaker-row")].map((row) => ({
       display_name: row.querySelector("[data-co-speaker-name]")?.value || "",
-      email: row.querySelector("[data-co-speaker-email]")?.value || ""
+      email: row.querySelector("[data-co-speaker-email]")?.value || "",
+      role: row.querySelector("[data-co-speaker-role]")?.value || "co_speaker"
     }));
     try { sessionStorage.setItem(key, JSON.stringify({ values, coSpeakers })); } catch (_) { /* Confirmation still prevents data loss. */ }
   }
@@ -366,7 +367,10 @@
       const statusLabel = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
       const tone = SUBMISSION_TONE[submission.status] || "";
       const identity = make("span", undefined, "proposal-summary-row__identity");
-      const submitted = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(submission.submitted_at_ms));
+      const submittedAt = Number(submission.submitted_at_ms);
+      const submitted = Number.isFinite(submittedAt)
+        ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(submittedAt))
+        : "date unavailable";
       identity.append(
         make("strong", submission.proposal_title),
         make("small", `Submitted ${submitted} · Receipt ${submission.id.slice(0, 8)}`)

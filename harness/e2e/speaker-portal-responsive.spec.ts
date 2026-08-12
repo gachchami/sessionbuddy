@@ -76,6 +76,7 @@ const portal = {
       proposal_abstract: "A practical session about production systems.",
     },
     status: "submitted",
+    submitted_at_ms: Date.UTC(2026, 8, 1),
     editable: true,
     form_slug: "engineering-summit",
     version: 1,

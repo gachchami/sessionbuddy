@@ -457,7 +457,13 @@ function ReviewWorkspace() {
         </section>
       )}
       <section className="review-detail" aria-label="Open review">
-        {visibleAssignments
+        {/* Read the unfiltered list, never `visibleAssignments`. "Show finalized"
+            filters the *queue*; it must not decide what stays open in the detail
+            pane. Finalizing the review being read flips it to `final`, and while
+            the selection is still set the list above is suppressed -- so drawing
+            this pane from the filtered list blanks the whole page at the moment
+            the reviewer commits, with no confirmation that the write landed. */}
+        {assignments
           .filter((assignment) => assignment.id === selectedAssignmentId)
           .map((assignment) => (
           <article key={assignment.id}>
@@ -959,10 +965,18 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               </div>
               <div>
                 <strong>{results.average_rating ?? "—"}</strong>
-                <span>overall mean</span>
+                <span>round average</span>
               </div>
-              <span className={`round-status round-status--${results.status}`}>
-                {results.status === "open" ? "Open for review" : results.status}
+              <span
+                className={`round-status round-status--${
+                  closeReady ? "ready" : results.status
+                }`}
+              >
+                {closeReady
+                  ? "Ready for decisions"
+                  : results.status === "open"
+                    ? "Review in progress"
+                    : `${results.status.charAt(0).toUpperCase()}${results.status.slice(1)}`}
               </span>
             </div>
             <div
@@ -986,7 +1000,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 <p className="eyebrow">People</p>
                 <h2 id="reviewer-progress-title">Reviewer progress</h2>
               </div>
-            {results.status === "open" && (
+            {results.status === "open" && !closeReady && (
               <div className="round-add-reviewer">
                 <label>
                   <span className="visually-hidden">Reviewer to add</span>
@@ -1027,6 +1041,52 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                   Add reviewer
                 </button>
               </div>
+            )}
+            {results.status === "open" && closeReady && (
+              <details className="round-add-reviewer-disclosure">
+                <summary>Add another reviewer</summary>
+                <div className="round-add-reviewer">
+                  <label>
+                    <span className="visually-hidden">Reviewer to add</span>
+                    <select
+                      value={selectedEvaluatorId}
+                      onChange={(event) =>
+                        setSelectedEvaluatorId(event.target.value)
+                      }
+                    >
+                      <option value="">Choose reviewer…</option>
+                      {results.available_evaluators
+                        .filter(
+                          (candidate) =>
+                            !results.evaluators.some(
+                              (current) =>
+                                current.evaluator_user_id === candidate.user_id &&
+                                current.assigned_count > 0,
+                            ),
+                        )
+                        .map((candidate) => (
+                          <option key={candidate.user_id} value={candidate.user_id}>
+                            {candidate.display_name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <button
+                    className="secondary"
+                    disabled={!selectedEvaluatorId}
+                    onClick={() =>
+                      addEvaluator().catch((error) =>
+                        setStatus(errorMessage(error)),
+                      )
+                    }
+                  >
+                    Add reviewer
+                  </button>
+                </div>
+                <p className="help">
+                  This adds a new assignment and moves the round back into review.
+                </p>
+              </details>
             )}
             </div>
           <div className="reviewer-list" aria-label="Evaluator progress">

@@ -6,6 +6,8 @@ set -eu
 mkdir -p .local
 RELEASE_GATE_STATE=$(mktemp -d .local/release-gate.XXXXXX)
 export RELEASE_GATE_STATE
+PW_WORKERS=${PW_WORKERS:-4}
+export PW_WORKERS
 
 release_compose() {
   docker compose -p sessionbuddy-release-gate -f compose.yaml -f compose.release.yaml "$@"
@@ -37,7 +39,7 @@ release_compose run --rm --no-deps worker uv run pytest -q
 release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
 
 release_compose up --detach worker
-release_compose run --rm e2e sh -lc '
+release_compose run --rm -e PW_WORKERS e2e sh -lc '
   ready=0
   for attempt in $(seq 1 60); do
     if node -e "fetch(\"http://worker:8787/health\").then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then

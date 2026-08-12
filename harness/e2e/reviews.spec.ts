@@ -152,4 +152,77 @@ test.describe("reviewer workspace", () => {
     await expect(page.getByText("This abstract belongs in the full review, not the docket.")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "View", exact: true })).toHaveClass(/secondary/);
   });
+
+  test("finalizing the open review keeps it on screen and leaves the queue reachable", async ({ page }) => {
+    // Regression: the detail pane used to render from `visibleAssignments`, which drops
+    // finalized reviews while "Show finalized" is unchecked (the default). Finalizing the
+    // review being read therefore filtered it out of its own pane, and because the list
+    // above stays suppressed while a selection is set, the entire page went blank until a
+    // reload. The reviewer also lost the "Review finalized" confirmation for an
+    // irreversible write. Asserting the queue count alone is not enough -- the docket bar
+    // rendered correctly throughout the bug -- so this asserts what is actually on screen.
+    const states: Record<string, string> = { one: "not_started", two: "not_started" };
+    const assignment = (key: string, id: string, title: string) => ({
+      id,
+      round_name: "Initial review",
+      proposal_title: title,
+      proposal_abstract: `Abstract for ${title}.`,
+      speaker_name: "Hidden for blind review",
+      rating_min: 1,
+      rating_max: 5,
+      recommendations: ["accept", "reject"],
+      evaluator_guidance: "",
+      evaluation_state: states[key],
+      comment_required: false,
+      rating: null,
+      recommendation: null,
+      internal_comment: "",
+      criteria: [],
+      criterion_scores: {},
+      blind_review: true,
+      review_closes_at_ms: null,
+      answers: [],
+      hidden_answer_count: 0,
+    });
+    const firstId = "11111111-1111-4111-8111-111111111111";
+    const secondId = "22222222-2222-4222-8222-222222222222";
+
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: reviewerSession }));
+    await page.route(`**/api/v1/evaluator/assignments/${firstId}/evaluation`, (route) => {
+      states.one = String(route.request().postDataJSON().state);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    await page.route("**/api/v1/evaluator/assignments**", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 2,
+          completed_count: Object.values(states).filter((value) => value === "final").length,
+          next_cursor: null,
+          data: [
+            assignment("one", firstId, "Taming 40-Minute CI"),
+            assignment("two", secondId, "Scaling Postgres"),
+          ],
+        }),
+      }));
+
+    await page.goto("/reviews");
+    await page.getByRole("button", { name: "Open review" }).first().click();
+    await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toBeVisible();
+
+    await page.getByLabel("Rating", { exact: false }).fill("4");
+    await page.getByLabel("Recommendation", { exact: false }).selectOption("accept");
+    await page.getByRole("button", { name: "Finalize" }).click();
+
+    // The review the evaluator just committed stays open, and says so.
+    await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toBeVisible();
+    await expect(page.getByText("Review finalized")).toBeVisible();
+    await expect(page.getByText("1 remaining")).toBeVisible();
+
+    // And the rest of the queue is one click away, without a reload.
+    await page.getByRole("button", { name: "Back to assigned proposals" }).click();
+    await expect(page.getByRole("heading", { name: "Scaling Postgres" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toHaveCount(0);
+  });
 });

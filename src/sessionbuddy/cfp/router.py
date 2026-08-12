@@ -67,6 +67,7 @@ from .models import (
     SubmissionDraftUpsert,
     SubmissionDraftView,
     SubmissionList,
+    SubmissionTitleMatch,
     SubmissionUpdate,
     SubmissionView,
     contributor_role_label,
@@ -1163,6 +1164,51 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
             )
         )
     return OwnedSubmissionList(data=data)
+
+
+@cfp_router.get(
+    "/api/v1/forms/{slug}/submissions/title-match",
+    response_model=SubmissionTitleMatch | None,
+    operation_id="findMyCallForSpeakersSubmissionByTitle",
+    tags=["submissions"],
+)
+async def find_my_submission_by_title(
+    slug: str, request: Request
+) -> SubmissionTitleMatch | None:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    form = await _form_context(db, slug)
+    if form is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(form["organization_id"]),
+            str(form["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=False,
+    )
+    title = str(request.query_params.get("title") or "").strip()
+    exclude_id = str(request.query_params.get("exclude_id") or "").strip()
+    if not 1 <= len(title) <= 200:
+        raise HTTPException(status_code=422)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT s.id,s.proposal_title,s.submitted_at_ms,
+                      COALESCE(d.decision,s.status) AS status
+               FROM submissions s
+               LEFT JOIN submission_decisions d ON d.submission_id=s.id
+               WHERE s.form_id=?1 AND s.submitter_user_id=?2
+                 AND lower(trim(s.proposal_title))=lower(trim(?3))
+                 AND (?4='' OR s.id!=?4)
+               ORDER BY s.updated_at_ms DESC,s.id DESC LIMIT 1"""
+        )
+        .bind(form["id"], authenticated.actor.user_id, title, exclude_id)
+        .first()
+    )
+    return SubmissionTitleMatch.model_validate(row) if row is not None else None
 
 
 @cfp_router.get(
@@ -2774,7 +2820,7 @@ async def list_submissions(
                  SELECT a.id FROM evaluation_assignments a
                  JOIN evaluation_rounds candidate ON candidate.id=a.round_id
                  WHERE a.submission_id=s.id AND a.status!='revoked'
-                   AND candidate.status='open'
+                   AND candidate.status!='draft'
                  ORDER BY candidate.updated_at_ms DESC,a.id DESC LIMIT 1
                )
                LEFT JOIN evaluation_rounds er ON er.id=ea.round_id

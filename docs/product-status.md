@@ -62,7 +62,9 @@ using `/cfp/{event_key}/{slug}`, with legacy-link redirects plus copy, open, and
 submission-review actions. Same-speaker duplicate titles remain valid and show
 an inline, non-blocking warning as soon as the title field loses focus; speaker
 and organizer rows include submission date and receipt identity for
-disambiguation. Additional participants can be identified as co-speakers,
+disambiguation. The advisory title lookup is owner-scoped and searches the full
+form history rather than relying on the 25-item recent-proposal list. Additional
+participants can be identified as co-speakers,
 co-authors, moderators, panelists, or another participant role; the selected role
 is preserved through invitation acceptance and later proposal edits. Primary
 speakers can withdraw their own submitted

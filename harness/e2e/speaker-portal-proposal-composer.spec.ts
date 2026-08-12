@@ -195,6 +195,42 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.getByRole("button", { name: "Review proposal" })).toBeEnabled();
   });
 
+  test("checks titles beyond the recent proposal list without blocking", async ({ page }) => {
+    await serveWorkspace(page);
+    await page.route("**/api/v1/forms/devflow-2027/submissions/title-match?*", (route) => route.fulfill({ json: {
+      id: "older-proposal",
+      proposal_title: "Long-running workshop",
+      submitted_at_ms: Date.UTC(2025, 1, 4),
+      status: "submitted",
+    } }));
+    await page.goto("/cfp/devflow/devflow-2027");
+    await page.getByLabel("Proposal title").fill("Long-running workshop");
+    await page.getByLabel("Proposal abstract").focus();
+    await expect(page.locator("#duplicate-title-warning")).toContainText("receipt older-pr");
+    await expect(page.getByRole("button", { name: "Review proposal" })).toBeEnabled();
+  });
+
+  test("restores an additional participant role from the browser draft", async ({ page }) => {
+    await serveWorkspace(page);
+    await page.route("**/api/v1/forms/devflow-2027/draft", (route) => route.fulfill({
+      status: 404,
+      json: { error: { code: "not_found", message: "No server draft exists." } },
+    }));
+    await page.goto("/cfp/devflow/devflow-2027");
+    await page.getByLabel("Proposal title").fill("Moderated systems panel");
+    await page.getByLabel("Proposal abstract").fill("A panel about reliable systems.");
+    await page.getByRole("button", { name: "Add participant" }).click();
+    const participant = page.locator(".co-speaker-row").first();
+    await participant.getByLabel("Name").fill("Morgan Chair");
+    await participant.getByLabel("Email").fill("morgan@example.test");
+    await participant.getByLabel("Role").selectOption("moderator");
+    await expect.poll(() => page.evaluate(() =>
+      localStorage.getItem("sessionbuddy:cfp:devflow-2027:draft:new") || ""
+    )).toContain('"role":"moderator"');
+    await page.reload();
+    await expect(page.locator(".co-speaker-row").first().getByLabel("Role")).toHaveValue("moderator");
+  });
+
   test("attributes an identical persisted draft to the server", async ({ page }) => {
     const draftAnswers = {
       speaker_name: "Priya Raman",

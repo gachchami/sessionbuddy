@@ -235,7 +235,7 @@ test.describe("form validation and workflow wiring", () => {
       });
       expect(liveUrlLayout, `live URL should stack cleanly at ${width}px`).toEqual({ fits: true, actionsBelowAddress: true });
 
-      for (const name of ["Description", "Proposal details", "Custom questions", "Co-speakers", "Confirmation", "Availability"]) {
+      for (const name of ["Description", "Proposal details", "Custom questions", "Participants", "Confirmation", "Availability"]) {
         const section = page.getByRole("button", { name: new RegExp(`^${name}`) });
         await section.click();
         await expect(section).toHaveAttribute("aria-pressed", "true");
@@ -629,8 +629,8 @@ test.describe("form validation and workflow wiring", () => {
     const portal = () => ({
       event: { id: eventId, name: "Conference", starts_at_ms: Date.UTC(2030, 2, 20), ends_at_ms: Date.UTC(2030, 2, 21), time_zone: "Asia/Kolkata" },
       profile,
-      tasks: taskComplete ? [] : [{ id: assignmentId, task_type: "custom", title: "Dietary needs", help_text: "Tell us", destination_path: "#tasks", state: "open", due_at_ms: null, completed_at_ms: null, form_fields: [{ key: "response", label: "Dietary requirements", type: "text", required: true, choices: [] }], response: {}, version: 1 }],
-      submissions: [{ id: programId, proposal_title: "A proposal", status: "accepted" }], completed_tasks: taskComplete ? 1 : 0, total_tasks: 1,
+      tasks: taskComplete ? [] : [{ id: assignmentId, event_id: eventId, task_type: "custom", title: "Dietary needs", help_text: "Tell us", destination_path: "#tasks", state: "open", due_at_ms: null, completed_at_ms: null, form_fields: [{ key: "response", label: "Dietary requirements", type: "text", required: true, choices: [] }], response: {}, version: 1 }],
+      submissions: [{ id: programId, proposal_title: "A proposal", status: "accepted", form_slug: "conference-2030", submitted_at_ms: Date.UTC(2030, 2, 1) }], completed_tasks: taskComplete ? 1 : 0, total_tasks: 1,
     });
     await page.route("**/api/v1/speaker/portal", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(portal()) }));
     await page.route("**/api/v1/speaker/resources", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
