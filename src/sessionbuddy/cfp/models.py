@@ -3,7 +3,14 @@ from html import escape
 from html.parser import HTMLParser
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 
 class _RichTextSanitizer(HTMLParser):
@@ -128,6 +135,32 @@ def _validate_email_address(value: str) -> str:
     if not address.username or not address.domain or "." not in address.domain:
         raise ValueError("email must be one valid address")
     return value
+
+
+ContributorRole = Literal["co_speaker", "co_author", "moderator", "panelist", "other"]
+CONTRIBUTOR_ROLE_LABELS: dict[ContributorRole, str] = {
+    "co_speaker": "Co-speaker",
+    "co_author": "Co-author",
+    "moderator": "Moderator",
+    "panelist": "Panelist",
+    "other": "Other participant",
+}
+
+
+def contributor_role_label(role: str) -> str:
+    return CONTRIBUTOR_ROLE_LABELS.get(role, "Participant")  # type: ignore[arg-type]
+
+
+class ContributorRoleOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    value: ContributorRole
+    label: str = Field(min_length=1, max_length=80)
+
+
+DEFAULT_CONTRIBUTOR_ROLE_OPTIONS = tuple(
+    ContributorRoleOption(value=value, label=label)
+    for value, label in CONTRIBUTOR_ROLE_LABELS.items()
+)
 
 
 class ImportantDate(BaseModel):
@@ -270,6 +303,7 @@ class PublishedFormView(BaseModel):
     closes_at_ms: int | None = None
     submission_limit: int | None = None
     co_speaker_limit: int = 1
+    participant_roles: tuple[ContributorRoleOption, ...] = DEFAULT_CONTRIBUTOR_ROLE_OPTIONS
     submissions_received: int = 0
     accepting_submissions: bool = True
     availability_message: str = "Applications are open."
@@ -297,7 +331,7 @@ class CoSpeakerInput(BaseModel):
 
     display_name: str = Field(min_length=1, max_length=200)
     email: str = Field(min_length=3, max_length=320)
-    role: Literal["co_speaker"] = "co_speaker"
+    role: ContributorRole = "co_speaker"
 
     @field_validator("email")
     @classmethod
@@ -309,6 +343,11 @@ class CoSpeakerView(CoSpeakerInput):
     id: str
     invitation_status: Literal["pending", "accepted", "declined", "removed"]
     expires_at_ms: int | None = None
+
+    @computed_field
+    @property
+    def role_label(self) -> str:
+        return contributor_role_label(self.role)
 
 
 class CoSpeakerInvitationView(CoSpeakerView):

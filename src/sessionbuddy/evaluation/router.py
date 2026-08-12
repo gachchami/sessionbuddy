@@ -194,6 +194,10 @@ def _blob(value: object) -> bytes:
 def _assignment_pairs(
     submission_ids: list[str], evaluator_ids: list[str], strategy: str
 ) -> list[tuple[str, str]]:
+    # Draft rounds may be prepared before their reviewer pool is populated. In that
+    # state there are intentionally no assignments yet, regardless of strategy.
+    if not evaluator_ids:
+        return []
     if strategy == "all":
         return [
             (submission_id, evaluator_id)

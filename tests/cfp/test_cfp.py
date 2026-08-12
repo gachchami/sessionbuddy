@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from sessionbuddy.api.app import app
 from sessionbuddy.cfp import router as cfp_routes
 from sessionbuddy.cfp.models import (
+    CoSpeakerInput,
     FormFieldDefinition,
     FormPublish,
     PrivateSubmissionView,
@@ -397,6 +398,20 @@ def test_form_co_speaker_limit_defaults_to_one_and_is_enforced() -> None:
     assert exc_info.value.status_code == 422
 
 
+def test_additional_participant_roles_are_bounded() -> None:
+    for role in ("co_speaker", "co_author", "moderator", "panelist", "other"):
+        participant = CoSpeakerInput(
+            display_name="Participant", email="participant@example.test", role=role
+        )
+        assert participant.role == role
+    with pytest.raises(ValidationError):
+        CoSpeakerInput(
+            display_name="Participant",
+            email="participant@example.test",
+            role="organizer",
+        )
+
+
 def test_private_submission_access_distinguishes_primary_and_co_speaker() -> None:
     base = {
         "id": "submission-1",
@@ -443,7 +458,7 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     assert "const workspacePath" not in public_script
 
 
-def test_admin_submission_inbox_links_assigned_proposals_to_their_round() -> None:
+def test_admin_submission_inbox_only_treats_open_rounds_as_current() -> None:
     root = Path(__file__).parents[2]
     router = (root / "src/sessionbuddy/cfp/router.py").read_text()
     script = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
@@ -452,7 +467,8 @@ def test_admin_submission_inbox_links_assigned_proposals_to_their_round() -> Non
         "@cfp_router", 1
     )[0]
     assert "er.id AS evaluation_round_id" in admin_list
-    assert "candidate.status!='draft'" in admin_list
+    assert "candidate.status='open'" in admin_list
+    assert "candidate.status!='draft'" not in admin_list
     assert "a.status!='revoked'" in admin_list
     assert "item.status === \"submitted\" && item.evaluation_round_id" in script
     assert "Open ${item.evaluation_round_name || \"evaluation round\"} to decide" in script
@@ -470,7 +486,8 @@ def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() 
     assert submission.co_speakers[0].role == "co_speaker"
 
     script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
-    assert 'make("p", "Role: Co-speaker"' in script
+    assert 'role.name = "co_speaker_role"' in script
+    assert "state.form?.participant_roles" in script
     assert "if (state.editingSubmission)" in script
     assert 'method: "PATCH"' in script
 

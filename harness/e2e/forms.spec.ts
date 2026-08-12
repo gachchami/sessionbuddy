@@ -355,6 +355,7 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/submissions`);
+    await expect(page.getByText(`Receipt ${assignmentId.slice(0, 8)}`, { exact: false })).toBeVisible();
     await page.getByRole("button", { name: "View proposal" }).nth(1).click();
     const reviewedDetail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(reviewedDetail.getByText("Evaluation round", { exact: true })).toBeVisible();

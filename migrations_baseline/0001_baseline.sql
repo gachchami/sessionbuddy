@@ -1111,7 +1111,8 @@ CREATE TABLE "submission_contributors" (
   display_name TEXT NOT NULL CHECK(length(display_name) BETWEEN 1 AND 200),
   email TEXT NOT NULL CHECK(length(email) BETWEEN 3 AND 320),
   normalized_email TEXT NOT NULL CHECK(length(normalized_email) BETWEEN 3 AND 320),
-  role TEXT NOT NULL DEFAULT 'co_speaker' CHECK(role='co_speaker'),
+  role TEXT NOT NULL DEFAULT 'co_speaker'
+    CHECK(role IN ('co_speaker','co_author','moderator','panelist','other')),
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL, invitation_status TEXT NOT NULL DEFAULT 'removed'
   CHECK(invitation_status IN ('pending','accepted','declined','removed')), invitation_token_hash BLOB, invitation_expires_at_ms INTEGER, invited_at_ms INTEGER, accepted_at_ms INTEGER, declined_at_ms INTEGER, removed_at_ms INTEGER, user_id TEXT REFERENCES users(id), invitation_version INTEGER NOT NULL DEFAULT 0
@@ -1163,7 +1164,8 @@ CREATE TABLE submission_speakers (
   event_id TEXT NOT NULL,
   submission_id TEXT NOT NULL,
   event_speaker_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('primary', 'co_speaker')),
+  role TEXT NOT NULL
+    CHECK (role IN ('primary','co_speaker','co_author','moderator','panelist','other')),
   snapshot_name TEXT NOT NULL CHECK (length(snapshot_name) BETWEEN 1 AND 200),
   created_at_ms INTEGER NOT NULL,
   FOREIGN KEY (organization_id, event_id, submission_id)

@@ -624,6 +624,35 @@
             ],
             "title": "Opens At Ms"
           },
+          "participant_roles": {
+            "default": [
+              {
+                "label": "Co-speaker",
+                "value": "co_speaker"
+              },
+              {
+                "label": "Co-author",
+                "value": "co_author"
+              },
+              {
+                "label": "Moderator",
+                "value": "moderator"
+              },
+              {
+                "label": "Panelist",
+                "value": "panelist"
+              },
+              {
+                "label": "Other participant",
+                "value": "other"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContributorRoleOption"
+            },
+            "title": "Participant Roles",
+            "type": "array"
+          },
           "redirect_to_portal": {
             "default": true,
             "title": "Redirect To Portal",
@@ -2156,8 +2185,14 @@
             "type": "string"
           },
           "role": {
-            "const": "co_speaker",
             "default": "co_speaker",
+            "enum": [
+              "co_speaker",
+              "co_author",
+              "moderator",
+              "panelist",
+              "other"
+            ],
             "title": "Role",
             "type": "string"
           }
@@ -2241,9 +2276,20 @@
             "type": "string"
           },
           "role": {
-            "const": "co_speaker",
             "default": "co_speaker",
+            "enum": [
+              "co_speaker",
+              "co_author",
+              "moderator",
+              "panelist",
+              "other"
+            ],
             "title": "Role",
+            "type": "string"
+          },
+          "role_label": {
+            "readOnly": true,
+            "title": "Role Label",
             "type": "string"
           },
           "submission_id": {
@@ -2258,7 +2304,8 @@
           "invitation_status",
           "submission_id",
           "proposal_title",
-          "event_name"
+          "event_name",
+          "role_label"
         ],
         "title": "CoSpeakerInvitationView",
         "type": "object"
@@ -2304,9 +2351,20 @@
             "type": "string"
           },
           "role": {
-            "const": "co_speaker",
             "default": "co_speaker",
+            "enum": [
+              "co_speaker",
+              "co_author",
+              "moderator",
+              "panelist",
+              "other"
+            ],
             "title": "Role",
+            "type": "string"
+          },
+          "role_label": {
+            "readOnly": true,
+            "title": "Role Label",
             "type": "string"
           }
         },
@@ -2314,7 +2372,8 @@
           "display_name",
           "email",
           "id",
-          "invitation_status"
+          "invitation_status",
+          "role_label"
         ],
         "title": "CoSpeakerView",
         "type": "object"
@@ -2578,6 +2637,34 @@
           "assignment_id"
         ],
         "title": "ConflictView",
+        "type": "object"
+      },
+      "ContributorRoleOption": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "enum": [
+              "co_speaker",
+              "co_author",
+              "moderator",
+              "panelist",
+              "other"
+            ],
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ContributorRoleOption",
         "type": "object"
       },
       "CoverageItem": {
@@ -7287,6 +7374,35 @@
               }
             ],
             "title": "Opens At Ms"
+          },
+          "participant_roles": {
+            "default": [
+              {
+                "label": "Co-speaker",
+                "value": "co_speaker"
+              },
+              {
+                "label": "Co-author",
+                "value": "co_author"
+              },
+              {
+                "label": "Moderator",
+                "value": "moderator"
+              },
+              {
+                "label": "Panelist",
+                "value": "panelist"
+              },
+              {
+                "label": "Other participant",
+                "value": "other"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ContributorRoleOption"
+            },
+            "title": "Participant Roles",
+            "type": "array"
           },
           "redirect_to_portal": {
             "default": true,

@@ -59,7 +59,13 @@ review-before-submit; confirmation email copy; authenticated speaker
 registration; versioned drafts; owned submissions; admin submission listing;
 tenant scoping; authenticated writes; and a persistent event-scoped CFP link
 using `/cfp/{event_key}/{slug}`, with legacy-link redirects plus copy, open, and
-submission-review actions. Primary speakers can withdraw their own submitted
+submission-review actions. Same-speaker duplicate titles remain valid and show
+an inline, non-blocking warning as soon as the title field loses focus; speaker
+and organizer rows include submission date and receipt identity for
+disambiguation. Additional participants can be identified as co-speakers,
+co-authors, moderators, panelists, or another participant role; the selected role
+is preserved through invitation acceptance and later proposal edits. Primary
+speakers can withdraw their own submitted
 proposal before review begins; withdrawal is audited, repeat-safe, excluded from
 review assignment, and read-only in the speaker portal. CFP-scoped sign-in grants the
 speaker role for that event even when the email already belongs to an administrator,
@@ -99,6 +105,12 @@ the direct-rejection action and links organizers to that round's audited decisio
 controls instead.
 A rejection immediately revokes unfinished assignments while preserving final
 reviews as immutable history.
+The organizer round view uses a compact progress rail and reviewer roster;
+proposal decision reasons, notification controls, and permanence warnings are
+revealed only after the organizer selects Accept or Reject.
+The proposal inbox presents rounds as an ordered status ledger. Only an open
+round blocks a proposal from selection; closed-round proposals can enter a later
+round, and draft rounds may be saved before any reviewers are assigned.
 
 ## Speaker operations
 

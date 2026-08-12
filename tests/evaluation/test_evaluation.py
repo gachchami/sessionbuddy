@@ -105,6 +105,8 @@ def test_evaluation_contracts_are_strict_and_bounded() -> None:
 
 
 def test_assignment_strategies_are_deterministic() -> None:
+    assert _assignment_pairs(["s1", "s2"], [], "balanced") == []
+    assert _assignment_pairs(["s1", "s2"], [], "all") == []
     assert _assignment_pairs(["s1", "s2", "s3"], ["e1", "e2"], "balanced") == [
         ("s1", "e1"),
         ("s2", "e2"),
@@ -123,7 +125,9 @@ def test_round_workspaces_support_late_submissions_and_audited_force_close() -> 
     root = Path(__file__).parents[2]
     submissions = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
     reviews = (root / "frontend/src/main.tsx").read_text()
-    assert "Add selected proposals to open round" in submissions
+    assert 'add.id = "add-selected-to-round"' in submissions
+    assert '"Select proposals to add"' in submissions
+    assert "Add ${count} selected proposal" in submissions
     assert "/submissions`" in submissions
     assert "Organizer closed the round before every review was final." in reviews
 

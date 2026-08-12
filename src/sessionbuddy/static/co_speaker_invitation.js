@@ -28,7 +28,7 @@
       });
       actions.hidden = true;
       setStatus(response === "accept"
-        ? `Invitation accepted. You are now a co-speaker for “${invitation.proposal_title}”.`
+        ? `Invitation accepted. You joined “${invitation.proposal_title}” as ${invitation.role_label}.`
         : `Invitation declined for “${invitation.proposal_title}”.`);
       byId("status").focus();
     } catch (error) {
@@ -42,6 +42,7 @@
     if (!token) throw new Error("This invitation link is invalid.");
     const invitation = await api(endpoint);
     byId("invited-name").textContent = invitation.display_name;
+    byId("invited-role").textContent = invitation.role_label;
     byId("proposal-title").textContent = invitation.proposal_title;
     byId("event-name").textContent = invitation.event_name;
     byId("invitation-expiry").textContent = invitation.expires_at_ms

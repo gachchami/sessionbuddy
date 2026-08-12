@@ -101,6 +101,13 @@
     const count = selectedSubmissionIds().length;
     byId("selected-count").textContent = `${count} selected`;
     byId("configure-round").disabled = count === 0;
+    const addToRound = byId("add-selected-to-round");
+    if (addToRound) {
+      addToRound.disabled = count === 0;
+      addToRound.textContent = count
+        ? `Add ${count} selected proposal${count === 1 ? "" : "s"}`
+        : "Select proposals to add";
+    }
   }
   function setEligibleSelection(selected) {
     document.querySelectorAll('input[name="submission_ids"]:not(:disabled)').forEach((input) => {
@@ -169,31 +176,43 @@
     if (!rounds.length) {
       const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = "No evaluation rounds yet."; container.append(empty); return;
     }
-    for (const round of rounds) {
-      const card = document.createElement("article"); card.className = "entity-card";
+    const statusOrder = { open: 0, draft: 1, closed: 2 };
+    const orderedRounds = [...rounds].sort((left, right) => (statusOrder[left.status] ?? 9) - (statusOrder[right.status] ?? 9));
+    for (const round of orderedRounds) {
+      const card = document.createElement("article"); card.className = `round-ledger__row round-ledger__row--${round.status}`;
+      const stateMarker = document.createElement("span"); stateMarker.className = "round-ledger__marker"; stateMarker.setAttribute("aria-hidden", "true");
+      const content = document.createElement("div"); content.className = "round-ledger__content";
       const heading = document.createElement("h3"); const link = document.createElement("a"); link.href = `/admin/evaluation-rounds/${encodeURIComponent(round.id)}`; link.textContent = round.name; heading.append(link);
-      const summary = document.createElement("p"); summary.className = "result"; summary.textContent = `${round.status} · ${round.assignment_count} assignments · ${round.evaluator_count} reviewers`;
-      const actions = document.createElement("div"); actions.className = "actions";
-      const monitor = document.createElement("a"); monitor.className = "button secondary"; monitor.href = link.href; monitor.textContent = "Open";
-      const exportLink = document.createElement("a"); exportLink.className = "button secondary"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
+      const status = document.createElement("span"); status.className = "round-ledger__status"; status.textContent = round.status === "open" ? "In review" : round.status;
+      const summary = document.createElement("p"); summary.className = "result"; summary.textContent = `${round.assignment_count} assignment${round.assignment_count === 1 ? "" : "s"} · ${round.evaluator_count} reviewer${round.evaluator_count === 1 ? "" : "s"}`;
+      content.append(status, heading, summary);
+      const actions = document.createElement("div"); actions.className = "round-ledger__actions";
+      const monitor = document.createElement("a"); monitor.className = round.status === "open" ? "button" : "button secondary"; monitor.href = link.href; monitor.textContent = round.status === "draft" ? "View draft" : round.status === "closed" ? "View results" : "Manage round";
+      const exportLink = document.createElement("a"); exportLink.className = "round-ledger__export"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
       actions.append(monitor, exportLink);
       if (round.status === "draft") {
         const openDraft = document.createElement("button");
-        openDraft.type = "button"; openDraft.textContent = "Open round";
+        openDraft.type = "button"; openDraft.textContent = "Start review";
         openDraft.addEventListener("click", () => openDraftRound(round, openDraft));
         actions.append(openDraft);
       }
-      card.append(heading, summary, actions); container.append(card);
+      card.append(stateMarker, content, actions); container.append(card);
     }
   }
   function showRound(round) {
+    const label = document.createElement("div");
+    label.className = "current-round-actions__label";
+    const eyebrow = document.createElement("span"); eyebrow.textContent = "Current round";
+    const name = document.createElement("strong"); name.textContent = round.name;
+    label.append(eyebrow, name);
     const link = document.createElement("a");
     link.href = `/admin/evaluation-rounds/${round.id}`;
-    link.textContent = "Monitor round and record decisions";
+    link.textContent = "Manage decisions";
+    link.className = "button secondary";
     const add = document.createElement("button");
     add.type = "button";
     add.className = "secondary";
-    add.textContent = "Add selected proposals to open round";
+    add.id = "add-selected-to-round";
     add.addEventListener("click", async () => {
       const submissionIds = selectedSubmissionIds();
       if (!submissionIds.length) {
@@ -228,8 +247,9 @@
     });
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.append(link, add);
-    byId("round-result").replaceChildren(actions);
+    actions.append(add, link);
+    byId("round-result").replaceChildren(label, actions);
+    updateSelectedCount();
     setDraftOnly(round.name);
   }
   function setDraftOnly(openRoundName) {
@@ -474,7 +494,7 @@
       ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(answerLabel(item, key), answerText(value)))
     );
     if (item.co_speakers?.length) {
-      details.append(detailRow("Co-speakers", item.co_speakers.map((person) => `${person.display_name} (${person.email}) · ${person.role === "co_speaker" ? "Co-speaker" : person.role}`).join(", ")));
+      details.append(detailRow("Additional participants", item.co_speakers.map((person) => `${person.display_name} (${person.email}) · ${person.role_label}`).join(", ")));
     }
     const decisionActions = byId("submission-detail-actions");
     decisionActions.replaceChildren();
@@ -566,9 +586,17 @@
         [["Speaker", item.speaker_name], ["Proposal", item.proposal_title], ["Status", item.status]].forEach(([label, value]) => {
           const cell = document.createElement("td");
           cell.dataset.label = label;
-          if (label === "Proposal") cell.className = "proposal-inbox__title";
+          if (label === "Proposal") {
+            cell.className = "proposal-inbox__title";
+            const identity = document.createElement("span");
+            identity.className = "proposal-inbox__identity";
+            identity.textContent = value;
+            const metadata = document.createElement("small");
+            metadata.textContent = `Submitted ${new Date(item.submitted_at_ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · Receipt ${item.id.slice(0, 8)}`;
+            cell.append(identity, metadata);
+          }
           if (label === "Status") cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
-          cell.textContent = value;
+          if (label !== "Proposal") cell.textContent = value;
           row.append(cell);
         });
         const detailCell = document.createElement("td");

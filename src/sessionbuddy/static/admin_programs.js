@@ -739,8 +739,8 @@
         const coSpeakerSummary = make("summary");
         const coSpeakerIdentity = make("span");
         coSpeakerIdentity.append(
-          make("strong", "Co-speakers"),
-          make("small", "Name and email for each additional presenter")
+          make("strong", "Additional participants"),
+          make("small", "Name, email, and role for each additional participant")
         );
         const coSpeakerMeta = make("span");
         coSpeakerMeta.className = "question-editor__meta";
@@ -755,7 +755,7 @@
         coSpeakerBody.append(
           make(
             "p",
-            "Each co-speaker receives an invitation to accept or decline and complete their own profile."
+            "Each participant receives an invitation to accept or decline and complete their own profile."
           )
         );
         coSpeakerDetails.append(coSpeakerSummary, coSpeakerBody);
@@ -792,7 +792,7 @@
     const availability = outlineButton("Availability", "availability", "availability");
     const nodes = [
       outlineButton("Description", "basics", "basics"), proposal, custom,
-      outlineButton("Co-speakers", "co-speakers", "co-speakers"),
+      outlineButton("Participants", "co-speakers", "co-speakers"),
       outlineButton("Confirmation", "confirmation", "confirmation"),
       availability
     ];
@@ -825,7 +825,7 @@
     const customCount = state.fields.filter((field) => !identityFieldKeys.includes(field.key) && !proposalFieldKeys.has(field.key)).length;
     byId("cfp-custom-empty").hidden = kind !== "custom" || customCount > 0;
     const selectedField = kind === "question" ? state.fields[Number(rawIndex)] : null;
-    const titles = { basics: "Description", proposal: "Proposal details", custom: "Custom questions", "co-speakers": "Co-speakers", availability: "Availability", confirmation: "Confirmation" };
+    const titles = { basics: "Description", proposal: "Proposal details", custom: "Custom questions", "co-speakers": "Additional participants", availability: "Availability", confirmation: "Confirmation" };
     byId("cfp-selection-title").textContent = selectedField?.label || titles[kind] || "Form";
     byId("cfp-selection-context").textContent = kind === "availability" ? "Form setting" : `${titles[kind] || "Proposal"} screen`;
     byId("cfp-selection-preview").hidden = true;

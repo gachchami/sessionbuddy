@@ -91,7 +91,11 @@ def invitation_database() -> tuple[sqlite3.Connection, AsyncSqlite]:
 
 
 def seed_invitation(
-    connection: sqlite3.Connection, token: str, *, contributor_id: str = "co-speaker"
+    connection: sqlite3.Connection,
+    token: str,
+    *,
+    contributor_id: str = "co-speaker",
+    role: str = "co_speaker",
 ) -> None:
     now = utc_now_ms()
     connection.execute(
@@ -100,8 +104,8 @@ def seed_invitation(
             role,created_at_ms,updated_at_ms,invitation_status,invitation_token_hash,
             invitation_expires_at_ms,invited_at_ms,invitation_version)
            VALUES(?,'org','event','submission','Co Speaker','co@example.test','co@example.test',
-                  'co_speaker',?,?,'pending',?,?,?,1)""",
-        (contributor_id, now, now, hash_token(token), now + 3_600_000, now),
+                  ?,?,?,'pending',?,?,?,1)""",
+        (contributor_id, role, now, now, hash_token(token), now + 3_600_000, now),
     )
 
 
@@ -109,6 +113,66 @@ def test_co_speaker_expiry_is_capped_by_the_cfp_close() -> None:
     now = 1_000
     assert _co_speaker_expiry(now, None) == now + 7 * 86_400_000
     assert _co_speaker_expiry(now, now + 10_000) == now + 10_000
+
+
+async def test_participant_role_is_preserved_when_invitation_is_accepted(
+    invitation_database,
+) -> None:
+    connection, database = invitation_database
+    token = "moderator-token-with-at-least-thirty-two-characters"  # noqa: S105
+    seed_invitation(connection, token, contributor_id="moderator", role="moderator")
+
+    accepted = await accept_co_speaker_invitation(token, request_for(database))
+
+    assert accepted.role == "moderator"
+    assert accepted.role_label == "Moderator"
+    assert connection.execute(
+        "SELECT role FROM submission_speakers WHERE submission_id='submission' AND role!='primary'"
+    ).fetchone()[0] == "moderator"
+
+
+async def test_accepted_participant_role_can_change_without_reinvitation(
+    invitation_database,
+) -> None:
+    connection, database = invitation_database
+    token = "editable-role-token-with-at-least-thirty-two-characters"  # noqa: S105
+    seed_invitation(connection, token)
+    await accept_co_speaker_invitation(token, request_for(database))
+    queued: list[dict[str, object]] = []
+
+    class Queue:
+        async def send(self, message: dict[str, object]) -> None:
+            queued.append(message)
+
+    request = request_for(database)
+    request.scope["env"].COMMUNICATION_QUEUE = Queue()
+    await _reconcile_co_speakers(
+        request,
+        submission_id="submission",
+        organization_id="org",
+        event_id="event",
+        invitation_deadline_ms=utc_now_ms() + 3_600_000,
+        proposal_title="Proposal",
+        primary_name="Owner",
+        desired=[
+            CoSpeakerInput(
+                display_name="Co Speaker",
+                email="co@example.test",
+                role="moderator",
+            )
+        ],
+        actor_user_id="owner",
+    )
+
+    contributor = connection.execute(
+        "SELECT role,invitation_status FROM submission_contributors WHERE id='co-speaker'"
+    ).fetchone()
+    assert tuple(contributor) == ("moderator", "accepted")
+    assert connection.execute(
+        "SELECT role FROM submission_speakers WHERE submission_id='submission' AND role!='primary'"
+    ).fetchone()[0] == "moderator"
+    assert connection.execute("SELECT COUNT(*) FROM communication_messages").fetchone()[0] == 0
+    assert queued == []
 
 
 async def test_accept_is_single_use_and_creates_relationships(

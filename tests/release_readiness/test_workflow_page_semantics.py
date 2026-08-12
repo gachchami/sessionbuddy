@@ -32,8 +32,12 @@ def test_workflow_loading_and_empty_states_are_announced_without_alert_noise() -
     messages = source("speaker_messages.html")
 
     assert 'id="submissions" aria-live="polite"' in submissions
-    assert 'id="round-history" class="entity-grid" aria-live="polite"' in submissions
-    assert 'id="round-result" class="public-link" role="status" aria-live="polite"' in submissions
+    assert 'id="round-history" class="round-ledger" aria-live="polite"' in submissions
+    assert (
+        'id="round-result" class="public-link current-round-actions" '
+        'role="status" aria-live="polite"'
+        in submissions
+    )
     assert 'id="unscheduled" class="session-list" aria-live="polite"' in agenda
     assert 'class="empty workflow-empty-state" role="status"' in agenda
     assert (

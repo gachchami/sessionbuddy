@@ -22,6 +22,13 @@ const form = {
     { key: "format", type: "select", label: "Format", required: true, choices: ["Talk", "Workshop"], help_text: "", placeholder: "" },
   ],
   conditions: [], important_dates: [], co_speaker_limit: 1, accepting_submissions: true,
+  participant_roles: [
+    { value: "co_speaker", label: "Co-speaker" },
+    { value: "co_author", label: "Co-author" },
+    { value: "moderator", label: "Moderator" },
+    { value: "panelist", label: "Panelist" },
+    { value: "other", label: "Other participant" },
+  ],
   availability_message: "Applications are open.", success_message: "We sent a confirmation.",
   redirect_to_portal: true,
 };
@@ -29,6 +36,7 @@ const form = {
 const proposal = (id: string, title: string, version = 1) => ({
   id, editable: true, speaker_name: "Priya Raman", speaker_email: "priya@example.test",
   proposal_title: title, proposal_abstract: `${title} abstract`, status: "submitted", version,
+  submitted_at_ms: Date.UTC(2027, 7, 3),
   answers: { speaker_name: "Priya Raman", speaker_email: "priya@example.test", proposal_title: title, proposal_abstract: `${title} abstract`, format: "Talk" },
   co_speakers: [],
 });
@@ -173,6 +181,20 @@ test.describe("speaker proposal workspace", () => {
     expect(await page.evaluate(() => localStorage.getItem("sessionbuddy:cfp:devflow-2027:draft:new"))).toBeNull();
   });
 
+  test("warns about an existing title inline without blocking submission", async ({ page }) => {
+    await serveWorkspace(page);
+    await page.goto("/cfp/devflow/devflow-2027");
+    await page.getByLabel("Proposal title").fill("First proposal");
+    await page.getByLabel("Proposal abstract").focus();
+    const warning = page.locator("#duplicate-title-warning");
+    await expect(warning).toContainText("receipt proposal");
+    await expect(warning).toContainText("You can still use this title.");
+    await expect(warning.getByRole("link", { name: "Open that proposal" })).toHaveAttribute(
+      "href", "/speaker/proposals/devflow-2027/proposal-a"
+    );
+    await expect(page.getByRole("button", { name: "Review proposal" })).toBeEnabled();
+  });
+
   test("attributes an identical persisted draft to the server", async ({ page }) => {
     const draftAnswers = {
       speaker_name: "Priya Raman",
@@ -213,8 +235,8 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.getByLabel("Proposal title")).toBeDisabled();
   });
 
-  test("keeps conditional requirements and co-speaker conflicts anchored to visible controls", async ({ page }) => {
-    await serveWorkspace(page, { form: {
+  test("keeps conditional requirements and participant roles anchored to visible controls", async ({ page }) => {
+    const harness = await serveWorkspace(page, { form: {
       co_speaker_limit: 2,
       fields: [
         ...form.fields,
@@ -230,18 +252,23 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.getByLabel("Workshop prerequisites")).toBeFocused();
 
     await page.getByLabel("Workshop prerequisites").fill("Bring a laptop.");
-    await page.getByRole("button", { name: "Add co-speaker" }).click();
-    await page.getByRole("button", { name: "Add co-speaker" }).click();
+    await page.getByRole("button", { name: "Add participant" }).click();
+    await page.getByRole("button", { name: "Add participant" }).click();
     const rows = page.locator(".co-speaker-row");
     await rows.nth(0).getByLabel("Name").fill("First collaborator");
     await rows.nth(0).getByLabel("Email").fill("collaborator@example.test");
+    await rows.nth(0).getByLabel("Role").selectOption("moderator");
     await rows.nth(1).getByLabel("Name").fill("Second collaborator");
     await rows.nth(1).getByLabel("Email").fill("collaborator@example.test");
     await page.getByRole("button", { name: "Review proposal" }).click();
     await expect(rows.nth(1).getByLabel("Email")).toBeFocused();
     await expect(rows.nth(1).getByLabel("Email")).toHaveJSProperty(
-      "validationMessage", "Each co-speaker must use a different email."
+      "validationMessage", "Each additional participant must use a different email."
     );
+    await rows.nth(1).getByLabel("Email").fill("second@example.test");
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await page.getByRole("button", { name: "Save changes" }).click();
+    expect((harness.patches.at(-1)?.body.co_speakers as Array<{ role: string }>)[0].role).toBe("moderator");
   });
 
   test("keeps an unchanged failed save retry on one idempotency key", async ({ page }) => {

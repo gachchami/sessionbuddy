@@ -75,6 +75,26 @@
     });
   }
 
+  function updateDuplicateTitleWarning(input, warning) {
+    const title = input.value.trim().toLocaleLowerCase();
+    const duplicate = state.submissions.find((submission) =>
+      submission.id !== state.editingSubmission?.id
+      && String(submission.proposal_title || "").trim().toLocaleLowerCase() === title
+    );
+    warning.replaceChildren();
+    warning.hidden = !duplicate;
+    if (!duplicate) return;
+    const date = new Date(duplicate.submitted_at_ms).toLocaleDateString(undefined, {
+      day: "numeric", month: "short", year: "numeric"
+    });
+    warning.append(
+      `You already have a proposal with this title, submitted ${date}, receipt ${duplicate.id.slice(0, 8)}. `
+    );
+    const link = make("a", "Open that proposal");
+    link.href = `/speaker/proposals/${encodeURIComponent(slug)}/${encodeURIComponent(duplicate.id)}`;
+    warning.append(link, ". You can still use this title.");
+  }
+
   function make(tag, text, className) {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -238,6 +258,18 @@
       if (field.key === "speaker_name") input.autocomplete = "name";
       if (field.key === "speaker_email") input.autocomplete = "email";
       label.append(input);
+      if (field.key === "proposal_title") {
+        const warning = make("small", "", "field-warning duplicate-title-warning");
+        warning.id = "duplicate-title-warning";
+        warning.hidden = true;
+        warning.setAttribute("aria-live", "polite");
+        input.setAttribute("aria-describedby", warning.id);
+        input.addEventListener("blur", () => updateDuplicateTitleWarning(input, warning));
+        input.addEventListener("input", () => {
+          if (!warning.hidden) updateDuplicateTitleWarning(input, warning);
+        });
+        label.append(warning);
+      }
       if (field.help_text) label.append(make("small", field.help_text));
       container.append(label);
     }
@@ -264,15 +296,20 @@
     name.name = "co_speaker_name"; name.required = true; name.maxLength = 200; name.value = value.display_name || ""; nameLabel.append(name);
     const emailLabel = make("label", "Email"); const email = document.createElement("input");
     email.name = "co_speaker_email"; email.type = "email"; email.required = true; email.maxLength = 320; email.value = value.email || ""; emailLabel.append(email);
-    const role = make("p", "Role: Co-speaker", "help");
+    const roleLabel = make("label", "Role"); const role = document.createElement("select");
+    role.name = "co_speaker_role";
+    (state.form?.participant_roles || []).forEach(({ value: optionValue, label }) => {
+      const option = document.createElement("option"); option.value = optionValue; option.textContent = label; role.append(option);
+    });
+    role.value = value.role || "co_speaker"; roleLabel.append(role);
     const remove = make("button", "Remove", "secondary"); remove.type = "button"; remove.addEventListener("click", () => {
       row.remove();
       validateCoSpeakers(byId("proposal-form"));
       queueBrowserDraft();
     });
     const actions = make("div", undefined, "co-speaker-row__actions");
-    actions.append(role, remove);
-    row.append(nameLabel, emailLabel, actions); byId("co-speaker-rows").append(row);
+    actions.append(remove);
+    row.append(nameLabel, emailLabel, roleLabel, actions); byId("co-speaker-rows").append(row);
     if (focus) name.focus();
   }
 
@@ -280,7 +317,7 @@
     return [...document.querySelectorAll(".co-speaker-row")].map((row) => ({
       display_name: row.querySelector('[name="co_speaker_name"]').value.trim(),
       email: row.querySelector('[name="co_speaker_email"]').value.trim(),
-      role: "co_speaker"
+      role: row.querySelector('[name="co_speaker_role"]').value
     }));
   }
 
@@ -295,10 +332,10 @@
       const normalized = email.value.trim().toLowerCase();
       email.setCustomValidity("");
       if (normalized && normalized === primaryEmail) {
-        email.setCustomValidity("A co-speaker must use a different email from the primary speaker.");
+        email.setCustomValidity("An additional participant must use a different email from the primary speaker.");
         valid = false;
       } else if (normalized && seen.has(normalized)) {
-        email.setCustomValidity("Each co-speaker must use a different email.");
+        email.setCustomValidity("Each additional participant must use a different email.");
         valid = false;
       }
       if (normalized) seen.add(normalized);
@@ -331,7 +368,10 @@
     for (const invitation of invitations) {
       const card = make("article", undefined, "co-speaker-invitation");
       const identity = make("div");
-      identity.append(make("strong", invitation.display_name), make("span", invitation.email, "help"));
+      identity.append(
+        make("strong", invitation.display_name),
+        make("span", `${invitation.role_label} · ${invitation.email}`, "help")
+      );
       const meta = make("div", undefined, "co-speaker-invitation__meta");
       const badge = make("span", invitationStatus(invitation.invitation_status), `badge${invitation.invitation_status === "accepted" ? " success" : ""}`);
       meta.append(badge);
@@ -719,6 +759,12 @@
         byId("proposal-card").hidden = false;
         byId("sign-in-card").hidden = true;
         if (!workspaceMode) {
+          try {
+            state.submissions = (await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`)).data || [];
+          } catch (_) {
+            // Duplicate-title guidance is advisory and must never block a valid proposal.
+            state.submissions = [];
+          }
           const serverDraft = await loadDraft();
           if (saved && browserDraftMatchesServerDraft(saved, serverDraft)) clearBrowserDraft();
           const restored = saved?.submissionId || browserDraftMatchesServerDraft(saved, serverDraft)

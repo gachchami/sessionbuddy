@@ -685,6 +685,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [sendEmail, setSendEmail] = useState(true);
   const [speakerMessage, setSpeakerMessage] = useState("");
   const [resultSort, setResultSort] = useState<ResultSort>("submitted");
+  const [selectedEvaluatorId, setSelectedEvaluatorId] = useState("");
 
   // Chairs rank proposals by score; the API returns them newest-submitted first, so the
   // ordering the committee actually works from is applied here over the loaded page(s).
@@ -713,9 +714,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
         ? { ...body, submissions: [...current.submissions, ...body.submissions] }
         : body,
     );
-    setStatus(
-      `${body.completed_count} of ${body.assigned_count} evaluations finalized.`,
-    );
+    setStatus("");
   }
   async function signIn() {
     try {
@@ -784,19 +783,16 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     setStatus("Conflicted assignment reassigned.");
   }
   async function addEvaluator() {
-    const select = document.getElementById(
-      "round-add-evaluator",
-    ) as HTMLSelectElement;
-    select.setCustomValidity(select.value ? "" : "Choose a reviewer to add.");
-    if (!select.reportValidity()) return;
+    if (!selectedEvaluatorId) return;
     const result = await api<{ assignment_count: number }>(
       `/api/v1/admin/evaluation-rounds/${roundId}/evaluators`,
       {
         method: "POST",
         headers: mutationHeaders(csrf),
-        body: JSON.stringify({ evaluator_user_id: select.value }),
+        body: JSON.stringify({ evaluator_user_id: selectedEvaluatorId }),
       },
     );
+    setSelectedEvaluatorId("");
     await load();
     setStatus(
       `Reviewer added with ${result.assignment_count} assignment${result.assignment_count === 1 ? "" : "s"}.`,
@@ -857,17 +853,16 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     !results.conflicts.some((conflict) => conflict.replacement_required);
 
   return (
-    <main>
-      <section className="hero">
-        <h1>{results?.round_name || "Round progress"}</h1>
-        <p>
-          Monitor completion, resolve conflicts, and decide which proposals move
-          forward.
-        </p>
-      </section>
-      <div className="toolbar">
-        <p role="status">{status}</p>
-        <div className="actions">
+    <main className="round-desk">
+      <header className="round-desk__header">
+        <div>
+          <p className="eyebrow">Evaluation round</p>
+          <h1>{results?.round_name || "Round progress"}</h1>
+          <p>
+            Track reviewer progress and decide which proposals move forward.
+          </p>
+        </div>
+        <div className="round-desk__actions">
           <a
             className="button secondary"
             href={`/api/v1/admin/evaluation-rounds/${encodeURIComponent(roundId)}/export.csv`}
@@ -883,6 +878,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             Refresh
           </button>
           <button
+            className={closeReady ? "" : "danger-outline"}
             disabled={!results || results.status !== "open"}
             onClick={() => {
               if (!closeReady) {
@@ -892,10 +888,13 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               closeRound(false).catch((error) => setStatus(errorMessage(error)));
             }}
           >
-            {closeReady ? "Close round" : "Force close round"}
+            {closeReady ? "Close round" : "Close round early"}
           </button>
         </div>
-      </div>
+      </header>
+      <p className="round-desk__status" role="status" aria-live="polite">
+        {status}
+      </p>
       {showForceClose && (
         <section className="confirmation" role="alert">
           <h2>Close this round early?</h2>
@@ -921,6 +920,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               Cancel
             </button>
             <button
+              className="danger"
               onClick={() =>
                 closeRound(true).catch((error) =>
                   setStatus(errorMessage(error)),
@@ -934,11 +934,11 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       )}
       {results && (
         <>
-          <nav className="workflow" aria-label="Event workflow">
+          <nav className="round-desk__links" aria-label="Related event workspaces">
             <a
               href={`/admin/events/${encodeURIComponent(results.event_id)}/submissions`}
             >
-              Proposals
+              <span aria-hidden="true">←</span> Proposal inbox
             </a>
             <a
               href={`/admin/events/${encodeURIComponent(results.event_id)}/onboarding`}
@@ -948,33 +948,54 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             <a
               href={`/admin/events/${encodeURIComponent(results.event_id)}/agenda`}
             >
-              Build agenda
+              Agenda
             </a>
           </nav>
-          <section className="metrics">
-            <article>
-              <span>Completed</span>
-              <strong>
-                {results.completed_count}/{results.assigned_count}
-              </strong>
-            </article>
-            <article>
-              <span>Overall mean</span>
-              <strong>{results.average_rating ?? "—"}</strong>
-            </article>
-            <article>
-              <span>Round status</span>
-              <strong>{results.status}</strong>
-            </article>
+          <section className="round-progress" aria-label="Round progress">
+            <div className="round-progress__summary">
+              <div>
+                <strong>{results.completed_count}/{results.assigned_count}</strong>
+                <span>reviews finalized</span>
+              </div>
+              <div>
+                <strong>{results.average_rating ?? "—"}</strong>
+                <span>overall mean</span>
+              </div>
+              <span className={`round-status round-status--${results.status}`}>
+                {results.status === "open" ? "Open for review" : results.status}
+              </span>
+            </div>
+            <div
+              className="round-progress__track"
+              role="progressbar"
+              aria-label="Finalized reviews"
+              aria-valuemin={0}
+              aria-valuemax={results.assigned_count}
+              aria-valuenow={results.completed_count}
+            >
+              <span
+                style={{
+                  width: `${results.assigned_count ? (results.completed_count / results.assigned_count) * 100 : 0}%`,
+                }}
+              />
+            </div>
           </section>
-          <div className="toolbar">
-            <h2>Reviewer progress</h2>
+          <section className="round-section" aria-labelledby="reviewer-progress-title">
+            <div className="round-section__heading">
+              <div>
+                <p className="eyebrow">People</p>
+                <h2 id="reviewer-progress-title">Reviewer progress</h2>
+              </div>
             {results.status === "open" && (
-              <div className="actions">
-                <label className="compact">
-                  Add reviewer
-                  <select id="round-add-evaluator" defaultValue="">
-                    <option value="">Choose…</option>
+              <div className="round-add-reviewer">
+                <label>
+                  <span className="visually-hidden">Reviewer to add</span>
+                  <select
+                    id="round-add-evaluator"
+                    value={selectedEvaluatorId}
+                    onChange={(event) => setSelectedEvaluatorId(event.target.value)}
+                  >
+                    <option value="">Choose reviewer…</option>
                     {results.available_evaluators
                       .filter(
                         (candidate) =>
@@ -996,35 +1017,43 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 </label>
                 <button
                   className="secondary"
+                  disabled={!selectedEvaluatorId}
                   onClick={() =>
                     addEvaluator().catch((error) =>
                       setStatus(errorMessage(error)),
                     )
                   }
                 >
-                  Add
+                  Add reviewer
                 </button>
               </div>
             )}
-          </div>
-          <section className="metrics" aria-label="Evaluator progress">
+            </div>
+          <div className="reviewer-list" aria-label="Evaluator progress">
             {results.evaluators
               .filter(
                 (evaluator) =>
                   evaluator.assigned_count > 0 || evaluator.completed_count > 0,
               )
               .map((evaluator) => (
-                <article key={evaluator.evaluator_user_id}>
-                  <strong>{evaluator.display_name}</strong>
-                  <span>
-                    {evaluator.completed_count}/{evaluator.assigned_count}{" "}
-                    finalized
-                  </span>
-                  <span>{evaluator.conflict_count} conflicts</span>
+                <article className="reviewer-row" key={evaluator.evaluator_user_id}>
+                  <div className="reviewer-row__identity">
+                    <span className="reviewer-row__avatar" aria-hidden="true">
+                      {evaluator.display_name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <div>
+                      <strong>{evaluator.display_name}</strong>
+                      <span>
+                        {evaluator.completed_count}/{evaluator.assigned_count} finalized
+                        {evaluator.conflict_count > 0 && ` · ${evaluator.conflict_count} conflicts`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="reviewer-row__actions">
                   {results.status === "open" &&
                     evaluator.completed_count < evaluator.assigned_count && (
                       <button
-                        className="secondary"
+                        className="tertiary"
                         onClick={() =>
                           remindEvaluator(evaluator).catch((error) =>
                             setStatus(errorMessage(error)),
@@ -1038,7 +1067,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     evaluator.completed_count === 0 &&
                     evaluator.conflict_count === 0 && (
                       <button
-                        className="secondary"
+                        className="tertiary danger-text"
                         onClick={() =>
                           removeEvaluator(evaluator).catch((error) =>
                             setStatus(errorMessage(error)),
@@ -1048,8 +1077,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         Remove
                       </button>
                     )}
+                  </div>
                 </article>
               ))}
+          </div>
           </section>
           {results.conflicts.length > 0 && (
             <>
@@ -1105,10 +1136,14 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               </section>
             </>
           )}
-          <div className="meta">
-            <h2>Proposal results</h2>
-            <label>
-              Sort by{" "}
+          <section className="round-section round-section--proposals" aria-labelledby="proposal-results-title">
+          <div className="round-section__heading">
+            <div>
+              <p className="eyebrow">Decisions</p>
+              <h2 id="proposal-results-title">Proposal results</h2>
+            </div>
+            <label className="sort-control">
+              <span>Sort by</span>
               <select
                 value={resultSort}
                 aria-label="Sort proposal results"
@@ -1122,7 +1157,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               </select>
             </label>
           </div>
-          <section className="grid" aria-label="Proposal results">
+          <div className="proposal-results" aria-label="Proposal results">
             {sortedSubmissions.map((submission) => {
               const complete =
                 submission.assigned_count > 0 &&
@@ -1132,8 +1167,8 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 pendingDecision?.submission.submission_id ===
                 submission.submission_id;
               return (
-                <article key={submission.submission_id}>
-                  <div className="meta">
+                <article className="proposal-result" key={submission.submission_id}>
+                  <div className="proposal-result__state">
                     <span>
                       {decided
                         ? "decision locked"
@@ -1145,7 +1180,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                   </div>
                   <h3>{submission.proposal_title}</h3>
                   <p className="speaker">{submission.speaker_name}</p>
-                  <p>
+                  <p className="proposal-result__score">
                     <strong>{submission.average_rating ?? "—"}</strong> mean ·{" "}
                     {submission.completed_count}/{submission.assigned_count}{" "}
                     complete
@@ -1173,17 +1208,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       <strong>Internal decision reason:</strong>{" "}
                       {submission.internal_reason || "No reason recorded."}
                     </p>
-                  ) : (
-                    <label>
-                      Internal decision reason
-                      <textarea
-                        id={`reason-${submission.submission_id}`}
-                        rows={3}
-                        maxLength={2000}
-                        required={!complete}
-                      />
-                    </label>
-                  )}
+                  ) : null}
                   <p className="help">
                     {decided
                       ? "This decision is permanent."
@@ -1192,12 +1217,22 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         : "Reviews are incomplete. An organizer may override with a required internal reason; the override is audited."}
                   </p>
                   {decided ? null : pending ? (
-                    <div className="confirmation" role="alert">
+                    <div className="confirmation decision-confirmation" role="alert">
                       <strong>
                         Confirm permanent {pendingDecision.decision}
                         {complete ? "" : " with organizer override"}
                       </strong>
                       <p>This cannot be changed later.</p>
+                      <label>
+                        Internal decision reason {complete && <span className="optional">Optional</span>}
+                        <textarea
+                          id={`reason-${submission.submission_id}`}
+                          rows={3}
+                          maxLength={2000}
+                          required={!complete}
+                          placeholder={complete ? "Add a private note for the decision record." : "Explain why you are overriding incomplete reviews."}
+                        />
+                      </label>
                       <label className="check">
                         <input
                           type="checkbox"
@@ -1230,6 +1265,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                           Cancel
                         </button>
                         <button
+                          className={pendingDecision.decision === "rejected" ? "danger" : ""}
                           onClick={() =>
                             decide(submission, pendingDecision.decision).catch(
                               (error) => setStatus(errorMessage(error)),
@@ -1241,7 +1277,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       </div>
                     </div>
                   ) : (
-                    <div className="actions">
+                    <div className="actions proposal-result__actions">
                       <button
                         className="secondary"
                         onClick={() => {
@@ -1270,7 +1306,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 </article>
               );
             })}
-          </section>
+          </div>
           {results.next_cursor && (
             <div className="actions">
               <button
@@ -1285,6 +1321,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               </button>
             </div>
           )}
+          </section>
         </>
       )}
     </main>

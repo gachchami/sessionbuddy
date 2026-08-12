@@ -29,3 +29,21 @@ def test_round_errors_open_the_disclosure_and_receive_focus() -> None:
     assert 'id="round-status" class="status" role="alert" tabindex="-1"' in markup
     assert 'byId("round-disclosure").open = true' in javascript
     assert 'byId("round-status").focus()' in javascript
+
+
+def test_round_history_distinguishes_work_by_status() -> None:
+    markup = (STATIC / "admin_submissions.html").read_text()
+    javascript = (STATIC / "admin_submissions.js").read_text()
+
+    assert 'class="round-ledger"' in markup
+    assert "Open my assigned reviews" not in markup
+    assert 'summary>Create an evaluation round</summary>' in markup
+    assert 'round.status === "draft" ? "View draft"' in javascript
+    assert 'round.status === "closed" ? "View results"' in javascript
+    assert ': "Manage round"' in javascript
+    assert 'openDraft.textContent = "Start review"' in javascript
+    assert 'eyebrow.textContent = "Current round"' in javascript
+    assert 'link.textContent = "Manage decisions"' in javascript
+    assert 'add.id = "add-selected-to-round"' in javascript
+    assert ': "Select proposals to add"' in javascript
+    assert "addToRound.disabled = count === 0" in javascript

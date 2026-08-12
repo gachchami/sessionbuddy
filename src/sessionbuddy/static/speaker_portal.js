@@ -365,8 +365,14 @@
       link.href = `/speaker/proposals/${encodeURIComponent(submission.form_slug)}/${encodeURIComponent(submission.id)}`;
       const statusLabel = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
       const tone = SUBMISSION_TONE[submission.status] || "";
-      link.append(
+      const identity = make("span", undefined, "proposal-summary-row__identity");
+      const submitted = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(submission.submitted_at_ms));
+      identity.append(
         make("strong", submission.proposal_title),
+        make("small", `Submitted ${submitted} · Receipt ${submission.id.slice(0, 8)}`)
+      );
+      link.append(
+        identity,
         make("span", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`),
         make("span", "→", "proposal-summary-row__arrow")
       );
@@ -518,7 +524,7 @@
     return [...container.querySelectorAll(".co-speaker-row")].map((row) => ({
       display_name: row.querySelector("[data-co-speaker-name]").value.trim(),
       email: row.querySelector("[data-co-speaker-email]").value.trim(),
-      role: "co_speaker"
+      role: row.querySelector("[data-co-speaker-role]").value
     })).filter((entry) => entry.display_name || entry.email);
   }
 
@@ -536,7 +542,7 @@
 
   function addCoSpeakerRow(container) {
     const row = make("div", undefined, "co-speaker-row");
-    const nameLabel = make("label", "Co-speaker name");
+    const nameLabel = make("label", "Participant name");
     const name = document.createElement("input");
     name.type = "text";
     name.maxLength = 200;
@@ -545,17 +551,29 @@
     name.required = true;
     name.dataset.coSpeakerName = "true";
     nameLabel.append(name);
-    const emailLabel = make("label", "Co-speaker email");
+    const emailLabel = make("label", "Participant email");
     const email = document.createElement("input");
     email.type = "email";
     email.maxLength = 320;
     email.required = true;
     email.dataset.coSpeakerEmail = "true";
     emailLabel.append(email);
+    const roleLabel = make("label", "Role");
+    const role = document.createElement("select");
+    role.dataset.coSpeakerRole = "true";
+    (state.form?.participant_roles || []).forEach(({ value, label: text }) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      role.append(option);
+    });
+    roleLabel.append(role);
     const remove = make("button", "Remove", "secondary");
     remove.type = "button";
     remove.addEventListener("click", () => { row.remove(); saveComposerDraft(); });
-    row.append(nameLabel, emailLabel, remove);
+    const actions = make("div", undefined, "co-speaker-row__actions");
+    actions.append(remove);
+    row.append(nameLabel, emailLabel, roleLabel, actions);
     container.append(row);
     name.focus();
   }
@@ -646,18 +664,18 @@
     if (coSpeakerLimit > 0) {
       const coSpeakers = make("div", undefined, "proposal-composer__co-speakers");
       coSpeakerRowHost = make("div");
-      const add = make("button", "Add co-speaker", "secondary");
+      const add = make("button", "Add participant", "secondary");
       add.type = "button";
       add.addEventListener("click", () => {
         if (coSpeakerRowHost.querySelectorAll(".co-speaker-row").length >= coSpeakerLimit) {
-          showComposerError(`This call allows up to ${coSpeakerLimit} co-speaker${coSpeakerLimit === 1 ? "" : "s"}.`);
+          showComposerError(`This call allows up to ${coSpeakerLimit} additional participant${coSpeakerLimit === 1 ? "" : "s"}.`);
           return;
         }
         addCoSpeakerRow(coSpeakerRowHost);
         shell.dataset.dirty = "true";
         saveComposerDraft();
       });
-      coSpeakers.append(make("h4", "Co-speakers"), coSpeakerRowHost, add);
+      coSpeakers.append(make("h4", "Additional participants"), coSpeakerRowHost, add);
       shell.append(coSpeakers);
     }
     const actions = make("div", undefined, "actions");
@@ -697,6 +715,7 @@
           const row = coSpeakerRowHost.lastElementChild;
           row.querySelector("[data-co-speaker-name]").value = entry.display_name || "";
           row.querySelector("[data-co-speaker-email]").value = entry.email || "";
+          row.querySelector("[data-co-speaker-role]").value = entry.role || "co_speaker";
         }
         if (draft) shell.dataset.dirty = "true";
         state.applyConditions();

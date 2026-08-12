@@ -11,7 +11,7 @@ def test_review_surfaces_use_proposal_until_acceptance() -> None:
     assert "Proposal details" in markup
     assert "Submission details" not in markup
     assert "No proposals yet." in javascript
-    assert "selected proposals" in javascript
+    assert "selected proposal" in javascript
     assert "decide which proposals move" in reviewer
     assert "Proposal results" in reviewer
     assert "decide which sessions move" not in reviewer

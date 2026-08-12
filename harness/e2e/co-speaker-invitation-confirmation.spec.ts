@@ -21,6 +21,7 @@ const invitation = {
   display_name: "Alex Speaker",
   email: "alex@example.test",
   role: "co_speaker",
+  role_label: "Co-speaker",
   invitation_status: "pending",
   expires_at_ms: Date.UTC(2027, 4, 1),
   proposal_title: "Reliable Agent Systems",

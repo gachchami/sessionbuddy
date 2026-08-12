@@ -69,6 +69,7 @@ from .models import (
     SubmissionList,
     SubmissionUpdate,
     SubmissionView,
+    contributor_role_label,
 )
 from .staged_uploads import (
     MAX_ACTIVE_STAGED_BYTES,
@@ -209,7 +210,7 @@ async def _reconcile_co_speakers(
     db, now = _db(request), utc_now_ms()
     existing = result_rows(
         await db.prepare(
-            """SELECT id,normalized_email,user_id,invitation_status,invitation_version
+            """SELECT id,normalized_email,user_id,role,invitation_status,invitation_version
                FROM submission_contributors WHERE submission_id=?1"""
         )
         .bind(submission_id)
@@ -232,15 +233,37 @@ async def _reconcile_co_speakers(
         if contributor is not None:
             batch.add_statement(
                 db.prepare(
-                    """UPDATE submission_contributors SET display_name=?1,email=?2,
-                         updated_at_ms=?3 WHERE id=?4 AND invitation_status!='removed'"""
-                ).bind(contributor.display_name, contributor.email, now, current["id"])
+                    """UPDATE submission_contributors SET display_name=?1,email=?2,role=?3,
+                         updated_at_ms=?4 WHERE id=?5 AND invitation_status!='removed'"""
+                ).bind(
+                    contributor.display_name,
+                    contributor.email,
+                    contributor.role,
+                    now,
+                    current["id"],
+                )
             )
+            if current["user_id"] is not None:
+                batch.add_statement(
+                    db.prepare(
+                        """UPDATE submission_speakers SET role=?1,snapshot_name=?2
+                           WHERE submission_id=?3 AND role!='primary' AND event_speaker_id IN (
+                             SELECT es.id FROM event_speakers es
+                             JOIN people p ON p.id=es.person_id
+                             WHERE es.event_id=?4 AND p.user_id=?5)"""
+                    ).bind(
+                        contributor.role,
+                        contributor.display_name,
+                        submission_id,
+                        event_id,
+                        current["user_id"],
+                    )
+                )
             continue
         batch.add_statement(
             db.prepare(
                 """DELETE FROM submission_speakers
-                   WHERE submission_id=?1 AND role='co_speaker' AND event_speaker_id IN (
+                   WHERE submission_id=?1 AND role!='primary' AND event_speaker_id IN (
                      SELECT es.id FROM event_speakers es JOIN people p ON p.id=es.person_id
                      WHERE es.event_id=?2 AND p.user_id=?3)"""
             ).bind(submission_id, event_id, current["user_id"])
@@ -297,10 +320,10 @@ async def _reconcile_co_speakers(
                     normalized_email,role,created_at_ms,updated_at_ms,invitation_status,
                     invitation_token_hash,invitation_expires_at_ms,invited_at_ms,
                     invitation_version)
-                   VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8,'pending',
-                          ?9,?10,?8,1)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,'pending',
+                          ?10,?11,?9,1)
                    ON CONFLICT(submission_id,normalized_email) DO UPDATE SET
-                     display_name=excluded.display_name,email=excluded.email,
+                     display_name=excluded.display_name,email=excluded.email,role=excluded.role,
                      invitation_status='pending',invitation_token_hash=excluded.invitation_token_hash,
                      invitation_expires_at_ms=excluded.invitation_expires_at_ms,
                      invited_at_ms=excluded.invited_at_ms,declined_at_ms=NULL,removed_at_ms=NULL,
@@ -308,7 +331,7 @@ async def _reconcile_co_speakers(
                      updated_at_ms=excluded.updated_at_ms"""
             ).bind(
                 contributor_id, organization_id, event_id, submission_id,
-                contributor.display_name, contributor.email, normalized, now,
+                contributor.display_name, contributor.email, normalized, contributor.role, now,
                 hash_token(token), expires_at,
             )
         )
@@ -320,8 +343,9 @@ async def _reconcile_co_speakers(
                    VALUES(?1,?2,?3,?4,?5,?6,?7,'queued',?8,?8)"""
             ).bind(
                 message_id, organization_id, event_id, contributor.email,
-                f"Invitation to co-present {proposal_title}",
-                f'<p>{escape(primary_name)} invited you to co-present.</p>'
+                f"Invitation to join {proposal_title}",
+                f'<p>{escape(primary_name)} invited you to join as '
+                f'{escape(contributor_role_label(contributor.role).lower())}.</p>'
                 f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
                 f"co-speaker:{contributor_id}:v{invitation_version}", now,
             )
@@ -1269,12 +1293,12 @@ async def _respond_to_co_speaker_invitation(
                 """INSERT INTO submission_speakers
                    (id,organization_id,event_id,submission_id,event_speaker_id,role,
                     snapshot_name,created_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,'co_speaker',?6,?7)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
                    ON CONFLICT(organization_id,event_id,submission_id,event_speaker_id)
-                   DO UPDATE SET snapshot_name=excluded.snapshot_name"""
+                   DO UPDATE SET role=excluded.role,snapshot_name=excluded.snapshot_name"""
             ).bind(
                 new_id(), row["organization_id"], row["event_id"], row["submission_id"],
-                speaker_id, row["display_name"], now,
+                speaker_id, row["role"], row["display_name"], now,
             )
         )
     batch.add_statement(
@@ -1315,7 +1339,7 @@ async def _respond_to_co_speaker_invitation(
         submission_id=str(row["submission_id"]),
         display_name=str(row["display_name"]),
         email=str(row["email"]),
-        role="co_speaker",
+        role=str(row["role"]),
         invitation_status=response_status,
         expires_at_ms=None,
         proposal_title=str(row["proposal_title"]),
@@ -1417,8 +1441,11 @@ async def resend_co_speaker_invitation(
             row["organization_id"],
             row["event_id"],
             row["email"],
-            f"Invitation to co-present {row['proposal_title']}",
-            f'<p>You were invited to co-present at {escape(str(row["event_name"]))}.</p>'
+            f"Invitation to join {row['proposal_title']}",
+            "<p>You were invited to join as "
+            + escape(contributor_role_label(str(row["role"])).lower())
+            + " "
+            + f'at {escape(str(row["event_name"]))}.</p>'
             f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
             f"co-speaker:{co_speaker_id}:v{int(row['invitation_version']) + 1}",
             now,
@@ -1453,7 +1480,7 @@ async def resend_co_speaker_invitation(
         id=co_speaker_id,
         display_name=str(row["display_name"]),
         email=str(row["email"]),
-        role="co_speaker",
+        role=str(row["role"]),
         invitation_status="pending",
         expires_at_ms=expires_at,
     )
@@ -1483,7 +1510,7 @@ async def remove_co_speaker(
     batch.add_statement(
         db.prepare(
             """DELETE FROM submission_speakers
-               WHERE submission_id=?1 AND role='co_speaker' AND event_speaker_id IN (
+               WHERE submission_id=?1 AND role!='primary' AND event_speaker_id IN (
                  SELECT es.id FROM event_speakers es JOIN people p ON p.id=es.person_id
                  WHERE es.event_id=?2 AND p.user_id=?3)"""
         ).bind(submission_id, row["event_id"], row["user_id"])
@@ -1957,7 +1984,7 @@ async def update_submission(
     db = _db(request)
     row = row_mapping(
         await db.prepare(
-            """SELECT s.organization_id,s.event_id,s.form_id,s.status,s.version,
+            """SELECT s.organization_id,s.event_id,s.form_id,s.status,s.version,s.proposal_title,
                       s.submitter_user_id,f.schema_json,f.opens_at_ms,f.closes_at_ms
                FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
                WHERE s.id=?1 AND f.slug=?2 LIMIT 1"""
@@ -2501,8 +2528,8 @@ async def create_submission(
                     normalized_email,role,created_at_ms,updated_at_ms,invitation_status,
                     invitation_token_hash,invitation_expires_at_ms,invited_at_ms,
                     invitation_version)
-                   VALUES(?1,?2,?3,?4,?5,?6,?7,'co_speaker',?8,?8,'pending',
-                          ?9,?10,?8,1)"""
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?9,'pending',
+                          ?10,?11,?9,1)"""
             ).bind(
                 contributor_id,
                 form["organization_id"],
@@ -2511,6 +2538,7 @@ async def create_submission(
                 contributor.display_name,
                 contributor.email,
                 normalize_email(contributor.email),
+                contributor.role,
                 now,
                 hash_token(invitation_token),
                 invitation_expires_at,
@@ -2527,8 +2555,9 @@ async def create_submission(
                 form["organization_id"],
                 form["event_id"],
                 contributor.email,
-                f"Invitation to co-present {body.proposal_title}",
-                f'<p>{escape(body.speaker_name)} invited you to co-present.</p>'
+                f"Invitation to join {body.proposal_title}",
+                f'<p>{escape(body.speaker_name)} invited you to join as '
+                f'{escape(contributor_role_label(contributor.role).lower())}.</p>'
                 f'<p><a href="{escape(invitation_url)}">Respond to the invitation</a>.</p>',
                 f"co-speaker:{contributor_id}:v1",
                 now,
@@ -2745,9 +2774,8 @@ async def list_submissions(
                  SELECT a.id FROM evaluation_assignments a
                  JOIN evaluation_rounds candidate ON candidate.id=a.round_id
                  WHERE a.submission_id=s.id AND a.status!='revoked'
-                   AND candidate.status!='draft'
-                 ORDER BY CASE candidate.status WHEN 'open' THEN 0 ELSE 1 END,
-                          candidate.updated_at_ms DESC,a.id DESC LIMIT 1
+                   AND candidate.status='open'
+                 ORDER BY candidate.updated_at_ms DESC,a.id DESC LIMIT 1
                )
                LEFT JOIN evaluation_rounds er ON er.id=ea.round_id
                WHERE s.organization_id=?1 AND s.event_id=?2"""
