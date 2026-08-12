@@ -850,6 +850,28 @@
             "title": "Content Type",
             "type": "string"
           },
+          "direct_download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direct Download Url"
+          },
+          "download_grant_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Grant Url"
+          },
           "event_speaker_id": {
             "title": "Event Speaker Id",
             "type": "string"
@@ -875,6 +897,23 @@
             "title": "Kind",
             "type": "string"
           },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "scan_status": {
+            "const": "clean",
+            "default": "clean",
+            "title": "Scan Status",
+            "type": "string"
+          },
           "speaker_name": {
             "title": "Speaker Name",
             "type": "string"
@@ -882,6 +921,10 @@
           "uploaded_at_ms": {
             "title": "Uploaded At Ms",
             "type": "integer"
+          },
+          "uploaded_by": {
+            "title": "Uploaded By",
+            "type": "string"
           },
           "version_comment": {
             "title": "Version Comment",
@@ -910,6 +953,7 @@
           "generation",
           "version_count",
           "uploaded_at_ms",
+          "uploaded_by",
           "version_comment"
         ],
         "title": "AdminSpeakerAssetView",
@@ -6551,6 +6595,51 @@
         "title": "OrganizationView",
         "type": "object"
       },
+      "OrganizerSpeakerNote": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "OrganizerSpeakerNote",
+        "type": "object"
+      },
+      "OrganizerSpeakerNotes": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizerSpeakerNote"
+            },
+            "maxItems": 25,
+            "title": "Data",
+            "type": "array"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "OrganizerSpeakerNotes",
+        "type": "object"
+      },
       "OwnedSubmissionList": {
         "additionalProperties": false,
         "properties": {
@@ -7683,9 +7772,29 @@
             "title": "Html Body",
             "type": "string"
           },
-          "recipient_user_id": {
-            "title": "Recipient User Id",
+          "recipient_state": {
+            "default": "active",
+            "enum": [
+              "active",
+              "invited"
+            ],
+            "title": "Recipient State",
             "type": "string"
+          },
+          "recipient_target_id": {
+            "title": "Recipient Target Id",
+            "type": "string"
+          },
+          "recipient_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient User Id"
           },
           "subject": {
             "title": "Subject",
@@ -7693,7 +7802,7 @@
           }
         },
         "required": [
-          "recipient_user_id",
+          "recipient_target_id",
           "display_name",
           "email",
           "subject",
@@ -15067,6 +15176,116 @@
           }
         },
         "summary": "Upload Admin Speaker Headshot",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/organizer-notes": {
+      "get": {
+        "operationId": "get_admin_speaker_notes_api_v1_admin_events__event_id__speakers__event_speaker_id__organizer_notes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerSpeakerNotes"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Admin Speaker Notes",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      },
+      "put": {
+        "operationId": "update_admin_speaker_notes_api_v1_admin_events__event_id__speakers__event_speaker_id__organizer_notes_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizerSpeakerNotes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerSpeakerNotes"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Admin Speaker Notes",
         "tags": [
           "speaker-onboarding"
         ]

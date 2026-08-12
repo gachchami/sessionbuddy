@@ -55,9 +55,10 @@
     checkbox.value = speaker.event_speaker_id;
     const identity = document.createElement("span");
     const name = document.createElement("strong"); name.textContent = speaker.display_name;
-    const detail = document.createElement("small"); detail.textContent = `${speaker.email} · ${speaker.proposal_title || "No session title"}`;
+    const recipientState = speaker.selection_status === "invited" ? "Invited — awaiting acceptance" : "Active speaker";
+    const detail = document.createElement("small"); detail.textContent = `${speaker.email} · ${speaker.proposal_title || recipientState}`;
     identity.append(name, detail);
-    const status = document.createElement("span"); status.className = "badge"; status.textContent = speaker.selection_status;
+    const status = document.createElement("span"); status.className = "badge"; status.textContent = recipientState;
     label.append(checkbox, identity, status);
     return label;
   }
@@ -69,7 +70,7 @@
     const selected = new Set(selectedIds());
     list.replaceChildren();
     if (!visibleSpeakers.length) {
-      const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = speakers.length ? "No recipients match your search." : "No active speakers are available yet."; list.append(empty);
+      const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = speakers.length ? "No recipients match your search." : "No active or invited speakers are available yet."; list.append(empty);
       return;
     }
     list.append(...visibleSpeakers.map((speaker) => {
@@ -108,6 +109,15 @@
     if (!eventSpeakerIds.length) { setStatus("Select at least one recipient.", true); return null; }
     if (!form.reportValidity()) return null;
     const values = Object.fromEntries(new FormData(form));
+    const invited = speakers.filter((speaker) => eventSpeakerIds.includes(speaker.event_speaker_id) && speaker.selection_status === "invited");
+    const activeOnlyFields = ["submission.title", "portal.link"];
+    const text = `${values.subject}\n${values.body_text}`;
+    const missing = activeOnlyFields.filter((field) => new RegExp(`{{\\s*${field.replace(".", "\\.")}\\s*}}`).test(text));
+    if (invited.length && missing.length) {
+      const names = invited.map((speaker) => speaker.display_name).join(", ");
+      setStatus(`${names} ${invited.length === 1 ? "is" : "are"} awaiting acceptance and cannot use ${missing.join(" or ")}. Choose the Invitation reminder template or remove ${invited.length === 1 ? "this recipient" : "these recipients"}.`, true);
+      return null;
+    }
     return { event_speaker_ids: eventSpeakerIds, subject: values.subject, body_text: values.body_text };
   }
 
@@ -123,6 +133,7 @@
   });
   byId("message-template").addEventListener("change", (event) => {
     const templates = {
+      invitation: { subject: "Your invitation to {{event.name}}", body: "Hi {{speaker.name}},\n\nYour speaker invitation is waiting for you. Please use the secure access link in your original invitation email to accept." },
       welcome: { subject: "Welcome to {{event.name}}", body: "Hi {{speaker.name}},\n\nWe’re excited to have you present {{submission.title}}. Complete your next steps at {{portal.link}}." },
       deadline: { subject: "Next steps for {{event.name}}", body: "Hi {{speaker.name}},\n\nPlease review your outstanding speaker tasks at {{portal.link}}." }
     };
@@ -158,7 +169,8 @@
       const preview = byId("message-preview-content"); preview.replaceChildren();
       result.recipients.forEach((recipient) => {
         const card = document.createElement("article");
-        const heading = document.createElement("strong"); heading.textContent = `${recipient.display_name} · ${recipient.email}`;
+        const state = recipient.recipient_state === "invited" ? "Invited — awaiting acceptance" : "Active speaker";
+        const heading = document.createElement("strong"); heading.textContent = `${recipient.display_name} · ${recipient.email} · ${state}`;
         const subject = document.createElement("p"); subject.textContent = `Subject: ${recipient.subject}`;
         const message = document.createElement("p");
         message.textContent = new DOMParser().parseFromString(recipient.html_body.replace(/<br\s*\/?>/gi, "\n"), "text/html").body.textContent || "";
@@ -234,7 +246,7 @@
     eventTimeZone = event.time_zone;
     byId("message-time-zone").textContent = eventTimeZone;
     byId("speaker-directory").href = `/admin/events/${encodeURIComponent(eventId)}/speakers`;
-    speakers = (await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)).data.filter((speaker) => speaker.selection_status !== "invited");
+    speakers = (await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)).data;
     renderRecipients();
     await loadMessageHistory();
     if (byId("status").textContent === "Loading speakers\u2026") {

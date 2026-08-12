@@ -204,9 +204,7 @@ async def _asset_versions_by_asset(
     )
     versions: dict[str, list[SpeakerAssetVersionView]] = {}
     for row in rows:
-        versions.setdefault(str(row["asset_id"]), []).append(
-            _speaker_asset_version_view(row)
-        )
+        versions.setdefault(str(row["asset_id"]), []).append(_speaker_asset_version_view(row))
     return versions
 
 
@@ -517,10 +515,12 @@ async def get_admin_onboarding_dashboard(
                 row_state = "due_soon"
         row_views.append(
             OnboardingRow(
-                event_speaker_id=(str(row["event_speaker_id"])
-                                  if row["event_speaker_id"] is not None else None),
-                invitation_id=(str(row["invitation_id"])
-                               if row["invitation_id"] is not None else None),
+                event_speaker_id=(
+                    str(row["event_speaker_id"]) if row["event_speaker_id"] is not None else None
+                ),
+                invitation_id=(
+                    str(row["invitation_id"]) if row["invitation_id"] is not None else None
+                ),
                 recipient_state="invited" if is_invited else "active",
                 display_name=str(row["display_name"]),
                 proposal_title=str(row["proposal_title"]),
@@ -791,8 +791,7 @@ async def get_speaker_portal(
                 version=int(submission["version"]),
                 editable=(
                     str(submission["status"]) == "submitted"
-                    and str(submission["submitter_user_id"] or "")
-                    == authenticated.actor.user_id
+                    and str(submission["submitter_user_id"] or "") == authenticated.actor.user_id
                 ),
             )
             for submission in submissions
@@ -1333,6 +1332,7 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                 """SELECT a.id,a.event_speaker_id,p.display_name AS speaker_name,a.kind,
                           current.original_filename,current.content_type,current.byte_size,
                           current.generation,current.uploaded_at_ms,current.version_comment,
+                          COALESCE(u.email,'System') AS uploaded_by,0 AS profile_only,
                           (SELECT count(*) FROM speaker_asset_versions history
                            WHERE history.asset_id=a.id AND history.scan_state IN
                              ('clean','superseded')) AS version_count
@@ -1342,8 +1342,26 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                    JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
                    JOIN speaker_asset_versions current ON current.asset_id=a.id
                      AND current.is_current=1 AND current.scan_state='clean'
+                   LEFT JOIN users u ON u.id=current.uploaded_by_user_id
                    WHERE a.organization_id=?1 AND a.event_id=?2
-                   ORDER BY current.uploaded_at_ms DESC,a.id LIMIT 500"""
+                   UNION ALL
+                   SELECT 'profile-headshot:' || es.id AS id,es.id AS event_speaker_id,
+                          p.display_name AS speaker_name,'headshot' AS kind,
+                          CASE h.content_type WHEN 'image/jpeg' THEN 'headshot.jpg'
+                            WHEN 'image/webp' THEN 'headshot.webp'
+                            ELSE 'headshot.png' END AS original_filename,
+                          h.content_type,h.byte_size,
+                          1 AS generation,h.updated_at_ms AS uploaded_at_ms,
+                          'Profile headshot' AS version_comment,
+                          COALESCE(owner.email,'Speaker') AS uploaded_by,1 AS profile_only,
+                          1 AS version_count
+                   FROM event_speakers es
+                   JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
+                   JOIN users owner ON owner.id=p.user_id
+                   JOIN user_headshots h ON h.user_id=owner.id
+                   WHERE es.organization_id=?1 AND es.event_id=?2
+                     AND h.speaker_asset_version_id IS NULL
+                   ORDER BY uploaded_at_ms DESC,id LIMIT 500"""
             )
             .bind(event["organization_id"], event_id),
         )
@@ -1365,8 +1383,23 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                 generation=int(row["generation"]),
                 version_count=int(row["version_count"]),
                 uploaded_at_ms=int(row["uploaded_at_ms"]),
+                uploaded_by=str(row["uploaded_by"]),
+                preview_url=(
+                    f"/api/v1/admin/events/{event_id}/speakers/{row['event_speaker_id']}/headshot"
+                    if row["kind"] == "headshot"
+                    else None
+                ),
+                download_grant_url=(
+                    f"/api/v1/admin/events/{event_id}/assets/{row['id']}/download-grants"
+                    if not row["profile_only"] else None
+                ),
+                direct_download_url=(
+                    f"/api/v1/admin/events/{event_id}/speakers/"
+                    f"{row['event_speaker_id']}/headshot"
+                    if row["profile_only"] else None
+                ),
                 version_comment=str(row["version_comment"]),
-                versions=versions_by_asset.get(str(row["id"]), []),
+                versions=([] if row["profile_only"] else versions_by_asset.get(str(row["id"]), [])),
             )
         )
     return AdminSpeakerAssetList(data=data)
@@ -1460,14 +1493,16 @@ async def create_speaker_asset_version_download_grant(
         request,
         Permission.SPEAKER_ASSET_READ_OWN,
         ResourceContext(
-            str(speaker["organization_id"]), event_id,
+            str(speaker["organization_id"]),
+            event_id,
             resource_owner_user_id=authenticated.actor.user_id,
         ),
         mutation=True,
     )
     grant = await AssetRepository(_db(request)).create_download_grant(
         AssetAccessScope(
-            organization_id=str(speaker["organization_id"]), event_id=event_id,
+            organization_id=str(speaker["organization_id"]),
+            event_id=event_id,
             actor_user_id=authenticated.actor.user_id,
             event_speaker_id=str(speaker["event_speaker_id"]),
         ),
@@ -1535,20 +1570,25 @@ async def create_admin_asset_version_download_grant(
 ) -> AssetDownloadGrantView:
     authenticated = await authenticate_request(request)
     event = row_mapping(
-        await _db(request).prepare(
-            "SELECT id,organization_id FROM events WHERE id=?1 AND status!='archived' LIMIT 1"
-        ).bind(event_id).first()
+        await _db(request)
+        .prepare("SELECT id,organization_id FROM events WHERE id=?1 AND status!='archived' LIMIT 1")
+        .bind(event_id)
+        .first()
     )
     if event is None:
         raise HTTPException(status_code=404)
     await require_permission(
-        request, Permission.SPEAKER_ASSET_READ,
-        ResourceContext(str(event["organization_id"]), event_id), mutation=True,
+        request,
+        Permission.SPEAKER_ASSET_READ,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
     )
     grant = await AssetRepository(_db(request)).create_download_grant(
         AssetAccessScope(
-            organization_id=str(event["organization_id"]), event_id=event_id,
-            actor_user_id=authenticated.actor.user_id, event_admin=True,
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            event_admin=True,
         ),
         asset_id,
         version_id=version_id,
@@ -1677,9 +1717,7 @@ async def authorize_speaker_upload(
     await enforce_rate_limit(
         request,
         binding_name="SPEAKER_UPLOAD_AUTH_RATE_LIMITER",
-        policy=RateLimitPolicy(
-            "speaker.asset.upload_authorize", limit=3, window_seconds=60
-        ),
+        policy=RateLimitPolicy("speaker.asset.upload_authorize", limit=3, window_seconds=60),
         subject=f"{authenticated.actor.user_id}:{event_id}",
     )
     now = utc_now_ms()
@@ -1752,8 +1790,9 @@ async def authorize_speaker_upload(
         db.prepare(
             """INSERT INTO speaker_asset_versions
            (id, organization_id, event_id, event_speaker_id, asset_id, generation,
-            object_key, original_filename, scan_state, created_at_ms,version_comment)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_upload', ?9,?10)"""
+            object_key, original_filename, scan_state, created_at_ms,version_comment,
+            uploaded_by_user_id)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_upload', ?9,?10,?11)"""
         ).bind(
             version_id,
             speaker["organization_id"],
@@ -1765,6 +1804,7 @@ async def authorize_speaker_upload(
             body.filename,
             now,
             body.version_comment,
+            authenticated.actor.user_id,
         )
     )
     batch.add_statement(

@@ -91,6 +91,18 @@ class SpeakerTargetList(BaseModel):
     data: list[SpeakerTarget]
 
 
+class OrganizerSpeakerNote(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    label: str = Field(min_length=1, max_length=100)
+    value: str = Field(default="", max_length=5000)
+
+
+class OrganizerSpeakerNotes(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    data: list[OrganizerSpeakerNote] = Field(default_factory=list, max_length=25)
+    version: int = Field(ge=1)
+
+
 class OrganizationSpeakerParticipation(BaseModel):
     event_id: str
     event_name: str

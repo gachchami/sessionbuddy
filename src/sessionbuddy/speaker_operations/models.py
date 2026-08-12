@@ -174,9 +174,7 @@ class OnboardingRow(BaseModel):
     task_id: str
     task_type: str
     task_title: str
-    state: Literal[
-        "open", "completed", "overdue", "due_soon", "waived", "awaiting_acceptance"
-    ]
+    state: Literal["open", "completed", "overdue", "due_soon", "waived", "awaiting_acceptance"]
     due_at_ms: int | None
     last_activity_at_ms: int
 
@@ -278,6 +276,11 @@ class AdminSpeakerAssetView(BaseModel):
     generation: int
     version_count: int
     uploaded_at_ms: int
+    uploaded_by: str
+    scan_status: Literal["clean"] = "clean"
+    preview_url: str | None = None
+    download_grant_url: str | None = None
+    direct_download_url: str | None = None
     version_comment: str
     versions: list[SpeakerAssetVersionView] = Field(default_factory=list)
 

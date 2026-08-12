@@ -59,9 +59,7 @@ _EVENT_LOGO_RULES = {
 _EVENT_LOGO_MAX_BYTES = 2 * 1024 * 1024
 _EVENT_IMAGE_MEDIA_TYPES = frozenset(_EVENT_LOGO_RULES)
 _HEADSHOT_MAX_BYTES = 5 * 1024 * 1024
-_IANA_TIME_ZONE = re.compile(
-    r"^(?:UTC|[A-Za-z][A-Za-z0-9._+-]*(?:/[A-Za-z0-9][A-Za-z0-9._+-]*)+)$"
-)
+_IANA_TIME_ZONE = re.compile(r"^(?:UTC|[A-Za-z][A-Za-z0-9._+-]*(?:/[A-Za-z0-9][A-Za-z0-9._+-]*)+)$")
 
 
 def _validated_time_zone(value: str) -> str:
@@ -69,6 +67,7 @@ def _validated_time_zone(value: str) -> str:
     if not _IANA_TIME_ZONE.fullmatch(value) or ".." in value:
         raise ValueError("time_zone must be UTC or an IANA time zone such as Asia/Kolkata")
     return value
+
 
 _SETUP_COMPLETED_SQL = """SELECT singleton_key
 FROM instance_setup
@@ -169,9 +168,7 @@ async def co_speaker_invitation_page(token: str) -> Response:
     )
 
 
-@access_router.get(
-    "/co-speaker-invitations/assets/invitation.js", include_in_schema=False
-)
+@access_router.get("/co-speaker-invitations/assets/invitation.js", include_in_schema=False)
 async def co_speaker_invitation_javascript() -> Response:
     return Response(_asset("co_speaker_invitation.js"), media_type="text/javascript")
 
@@ -208,12 +205,9 @@ async def event_overview_javascript() -> Response:
 
 @access_router.get("/admin/people", include_in_schema=False)
 @access_router.get("/admin/events/{event_id}/speakers", include_in_schema=False)
-@access_router.get(
-    "/admin/events/{event_id}/speakers/{event_speaker_id}", include_in_schema=False
-)
+@access_router.get("/admin/events/{event_id}/speakers/{event_speaker_id}", include_in_schema=False)
 async def speaker_directory_page(
-    request: Request,
-    event_id: str | None = None, event_speaker_id: str | None = None
+    request: Request, event_id: str | None = None, event_speaker_id: str | None = None
 ) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
     return Response(
@@ -368,8 +362,13 @@ class BootstrapCreate(BaseModel):
         if (self.admin_first_name is None) != (self.admin_last_name is None):
             raise ValueError("administrator first and last name must be provided together")
         values = (
-            self.event_name, self.starts_at_ms, self.ends_at_ms, self.time_zone,
-            self.event_location, self.event_description, self.event_delivery_mode,
+            self.event_name,
+            self.starts_at_ms,
+            self.ends_at_ms,
+            self.time_zone,
+            self.event_location,
+            self.event_description,
+            self.event_delivery_mode,
         )
         if any(value is not None for value in values):
             if any(value is None for value in values):
@@ -496,9 +495,9 @@ class EventView(BaseModel):
     version: int
     proposal_count: int = Field(default=0, ge=0)
     pending_review_count: int = Field(default=0, ge=0)
-    schedule_status: Literal[
-        "not_started", "draft", "ready", "published", "updates_pending"
-    ] = "not_started"
+    schedule_status: Literal["not_started", "draft", "ready", "published", "updates_pending"] = (
+        "not_started"
+    )
     cfp_status: Literal["not_started", "draft", "published", "closed"] = "not_started"
 
 
@@ -665,9 +664,7 @@ class SessionEventAccess(BaseModel):
     organization_id: str
     event_id: str
     event_name: str
-    permissions: list[Literal["owner", "view", "edit", "manage"]] = Field(
-        default_factory=list
-    )
+    permissions: list[Literal["owner", "view", "edit", "manage"]] = Field(default_factory=list)
     assignments: list[Literal["reviewer", "speaker"]] = Field(default_factory=list)
 
 
@@ -752,9 +749,7 @@ class CurrentSession(BaseModel):
     csrf_token: str
     default_email_sender_name: str
     default_email_address: str
-    account_roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(
-        default_factory=list
-    )
+    account_roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(default_factory=list)
     active_role: Literal["organizer", "reviewer", "speaker"]
     default_role: Literal["organizer", "reviewer", "speaker"] | None = None
     organization_id: str | None = None
@@ -804,7 +799,9 @@ async def _default_account_role(db, user_id: str) -> str | None:
             """SELECT role FROM user_roles
                WHERE user_id=?1 AND status='active' AND is_default=1
                LIMIT 1"""
-        ).bind(user_id).first()
+        )
+        .bind(user_id)
+        .first()
     )
     return str(row["role"]) if row is not None else None
 
@@ -936,8 +933,13 @@ async def bootstrap_tenant(
     bootstrap_token: str | None = Header(default=None, alias="X-Bootstrap-Token"),
 ) -> BootstrapView:
     event_values = (
-        body.event_name, body.starts_at_ms, body.ends_at_ms, body.time_zone,
-        body.event_location, body.event_description, body.event_delivery_mode,
+        body.event_name,
+        body.starts_at_ms,
+        body.ends_at_ms,
+        body.time_zone,
+        body.event_location,
+        body.event_description,
+        body.event_delivery_mode,
     )
     has_event = any(value is not None for value in event_values)
     if has_event:
@@ -977,9 +979,7 @@ async def bootstrap_tenant(
         ).bind(now)
     )
     batch.add_statement(
-        db.prepare(
-            "DELETE FROM instance_setup_credentials WHERE singleton_key='primary'"
-        )
+        db.prepare("DELETE FROM instance_setup_credentials WHERE singleton_key='primary'")
     )
     batch.add_statement(
         db.prepare(
@@ -1102,8 +1102,7 @@ async def account_profile(request: Request) -> AccountProfileView:
     authenticated = await authenticate_request(request)
     db = database(request)
     row = row_mapping(
-        await db
-        .prepare(
+        await db.prepare(
             """SELECT u.email,u.first_name,u.last_name,u.display_name,u.job_title,u.company,
                       u.time_zone,u.description,u.website_url,u.linkedin_url,u.x_url,
                       u.public_profile_enabled,u.version,
@@ -1124,7 +1123,9 @@ async def account_profile(request: Request) -> AccountProfileView:
         await db.prepare(
             """SELECT role FROM user_roles
                WHERE user_id=?1 AND status='active' ORDER BY role"""
-        ).bind(authenticated.actor.user_id).all()
+        )
+        .bind(authenticated.actor.user_id)
+        .all()
     )
     return AccountProfileView(**row, roles=[str(item["role"]) for item in roles])
 
@@ -1142,9 +1143,9 @@ async def update_account_profile(
     guard_mutation(request, authenticated.session_id)
     db, now = database(request), utc_now_ms()
     current = row_mapping(
-        await db.prepare(
-            "SELECT version FROM users WHERE id=?1 AND status='active' LIMIT 1"
-        ).bind(authenticated.actor.user_id).first()
+        await db.prepare("SELECT version FROM users WHERE id=?1 AND status='active' LIMIT 1")
+        .bind(authenticated.actor.user_id)
+        .first()
     )
     if current is None or int(current["version"]) != body.version:
         raise HTTPException(status_code=409)
@@ -1183,11 +1184,7 @@ async def update_account_profile(
             body.version,
         )
     )
-    speaker_links = [
-        value
-        for value in (body.website_url, body.linkedin_url, body.x_url)
-        if value
-    ]
+    speaker_links = [value for value in (body.website_url, body.linkedin_url, body.x_url) if value]
     batch.add_statement(
         db.prepare(
             """UPDATE people SET display_name=?1,job_title=?2,company=?3,
@@ -1321,17 +1318,20 @@ async def upload_account_headshot(request: Request) -> Response:
     now = utc_now_ms()
     batch = CommandBatch(database(request))
     batch.add_statement(
-        database(request).prepare(
+        database(request)
+        .prepare(
             """INSERT INTO user_headshots
                (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
                VALUES(?1,?2,?3,?4,?5,?6)
                ON CONFLICT(user_id) DO UPDATE SET object_key=excluded.object_key,
                  content_type=excluded.content_type,byte_size=excluded.byte_size,
                  checksum_sha256=excluded.checksum_sha256,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(authenticated.actor.user_id, object_key, content_type, len(body), checksum, now)
+        )
+        .bind(authenticated.actor.user_id, object_key, content_type, len(body), checksum, now)
     )
     batch.add_statement(
-        database(request).prepare(
+        database(request)
+        .prepare(
             """UPDATE speaker_tasks SET state='completed',completed_at_ms=?1,
                       version=version+1,updated_at_ms=?1
                WHERE task_type='headshot' AND state='open'
@@ -1341,7 +1341,8 @@ async def upload_account_headshot(request: Request) -> Response:
                      AND es.event_id=speaker_tasks.event_id
                      AND es.id=speaker_tasks.event_speaker_id AND p.user_id=?2
                  )"""
-        ).bind(now, authenticated.actor.user_id)
+        )
+        .bind(now, authenticated.actor.user_id)
     )
     batch.audit(
         AuditEvent(
@@ -1368,9 +1369,10 @@ async def upload_account_headshot(request: Request) -> Response:
 async def account_headshot(request: Request) -> StreamingResponse:
     authenticated = await authenticate_request(request)
     row = row_mapping(
-        await database(request).prepare(
-            "SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1"
-        ).bind(authenticated.actor.user_id).first()
+        await database(request)
+        .prepare("SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1")
+        .bind(authenticated.actor.user_id)
+        .first()
     )
     if row is None:
         raise HTTPException(status_code=404)
@@ -1479,24 +1481,30 @@ async def delete_account_headshot(request: Request) -> Response:
     db = database(request)
     row = row_mapping(
         await db.prepare("SELECT object_key FROM user_headshots WHERE user_id=?1 LIMIT 1")
-        .bind(authenticated.actor.user_id).first()
+        .bind(authenticated.actor.user_id)
+        .first()
     )
     if row is not None:
-        await db.prepare("DELETE FROM user_headshots WHERE user_id=?1").bind(
-            authenticated.actor.user_id
-        ).run()
+        await (
+            db.prepare("DELETE FROM user_headshots WHERE user_id=?1")
+            .bind(authenticated.actor.user_id)
+            .run()
+        )
         await _event_logo_bucket(request).delete(str(row["object_key"]))
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 async def _managed_speaker_headshot_target(request: Request, event_id: str, event_speaker_id: str):
     row = row_mapping(
-        await database(request).prepare(
+        await database(request)
+        .prepare(
             """SELECT es.organization_id,es.event_id,p.user_id
                FROM event_speakers es JOIN people p
                  ON p.organization_id=es.organization_id AND p.id=es.person_id
                WHERE es.id=?1 AND es.event_id=?2 AND p.user_id IS NOT NULL LIMIT 1"""
-        ).bind(event_speaker_id, event_id).first()
+        )
+        .bind(event_speaker_id, event_id)
+        .first()
     )
     if row is None:
         raise HTTPException(status_code=404)
@@ -1520,9 +1528,10 @@ async def admin_speaker_headshot(
 ) -> StreamingResponse:
     _, target = await _managed_speaker_headshot_target(request, event_id, event_speaker_id)
     row = row_mapping(
-        await database(request).prepare(
-            "SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1"
-        ).bind(target["user_id"]).first()
+        await database(request)
+        .prepare("SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1")
+        .bind(target["user_id"])
+        .first()
     )
     if row is None:
         raise HTTPException(status_code=404)
@@ -1555,7 +1564,27 @@ async def upload_admin_speaker_headshot(
     )
     body, content_type, extension = await _read_headshot(request)
     checksum = hashlib.sha256(body).digest()
-    asset_id = new_id()
+    db = database(request)
+    slot = row_mapping(
+        await db.prepare(
+            """SELECT id FROM speaker_assets
+               WHERE organization_id=?1 AND event_id=?2 AND event_speaker_id=?3
+                 AND kind='headshot' AND submission_id IS NULL
+               ORDER BY created_at_ms,id LIMIT 1"""
+        )
+        .bind(target["organization_id"], event_id, event_speaker_id)
+        .first()
+    )
+    asset_id = str(slot["id"]) if slot is not None else new_id()
+    asset_version_id = new_id()
+    generation = int(
+        await db.prepare(
+            "SELECT COALESCE(MAX(generation),0)+1 AS generation "
+            "FROM speaker_asset_versions WHERE asset_id=?1"
+        )
+        .bind(asset_id)
+        .first("generation")
+    )
     environment_value = request.scope.get("env")
     if not malware_scan_disabled(environment_value):
         try:
@@ -1565,29 +1594,81 @@ async def upload_admin_speaker_headshot(
                     schema_version=1,
                     organization_id=str(target["organization_id"]),
                     event_id=event_id,
-                    asset_version_id=asset_id,
-                    generation=1,
+                    asset_version_id=asset_version_id,
+                    generation=generation,
                     checksum_sha256=checksum,
-                    job_id=asset_id,
+                    job_id=asset_version_id,
                 ),
             )
         except Exception as exc:
             raise HTTPException(status_code=503) from exc
         if scan.verdict != "clean":
             raise HTTPException(status_code=400)
-    object_key = f"private/user-headshots/{target['user_id']}.{extension}"
+    object_key = f"private/speaker-assets/{asset_version_id}/headshot.{extension}"
     await _event_logo_bucket(request).put(object_key, body)
     now = utc_now_ms()
-    batch = CommandBatch(database(request))
+    batch = CommandBatch(db)
+    if slot is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_assets
+                   (id,organization_id,event_id,event_speaker_id,submission_id,task_id,
+                    kind,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,NULL,NULL,'headshot',?5,?5)"""
+            ).bind(asset_id, target["organization_id"], event_id, event_speaker_id, now)
+        )
+    else:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_asset_versions SET is_current=0,scan_state='superseded'
+                   WHERE asset_id=?1 AND is_current=1"""
+            ).bind(asset_id)
+        )
+        batch.add_statement(
+            db.prepare(
+                "UPDATE speaker_assets SET version=version+1,updated_at_ms=?2 WHERE id=?1"
+            ).bind(asset_id, now)
+        )
     batch.add_statement(
-        database(request).prepare(
+        db.prepare(
+            """INSERT INTO speaker_asset_versions
+               (id,organization_id,event_id,event_speaker_id,asset_id,generation,object_key,
+                original_filename,content_type,byte_size,checksum_sha256,scan_state,is_current,
+                created_at_ms,uploaded_at_ms,scan_started_at_ms,scanned_at_ms,scan_result_code,
+                uploaded_by_user_id,version_comment)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'clean',1,
+                      ?12,?12,?12,?12,'clean',?13,'Organizer headshot upload')"""
+        ).bind(
+            asset_version_id,
+            target["organization_id"],
+            event_id,
+            event_speaker_id,
+            asset_id,
+            generation,
+            object_key,
+            f"headshot.{extension}",
+            content_type,
+            len(body),
+            checksum,
+            now,
+            authenticated.actor.user_id,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
             """INSERT INTO user_headshots
-               (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6)
+               (user_id,speaker_asset_version_id,object_key,content_type,byte_size,
+                checksum_sha256,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7)
                ON CONFLICT(user_id) DO UPDATE SET object_key=excluded.object_key,
                  content_type=excluded.content_type,byte_size=excluded.byte_size,
-                 checksum_sha256=excluded.checksum_sha256,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(target["user_id"], object_key, content_type, len(body), checksum, now)
+                 checksum_sha256=excluded.checksum_sha256,
+                 speaker_asset_version_id=excluded.speaker_asset_version_id,
+                 updated_at_ms=excluded.updated_at_ms"""
+        ).bind(
+            target["user_id"], asset_version_id, object_key, content_type,
+            len(body), checksum, now,
+        )
     )
     batch.audit(
         AuditEvent(
@@ -1620,9 +1701,7 @@ async def list_organizations(request: Request) -> OrganizationList:
         raise HTTPException(status_code=403)
     organizations: list[OrganizationView] = []
     organization_ids = {
-        resource_id
-        for resource_id in authenticated.actor.owned_resource_ids
-        if resource_id
+        resource_id for resource_id in authenticated.actor.owned_resource_ids if resource_id
     }
     organization_ids.update(authenticated.actor.resource_grants)
     if organization_ids:
@@ -1688,6 +1767,8 @@ async def update_organization(
 EVENTS_PAGE_LIMIT = 50
 EVENT_LIST_VIEWS = frozenset({"all", "active", "draft", "past"})
 EVENT_LIST_ORDERS = frozenset({"recent", "upcoming"})
+
+
 async def _has_event_access_in_organization(db, user_id: str, organization_id: str) -> bool:
     row = row_mapping(
         await db.prepare(
@@ -1700,7 +1781,9 @@ async def _has_event_access_in_organization(db, user_id: str, organization_id: s
                  AND (owned.owner_user_id=?1
                       OR grant_access.permission IN ('edit','manage'))
                LIMIT 1"""
-        ).bind(user_id, organization_id).first()
+        )
+        .bind(user_id, organization_id)
+        .first()
     )
     return row is not None
 
@@ -1769,9 +1852,7 @@ async def list_events(
         conditions.append("(e.ends_at_ms<? OR e.status='archived')")
         binds.append(now)
     if search:
-        escaped = (
-            search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        )
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped}%"
         conditions.append(
             "(e.name LIKE ? ESCAPE '\\' OR COALESCE(e.location,'') LIKE ? ESCAPE '\\')"
@@ -1929,10 +2010,7 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
             .first("total")
         )
         session_count = await (
-            db.prepare(
-                "SELECT COUNT(*) AS total FROM accepted_sessions "
-                "WHERE organization_id=?1"
-            )
+            db.prepare("SELECT COUNT(*) AS total FROM accepted_sessions WHERE organization_id=?1")
             .bind(organization_id)
             .first("total")
         )
@@ -2195,9 +2273,7 @@ async def duplicate_event(
     if body.status == "active":
         _validate_event_can_activate(body.ends_at_ms, now)
     source_scope = row_mapping(
-        await db.prepare(
-            "SELECT id,organization_id FROM events WHERE id=?1 LIMIT 1"
-        )
+        await db.prepare("SELECT id,organization_id FROM events WHERE id=?1 LIMIT 1")
         .bind(event_id)
         .first()
     )
@@ -2372,9 +2448,7 @@ async def duplicate_event(
             )
         )
     logo_url = str(copied_logo["asset_url"]) if copied_logo else body.logo_url
-    cover_image_url = (
-        str(copied_cover["asset_url"]) if copied_cover else body.cover_image_url
-    )
+    cover_image_url = str(copied_cover["asset_url"]) if copied_cover else body.cover_image_url
     batch.add_statement(
         db.prepare(
             """INSERT INTO events
@@ -2733,9 +2807,7 @@ async def upload_organization_event_asset(
     response_class=StreamingResponse,
     tags=["public-program"],
 )
-async def public_event_branding_asset(
-    asset_name: str, request: Request
-) -> StreamingResponse:
+async def public_event_branding_asset(asset_name: str, request: Request) -> StreamingResponse:
     suffix = asset_name[asset_name.rfind(".") :] if "." in asset_name else ""
     expected_content_type = {
         ".jpg": "image/jpeg",
@@ -2774,9 +2846,9 @@ async def public_event_branding_asset(
 async def upload_event_logo(event_id: str, request: Request) -> EventLogoView:
     db = database(request)
     event = row_mapping(
-        await db.prepare(
-            "SELECT organization_id,version FROM events WHERE id=?1 LIMIT 1"
-        ).bind(event_id).first()
+        await db.prepare("SELECT organization_id,version FROM events WHERE id=?1 LIMIT 1")
+        .bind(event_id)
+        .first()
     )
     if event is None:
         raise HTTPException(status_code=404)
@@ -2869,15 +2941,17 @@ async def upload_event_logo(event_id: str, request: Request) -> EventLogoView:
 async def upload_event_cover(event_id: str, request: Request) -> EventCoverView:
     db = database(request)
     event = row_mapping(
-        await db.prepare(
-            "SELECT organization_id,version FROM events WHERE id=?1 LIMIT 1"
-        ).bind(event_id).first()
+        await db.prepare("SELECT organization_id,version FROM events WHERE id=?1 LIMIT 1")
+        .bind(event_id)
+        .first()
     )
     if event is None:
         raise HTTPException(status_code=404)
     authenticated = await require_permission(
-        request, Permission.EVENT_MANAGE,
-        ResourceContext(str(event["organization_id"]), event_id), mutation=True,
+        request,
+        Permission.EVENT_MANAGE,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
         mutation_media_types=_EVENT_IMAGE_MEDIA_TYPES,
     )
     body, content_type, extension = await _read_event_logo(request)
@@ -2889,9 +2963,13 @@ async def upload_event_cover(event_id: str, request: Request) -> EventCoverView:
             scan = await SignedScannerAdapter(environment).scan(
                 body,
                 job=ScanJob(
-                    schema_version=1, organization_id=str(event["organization_id"]),
-                    event_id=event_id, asset_version_id=image_id, generation=1,
-                    checksum_sha256=checksum, job_id=image_id,
+                    schema_version=1,
+                    organization_id=str(event["organization_id"]),
+                    event_id=event_id,
+                    asset_version_id=image_id,
+                    generation=1,
+                    checksum_sha256=checksum,
+                    job_id=image_id,
                 ),
             )
         except Exception as exc:
@@ -2928,13 +3006,21 @@ async def upload_event_cover(event_id: str, request: Request) -> EventCoverView:
                WHERE id=?3 AND version=?4"""
         ).bind(image_url, now, event_id, event["version"])
     )
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=authenticated.actor.user_id,
-        action="event.cover.upload", target_type="event", target_id=event_id,
-        result="succeeded", correlation_id=request.state.request_id, occurred_at_ms=now,
-        organization_id=organization_id, event_id=event_id,
-        metadata={"content_type": content_type, "byte_size": len(body)},
-    ))
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="event.cover.upload",
+            target_type="event",
+            target_id=event_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={"content_type": content_type, "byte_size": len(body)},
+        )
+    )
     try:
         await batch.execute()
     except PersistenceError as exc:
@@ -2950,9 +3036,10 @@ async def upload_event_cover(event_id: str, request: Request) -> EventCoverView:
 async def public_event_logo(event_id: str, logo_name: str, request: Request) -> StreamingResponse:
     logo_url = f"/api/v1/public/events/{event_id}/logo/{logo_name}"
     row = row_mapping(
-        await database(request).prepare(
-            "SELECT organization_id,logo_url FROM events WHERE id=?1 AND logo_url=?2 LIMIT 1"
-        ).bind(event_id, logo_url).first()
+        await database(request)
+        .prepare("SELECT organization_id,logo_url FROM events WHERE id=?1 AND logo_url=?2 LIMIT 1")
+        .bind(event_id, logo_url)
+        .first()
     )
     if row is None or not logo_name.endswith((".jpg", ".png", ".webp")):
         raise HTTPException(status_code=404)
@@ -2960,7 +3047,7 @@ async def public_event_logo(event_id: str, logo_name: str, request: Request) -> 
         ".jpg": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
-    }[logo_name[logo_name.rfind("."):]]
+    }[logo_name[logo_name.rfind(".") :]]
     object_key = f"public/event-logos/{row['organization_id']}/{event_id}/{logo_name}"
     stored = await _event_logo_bucket(request).get(object_key)
     if stored is None:
@@ -2980,14 +3067,17 @@ async def public_event_logo(event_id: str, logo_name: str, request: Request) -> 
 async def public_event_cover(event_id: str, image_name: str, request: Request) -> StreamingResponse:
     image_url = f"/api/v1/public/events/{event_id}/cover/{image_name}"
     row = row_mapping(
-        await database(request).prepare(
+        await database(request)
+        .prepare(
             """SELECT organization_id,cover_image_url FROM events
                WHERE id=?1 AND cover_image_url=?2 LIMIT 1"""
-        ).bind(event_id, image_url).first()
+        )
+        .bind(event_id, image_url)
+        .first()
     )
     if row is None or not image_name.endswith((".jpg", ".png", ".webp")):
         raise HTTPException(status_code=404)
-    suffix = image_name[image_name.rfind("."):]
+    suffix = image_name[image_name.rfind(".") :]
     content_type = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[suffix]
     stored = await _event_logo_bucket(request).get(
         f"public/event-covers/{row['organization_id']}/{event_id}/{image_name}"
@@ -2995,7 +3085,8 @@ async def public_event_cover(event_id: str, image_name: str, request: Request) -
     if stored is None:
         raise HTTPException(status_code=404)
     return StreamingResponse(
-        _stream_event_logo(stored), media_type=content_type,
+        _stream_event_logo(stored),
+        media_type=content_type,
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
@@ -3241,9 +3332,7 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         str(event["cover_image_url"]) if event["cover_image_url"] is not None else None
     )
     cover_image_url = (
-        body.cover_image_url
-        if "cover_image_url" in body.model_fields_set
-        else current_cover_url
+        body.cover_image_url if "cover_image_url" in body.model_fields_set else current_cover_url
     )
     if cover_image_url != current_cover_url and cover_image_url is not None:
         await _require_event_branding_reference(
@@ -3356,7 +3445,9 @@ async def _write_event_grant(
             """SELECT u.id,u.email,r.owner_user_id FROM users u
                JOIN owned_resources r ON r.id=?1 AND r.resource_type='event'
                WHERE u.id=?2 AND u.status='active' LIMIT 1"""
-        ).bind(event_id, user_id).first()
+        )
+        .bind(event_id, user_id)
+        .first()
     )
     if target is None:
         raise HTTPException(status_code=404)
@@ -3402,13 +3493,21 @@ async def _write_event_grant(
                updated_at_ms=?1 WHERE id=?2"""
         ).bind(now, user_id)
     )
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=authenticated.actor.user_id,
-        action="resource_access_grant.upsert", target_type="event", target_id=event_id,
-        result="succeeded", correlation_id=request.state.request_id, occurred_at_ms=now,
-        organization_id=organization_id, event_id=event_id,
-        metadata={"grantee_user_id": user_id, "permission": permission},
-    ))
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="resource_access_grant.upsert",
+            target_type="event",
+            target_id=event_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={"grantee_user_id": user_id, "permission": permission},
+        )
+    )
     await batch.execute()
     return ResourceGrantView(
         user_id=user_id, email=str(target["email"]), permission=permission, status="active"
@@ -3429,9 +3528,13 @@ async def create_event_access_grant(
     # cannot be used to enumerate accounts.
     await _managed_event(request, event_id, mutation=True, include_archived=True)
     _email_value, normalized = _email(body.email)
-    user_id = await db.prepare(
-        "SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1"
-    ).bind(normalized).first("id")
+    user_id = (
+        await db.prepare(
+            "SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1"
+        )
+        .bind(normalized)
+        .first("id")
+    )
     if user_id is None:
         raise HTTPException(status_code=404, detail="No active account uses that email address")
     return await _write_event_grant(event_id, str(user_id), body.permission, request)
@@ -3457,9 +3560,13 @@ async def revoke_event_access_grant(event_id: str, user_id: str, request: Reques
     db, organization_id, authenticated = await _managed_event(
         request, event_id, mutation=True, include_archived=True
     )
-    owner_id = await db.prepare(
-        "SELECT owner_user_id FROM owned_resources WHERE id=?1 AND resource_type='event'"
-    ).bind(event_id).first("owner_user_id")
+    owner_id = (
+        await db.prepare(
+            "SELECT owner_user_id FROM owned_resources WHERE id=?1 AND resource_type='event'"
+        )
+        .bind(event_id)
+        .first("owner_user_id")
+    )
     if owner_id is not None and str(owner_id) == user_id:
         raise HTTPException(status_code=409, detail="Resource ownership cannot be revoked")
     now = utc_now_ms()
@@ -3477,13 +3584,21 @@ async def revoke_event_access_grant(event_id: str, user_id: str, request: Reques
                updated_at_ms=?1 WHERE id=?2"""
         ).bind(now, user_id)
     )
-    batch.audit(AuditEvent(
-        actor_type="user", actor_user_id=authenticated.actor.user_id,
-        action="resource_access_grant.revoke", target_type="event", target_id=event_id,
-        result="succeeded", correlation_id=request.state.request_id, occurred_at_ms=now,
-        organization_id=organization_id, event_id=event_id,
-        metadata={"grantee_user_id": user_id},
-    ))
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="resource_access_grant.revoke",
+            target_type="event",
+            target_id=event_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={"grantee_user_id": user_id},
+        )
+    )
     await batch.execute()
     return Response(status_code=204)
 
@@ -3596,8 +3711,14 @@ async def create_invitation(
                            AND pending_invitation_id=?4 AND task_type=?5
                            AND state IN ('open','completed'))"""
                 ).bind(
-                    new_id(), event["organization_id"], event_id, row["id"],
-                    task_type, title, destination_type, now,
+                    new_id(),
+                    event["organization_id"],
+                    event_id,
+                    row["id"],
+                    task_type,
+                    title,
+                    destination_type,
+                    now,
                 )
             )
     audit.audit(
@@ -3842,15 +3963,15 @@ async def resend_invitation(
 async def revoke_invitation(event_id: str, invitation_id: str, request: Request) -> Response:
     db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
     now = utc_now_ms()
-    invitation = row_mapping(await (
-        db.prepare(
+    invitation = row_mapping(
+        await db.prepare(
             """SELECT role,status,normalized_email FROM identity_invitations
                WHERE id=?1 AND organization_id=?2 AND event_id=?3
                  AND status IN ('pending','accepted') LIMIT 1"""
         )
         .bind(invitation_id, organization_id, event_id)
         .first()
-    ))
+    )
     if invitation is None:
         raise HTTPException(status_code=404)
     role, status = str(invitation["role"]), str(invitation["status"])
@@ -3906,8 +4027,11 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
         AuditEvent(
             actor_type="user",
             actor_user_id=authenticated.actor.user_id,
-            action=("evaluator.eligibility.revoke" if status == "accepted"
-                    else "identity.invitation.revoke"),
+            action=(
+                "evaluator.eligibility.revoke"
+                if status == "accepted"
+                else "identity.invitation.revoke"
+            ),
             target_type="identity_invitation",
             target_id=invitation_id,
             result="succeeded",
@@ -3915,8 +4039,11 @@ async def revoke_invitation(event_id: str, invitation_id: str, request: Request)
             occurred_at_ms=now,
             organization_id=organization_id,
             event_id=event_id,
-            metadata={"role": role, "previous_status": status,
-                      "reviewer_user_id": reviewer_user_id},
+            metadata={
+                "role": role,
+                "previous_status": status,
+                "reviewer_user_id": reviewer_user_id,
+            },
         )
     )
     await audit.execute()
@@ -4076,8 +4203,9 @@ async def list_organization_activity(
     db, _owner_user_id, _authenticated = await _organization_access_control_context(
         request, organization_id, mutation=False
     )
-    result = await db.prepare(
-        """SELECT a.id AS activity_id,
+    result = (
+        await db.prepare(
+            """SELECT a.id AS activity_id,
                   CASE
                     WHEN a.actor_type='system' THEN 'SessionBuddy'
                     WHEN u.id IS NULL THEN 'Unknown account'
@@ -4140,7 +4268,10 @@ async def list_organization_activity(
              ON resource_entity.public_id=a.resource_id
            WHERE p.organization_id=?1
            ORDER BY p.occurred_at_ms DESC,p.activity_id DESC LIMIT 30"""
-    ).bind(organization_id).all()
+        )
+        .bind(organization_id)
+        .all()
+    )
     return OrganizationActivityList(
         data=[OrganizationActivityView(**row) for row in result_rows(result)]
     )
@@ -4167,7 +4298,9 @@ async def transfer_organization_ownership(
             """SELECT owner_user_id,version FROM owned_resources
                WHERE id=?1 AND resource_type='organization' AND status='active'
                LIMIT 1"""
-        ).bind(organization_id).first()
+        )
+        .bind(organization_id)
+        .first()
     )
     if owned is None or str(owned["owner_user_id"]) != authenticated.actor.user_id:
         raise HTTPException(status_code=404)
@@ -4178,7 +4311,9 @@ async def transfer_organization_ownership(
                JOIN resource_access_grants g ON g.user_id=u.id
                 AND g.resource_id=?1 AND g.permission='manage' AND g.status='active'
                WHERE u.normalized_email=?2 AND u.status='active' LIMIT 1"""
-        ).bind(organization_id, normalized).first()
+        )
+        .bind(organization_id, normalized)
+        .first()
     )
     if target is None:
         raise HTTPException(status_code=404)
@@ -4287,9 +4422,7 @@ async def _upsert_organization_access_grant(
     request: Request,
 ) -> ResourceGrantView:
     target = row_mapping(
-        await db.prepare(
-            "SELECT id,email FROM users WHERE id=?1 AND status='active' LIMIT 1"
-        )
+        await db.prepare("SELECT id,email FROM users WHERE id=?1 AND status='active' LIMIT 1")
         .bind(user_id)
         .first()
     )
@@ -4401,9 +4534,13 @@ async def create_organization_access_grant(
         request, organization_id, mutation=True
     )
     _email_value, normalized = _email(body.email)
-    user_id = await db.prepare(
-        "SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1"
-    ).bind(normalized).first("id")
+    user_id = (
+        await db.prepare(
+            "SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1"
+        )
+        .bind(normalized)
+        .first("id")
+    )
     if user_id is None:
         raise HTTPException(status_code=404)
     return await _upsert_organization_access_grant(
@@ -4455,10 +4592,14 @@ async def revoke_organization_access_grant(
     )
     if user_id == owner_user_id:
         raise HTTPException(status_code=409, detail="Resource ownership cannot be revoked")
-    active_grant = await db.prepare(
-        """SELECT id FROM resource_access_grants
+    active_grant = (
+        await db.prepare(
+            """SELECT id FROM resource_access_grants
            WHERE resource_id=?1 AND user_id=?2 AND status='active' LIMIT 1"""
-    ).bind(organization_id, user_id).first("id")
+        )
+        .bind(organization_id, user_id)
+        .first("id")
+    )
     if active_grant is None:
         raise HTTPException(status_code=404)
     now = utc_now_ms()
@@ -4537,9 +4678,8 @@ async def list_ownership_recovery_events(
     )
     after_created_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
     rows = result_rows(
-        await (
-            db.prepare(
-                """SELECT e.id AS event_id,e.name,e.status,
+        await db.prepare(
+            """SELECT e.id AS event_id,e.name,e.status,
                           owned.owner_user_id AS current_owner_user_id,
                           owner.email AS current_owner_email,e.created_at_ms
                    FROM events e
@@ -4551,10 +4691,9 @@ async def list_ownership_recovery_events(
                      AND (?2 IS NULL OR e.created_at_ms<?2
                           OR (e.created_at_ms=?2 AND e.id<?3))
                    ORDER BY e.created_at_ms DESC,e.id DESC LIMIT ?4"""
-            )
-            .bind(organization_id, after_created_at_ms, after_id, limit + 1)
-            .all()
         )
+        .bind(organization_id, after_created_at_ms, after_id, limit + 1)
+        .all()
     )
     page = rows[:limit]
     events = [
@@ -4953,21 +5092,23 @@ async def password_sign_in(
     # so response time does not become a reliable account-existence oracle.
     pepper = secret(request, "PASSWORD_PEPPER")
     fake = (
-        "$pbkdf2-sha256$i=600000$MDAwMDAwMDAwMDAwMDAwMA$"
-        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA"
+        "$pbkdf2-sha256$i=600000$MDAwMDAwMDAwMDAwMDAwMA$MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA"
     )
     verifier = str(credential["verifier_phc"]) if credential is not None else fake
     valid = verify_password(body.password, verifier, pepper)
-    blocked = credential is not None and credential["blocked_until_ms"] is not None and int(
-        credential["blocked_until_ms"]
-    ) > now
+    blocked = (
+        credential is not None
+        and credential["blocked_until_ms"] is not None
+        and int(credential["blocked_until_ms"]) > now
+    )
     active = credential is not None and str(credential["status"]) == "active"
     if not valid or blocked or not active:
         if credential is not None:
             failures = min(int(credential["consecutive_failures"]) + 1, 100)
             delay_seconds = min(2 ** min(failures, 10), 3600) if failures >= 5 else 0
-            await db.prepare(
-                """INSERT INTO password_authentication_state
+            await (
+                db.prepare(
+                    """INSERT INTO password_authentication_state
                    (user_id,consecutive_failures,first_failure_at_ms,last_failure_at_ms,
                     blocked_until_ms,updated_at_ms)
                    VALUES(?1,1,?2,?2,NULL,?2)
@@ -4975,12 +5116,15 @@ async def password_sign_in(
                      consecutive_failures=?3,
                      first_failure_at_ms=COALESCE(first_failure_at_ms,?2),
                      last_failure_at_ms=?2,blocked_until_ms=?4,updated_at_ms=?2"""
-            ).bind(
-                credential["id"],
-                now,
-                failures,
-                now + delay_seconds * 1000 if delay_seconds else None,
-            ).run()
+                )
+                .bind(
+                    credential["id"],
+                    now,
+                    failures,
+                    now + delay_seconds * 1000 if delay_seconds else None,
+                )
+                .run()
+            )
         raise HTTPException(status_code=401)
 
     default_role = await _default_account_role(db, str(credential["id"]))
@@ -5023,9 +5167,9 @@ async def password_sign_in(
         ).bind(session_id, credential["id"], default_role, now)
     )
     batch.add_statement(
-        db.prepare(
-            "UPDATE password_credentials SET last_verified_at_ms=?1 WHERE user_id=?2"
-        ).bind(now, credential["id"])
+        db.prepare("UPDATE password_credentials SET last_verified_at_ms=?1 WHERE user_id=?2").bind(
+            now, credential["id"]
+        )
     )
     batch.audit(
         AuditEvent(
@@ -5216,9 +5360,7 @@ async def _finish_magic_link_sign_in(
                        ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET
                          status='active',revoked_at_ms=NULL,revoked_by_user_id=NULL,
                          version=version+1,updated_at_ms=excluded.updated_at_ms"""
-                ).bind(
-                    new_id(), resource_id, user_id, invitation["invited_by_user_id"], now
-                )
+                ).bind(new_id(), resource_id, user_id, invitation["invited_by_user_id"], now)
             )
             if existing_user is not None:
                 batch.add_statement(
@@ -5353,9 +5495,7 @@ async def _finish_magic_link_sign_in(
                     detail="Complete registration before signing in.",
                 )
             try:
-                verifier = hash_password(
-                    registration.password, secret(request, "PASSWORD_PEPPER")
-                )
+                verifier = hash_password(registration.password, secret(request, "PASSWORD_PEPPER"))
             except PasswordPolicyError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             display_name = f"{registration.first_name} {registration.last_name}".strip()
@@ -5474,9 +5614,7 @@ async def _finish_magic_link_sign_in(
     return SessionCreated(
         user_id=str(user_id),
         csrf_token=csrf,
-        redirect_path=_role_compatible_redirect(
-            str(challenge["redirect_path"]), session_role
-        ),
+        redirect_path=_role_compatible_redirect(str(challenge["redirect_path"]), session_role),
     )
 
 
@@ -5560,7 +5698,9 @@ async def _requires_submission_registration(request: Request, token: str) -> dic
         await db.prepare(
             """SELECT normalized_email,provisioning_context FROM authentication_challenges
                WHERE token_hash=?1 AND consumed_at_ms IS NULL AND expires_at_ms>?2 LIMIT 1"""
-        ).bind(hash_token(token), now).first()
+        )
+        .bind(hash_token(token), now)
+        .first()
     )
     if challenge is None or challenge["provisioning_context"] != "submission":
         return None
@@ -5591,8 +5731,7 @@ def _magic_link_page(
     page = _asset("auth_link_confirm.html")
     values = values or {}
     token_field = (
-        '<input type="hidden" name="token" autocomplete="off" value="'
-        f'{escape(token, quote=True)}">'
+        f'<input type="hidden" name="token" autocomplete="off" value="{escape(token, quote=True)}">'
     )
     if registration_email is None:
         needs_fragment_transfer = not token
@@ -5611,6 +5750,7 @@ def _magic_link_page(
             ),
         }
     else:
+
         def field(name: str) -> str:
             return escape(values.get(name, ""), quote=True)
 
@@ -5757,8 +5897,7 @@ async def current_session(request: Request) -> CurrentSession:
     authenticated = await authenticate_request(request)
     db = database(request)
     user = row_mapping(
-        await db
-        .prepare(
+        await db.prepare(
             """SELECT email,display_name,
                       profile_completed_at_ms IS NOT NULL AS profile_complete
                FROM users WHERE id=?1 LIMIT 1"""
@@ -5773,7 +5912,9 @@ async def current_session(request: Request) -> CurrentSession:
             """SELECT role,is_default FROM user_roles
                WHERE user_id=?1 AND status='active'
                ORDER BY is_default DESC,role"""
-        ).bind(authenticated.actor.user_id).all()
+        )
+        .bind(authenticated.actor.user_id)
+        .all()
     )
     active_role_row = row_mapping(
         await db.prepare(
@@ -5782,7 +5923,9 @@ async def current_session(request: Request) -> CurrentSession:
                  ON account.user_id=active.user_id AND account.role=active.role
                 AND account.status='active'
                WHERE active.session_id=?1 AND active.user_id=?2 LIMIT 1"""
-        ).bind(authenticated.session_id, authenticated.actor.user_id).first()
+        )
+        .bind(authenticated.session_id, authenticated.actor.user_id)
+        .first()
     )
     account_roles = [str(item["role"]) for item in account_role_rows]
     if active_role_row is None:
@@ -5805,7 +5948,9 @@ async def current_session(request: Request) -> CurrentSession:
                WHERE r.status='active' AND (r.owner_user_id=?1 OR g.id IS NOT NULL)
                  AND r.resource_type IN ('organization','event')
                ORDER BY r.resource_type,r.id"""
-        ).bind(authenticated.actor.user_id).all()
+        )
+        .bind(authenticated.actor.user_id)
+        .all()
     )
     assignment_rows = result_rows(
         await db.prepare(
@@ -5824,7 +5969,9 @@ async def current_session(request: Request) -> CurrentSession:
                          AND events.organization_id=assignments.organization_id
                WHERE assignments.evaluator_user_id=?1 AND assignments.status!='revoked'
                ORDER BY 1,2,4"""
-        ).bind(authenticated.actor.user_id).all()
+        )
+        .bind(authenticated.actor.user_id)
+        .all()
     )
     organizations_by_id: dict[str, dict[str, object]] = {}
     events_by_id: dict[str, dict[str, object]] = {}
@@ -5838,8 +5985,14 @@ async def current_session(request: Request) -> CurrentSession:
         event_id_value = str(item["event_id"])
         event_entry = events_by_id.setdefault(
             event_id_value,
-            {"row": {"id": event_id_value, "organization_id": item["organization_id"],
-                     "event_name": item["event_name"]}, "permissions": []},
+            {
+                "row": {
+                    "id": event_id_value,
+                    "organization_id": item["organization_id"],
+                    "event_name": item["event_name"],
+                },
+                "permissions": [],
+            },
         )
         event_entry.setdefault("assignments", []).append(str(item["assignment"]))
     organization_access = [
@@ -5861,9 +6014,7 @@ async def current_session(request: Request) -> CurrentSession:
         for resource_id, value in events_by_id.items()
     ]
     organization_id = organization_access[0].organization_id if organization_access else None
-    organization_name = (
-        organization_access[0].organization_name if organization_access else None
-    )
+    organization_name = organization_access[0].organization_name if organization_access else None
     event_scope = event_access[0] if event_access else None
     configured_sender = str(
         getattr(environment(request), "RESEND_FROM_ADDRESS", "SessionBuddy <events@example.test>")
@@ -5901,7 +6052,9 @@ async def update_active_role(body: ActiveRoleUpdate, request: Request) -> Curren
         await db.prepare(
             """SELECT role FROM user_roles
                WHERE user_id=?1 AND role=?2 AND status='active' LIMIT 1"""
-        ).bind(authenticated.actor.user_id, body.role).first()
+        )
+        .bind(authenticated.actor.user_id, body.role)
+        .first()
     )
     if assigned is None:
         raise HTTPException(status_code=403)
@@ -5931,7 +6084,9 @@ async def update_default_role(body: DefaultRoleUpdate, request: Request) -> Curr
         await db.prepare(
             """SELECT role FROM user_roles
                WHERE user_id=?1 AND role=?2 AND status='active' LIMIT 1"""
-        ).bind(authenticated.actor.user_id, body.role).first()
+        )
+        .bind(authenticated.actor.user_id, body.role)
+        .first()
     )
     if assigned is None:
         raise HTTPException(status_code=403)

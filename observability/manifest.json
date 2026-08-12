@@ -393,6 +393,19 @@
         "p95_ms": 600
       }
     },
+    "GET /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/organizer-notes": {
+      "benchmark": "admin-read-speaker-organizer-notes",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
     "GET /api/v1/admin/events/{event_id}/submissions": {
       "benchmark": "cfp-list-submissions",
       "dashboards": [
@@ -1942,6 +1955,19 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 1500
+      }
+    },
+    "PUT /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/organizer-notes": {
+      "benchmark": "admin-update-speaker-organizer-notes",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
       }
     },
     "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation": {

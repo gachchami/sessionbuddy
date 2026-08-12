@@ -90,6 +90,17 @@ def test_event_speaker_edit_route_remains_separate_from_public_profiles() -> Non
     assert "showSpeakerDetail(selection.person, selection.participation)" in script
 
 
+def test_event_speaker_profile_supports_private_configurable_organizer_notes() -> None:
+    page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
+    script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
+
+    assert 'id="speaker-organizer-notes"' in page
+    assert "travel, logistics, accessibility, or hospitality" in page
+    assert "These notes are organizer-only" in page
+    assert "function speakerNoteRow" in script
+    assert "/organizer-notes`" in script
+
+
 def test_event_directory_offers_validated_csv_invitation_import() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")

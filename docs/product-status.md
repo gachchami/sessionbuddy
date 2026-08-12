@@ -125,10 +125,13 @@ allowlisted embeds, public branded speaker galleries, quarantined asset uploads,
 fixed-length R2-to-scanner streaming, asynchronous malware scanning, private
 download grants, cursor-paginated communications, reminders, and admin progress
 views. Pending speaker invitations appear in the event roster without granting
-speaker permissions before acceptance. Registered invited speakers can receive
+speaker permissions before acceptance and are available to invitation-safe
+bulk communications with an explicit invited-recipient label. Registered invited speakers can receive
 onboarding tasks before a proposal is accepted, organizers can edit their
 event-scoped speaker details, and event rosters accept validated CSV invitation
-imports of up to 500 speakers. Speaker and welcome-message attribution prefers
+imports of up to 500 speakers. Organizers can also maintain private, configurable
+label/value notes for event-specific travel, logistics, accessibility, and hospitality
+details. Speaker and welcome-message attribution prefers
 the accepted session over a newer unrelated proposal. Public profiles include
 each published session's time, room, and track. A scheduled communication dispatcher
 republishes stuck queued messages, retries transient provider failures, and
@@ -216,7 +219,10 @@ Profile and headshot tasks link to that Account flow and reconcile when the
 canonical data is saved. Organizers can preview and replace a linked speaker's headshot from
 the event-scoped directory; the route requires exact event speaker-management
 authority, validates and scans the image when a scanner is configured, and emits
-an audit record. Explicit development scanner-disable mode performs no scanner
+an audit record. Organizer-uploaded headshots are stored as speaker asset versions,
+so the profile and organizer file inventory reference the same scanned object and
+the inventory exposes uploader, upload time, scan state, preview, and download history.
+Explicit development scanner-disable mode performs no scanner
 request, while production remains fail closed.
 
 The portal deliberately exposes only calls belonging to events the speaker

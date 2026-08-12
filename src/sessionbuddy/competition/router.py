@@ -26,6 +26,7 @@ from .models import (
     OrganizationSpeaker,
     OrganizationSpeakerList,
     OrganizationSpeakerParticipation,
+    OrganizerSpeakerNotes,
     PublicEventList,
     PublicEventSummary,
     PublicSpeaker,
@@ -309,8 +310,7 @@ async def create_resource(
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
     row = row_mapping(
-        await db
-        .prepare(
+        await db.prepare(
             """SELECT id,event_id,title,slug,summary,body_text,embed_url,status,sort_order,
                       version,updated_at_ms FROM event_resources WHERE id=?1"""
         )
@@ -503,7 +503,8 @@ async def list_organization_speakers(
                 location=str(row["location"]),
                 links=json.loads(str(row["links_json"])),
                 version=int(row["version"]),
-                organization_roles=["Speaker"], event_associations=[],
+                organization_roles=["Speaker"],
+                event_associations=[],
                 participations=[],
             )
             people[person_id] = person
@@ -516,12 +517,18 @@ async def list_organization_speakers(
                 proposal_title=str(row["proposal_title"]),
             )
         )
-        person.event_associations.append(OrganizationPersonEventAssociation(
-            event_id=str(row["event_id"]), event_name=str(row["event_name"]),
-            role="Speaker", status=str(row["selection_status"]),
-        ))
-    organizer_rows = result_rows(await _db(request).prepare(
-        """SELECT DISTINCT u.id AS user_id,u.email,u.public_profile_enabled,
+        person.event_associations.append(
+            OrganizationPersonEventAssociation(
+                event_id=str(row["event_id"]),
+                event_name=str(row["event_name"]),
+                role="Speaker",
+                status=str(row["selection_status"]),
+            )
+        )
+    organizer_rows = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT DISTINCT u.id AS user_id,u.email,u.public_profile_enabled,
                   COALESCE(NULLIF(u.display_name,''),u.email) AS display_name
            FROM users u WHERE u.status='active' AND (
              EXISTS(SELECT 1 FROM owned_resources o WHERE o.id=?1
@@ -531,7 +538,10 @@ async def list_organization_speakers(
                 AND r.status='active' WHERE g.resource_id=?1 AND g.user_id=u.id
                 AND g.status='active' AND g.permission='manage'))
            ORDER BY display_name,u.id LIMIT 500"""
-    ).bind(organization_id).all())
+        )
+        .bind(organization_id)
+        .all()
+    )
     by_user = {p.user_id: p for p in people.values() if p.user_id}
     for row in organizer_rows:
         user_id = str(row["user_id"])
@@ -540,14 +550,25 @@ async def list_organization_speakers(
                 by_user[user_id].organization_roles.insert(0, "Organizer")
         else:
             people[f"organizer:{user_id}"] = OrganizationSpeaker(
-                person_id="", user_id=user_id,
+                person_id="",
+                user_id=user_id,
                 public_profile_enabled=bool(row["public_profile_enabled"]),
                 email=str(row["email"]),
-                display_name=str(row["display_name"]), job_title="", company="",
-                biography="", location="", links=[], version=1,
-                organization_roles=["Organizer"], event_associations=[], participations=[])
-    invitations = result_rows(await _db(request).prepare(
-        """SELECT i.normalized_email,i.email,i.display_name,i.role,i.status,i.event_id,
+                display_name=str(row["display_name"]),
+                job_title="",
+                company="",
+                biography="",
+                location="",
+                links=[],
+                version=1,
+                organization_roles=["Organizer"],
+                event_associations=[],
+                participations=[],
+            )
+    invitations = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT i.normalized_email,i.email,i.display_name,i.role,i.status,i.event_id,
                   e.name AS event_name,u.id AS user_id,
                   COALESCE(u.public_profile_enabled,0) AS public_profile_enabled
            FROM identity_invitations i
@@ -556,25 +577,41 @@ async def list_organization_speakers(
            WHERE i.organization_id=?1 AND i.role IN ('speaker','evaluator')
              AND i.status IN ('pending','accepted') AND e.status!='archived'
            ORDER BY i.normalized_email,e.name,i.id LIMIT 1000"""
-    ).bind(organization_id).all())
+        )
+        .bind(organization_id)
+        .all()
+    )
     by_email = {p.email.casefold(): p for p in people.values()}
     for row in invitations:
         email, role = str(row["email"]), ("Reviewer" if row["role"] == "evaluator" else "Speaker")
         person = by_email.get(email.casefold())
         if person is None:
             person = OrganizationSpeaker(
-                person_id="", user_id=(str(row["user_id"]) if row["user_id"] else None),
+                person_id="",
+                user_id=(str(row["user_id"]) if row["user_id"] else None),
                 public_profile_enabled=bool(row["public_profile_enabled"]),
-                email=email, display_name=str(row["display_name"] or email), job_title="",
-                company="", biography="", location="", links=[], version=1,
-                organization_roles=[role], event_associations=[], participations=[])
+                email=email,
+                display_name=str(row["display_name"] or email),
+                job_title="",
+                company="",
+                biography="",
+                location="",
+                links=[],
+                version=1,
+                organization_roles=[role],
+                event_associations=[],
+                participations=[],
+            )
             people[f"invite:{row['normalized_email']}"] = person
             by_email[email.casefold()] = person
         elif role not in person.organization_roles:
             person.organization_roles.append(role)
         association = OrganizationPersonEventAssociation(
-            event_id=str(row["event_id"]), event_name=str(row["event_name"]),
-            role=role, status=str(row["status"]))
+            event_id=str(row["event_id"]),
+            event_name=str(row["event_name"]),
+            role=role,
+            status=str(row["status"]),
+        )
         if association not in person.event_associations:
             person.event_associations.append(association)
     return OrganizationSpeakerList(organization_id=organization_id, data=list(people.values()))
@@ -664,9 +701,7 @@ async def _speaker_profile_page(
             None,
         )
         permission = (
-            Permission.SPEAKER_PROFILE_EDIT_OWN
-            if mutation
-            else Permission.SPEAKER_PROFILE_READ_OWN
+            Permission.SPEAKER_PROFILE_EDIT_OWN if mutation else Permission.SPEAKER_PROFILE_READ_OWN
         )
     else:
         candidate = next(
@@ -677,9 +712,7 @@ async def _speaker_profile_page(
                 and (
                     str(row["event_id"]) in authenticated.actor.owned_resource_ids
                     or bool(
-                        authenticated.actor.resource_grants.get(
-                            str(row["event_id"]), frozenset()
-                        )
+                        authenticated.actor.resource_grants.get(str(row["event_id"]), frozenset())
                         & {ResourceGrant.EDIT, ResourceGrant.MANAGE}
                     )
                 )
@@ -746,16 +779,25 @@ async def update_own_speaker_profile_page(
 ) -> SpeakerProfilePageView:
     profile, authenticated = await _speaker_profile_page(person_id, request, mutation=True)
     changed = row_mapping(
-        await _db(request).prepare(
+        await _db(request)
+        .prepare(
             """UPDATE people SET display_name=?1,job_title=?2,company=?3,biography=?4,
                       location=?5,links_json=?6,version=version+1,updated_at_ms=?7
                WHERE id=?8 AND user_id=?9 AND version=?10 RETURNING id"""
-        ).bind(
-            body.display_name, body.job_title or None, body.company or None,
-            body.biography or None, body.location or None,
-            json.dumps(body.links, separators=(",", ":")), utc_now_ms(), person_id,
-            authenticated.actor.user_id, body.version,
-        ).first()
+        )
+        .bind(
+            body.display_name,
+            body.job_title or None,
+            body.company or None,
+            body.biography or None,
+            body.location or None,
+            json.dumps(body.links, separators=(",", ":")),
+            utc_now_ms(),
+            person_id,
+            authenticated.actor.user_id,
+            body.version,
+        )
+        .first()
     )
     if changed is None:
         raise HTTPException(status_code=409)
@@ -858,6 +900,83 @@ async def update_admin_speaker(
     if row is None:
         raise HTTPException(status_code=404)
     return _speaker_target(row)
+
+
+@competition_router.get(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/organizer-notes",
+    response_model=OrganizerSpeakerNotes,
+    tags=["speaker-onboarding"],
+)
+async def get_admin_speaker_notes(
+    event_id: str, event_speaker_id: str, request: Request
+) -> OrganizerSpeakerNotes:
+    event, _ = await _managed_event(request, event_id, mutation=False)
+    row = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT organizer_notes_json,version FROM event_speakers
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
+        )
+        .bind(event_speaker_id, event["organization_id"], event_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    return OrganizerSpeakerNotes(
+        data=json.loads(str(row["organizer_notes_json"])), version=int(row["version"])
+    )
+
+
+@competition_router.put(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/organizer-notes",
+    response_model=OrganizerSpeakerNotes,
+    tags=["speaker-onboarding"],
+)
+async def update_admin_speaker_notes(
+    event_id: str,
+    event_speaker_id: str,
+    body: OrganizerSpeakerNotes,
+    request: Request,
+) -> OrganizerSpeakerNotes:
+    event, auth = await _managed_event(request, event_id, mutation=True)
+    now, db = utc_now_ms(), _db(request)
+    changed = row_mapping(
+        await db.prepare(
+            """UPDATE event_speakers SET organizer_notes_json=?1,version=version+1,
+                      updated_at_ms=?2,last_activity_at_ms=?2
+               WHERE id=?3 AND organization_id=?4 AND event_id=?5 AND version=?6
+               RETURNING version"""
+        )
+        .bind(
+            json.dumps([item.model_dump() for item in body.data], separators=(",", ":")),
+            now,
+            event_speaker_id,
+            event["organization_id"],
+            event_id,
+            body.version,
+        )
+        .first()
+    )
+    if changed is None:
+        raise HTTPException(status_code=409)
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="speaker.organizer_notes.update",
+            target_type="event_speaker",
+            target_id=event_speaker_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"note_count": len(body.data)},
+        )
+    )
+    await audit.execute()
+    return OrganizerSpeakerNotes(data=body.data, version=int(changed["version"]))
 
 
 async def _session_content_view(
@@ -1385,9 +1504,12 @@ async def _integration_event(request: Request, event_id: str, token: str | None)
     )
     if row is None:
         raise HTTPException(status_code=401)
-    await _db(request).prepare(
-        "UPDATE event_integration_tokens SET last_used_at_ms=?1 WHERE id=?2"
-    ).bind(utc_now_ms(), row["id"]).run()
+    await (
+        _db(request)
+        .prepare("UPDATE event_integration_tokens SET last_used_at_ms=?1 WHERE id=?2")
+        .bind(utc_now_ms(), row["id"])
+        .run()
+    )
     return row
 
 

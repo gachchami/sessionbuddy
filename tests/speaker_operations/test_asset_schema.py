@@ -120,6 +120,19 @@ def test_generation_and_current_clean_constraints(db: sqlite3.Connection) -> Non
         )
 
 
+def test_asset_versions_record_the_uploader_for_inventory_metadata(
+    db: sqlite3.Connection,
+) -> None:
+    columns = {
+        row[1] for row in db.execute("PRAGMA table_info(speaker_asset_versions)").fetchall()
+    }
+    assert "uploaded_by_user_id" in columns
+    headshot_columns = {
+        row[1] for row in db.execute("PRAGMA table_info(user_headshots)").fetchall()
+    }
+    assert "speaker_asset_version_id" in headshot_columns
+
+
 def test_scan_states_require_expected_metadata_and_timestamps(db: sqlite3.Connection) -> None:
     add_asset(db)
     add_version(db, "pending", 1)

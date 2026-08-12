@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speaker messages · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=67">
+  <link rel="stylesheet" href="/product/assets/product.css?v=68">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=22">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
-  <script src="/admin/speakers/assets/messages.js?v=4" defer></script>
+  <script src="/admin/speakers/assets/messages.js?v=5" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--messages">
   <a class="skip-link" href="#main">Skip to speaker messages</a>
@@ -19,14 +19,14 @@
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading speakers…</div>
     <div class="message-workspace">
       <section class="card workflow-stage workflow-stage--recipients" aria-labelledby="recipients-title">
-        <div class="section-heading"><div><h2 id="recipients-title">Recipients</h2><p class="section-summary">Only active speaker records can receive messages.</p></div><span id="recipient-count" class="badge">0 selected</span></div>
+        <div class="section-heading"><div><h2 id="recipients-title">Recipients</h2><p class="section-summary">Active speakers and invited people are included. Invitation-only recipients are clearly labeled.</p></div><span id="recipient-count" class="badge">0 selected</span></div>
         <div class="filter-bar"><label>Search recipients<input id="recipient-search" type="search" placeholder="Name, email, company, or session"></label><button id="select-visible" class="secondary" type="button">Select visible</button></div>
         <div id="recipient-list" class="recipient-list" aria-live="polite"><p class="empty workflow-empty-state">Loading recipients…</p></div>
       </section>
       <section class="card workflow-stage workflow-stage--compose" aria-labelledby="compose-title">
         <div class="section-heading"><div><h2 id="compose-title">Compose</h2><p class="section-summary">Merge fields are personalized in the preview.</p></div></div>
         <form id="message-form">
-          <label>Template<select id="message-template"><option value="">Write from scratch</option><option value="welcome">Speaker welcome</option><option value="deadline">Deadline reminder</option></select></label>
+          <label>Template<select id="message-template"><option value="">Write from scratch</option><option value="invitation">Invitation reminder (invited people)</option><option value="welcome">Speaker welcome (active speakers)</option><option value="deadline">Deadline reminder (active speakers)</option></select></label>
           <div class="personalization-help"><strong>Personalize each email</strong><span>Choose a field below. Each selected speaker will see their own details; you can verify every email before sending.</span></div>
           <div class="personalization-toolbar" aria-label="Personalize message"><span>Insert:</span><button class="secondary" type="button" data-merge-field="{{speaker.name}}">Speaker name</button><button class="secondary" type="button" data-merge-field="{{submission.title}}">Session title</button><button class="secondary" type="button" data-merge-field="{{event.name}}">Event name</button><button class="secondary" type="button" data-merge-field="{{portal.link}}">Portal link</button></div>
           <label>Subject<input name="subject" maxlength="200" required></label>

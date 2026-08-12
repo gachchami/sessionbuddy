@@ -1088,6 +1088,7 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .account-headshot__preview { width: 7rem; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border: 1px solid #dcd4ff; border-radius: 1.25rem; background: #eeeaff; color: #5934cb; font-size: 1.75rem; font-weight: 800; }
 .account-headshot__preview img { width: 100%; height: 100%; object-fit: cover; }
 .speaker-profile-card__headshot { width: 3.25rem; height: 3.25rem; float: left; margin: 0 .8rem .5rem 0; border-radius: .75rem; object-fit: cover; }
+.speaker-file-preview { display: block; width: 6rem; aspect-ratio: 1; margin: .75rem 0; border: 1px solid #dcd4ff; border-radius: .75rem; object-fit: cover; }
 .account-headshot__choose { position: relative; margin: 0; }
 .account-headshot__choose input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 .account-link-fields { margin-top: 1.5rem; background: #fff; }

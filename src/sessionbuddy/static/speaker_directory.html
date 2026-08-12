@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>People · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=67">
+  <link rel="stylesheet" href="/product/assets/product.css?v=68">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=22">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
   <script src="/admin/people/assets/search.js?v=1" defer></script>
-  <script src="/admin/people/assets/people.js?v=3" defer></script>
+  <script src="/admin/people/assets/people.js?v=4" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
   <a class="skip-link" href="#main">Skip to people</a>
@@ -40,6 +40,12 @@
       <form id="speaker-headshot-form" class="account-headshot" hidden>
         <div class="account-headshot__preview"><img id="speaker-headshot-preview" alt="" hidden><span id="speaker-headshot-fallback" aria-hidden="true">SP</span></div>
         <div><h3>Headshot</h3><p class="help">Upload a JPG, PNG, or WebP for this speaker. Maximum 5 MB; it is scanned before use.</p><div class="actions"><label class="button secondary account-headshot__choose">Choose image<input name="headshot" type="file" accept="image/jpeg,image/png,image/webp" required></label><button type="submit">Save headshot</button></div><p id="speaker-headshot-status" class="status status-compact" role="status"></p></div>
+      </form>
+      <form id="speaker-organizer-notes" hidden>
+        <div class="section-heading"><div><h3>Organizer notes</h3><p class="help">Add event-specific fields such as travel, logistics, accessibility, or hospitality details. These notes are organizer-only.</p></div><button id="add-speaker-note" class="secondary" type="button">Add field</button></div>
+        <input name="version" type="hidden">
+        <div id="speaker-note-fields"></div>
+        <button type="submit">Save organizer notes</button>
       </form>
       <div class="actions"><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="/admin/people">Back to people</a></div>
     </section>

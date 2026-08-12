@@ -9,6 +9,7 @@ const pageHtml = readFileSync(resolve(root, "speaker_directory.html"), "utf8")
   .replace(/<script[^>]+><\/script>/g, "")
   .replace("</head>", `<style>${readFileSync(resolve(root, "product.css"), "utf8")}</style></head>`)
   .replace("</body>", `<script>${readFileSync(resolve(root, "api_client.js"), "utf8")}</script><script>${readFileSync(resolve(root, "speaker_directory.js"), "utf8")}</script></body>`);
+const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 for (const width of [1280, 390]) {
   test(`organizer previews and uploads an event-scoped speaker headshot at ${width}px`, async ({ page }) => {
@@ -25,7 +26,8 @@ for (const width of [1280, 390]) {
         expect(route.request().headers()["x-csrf-token"]).toBe("csrf");
         expect(route.request().headers()["content-type"]).toBe("image/png");
         await route.fulfill({ status: 204 });
-      } else await route.fulfill({ status: 404 });
+      } else if (uploaded) await route.fulfill({ status: 200, contentType: "image/png", body: onePixelPng });
+      else await route.fulfill({ status: 404 });
     });
 
     await page.goto("/admin/events/event-a/speakers/es-a");
@@ -35,6 +37,8 @@ for (const width of [1280, 390]) {
     await form.getByRole("button", { name: "Save headshot" }).click();
     await expect.poll(() => uploaded).toBe(true);
     await expect(page.locator("#speaker-headshot-status")).toHaveText("Headshot saved.");
+    await expect(page.locator("#speaker-headshot-preview")).toBeVisible();
+    await expect(page.locator("#speaker-headshot-fallback")).toBeHidden();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     const results = await new AxeBuilder({ page }).include("#speaker-detail").analyze();
     expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact || ""))).toEqual([]);

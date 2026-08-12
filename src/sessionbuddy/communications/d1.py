@@ -28,7 +28,7 @@ from .models import (
     SpeakerMessagePreviewRequest,
     SpeakerMessageSendRequest,
 )
-from .rendering import render_template
+from .rendering import render_template, validate_template
 
 
 def _status_cursor(
@@ -280,10 +280,12 @@ class D1CommunicationsService:
         if self.organization_id is None:
             raise HTTPException(status_code=404)
         recipients: list[RecipientPreview] = []
-        for event_speaker_id in body.event_speaker_ids:
+        for recipient_target_id in body.event_speaker_ids:
             row = row_mapping(
                 await self.db.prepare(
-                    """SELECT u.id,u.email,p.display_name,e.name AS event_name,
+                    """SELECT u.id AS recipient_user_id,es.id AS recipient_target_id,
+                              'active' AS recipient_state,u.email,p.display_name,
+                              e.name AS event_name,
                               -- Prefer the ACCEPTED submission; fall back to newest.
                               -- queue_speaker_message renders what it sends from this same
                               -- query, so a newest-wins title here is not a preview artefact:
@@ -318,22 +320,64 @@ class D1CommunicationsService:
                        WHERE es.id=?1 AND es.organization_id=?2 AND es.event_id=?3
                          AND es.status!='withdrawn' LIMIT 1"""
                 )
-                .bind(event_speaker_id, self.organization_id, event_id)
+                .bind(recipient_target_id, self.organization_id, event_id)
                 .first()
             )
             if row is None:
+                row = row_mapping(
+                    await self.db.prepare(
+                        """SELECT NULL AS recipient_user_id,i.id AS recipient_target_id,
+                                  'invited' AS recipient_state,i.email AS email,
+                                  i.display_name,e.name AS event_name,'' AS proposal_title
+                           FROM identity_invitations i
+                           JOIN events e ON e.organization_id=i.organization_id
+                             AND e.id=i.event_id
+                           WHERE i.id=?1 AND i.organization_id=?2 AND i.event_id=?3
+                             AND i.role='speaker' AND i.status='pending'
+                             AND i.expires_at_ms>?4 LIMIT 1"""
+                    )
+                    .bind(
+                        recipient_target_id,
+                        self.organization_id,
+                        event_id,
+                        utc_now_ms(),
+                    )
+                    .first()
+                )
+            if row is None:
                 raise HTTPException(status_code=404)
             display_name = str(row["display_name"])
-            public_base = str(
-                getattr(self.request.scope.get("env"), "PUBLIC_BASE_URL", "")
-            ).rstrip("/")
+            public_base = str(getattr(self.request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip(
+                "/"
+            )
             values = {
                 "event.name": str(row["event_name"]),
                 "speaker.name": display_name,
                 "speaker.first_name": display_name.split(maxsplit=1)[0],
-                "submission.title": str(row["proposal_title"]),
-                "portal.link": f"{public_base}/speaker" if public_base else "/speaker",
             }
+            if row["recipient_state"] == "active":
+                values.update(
+                    {
+                        "submission.title": str(row["proposal_title"]),
+                        "portal.link": (
+                            f"{public_base}/speaker" if public_base else "/speaker"
+                        ),
+                    }
+                )
+            try:
+                required = validate_template(body.subject) | validate_template(body.body_text)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            missing = sorted(required - values.keys())
+            if missing:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{display_name} cannot receive this template; missing "
+                        f"{', '.join(missing)}. Choose an invitation-safe template "
+                        "or remove this recipient."
+                    ),
+                )
             try:
                 rendered_subject = render_template(body.subject, values)
                 rendered_body = render_template(body.body_text, values)
@@ -341,7 +385,13 @@ class D1CommunicationsService:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             recipients.append(
                 RecipientPreview(
-                    recipient_user_id=str(row["id"]),
+                    recipient_user_id=(
+                        str(row["recipient_user_id"])
+                        if row["recipient_user_id"] is not None
+                        else None
+                    ),
+                    recipient_target_id=str(row["recipient_target_id"]),
+                    recipient_state=str(row["recipient_state"]),
                     display_name=display_name,
                     email=str(row["email"]),
                     subject=rendered_subject,
@@ -393,7 +443,7 @@ class D1CommunicationsService:
                     .bind(
                         self.organization_id,
                         event_id,
-                        f"speaker-bulk:{idempotency_key}:{recipient.recipient_user_id}",
+                        f"speaker-bulk:{idempotency_key}:{recipient.recipient_target_id}",
                     )
                     .first("id")
                 )
@@ -409,9 +459,7 @@ class D1CommunicationsService:
         for recipient in preview.recipients:
             message_id = new_id()
             ids.append(message_id)
-            deterministic_key = (
-                f"speaker-bulk:{idempotency_key}:{recipient.recipient_user_id}"
-            )
+            deterministic_key = f"speaker-bulk:{idempotency_key}:{recipient.recipient_target_id}"
             batch.add_statement(
                 self.db.prepare(
                     """INSERT INTO communication_messages

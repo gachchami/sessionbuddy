@@ -661,6 +661,8 @@ CREATE TABLE event_speakers (
   version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL,
+  organizer_notes_json TEXT NOT NULL DEFAULT '[]'
+    CHECK (json_valid(organizer_notes_json) AND json_type(organizer_notes_json)='array'),
   withdrawn_at_ms INTEGER, selection_status TEXT NOT NULL DEFAULT 'accepted'
   CHECK (selection_status IN ('submitted', 'accepted', 'rejected')),
   FOREIGN KEY (organization_id, event_id)
@@ -1052,6 +1054,7 @@ CREATE TABLE speaker_asset_versions (
   uploaded_at_ms INTEGER,
   scan_started_at_ms INTEGER,
   scanned_at_ms INTEGER,
+  uploaded_by_user_id TEXT REFERENCES users(id) ON DELETE RESTRICT,
   scan_result_code TEXT CHECK (scan_result_code IS NULL OR length(scan_result_code) <= 100), version_comment TEXT NOT NULL DEFAULT 'Legacy upload'
 CHECK(length(trim(version_comment)) BETWEEN 1 AND 1000),
   FOREIGN KEY (organization_id, event_id, event_speaker_id, asset_id)
@@ -1280,6 +1283,7 @@ CREATE TABLE upload_intents (
 
 CREATE TABLE user_headshots (
   user_id TEXT PRIMARY KEY NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  speaker_asset_version_id TEXT REFERENCES speaker_asset_versions(id) ON DELETE RESTRICT,
   object_key TEXT NOT NULL UNIQUE,
   content_type TEXT NOT NULL CHECK(content_type IN ('image/jpeg','image/png','image/webp')),
   byte_size INTEGER NOT NULL CHECK(byte_size BETWEEN 1 AND 5242880),

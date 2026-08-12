@@ -48,7 +48,7 @@
         {
           "binding": "DB",
           "database_name": "sessionbuddy-development-clean",
-          "database_id": "deb5ce62-a409-4413-b7d7-9979a31a72c6",
+          "database_id": "9dce60a7-fc11-4454-ba3c-58b356eff513",
           "migrations_dir": "migrations_baseline"
         }
       ],

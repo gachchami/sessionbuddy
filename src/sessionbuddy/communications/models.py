@@ -19,7 +19,9 @@ class RecipientPreviewRequest(BaseModel):
 
 class RecipientPreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    recipient_user_id: str
+    recipient_user_id: str | None = None
+    recipient_target_id: str
+    recipient_state: Literal["active", "invited"] = "active"
     display_name: str
     email: str
     subject: str

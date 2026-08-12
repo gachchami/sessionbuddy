@@ -93,6 +93,22 @@ def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> Non
     assert "version.version_comment" in script
     assert "/versions/${encodeURIComponent(version.id)}/download-grants" in script
     assert "link.download = version.filename" in script
+    assert "asset.uploaded_by" in script
+    assert "asset.scan_status" in script
+    assert "asset.preview_url" in script
+    assert "asset.direct_download_url" in script
+    assert "downloadProfileHeadshot" in script
+
+
+def test_changed_speaker_workflows_bust_cached_assets() -> None:
+    directory = (STATIC / "speaker_directory.html").read_text()
+    content = (STATIC / "speaker_content.html").read_text()
+    messages = (STATIC / "speaker_messages.html").read_text()
+    assert "/admin/people/assets/people.js?v=4" in directory
+    assert "/admin/speaker-content/assets/speaker-content.js?v=2" in content
+    assert "/admin/speakers/assets/messages.js?v=5" in messages
+    pages = (directory, content, messages)
+    assert all("/product/assets/product.css?v=68" in page for page in pages)
 
 
 def test_speaker_message_retries_reuse_idempotency_key() -> None:

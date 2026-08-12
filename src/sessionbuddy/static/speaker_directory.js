@@ -28,6 +28,43 @@
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
+  function speakerNoteRow(note = { label: "", value: "" }) {
+    const row = document.createElement("fieldset");
+    row.className = "form-grid speaker-note-row";
+    const label = document.createElement("label");
+    label.textContent = "Field name";
+    const labelInput = document.createElement("input");
+    labelInput.dataset.noteLabel = "";
+    labelInput.maxLength = 100;
+    labelInput.required = true;
+    labelInput.placeholder = "Travel and logistics";
+    labelInput.value = note.label;
+    label.append(labelInput);
+    const value = document.createElement("label");
+    value.textContent = "Private note";
+    const valueInput = document.createElement("textarea");
+    valueInput.dataset.noteValue = "";
+    valueInput.maxLength = 5000;
+    valueInput.rows = 3;
+    valueInput.value = note.value;
+    value.append(valueInput);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary";
+    remove.textContent = "Remove field";
+    remove.addEventListener("click", () => row.remove());
+    row.append(label, value, remove);
+    return row;
+  }
+
+  async function loadSpeakerNotes(eventId, eventSpeakerId) {
+    const form = byId("speaker-organizer-notes");
+    const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speakers/${encodeURIComponent(eventSpeakerId)}/organizer-notes`);
+    form.elements.version.value = result.version;
+    byId("speaker-note-fields").replaceChildren(...result.data.map(speakerNoteRow));
+    form.hidden = false;
+  }
+
   function participationLink(participation) {
     if (participation.selection_status === "invited") {
       return `/admin/events/${encodeURIComponent(participation.event_id)}/speakers`;
@@ -317,7 +354,19 @@
       const preview = byId("speaker-headshot-preview");
       preview.src = `/api/v1/admin/events/${encodeURIComponent(participation.event_id)}/speakers/${encodeURIComponent(participation.event_speaker_id)}/headshot?v=${person.version}`;
       preview.hidden = false;
+      preview.addEventListener("load", () => {
+        preview.hidden = false;
+        byId("speaker-headshot-fallback").hidden = true;
+      }, { once: true });
       preview.addEventListener("error", () => { preview.hidden = true; byId("speaker-headshot-fallback").hidden = false; }, { once: true });
+    }
+    if (participation.selection_status !== "invited") {
+      loadSpeakerNotes(participation.event_id, participation.event_speaker_id).catch((error) => {
+        byId("status").textContent = window.SessionBuddyApi.message(error);
+        byId("status").classList.add("error");
+      });
+    } else {
+      byId("speaker-organizer-notes").hidden = true;
     }
     document.title = `${person.display_name} · SessionBuddy`;
   }
@@ -557,6 +606,32 @@
       byId("speaker-name").textContent = updated.display_name;
       if (profileScoped) showProfile(selectedSpeaker);
       byId("status").textContent = "Speaker details saved.";
+    } catch (error) {
+      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").classList.add("error");
+    }
+  });
+
+  byId("add-speaker-note").addEventListener("click", () => {
+    byId("speaker-note-fields").append(speakerNoteRow());
+  });
+
+  byId("speaker-organizer-notes").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!selectedSpeaker?.event_speaker_id || !form.reportValidity()) return;
+    const data = [...byId("speaker-note-fields").querySelectorAll(".speaker-note-row")].map((row) => ({
+      label: row.querySelector("[data-note-label]").value,
+      value: row.querySelector("[data-note-value]").value,
+    }));
+    try {
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}/organizer-notes`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-csrf-token": csrf },
+        body: JSON.stringify({ data, version: Number(form.elements.version.value) }),
+      });
+      form.elements.version.value = result.version;
+      byId("status").textContent = "Organizer notes saved.";
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");

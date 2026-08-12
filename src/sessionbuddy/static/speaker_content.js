@@ -119,6 +119,20 @@
       setStatus(window.SessionBuddyApi.message(error, "The file could not be downloaded."), true);
     } finally { button.disabled = false; }
   }
+  async function downloadProfileHeadshot(asset, button) {
+    button.disabled = true;
+    try {
+      const response = await fetch(asset.direct_download_url, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("The headshot could not be downloaded.");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = asset.filename; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus(`${asset.filename} downloaded.`);
+    } catch (error) {
+      setStatus(error.message || "The headshot could not be downloaded.", true);
+    } finally { button.disabled = false; }
+  }
   async function loadAssets() {
     const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets`);
     byId("file-count").textContent = body.data.length;
@@ -126,8 +140,22 @@
       const item = document.createElement("li");
       const title = document.createElement("strong"); title.textContent = asset.filename;
       const meta = document.createElement("span"); meta.className = "muted";
-      meta.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")} · ${fileSize(asset.byte_size)} · ${asset.version_count} version${asset.version_count === 1 ? "" : "s"}`;
+      meta.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")} · ${fileSize(asset.byte_size)} · uploaded ${eventTime(asset.uploaded_at_ms)} by ${asset.uploaded_by} · scan ${asset.scan_status} · ${asset.version_count} version${asset.version_count === 1 ? "" : "s"}`;
+      if (asset.preview_url) {
+        const preview = document.createElement("img");
+        preview.className = "speaker-file-preview";
+        preview.src = asset.preview_url;
+        preview.alt = `Headshot preview for ${asset.speaker_name}`;
+        preview.loading = "lazy";
+        item.append(preview);
+      }
       const currentComment = document.createElement("p"); currentComment.className = "help"; currentComment.textContent = asset.version_comment;
+      if (asset.direct_download_url) {
+        const download = document.createElement("button");
+        download.type = "button"; download.className = "secondary"; download.textContent = "Download headshot";
+        download.addEventListener("click", () => downloadProfileHeadshot(asset, download));
+        item.append(download);
+      }
       const history = document.createElement("details");
       const summary = document.createElement("summary"); summary.textContent = `${asset.versions.length} saved versions`;
       const versions = document.createElement("ol");
@@ -141,7 +169,9 @@
         versionItem.append(versionTitle, versionMeta, comment, button); versions.append(versionItem);
       });
       history.append(summary, versions);
-      item.append(title, meta, currentComment, history); return item;
+      item.prepend(title, meta, currentComment);
+      if (asset.versions.length) item.append(history);
+      return item;
     });
     if (!nodes.length) {
       const empty = document.createElement("li"); empty.className = "empty";

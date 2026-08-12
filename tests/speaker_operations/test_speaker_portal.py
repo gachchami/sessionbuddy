@@ -218,6 +218,11 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     assert 'byId("confirm-message-send").showModal()' in messages
     assert "await sendPreviewedMessage()" in messages
     assert "personalized emails will be queued immediately" in message_page
+    assert 'selection_status !== "invited"' not in messages
+    assert "Invited — awaiting acceptance" in messages
+    assert "Active speakers and invited people are included" in message_page
+    assert "Choose the Invitation reminder template" in messages
+    assert "cannot use ${missing.join" in messages
 
 
 async def test_open_call_is_absent_when_the_event_has_no_published_form() -> None:
