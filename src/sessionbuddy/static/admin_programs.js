@@ -18,7 +18,7 @@
     { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] }
   ];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
-  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -411,7 +411,7 @@
       legend.className = "sr-only";
       const editor = make("details");
       editor.className = "question-editor";
-      editor.open = !system;
+      editor.open = !system && !state.collapsedFieldKeys.has(field.key);
       const editorSummary = make("summary");
       const summaryIdentity = make("span");
       summaryIdentity.append(make("strong", field.label));
@@ -692,6 +692,7 @@
         remove.className = "secondary";
         remove.addEventListener("click", () => {
           readFields();
+          state.collapsedFieldKeys.delete(field.key);
           state.fields.splice(index, 1);
           renderFields();
         });
@@ -702,8 +703,9 @@
           const labelInput = card.elements.field_label;
           if (!labelInput.reportValidity()) return;
           readFields();
+          state.collapsedFieldKeys.add(field.key);
+          state.selectedOutline = "custom";
           renderFields();
-          selectOutline("custom", false);
           byId("add-field").focus();
         });
         const actions = make("div");
@@ -1196,7 +1198,9 @@
     const add = byId("add-field");
     add.addEventListener("click", () => {
       readFields();
-      state.fields.push({ key: `question_${state.fields.length - 3}`, type: "text", label: "New question", required: false, choices: [] });
+      const field = { key: `question_${state.fields.length - 3}`, type: "text", label: "New question", required: false, choices: [] };
+      state.collapsedFieldKeys.delete(field.key);
+      state.fields.push(field);
       renderFields();
       selectOutline(`question:${state.fields.length - 1}`);
       state.dirty = true;
@@ -1380,8 +1384,10 @@
     byId("cfp-link-title").scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
-  byId("copy-cfp-url").addEventListener("click", async () => {
+  let copyFeedbackTimer = null;
+  async function copyCfpUrl(trigger) {
     const input = byId("cfp-url");
+    const originalLabel = trigger.textContent;
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(input.value);
       else {
@@ -1389,14 +1395,24 @@
         if (!document.execCommand("copy")) throw new Error("Copy unavailable");
       }
       byId("copy-result").textContent = "Copied.";
+      byId("cfp-copy-feedback").textContent = "Call for Proposals URL copied to clipboard.";
+      trigger.textContent = "✓ Copied";
+      trigger.classList.add("is-copied");
+      clearTimeout(copyFeedbackTimer);
+      copyFeedbackTimer = setTimeout(() => {
+        trigger.textContent = originalLabel;
+        trigger.classList.remove("is-copied");
+      }, 2200);
     } catch (_) {
       input.focus();
       input.select();
       byId("copy-result").textContent = "Select the URL and copy it manually.";
+      byId("cfp-copy-feedback").textContent = "Copy was unavailable. The URL is selected for manual copying.";
     }
-  });
+  }
 
-  byId("copy-cfp-header").addEventListener("click", () => byId("copy-cfp-url").click());
+  byId("copy-cfp-url").addEventListener("click", (event) => copyCfpUrl(event.currentTarget));
+  byId("copy-cfp-header").addEventListener("click", (event) => copyCfpUrl(event.currentTarget));
 
   function renderPreview() {
     const form = byId("publish-form");

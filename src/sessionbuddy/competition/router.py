@@ -1493,10 +1493,12 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         await _db(request)
         .prepare(
             """SELECT DISTINCT es.id,p.display_name,p.job_title,p.company,p.biography,p.location,
-                      p.links_json,EXISTS(SELECT 1 FROM speaker_assets a
+                      p.links_json,(EXISTS(SELECT 1 FROM speaker_assets a
                         JOIN speaker_asset_versions av
                         ON av.asset_id=a.id AND av.is_current=1 AND av.scan_state='clean'
-                        WHERE a.event_speaker_id=es.id AND a.kind='headshot') AS has_headshot
+                        WHERE a.event_speaker_id=es.id AND a.kind='headshot')
+                        OR EXISTS(SELECT 1 FROM user_headshots uh WHERE uh.user_id=p.user_id))
+                        AS has_headshot
                FROM event_speakers es JOIN people p ON p.id=es.person_id
                WHERE es.organization_id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
                ORDER BY p.display_name,es.id"""
@@ -1605,14 +1607,26 @@ async def public_speaker_headshot(
     row = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT av.object_key,av.content_type,av.byte_size FROM event_speakers es
-               JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id
-               JOIN speaker_assets a ON a.organization_id=es.organization_id
-                 AND a.event_id=es.event_id AND a.event_speaker_id=es.id AND a.kind='headshot'
-               JOIN speaker_asset_versions av ON av.asset_id=a.id AND av.is_current=1
-                 AND av.scan_state='clean'
-               WHERE es.id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
-                 AND e.status='active' LIMIT 1"""
+            """SELECT object_key,content_type,byte_size FROM (
+                 SELECT av.object_key,av.content_type,av.byte_size,0 AS priority
+                 FROM event_speakers es
+                 JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id
+                 JOIN speaker_assets a ON a.organization_id=es.organization_id
+                   AND a.event_id=es.event_id AND a.event_speaker_id=es.id
+                   AND a.kind='headshot'
+                 JOIN speaker_asset_versions av ON av.asset_id=a.id AND av.is_current=1
+                   AND av.scan_state='clean'
+                 WHERE es.id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
+                   AND e.status='active'
+                 UNION ALL
+                 SELECT uh.object_key,uh.content_type,uh.byte_size,1 AS priority
+                 FROM event_speakers es
+                 JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id
+                 JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
+                 JOIN user_headshots uh ON uh.user_id=p.user_id
+                 WHERE es.id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
+                   AND e.status='active'
+               ) ORDER BY priority LIMIT 1"""
         )
         .bind(event_speaker_id, event_id)
         .first()

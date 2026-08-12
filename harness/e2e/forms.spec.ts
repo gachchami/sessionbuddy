@@ -503,7 +503,7 @@ test.describe("form validation and workflow wiring", () => {
     await page.goto("/speaker");
     await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
 
-    const taskForm = page.locator("#task-list form");
+    const taskForm = page.locator(".task-list form");
     await taskForm.getByRole("button", { name: "Send response" }).click();
     expect(taskWrites).toBe(0);
     await taskForm.getByLabel("Dietary requirements").fill("Vegetarian");

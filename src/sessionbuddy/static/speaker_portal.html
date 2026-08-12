@@ -6,10 +6,10 @@
   <meta name="color-scheme" content="light">
   <title>Speaker home · SessionBuddy</title>
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
-  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=22">
+  <link rel="stylesheet" href="/speaker/assets/speaker.css?v=24">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=24" defer></script>
-  <script src="/speaker/assets/speaker-portal.js?v=19" defer></script>
+  <script src="/speaker/assets/speaker-portal.js?v=22" defer></script>
 </head>
 <body class="app-body speaker-portal-page">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -31,63 +31,48 @@
         <div class="portal-hero__copy">
           <p class="portal-hero__eyebrow">Speaker portal</p>
           <h1 class="portal-hero__title">Welcome, <strong id="welcome-name"></strong></h1>
-          <p id="event-summary" class="portal-hero__context section-index"></p>
+          <p id="portal-summary" class="portal-hero__context section-index">Manage sessions, tasks, and resources across all your events.</p>
         </div>
         <div class="portal-hero__tools">
           <a id="public-profile-link" class="portal-hero__profile" href="#" hidden>Public profile</a>
         </div>
       </header>
-      <div class="portfolio-layout">
-        <nav class="event-index panel" aria-labelledby="event-index-title">
-          <div class="section-heading"><h2 id="event-index-title">Your events</h2><span id="event-count" class="count-badge">0</span></div>
-          <div class="event-index__group">
-            <h3>Current and upcoming</h3>
-            <div id="active-event-list" class="event-index__list"></div>
+
+      <section id="portfolio-summary" class="portfolio-summary" aria-label="Submission summary">
+        <article class="summary-tile summary-tile--accent">
+          <strong id="summary-total" class="summary-tile__value">0</strong>
+          <span class="summary-tile__label">Submissions</span>
+        </article>
+        <article class="summary-tile">
+          <strong id="summary-accepted" class="summary-tile__value">0</strong>
+          <span class="summary-tile__label">Accepted</span>
+        </article>
+        <article class="summary-tile">
+          <strong id="summary-review" class="summary-tile__value">0</strong>
+          <span class="summary-tile__label">In review</span>
+        </article>
+        <article class="summary-tile">
+          <strong id="summary-rejected" class="summary-tile__value">0</strong>
+          <span class="summary-tile__label">Rejected</span>
+        </article>
+        <article class="summary-tile">
+          <strong id="summary-actions" class="summary-tile__value">0</strong>
+          <span class="summary-tile__label">Needs attention</span>
+        </article>
+      </section>
+
+      <section id="submissions" class="portal-submissions" aria-labelledby="submissions-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="submissions-title">Submissions by event</h2>
+            <p id="session-event-label" class="section-index"></p>
           </div>
-          <details class="event-index__archive" open>
-            <summary>Past events <span id="past-event-count">0</span></summary>
-            <div id="past-event-list" class="event-index__list"></div>
-          </details>
-        </nav>
-        <div class="portal-grid">
-        <section id="tasks" class="panel portal-priority-panel" aria-labelledby="tasks-title">
-          <div class="section-heading">
-            <div><h2 id="tasks-title">Needs attention</h2><p id="task-event-label" class="section-index"></p></div>
-            <span id="task-count" class="count-badge">0</span>
-          </div>
-          <ul id="task-list" class="item-list" aria-describedby="task-help"></ul>
-        </section>
-
-        <details id="speaker-profile-tools" class="panel portal-wide-panel secondary-panel" open>
-          <summary>Profile &amp; headshot</summary>
-          <p class="section-index">Keep the profile and image organizers use for this event up to date.</p>
-          <div id="speaker-profile-form"></div>
-          <div id="speaker-headshot-form"></div>
-        </details>
-
-        <section id="submissions" class="panel portal-priority-panel" aria-labelledby="submissions-title">
-          <div class="section-heading">
-            <div><h2 id="submissions-title">Sessions</h2><p id="session-event-label" class="section-index"></p></div>
-            <button id="open-proposal-composer" class="secondary" type="button" hidden aria-expanded="false" aria-controls="proposal-composer">Submit a proposal</button>
-          </div>
-          <p id="call-availability" class="section-index" hidden></p>
-          <div id="proposal-composer" class="proposal-composer" hidden></div>
-          <ul id="submission-list" class="item-list"></ul>
-        </section>
-
-        <details id="resources" class="panel portal-wide-panel secondary-panel">
-          <summary><span id="resources-title">Event resources</span><span id="resource-count" class="count-badge">0</span></summary>
-          <div id="resource-list" class="resource-list"><p class="empty">Loading resources…</p></div>
-        </details>
-
-        <section id="notifications" class="panel portal-wide-panel" aria-labelledby="notifications-title">
-          <div class="section-heading"><div><h2 id="notifications-title">Event updates</h2><p id="notification-event-label" class="section-index"></p></div><span id="notification-count" class="count-badge">0</span></div>
-          <p id="notification-help" class="section-index">Delivered messages remain available here if the email is lost.</p>
-          <ul id="notification-list" class="item-list" aria-describedby="notification-help"></ul>
-        </section>
-
+          <button id="open-proposal-composer" class="secondary" type="button" hidden aria-expanded="false" aria-controls="proposal-composer">Submit a proposal</button>
         </div>
-      </div>
+        <p id="call-availability" class="section-index" hidden></p>
+        <div id="proposal-composer" class="proposal-composer" hidden></div>
+        <div id="event-sections" class="event-sections"></div>
+      </section>
     </div>
   </main>
 </body>

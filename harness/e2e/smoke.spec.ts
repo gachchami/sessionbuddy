@@ -203,7 +203,7 @@ test.describe("public smoke checks", () => {
       "href",
       `/admin/events/${eventId}/agenda`,
     );
-    await expect(page.getByRole("link", { name: "Agenda & publish" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "Agenda", exact: true })).toHaveAttribute(
       "href",
       `/admin/events/${eventId}/agenda`,
     );

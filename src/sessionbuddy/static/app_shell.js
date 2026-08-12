@@ -277,6 +277,25 @@
     return details;
   }
 
+  function closeOpenAccount({ restoreFocus = false } = {}) {
+    const openAccount = document.querySelector("details.sb-account[open]");
+    if (!openAccount) return false;
+    openAccount.removeAttribute("open");
+    if (restoreFocus) openAccount.querySelector("summary")?.focus();
+    return true;
+  }
+
+  // Account menus appear in both sidebar and topbar-only shells. Register
+  // dismissal once at the shared document boundary so early layout returns and
+  // later shell rerenders cannot omit or duplicate these handlers.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeOpenAccount({ restoreFocus: true });
+  });
+  document.addEventListener("click", (event) => {
+    const openAccount = document.querySelector("details.sb-account[open]");
+    if (openAccount && !openAccount.contains(event.target)) closeOpenAccount();
+  });
+
   function currentSection() {
     if (location.pathname === "/admin") return "home";
     if (location.pathname.startsWith("/admin/people") || /\/speakers(?:\/|$)/.test(location.pathname)) return "speakers";
@@ -545,18 +564,6 @@
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       closeNavigation();
-      const openAccount = document.querySelector("details.sb-account[open]");
-      if (openAccount) {
-        openAccount.removeAttribute("open");
-        const summary = openAccount.querySelector("summary");
-        if (summary) summary.focus();
-      }
-    });
-    document.addEventListener("click", (event) => {
-      const openAccount = document.querySelector("details.sb-account[open]");
-      if (openAccount && !openAccount.contains(event.target)) {
-        openAccount.removeAttribute("open");
-      }
     });
 
     shell.className = "sb-app-shell";

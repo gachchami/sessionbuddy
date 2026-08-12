@@ -8,8 +8,8 @@ from sessionbuddy.platform.auth.cookies import sign_session_cookie, verify_sessi
 from sessionbuddy.platform.auth.csrf import issue_csrf_token, verify_csrf_token
 from sessionbuddy.platform.auth.http import (
     allowed_origins,
-    browser_request_origin,
     browser_request_is_same_origin,
+    browser_request_origin,
     session_cookie_value,
 )
 from sessionbuddy.platform.auth.models import CookiePolicy, SessionPolicy

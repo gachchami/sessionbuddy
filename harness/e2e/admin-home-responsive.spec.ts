@@ -74,6 +74,16 @@ for (const viewport of [
 
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Open Source Summit", exact: true })).toBeVisible();
+    const account = page.locator("details.sb-account");
+    const accountTrigger = account.locator("summary");
+    await accountTrigger.click();
+    await expect(account).toHaveAttribute("open", "");
+    await page.locator("main").click({ position: { x: 4, y: 4 }, force: true });
+    await expect(account).not.toHaveAttribute("open", "");
+    await accountTrigger.click();
+    await page.keyboard.press("Escape");
+    await expect(account).not.toHaveAttribute("open", "");
+    await expect(accountTrigger).toBeFocused();
     await expect(page.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/organization");
     await expect(page.getByRole("link", { name: "Create event" })).toHaveAttribute("href", "/admin/events#event-form");
     await expect(page.getByRole("link", { name: /Spring Summit/ })).toHaveAttribute("href", "/admin/events/event-1");

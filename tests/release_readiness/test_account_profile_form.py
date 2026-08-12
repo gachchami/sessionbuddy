@@ -57,12 +57,16 @@ def test_profile_access_section_selects_a_default_account_role() -> None:
 
 
 def test_headshot_has_preview_upload_and_remove_controls() -> None:
+    markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
     assert 'URL.createObjectURL(selectedHeadshot)' in javascript
     assert 'method: "PUT"' in javascript
     assert 'method: "DELETE"' in javascript
     assert '"/api/v1/account/headshot"' in javascript
+    assert "A chosen image is uploaded when you save your profile." in markup
+    assert '<button id="save-profile" type="submit" disabled>Save profile</button>' in markup
+    assert 'id="upload-headshot"' not in markup
 
 
 def test_profile_load_is_quiet_and_mobile_layout_is_single_column() -> None:

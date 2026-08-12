@@ -296,7 +296,7 @@
   padding: .55rem .72rem;
   border-radius: .55rem;
   color: #566174;
-  font-size: .82rem;
+  font-size: .875rem;
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
@@ -307,7 +307,7 @@
 
 @media (max-width: 60rem) {
   .sb-event-nav { min-height: 6.35rem; justify-content: flex-start; padding-block: .38rem; }
-  .sb-event-nav a { min-height: 2.35rem; padding: .42rem .58rem; font-size: .76rem; }
+  .sb-event-nav a { min-height: 2.35rem; padding: .42rem .58rem; font-size: .75rem; }
   .app-body.sb-shell-authenticated.sb-shell-event > main.shell { padding-top: 12.35rem; }
   .app-body.sb-shell-authenticated.sb-shell-event { scroll-padding-top: 12rem; }
   .app-body.sb-shell-authenticated.sb-shell-event :where(button, a, input, select, textarea, summary) { scroll-margin-top: 12rem; }
@@ -398,4 +398,17 @@
   .sb-global-nav a::after,
   .sb-account summary > .sb-nav-icon { transition: none; }
   .sb-app-shell * { scroll-behavior: auto !important; }
+}
+
+/* Height of the fixed shell chrome (topbar + event nav), published so page
+   styles can pin sticky elements directly beneath it. Values mirror the
+   `> main.shell` padding-top declarations above and below. */
+.app-body.sb-shell-authenticated { --sb-chrome-top: 4.5rem; }
+.app-body.sb-shell-authenticated.sb-shell-event { --sb-chrome-top: 9.5rem; }
+@media (max-width: 60rem) {
+  .app-body.sb-shell-authenticated.sb-shell-event { --sb-chrome-top: 12.35rem; }
+}
+@media (max-width: 52rem) {
+  .app-body.sb-shell-authenticated { --sb-chrome-top: 5.5rem; }
+  .app-body.sb-shell-authenticated.sb-shell-event { --sb-chrome-top: 12.1rem; }
 }

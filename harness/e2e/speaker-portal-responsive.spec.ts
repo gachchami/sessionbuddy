@@ -158,15 +158,15 @@ test.describe("speaker portal responsive design", () => {
       await expect(page.locator(".portal-hero__title")).toContainText("Welcome, Alex Speaker");
       await expect(page.getByRole("link", { name: "Public profile" })).toBeVisible();
       await expect(page.locator(".session-files")).toHaveCount(1);
-      await expect(page.locator("#notification-list")).toContainText("Slides are due Friday");
-      await page.locator("#notification-list summary").click();
-      await expect(page.locator("#notification-list")).toContainText("The original email is not required.");
-      await expect(page.locator('#notification-list a[href="https://sessionbuddy.test/speaker"]')).toHaveCount(1);
-      await expect(page.locator('#notification-list a[href^="javascript:"]')).toHaveCount(0);
+      await expect(page.locator(".notification-list")).toContainText("Slides are due Friday");
+      await page.locator(".notification-list summary").click();
+      await expect(page.locator(".notification-list")).toContainText("The original email is not required.");
+      await expect(page.locator('.notification-list a[href="https://sessionbuddy.test/speaker"]')).toHaveCount(1);
+      await expect(page.locator('.notification-list a[href^="javascript:"]')).toHaveCount(0);
       await expect(page.locator("#profile")).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Speaker portal" })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      expect(await page.locator(".portal-grid").evaluate((element) =>
+      expect(await page.locator(".session-fields").first().evaluate((element) =>
         getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
     });
   }
@@ -175,10 +175,10 @@ test.describe("speaker portal responsive design", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await servePortal(page);
     await page.goto("/speaker");
-    await page.locator("#notification-list summary").click();
+    await page.locator(".notification-list summary").click();
 
-    await expect(page.locator("#notification-list")).toContainText("Event time (America/New_York)");
-    const results = await new AxeBuilder({ page }).include("#notifications").analyze();
+    await expect(page.locator(".notification-list")).toContainText("Event time (America/New_York)");
+    const results = await new AxeBuilder({ page }).include("#submissions").analyze();
     expect(results.violations).toEqual([]);
   });
 
@@ -207,23 +207,26 @@ test.describe("speaker portal responsive design", () => {
     await page.getByRole("button", { name: "Withdraw proposal" }).click();
 
     await expect(page.locator("#status")).toHaveText("Proposal withdrawn. It is now read-only.");
-    await expect(page.locator("#submission-list")).toContainText("Withdrawn");
-    await expect(page.locator("#submission-list")).toContainText("withdrawn and read-only");
+    await expect(page.locator(".submission-list")).toContainText("Withdrawn");
+    await expect(page.locator(".submission-list")).toContainText("withdrawn and read-only");
     await expect(page.getByRole("button", { name: "Edit proposal" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Withdraw proposal" })).toHaveCount(0);
     await expect(page.locator(".session-upload-grid")).toHaveCount(0);
   });
 
-  test("speaker can switch between event workspaces", async ({ page }) => {
+  test("every event the speaker belongs to is grouped on one page", async ({ page }) => {
     await servePortal(page);
     await page.goto("/speaker");
 
-    await expect(page.locator(".event-index__item")).toHaveCount(2);
-    await page.getByRole("button", { name: /Applied AI Conference 2027/ }).click();
+    await expect(page.locator(".event-group")).toHaveCount(2);
+    await expect(page.locator("#portal-summary")).toHaveText("Manage sessions, tasks, and resources across 2 events.");
+    await expect(page.getByRole("heading", { name: "AI Engineering Summit 2026" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Applied AI Conference 2027" })).toBeVisible();
 
-    await expect(page.locator("#event-summary")).toContainText("Applied AI Conference 2027");
-    await expect(page.locator("#submission-list")).toContainText("No proposals");
-    await expect(page.locator("#notification-list")).toContainText("No updates from this event yet.");
+    const second = page.locator('.event-group[data-event-id="event-second"]');
+    await expect(second.locator(".submission-list")).toContainText("No proposals");
+    await expect(second.locator(".notification-list")).toHaveCount(0);
+    await expect(page.locator("#summary-total")).toHaveText("1");
   });
 
   test("a failed safety check retries the same upload intent", async ({ page }) => {
@@ -314,85 +317,21 @@ test.describe("speaker portal responsive design", () => {
     await expect(uploadForm.locator(".upload-status")).not.toContainText("File received");
   });
 
-  test("profile tasks PATCH the speaker profile and preserve edits on error", async ({ page }) => {
+  test("profile and headshot tasks lead to the coordinated Account flow", async ({ page }) => {
     await servePortal(page);
     const taskPortal = {
       ...portal,
-      tasks: [{ id: "task-profile", task_type: "profile", title: "Confirm profile", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] }],
+      tasks: [
+        { id: "task-profile", task_type: "profile", title: "Confirm profile", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] },
+        { id: "task-headshot", task_type: "headshot", title: "Upload headshot", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] },
+      ],
     };
     await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
       contentType: "application/json", body: JSON.stringify(taskPortal),
     }));
-    const requests: Record<string, unknown>[] = [];
-    let attempts = 0;
-    await page.route("**/api/v1/speaker/profile", async (route) => {
-      attempts += 1;
-      requests.push(JSON.parse(route.request().postData() ?? "{}"));
-      await route.fulfill(attempts === 1 ? {
-        status: 503, contentType: "application/json",
-        body: JSON.stringify({ error: { code: "unavailable", message: "Profile service unavailable." } }),
-      } : { contentType: "application/json", body: JSON.stringify({ ok: true }) });
-    });
     await page.goto("/speaker");
-    const profileForm = page.locator("#speaker-profile-form .task-form");
-    await profileForm.getByLabel("Display name").fill("Alex Updated");
-    await profileForm.getByLabel("Links (one per line)").fill("https://example.test\nhttps://social.example.test/alex");
-    await profileForm.getByRole("button", { name: "Save profile" }).click();
-    await expect(page.locator("#status")).toContainText("Something went wrong on our side");
-    await expect(profileForm.getByLabel("Display name")).toHaveValue("Alex Updated");
-
-    await profileForm.getByRole("button", { name: "Save profile" }).click();
-    await expect(page.locator("#status")).toHaveText("Profile saved.");
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toMatchObject({
-      display_name: "Alex Updated", biography: "Builds production AI systems.", version: 1,
-      links: ["https://example.test", "https://social.example.test/alex"],
-    });
-  });
-
-  test("headshot tasks authorize, upload, and complete into the quarantined speaker asset path", async ({ page }) => {
-    await page.addInitScript(() => {
-      if (!globalThis.crypto.subtle) {
-        Object.defineProperty(globalThis.crypto, "subtle", {
-          configurable: true,
-          value: { digest: async () => new Uint8Array(32).buffer },
-        });
-      }
-    });
-    await servePortal(page);
-    const taskPortal = {
-      ...portal,
-      tasks: [{ id: "task-headshot", task_type: "headshot", title: "Upload headshot", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] }],
-    };
-    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
-      contentType: "application/json", body: JSON.stringify(taskPortal),
-    }));
-    let authorizationBody: Record<string, unknown> = {};
-    let uploads = 0;
-    let completions = 0;
-    await page.route("**/api/v1/speaker/events/event-responsive/upload-authorizations", async (route) => {
-      authorizationBody = JSON.parse(route.request().postData() ?? "{}");
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify({
-        intent_id: "intent-headshot", upload_url: "/api/v1/uploads/intent-headshot/content?token=local-test",
-        method: "PUT", headers: { "content-type": "image/png" }, expires_at_ms: Date.now() + 60_000,
-      }) });
-    });
-    await page.route("**/api/v1/uploads/intent-headshot/content?token=local-test", async (route) => {
-      uploads += 1;
-      expect(route.request().method()).toBe("PUT");
-      await route.fulfill({ status: 204 });
-    });
-    await page.route("**/api/v1/speaker/events/event-responsive/upload-intents/intent-headshot/complete", async (route) => {
-      completions += 1;
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ intent_id: "intent-headshot", state: "quarantined" }) });
-    });
-    await page.goto("/speaker");
-    const uploadForm = page.locator('#speaker-headshot-form form[data-kind="headshot"]');
-    await uploadForm.locator('input[type="file"]').setInputFiles({ name: "alex.png", mimeType: "image/png", buffer: Buffer.from("png") });
-    await uploadForm.getByLabel(/What changed/).fill("New conference headshot.");
-    await uploadForm.getByRole("button", { name: "Upload headshot" }).click();
-    await expect.poll(() => completions).toBe(1);
-    expect(uploads).toBe(1);
-    expect(authorizationBody).toMatchObject({ kind: "headshot", task_id: "task-headshot", submission_id: null });
+    await expect(page.getByRole("link", { name: "Edit profile" })).toHaveAttribute("href", "/account");
+    await expect(page.getByRole("link", { name: "Manage headshot" })).toHaveAttribute("href", "/account");
+    await expect(page.locator("#speaker-profile-tools")).toHaveCount(0);
   });
 });

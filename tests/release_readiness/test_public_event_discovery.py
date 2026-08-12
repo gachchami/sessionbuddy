@@ -38,6 +38,6 @@ def test_share_page_points_publication_to_the_agenda_surface() -> None:
     assert "Agenda publication is controlled from the Agenda page." in page
     assert 'id="publish-agenda"' in page
     assert 'byId("publish-agenda").href = `/admin/events/${encoded}/agenda`' in script
-    assert '["Agenda & publish", `${prefix}/agenda`' in shell
-    assert '["Share & integrations", `${prefix}/workspace`' in shell
+    assert '["Agenda", `${prefix}/agenda`' in shell
+    assert '["Share", `${prefix}/workspace`' in shell
     assert '["Publish", `${prefix}/workspace`' not in shell

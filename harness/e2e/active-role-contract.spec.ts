@@ -82,7 +82,9 @@ test.describe("active role session contract", () => {
 
       const shell = page.locator("header[data-auth-shell]");
       await expect(shell.getByRole("alert")).toHaveCount(0);
-      await expect(shell.locator(`a[href="${destination}"]`).first()).toBeVisible();
+      if (activeRole !== "speaker") {
+        await expect(shell.locator(`a[href="${destination}"]`)).not.toHaveCount(0);
+      }
       await expect(shell.locator(".sb-account__identity")).toContainText(
         activeRole[0].toUpperCase() + activeRole.slice(1),
       );

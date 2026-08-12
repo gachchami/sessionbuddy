@@ -83,8 +83,8 @@ organizer-controlled copy.
 
 ## Speaker operations
 
-Implemented: speaker portal, decision-aware status, default and custom form
-tasks, profile management, organizer-published resources/wiki content with
+Implemented: multi-event speaker portal, decision-aware status, default and custom form
+tasks, Account-owned profile and headshot management, organizer-published resources/wiki content with
 allowlisted embeds, public branded speaker galleries, quarantined asset uploads,
 fixed-length R2-to-scanner streaming, asynchronous malware scanning, private
 download grants, cursor-paginated communications, reminders, and admin progress
@@ -168,8 +168,11 @@ whether a call accepts proposals.
 
 The portal rechecks the authenticated event call before opening the composer,
 so a newly exhausted allowance or event switch is resolved before uploads begin.
-Speaker profile and headshot management remain available independently of task
-completion. Organizers can preview and replace a linked speaker's headshot from
+Speaker profile and headshot management use one coordinated save flow in Account;
+the canonical identity synchronizes to linked speaker records, and its private
+headshot is the public-gallery fallback when an event has no legacy event-specific
+image. Profile and headshot tasks link to that Account flow and reconcile when the
+canonical data is saved. Organizers can preview and replace a linked speaker's headshot from
 the event-scoped directory; the route requires exact event speaker-management
 authority, validates and scans the image when a scanner is configured, and emits
 an audit record. Explicit development scanner-disable mode performs no scanner

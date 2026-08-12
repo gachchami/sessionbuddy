@@ -669,26 +669,7 @@
     byId("headshot-preview").src = previewObjectUrl;
     byId("headshot-preview").hidden = false;
     byId("headshot-fallback").hidden = true;
-    byId("upload-headshot").disabled = false;
-  });
-  byId("upload-headshot").addEventListener("click", async () => {
-    if (!selectedHeadshot) return;
-    const button = byId("upload-headshot");
-    button.disabled = true;
-    try {
-      await api("/api/v1/account/headshot", {
-        method: "PUT",
-        headers: { "content-type": selectedHeadshot.type, "x-csrf-token": session.csrf_token },
-        body: selectedHeadshot
-      });
-      selectedHeadshot = undefined;
-      byId("headshot-input").value = "";
-      byId("remove-headshot").hidden = false;
-      showStatus("Headshot saved.", "success");
-    } catch (error) {
-      showStatus(window.SessionBuddyApi.message(error), "error", true);
-      button.disabled = false;
-    }
+    byId("save-profile").disabled = false;
   });
   byId("remove-headshot").addEventListener("click", async () => {
     const button = byId("remove-headshot");
@@ -800,7 +781,7 @@
     showStatus("Saving your profile…");
     const values = Object.fromEntries(new FormData(form).entries());
     try {
-      const profile = await api("/api/v1/account/profile", {
+      let profile = await api("/api/v1/account/profile", {
         method: "PATCH",
         headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
         body: JSON.stringify({
@@ -818,6 +799,17 @@
           version
         })
       });
+      if (selectedHeadshot) {
+        showStatus("Saving your headshot…");
+        await api("/api/v1/account/headshot", {
+          method: "PUT",
+          headers: { "content-type": selectedHeadshot.type, "x-csrf-token": session.csrf_token },
+          body: selectedHeadshot
+        });
+        selectedHeadshot = undefined;
+        byId("headshot-input").value = "";
+        profile = await api("/api/v1/account/profile");
+      }
       setProfile(profile);
       showStatus(values.password
         ? "Profile and password saved. Sign in again to continue."

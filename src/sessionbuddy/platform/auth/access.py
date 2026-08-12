@@ -34,7 +34,6 @@ from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
 from .http import (
-    allowed_origins,
     authenticate_request,
     browser_request_is_same_origin,
     database,
@@ -1118,6 +1117,40 @@ async def update_account_profile(
             body.version,
         )
     )
+    speaker_links = [
+        value
+        for value in (body.website_url, body.linkedin_url, body.x_url)
+        if value
+    ]
+    batch.add_statement(
+        db.prepare(
+            """UPDATE people SET display_name=?1,job_title=?2,company=?3,
+                      biography=?4,links_json=?5,version=version+1,updated_at_ms=?6
+               WHERE user_id=?7 AND archived_at_ms IS NULL"""
+        ).bind(
+            display_name,
+            body.job_title or None,
+            body.company or None,
+            body.description or "",
+            json.dumps(speaker_links, separators=(",", ":")),
+            now,
+            authenticated.actor.user_id,
+        )
+    )
+    if body.description:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE speaker_tasks SET state='completed',completed_at_ms=?1,
+                          version=version+1,updated_at_ms=?1
+                   WHERE task_type IN ('profile','biography') AND state='open'
+                     AND EXISTS (
+                       SELECT 1 FROM event_speakers es JOIN people p ON p.id=es.person_id
+                       WHERE es.organization_id=speaker_tasks.organization_id
+                         AND es.event_id=speaker_tasks.event_id
+                         AND es.id=speaker_tasks.event_speaker_id AND p.user_id=?2
+                     )"""
+            ).bind(now, authenticated.actor.user_id)
+        )
     if verifier is not None:
         batch.add_statement(
             db.prepare(
@@ -1225,6 +1258,19 @@ async def upload_account_headshot(request: Request) -> Response:
                  content_type=excluded.content_type,byte_size=excluded.byte_size,
                  checksum_sha256=excluded.checksum_sha256,updated_at_ms=excluded.updated_at_ms"""
         ).bind(authenticated.actor.user_id, object_key, content_type, len(body), checksum, now)
+    )
+    batch.add_statement(
+        database(request).prepare(
+            """UPDATE speaker_tasks SET state='completed',completed_at_ms=?1,
+                      version=version+1,updated_at_ms=?1
+               WHERE task_type='headshot' AND state='open'
+                 AND EXISTS (
+                   SELECT 1 FROM event_speakers es JOIN people p ON p.id=es.person_id
+                   WHERE es.organization_id=speaker_tasks.organization_id
+                     AND es.event_id=speaker_tasks.event_id
+                     AND es.id=speaker_tasks.event_speaker_id AND p.user_id=?2
+                 )"""
+        ).bind(now, authenticated.actor.user_id)
     )
     batch.audit(
         AuditEvent(

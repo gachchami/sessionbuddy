@@ -25,11 +25,22 @@ const sessionBody = JSON.stringify({
   event_access: [],
 });
 
-async function serveSignedInEventsPage(page: import("@playwright/test").Page) {
+async function serveSignedInEventsPage(
+  page: import("@playwright/test").Page,
+  sessionIsActive: () => boolean = () => true,
+) {
   await page.route("**/api/v1/setup/status", (route) =>
     route.fulfill({ contentType: "application/json", body: JSON.stringify({ configured: true }) }));
-  await page.route("**/api/v1/auth/session", (route) =>
-    route.fulfill({ contentType: "application/json", body: sessionBody }));
+  await page.route("**/api/v1/auth/session", (route) => {
+    if (!sessionIsActive()) {
+      return route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "authentication_required", message: "Authentication required" } }),
+      });
+    }
+    return route.fulfill({ contentType: "application/json", body: sessionBody });
+  });
   await page.route("**/api/v1/admin/organizations", (route) =>
     route.fulfill({
       contentType: "application/json",
@@ -52,7 +63,8 @@ test.describe("account sign-out", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
   test("signing out posts the guarded logout request and returns home", async ({ page }) => {
-    await serveSignedInEventsPage(page);
+    let sessionIsActive = true;
+    await serveSignedInEventsPage(page, () => sessionIsActive);
     let logoutMethod = "";
     let logoutCsrf: string | undefined;
     let logoutContentType: string | undefined;
@@ -60,6 +72,7 @@ test.describe("account sign-out", () => {
       logoutMethod = route.request().method();
       logoutCsrf = route.request().headers()["x-csrf-token"];
       logoutContentType = route.request().headers()["content-type"];
+      sessionIsActive = false;
       await route.fulfill({ status: 204 });
     });
 
@@ -102,10 +115,12 @@ test.describe("account sign-out", () => {
     // A 401 from logout means the session is already gone server-side.
     // Retrying can never succeed, so the shell must treat it as a completed
     // sign-out and go home instead of trapping the user in a retry loop.
-    await serveSignedInEventsPage(page);
+    let sessionIsActive = true;
+    await serveSignedInEventsPage(page, () => sessionIsActive);
     let logoutAttempts = 0;
     await page.route("**/api/v1/session/logout", async (route) => {
       logoutAttempts += 1;
+      sessionIsActive = false;
       await route.fulfill({
         status: 401,
         contentType: "application/json",
@@ -123,7 +138,8 @@ test.describe("account sign-out", () => {
   });
 
   test("a failed sign-out recovers instead of stranding the user", async ({ page }) => {
-    await serveSignedInEventsPage(page);
+    let sessionIsActive = true;
+    await serveSignedInEventsPage(page, () => sessionIsActive);
     let logoutAttempts = 0;
     await page.route("**/api/v1/session/logout", async (route) => {
       logoutAttempts += 1;
@@ -135,6 +151,7 @@ test.describe("account sign-out", () => {
         });
         return;
       }
+      sessionIsActive = false;
       await route.fulfill({ status: 204 });
     });
 

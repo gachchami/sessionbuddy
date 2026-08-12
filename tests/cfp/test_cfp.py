@@ -228,7 +228,8 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     ).read_text()
     assert 'const add = byId("add-field")' in script
     assert 'make("button", "Done editing question")' in script
-    assert 'selectOutline("custom", false)' in script
+    assert 'state.selectedOutline = "custom"' in script
+    assert "state.collapsedFieldKeys.add(field.key)" in script
     assert 'byId("add-field").focus()' in script
     assert "state.program" not in script
     assert "toLocalInput(state.eventStartsAtMs - 1)" in script
@@ -876,7 +877,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'formElement.getAttribute("aria-busy") === "true"' in cfp_source
     assert 'error.code === "slug_conflict"' in cfp_source
     assert 'error.code === "stale_conflict"' in cfp_source
-    assert "Read proposal" in submissions_js.text
+    assert "Open proposal actions" in submissions_js.text
     assert "item.answers" in submissions_js.text
     assert 'location.pathname.startsWith("/admin") && !organizer' in app_shell_js.text
     assert 'location.replace("/speaker")' in app_shell_js.text

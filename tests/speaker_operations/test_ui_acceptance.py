@@ -55,10 +55,14 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     javascript = source("speaker_portal.js")
     html = source("speaker_portal.html")
     for section in (
-        'id="tasks"',
         'id="submissions"',
+        'id="event-sections"',
+        'id="portfolio-summary"',
     ):
         assert section in html
+    # Tasks now live inside each generated event group rather than in one
+    # page-level panel, so the renderer owns that contract.
+    assert 'subHeading("Needs attention", outstanding.length)' in javascript
     assert 'completion.state === "rejected"' in javascript
     assert 'completion.state === "clean"' in javascript
     assert "rejected by the safety scan" in javascript
@@ -69,9 +73,9 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'id="welcome-name"' in html
     assert 'id="public-profile-link"' in html
     assert 'task.destination_path === "#profile"' in javascript
-    assert 'api("/api/v1/speaker/profile"' in javascript
-    assert 'method: "PATCH"' in javascript
-    assert 'createUploadForm("headshot", "")' in javascript
+    assert 'action.href = "/account"' in javascript
+    assert 'id="speaker-profile-tools"' not in html
+    assert 'id="speaker-headshot-form"' not in html
     assert 'Completed (${completed.length})' in javascript
     assert html.count('name="version_comment"') == 0
     assert 'createUploadForm("slides", submission.id)' in javascript

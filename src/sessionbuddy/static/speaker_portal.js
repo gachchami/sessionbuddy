@@ -2,6 +2,10 @@
   "use strict";
   const state = {
     csrf: "", portal: null, assets: [],
+    // The portfolio holds every event this speaker belongs to, keyed by event
+    // id, so the page can group submissions by event without refetching. The
+    // "active" event is the one the proposal composer and uploads act on.
+    portfolio: new Map(), eventOrder: [], activeEventId: "", resources: [],
     sessionEmail: "", sessionName: "",
     // Proposal composer: the published schema plus the files chosen for its
     // upload fields and the staged references already accepted for them.
@@ -124,6 +128,14 @@
     } catch (_) { return "Date unavailable"; }
   }
 
+  // Event runs are whole days; only tasks and messages need a clock time.
+  function formatDay(value, timezone) {
+    if (!value) return "";
+    try {
+      return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: timezone }).format(new Date(value));
+    } catch (_) { return "Date unavailable"; }
+  }
+
   function eventTimeLabel(value, timezone) {
     return `${formatDate(value, timezone)} · Event time (${timezone})`;
   }
@@ -155,7 +167,7 @@
       : "/api/v1/speaker/portal";
   }
 
-  function customTaskForm(task) {
+  function customTaskForm(task, eventId) {
     const form = make("form", undefined, "task-form");
     form.dataset.taskId = task.id;
     for (const field of task.form_fields || []) {
@@ -196,7 +208,7 @@
           headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
           body: JSON.stringify({ answers: values, version: task.version })
         });
-        const portal = await api(portalPath());
+        const portal = await api(portalPath(eventId || state.activeEventId));
         renderPortal(portal);
         announceOnboardingChange();
         setStatus("Task completed.", "success");
@@ -208,64 +220,9 @@
     return form;
   }
 
-  function profileTaskForm() {
-    const profile = state.portal?.profile || {};
-    const form = make("form", undefined, "task-form");
-    const fields = [
-      ["display_name", "Display name", "text", true],
-      ["job_title", "Job title", "text", false],
-      ["company", "Company", "text", false],
-      ["biography", "Biography", "textarea", true],
-      ["location", "Location", "text", false],
-      ["links", "Links (one per line)", "textarea", false]
-    ];
-    for (const [key, labelText, type, required] of fields) {
-      const label = make("label", labelText);
-      const input = type === "textarea" ? document.createElement("textarea") : document.createElement("input");
-      input.name = key;
-      input.required = required;
-      input.maxLength = key === "biography" ? 5000 : key === "links" ? 20000 : 200;
-      input.value = key === "links" ? (profile.links || []).join("\n") : profile[key] || "";
-      label.append(input);
-      form.append(label);
-    }
-    const submit = make("button", "Save profile");
-    submit.type = "submit";
-    form.append(submit);
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (!form.reportValidity()) return;
-      submit.disabled = true;
-      try {
-        await api("/api/v1/speaker/profile", {
-          method: "PATCH",
-          headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
-          body: JSON.stringify({
-            display_name: form.elements.display_name.value,
-            job_title: form.elements.job_title.value,
-            company: form.elements.company.value,
-            biography: form.elements.biography.value,
-            location: form.elements.location.value,
-            links: form.elements.links.value.split("\n").map((value) => value.trim()).filter(Boolean),
-            version: profile.version
-          })
-        });
-        await loadEvent(state.portal?.event?.id);
-        announceOnboardingChange();
-        setStatus("Profile saved.", "success");
-      } catch (error) {
-        setStatus(error.status === 409 ? "This profile changed. Reload and try again." : window.SessionBuddyApi.message(error, "The profile could not be saved."), "error");
-        submit.disabled = false;
-      }
-    });
-    return form;
-  }
-
-  function renderTasks(tasks, timezone) {
-    const list = byId("task-list");
+  function renderTasks(tasks, timezone, list) {
     list.replaceChildren();
     const outstanding = tasks.filter((task) => !["completed", "waived"].includes(task.state));
-    byId("task-count").textContent = String(outstanding.length);
     if (!outstanding.length) list.append(make("li", "No actions due.", "empty"));
     outstanding.forEach((task) => {
       const item = make("li", undefined, "item-card");
@@ -285,10 +242,10 @@
       item.append(meta);
       if (["profile", "biography", "headshot"].includes(task.task_type)) {
         const action = make("a", task.task_type === "headshot" ? "Manage headshot" : "Edit profile", "task-link");
-        action.href = "#speaker-profile-tools";
+        action.href = "/account";
         item.append(action);
       } else if (task.task_type === "custom") {
-        item.append(customTaskForm(task));
+        item.append(customTaskForm(task, list.dataset.eventId));
       } else {
         const action = make("a", task.action_label || "Complete task", "task-link");
         action.href = taskDestination(task);
@@ -310,20 +267,75 @@
     }
   }
 
-  function renderSubmissions(submissions) {
-    const list = byId("submission-list");
+  // Status drives the pill colour. Anything unrecognised stays neutral rather
+  // than borrowing a success or danger colour it has not earned.
+  const SUBMISSION_TONE = {
+    accepted: "success", rejected: "overdue", declined: "overdue",
+    withdrawn: "muted", draft: "muted"
+  };
+
+  const CORE_ANSWER_KEYS = new Set([
+    "speaker_name", "speaker_email", "proposal_title", "proposal_abstract"
+  ]);
+
+  function answerText(value) {
+    if (value === null || value === undefined) return "";
+    if (Array.isArray(value)) return value.filter((entry) => typeof entry !== "object").join(", ");
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "object") return "";
+    return String(value);
+  }
+
+  function humanizeKey(key) {
+    return key.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+  }
+
+  // Every submission renders as a labelled field list so a speaker can scan
+  // one event's proposals without opening each of them.
+  function submissionFields(submission, assets) {
+    const fields = make("ul", undefined, "session-fields");
+    const row = (label, value) => {
+      if (!value) return;
+      const line = document.createElement("li");
+      line.append(make("span", label, "session-fields__key"), make("span", value, "session-fields__value"));
+      fields.append(line);
+    };
+    row("Call", submission.form_slug);
+    row("Speaker", submission.speaker_name);
+    const extras = Object.entries(submission.answers || {})
+      .filter(([key]) => !CORE_ANSWER_KEYS.has(key))
+      .map(([key, value]) => [key, answerText(value)])
+      .filter(([, value]) => value)
+      .slice(0, 6);
+    extras.forEach(([key, value]) => row(humanizeKey(key), value));
+    row("Files", assets.length
+      ? assets.map((asset) => asset.kind === "slides" ? "Slides" : "Document").join(", ")
+      : "None uploaded");
+    row("Revision", `v${submission.version}`);
+    return fields;
+  }
+
+  function renderSubmissions(submissions, list, assetsBySubmission) {
     list.replaceChildren();
     if (!submissions.length) {
       list.append(make("li", "No proposals are connected to this account yet.", "empty"));
       return;
     }
-    submissions.forEach((submission) => {
+    submissions.forEach((submission, index) => {
       const item = make("li", undefined, "item-card");
       const statusLabel = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
-      item.append(
+      const tone = SUBMISSION_TONE[submission.status] || "";
+      const head = make("div", undefined, "item-card__head");
+      head.append(
+        make("span", String(index + 1), "item-card__index"),
         make("h3", submission.proposal_title),
-        make("p", statusLabel, `state-badge${submission.status === "accepted" ? " success" : ""}`)
+        make("p", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`)
       );
+      const sessionAssets = assetsBySubmission.filter((asset) => asset.submission_id === submission.id);
+      item.append(head, submissionFields(submission, sessionAssets));
+      if (submission.proposal_abstract) {
+        item.append(make("p", submission.proposal_abstract, "item-card__abstract"));
+      }
       if (submission.editable) {
         const edit = make("button", "Edit proposal", "secondary");
         edit.type = "button";
@@ -380,7 +392,7 @@
                 })
               });
               Object.assign(submission, updated);
-              renderSubmissions(submissions);
+              renderPortfolio();
               setStatus("Proposal changes saved.", "success");
             } catch (error) {
               setStatus(error.status === 409
@@ -407,7 +419,7 @@
               body: "{}"
             });
             Object.assign(submission, updated);
-            renderSubmissions(submissions);
+            renderPortfolio();
             setStatus("Proposal withdrawn. It is now read-only.", "success");
           } catch (error) {
             setStatus(window.SessionBuddyApi.message(error, "The proposal could not be withdrawn."), "error");
@@ -422,7 +434,6 @@
       files.className = "session-files";
       files.append(make("summary", "Files"));
       const saved = make("ul", undefined, "session-file-list");
-      const sessionAssets = state.assets.filter((asset) => asset.submission_id === submission.id);
       if (!sessionAssets.length) saved.append(make("li", "No files uploaded for this session.", "empty"));
       sessionAssets.forEach((asset) => saved.append(make("li", `${asset.kind === "slides" ? "Slides" : "Document"}: ${asset.filename}`)));
       files.append(saved);
@@ -1000,7 +1011,9 @@
     return form;
   }
 
-  function renderPortal(portal) {
+  // A single event's portal payload arrives here; the portfolio keeps every
+  // event the speaker belongs to so the page can render them all together.
+  function rememberPortal(portal) {
     if (portal.open_call && state.closedCallForms.has(portal.open_call.form_id)) {
       portal.open_call = {
         ...portal.open_call,
@@ -1008,54 +1021,254 @@
         availability_message: portal.open_call.availability_message || "Applications are closed."
       };
     }
-    state.portal = portal;
     const event = portal.event;
+    const existing = state.portfolio.get(event.id);
+    state.portfolio.set(event.id, { event, portal, assets: existing?.assets || [] });
+    (portal.events || [event]).forEach((available) => {
+      if (!state.eventOrder.includes(available.id)) state.eventOrder.push(available.id);
+      if (!state.portfolio.has(available.id)) {
+        state.portfolio.set(available.id, { event: available, portal: null, assets: [] });
+      }
+    });
+    return event.id;
+  }
+
+  function renderPortal(portal) {
+    state.activeEventId = rememberPortal(portal);
+    state.portal = portal;
+    state.assets = state.portfolio.get(portal.event.id)?.assets || [];
     byId("welcome-name").textContent = portal.profile.display_name || "speaker";
     const publicProfile = byId("public-profile-link");
     publicProfile.hidden = !portal.public_profile_url;
     if (portal.public_profile_url) publicProfile.href = portal.public_profile_url;
-    const availableEvents = portal.events || [event];
-    const activeList = byId("active-event-list");
-    const pastList = byId("past-event-list");
-    activeList.replaceChildren();
-    pastList.replaceChildren();
-    byId("event-count").textContent = String(availableEvents.length);
-    const pastEvents = availableEvents.filter((available) => available.ends_at_ms < Date.now());
-    byId("past-event-count").textContent = String(pastEvents.length);
-    availableEvents.forEach((available) => {
-      const option = make("button", undefined, "event-index__item");
-      option.type = "button";
-      option.dataset.eventId = available.id;
-      option.classList.toggle("is-current", available.id === event.id);
-      if (available.id === event.id) option.setAttribute("aria-current", "page");
-      const copy = make("span");
-      copy.append(make("strong", available.name), make("small", eventTimeLabel(available.starts_at_ms, available.time_zone)));
-      option.append(copy, make("span", available.id === event.id ? "Open" : "View", "event-index__state"));
-      option.addEventListener("click", () => selectEvent(available.id));
-      (available.ends_at_ms < Date.now() ? pastList : activeList).append(option);
-    });
-    if (!activeList.children.length) activeList.append(make("p", "No upcoming events.", "empty"));
-    if (!pastList.children.length) pastList.append(make("p", "No past events yet.", "empty"));
-    const eventDates = `${formatDate(event.starts_at_ms, event.time_zone)}–${formatDate(event.ends_at_ms, event.time_zone)}`;
-    byId("event-summary").textContent = `${event.name} · ${eventDates} · Event time (${event.time_zone})`;
-    byId("task-event-label").textContent = event.name;
-    byId("session-event-label").textContent = event.name;
-    byId("notification-event-label").textContent = `${event.name} · Event time (${event.time_zone})`;
-    const tasks = portal.tasks || [];
-    renderTasks(tasks, event.time_zone);
-    byId("speaker-profile-form").replaceChildren(profileTaskForm());
-    byId("speaker-headshot-form").replaceChildren(createUploadForm("headshot", ""));
+    byId("session-event-label").textContent = `${portal.event.name} · Event time (${portal.event.time_zone})`;
     renderOpenCall(portal.open_call || null);
-    renderSubmissions(portal.submissions || []);
-    renderNotifications(portal.notifications || [], event.time_zone);
+    renderPortfolio();
     byId("auth-state").hidden = true;
     byId("portal").hidden = false;
   }
 
-  function renderNotifications(notifications, timezone) {
-    const list = byId("notification-list");
+  function eventDateRange(event) {
+    const start = formatDay(event.starts_at_ms, event.time_zone);
+    const end = formatDay(event.ends_at_ms, event.time_zone);
+    if (!start && !end) return "Dates to be confirmed";
+    return !end || start === end ? start : `${start} – ${end}`;
+  }
+
+  function summaryCounts(entries) {
+    const totals = { total: 0, accepted: 0, review: 0, rejected: 0, actions: 0 };
+    entries.forEach(({ portal }) => {
+      const submissions = portal?.submissions || [];
+      totals.total += submissions.length;
+      totals.accepted += submissions.filter((one) => one.status === "accepted").length;
+      totals.review += submissions.filter((one) => ["submitted", "in_review", "under_review"].includes(one.status)).length;
+      totals.rejected += submissions.filter((one) => ["rejected", "declined"].includes(one.status)).length;
+      totals.actions += (portal?.tasks || []).filter((task) => !["completed", "waived"].includes(task.state)).length;
+    });
+    return totals;
+  }
+
+  function eventSection(entry) {
+    const { event, portal } = entry;
+    const section = make("article", undefined, "event-group");
+    section.dataset.eventId = event.id;
+    section.classList.toggle("is-active", event.id === state.activeEventId);
+    const heading = make("header", undefined, "event-group__head");
+    const copy = make("div");
+    const title = make("h3", event.name);
+    title.id = `event-heading-${event.id}`;
+    const meta = make("p", undefined, "event-group__meta");
+    meta.append(
+      make("span", eventDateRange(event)),
+      make("span", `Event time (${event.time_zone})`)
+    );
+    copy.append(title, meta);
+    const submissions = portal?.submissions || [];
+    heading.append(copy, make("span", `${submissions.length} submission${submissions.length === 1 ? "" : "s"}`, "count-badge"));
+    section.setAttribute("aria-labelledby", title.id);
+    section.append(heading);
+
+    if (!portal) {
+      section.append(make("p", "This event could not be loaded.", "empty"));
+      return section;
+    }
+
+    const sessionList = make("ul", undefined, "item-list submission-list");
+    sessionList.dataset.eventId = event.id;
+    renderSubmissions(submissions, sessionList, entry.assets || []);
+    section.append(sessionList);
+
+    // Tasks always get a block, even when empty: "nothing is due" is the
+    // answer a speaker opens this page for.
+    const outstanding = (portal.tasks || []).filter((task) => !["completed", "waived"].includes(task.state));
+    const tasksBlock = make("section", undefined, "event-group__block");
+    tasksBlock.append(subHeading("Needs attention", outstanding.length));
+    if ((portal.tasks || []).length) {
+      const taskList = make("ul", undefined, "item-list task-list");
+      taskList.dataset.eventId = event.id;
+      renderTasks(portal.tasks || [], event.time_zone, taskList);
+      tasksBlock.append(taskList);
+    } else {
+      tasksBlock.append(emptyDataTable("Task", "Status", "No tasks assigned", "0"));
+    }
+    section.append(tasksBlock);
+
+    const notifications = portal.notifications || [];
+    if (notifications.length) {
+      const updates = make("section", undefined, "event-group__block");
+      updates.append(subHeading("Event updates", notifications.length));
+      const list = make("ul", undefined, "notification-list");
+      list.dataset.eventId = event.id;
+      renderNotifications(notifications, event.time_zone, list);
+      updates.append(list);
+      section.append(updates);
+    }
+
+    const resources = state.resources.filter((resource) => resource.event_id === event.id);
+    const resourceBlock = make("section", undefined, "event-group__block");
+    resourceBlock.append(subHeading("Resources", resources.length));
+    const resourceContainer = make("div", undefined, "resource-list");
+    renderResources(resources, resourceContainer);
+    resourceBlock.append(resourceContainer);
+    section.append(resourceBlock);
+
+    const assets = entry.assets || [];
+    const assetBlock = make("section", undefined, "event-group__block");
+    assetBlock.append(subHeading("Files", assets.length));
+    assetBlock.append(assetTable(assets));
+    section.append(assetBlock);
+
+    const activities = portal.activities || [];
+    const activityBlock = make("section", undefined, "event-group__block");
+    activityBlock.append(subHeading("Activities", activities.length));
+    activityBlock.append(activityTable(activities, event.time_zone));
+    section.append(activityBlock);
+
+    if (portal.open_call?.accepting_submissions && event.id !== state.activeEventId) {
+      const submit = make("button", "Submit a proposal", "secondary event-group__submit");
+      submit.type = "button";
+      submit.addEventListener("click", () => selectEvent(event.id, { openComposer: true }));
+      section.append(submit);
+    }
+    return section;
+  }
+
+  function subHeading(text, count) {
+    const heading = make("div", undefined, "event-group__subheading");
+    heading.append(make("h4", text), make("span", String(count), "count-badge"));
+    return heading;
+  }
+
+  function dataTable(headings, rows, emptyRow) {
+    const wrapper = make("div", undefined, "data-table-wrap");
+    const table = make("table", undefined, `portal-data-table${rows.length ? "" : " is-empty"}`);
+    const head = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    headings.forEach((label) => {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.textContent = label;
+      headRow.append(cell);
+    });
+    head.append(headRow);
+    const body = document.createElement("tbody");
+    (rows.length ? rows : [emptyRow]).forEach((values) => {
+      const row = document.createElement("tr");
+      values.forEach((value, index) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        if (!rows.length && index === values.length - 1) cell.className = "portal-data-table__zero";
+        row.append(cell);
+      });
+      body.append(row);
+    });
+    table.append(head, body);
+    wrapper.append(table);
+    return wrapper;
+  }
+
+  function emptyDataTable(itemHeading, statusHeading, itemText, statusText) {
+    return dataTable([itemHeading, statusHeading], [], [itemText, statusText]);
+  }
+
+  function assetTable(assets) {
+    return dataTable(
+      ["File", "Type", "Versions"],
+      assets.map((asset) => [
+        asset.filename,
+        asset.kind.replaceAll("_", " "),
+        String(asset.version_count || 1)
+      ]),
+      ["No files uploaded", "—", "0"]
+    );
+  }
+
+  function activityTable(activities, timezone) {
+    return dataTable(
+      ["Activity", "Item", "When"],
+      activities.map((activity) => [
+        `${activity.operation} ${activity.resource_type.replaceAll("_", " ")}`,
+        activity.subject,
+        eventTimeLabel(activity.occurred_at_ms, timezone)
+      ]),
+      ["No activity yet", "—", "0"]
+    );
+  }
+
+  // Rebuilds every event section from portfolio state. The composer lives
+  // outside this container so an open draft survives a re-render.
+  function renderPortfolio() {
+    const container = byId("event-sections");
+    if (!container) return;
+    const entries = state.eventOrder
+      .map((eventId) => state.portfolio.get(eventId))
+      .filter(Boolean)
+      .filter((entry) => entry.event.id === state.activeEventId || entry.portal);
+    const totals = summaryCounts(entries);
+    byId("summary-total").textContent = String(totals.total);
+    byId("summary-accepted").textContent = String(totals.accepted);
+    byId("summary-review").textContent = String(totals.review);
+    byId("summary-rejected").textContent = String(totals.rejected);
+    byId("summary-actions").textContent = String(totals.actions);
+    byId("portal-summary").textContent = entries.length === 1
+      ? "Manage sessions, tasks, and resources for your event."
+      : `Manage sessions, tasks, and resources across ${entries.length} events.`;
+    container.replaceChildren();
+    if (!entries.length) {
+      container.append(make("p", "No events are connected to this account yet.", "empty"));
+      return;
+    }
+    entries.forEach((entry) => container.append(eventSection(entry)));
+  }
+
+  function renderResources(resources, container) {
+    if (!resources.length) {
+      container.replaceChildren(emptyDataTable("Resource", "Status", "No resources published", "0"));
+      return;
+    }
+    const cards = resources.map((resource) => {
+      const details = make("details", undefined, "resource-card");
+      details.append(make("summary", resource.title));
+      if (resource.summary) details.append(make("p", resource.summary, "help"));
+      if (resource.body_text) details.append(make("p", resource.body_text, "resource-card__body"));
+      const embed = safeEmbedUrl(resource.embed_url);
+      if (embed) {
+        const frame = document.createElement("iframe");
+        frame.className = "resource-embed";
+        frame.src = embed;
+        frame.title = resource.title;
+        frame.loading = "lazy";
+        frame.referrerPolicy = "no-referrer";
+        frame.sandbox = "allow-scripts allow-same-origin allow-popups";
+        details.append(frame);
+      }
+      return details;
+    });
+    container.replaceChildren(...cards);
+  }
+
+  function renderNotifications(notifications, timezone, list) {
     list.replaceChildren();
-    byId("notification-count").textContent = String(notifications.length);
     if (!notifications.length) {
       list.append(make("li", "No updates from this event yet.", "empty"));
       return;
@@ -1128,20 +1341,48 @@
   }
 
   async function loadEvent(eventId = "") {
-    state.assets = [];
     const portal = await api(portalPath(eventId));
     renderPortal(portal);
     await Promise.all([loadAssets(), loadResources()]);
+    await loadPortfolio();
   }
 
-  async function selectEvent(eventId) {
-    if (eventId === state.portal?.event?.id) return;
+  // Four at a time keeps a speaker with a long history from opening a hundred
+  // parallel requests while still filling the page quickly.
+  async function inBatches(items, size, worker) {
+    for (let index = 0; index < items.length; index += size) {
+      await Promise.all(items.slice(index, index + size).map(worker));
+    }
+  }
+
+  // The portal endpoint answers for one event at a time, so the remaining
+  // events are fetched after the first paint and folded into the same view.
+  async function loadPortfolio() {
+    const pending = state.eventOrder.filter((eventId) => !state.portfolio.get(eventId)?.portal);
+    if (!pending.length) return;
+    await inBatches(pending, 4, async (eventId) => {
+      try {
+        const portal = await api(portalPath(eventId));
+        rememberPortal(portal);
+        if (portal.submissions?.length) await loadAssetsFor(eventId);
+      } catch (_) {
+        // One unreachable event must not blank the events that did load.
+      }
+    });
+    renderPortfolio();
+  }
+
+  async function selectEvent(eventId, { openComposer: shouldCompose = false } = {}) {
+    if (eventId === state.activeEventId && !shouldCompose) return;
     if (!confirmComposerDiscard()) return;
     closeComposer({ discardDraft: true });
     setStatus("Loading event…");
     try {
-      await loadEvent(eventId);
+      const portal = await api(portalPath(eventId));
+      renderPortal(portal);
+      await Promise.all([loadAssets(), loadResources()]);
       setStatus("Speaker details are ready.", "success");
+      if (shouldCompose) byId("open-proposal-composer").click();
     } catch (error) {
       setStatus(window.SessionBuddyApi.message(error, "This event could not be loaded."), "error");
     }
@@ -1229,50 +1470,34 @@
   }
 
   async function loadResources() {
-    const container = byId("resource-list");
     try {
       const result = await api("/api/v1/speaker/resources");
-      const resources = result.data.filter((resource) => resource.event_id === state.portal?.event?.id);
-      byId("resource-count").textContent = String(resources.length);
-      if (!resources.length) {
-        container.replaceChildren(make("p", "No resources have been published yet.", "empty"));
-        return;
-      }
-      const cards = resources.map((resource) => {
-        const details = make("details", undefined, "resource-card");
-        details.append(make("summary", resource.title));
-        if (resource.summary) details.append(make("p", resource.summary, "help"));
-        if (resource.body_text) details.append(make("p", resource.body_text, "resource-card__body"));
-        const embed = safeEmbedUrl(resource.embed_url);
-        if (embed) {
-          const frame = document.createElement("iframe");
-          frame.className = "resource-embed";
-          frame.src = embed;
-          frame.title = resource.title;
-          frame.loading = "lazy";
-          frame.referrerPolicy = "no-referrer";
-          frame.sandbox = "allow-scripts allow-same-origin allow-popups";
-          details.append(frame);
-        }
-        return details;
-      });
-      container.replaceChildren(...cards);
+      state.resources = result.data || [];
     } catch (_) {
-      container.replaceChildren(make("p", "Resources could not be loaded.", "empty"));
+      state.resources = [];
     }
+    renderPortfolio();
+  }
+
+  async function loadAssetsFor(eventId) {
+    const entry = state.portfolio.get(eventId);
+    if (!entry) return;
+    const result = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets`);
+    entry.assets = result.data || [];
+    if (eventId === state.activeEventId) state.assets = entry.assets;
   }
 
   async function loadAssets() {
     try {
-      const eventId = state.portal?.event?.id;
+      const eventId = state.activeEventId;
       if (!eventId) throw new Error("Speaker event is unavailable.");
-      const result = await api(`/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets`);
-      const assets = result.data || [];
-      state.assets = assets;
-      renderSubmissions(state.portal?.submissions || []);
+      await loadAssetsFor(eventId);
+      renderPortfolio();
     } catch (_) {
+      const entry = state.portfolio.get(state.activeEventId);
+      if (entry) entry.assets = [];
       state.assets = [];
-      renderSubmissions(state.portal?.submissions || []);
+      renderPortfolio();
       setStatus("Session files could not be loaded. Uploads are temporarily unavailable.", "error");
     }
   }

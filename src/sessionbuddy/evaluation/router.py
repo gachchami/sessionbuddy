@@ -576,7 +576,10 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
         )
         for proposal in proposal_rows:
             proposals_by_round[str(proposal["round_id"])].append(
-                {"submission_id": str(proposal["submission_id"]), "proposal_title": str(proposal["proposal_title"])}
+                {
+                    "submission_id": str(proposal["submission_id"]),
+                    "proposal_title": str(proposal["proposal_title"]),
+                }
             )
     return EvaluationRoundList(data=[
         EvaluationRoundView.model_validate({**row, "proposals": proposals_by_round[str(row["id"])]})

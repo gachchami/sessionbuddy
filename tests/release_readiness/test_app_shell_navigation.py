@@ -89,7 +89,8 @@ def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
         in javascript
     )
     assert (
-        "const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace || !hasSidebarNavigation"
+        "const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace || "
+        "!hasSidebarNavigation"
         in javascript
     )
     assert "} else if (!hasSidebarNavigation) {" in javascript
@@ -123,7 +124,6 @@ def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
 
 def test_account_navigation_exposes_one_active_role_and_role_switching() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
-    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert '"/api/v1/session/active-role"' in javascript
     assert "localStorage" not in javascript
@@ -134,9 +134,15 @@ def test_account_settings_uses_the_global_shell_without_polluting_primary_naviga
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
-    assert 'const globalOrganizerWorkspace = organizerWorkspace || section === "account"' in javascript
+    assert (
+        'const globalOrganizerWorkspace = organizerWorkspace || section === "account"'
+        in javascript
+    )
     assert 'if (globalOrganizerWorkspace) {' in javascript
-    assert 'globalNav.append(navLink("Account settings", "/account", "account", true))' not in javascript
+    assert (
+        'globalNav.append(navLink("Account settings", "/account", "account", true))'
+        not in javascript
+    )
     assert 'globalNav.append(navLink("Speaker portal", "/speaker", "mic"' not in javascript
     assert 'globalNav.append(navLink("My reviews", "/reviews", "review"' not in javascript
     assert 'topbar.append(topbarBrand, globalNav, accountMenu(session, roles));' in javascript
@@ -348,3 +354,16 @@ def test_event_navigation_matches_the_server_authority_split() -> None:
     event_nav_call = "eventNav(currentEventId, administersEventDirectly(session, currentEventId))"
     assert event_nav_call in javascript
     assert "if (canAdministerAccess) {" in javascript
+
+
+def test_account_menu_dismissal_is_shared_across_shell_layouts() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    shared_handler = javascript.index("function closeOpenAccount")
+    topbar_return = javascript.index('shell.className = "sb-app-shell sb-app-shell--single"')
+    assert shared_handler < topbar_return
+    escape_handler = (
+        'if (event.key === "Escape") closeOpenAccount({ restoreFocus: true });'
+    )
+    assert escape_handler in javascript
+    assert "!openAccount.contains(event.target)" in javascript

@@ -15,7 +15,7 @@ def test_release_gate_uses_disposable_d1_state_and_isolated_compose_project() ->
     assert script.count("npm run worker:migrate") == 2
     assert "INSERT INTO instance_setup" in script
     assert script.index("INSERT INTO instance_setup") < script.index("up --detach worker")
-    assert override.count("ports: !reset []") == 2
+    assert override.count("ports: !reset []") == 3
     assert "mailpit:" in override
     assert "--persist-to" in override
     assert "name: sessionbuddy_wrangler-config" in override

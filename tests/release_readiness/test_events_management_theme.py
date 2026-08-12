@@ -124,11 +124,10 @@ def test_event_branding_composes_a_live_public_page_preview() -> None:
     assert "border-top: 4px solid var(--event-preview-accent" in styles
 
 
-def test_home_and_events_use_distinct_event_list_surfaces() -> None:
+def test_home_summarizes_events_and_events_keeps_the_full_management_surface() -> None:
     home = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     events = (STATIC / "events_admin.html").read_text(encoding="utf-8")
 
-    assert 'aria-label="Organization destinations"' in home
-    assert 'class="organizer-home-event-list"' not in home
+    assert 'class="organizer-home-event-list" aria-label="Events"' in home
     assert 'class="event-table-frame" role="table" aria-label="Events"' in events
     assert 'class="event-management-list" role="rowgroup"' in events

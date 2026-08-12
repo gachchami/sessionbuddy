@@ -116,6 +116,9 @@ for (const viewport of [
 
     await custom.getByRole("button", { name: "Done editing question" }).click();
     await expect(page.locator("#add-field")).toBeFocused();
+    const savedCustom = page.locator('fieldset.question-card[data-index]')
+      .filter({ hasText: "Workshop prerequisites" }).last();
+    await expect(savedCustom.locator("details.question-editor")).not.toHaveAttribute("open", "");
 
     // Adding a question selects its full editor. Keep the primary add action
     // reachable there so long forms do not require returning to the outline.

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
-  <script src="/account/assets/account.js?v=12" defer></script>
+  <script src="/account/assets/account.js?v=13" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
@@ -18,13 +18,13 @@
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
     <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title" hidden>
       <div class="account-profile-heading"><div><p class="eyebrow">Your identity</p><h2 id="profile-title">Profile</h2><p>Used across every SessionBuddy workspace you can access.</p></div><div id="profile-roles" class="account-role-list"></div></div>
-      <section class="account-headshot" aria-labelledby="headshot-title">
-        <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
-        <div><h3 id="headshot-title">Headshot</h3><p class="help">A square JPG, PNG, or WebP works best. Maximum 5 MB.</p>
-          <div class="actions"><label class="button secondary account-headshot__choose">Choose image<input id="headshot-input" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="upload-headshot" type="button" disabled>Save headshot</button><button id="remove-headshot" class="secondary" type="button" hidden>Remove</button></div>
-        </div>
-      </section>
       <form id="profile-form">
+        <section class="account-headshot" aria-labelledby="headshot-title">
+          <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
+          <div><h3 id="headshot-title">Headshot</h3><p class="help">A square JPG, PNG, or WebP works best. Maximum 5 MB. A chosen image is uploaded when you save your profile.</p>
+            <div class="actions"><label class="button secondary account-headshot__choose">Choose image<input id="headshot-input" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="remove-headshot" class="secondary" type="button" hidden>Remove</button></div>
+          </div>
+        </section>
         <p id="name-draft-help" class="help" hidden>We split your existing account name into these fields as a draft. Review both names before saving. Nothing changes until you save your profile.</p>
         <div class="form-grid">
           <label>First name<input name="first_name" autocomplete="given-name" maxlength="100" aria-describedby="name-draft-help" required></label>

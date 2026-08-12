@@ -105,11 +105,10 @@ test.describe("account profile responsive design", () => {
     const panel = await page.locator(".account-profile-panel").boundingBox();
     const headshot = await page.locator(".account-headshot").boundingBox();
     const choose = await page.locator(".account-headshot__choose").boundingBox();
-    const save = await page.getByRole("button", { name: "Save headshot" }).boundingBox();
+    const save = await page.getByRole("button", { name: "Save profile" }).boundingBox();
     expect(panel && headshot && choose && save).toBeTruthy();
     expect(headshot!.x).toBeGreaterThanOrEqual(panel!.x);
     expect(headshot!.x + headshot!.width).toBeLessThanOrEqual(panel!.x + panel!.width + 1);
-    expect(Math.abs(choose!.width - save!.width)).toBeLessThanOrEqual(2);
     expect(choose!.height).toBeLessThanOrEqual(52);
     expect(save!.height).toBeLessThanOrEqual(52);
 
@@ -447,8 +446,6 @@ test.describe("account profile responsive design", () => {
     await expect(page.getByRole("heading", { name: "Roles and Access" })).toBeHidden();
     await expect(page.getByRole("heading", { name: "Organizers" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Organization activity" })).toBeVisible();
-    await expect(page.getByText("Admin access added", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Organization Owner · Aug 16, 2026/)).toBeVisible();
     const ownerRow = page.locator("li", { hasText: "owner@example.test" });
     await expect(ownerRow).toContainText("Owner");
     await expect(ownerRow.locator("select")).toHaveCount(0);

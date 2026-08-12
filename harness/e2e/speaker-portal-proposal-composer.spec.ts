@@ -473,9 +473,6 @@ test.describe("speaker portal proposal composer", () => {
         state: "open", version: 1, due_at_ms: null, form_fields: [],
       }] },
     });
-    await page.route("**/api/v1/speaker/profile", (route) => route.fulfill({
-      contentType: "application/json", body: JSON.stringify({ ok: true }),
-    }));
     await page.goto("/speaker");
     await expect(page.locator("#status")).toHaveText("Speaker details are ready.");
 
@@ -484,10 +481,6 @@ test.describe("speaker portal proposal composer", () => {
     await expect(page.locator("#proposal-composer")).toBeHidden();
     await expect(page.locator("#status")).toContainText("Applications are closed.");
 
-    // Saving an unrelated task refreshes the portal from its stale open-call
-    // snapshot. That incidental render must not resurrect the trigger.
-    await page.getByRole("button", { name: "Save profile" }).click();
-    await expect(page.locator("#status")).toHaveText("Profile saved.");
     await expect(page.getByRole("button", { name: /Submit a proposal/ })).toBeHidden();
   });
 
@@ -712,8 +705,9 @@ test.describe("speaker portal proposal composer", () => {
 
     const results = await new AxeBuilder({ page }).include("#submissions").analyze();
     expect(results.violations).toEqual([]);
-    await expect(page.locator("#submissions")).toHaveCSS("grid-column-start", "1");
-    await expect(page.locator("#submissions")).toHaveCSS("grid-column-end", "-1");
+    const composerWidth = await page.locator(".proposal-composer").evaluate((element) => element.clientWidth);
+    const sectionWidth = await page.locator("#submissions").evaluate((element) => element.clientWidth);
+    expect(sectionWidth - composerWidth).toBeLessThanOrEqual(2);
     await expect(page.locator(".proposal-composer label").first()).toHaveCSS("font-size", "14px");
     await expect(page.getByRole("button", { name: "Submit proposal" })).toHaveCSS("background-color", "rgb(87, 50, 198)");
   });

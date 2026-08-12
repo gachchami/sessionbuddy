@@ -25,7 +25,10 @@ def test_general_people_directory_is_platform_scoped_and_filterable() -> None:
     assert "/organizations/${encodeURIComponent(organization.id)}/people" in script
     assert "speaker.participations || speaker.events || []" in script
     assert "function uniquePeople(items)" in script
-    assert "item.person_id || item.user_id || item.email.toLowerCase()" in script
+    assert (
+        "item.organization_id}:${item.user_id || item.email?.toLowerCase() || "
+        "item.person_id}"
+    ) in script
     assert "participation.event_id === eventId" in script
     assert 'row.className = "people-table-row"' in script
     assert 'window.SessionBuddyPeopleSearch.matches' in script

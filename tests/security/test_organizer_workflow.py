@@ -579,10 +579,10 @@ def test_console_gates_privileged_entry_points_by_real_permission() -> None:
     # People directory requires organization management; nav renders only then.
     assert "function canManageOrganization(session)" in shell
     assert shell.count('navLink("People", "/admin/people"') == 2
-    # Event sub-nav uses exact event authority, or an API permission probe for
-    # the selected event — never authority over some unrelated resource.
+    # Event sub-nav uses the exact event authority carried by the session —
+    # never authority over some unrelated resource.
     assert "administersEventDirectly(session, currentEventId)" in shell
-    assert "/api/v1/admin/events/${encodeURIComponent(currentEventId)}" in shell
+    assert "(session.event_access || []).some" in shell
     # Create event tracks the selected organization's exact manage permission.
     assert "state.adminOrganizationIds" in events
     assert "updateCreateAccess(event.currentTarget.value)" in events

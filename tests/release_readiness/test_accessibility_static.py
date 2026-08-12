@@ -61,8 +61,12 @@ def test_public_form_and_portal_expose_errors_and_progress_accessibly() -> None:
     assert 'id="status"' in cfp and 'tabindex="-1"' in cfp
     assert 'byId("status").focus()' in cfp_js
     assert 'role="status" aria-live="polite"' in cfp
-    assert 'aria-labelledby="tasks-title"' in portal
     assert 'aria-labelledby="submissions-title"' in portal
+    assert 'aria-label="Submission summary"' in portal
+    # Event groups are generated, so their heading link is asserted in the
+    # renderer rather than in the served shell.
+    portal_js = (STATIC / "speaker_portal.js").read_text()
+    assert 'section.setAttribute("aria-labelledby", title.id)' in portal_js
     assert 'id="profile"' not in portal
     assert 'id="public-profile-link"' in portal
 
