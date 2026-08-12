@@ -1,2735 +1,2045 @@
 {
-  "schema_version": 1,
   "api_routes": {
-    "GET /api/v1/admin/organizations/{organization_id}/activities": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "organization-activity",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/organizations/{organization_id}/ownership-transfers": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "organization-ownership-transfer",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/co-speaker-invitations/{token}": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "co-speaker-invitation-detail",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/co-speaker-invitations/{token}/accept": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "co-speaker-invitation-accept",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/co-speaker-invitations/{token}/decline": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "co-speaker-invitation-decline",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}/resend": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "co-speaker-invitation-resend",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "DELETE /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 700,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "co-speaker-remove",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/public/events": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-event-directory",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/public/people/{user_id}": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-person-profile",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/public/people/{user_id}/headshot": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-person-headshot",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/speaker-profiles/{person_id}": {
-      "owner": "speaker-operations",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-profile-detail",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PATCH /api/v1/speaker-profiles/{person_id}": {
-      "owner": "speaker-operations",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-profile-update",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-resend-invitation",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/evaluation-rounds/{round_id}/export.csv": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-export-evaluations",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/assets": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-speaker-assets",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "GET /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot": {
-      "owner": "speaker-onboarding",
-      "slo": { "p95_ms": 600, "error_rate_max": 0.001 },
-      "benchmark": "admin-read-speaker-headshot",
-      "dashboards": ["release-health", "api-explorer"],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "PUT /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot": {
-      "owner": "speaker-onboarding",
-      "slo": { "p95_ms": 1500, "error_rate_max": 0.001 },
-      "benchmark": "admin-upload-speaker-headshot",
-      "dashboards": ["release-health", "api-explorer"],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-speaker",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /api/v1/admin/events/{event_id}/communications/speakers/preview": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-preview-speaker-message",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /api/v1/admin/events/{event_id}/communications/speakers/send": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-send-speaker-message",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "GET /api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-get-session-content",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-session-content",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "POST /api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content/restore": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-restore-session-content",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/rooms": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-agenda-room",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/agenda/rooms/{room_id}": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-agenda-room",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/tracks": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-agenda-track",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "GET /api/v1/admin/events/{event_id}/agenda/tracks": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-agenda-tracks",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/agenda/tracks/{track_id}": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-agenda-track",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "GET /api/v1/admin/events/{event_id}/labels": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-event-labels",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "POST /api/v1/admin/events/{event_id}/labels": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-event-label",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/labels/{label_id}": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-event-label",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "PUT /api/v1/admin/events/{event_id}/sessions/{session_id}/labels": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-assign-session-labels",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/auto-schedule": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 1000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-auto-schedule",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "GET /api/v1/admin/events/{event_id}/resources": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-event-resources",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /api/v1/admin/events/{event_id}/resources": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-event-resource",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "GET /api/v1/admin/events/{event_id}/speaker-targets": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-speaker-targets",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /api/v1/admin/events/{event_id}/speaker-tasks": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 650,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-custom-speaker-task",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-accelevents-token",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#integration"
-    },
-    "GET /api/v1/speaker/resources": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-list-resources",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /api/v1/speaker/tasks/{task_id}/response": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-complete-custom-task",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "GET /api/v1/public/events/{event_id}/schedule": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-published-schedule",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#agenda"
-    },
-    "GET /api/v1/public/events/{event_id}/speakers": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-speaker-gallery",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "GET /api/v1/public/events/{event_id}/speakers/{event_speaker_id}/headshot": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-speaker-headshot",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#speaker-onboarding"
-    },
-    "POST /v1/event/{event_id}/sessions": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "accelevents-session-pull",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#integration"
-    },
-    "POST /v1/event/{event_id}/speakers": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 800,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "accelevents-speaker-pull",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#integration"
-    },
-    "GET /api/v1/admin/organizations": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-organizations",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/organizations/{organization_id}/people": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-organization-people",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PATCH /api/v1/admin/organizations/{organization_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-organization",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/organizations/{organization_id}/events": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-events",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/organizations/{organization_id}/events": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-create-event",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/organizations/{organization_id}/event-assets/{kind}": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 2000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-stage-event-branding",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/public/event-assets/{asset_name}": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-event-branding",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PATCH /api/v1/admin/events/{event_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-update-event",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/events/{event_id}/duplicate": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 2000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-duplicate-event",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/logo": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 2000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-upload-event-logo",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/public/events/{event_id}/logo/{logo_name}": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-event-logo",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/cover": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 2000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-upload-event-cover",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/public/events/{event_id}/cover/{image_name}": {
-      "owner": "platform",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "public-event-cover",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/bootstrap": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 750,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-bootstrap",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/setup/status": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-setup-status",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/account/profile": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-account-profile",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "PATCH /api/v1/account/profile": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-account-profile-update",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/account/headshot": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-account-headshot",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "PUT /api/v1/account/headshot": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-account-headshot-update",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
     "DELETE /api/v1/account/headshot": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
       "benchmark": "identity-account-headshot-delete",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "PUT /api/v1/account/default-role": {
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-account-default-role-update",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/events/{event_id}/access-grants": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-list-resource-access-grants",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/events/{event_id}/access-grants": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-create-resource-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-update-resource-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
     },
     "DELETE /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
       "benchmark": "identity-revoke-resource-access-grant",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/organizations/{organization_id}/access-grants": {
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-list-organization-access-grants",
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "DELETE /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
+      "benchmark": "scheduling-unschedule-agenda-item",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/organizations/{organization_id}/access-grants": {
-      "owner": "identity",
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#database-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-create-organization-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "PATCH /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-update-organization-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "DELETE /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-revoke-organization-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/organizations/{organization_id}/ownership-recovery/events": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-list-ownership-recovery-events",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/events/{event_id}/ownership-transfers": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-transfer-event-ownership",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/admin/events/{event_id}/invitations": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-create-invitation",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/events/{event_id}/invitations": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-list-invitations",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
     },
     "DELETE /api/v1/admin/events/{event_id}/invitations/{invitation_id}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
       "benchmark": "identity-revoke-invitation",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/events/{event_id}/members": {
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-list-members",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
     },
     "DELETE /api/v1/admin/events/{event_id}/members/{user_id}/roles/{role}": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
       "benchmark": "identity-revoke-member-role",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/auth/magic-links": {
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-magic-link-request",
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "DELETE /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
+      "benchmark": "identity-revoke-organization-access-grant",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/auth/password/sign-in": {
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-password-sign-in",
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "DELETE /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}": {
+      "benchmark": "co-speaker-remove",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 700
+      }
     },
-    "GET /api/v1/auth/session": {
+    "GET /api/v1/account/headshot": {
+      "benchmark": "identity-account-headshot",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "identity-current-session",
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/account/profile": {
+      "benchmark": "identity-account-profile",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/health": {
-      "owner": "platform-operations",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "engine-room-health",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /health": {
-      "owner": "platform-operations",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "engine-room-health",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#availability"
-    },
-    "GET /api/v1/engine-room/status": {
-      "owner": "platform-operations",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "engine-room-console-status",
-      "dashboards": [
-        "release-health",
-        "api-explorer",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/engine-room/database": {
-      "owner": "platform-operations",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "engine-room-d1-probe",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "POST /api/v1/engine-room/communications/requeue-exhausted": {
-      "owner": "platform-operations",
-      "slo": {
-        "p95_ms": 1000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "engine-room-communication-recovery",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/cfp": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-load-workspace",
-      "dashboards": [
-        "release-health",
-        "api-explorer",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/session": {
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "session-current",
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/admin/evaluation-rounds/{round_id}/export.csv": {
+      "benchmark": "admin-export-evaluations",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PUT /api/v1/session/active-role": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "session-active-role-update",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "POST /api/v1/session/refresh": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "session-refresh",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/session/logout": {
-      "owner": "identity",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "session-logout",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/forms/{slug}": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 250,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-get-form",
-      "dashboards": [
-        "release-health",
-        "api-explorer",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/forms/{slug}/draft": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-get-draft",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PUT /api/v1/forms/{slug}/draft": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-save-draft",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/forms/{slug}/submissions": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-create-submission",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/forms/{slug}/submissions/mine": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-list-owned-submissions",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PATCH /api/v1/forms/{slug}/submissions/{submission_id}": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-update-owned-submission",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/forms/{slug}/submissions/{submission_id}/withdraw": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 400,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-withdraw-owned-submission",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/evaluator/assignments": {
       "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-list-evaluator-assignments",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-save-evaluation",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/evaluator/assignments/{assignment_id}/conflict": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-declare-conflict",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-assignments/{assignment_id}/reassign": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-reassign-conflict",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
     },
     "GET /api/v1/admin/evaluation-rounds/{round_id}/results": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
       "benchmark": "evaluation-round-results",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators": {
       "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-add-round-reviewer",
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}": {
+      "benchmark": "admin-event-read",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions": {
-      "owner": "evaluation",
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-add-round-submissions",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/access-grants": {
+      "benchmark": "identity-list-resource-access-grants",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove": {
-      "owner": "evaluation",
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-remove-round-reviewer",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/reminder": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 700,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-remind-round-reviewer",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-rounds/{round_id}/close": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-close-round",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-record-decision",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/speaker/portal": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 750,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-speaker-portal",
-      "dashboards": [
-        "release-health",
-        "api-explorer",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/onboarding": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 750,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-admin-onboarding",
-      "dashboards": [
-        "release-health",
-        "api-explorer",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PATCH /api/v1/speaker/profile": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-speaker-profile-update",
-      "dashboards": [
-        "release-health",
-        "api-explorer",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/speaker/events/{event_id}/assets": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-speaker-assets",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/speaker/events/{event_id}/upload-authorizations": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-upload-authorize",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/speaker/events/{event_id}/upload-intents/{intent_id}/complete": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 1500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-upload-complete",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/communications/preview": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-communication-preview",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/communications/send": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 750,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-communication-send",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-task-reminder",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/communications": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-communication-status",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/communications/dispatch-local": {
-      "owner": "communications",
-      "slo": {
-        "p95_ms": 750,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-local-delivery",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-speaker-download-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-speaker-version-download-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-admin-download-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-admin-version-download-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/assets/download": {
-      "owner": "speaker-onboarding",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "speaker-operations-private-asset-download",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
     },
     "GET /api/v1/admin/events/{event_id}/agenda": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
       "benchmark": "scheduling-admin-agenda",
       "dashboards": [
         "release-health",
         "api-explorer",
         "page-performance"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/setup": {
       "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "scheduling-setup-agenda",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/agenda/tracks": {
+      "benchmark": "admin-list-agenda-tracks",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/preview": {
       "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
       "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "scheduling-conflict-preview",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/assets": {
+      "benchmark": "admin-list-speaker-assets",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/items": {
-      "owner": "agenda",
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "scheduling-create-agenda-item",
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/cfp": {
+      "benchmark": "cfp-load-workspace",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/communications": {
+      "benchmark": "speaker-operations-communication-status",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "PATCH /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
-      "owner": "agenda",
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "scheduling-move-agenda-item",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/evaluation-rounds": {
+      "benchmark": "admin-list-evaluation-rounds",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "DELETE /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
-      "owner": "agenda",
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "scheduling-unschedule-agenda-item",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/evaluation-rounds/current": {
+      "benchmark": "evaluation-current-evaluation-round",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
-    },
-    "POST /api/v1/admin/events/{event_id}/agenda/publish": {
-      "owner": "agenda",
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 1000,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "scheduling-publish-agenda",
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/evaluators": {
+      "benchmark": "evaluation-list-evaluators",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#database-regression"
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/invitations": {
+      "benchmark": "identity-list-invitations",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/labels": {
+      "benchmark": "admin-list-event-labels",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/members": {
+      "benchmark": "identity-list-members",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/onboarding": {
+      "benchmark": "speaker-operations-admin-onboarding",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 750
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/resources": {
+      "benchmark": "admin-list-event-resources",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content": {
+      "benchmark": "admin-get-session-content",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/speaker-targets": {
+      "benchmark": "admin-list-speaker-targets",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot": {
+      "benchmark": "admin-read-speaker-headshot",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "GET /api/v1/admin/events/{event_id}/submissions": {
+      "benchmark": "cfp-list-submissions",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/admin/organizations": {
+      "benchmark": "admin-list-organizations",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/access-grants": {
+      "benchmark": "identity-list-organization-access-grants",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/activities": {
+      "benchmark": "organization-activity",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/events": {
+      "benchmark": "admin-list-events",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/metrics": {
+      "benchmark": "admin-organization-metrics",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/ownership-recovery/events": {
+      "benchmark": "identity-list-ownership-recovery-events",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/admin/organizations/{organization_id}/people": {
+      "benchmark": "admin-list-organization-people",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/auth/session": {
+      "benchmark": "identity-current-session",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/co-speaker-invitations/{token}": {
+      "benchmark": "co-speaker-invitation-detail",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/engine-room/database": {
+      "benchmark": "engine-room-d1-probe",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#database-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/engine-room/status": {
+      "benchmark": "engine-room-console-status",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/evaluator/assignments": {
+      "benchmark": "evaluation-list-evaluator-assignments",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
     },
     "GET /api/v1/events/{event_id}/schedule": {
-      "owner": "agenda",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
       "benchmark": "scheduling-read-schedule",
       "dashboards": [
         "release-health",
         "api-explorer",
         "page-performance"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/forms/{slug}": {
+      "benchmark": "cfp-get-form",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/forms/{slug}/draft": {
+      "benchmark": "cfp-get-draft",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/forms/{slug}/submissions/mine": {
+      "benchmark": "cfp-list-owned-submissions",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "GET /api/v1/health": {
+      "benchmark": "engine-room-health",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/public/event-assets/{asset_name}": {
+      "benchmark": "public-event-branding",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/events": {
+      "benchmark": "public-event-directory",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/events/{event_id}/cover/{image_name}": {
+      "benchmark": "public-event-cover",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/events/{event_id}/logo/{logo_name}": {
+      "benchmark": "public-event-logo",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/events/{event_id}/schedule": {
+      "benchmark": "public-published-schedule",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/events/{event_id}/speakers": {
+      "benchmark": "public-speaker-gallery",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "GET /api/v1/public/events/{event_id}/speakers/{event_speaker_id}/headshot": {
+      "benchmark": "public-speaker-headshot",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/people/{user_id}": {
+      "benchmark": "public-person-profile",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/public/people/{user_id}/headshot": {
+      "benchmark": "public-person-headshot",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/session": {
+      "benchmark": "session-current",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/setup/status": {
+      "benchmark": "identity-setup-status",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "GET /api/v1/speaker-profiles/{person_id}": {
+      "benchmark": "speaker-profile-detail",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-operations",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/speaker/events/{event_id}/assets": {
+      "benchmark": "speaker-operations-speaker-assets",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/speaker/portal": {
+      "benchmark": "speaker-operations-speaker-portal",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 750
+      }
+    },
+    "GET /api/v1/speaker/proposal-drafts": {
+      "benchmark": "speaker-operations-proposal-drafts",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /api/v1/speaker/resources": {
+      "benchmark": "speaker-list-resources",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "GET /health": {
+      "benchmark": "engine-room-health",
+      "dashboards": [
+        "release-health"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#availability",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 250
+      }
+    },
+    "PATCH /api/v1/account/profile": {
+      "benchmark": "identity-account-profile-update",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}": {
+      "benchmark": "admin-update-event",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
+      "benchmark": "identity-update-resource-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
+      "benchmark": "scheduling-move-agenda-item",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#database-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/agenda/rooms/{room_id}": {
+      "benchmark": "admin-update-agenda-room",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/agenda/tracks/{track_id}": {
+      "benchmark": "admin-update-agenda-track",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
     },
     "PATCH /api/v1/admin/events/{event_id}/cfp": {
-      "owner": "cfp",
-      "slo": {
-        "p95_ms": 600,
-        "error_rate_max": 0.001
-      },
       "benchmark": "admin-update-published-form",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/evaluation-rounds": {
-      "owner": "evaluation",
+      "owner": "cfp",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-list-evaluation-rounds",
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/labels/{label_id}": {
+      "benchmark": "admin-update-event-label",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content": {
+      "benchmark": "admin-update-session-content",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "PATCH /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}": {
+      "benchmark": "admin-update-speaker",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "PATCH /api/v1/admin/organizations/{organization_id}": {
+      "benchmark": "admin-update-organization",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "PATCH /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
+      "benchmark": "identity-update-organization-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PATCH /api/v1/forms/{slug}/submissions/{submission_id}": {
+      "benchmark": "cfp-update-owned-submission",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "PATCH /api/v1/speaker-profiles/{person_id}": {
+      "benchmark": "speaker-profile-update",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-operations",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "POST /api/v1/admin/evaluation-assignments/{assignment_id}/reassign": {
+      "benchmark": "evaluation-reassign-conflict",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/close": {
+      "benchmark": "evaluation-close-round",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators": {
+      "benchmark": "evaluation-add-round-reviewer",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/reminder": {
+      "benchmark": "evaluation-remind-round-reviewer",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 700
+      }
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove": {
+      "benchmark": "evaluation-remove-round-reviewer",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions": {
+      "benchmark": "evaluation-add-round-submissions",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision": {
+      "benchmark": "evaluation-record-decision",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/access-grants": {
+      "benchmark": "identity-create-resource-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/auto-schedule": {
+      "benchmark": "admin-auto-schedule",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 1000
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/items": {
+      "benchmark": "scheduling-create-agenda-item",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#database-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/preview": {
+      "benchmark": "scheduling-conflict-preview",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#database-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/publish": {
+      "benchmark": "scheduling-publish-agenda",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#database-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 1000
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/rooms": {
+      "benchmark": "admin-create-agenda-room",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/setup": {
+      "benchmark": "scheduling-setup-agenda",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#database-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/agenda/tracks": {
+      "benchmark": "admin-create-agenda-track",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
+      "benchmark": "speaker-operations-admin-download-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
+      "benchmark": "speaker-operations-admin-version-download-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
     },
     "POST /api/v1/admin/events/{event_id}/cfp/publish": {
-      "owner": "program-management",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
       "benchmark": "cfp-publish-form",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/submissions": {
       "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-list-submissions",
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/dispatch-local": {
+      "benchmark": "speaker-operations-local-delivery",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 750
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/preview": {
+      "benchmark": "speaker-operations-communication-preview",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/send": {
+      "benchmark": "speaker-operations-communication-send",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 750
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/speakers/preview": {
+      "benchmark": "admin-preview-speaker-message",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/communications/speakers/send": {
+      "benchmark": "admin-send-speaker-message",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/cover": {
+      "benchmark": "admin-upload-event-cover",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 2000
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/duplicate": {
+      "benchmark": "admin-duplicate-event",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 2000
+      }
     },
     "POST /api/v1/admin/events/{event_id}/evaluation-rounds": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
       "benchmark": "evaluation-create-evaluation-round",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/evaluation-rounds/current": {
       "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-current-evaluation-round",
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/integrations/accelevents/tokens": {
+      "benchmark": "admin-create-accelevents-token",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}/evaluators": {
-      "owner": "evaluation",
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#integration",
       "slo": {
-        "p95_ms": 300,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "evaluation-list-evaluators",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/invitations": {
+      "benchmark": "identity-create-invitation",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend": {
+      "benchmark": "identity-resend-invitation",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/labels": {
+      "benchmark": "admin-create-event-label",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/logo": {
+      "benchmark": "admin-upload-event-logo",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 2000
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/ownership-transfers": {
+      "benchmark": "identity-transfer-event-ownership",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/resources": {
+      "benchmark": "admin-create-event-resource",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content/restore": {
+      "benchmark": "admin-restore-session-content",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/speaker-tasks": {
+      "benchmark": "admin-create-custom-speaker-task",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 650
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/speaker-tasks/{task_id}/reminders": {
+      "benchmark": "speaker-operations-task-reminder",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/reject": {
+      "benchmark": "evaluation-direct-rejection",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/access-grants": {
+      "benchmark": "identity-create-organization-access-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/event-assets/{kind}": {
+      "benchmark": "admin-stage-event-branding",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 2000
+      }
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/events": {
+      "benchmark": "admin-create-event",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/organizations/{organization_id}/ownership-transfers": {
+      "benchmark": "organization-ownership-transfer",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "POST /api/v1/assets/download": {
+      "benchmark": "speaker-operations-private-asset-download",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/auth/magic-links": {
+      "benchmark": "identity-magic-link-request",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/auth/password/sign-in": {
+      "benchmark": "identity-password-sign-in",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/bootstrap": {
+      "benchmark": "identity-bootstrap",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 750
+      }
     },
     "POST /api/v1/cfp/forms/{form_id}/upload-authorizations": {
-      "owner": "cfp-intake",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
       "benchmark": "cfp-staged-upload-authorize",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
+      "owner": "cfp-intake",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
     },
     "POST /api/v1/cfp/forms/{form_id}/upload-authorizations/{staged_id}/complete": {
-      "owner": "cfp-intake",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
       "benchmark": "cfp-staged-upload-complete",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "GET /api/v1/admin/events/{event_id}": {
-      "owner": "identity",
+      "owner": "cfp-intake",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-event-read",
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/co-speaker-invitations/{token}/accept": {
+      "benchmark": "co-speaker-invitation-accept",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    },
-    "GET /api/v1/admin/organizations/{organization_id}/metrics": {
-      "owner": "identity",
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
       "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "admin-organization-metrics",
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "POST /api/v1/co-speaker-invitations/{token}/decline": {
+      "benchmark": "co-speaker-invitation-decline",
       "dashboards": [
         "release-health",
         "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#identity"
-    }
-  },
-  "pages": {
-    "/docs": {
-      "owner": "platform-operations",
-      "classification": "synthetic/local",
-      "journeys": [
-        "browse-read-only-api-contract"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/engine-room": {
-      "owner": "platform-operations",
-      "classification": "synthetic/local",
-      "journeys": [
-        "engine-room-console-desktop",
-        "engine-room-console-mid-tier-mobile"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/cfp/{slug}": {
       "owner": "program-management",
-      "classification": "public",
-      "journeys": [
-        "public-submit-proposal"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/engine-room/communications/requeue-exhausted": {
+      "benchmark": "engine-room-communication-recovery",
       "dashboards": [
         "release-health",
-        "page-performance"
+        "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#async-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 1000
+      }
     },
-    "/cfp/{event_key}/{slug}": {
-      "owner": "program-management",
-      "classification": "public",
-      "journeys": [
-        "public-submit-proposal"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+    "POST /api/v1/evaluator/assignments/{assignment_id}/conflict": {
+      "benchmark": "evaluation-declare-conflict",
       "dashboards": [
         "release-health",
-        "page-performance"
+        "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/reviews": {
       "owner": "evaluation",
-      "classification": "synthetic/local",
-      "journeys": [
-        "evaluator-review-assignment"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/forms/{slug}/submissions": {
+      "benchmark": "cfp-create-submission",
       "dashboards": [
         "release-health",
-        "page-performance"
+        "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
     },
-    "/admin/evaluation-rounds/{round_id}": {
+    "POST /api/v1/forms/{slug}/submissions/{submission_id}/co-speakers/{co_speaker_id}/resend": {
+      "benchmark": "co-speaker-invitation-resend",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "POST /api/v1/forms/{slug}/submissions/{submission_id}/withdraw": {
+      "benchmark": "cfp-withdraw-owned-submission",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "POST /api/v1/session/logout": {
+      "benchmark": "session-logout",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/session/refresh": {
+      "benchmark": "session-refresh",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants": {
+      "benchmark": "speaker-operations-speaker-download-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
+      "benchmark": "speaker-operations-speaker-version-download-grant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/speaker/events/{event_id}/upload-authorizations": {
+      "benchmark": "speaker-operations-upload-authorize",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "POST /api/v1/speaker/events/{event_id}/upload-intents/{intent_id}/complete": {
+      "benchmark": "speaker-operations-upload-complete",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 1500
+      }
+    },
+    "POST /api/v1/speaker/tasks/{task_id}/response": {
+      "benchmark": "speaker-complete-custom-task",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /v1/event/{event_id}/sessions": {
+      "benchmark": "accelevents-session-pull",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#integration",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "POST /v1/event/{event_id}/speakers": {
+      "benchmark": "accelevents-speaker-pull",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#integration",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 800
+      }
+    },
+    "PUT /api/v1/account/default-role": {
+      "benchmark": "identity-account-default-role-update",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "PUT /api/v1/account/headshot": {
+      "benchmark": "identity-account-headshot-update",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PUT /api/v1/admin/events/{event_id}/sessions/{session_id}/labels": {
+      "benchmark": "admin-assign-session-labels",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "PUT /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot": {
+      "benchmark": "admin-upload-speaker-headshot",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 1500
+      }
+    },
+    "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation": {
+      "benchmark": "evaluation-save-evaluation",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
       "owner": "evaluation",
-      "classification": "synthetic/local",
-      "journeys": [
-        "admin-monitor-and-decide"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "PUT /api/v1/forms/{slug}/draft": {
+      "benchmark": "cfp-save-draft",
       "dashboards": [
         "release-health",
-        "page-performance"
+        "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/speaker": {
-      "owner": "speaker-onboarding",
-      "classification": "personalized/local",
-      "journeys": [
-        "speaker-profile-and-task-completion"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/speaker/proposals/{slug}": {
-      "owner": "cfp",
-      "classification": "personalized/local",
-      "journeys": ["speaker-proposal-management"],
-      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": ["release-health", "page-performance"],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/speaker/proposals/{slug}/new": {
-      "owner": "cfp",
-      "classification": "personalized/local",
-      "journeys": ["speaker-proposal-management"],
-      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": ["release-health", "page-performance"],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/speaker/proposals/{slug}/{submission_id}": {
-      "owner": "cfp",
-      "classification": "personalized/local",
-      "journeys": ["speaker-proposal-management"],
-      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": ["release-health", "page-performance"],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/onboarding": {
-      "owner": "speaker-onboarding",
-      "classification": "personalized/local",
-      "journeys": [
-        "admin-find-blocked-speakers"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/agenda": {
-      "owner": "agenda",
-      "classification": "personalized/local",
-      "journeys": [
-        "admin-schedule-and-publish"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/events/{event_id}/schedule": {
-      "owner": "agenda",
-      "classification": "authenticated",
-      "journeys": [
-        "staff-speaker-read-schedule"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/submissions": {
       "owner": "program-management",
-      "classification": "synthetic/local",
-      "journeys": [
-        "admin-review-submissions"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
+      }
+    },
+    "PUT /api/v1/session/active-role": {
+      "benchmark": "session-active-role-update",
       "dashboards": [
         "release-health",
-        "page-performance"
+        "api-explorer"
       ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/": {
-      "owner": "platform-operations",
-      "classification": "public",
-      "journeys": [
-        "discover-product"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/account": {
       "owner": "identity",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-own-account"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin": {
-      "owner": "platform-operations",
-      "classification": "authenticated",
-      "journeys": [
-        "organizer-dashboard"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/organization": {
-      "owner": "platform",
-      "classification": "authenticated",
-      "journeys": [
-        "organization-settings"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events": {
-      "owner": "identity",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-events"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}": {
-      "owner": "identity",
-      "classification": "authenticated",
-      "journeys": [
-        "event-overview"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/access": {
-      "owner": "identity",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-event-access"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/reviewers": {
-      "owner": "evaluation",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-event-reviewers"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/cfp": {
-      "owner": "program-management",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-call-for-proposals"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/messages": {
-      "owner": "communications",
-      "classification": "authenticated",
-      "journeys": [
-        "review-speaker-messages"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/speakers": {
-      "owner": "speaker-onboarding",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-event-speakers"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/speakers/{event_speaker_id}": {
-      "owner": "speaker-onboarding",
-      "classification": "authenticated",
-      "journeys": [
-        "manage-speaker-profile"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/workspace": {
-      "owner": "platform",
-      "classification": "authenticated",
-      "journeys": [
-        "publish-event-surfaces"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/people": {
-      "owner": "platform",
-      "classification": "authenticated",
-      "journeys": [
-        "browse-organization-people"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/people/{user_id}": {
-      "owner": "platform",
-      "classification": "public",
-      "journeys": [
-        "view-public-person-profile"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/co-speaker-invitations/{token}": {
-      "owner": "program-management",
-      "classification": "public",
-      "journeys": [
-        "co-speaker-respond"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/embeds/events/{event_id}/gallery": {
-      "owner": "platform",
-      "classification": "public",
-      "journeys": [
-        "embedded-speaker-gallery"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/embeds/events/{event_id}/schedule": {
-      "owner": "agenda",
-      "classification": "public",
-      "journeys": [
-        "embedded-schedule"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/embeds/events/{event_id}/sessions": {
-      "owner": "agenda",
-      "classification": "public",
-      "journeys": [
-        "embedded-session-feed"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/embeds/events/{event_id}/speakers": {
-      "owner": "speaker-onboarding",
-      "classification": "public",
-      "journeys": [
-        "embedded-speaker-gallery"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/events/{event_id}/gallery": {
-      "owner": "platform",
-      "classification": "public",
-      "journeys": [
-        "public-speaker-gallery"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/events/{event_id}/sessions": {
-      "owner": "agenda",
-      "classification": "public",
-      "journeys": [
-        "public-session-feed"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/events/{event_id}/speakers": {
-      "owner": "speaker-onboarding",
-      "classification": "public",
-      "journeys": [
-        "public-speaker-gallery"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/setup": {
-      "owner": "platform-operations",
-      "classification": "public",
-      "journeys": [
-        "first-run-bootstrap"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/sign-in": {
-      "owner": "identity",
-      "classification": "public",
-      "journeys": [
-        "sign-in"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/speakers/{person_id}": {
-      "owner": "speaker-onboarding",
-      "classification": "authenticated",
-      "journeys": [
-        "view-person-profile"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
-    },
-    "/admin/events/{event_id}/speaker-content": {
-      "owner": "platform",
-      "classification": "authenticated",
-      "journeys": [
-        "speaker-operations"
-      ],
-      "web_vitals": {
-        "lcp_p75_ms": 2500,
-        "inp_p75_ms": 200,
-        "cls_p75_max": 0.1
-      },
-      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
-      "dashboards": [
-        "release-health",
-        "page-performance"
-      ],
-      "runbook": "docs/debugging-runbook.md#page-regression"
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
     }
   },
   "async_handlers": {
-    "cron:scheduled:communication-recovery": {
-      "owner": "communications",
-      "kind": "cron",
-      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)",
-      "handler": "src/entry.py::Default.scheduled -> dispatch_stuck_deliveries",
-      "success_signal": "structured log event communication_delivery_dispatch, level info",
-      "alert_condition": "communication_delivery_dispatch at level error (publish failures, exhausted retry budgets, or oldest pending message older than 30 minutes)",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
-    },
-    "cron:scheduled:cfp-staged-purge": {
-      "owner": "cfp-intake",
-      "kind": "cron",
-      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)",
-      "handler": "src/entry.py::Default.scheduled -> purge_expired_staged_assets",
-      "success_signal": "structured log event cfp_staged_upload_purge, level info",
-      "alert_condition": "cfp_staged_upload_purge at level error (R2 delete failures)",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
-    },
-    "cron:scheduled:speaker-pending-upload-purge": {
-      "owner": "speaker-onboarding",
-      "kind": "cron",
-      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)",
-      "handler": "src/entry.py::Default.scheduled -> purge_expired_speaker_uploads",
-      "success_signal": "structured log event speaker_pending_upload_purge, level info",
-      "alert_condition": "speaker_pending_upload_purge at level error (R2 delete failures)",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
-    },
-    "queue:asset-scan": {
-      "owner": "speaker-onboarding",
-      "kind": "queue",
-      "trigger": "queue sessionbuddy-asset-scans (binding ASSET_SCAN_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-asset-scans-dlq",
-      "handler": "src/entry.py::Default.queue -> consume_scan_job",
-      "success_signal": "none (KNOWN GAP: the consumer acks/retries without structured logs; track via speaker_asset_versions scan_state transitions and DLQ depth)",
-      "alert_condition": "sessionbuddy-asset-scans-dlq depth greater than zero",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
-    },
-    "queue:communication-delivery": {
-      "owner": "communications",
-      "kind": "queue",
-      "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq",
-      "handler": "src/entry.py::Default.queue -> consume_delivery",
-      "success_signal": "successful sends ack silently; failures emit structured log event communication_delivery_failed (level error, reason=exception class or provider_unconfigured)",
-      "alert_condition": "communication_delivery_failed at level error, or growth in sessionbuddy-communications-dlq depth; reason=provider_unconfigured means RESEND_API_KEY/RESEND_FROM_ADDRESS are missing and affected rows are parked failed for requeue-exhausted after configuration is fixed",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
-    },
-    "queue:communication-reminder": {
-      "owner": "communications",
-      "kind": "queue",
-      "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq",
-      "handler": "src/entry.py::Default.queue -> consume_reminder",
-      "success_signal": "none (KNOWN GAP: reminder consumption acks silently; track reminder_schedules rows)",
-      "alert_condition": "sessionbuddy-communications-dlq depth greater than zero",
-      "dashboards": [
-        "release-health"
-      ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
-    },
     "cron:activity-dispatch": {
-      "owner": "platform",
-      "kind": "cron",
-      "trigger": "cron * * * * * (wrangler.activity.jsonc triggers.crons)",
-      "handler": "src/activity_entry.py::Default.scheduled -> dispatch_pending_activities",
-      "success_signal": "structured log event activity_dispatch, level info",
       "alert_condition": "activity_dispatch at level error or oldest unprocessed activity age above five minutes",
       "dashboards": [
         "release-health"
       ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+      "handler": "src/activity_entry.py::Default.scheduled -> dispatch_pending_activities",
+      "kind": "cron",
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "structured log event activity_dispatch, level info",
+      "trigger": "cron * * * * * (wrangler.activity.jsonc triggers.crons)"
+    },
+    "cron:scheduled:cfp-staged-purge": {
+      "alert_condition": "cfp_staged_upload_purge at level error (R2 delete failures)",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.scheduled -> purge_expired_staged_assets",
+      "kind": "cron",
+      "owner": "cfp-intake",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "structured log event cfp_staged_upload_purge, level info",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)"
+    },
+    "cron:scheduled:communication-recovery": {
+      "alert_condition": "communication_delivery_dispatch at level error (publish failures, exhausted retry budgets, or oldest pending message older than 30 minutes)",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.scheduled -> dispatch_stuck_deliveries",
+      "kind": "cron",
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "structured log event communication_delivery_dispatch, level info",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)"
+    },
+    "cron:scheduled:speaker-pending-upload-purge": {
+      "alert_condition": "speaker_pending_upload_purge at level error (R2 delete failures)",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.scheduled -> purge_expired_speaker_uploads",
+      "kind": "cron",
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "structured log event speaker_pending_upload_purge, level info",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)"
     },
     "queue:activity-distribution": {
-      "owner": "platform",
-      "kind": "queue",
-      "trigger": "queue sessionbuddy-activity-development, max_retries 5, dead_letter_queue sessionbuddy-activity-development-dlq",
-      "handler": "src/activity_entry.py::Default.queue -> distribute_activity",
-      "success_signal": "activity_status.status=PROCESSED and idempotent distribution rows",
       "alert_condition": "activity_distribution at level error or activity DLQ depth greater than zero",
       "dashboards": [
         "release-health"
       ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+      "handler": "src/activity_entry.py::Default.queue -> distribute_activity",
+      "kind": "queue",
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "activity_status.status=PROCESSED and idempotent distribution rows",
+      "trigger": "queue sessionbuddy-activity-development, max_retries 5, dead_letter_queue sessionbuddy-activity-development-dlq"
+    },
+    "queue:asset-scan": {
+      "alert_condition": "sessionbuddy-asset-scans-dlq depth greater than zero",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.queue -> consume_scan_job",
+      "kind": "queue",
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "none (KNOWN GAP: the consumer acks/retries without structured logs; track via speaker_asset_versions scan_state transitions and DLQ depth)",
+      "trigger": "queue sessionbuddy-asset-scans (binding ASSET_SCAN_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-asset-scans-dlq"
+    },
+    "queue:communication-delivery": {
+      "alert_condition": "communication_delivery_failed at level error, or growth in sessionbuddy-communications-dlq depth; reason=provider_unconfigured means RESEND_API_KEY/RESEND_FROM_ADDRESS are missing and affected rows are parked failed for requeue-exhausted after configuration is fixed",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.queue -> consume_delivery",
+      "kind": "queue",
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "successful sends ack silently; failures emit structured log event communication_delivery_failed (level error, reason=exception class or provider_unconfigured)",
+      "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq"
+    },
+    "queue:communication-reminder": {
+      "alert_condition": "sessionbuddy-communications-dlq depth greater than zero",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.queue -> consume_reminder",
+      "kind": "queue",
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "none (KNOWN GAP: reminder consumption acks silently; track reminder_schedules rows)",
+      "trigger": "queue sessionbuddy-communications (binding COMMUNICATION_QUEUE), max_retries 5, dead_letter_queue sessionbuddy-communications-dlq"
     },
     "workflow:ReminderWorkflow": {
-      "owner": "communications",
-      "kind": "workflow",
-      "trigger": "workflow binding REMINDER_WORKFLOW (wrangler.jsonc workflows, class ReminderWorkflow)",
-      "handler": "src/sessionbuddy/communications/runtime.py::ReminderWorkflow (exported via src/entry.py)",
-      "success_signal": "workflow instance completes; reminder rows advance in reminder_schedules",
       "alert_condition": "workflow instances failing or stuck in the Cloudflare workflows dashboard",
       "dashboards": [
         "release-health"
       ],
-      "runbook": "docs/debugging-runbook.md#async-delay-or-failure"
+      "handler": "src/sessionbuddy/communications/runtime.py::ReminderWorkflow (exported via src/entry.py)",
+      "kind": "workflow",
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "workflow instance completes; reminder rows advance in reminder_schedules",
+      "trigger": "workflow binding REMINDER_WORKFLOW (wrangler.jsonc workflows, class ReminderWorkflow)"
     }
   },
   "excluded_routes": {
@@ -2745,5 +2055,747 @@
     "/auth/verify": {
       "reason": "Magic-link confirmation and consumption flow; observed through the identity API entries and auth structured logs, not page web-vitals."
     }
-  }
+  },
+  "pages": {
+    "/": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "discover-product"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/account": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-own-account"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "organizer-dashboard"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/evaluation-rounds/{round_id}": {
+      "classification": "synthetic/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "admin-monitor-and-decide"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-events"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "event-overview"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/access": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-event-access"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/agenda": {
+      "classification": "personalized/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "admin-schedule-and-publish"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/cfp": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-call-for-proposals"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/messages": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "review-speaker-messages"
+      ],
+      "owner": "communications",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/onboarding": {
+      "classification": "personalized/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "admin-find-blocked-speakers"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/reviewers": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-event-reviewers"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/speaker-content": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "speaker-operations"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/speakers": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-event-speakers"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/speakers/{event_speaker_id}": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-speaker-profile"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/submissions": {
+      "classification": "synthetic/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "admin-review-submissions"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/workspace": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "publish-event-surfaces"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/organization": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "organization-settings"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/people": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "browse-organization-people"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/cfp/{event_key}/{slug}": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "public-submit-proposal"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/cfp/{slug}": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "public-submit-proposal"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/co-speaker-invitations/{token}": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "co-speaker-respond"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/docs": {
+      "classification": "synthetic/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "browse-read-only-api-contract"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/embeds/events/{event_id}/gallery": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "embedded-speaker-gallery"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/embeds/events/{event_id}/schedule": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "embedded-schedule"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/embeds/events/{event_id}/sessions": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "embedded-session-feed"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/embeds/events/{event_id}/speakers": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "embedded-speaker-gallery"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/engine-room": {
+      "classification": "synthetic/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "engine-room-console-desktop",
+        "engine-room-console-mid-tier-mobile"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/events/{event_id}/gallery": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "public-speaker-gallery"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/events/{event_id}/schedule": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "staff-speaker-read-schedule"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/events/{event_id}/sessions": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "public-session-feed"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/events/{event_id}/speakers": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "public-speaker-gallery"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/people/{user_id}": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "view-public-person-profile"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/reviews": {
+      "classification": "synthetic/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "evaluator-review-assignment"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/setup": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "first-run-bootstrap"
+      ],
+      "owner": "platform-operations",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/sign-in": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "sign-in"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/speaker": {
+      "classification": "personalized/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "speaker-profile-and-task-completion"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/speaker/proposals/{slug}": {
+      "classification": "personalized/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "speaker-proposal-management"
+      ],
+      "owner": "cfp",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/speaker/proposals/{slug}/new": {
+      "classification": "personalized/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "speaker-proposal-management"
+      ],
+      "owner": "cfp",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/speaker/proposals/{slug}/{submission_id}": {
+      "classification": "personalized/local",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "speaker-proposal-management"
+      ],
+      "owner": "cfp",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/speakers/{person_id}": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "view-person-profile"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    }
+  },
+  "schema_version": 1
 }

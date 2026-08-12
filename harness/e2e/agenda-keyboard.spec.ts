@@ -15,6 +15,7 @@ const sessionId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const itemId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const mainRoomId = "11111111-1111-4111-8111-111111111111";
 const breakoutRoomId = "22222222-2222-4222-8222-222222222222";
+const platformTrackId = "33333333-3333-4333-8333-333333333333";
 
 async function serveAgenda(page: Page) {
   let saved: Record<string, unknown> | null = null;
@@ -35,7 +36,7 @@ async function serveAgenda(page: Page) {
       { id: mainRoomId, name: "Main stage", status: "active", version: 1 },
       { id: breakoutRoomId, name: "Breakout room", status: "active", version: 1 },
     ],
-    tracks: [],
+    tracks: [{ id: platformTrackId, name: "Platform & Infra", status: "active", version: 1 }],
     labels: [],
     archived_rooms: [],
     archived_tracks: [],
@@ -52,6 +53,7 @@ async function serveAgenda(page: Page) {
           label_version: 1,
           labels: [],
           label_ids: [],
+          speaker_names: "Priya Raman",
           version: 1,
           room_name: saved.room_id === breakoutRoomId ? "Breakout room" : "Main stage",
           ...saved,
@@ -68,6 +70,9 @@ async function serveAgenda(page: Page) {
           label_version: 1,
           labels: [],
           label_ids: [],
+          track_id: platformTrackId,
+          track_name: "Platform & Infra",
+          speaker_names: "Priya Raman",
         }],
   });
 
@@ -178,6 +183,8 @@ test.describe("agenda keyboard scheduling", () => {
     await page.keyboard.press("Enter");
 
     const scheduleDialog = page.getByRole("dialog", { name: "Schedule Keyboard-first session" });
+    await expect(scheduleDialog.getByText("Speaker: Priya Raman")).toBeVisible();
+    await expect(scheduleDialog.getByLabel("Track")).toHaveValue(platformTrackId);
     await expect(scheduleDialog).toBeVisible();
     await expect(scheduleDialog.getByLabel("Starts")).toBeFocused();
     await scheduleDialog.getByLabel("Starts").fill("2030-03-20T09:00");

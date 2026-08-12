@@ -36,7 +36,7 @@ def test_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> Non
     assert 'make("span", "Optional")' in script
     assert 'make("span", "Repeatable")' in script
     assert 'name="co_speaker_limit" type="number" value="1"' in page
-    assert "admin-programs.js?v=60" in page
+    assert "admin-programs.js?v=61" in page
 
 
 def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:

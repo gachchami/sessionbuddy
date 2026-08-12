@@ -311,6 +311,28 @@ async def _event_organization_id(db, event_id: str) -> str:
 
 
 @evaluation_router.post(
+    "/api/v1/admin/events/{event_id}/submissions/{submission_id}/reject",
+    response_model=SubmissionDecisionView,
+    operation_id="rejectUnreviewedSubmission",
+    tags=["evaluations"],
+)
+async def reject_unreviewed_submission(
+    event_id: str,
+    submission_id: str,
+    request: Request,
+    body: SubmissionDecisionCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> SubmissionDecisionView:
+    if body.decision != "rejected" or body.override_incomplete_reviews:
+        raise HTTPException(status_code=422, detail="This action only rejects unreviewed proposals")
+    if not body.internal_reason:
+        raise HTTPException(status_code=422, detail="An internal rejection reason is required")
+    return await record_submission_decision(
+        None, submission_id, request, body, idempotency_key, direct_event_id=event_id
+    )
+
+
+@evaluation_router.post(
     "/api/v1/admin/events/{event_id}/evaluation-rounds",
     response_model=EvaluationRoundView,
     status_code=201,
@@ -2169,15 +2191,29 @@ async def close_evaluation_round(
     tags=["evaluations"],
 )
 async def record_submission_decision(
-    round_id: str,
+    round_id: str | None,
     submission_id: str,
     request: Request,
     body: SubmissionDecisionCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    direct_event_id: str | None = None,
 ) -> SubmissionDecisionView:
     db = _db(request)
-    context = row_mapping(
-        await db.prepare(
+    if round_id is None:
+        context = row_mapping(
+            await db.prepare(
+                """SELECT s.organization_id,s.event_id,0 AS assigned_count,0 AS completed_count
+                   FROM submissions s
+                   WHERE s.id=?1 AND s.event_id=?2 AND s.status='submitted'
+                     AND NOT EXISTS (SELECT 1 FROM submission_decisions d
+                                      WHERE d.submission_id=s.id)
+                     AND NOT EXISTS (SELECT 1 FROM evaluation_assignments a
+                                      WHERE a.submission_id=s.id AND a.status!='revoked')"""
+            ).bind(submission_id, direct_event_id).first()
+        )
+    else:
+        context = row_mapping(
+            await db.prepare(
             """SELECT r.organization_id, r.event_id, COUNT(a.id) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count
            FROM evaluation_rounds r
@@ -2186,9 +2222,9 @@ async def record_submission_decision(
            WHERE r.id = ?1 AND a.submission_id = ?2
            GROUP BY r.organization_id, r.event_id"""
         )
-        .bind(round_id, submission_id)
-        .first()
-    )
+            .bind(round_id, submission_id)
+            .first()
+        )
     if context is None:
         raise HTTPException(status_code=404)
     auth = await require_permission(
@@ -2248,7 +2284,11 @@ async def record_submission_decision(
     if body.send_email and not str(speaker["speaker_email"] or "").strip():
         raise HTTPException(status_code=409)
     key = _key(idempotency_key)
-    route = "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
+    route = (
+        "POST /api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
+        if round_id is not None
+        else "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/reject"
+    )
     fingerprint = _fingerprint(body)
     replay = row_mapping(
         await db.prepare(
@@ -2384,6 +2424,16 @@ async def record_submission_decision(
                 submission_id,
             )
         )
+    if body.decision == "rejected":
+        # A permanent rejection immediately removes unfinished work from every
+        # reviewer queue. Completed reviews remain immutable historical evidence.
+        batch.add_statement(
+            db.prepare(
+                """UPDATE evaluation_assignments SET status='revoked',updated_at_ms=?1
+                   WHERE organization_id=?2 AND event_id=?3 AND submission_id=?4
+                     AND status='assigned'"""
+            ).bind(now, context["organization_id"], context["event_id"], submission_id)
+        )
         # Waive only the rejected submission's tasks, never tasks that belong
         # to another (accepted) submission of the same speaker.
         batch.add_statement(
@@ -2444,6 +2494,7 @@ async def record_submission_decision(
                 "communication_queued": bool(communication_id),
                 "onboarding_created": body.decision == "accepted",
                 "review_override": incomplete_reviews,
+                "direct_rejection": round_id is None,
             },
         )
     )

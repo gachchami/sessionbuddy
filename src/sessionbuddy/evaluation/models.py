@@ -285,7 +285,7 @@ class SubmissionDecisionCreate(BaseModel):
 class SubmissionDecisionView(SubmissionDecisionCreate):
     id: str
     submission_id: str
-    round_id: str
+    round_id: str | None
     version: int
     communication_queued: bool = False
 

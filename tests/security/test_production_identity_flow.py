@@ -758,6 +758,34 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
         assert denied.status_code == 403
 
 
+async def test_password_sign_in_replaces_an_incompatible_role_workspace_redirect(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    password = "speaker password for redirect regression"  # noqa: S105 - test fixture
+    _insert_password_speaker(
+        connection,
+        user_id="speaker-stale-redirect",
+        email="speaker-stale-redirect@example.com",
+        password=password,
+    )
+
+    async with _client(environment) as client:
+        signed_in = await client.post(
+            "/api/v1/auth/password/sign-in",
+            json={
+                "email": "speaker-stale-redirect@example.com",
+                "password": password,
+                "redirect_path": "/reviews",
+            },
+        )
+        assert signed_in.status_code == 200
+        assert signed_in.json()["redirect_path"] == "/speaker"
+        # An unlinked speaker sees the UI onboarding state; the domain API
+        # remains opaque so no event or tenant data crosses the boundary.
+        assert (await client.get("/api/v1/speaker/portal")).status_code == 404
+
+
 async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
     production_environment,
 ) -> None:
@@ -1281,6 +1309,22 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         )
         assert draft.status_code == 200
         assert draft.json()["version"] == 1
+        listed_drafts = await speaker.get("/api/v1/speaker/proposal-drafts")
+        assert listed_drafts.status_code == 200
+        assert listed_drafts.json() == {
+            "data": [
+                {
+                    "id": draft.json()["id"],
+                    "form_id": draft.json()["form_id"],
+                    "event_id": event_id,
+                    "event_name": "Speaker Summit",
+                    "form_slug": "speaker-summit",
+                    "proposal_title": "Production identity",
+                    "updated_at_ms": draft.json()["updated_at_ms"],
+                    "edit_path": f"/cfp/{event_id.replace('-', '')[:6]}/speaker-summit",
+                }
+            ]
+        }
         submission = await speaker.post(
             "/api/v1/forms/speaker-summit/submissions",
             headers={

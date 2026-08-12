@@ -91,6 +91,18 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert "File received. Safety checks are temporarily unavailable" in javascript
     assert "this file is not public or current yet" in javascript
     assert "You do not need to choose or upload the file again" in javascript
+    assert 'id="empty-state"' in html
+    assert "Your speaker workspace is ready" in html
+    assert "You do not have any proposals yet" in html
+    assert "Event organizers share each call for proposals directly" in html
+    assert "Explore open calls" not in html
+    assert 'id="saved-proposal-drafts"' in html
+    assert 'api("/api/v1/speaker/proposal-drafts")' in javascript
+    assert "renderProposalDrafts(drafts)" in javascript
+    assert "connected events" not in html
+    assert ': "No proposals yet.");' in javascript
+    assert 'error.status === 404 && state.csrf' in javascript
+    assert 'byId("empty-state").hidden = false' in javascript
 
 
 def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:

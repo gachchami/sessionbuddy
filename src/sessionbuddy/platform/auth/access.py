@@ -769,6 +769,29 @@ def _role_destination(role: str | None) -> str:
     return destination
 
 
+def _role_compatible_redirect(redirect_path: str, role: str) -> str:
+    """Keep role-scoped workspaces from leaking across sign-in personas."""
+    role_prefixes = {
+        "organizer": ("/admin",),
+        "reviewer": ("/reviews",),
+        "speaker": ("/speaker",),
+    }
+    requested_role = next(
+        (
+            candidate
+            for candidate, prefixes in role_prefixes.items()
+            if any(
+                redirect_path == prefix or redirect_path.startswith(f"{prefix}/")
+                for prefix in prefixes
+            )
+        ),
+        None,
+    )
+    if requested_role is not None and requested_role != role:
+        return _role_destination(role)
+    return _role_destination(role) if redirect_path == "/" else redirect_path
+
+
 async def _default_account_role(db, user_id: str) -> str | None:
     row = row_mapping(
         await db.prepare(
@@ -1168,7 +1191,12 @@ async def update_account_profile(
             display_name,
             body.job_title or None,
             body.company or None,
-            body.description or "",
+            # NULL, not "": `users.description` above is bound the same way, and
+            # the public profile resolves `COALESCE(u.description,p.biography)`.
+            # Writing "" here made an empty account-page save overwrite a bio an
+            # organizer had set on the person record, and the COALESCE then
+            # returned the empty string instead of falling through to it.
+            body.description or None,
             json.dumps(speaker_links, separators=(",", ":")),
             now,
             authenticated.actor.user_id,
@@ -4987,9 +5015,7 @@ async def password_sign_in(
     return SessionCreated(
         user_id=str(credential["id"]),
         csrf_token=csrf,
-        redirect_path=(
-            _role_destination(default_role) if body.redirect_path == "/" else body.redirect_path
-        ),
+        redirect_path=_role_compatible_redirect(body.redirect_path, default_role),
     )
 
 

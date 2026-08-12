@@ -115,6 +115,60 @@ test.describe("account profile responsive design", () => {
     await page.screenshot({ path: ".local/account-mobile.png", fullPage: true });
   });
 
+  test("keeps account navigation after one transient shell session failure", async ({ page }) => {
+    await serveAccountPage(page);
+    const session = {
+      authenticated: true,
+      user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      email: "admin@example.test",
+      display_name: "Admin User",
+      profile_complete: true,
+      csrf_token: "browser-test-csrf",
+      account_roles: ["organizer"],
+      active_role: "organizer",
+      default_role: "organizer",
+      organization_access: [{
+        organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        organization_name: "Example Events",
+        permissions: ["owner"],
+      }],
+      event_access: [],
+    };
+    let sessionRequests = 0;
+    await page.route("**/api/v1/auth/session", async (route) => {
+      sessionRequests += 1;
+      if (sessionRequests === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await route.fulfill({ status: 503, json: { error: { code: "unavailable", message: "Try again." } } });
+        return;
+      }
+      await route.fulfill({ json: session });
+    });
+    await page.route("**/api/v1/account/profile", (route) => route.fulfill({ json: {
+      email: session.email,
+      first_name: "Admin",
+      last_name: "User",
+      job_title: null,
+      company: null,
+      time_zone: "UTC",
+      description: null,
+      website_url: null,
+      linkedin_url: null,
+      x_url: null,
+      roles: ["organizer"],
+      headshot_url: null,
+      has_password: true,
+      version: 1,
+    } }));
+
+    await page.goto("/account");
+    await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
+    await expect(page.getByText("Temporarily unavailable")).toHaveCount(0);
+    await page.getByLabel("Profile and account for admin@example.test").click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    expect(sessionRequests).toBeGreaterThanOrEqual(2);
+  });
+
   test("a legacy display name becomes an editable, unsaved profile draft", async ({ page }) => {
     await serveAccountPage(page);
     const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";

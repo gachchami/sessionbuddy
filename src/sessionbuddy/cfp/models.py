@@ -395,6 +395,25 @@ class SubmissionDraftView(BaseModel):
     updated_at_ms: int
 
 
+class SpeakerProposalDraftSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    form_id: str
+    event_id: str
+    event_name: str
+    form_slug: str
+    proposal_title: str
+    updated_at_ms: int
+    edit_path: str
+
+
+class SpeakerProposalDraftList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: list[SpeakerProposalDraftSummary]
+
+
 class StagedUploadCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 

@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/speaker/assets/speaker.css?v=24">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=24" defer></script>
-  <script src="/speaker/assets/speaker-portal.js?v=23" defer></script>
+  <script src="/speaker/assets/speaker-portal.js?v=24" defer></script>
 </head>
 <body class="app-body speaker-portal-page">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -24,6 +24,17 @@
       <h1 id="auth-title">Speaker sign in</h1>
       <p>Use the email address connected to your invitation or proposal.</p>
       <button id="speaker-sign-in" type="button">Sign in</button>
+    </section>
+
+    <section id="empty-state" class="state-panel" hidden aria-labelledby="empty-title">
+      <h1 id="empty-title">Your speaker workspace is ready</h1>
+      <p>You do not have any proposals yet. Event organizers share each call for proposals directly; use the CFP link they sent you to submit.</p>
+    </section>
+
+    <section id="saved-proposal-drafts" class="state-panel" hidden aria-labelledby="saved-proposal-drafts-title">
+      <h2 id="saved-proposal-drafts-title">Saved drafts</h2>
+      <p class="help">Continue a proposal you have not submitted yet.</p>
+      <ul id="saved-proposal-draft-list" class="item-list"></ul>
     </section>
 
     <div id="portal" hidden>

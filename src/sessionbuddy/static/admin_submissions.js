@@ -338,6 +338,45 @@
     open.textContent = "View proposal";
     open.addEventListener("click", () => showSubmission(item, open));
     actions.append(open);
+    if (item.status === "submitted") {
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "danger secondary";
+      reject.textContent = "Reject without review";
+      reject.addEventListener("click", async () => {
+        const reason = window.prompt(
+          `Record the internal reason for rejecting “${item.proposal_title}”. This decision is permanent.`,
+          ""
+        )?.trim();
+        if (!reason) return;
+        if (!window.confirm("Reject this proposal permanently without reviewer evaluation?")) return;
+        reject.disabled = true;
+        try {
+          await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/reject`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-csrf-token": state.csrf,
+              "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+            },
+            body: JSON.stringify({
+              decision: "rejected",
+              internal_reason: reason,
+              send_email: false,
+              speaker_message: "",
+              override_incomplete_reviews: false,
+            }),
+          });
+          byId("status").textContent = `“${item.proposal_title}” was rejected without review.`;
+          location.reload();
+        } catch (error) {
+          byId("status").textContent = window.SessionBuddyApi.message(error);
+          byId("status").classList.add("error");
+          reject.disabled = false;
+        }
+      });
+      actions.append(reject);
+    }
     panel.append(details, actions);
     cell.append(panel);
     row.append(cell);

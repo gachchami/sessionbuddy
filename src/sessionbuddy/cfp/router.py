@@ -58,6 +58,8 @@ from .models import (
     OwnedSubmissionList,
     PrivateSubmissionView,
     PublishedFormView,
+    SpeakerProposalDraftList,
+    SpeakerProposalDraftSummary,
     StagedUploadAuthorizationView,
     StagedUploadCompletionView,
     StagedUploadCreate,
@@ -347,6 +349,14 @@ async def _timed_first(request: Request, statement, column: str | None = None):
         # D1 treats an explicit JavaScript null as a requested column named
         # "null". Omit the argument entirely when the caller wants the row.
         return await statement.first() if column is None else await statement.first(column)
+    finally:
+        record_timing(request, "db", (perf_counter() - started) * 1000)
+
+
+async def _timed_all(request: Request, statement):
+    started = perf_counter()
+    try:
+        return await statement.all()
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)
 
@@ -905,6 +915,52 @@ async def speaker_proposal_editor_page(
 ) -> HTMLResponse:
     await _require_workspace_submission(request, slug, submission_id)
     return HTMLResponse(_asset("public_cfp.html"), headers={"Cache-Control": "no-store"})
+
+
+@cfp_router.get(
+    "/api/v1/speaker/proposal-drafts",
+    response_model=SpeakerProposalDraftList,
+    operation_id="listMyProposalDrafts",
+    tags=["submissions"],
+)
+async def list_my_proposal_drafts(request: Request) -> SpeakerProposalDraftList:
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    rows = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT d.id,d.form_id,d.event_id,d.answers_json,d.updated_at_ms,
+                          f.slug AS form_slug,e.name AS event_name
+                   FROM submission_drafts d
+                   JOIN call_for_speaker_forms f
+                     ON f.organization_id=d.organization_id AND f.event_id=d.event_id
+                    AND f.id=d.form_id
+                   JOIN events e
+                     ON e.organization_id=d.organization_id AND e.id=d.event_id
+                   WHERE d.user_id=?1
+                   ORDER BY d.updated_at_ms DESC,d.id DESC LIMIT 100"""
+            ).bind(authenticated.actor.user_id),
+        )
+    )
+    drafts = []
+    for row in rows:
+        answers = json.loads(str(row["answers_json"]))
+        event_id = str(row["event_id"])
+        slug = str(row["form_slug"])
+        drafts.append(
+            SpeakerProposalDraftSummary(
+                id=str(row["id"]),
+                form_id=str(row["form_id"]),
+                event_id=event_id,
+                event_name=str(row["event_name"]),
+                form_slug=slug,
+                proposal_title=str(answers.get("proposal_title") or "Untitled proposal"),
+                updated_at_ms=int(row["updated_at_ms"]),
+                edit_path=f"/cfp/{public_event_key(event_id)}/{slug}",
+            )
+        )
+    return SpeakerProposalDraftList(data=drafts)
 
 
 @cfp_router.get(

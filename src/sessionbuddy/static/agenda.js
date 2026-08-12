@@ -590,6 +590,7 @@
     form.elements.label_version.value = item.label_version || 1;
     form.elements.title.value = item.title;
     form.elements.abstract.value = item.abstract || "";
+    byId("editor-speakers").textContent = item.speaker_names || "Not provided";
     window.SessionBuddyApi.refreshCharacterCounters(form);
     form.elements.content_status.value = item.content_status || "draft";
     renderLabelChoices(item);

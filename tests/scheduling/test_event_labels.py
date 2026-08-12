@@ -101,6 +101,11 @@ async def test_event_labels_are_owned_assignable_and_public(
         )
 
         session_id = _seed_accepted_session(connection, organization_id, event_id)
+        connection.execute(
+            """UPDATE submissions SET routed_track='General'
+               WHERE id=(SELECT submission_id FROM accepted_sessions WHERE id=?)""",
+            (session_id,),
+        )
         setup = await client.post(
             f"/api/v1/admin/events/{event_id}/agenda/setup",
             headers={**headers, "idempotency-key": "label-agenda-setup-2026"},
@@ -149,6 +154,8 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert agenda.status_code == 200
         assert agenda.json()["labels"] == [label]
         assert agenda.json()["unscheduled_sessions"][0]["label_ids"] == [label["id"]]
+        assert agenda.json()["unscheduled_sessions"][0]["track_name"] == "General"
+        assert agenda.json()["unscheduled_sessions"][0]["speaker_names"] == "Priya Raman"
         assert set(agenda.json()["unscheduled_sessions"][0]) == {
             "session_id",
             "title",
@@ -158,6 +165,9 @@ async def test_event_labels_are_owned_assignable_and_public(
             "label_version",
             "labels",
             "label_ids",
+            "track_id",
+            "track_name",
+            "speaker_names",
         }
 
         room_id = setup.json()["rooms"][0]["id"]

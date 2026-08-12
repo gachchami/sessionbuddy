@@ -1498,6 +1498,10 @@
             "title": "Session Id",
             "type": "string"
           },
+          "speaker_names": {
+            "title": "Speaker Names",
+            "type": "string"
+          },
           "start_at_ms": {
             "minimum": 0.0,
             "title": "Start At Ms",
@@ -1549,6 +1553,7 @@
           "room_name",
           "track_id",
           "track_name",
+          "speaker_names",
           "version",
           "labels",
           "label_ids"
@@ -1626,9 +1631,35 @@
             "title": "Session Id",
             "type": "string"
           },
+          "speaker_names": {
+            "title": "Speaker Names",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "track_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Name"
           }
         },
         "required": [
@@ -1638,6 +1669,7 @@
           "content_status",
           "content_version",
           "label_version",
+          "speaker_names",
           "labels",
           "label_ids"
         ],
@@ -8768,61 +8800,6 @@
         "title": "SpeakerProfilePageView",
         "type": "object"
       },
-      "SpeakerProfileUpdate": {
-        "additionalProperties": false,
-        "properties": {
-          "biography": {
-            "maxLength": 5000,
-            "minLength": 1,
-            "title": "Biography",
-            "type": "string"
-          },
-          "company": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Company",
-            "type": "string"
-          },
-          "display_name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "job_title": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Job Title",
-            "type": "string"
-          },
-          "links": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 10,
-            "title": "Links",
-            "type": "array"
-          },
-          "location": {
-            "default": "",
-            "maxLength": 200,
-            "title": "Location",
-            "type": "string"
-          },
-          "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "display_name",
-          "biography",
-          "version"
-        ],
-        "title": "SpeakerProfileUpdate",
-        "type": "object"
-      },
       "SpeakerProfileView": {
         "additionalProperties": false,
         "properties": {
@@ -8868,6 +8845,72 @@
           "version"
         ],
         "title": "SpeakerProfileView",
+        "type": "object"
+      },
+      "SpeakerProposalDraftList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerProposalDraftSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SpeakerProposalDraftList",
+        "type": "object"
+      },
+      "SpeakerProposalDraftSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "edit_path": {
+            "title": "Edit Path",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "form_id": {
+            "title": "Form Id",
+            "type": "string"
+          },
+          "form_slug": {
+            "title": "Form Slug",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "updated_at_ms": {
+            "title": "Updated At Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "form_id",
+          "event_id",
+          "event_name",
+          "form_slug",
+          "proposal_title",
+          "updated_at_ms",
+          "edit_path"
+        ],
+        "title": "SpeakerProposalDraftSummary",
         "type": "object"
       },
       "SpeakerSubmissionView": {
@@ -9532,8 +9575,15 @@
             "type": "boolean"
           },
           "round_id": {
-            "title": "Round Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Id"
           },
           "send_email": {
             "default": false,
@@ -10857,8 +10907,15 @@
             "name": "round_id",
             "required": true,
             "schema": {
-              "title": "Round Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Round Id"
             }
           },
           {
@@ -10868,6 +10925,22 @@
             "schema": {
               "title": "Submission Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direct_event_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Direct Event Id"
             }
           },
           {
@@ -14430,6 +14503,83 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/submissions/{submission_id}/reject": {
+      "post": {
+        "operationId": "rejectUnreviewedSubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionDecisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDecisionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Unreviewed Submission",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
     "/api/v1/admin/organizations": {
       "get": {
         "operationId": "list_organizations_api_v1_admin_organizations_get",
@@ -17337,62 +17487,24 @@
         ]
       }
     },
-    "/api/v1/speaker/profile": {
-      "patch": {
-        "operationId": "updateOwnSpeakerProfile",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "Idempotency-Key",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SpeakerProfileUpdate"
-              }
-            }
-          },
-          "required": true
-        },
+    "/api/v1/speaker/proposal-drafts": {
+      "get": {
+        "operationId": "listMyProposalDrafts",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SpeakerProfileView"
+                  "$ref": "#/components/schemas/SpeakerProposalDraftList"
                 }
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
-        "summary": "Update Speaker Profile",
+        "summary": "List My Proposal Drafts",
         "tags": [
-          "speaker-portal"
+          "submissions"
         ]
       }
     },

@@ -87,7 +87,10 @@ provided one, a headshot task when no clean headshot exists, and the required
 presentation task. It does not generate a generic supporting-material task;
 additional documents must be requested later with explicit context. Rejection
 waives outstanding onboarding; either decision can queue a speaker email with
-organizer-controlled copy.
+organizer-controlled copy. Organizers can also reject an unreviewed proposal
+directly with a required audited reason, without creating a reviewer assignment.
+A rejection immediately revokes unfinished assignments while preserving final
+reviews as immutable history.
 
 ## Speaker operations
 
@@ -113,6 +116,10 @@ publication, branded list/day/week/track/room schedule views, a browser-local
 attendee itinerary, embeddable public schedule and speaker views, versioned
 calendar invitations, and a read-only Sessionboard-compatible feed for pulling
 accepted speakers and sessions into Accelevents.
+
+Accepted-session handoff preserves the proposal's routed track when it matches
+an active agenda track and exposes the primary and co-speaker names in the
+schedule editor.
 
 The agenda editor's authenticated unschedule action includes the required JSON
 media type, and the public schedule identifies the published revision number

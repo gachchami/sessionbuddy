@@ -67,7 +67,7 @@ def test_rebased_baseline_contains_the_complete_fresh_install_schema() -> None:
                    WHERE type='table' AND name NOT LIKE 'sqlite_%'"""
             ).fetchall()
         }
-        assert len(tables) == 66
+        assert len(tables) == 76
         assert {
             "owned_resources",
             "resource_access_grants",

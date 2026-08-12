@@ -1125,7 +1125,7 @@ CREATE TABLE submission_decisions (
   id TEXT PRIMARY KEY NOT NULL,
   organization_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
-  round_id TEXT NOT NULL,
+  round_id TEXT,
   submission_id TEXT NOT NULL,
   decision TEXT NOT NULL CHECK (decision IN ('accepted', 'rejected')),
   internal_reason TEXT NOT NULL CHECK (length(internal_reason) <= 2000),
@@ -1136,7 +1136,8 @@ CREATE TABLE submission_decisions (
   FOREIGN KEY (round_id) REFERENCES evaluation_rounds(id) ON DELETE RESTRICT,
   FOREIGN KEY (submission_id) REFERENCES submissions(id) ON DELETE RESTRICT,
   FOREIGN KEY (decided_by_user_id) REFERENCES users(id) ON DELETE RESTRICT,
-  UNIQUE (round_id, submission_id)
+  UNIQUE (round_id, submission_id),
+  UNIQUE (submission_id)
 );
 
 CREATE TABLE "submission_drafts" (
@@ -2718,11 +2719,12 @@ END;
 CREATE TRIGGER validate_submission_decision_scope_insert
 BEFORE INSERT ON submission_decisions
 WHEN NOT EXISTS (
-  SELECT 1 FROM evaluation_rounds r
-  JOIN submissions s ON s.id=NEW.submission_id
-  WHERE r.id=NEW.round_id AND r.organization_id=NEW.organization_id
-    AND r.event_id=NEW.event_id AND s.organization_id=NEW.organization_id
+  SELECT 1 FROM submissions s
+  LEFT JOIN evaluation_rounds r ON r.id=NEW.round_id
+  WHERE s.id=NEW.submission_id AND s.organization_id=NEW.organization_id
     AND s.event_id=NEW.event_id
+    AND (NEW.round_id IS NULL OR (r.organization_id=NEW.organization_id
+      AND r.event_id=NEW.event_id))
 )
 BEGIN
   SELECT RAISE(ABORT, 'submission decision scope mismatch');
@@ -2731,11 +2733,12 @@ END;
 CREATE TRIGGER validate_submission_decision_scope_update
 BEFORE UPDATE OF organization_id,event_id,round_id,submission_id ON submission_decisions
 WHEN NOT EXISTS (
-  SELECT 1 FROM evaluation_rounds r
-  JOIN submissions s ON s.id=NEW.submission_id
-  WHERE r.id=NEW.round_id AND r.organization_id=NEW.organization_id
-    AND r.event_id=NEW.event_id AND s.organization_id=NEW.organization_id
+  SELECT 1 FROM submissions s
+  LEFT JOIN evaluation_rounds r ON r.id=NEW.round_id
+  WHERE s.id=NEW.submission_id AND s.organization_id=NEW.organization_id
     AND s.event_id=NEW.event_id
+    AND (NEW.round_id IS NULL OR (r.organization_id=NEW.organization_id
+      AND r.event_id=NEW.event_id))
 )
 BEGIN
   SELECT RAISE(ABORT, 'submission decision scope mismatch');

@@ -220,6 +220,6 @@ def test_repository_wrangler_configs_share_the_dev_database() -> None:
     main = (root / "wrangler.jsonc").read_text(encoding="utf-8")
     activity = (root / "wrangler.activity.jsonc").read_text(encoding="utf-8")
 
-    expected = '"database_id": "84c13579-447f-4794-b3d3-674af424c17a"'
+    expected = '"database_id": "81410138-fb92-4192-ae56-7397b21cbd1f"'
     assert expected in main
     assert expected in activity

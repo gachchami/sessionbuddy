@@ -43,6 +43,38 @@
     status.hidden = kind === "success" && message === "Speaker details are ready.";
   }
 
+  function renderProposalDrafts(drafts) {
+    const section = byId("saved-proposal-drafts");
+    const list = byId("saved-proposal-draft-list");
+    list.replaceChildren();
+    for (const draft of drafts) {
+      const item = make("li", undefined, "proposal-summary-row");
+      const link = make("a", undefined, "proposal-summary-row__link");
+      link.href = draft.edit_path;
+      link.setAttribute("aria-label", `Continue editing ${draft.proposal_title} for ${draft.event_name}`);
+      const title = make("strong", draft.proposal_title);
+      const event = make("span", draft.event_name, "proposal-summary-row__event");
+      const saved = make("time", `Saved ${new Date(draft.updated_at_ms).toLocaleString()}`);
+      saved.dateTime = new Date(draft.updated_at_ms).toISOString();
+      link.append(title, event, saved);
+      item.append(link);
+      list.append(item);
+    }
+    section.hidden = drafts.length === 0;
+  }
+
+  async function loadProposalDrafts() {
+    try {
+      const result = await api("/api/v1/speaker/proposal-drafts");
+      const drafts = result.data || [];
+      renderProposalDrafts(drafts);
+      return drafts.length;
+    } catch (_) {
+      renderProposalDrafts([]);
+      return 0;
+    }
+  }
+
   function composerDraftKey(eventId = state.composerEventId, formId = state.form?.id) {
     return eventId && formId ? `sessionbuddy:proposal-draft:${eventId}:${formId}` : "";
   }
@@ -1223,11 +1255,21 @@
         state.sessionEmail = "";
         state.sessionName = "";
       }
+      await loadProposalDrafts();
       await loadEvent();
       setStatus("Speaker details are ready.", "success");
     } catch (error) {
-      if (error.status === 401 || error.status === 404) {
+      if (error.status === 404 && state.csrf) {
         byId("portal").hidden = true;
+        byId("auth-state").hidden = true;
+        byId("empty-state").hidden = false;
+        const draftCount = byId("saved-proposal-draft-list").children.length;
+        setStatus(draftCount
+          ? `${draftCount} saved proposal draft${draftCount === 1 ? "" : "s"}.`
+          : "No proposals yet.");
+      } else if (error.status === 401 || error.status === 404) {
+        byId("portal").hidden = true;
+        byId("empty-state").hidden = true;
         byId("auth-state").hidden = false;
         setStatus("Speaker access is required to view this portal.", "error");
       } else {

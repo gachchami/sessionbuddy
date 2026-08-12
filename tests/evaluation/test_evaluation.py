@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -189,6 +190,44 @@ def test_decision_readiness_ignores_revoked_conflict_assignments() -> None:
     ) in decision
     assert "JOIN speaker_asset_versions av ON av.asset_id=sa.id" in decision
     assert "JOIN asset_versions av" not in decision
+    assert "AND status='assigned'" in decision
+
+
+def test_direct_rejection_is_unreviewed_audited_and_round_independent() -> None:
+    root = Path(__file__).parents[2]
+    router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
+    baseline = (root / "migrations_baseline/0001_baseline.sql").read_text()
+    direct = router.split("async def reject_unreviewed_submission(", 1)[1].split(
+        "async def", 1
+    )[0]
+
+    assert "body.decision != \"rejected\"" in direct
+    assert "if not body.internal_reason" in direct
+    assert "direct_event_id=event_id" in direct
+    decisions = baseline.split("CREATE TABLE submission_decisions", 1)[1].split(
+        "CREATE TABLE", 1
+    )[0]
+    assert "round_id TEXT," in decisions
+    assert "UNIQUE (submission_id)" in decisions
+
+
+def test_acceptance_headshot_readiness_query_uses_the_canonical_asset_table() -> None:
+    connection = sqlite3.connect(":memory:")
+    baseline = Path(__file__).parents[2] / "migrations_baseline/0001_baseline.sql"
+    connection.executescript(baseline.read_text())
+
+    result = connection.execute(
+        """SELECT EXISTS(
+               SELECT 1 FROM speaker_assets sa
+               JOIN speaker_asset_versions av ON av.asset_id=sa.id
+                 AND av.is_current=1 AND av.scan_state='clean'
+               WHERE sa.organization_id=?1 AND sa.event_id=?2
+                 AND sa.event_speaker_id=?3 AND sa.kind='headshot'
+             )""",
+        ("organization", "event", "speaker"),
+    ).fetchone()
+
+    assert result == (0,)
 
 
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:

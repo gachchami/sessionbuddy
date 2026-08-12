@@ -19,8 +19,8 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     )
     assert preview_toggle in script
     visible_fields = (
-        'const visibleFields = fields.filter((field) => '
-        '!["speaker_name", "speaker_email"].includes(field.key));'
+        "const visibleFields = fields.filter((field) => "
+        "!identityFieldKeys.includes(field.key));"
     )
     assert visible_fields in script
     assert 'id="cfp-live-preview"' not in page

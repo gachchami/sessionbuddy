@@ -38,6 +38,13 @@
     );
   }
 
+  function browserDraftMatchesServerDraft(browser, server) {
+    if (!browser || !server) return false;
+    if ((browser.coSpeakers || []).length || (browser.fileNames || []).length || browser.readyToSubmit) return false;
+    const keys = new Set([...Object.keys(browser.answers || {}), ...Object.keys(server.answers || {})]);
+    return [...keys].every((key) => JSON.stringify(browser.answers?.[key]) === JSON.stringify(server.answers?.[key]));
+  }
+
   function setStatus(message, kind = "") {
     const node = byId("status");
     node.textContent = message;
@@ -408,6 +415,7 @@
       } else control.value = String(value ?? "");
     }
     state.applyConditions();
+    window.SessionBuddyApi.refreshCharacterCounters?.(byId("proposal-form"));
   }
 
   function browserDraft() {
@@ -478,10 +486,11 @@
       if ([401, 404].includes(error.status)) return;
       throw error;
     }
-    if (!draft || !hasMeaningfulProposalAnswers(draft.answers)) return;
+    if (!draft || !hasMeaningfulProposalAnswers(draft.answers)) return null;
     state.draftVersion = draft.version;
     restoreValues(draft.answers || {});
     setStatus("Your saved draft has been restored.");
+    return draft;
   }
 
   function lockSignedInEmail() {
@@ -689,7 +698,11 @@
         byId("proposal-card").hidden = false;
         byId("sign-in-card").hidden = true;
         if (!workspaceMode) {
-          const restored = saved?.submissionId ? null : restoreBrowserDraft(state.sessionEmail);
+          const serverDraft = await loadDraft();
+          if (saved && browserDraftMatchesServerDraft(saved, serverDraft)) clearBrowserDraft();
+          const restored = saved?.submissionId || browserDraftMatchesServerDraft(saved, serverDraft)
+            ? null
+            : restoreBrowserDraft(state.sessionEmail);
           applySignedInIdentity();
           if (restored) {
             const needsFiles = (restored.fileNames || []).length > 0;
@@ -703,8 +716,7 @@
                 ? "Email verified. Review your restored proposal, then confirm submission."
                 : "Your proposal was restored from this browser.", "success");
           } else {
-            setStatus("Start a new proposal below.");
-            await loadDraft();
+            if (!serverDraft) setStatus("Start a new proposal below.");
             applySignedInIdentity();
           }
           return;
@@ -848,9 +860,11 @@
         return;
       }
       const draft = await api(`/api/v1/forms/${encodeURIComponent(slug)}/draft`, { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: JSON.stringify({ answers: answers({ includeUploads: false }), version: state.draftVersion }) });
-      state.draftVersion = draft.version;
-      state.draftDirty = false;
-      try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
+        state.draftVersion = draft.version;
+        state.draftDirty = false;
+        clearTimeout(state.draftTimer);
+        state.draftTimer = null;
+        try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
       setStatus("Draft saved.", "success");
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   });
@@ -862,7 +876,9 @@
       return;
     }
     showReview(true);
-    setStatus("Not submitted yet. Review your proposal, then select Confirm submission.");
+    setStatus(state.editingSubmission
+      ? "Review your changes, then select Save changes."
+      : "Not submitted yet. Review your proposal, then select Confirm submission.");
     byId("review-title").focus?.();
   });
   byId("proposal-form").addEventListener("invalid", (event) => {

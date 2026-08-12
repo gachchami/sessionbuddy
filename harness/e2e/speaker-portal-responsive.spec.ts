@@ -92,6 +92,10 @@ async function servePortal(page: Page) {
     contentType: "application/json",
     body: JSON.stringify({ email: "alex@example.test", display_name: "Alex Speaker", csrf_token: "responsive-csrf" }),
   }));
+  await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: [] }),
+  }));
   await page.route("**/api/v1/speaker/portal", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify(portal),
@@ -196,6 +200,61 @@ test.describe("speaker portal responsive design", () => {
     const proposal = page.getByRole("link", { name: /A deliberately long session title/ });
     await expect(proposal).toHaveAttribute("href", /\/speaker\/proposals\/.+\/.+/);
     await expect(page.locator(".proposal-editor")).toHaveCount(0);
+  });
+
+  test("saved drafts remain visible alongside submitted proposals", async ({ page }) => {
+    await servePortal(page);
+    await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [{
+        id: "draft-alongside-submission",
+        form_id: "form-second",
+        event_id: "event-second",
+        event_name: "Applied AI Conference 2027",
+        form_slug: "applied-ai-2027",
+        proposal_title: "A second proposal in progress",
+        updated_at_ms: Date.UTC(2026, 7, 17, 11, 0),
+        edit_path: "/cfp/events/applied-ai-2027",
+      }] }),
+    }));
+    await page.goto("/speaker");
+
+    await expect(page.locator("#portal")).toBeVisible();
+    await expect(page.getByRole("link", { name: /A deliberately long session title/ })).toBeVisible();
+    await expect(page.getByRole("link", {
+      name: "Continue editing A second proposal in progress for Applied AI Conference 2027",
+    })).toBeVisible();
+  });
+
+  test("the empty workspace shows saved drafts without advertising an open-calls directory", async ({ page }) => {
+    await servePortal(page);
+    await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [{
+        id: "draft-responsive",
+        form_id: "form-responsive",
+        event_id: "event-responsive",
+        event_name: "AI Engineering Summit 2026",
+        form_slug: "engineering-summit",
+        proposal_title: "A saved proposal draft",
+        updated_at_ms: Date.UTC(2026, 7, 17, 10, 30),
+        edit_path: "/cfp/eventr/engineering-summit",
+      }] }),
+    }));
+    await page.route("**/api/v1/speaker/portal", (route) => route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "not_found", message: "No speaker workspace yet." } }),
+    }));
+    await page.goto("/speaker");
+
+    await expect(page.locator("#empty-state")).toBeVisible();
+    await expect(page.locator("#empty-state")).toContainText("Event organizers share each call for proposals directly");
+    const draft = page.getByRole("link", { name: "Continue editing A saved proposal draft for AI Engineering Summit 2026" });
+    await expect(draft).toBeVisible();
+    await expect(draft).toHaveAttribute("href", "/cfp/eventr/engineering-summit");
+    await expect(page.locator("#status")).toHaveText("1 saved proposal draft.");
+    await expect(page.getByRole("link", { name: "Explore open calls" })).toHaveCount(0);
   });
 
   test("every event the speaker belongs to is grouped on one page", async ({ page }) => {

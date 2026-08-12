@@ -344,6 +344,7 @@ def _scheduled_item(row: dict) -> AgendaScheduledItemView:
         room_name=str(row["room_name"]),
         track_id=str(row["track_id"]) if row["track_id"] is not None else None,
         track_name=str(row["track_name"]) if row["track_name"] is not None else None,
+        speaker_names=str(row["speaker_names"]),
         version=int(row["version"]),
         labels=[_agenda_label(label) for label in row["labels"]],
         label_ids=[str(label_id) for label_id in row["label_ids"]],
@@ -358,6 +359,9 @@ def _unscheduled_item(row: dict) -> AgendaUnscheduledSessionView:
         content_status=str(row["content_status"]),
         content_version=int(row["content_version"]),
         label_version=int(row["label_version"]),
+        track_id=str(row["track_id"]) if row["track_id"] is not None else None,
+        track_name=str(row["track_name"]) if row["track_name"] is not None else None,
+        speaker_names=str(row["speaker_names"]),
         labels=[_agenda_label(label) for label in row["labels"]],
         label_ids=[str(label_id) for label_id in row["label_ids"]],
     )
@@ -379,7 +383,10 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
                       s.proposal_abstract AS abstract,ac.content_status,
                       ac.version AS content_version,ac.label_version,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
-                      ai.room_id,r.name AS room_name,ai.track_id,t.name AS track_name,ai.version
+                      ai.room_id,r.name AS room_name,ai.track_id,t.name AS track_name,ai.version,
+                      COALESCE((SELECT group_concat(ss.snapshot_name, ', ')
+                        FROM submission_speakers ss WHERE ss.submission_id=s.id),s.speaker_name)
+                        AS speaker_names
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
                JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
                LEFT JOIN event_tracks t ON t.id=ai.track_id
@@ -393,8 +400,15 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
         await db.prepare(
             """SELECT ac.id AS session_id,s.proposal_title AS title,
                       s.proposal_abstract AS abstract,ac.content_status,
-                      ac.version AS content_version,ac.label_version
+                      ac.version AS content_version,ac.label_version,
+                      t.id AS track_id,t.name AS track_name,
+                      COALESCE((SELECT group_concat(ss.snapshot_name, ', ')
+                        FROM submission_speakers ss WHERE ss.submission_id=s.id),s.speaker_name)
+                        AS speaker_names
                FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
+               LEFT JOIN event_tracks t ON t.organization_id=s.organization_id
+                 AND t.event_id=s.event_id AND t.status='active'
+                 AND lower(trim(t.name))=lower(trim(s.routed_track))
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
                    AND ai.accepted_session_id=ac.id)

@@ -35,6 +35,7 @@ const proposal = (id: string, title: string, version = 1) => ({
 
 interface WorkspaceOptions {
   form?: Record<string, unknown>;
+  draft?: Record<string, unknown> | null;
   patchStatuses?: number[];
   uploadAuthorizationStatuses?: number[];
   uploadCompletionStates?: string[];
@@ -57,7 +58,7 @@ async function serveWorkspace(page: Page, options: WorkspaceOptions = {}) {
   let uploadAuthorizations = 0;
   let uploadPuts = 0;
   let uploadCompletions = 0;
-  let draft: Record<string, unknown> | null = null;
+  let draft: Record<string, unknown> | null = options.draft ?? null;
   await page.route(/\/speaker\/proposals\/devflow-2027(?:\/.*)?$/, (route) => route.fulfill({ contentType: "text/html", body: workspaceHtml }));
   await page.route("**/cfp/devflow/devflow-2027", (route) => route.fulfill({ contentType: "text/html", body: workspaceHtml }));
   await page.route("**/api/v1/forms/devflow-2027", (route) => route.fulfill({ json: { ...form, ...(options.form || {}) } }));
@@ -135,12 +136,71 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.getByRole("navigation", { name: "Your proposals" })).toBeHidden();
     await expect(page.getByLabel("Proposal abstract").locator("+ .character-counter")).toHaveText("23 of 5,000 characters");
     await page.getByLabel("Proposal title").fill("First proposal revised");
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await expect(page.locator("#status")).toHaveText("Review your changes, then select Save changes.");
+    await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
+    await page.getByRole("button", { name: "Back", exact: true }).click();
     await page.getByRole("button", { name: "Save draft" }).click();
     await expect(page.locator("#status")).toContainText("Changes saved");
     await page.goto("/speaker/proposals/devflow-2027/proposal-b");
     await expect(page.getByLabel("Proposal title")).toHaveValue("Second proposal");
     await page.goto("/speaker/proposals/devflow-2027/proposal-a");
     await expect(page.getByLabel("Proposal title")).toHaveValue("First proposal revised");
+  });
+
+  test("ignores an identity-only browser draft on a fresh proposal", async ({ page }) => {
+    await serveWorkspace(page);
+    await page.route("**/api/v1/forms/devflow-2027/draft", (route) => route.fulfill({
+      status: 404,
+      json: { error: { code: "not_found", message: "No draft exists." } },
+    }));
+    await page.addInitScript(() => {
+      localStorage.setItem("sessionbuddy:cfp:devflow-2027:draft:new", JSON.stringify({
+        schemaVersion: 1,
+        formVersion: 1,
+        answers: { speaker_name: "Priya Raman", speaker_email: "priya@example.test" },
+        coSpeakers: [],
+        submissionId: null,
+        fileNames: [],
+        readyToSubmit: false,
+        ownerEmail: "priya@example.test",
+        savedAt: Date.now(),
+      }));
+    });
+    await page.goto("/cfp/devflow/devflow-2027");
+    await expect(page.locator("#status")).toHaveText("Start a new proposal below.");
+    await expect(page.locator("#status")).not.toContainText("restored from this browser");
+    expect(await page.evaluate(() => localStorage.getItem("sessionbuddy:cfp:devflow-2027:draft:new"))).toBeNull();
+  });
+
+  test("attributes an identical persisted draft to the server", async ({ page }) => {
+    const draftAnswers = {
+      speaker_name: "Priya Raman",
+      speaker_email: "priya@example.test",
+      proposal_title: "Server-saved proposal",
+      proposal_abstract: "This draft is safely stored on the server.",
+      format: "Talk",
+    };
+    await serveWorkspace(page, { draft: {
+      id: "draft-a", answers: draftAnswers, version: 2, updated_at_ms: Date.now(),
+    } });
+    await page.addInitScript((answers) => {
+      localStorage.setItem("sessionbuddy:cfp:devflow-2027:draft:new", JSON.stringify({
+        schemaVersion: 1,
+        formVersion: 1,
+        answers,
+        coSpeakers: [],
+        submissionId: null,
+        fileNames: [],
+        readyToSubmit: false,
+        ownerEmail: "priya@example.test",
+        savedAt: Date.now(),
+      }));
+    }, draftAnswers);
+    await page.goto("/cfp/devflow/devflow-2027");
+    await expect(page.locator("#status")).toHaveText("Your saved draft has been restored.");
+    await expect(page.locator("#status")).not.toContainText("from this browser");
+    await expect(page.getByLabel("Proposal title")).toHaveValue("Server-saved proposal");
   });
 
   test("keeps withdrawal on the exact proposal page", async ({ page }) => {

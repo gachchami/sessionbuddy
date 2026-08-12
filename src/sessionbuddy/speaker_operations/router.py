@@ -60,7 +60,6 @@ from .models import (
     SpeakerNotificationView,
     SpeakerOpenCallView,
     SpeakerPortalView,
-    SpeakerProfileUpdate,
     SpeakerProfileView,
     SpeakerSubmissionView,
     SpeakerTaskResponseCreate,
@@ -1046,123 +1045,6 @@ async def complete_custom_speaker_task(
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)
     return SpeakerTaskResponseView(id=task_id, response=body.answers, version=body.version + 1)
-
-
-@speaker_operations_router.patch(
-    "/api/v1/speaker/profile",
-    response_model=SpeakerProfileView,
-    operation_id="updateOwnSpeakerProfile",
-    tags=["speaker-portal"],
-)
-async def update_speaker_profile(
-    request: Request,
-    body: SpeakerProfileUpdate,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> SpeakerProfileView:
-    authenticated, row = await _speaker_row(request)
-    await require_permission(
-        request,
-        Permission.SPEAKER_PROFILE_EDIT_OWN,
-        ResourceContext(
-            str(row["organization_id"]),
-            str(row["event_id"]),
-            resource_owner_user_id=authenticated.actor.user_id,
-        ),
-        mutation=True,
-    )
-    db = _db(request)
-    key = _key(idempotency_key)
-    route = "PATCH /api/v1/speaker/profile"
-    fingerprint = _fingerprint(body)
-    replay = row_mapping(
-        await _timed_first(
-            request,
-            db.prepare(
-                """SELECT request_fingerprint FROM idempotency_records
-                   WHERE principal_key = ?1 AND route_key = ?2
-                     AND idempotency_key_hash = ?3 AND state = 'completed'"""
-            ).bind(authenticated.actor.user_id, route, hashlib.sha256(key.encode()).digest()),
-        )
-    )
-    if replay is not None:
-        if _blob(replay["request_fingerprint"]) != fingerprint:
-            raise HTTPException(status_code=409)
-        _, latest = await _speaker_row(request)
-        return _profile(latest)
-    if int(row["version"]) != body.version:
-        raise HTTPException(status_code=409)
-
-    now = utc_now_ms()
-    record = IdempotencyRecord(
-        principal_key=authenticated.actor.user_id,
-        organization_id=str(row["organization_id"]),
-        event_id=str(row["event_id"]),
-        route_key=route,
-        idempotency_key=key,
-        request_fingerprint=fingerprint,
-        expires_at_ms=now + 86_400_000,
-    )
-    batch = CommandBatch(db)
-    batch.begin_idempotency(record, now)
-    batch.add_statement(
-        db.prepare(
-            """UPDATE people SET display_name = ?1, job_title = ?2, company = ?3,
-                      biography = ?4, location = ?5, links_json = ?6,
-                      version = version + 1, updated_at_ms = ?7
-               WHERE id = ?8 AND organization_id = ?9 AND user_id = ?10 AND version = ?11"""
-        ).bind(
-            body.display_name,
-            body.job_title or None,
-            body.company or None,
-            body.biography,
-            body.location or None,
-            json.dumps(body.links, separators=(",", ":")),
-            now,
-            row["person_id"],
-            row["organization_id"],
-            authenticated.actor.user_id,
-            body.version,
-        )
-    )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE speaker_tasks SET state = 'completed', completed_at_ms = ?1,
-                      version = version + 1, updated_at_ms = ?1
-               WHERE organization_id = ?2 AND event_id = ?3 AND event_speaker_id = ?4
-                 AND task_type = 'profile' AND state = 'open'"""
-        ).bind(now, row["organization_id"], row["event_id"], row["event_speaker_id"])
-    )
-    batch.audit(
-        AuditEvent(
-            organization_id=str(row["organization_id"]),
-            event_id=str(row["event_id"]),
-            actor_user_id=authenticated.actor.user_id,
-            actor_type="user",
-            action="speaker.profile.update",
-            target_type="person",
-            target_id=str(row["person_id"]),
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            metadata={"fields_changed": 6, "task_reconciled": 1},
-        )
-    )
-    batch.complete_idempotency(
-        record,
-        status=200,
-        resource_type="person",
-        resource_id=str(row["person_id"]),
-        completed_at_ms=now,
-    )
-    started = perf_counter()
-    try:
-        await batch.execute()
-    except PersistenceError as exc:
-        raise HTTPException(status_code=409) from exc
-    finally:
-        record_timing(request, "db", (perf_counter() - started) * 1000)
-    _, updated = await _speaker_row(request)
-    return _profile(updated)
 
 
 ASSET_RULES = {

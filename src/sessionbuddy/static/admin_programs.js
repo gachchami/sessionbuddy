@@ -17,6 +17,10 @@
     { key: "track", type: "select", label: "Track", required: false, choices: [] },
     { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] }
   ];
+  // Account-backed identity fields. They are never editable in the builder and
+  // never reorderable, so every predicate that used to name the pair by hand
+  // reads this instead.
+  const identityFieldKeys = ["speaker_name", "speaker_email"];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
   const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
@@ -403,7 +407,7 @@
     const list = byId("form-fields");
     list.replaceChildren();
     state.fields.forEach((field, index) => {
-      const system = ["speaker_name", "speaker_email"].includes(field.key) || proposalFieldKeys.has(field.key);
+      const system = identityFieldKeys.includes(field.key) || proposalFieldKeys.has(field.key);
       const card = make("fieldset");
       card.className = "question-card";
       card.dataset.index = String(index);
@@ -433,14 +437,14 @@
         requiredBadge.className = "required-marker";
         summaryMeta.append(requiredBadge);
       }
-      if (!["speaker_name", "speaker_email"].includes(field.key)) {
+      if (!identityFieldKeys.includes(field.key)) {
         const orderControls = make("span");
         orderControls.className = "question-order-controls";
         const move = (direction) => {
           readFields();
           const current = state.fields.findIndex((item) => item.key === field.key);
           const target = current + direction;
-          if (target < 2 || target >= state.fields.length) return;
+          if (target < identityFieldKeys.length || target >= state.fields.length) return;
           [state.fields[current], state.fields[target]] = [state.fields[target], state.fields[current]];
           renderFields();
           selectOutline(proposalFieldKeys.has(field.key) ? "proposal" : "custom", false);
@@ -451,7 +455,7 @@
         up.type = "button";
         up.className = "question-order-button";
         up.setAttribute("aria-label", `Move ${field.label} up`);
-        up.disabled = index <= 2;
+        up.disabled = index <= identityFieldKeys.length;
         up.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); move(-1); });
         const down = make("button", "↓");
         down.type = "button";
@@ -774,7 +778,7 @@
     const items = byId("cfp-outline-items");
     if (!items) return;
     const proposalCount = state.fields.filter((field) => proposalFieldKeys.has(field.key)).length;
-    const customCount = state.fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key) && !proposalFieldKeys.has(field.key)).length;
+    const customCount = state.fields.filter((field) => !identityFieldKeys.includes(field.key) && !proposalFieldKeys.has(field.key)).length;
     const proposal = outlineButton("Proposal details", "questions", "proposal");
     proposal.append(make("small", String(proposalCount)));
     const custom = outlineButton("Custom questions", "questions", "custom");
@@ -803,7 +807,7 @@
     allQuestionCards.forEach((card) => {
       const field = state.fields[Number(card.dataset.index)];
       card.hidden = kind === "proposal" ? !field || !proposalFieldKeys.has(field.key)
-        : kind === "custom" ? !field || ["speaker_name", "speaker_email"].includes(field.key) || proposalFieldKeys.has(field.key)
+        : kind === "custom" ? !field || identityFieldKeys.includes(field.key) || proposalFieldKeys.has(field.key)
         : kind === "question" && card.dataset.index !== rawIndex;
     });
     byId("cfp-questions").classList.toggle("cfp-editor-section--single-question", ["question", "proposal"].includes(kind));
@@ -812,7 +816,7 @@
     // the single-question screen you land on right after adding one.
     byId("cfp-questions").classList.toggle("cfp-editor-section--proposal", kind === "proposal");
     byId("cfp-questions").classList.toggle("cfp-editor-section--custom", kind === "custom");
-    const customCount = state.fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key) && !proposalFieldKeys.has(field.key)).length;
+    const customCount = state.fields.filter((field) => !identityFieldKeys.includes(field.key) && !proposalFieldKeys.has(field.key)).length;
     byId("cfp-custom-empty").hidden = kind !== "custom" || customCount > 0;
     const selectedField = kind === "question" ? state.fields[Number(rawIndex)] : null;
     const titles = { basics: "Description", proposal: "Proposal details", custom: "Custom questions", "co-speakers": "Co-speakers", availability: "Availability", confirmation: "Confirmation" };
@@ -1441,7 +1445,7 @@
     header.append(eventName, title, welcome);
     const previewForm = document.createElement("div");
     previewForm.className = "cfp-preview-form";
-    const visibleFields = fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key));
+    const visibleFields = fields.filter((field) => !identityFieldKeys.includes(field.key));
     visibleFields.forEach((field) => {
       const label = document.createElement("label");
       const labelText = document.createElement("span");

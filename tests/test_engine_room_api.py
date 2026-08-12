@@ -238,7 +238,6 @@ async def test_openapi_contains_engine_room_and_cfp_routes(
         "/api/v1/session/logout",
         "/api/v1/session/refresh",
         "/api/v1/speaker/portal",
-        "/api/v1/speaker/profile",
         "/api/v1/speaker/events/{event_id}/assets",
         "/api/v1/speaker/events/{event_id}/upload-authorizations",
         "/api/v1/speaker/events/{event_id}/upload-intents/{intent_id}/complete",

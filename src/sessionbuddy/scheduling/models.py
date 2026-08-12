@@ -194,6 +194,7 @@ class AgendaScheduledItemView(StrictModel):
     room_name: str
     track_id: str | None
     track_name: str | None
+    speaker_names: str
     version: int = Field(ge=1)
     labels: list[EventLabelView]
     label_ids: list[str]
@@ -206,6 +207,9 @@ class AgendaUnscheduledSessionView(StrictModel):
     content_status: Literal["draft", "approved"]
     content_version: int = Field(ge=1)
     label_version: int = Field(ge=1)
+    track_id: str | None = None
+    track_name: str | None = None
+    speaker_names: str
     labels: list[EventLabelView]
     label_ids: list[str]
 
