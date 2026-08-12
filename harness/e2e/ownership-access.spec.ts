@@ -38,7 +38,7 @@ async function serve(page: import("@playwright/test").Page) {
   await page.route(`**/api/v1/admin/events/${eventId}/invitations`, async (route) => {
     if (route.request().method() === "POST") {
       postedRole = String(route.request().postDataJSON().role);
-      return route.fulfill({ status: 201, json: { id: "new", event_id: eventId, email: "new@example.test", role: postedRole, status: "pending" } });
+      return route.fulfill({ status: 201, json: { id: "new", event_id: eventId, email: "new@example.test", display_name: "New Reviewer", role: postedRole, status: "pending", access_url: "https://example.test/auth/verify#token=NEW" } });
     }
     return route.fulfill({ json: { data: [
       { id: "accepted", event_id: eventId, email: "reviewer@example.test", display_name: "Rina Reviewer", job_title: "Engineering Director", company: "Review Labs", role: "evaluator", status: "accepted" },
@@ -83,6 +83,7 @@ test.describe("event invitation RBAC", () => {
     await page.getByRole("button", { name: "Invite new@example.test" }).click();
     await expect(page.getByRole("dialog", { name: "Invite reviewer" })).toBeVisible();
     await expect(page.getByRole("dialog").getByLabel("Email address")).toHaveValue("new@example.test");
+    await page.getByRole("dialog").getByLabel("Full name").fill("New Reviewer");
     await page.getByRole("button", { name: "Send invitation" }).click();
     await expect.poll(state.postedRole).toBe("evaluator");
     await expect(page.locator("html")).toHaveJSProperty("scrollWidth", 320);

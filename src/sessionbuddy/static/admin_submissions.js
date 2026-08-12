@@ -285,13 +285,107 @@
   function answerLabel(item, key) {
     return item.answer_labels?.[key] || humanize(key);
   }
+  // One reject affordance, shared by the inline row and the proposal dialog.
+  // The reason is captured in a field rather than window.prompt: the dialog is
+  // modal, and a prompt raised over an open <dialog> is both poor UX and
+  // suppressible by the browser, which would silently remove the only way to
+  // reject a proposal that never went to review.
+  function rejectWithoutReviewControl(item) {
+    const wrap = document.createElement("div");
+    wrap.className = "reject-without-review";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "danger secondary";
+    trigger.textContent = "Reject without review";
+    const panel = document.createElement("div");
+    panel.className = "reject-without-review__panel";
+    panel.hidden = true;
+    const label = document.createElement("label");
+    label.append(document.createTextNode("Internal reason"));
+    const reason = document.createElement("textarea");
+    reason.rows = 3;
+    reason.maxLength = 2000;
+    label.append(reason);
+    const help = document.createElement("p");
+    help.className = "help";
+    help.textContent = "Recorded for organizers only, never shown to the speaker. This decision is permanent.";
+    const message = document.createElement("p");
+    message.className = "status";
+    message.setAttribute("role", "alert");
+    message.tabIndex = -1;
+    const confirmButton = document.createElement("button");
+    confirmButton.type = "button";
+    confirmButton.className = "danger";
+    confirmButton.textContent = "Confirm rejection";
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.className = "secondary";
+    cancelButton.textContent = "Cancel";
+    const buttons = document.createElement("div");
+    buttons.className = "actions";
+    buttons.append(confirmButton, cancelButton);
+    panel.append(label, help, message, buttons);
+    trigger.addEventListener("click", () => {
+      trigger.hidden = true;
+      panel.hidden = false;
+      reason.focus();
+    });
+    cancelButton.addEventListener("click", () => {
+      panel.hidden = true;
+      trigger.hidden = false;
+      message.textContent = "";
+      message.classList.remove("error");
+      trigger.focus();
+    });
+    confirmButton.addEventListener("click", async () => {
+      const internalReason = reason.value.trim();
+      if (!internalReason) {
+        message.textContent = "Add an internal reason before rejecting.";
+        message.classList.add("error");
+        reason.focus();
+        return;
+      }
+      confirmButton.disabled = true;
+      cancelButton.disabled = true;
+      try {
+        await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/reject`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": state.csrf,
+            "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+          },
+          body: JSON.stringify({
+            decision: "rejected",
+            internal_reason: internalReason,
+            send_email: false,
+            speaker_message: "",
+            override_incomplete_reviews: false,
+          }),
+        });
+        byId("status").textContent = `“${item.proposal_title}” was rejected without review.`;
+        location.reload();
+      } catch (error) {
+        // Chief among these is the 409 the server returns once the proposal is
+        // in a round: it names the round path, so surface it in place rather
+        // than on the page status line the dialog covers.
+        message.textContent = window.SessionBuddyApi.message(error);
+        message.classList.add("error");
+        message.focus();
+        confirmButton.disabled = false;
+        cancelButton.disabled = false;
+      }
+    });
+    wrap.append(trigger, panel);
+    return wrap;
+  }
   function showSubmission(item, trigger) {
     const details = byId("submission-detail-list");
     details.replaceChildren(
       detailRow("Speaker", item.speaker_name),
       detailRow("Email", item.speaker_email),
       detailRow("Title", item.proposal_title),
-      detailRow("Abstract", item.proposal_abstract),
+      detailRow("Full abstract", item.proposal_abstract),
       detailRow("Status", item.status),
       detailRow("Submitted", new Date(item.submitted_at_ms).toLocaleString()),
       detailRow("Routed category", item.routed_category),
@@ -302,93 +396,12 @@
     if (item.co_speakers?.length) {
       details.append(detailRow("Co-speakers", item.co_speakers.map((person) => `${person.display_name} (${person.email}) · ${person.role === "co_speaker" ? "Co-speaker" : person.role}`).join(", ")));
     }
+    const decisionActions = byId("submission-detail-actions");
+    decisionActions.replaceChildren();
+    if (item.status === "submitted") decisionActions.append(rejectWithoutReviewControl(item));
     const dialog = byId("submission-detail");
     dialog.addEventListener("close", () => trigger.focus(), { once: true });
     dialog.showModal();
-  }
-  function inlineSubmissionDetail(item, trigger) {
-    const row = document.createElement("tr");
-    row.id = `proposal-detail-${item.id}`;
-    row.className = "proposal-inline-detail-row";
-    row.hidden = true;
-    const cell = document.createElement("td");
-    cell.colSpan = 6;
-    const panel = document.createElement("section");
-    panel.className = "proposal-inline-detail";
-    panel.setAttribute("aria-label", `${item.proposal_title} details`);
-    const details = document.createElement("dl");
-    details.className = "proposal-inline-detail__facts";
-    details.append(
-      detailRow("Speaker email", item.speaker_email),
-      detailRow("Full abstract", item.proposal_abstract),
-      detailRow("Submitted", new Date(item.submitted_at_ms).toLocaleString()),
-      detailRow("Category", item.routed_category),
-      detailRow("Track", item.routed_track),
-      detailRow("Review queue", item.routed_review_queue),
-      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(answerLabel(item, key), answerText(value)))
-    );
-    if (item.co_speakers?.length) {
-      details.append(detailRow("Co-speakers", item.co_speakers.map((person) => person.display_name).join(", ")));
-    }
-    const actions = document.createElement("div");
-    actions.className = "actions proposal-inline-detail__actions";
-    const open = document.createElement("button");
-    open.type = "button";
-    open.className = "secondary";
-    open.textContent = "View proposal";
-    open.addEventListener("click", () => showSubmission(item, open));
-    actions.append(open);
-    if (item.status === "submitted") {
-      const reject = document.createElement("button");
-      reject.type = "button";
-      reject.className = "danger secondary";
-      reject.textContent = "Reject without review";
-      reject.addEventListener("click", async () => {
-        const reason = window.prompt(
-          `Record the internal reason for rejecting “${item.proposal_title}”. This decision is permanent.`,
-          ""
-        )?.trim();
-        if (!reason) return;
-        if (!window.confirm("Reject this proposal permanently without reviewer evaluation?")) return;
-        reject.disabled = true;
-        try {
-          await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/reject`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-csrf-token": state.csrf,
-              "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
-            },
-            body: JSON.stringify({
-              decision: "rejected",
-              internal_reason: reason,
-              send_email: false,
-              speaker_message: "",
-              override_incomplete_reviews: false,
-            }),
-          });
-          byId("status").textContent = `“${item.proposal_title}” was rejected without review.`;
-          location.reload();
-        } catch (error) {
-          byId("status").textContent = window.SessionBuddyApi.message(error);
-          byId("status").classList.add("error");
-          reject.disabled = false;
-        }
-      });
-      actions.append(reject);
-    }
-    panel.append(details, actions);
-    cell.append(panel);
-    row.append(cell);
-    trigger.setAttribute("aria-controls", row.id);
-    trigger.setAttribute("aria-expanded", "false");
-    trigger.addEventListener("click", () => {
-      const openState = trigger.getAttribute("aria-expanded") === "true";
-      trigger.setAttribute("aria-expanded", String(!openState));
-      trigger.textContent = openState ? "Expand" : "Collapse";
-      row.hidden = openState;
-    });
-    return row;
   }
   async function load() {
     try {
@@ -417,7 +430,7 @@
       if (!result.data.length) {
         const row = document.createElement("tr");
         const cell = document.createElement("td");
-        cell.colSpan = 6;
+        cell.colSpan = 5;
         cell.textContent = "No proposals yet.";
         row.append(cell);
         body.append(row);
@@ -460,24 +473,24 @@
           selectionCell.append(decided);
         }
         row.append(selectionCell);
-        [["Speaker", item.speaker_name], ["Proposal", item.proposal_title], ["Abstract", item.proposal_abstract], ["Status", item.status]].forEach(([label, value]) => {
+        [["Speaker", item.speaker_name], ["Proposal", item.proposal_title], ["Status", item.status]].forEach(([label, value]) => {
           const cell = document.createElement("td");
           cell.dataset.label = label;
           if (label === "Proposal") cell.className = "proposal-inbox__title";
-          if (label === "Abstract") cell.className = "proposal-inbox__abstract";
           if (label === "Status") cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
           cell.textContent = value;
           row.append(cell);
         });
         const detailCell = document.createElement("td");
-        detailCell.dataset.label = "Details";
+        detailCell.dataset.label = "Actions";
         const detailButton = document.createElement("button");
         detailButton.type = "button";
         detailButton.className = "secondary";
-        detailButton.textContent = "Expand";
+        detailButton.textContent = "View proposal";
+        detailButton.addEventListener("click", () => showSubmission(item, detailButton));
         detailCell.append(detailButton);
         row.append(detailCell);
-        body.append(row, inlineSubmissionDetail(item, detailButton));
+        body.append(row);
       });
     updateSelectedCount();
   }

@@ -2,10 +2,9 @@ import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// The invitation dialog must never surface the one-time acceptance link.
-// That link signs the invitee in, so showing it to the inviting
-// administrator would let them accept the invitation as the invitee. The
-// link travels only in the invitee's email; the dialog reports delivery.
+// Authorized invitation managers may copy the newly issued one-time bearer
+// link. It appears only in the create/resend result, never in list responses,
+// and resend rotates the previous link.
 
 const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
@@ -53,7 +52,7 @@ test.describe("invitation dialog", () => {
     }
   });
 
-  test("no acceptance link is rendered, even if a server returns one", async ({ page }) => {
+  test("shows the named reviewer and newly issued copyable access link", async ({ page }) => {
     let invitations: Array<Record<string, unknown>> = [];
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: sessionBody }));
@@ -80,15 +79,14 @@ test.describe("invitation dialog", () => {
           email: "reviewer@example.com",
           role: "evaluator",
           status: "pending",
+          display_name: "Sam Whitfield",
         }];
-        // A hostile/stale server response containing accept_url must still
-        // never reach the page: the client has no code path to render it.
         await route.fulfill({
           status: 201,
           contentType: "application/json",
           body: JSON.stringify({
             ...invitations[0],
-            accept_url: "https://example.test/auth/verify?token=SHOULD-NEVER-RENDER",
+            access_url: "https://example.test/auth/verify#token=NEW-REVIEWER-LINK",
           }),
         });
         return;
@@ -98,24 +96,22 @@ test.describe("invitation dialog", () => {
 
     await page.goto(`/admin/events/${eventId}/reviewers`);
     await page.getByRole("button", { name: "Invite reviewer" }).click();
+    await page.getByRole("dialog", { name: "Invite reviewer" }).getByRole("textbox", { name: "Full name" }).fill("Sam Whitfield");
     await page.getByRole("dialog", { name: "Invite reviewer" }).getByRole("textbox", { name: "Email address" }).fill("reviewer@example.com");
     await page.getByRole("button", { name: "Send invitation" }).click();
 
     const invitationRow = page.locator("#reviewer-list [role=row]").filter({
       has: page.getByText("reviewer@example.com", { exact: true }),
     });
-    await expect(invitationRow).toContainText("Reviewer");
+    await expect(invitationRow).toContainText("Sam Whitfield");
     await expect(invitationRow).toContainText("pending");
     // A successful send closes the dialog; the sender lands on the updated list.
     await expect(page.locator("#invite-dialog")).not.toHaveAttribute("open", "");
-    // The dialog offers no link surface at all.
-    await expect(page.getByText("Acceptance link")).toHaveCount(0);
-    await expect(page.getByText("Invitation ready")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Copy link" })).toHaveCount(0);
-    await expect(page.locator("#invite-result")).toHaveCount(0);
-    await expect(page.locator("#invite-url")).toHaveCount(0);
-    const pageContent = await page.content();
-    expect(pageContent).not.toContain("SHOULD-NEVER-RENDER");
+    await expect(page.getByText("Access link for reviewer@example.com")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
+    await expect(page.locator("#invitation-access-url")).toHaveValue(
+      "https://example.test/auth/verify#token=NEW-REVIEWER-LINK",
+    );
 
     // Reopening remains reviewer-only; no legacy role selector is exposed.
     await page.getByRole("button", { name: "Invite reviewer" }).click();
@@ -123,7 +119,7 @@ test.describe("invitation dialog", () => {
     await page.getByRole("button", { name: "Cancel" }).click();
   });
 
-  test("resending an invitation reports delivery without exposing a link", async ({ page }) => {
+  test("resending an invitation rotates and exposes the new copyable link", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: sessionBody }));
     await page.route(`**/api/v1/admin/events/${eventId}`, (route) =>
@@ -151,7 +147,7 @@ test.describe("invitation dialog", () => {
           email: "reviewer@example.com",
           role: "evaluator",
           status: "pending",
-          accept_url: "https://example.test/auth/verify?token=SHOULD-NEVER-RENDER",
+          access_url: "https://example.test/auth/verify#token=ROTATED-REVIEWER-LINK",
         }),
       }));
     await page.route(`**/api/v1/admin/events/${eventId}/invitations`, (route) =>
@@ -172,8 +168,10 @@ test.describe("invitation dialog", () => {
     await page.getByRole("button", { name: "Send again" }).click();
 
     await expect(page.locator("#status")).toHaveText("A new invitation was sent to reviewer@example.com.");
-    await expect(page.getByText("Acceptance link")).toHaveCount(0);
-    expect(await page.content()).not.toContain("SHOULD-NEVER-RENDER");
+    await expect(page.locator("#invitation-access-url")).toHaveValue(
+      "https://example.test/auth/verify#token=ROTATED-REVIEWER-LINK",
+    );
+    await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
   });
 
   test("reviewer page does not expose legacy event access grants", async ({ page }) => {

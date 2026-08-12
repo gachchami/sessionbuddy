@@ -449,7 +449,6 @@
     const accountRoles = new Set((session.account_roles || []).filter((role) => supportedRoles.has(role)));
     const showPortals = !organizerWorkspace && (accountRoles.has("reviewer") || accountRoles.has("speaker"));
     if (!organizerWorkspace && !showPortals) {
-      if (section === "reviews") nav.append(navLink("My reviews", "/reviews", "review", true));
       if (section === "speaker") nav.append(navLink("Speaker portal", "/speaker", "mic", true));
     }
     primaryGroup.append(nav);
@@ -481,14 +480,14 @@
       utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));
       const utilityNav = make("nav", undefined, "sb-sidebar__nav");
       utilityNav.setAttribute("aria-label", "Your portals");
-      if (accountRoles.has("reviewer")) utilityNav.append(navLink("My reviews", "/reviews", "review", section === "reviews"));
       if (accountRoles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
       utilityGroup.append(utilityNav);
-      sidebar.append(utilityGroup);
+      if (utilityNav.children.length) sidebar.append(utilityGroup);
     }
     speakerHubTabs(organizerWorkspace ? currentEventId : "");
     const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));
-    const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace || !hasSidebarNavigation;
+    const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace
+      || section === "reviews" || !hasSidebarNavigation;
     document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace);
 
     const topbar = make("div", undefined, "sb-topbar");
@@ -525,7 +524,7 @@
       speakerBrand.className = "sb-global-brand";
       speakerBrand.append(brandMark(), make("strong", "SessionBuddy"));
       topbar.append(speakerBrand, accountMenu(session, roles));
-    } else if (!hasSidebarNavigation) {
+    } else if (!hasSidebarNavigation || section === "reviews") {
       const accountBrand = link("", activeDestination);
       accountBrand.className = "sb-global-brand";
       accountBrand.append(brandMark(), make("strong", "SessionBuddy"));

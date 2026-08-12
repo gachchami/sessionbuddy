@@ -5464,6 +5464,71 @@
         "title": "InvitationCreate",
         "type": "object"
       },
+      "InvitationIssued": {
+        "properties": {
+          "access_url": {
+            "title": "Access Url",
+            "type": "string"
+          },
+          "company": {
+            "default": "",
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_title": {
+            "default": "",
+            "title": "Job Title",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "organization_admin",
+              "event_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "accepted",
+              "revoked",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "email",
+          "role",
+          "access_url"
+        ],
+        "title": "InvitationIssued",
+        "type": "object"
+      },
       "InvitationList": {
         "properties": {
           "data": {
@@ -13196,7 +13261,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationView"
+                  "$ref": "#/components/schemas/InvitationIssued"
                 }
               }
             },
@@ -13291,7 +13356,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationView"
+                  "$ref": "#/components/schemas/InvitationIssued"
                 }
               }
             },

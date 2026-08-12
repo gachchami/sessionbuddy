@@ -333,15 +333,7 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/submissions`);
-    const expandProposal = page.locator(`button[aria-controls="proposal-detail-${assignmentId}"]`);
-    await expandProposal.click();
-    await expect(expandProposal).toHaveAttribute("aria-expanded", "true");
-    const inlineDetail = page.getByRole("region", { name: "A proposal details" });
-    await expect(inlineDetail).toContainText("speaker@example.com");
-    await expect(inlineDetail).toContainText("Platform");
-    await expect(inlineDetail).toContainText("Audience level");
-    await expect(inlineDetail).toContainText("Intermediate");
-    await inlineDetail.getByRole("button", { name: "View proposal" }).click();
+    await page.getByRole("button", { name: "View proposal" }).first().click();
     const detail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(detail).toContainText("speaker@example.com");
     await expect(detail).toContainText("Platform");
@@ -387,7 +379,8 @@ test.describe("form validation and workflow wiring", () => {
       submission_id: assignmentId, proposal_title: "A proposal", proposal_abstract: "Abstract", speaker_name: "Speaker",
       rating_min: 1, rating_max: 5, recommendations: ["accept", "reject"], evaluator_guidance: "", evaluation_state: "not_started",
       criteria: [], criterion_scores: {}, blind_review: false, review_closes_at_ms: null,
-      rating: null, recommendation: null, internal_comment: "",
+      rating: null, recommendation: null, internal_comment: "", comment_required: false,
+      answers: [], hidden_answer_count: 0,
     };
     await page.route("**/api/v1/evaluator/assignments*", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [assignment], next_cursor: null, total: 1, completed_count: 0 }) }));
     let evaluationWrites = 0;
@@ -395,6 +388,7 @@ test.describe("form validation and workflow wiring", () => {
     await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/evaluation`, async (route) => { evaluationWrites += 1; await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) }); });
     await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/conflict`, async (route) => { conflictWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({}) }); });
     await page.goto("/reviews");
+    await page.getByRole("button", { name: "Open review" }).click();
     await page.getByRole("button", { name: "Save draft" }).click();
     expect(evaluationWrites).toBe(0);
     await page.getByLabel("Rating").fill("4");

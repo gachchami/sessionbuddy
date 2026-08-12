@@ -594,6 +594,10 @@ def test_console_gates_privileged_entry_points_by_real_permission() -> None:
     assert "organization_admin" not in access
     assert "access-grants" not in access
     assert "ownership-transfers" not in access
+    assert 'name="display_name"' in (static / "access_admin.html").read_text(
+        encoding="utf-8"
+    )
+    assert "showAccessLink(issued.access_url" in access
     # The single-event endpoint replaced the all-orgs scans.
     for name in (
         "event_overview.js",

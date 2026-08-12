@@ -24,7 +24,7 @@ def test_cfp_builder_automatically_syncs_event_tracks_into_submission_questions(
     assert 'label: "Track"' in script
     assert 'required: true' in script
     assert 'choices: [...state.eventTracks]' in script
-    assert 'if (!state.eventTracks.length)' in script
+    assert "const hasTracks = state.eventTracks.length > 0" in script
     assert "syncEventTrackField();" in script
 
 

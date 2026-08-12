@@ -72,7 +72,11 @@ application shell with a profile/sign-out menu, organization and event hubs,
 safe duplicate-as-draft confirmation with event-owned branding copies,
 clickable event overviews and speaker directories, event-scoped navigation,
 organization-wide organizer management, event-specific reviewer and speaker
-invitations, invitation revocation, and verified invitation acceptance. The
+invitations, invitation revocation, and verified invitation acceptance. Reviewer
+invitations capture the person's display name, return the newly minted one-time
+access URL to the authorized organizer for copying, rotate that URL on resend,
+and take a first-time reviewer through profile and optional password setup before
+Reviews. Invitation-list responses never disclose bearer URLs. The
 event UI does not expose a separate event-administrator role or generic
 view/edit/manage grants; organization owners and managers administer every
 event in that organization.

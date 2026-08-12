@@ -631,7 +631,8 @@ async def list_event_evaluators(
     normalized = normalize_email(email)
     rows = result_rows(
         await db.prepare(
-            """SELECT u.id AS user_id, COALESCE(u.display_name,u.email) AS display_name
+            """SELECT u.id AS user_id,
+                      COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS display_name
                FROM users u JOIN user_roles ur ON ur.user_id=u.id
                JOIN identity_invitations i
                  ON i.organization_id=?2 AND i.event_id=?3
@@ -1861,7 +1862,8 @@ async def get_round_results(
     submission_ids = [str(row["submission_id"]) for row in rows]
     review_rows: list[dict] = []
     if submission_ids:
-        review_query = """SELECT a.submission_id,COALESCE(u.display_name,u.email) AS evaluator_name,
+        review_query = """SELECT a.submission_id,
+                      COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS evaluator_name,
                       COALESCE(e.state,'not_started') AS state,e.rating,e.recommendation,
                       COALESCE(e.internal_comment,'') AS internal_comment
                FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
@@ -1931,14 +1933,15 @@ async def get_round_results(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT a.evaluator_user_id, COALESCE(u.display_name,u.email) AS display_name,
+                """SELECT a.evaluator_user_id,
+                  COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS display_name,
                   SUM(CASE WHEN a.status != 'revoked' THEN 1 ELSE 0 END) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
                   COUNT(c.id) AS conflict_count
            FROM evaluation_assignments a JOIN users u ON u.id = a.evaluator_user_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            LEFT JOIN evaluation_conflicts c ON c.assignment_id = a.id
-           WHERE a.round_id = ?1 GROUP BY a.evaluator_user_id, u.email
+           WHERE a.round_id = ?1 GROUP BY a.evaluator_user_id, u.email, u.display_name
            ORDER BY u.normalized_email LIMIT 100"""
             ).bind(round_id),
         )
@@ -1958,7 +1961,7 @@ async def get_round_results(
             request,
             db.prepare(
                 """SELECT DISTINCT u.id AS user_id,
-                          COALESCE(u.display_name,u.email) AS display_name
+                          COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS display_name
                    FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
                    JOIN user_roles ur ON ur.user_id=u.id
                    WHERE a.organization_id=?1 AND a.event_id=?2
@@ -1976,7 +1979,7 @@ async def get_round_results(
             request,
             db.prepare(
                 """SELECT c.assignment_id, c.evaluator_user_id,
-                  COALESCE(u.display_name,u.email) AS evaluator_name,
+                  COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS evaluator_name,
                   s.proposal_title, c.conflict_type,
                   NOT EXISTS (
                     SELECT 1 FROM evaluation_assignments replacement
@@ -2211,6 +2214,45 @@ async def record_submission_decision(
                                       WHERE a.submission_id=s.id AND a.status!='revoked')"""
             ).bind(submission_id, direct_event_id).first()
         )
+        if context is None:
+            # That query folds four separate conditions into a single miss, and
+            # answering all of them with 404 told an organizer their proposal
+            # did not exist when in fact it had been pulled into a round and the
+            # direct path had closed behind it. Re-probe to say which it is --
+            # but only after the caller has proved they may manage submissions
+            # here, so a 409 can never be used to test whether an id exists.
+            blocked = row_mapping(
+                await db.prepare(
+                    """SELECT s.organization_id,s.event_id,
+                          EXISTS(SELECT 1 FROM submission_decisions d
+                                  WHERE d.submission_id=s.id) AS decided,
+                          EXISTS(SELECT 1 FROM evaluation_assignments a
+                                  WHERE a.submission_id=s.id AND a.status!='revoked') AS assigned
+                       FROM submissions s
+                       WHERE s.id=?1 AND s.event_id=?2 AND s.status='submitted'"""
+                ).bind(submission_id, direct_event_id).first()
+            )
+            if blocked is not None:
+                await require_permission(
+                    request,
+                    Permission.SUBMISSION_MANAGE,
+                    ResourceContext(str(blocked["organization_id"]), str(blocked["event_id"])),
+                    mutation=True,
+                )
+                if int(blocked["decided"] or 0):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="This proposal already has a decision recorded.",
+                    )
+                if int(blocked["assigned"] or 0):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "This proposal is already in an evaluation round, so it can no longer "
+                            "be rejected without review. Reject it from the round instead, where "
+                            "the organizer override and its reason are recorded."
+                        ),
+                    )
     else:
         context = row_mapping(
             await db.prepare(

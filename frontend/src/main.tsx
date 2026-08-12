@@ -151,6 +151,7 @@ function ReviewWorkspace() {
   const [previews, setPreviews] = useState<Record<string, number | null>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [hideFinalized, setHideFinalized] = useState(false);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
@@ -364,17 +365,40 @@ function ReviewWorkspace() {
     }));
   }
 
+  function closeReview(assignment: Assignment) {
+    if (
+      dirty[assignment.id] &&
+      !window.confirm("Close this review without saving your latest changes?")
+    ) return;
+    setSelectedAssignmentId(null);
+  }
+
   const visibleAssignments = hideFinalized
     ? assignments.filter(
         (assignment) => assignment.evaluation_state !== "final",
       )
     : assignments;
+  const finalizedCount = assignments.filter(
+    (assignment) => assignment.evaluation_state === "final",
+  ).length;
 
   return (
     <main>
-      <section className="hero">
-        <h1>Reviews</h1>
-        <p>Score assigned proposals and finalize when ready.</p>
+      <section className="hero review-hero">
+        <div>
+          <p className="eyebrow">Reviewer workspace</p>
+          <h1>Reviews</h1>
+          <p>Read each proposal, record your assessment, and finalize when ready.</p>
+        </div>
+        {assignments.length > 0 && (
+          <div className="review-progress" aria-label={`${finalizedCount} of ${assignments.length} reviews finalized`}>
+            <div>
+              <strong>{finalizedCount}/{assignments.length}</strong>
+              <span>finalized</span>
+            </div>
+            <progress value={finalizedCount} max={assignments.length} />
+          </div>
+        )}
       </section>
       {loadState === "loading" && assignments.length === 0 ? (
         <section className="review-state" aria-busy="true" aria-live="polite">
@@ -397,7 +421,7 @@ function ReviewWorkspace() {
           <button className="secondary" onClick={refreshAssignments}>Refresh</button>
         </section>
       ) : (
-        <div className="toolbar">
+        <div className="toolbar review-toolbar">
           <p role="status">{status}</p>
           <div className="actions">
             <label className="check">
@@ -418,9 +442,45 @@ function ReviewWorkspace() {
           </div>
         </div>
       )}
-      <section className="grid" aria-label="Assigned proposals">
-        {visibleAssignments.map((assignment) => (
+      {!selectedAssignmentId && (
+        <section className="review-list" aria-label="Assigned proposals">
+          {visibleAssignments.map((assignment) => (
+            <article className="review-summary" key={assignment.id}>
+              <div className="meta">
+                <span>{assignment.round_name}</span>
+                <span>{assignment.evaluation_state.replace("_", " ")}</span>
+              </div>
+              <h2>{assignment.proposal_title}</h2>
+              <p className="review-summary__abstract">{assignment.proposal_abstract}</p>
+              {assignment.review_closes_at_ms && (
+                <p className="help">
+                  Due {new Date(assignment.review_closes_at_ms).toLocaleString()} (your local time)
+                </p>
+              )}
+              <div className="actions">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAssignmentId(assignment.id)}
+                >
+                  {assignment.evaluation_state === "final" ? "View review" : "Open review"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+      <section className="review-detail" aria-label="Open review">
+        {visibleAssignments
+          .filter((assignment) => assignment.id === selectedAssignmentId)
+          .map((assignment) => (
           <article key={assignment.id}>
+            <button
+              type="button"
+              className="secondary review-back"
+              onClick={() => closeReview(assignment)}
+            >
+              Back to assigned proposals
+            </button>
             <div className="meta">
               <span>{assignment.round_name}</span>
               <span>{assignment.evaluation_state.replace("_", " ")}</span>
@@ -432,7 +492,7 @@ function ReviewWorkspace() {
             )}
             <p>{assignment.proposal_abstract}</p>
             {assignment.answers.length > 0 && (
-              <details className="answers" open>
+              <details className="answers">
                 <summary>
                   Full proposal ({assignment.answers.length} answer
                   {assignment.answers.length === 1 ? "" : "s"})
@@ -470,12 +530,12 @@ function ReviewWorkspace() {
               }
             >
               {assignment.criteria.length ? (
-                <fieldset>
+                <fieldset className="scorecard">
                   <legend>Scorecard</legend>
                   {assignment.criteria.map((criterion) => (
-                    <label key={criterion.key}>
-                      {criterion.label}{" "}
-                      <span className="optional">{criterion.weight}%</span>
+                    <label className="scorecard__criterion" key={criterion.key}>
+                      <span>{criterion.label}</span>
+                      <small>{criterion.weight}% of overall score</small>
                       <input
                         name={`criterion_${criterion.key}`}
                         type="number"
@@ -504,30 +564,32 @@ function ReviewWorkspace() {
                   />
                 </label>
               )}
-              <label>
-                Recommendation
-                <select
-                  name="recommendation"
-                  defaultValue={assignment.recommendation ?? ""}
-                  required
-                  disabled={assignment.evaluation_state === "final"}
-                >
-                  <option value="">Choose…</option>
-                  {assignment.recommendations.map((choice) => (
-                    <option key={choice}>{choice}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Internal comment
-                <textarea
-                  name="internal_comment"
-                  rows={4}
-                  maxLength={5000}
-                  defaultValue={assignment.internal_comment}
-                  disabled={assignment.evaluation_state === "final"}
-                />
-              </label>
+              <div className="review-fields">
+                <label>
+                  Recommendation
+                  <select
+                    name="recommendation"
+                    defaultValue={assignment.recommendation ?? ""}
+                    required
+                    disabled={assignment.evaluation_state === "final"}
+                  >
+                    <option value="">Choose…</option>
+                    {assignment.recommendations.map((choice) => (
+                      <option key={choice}>{choice}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Internal comment
+                  <textarea
+                    name="internal_comment"
+                    rows={4}
+                    maxLength={5000}
+                    defaultValue={assignment.internal_comment}
+                    disabled={assignment.evaluation_state === "final"}
+                  />
+                </label>
+              </div>
               {assignment.criteria.length > 0 &&
                 assignment.evaluation_state !== "final" && (
                   <p className="help">
@@ -543,26 +605,27 @@ function ReviewWorkspace() {
                   {cardStatus[assignment.id]}
                 </p>
               )}
-              <div className="actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={assignment.evaluation_state === "final"}
-                  onClick={(event) =>
-                    save(event.currentTarget.form!, assignment, "draft").catch(
-                      (error) => setCard(assignment.id, errorMessage(error)),
-                    )
-                  }
-                >
-                  Save draft
-                </button>
-                <button
-                  type="submit"
-                  disabled={assignment.evaluation_state === "final"}
-                >
-                  Finalize
-                </button>
-              </div>
+              {assignment.evaluation_state === "final" ? (
+                <p className="review-finalized" role="status">
+                  <strong>Review finalized</strong>
+                  Scores and comments are now read-only.
+                </p>
+              ) : (
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={(event) =>
+                      save(event.currentTarget.form!, assignment, "draft").catch(
+                        (error) => setCard(assignment.id, errorMessage(error)),
+                      )
+                    }
+                  >
+                    Save draft
+                  </button>
+                  <button type="submit">Finalize</button>
+                </div>
+              )}
             </form>
             {assignment.evaluation_state !== "final" && (
               <details>

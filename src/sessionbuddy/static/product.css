@@ -891,7 +891,7 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .cfp-event-header .public-brand-preview__header .brand-mark { width: 2rem; height: 2rem; font-size: .75rem; }
 .cfp-event-header .public-brand-preview__body h1 { max-width: 50rem; margin: .8rem 0 .35rem; color: #171428; font-size: clamp(1.65rem,3vw,2.35rem); line-height: 1.05; letter-spacing: -.04em; }
 .cfp-event-header .public-brand-preview__body a { margin-top: .25rem; color: var(--event-preview-accent,#3159d9); font-size: .75rem; font-weight: 700; }
-.cfp-event-header__deadline { margin-top: .45rem !important; color: #171428 !important; font-size: .82rem !important; font-weight: 700 !important; }
+.cfp-event-header__deadline { margin-top: .45rem !important; color: #171428 !important; font-size: .875rem !important; font-weight: 700 !important; }
 .cfp-public-page .public-event-hero { position: relative; overflow: hidden; padding: 1.35rem 0 1.5rem; border: 0; border-bottom: 1px solid var(--cfp-rule); border-radius: 0; background: transparent; box-shadow: none; }
 .cfp-public-page .public-event-hero h2 { max-width: 52rem; font-size: clamp(1.65rem,3.5vw,2.4rem); letter-spacing: -.04em; line-height: 1.05; }
 .cfp-public-page .public-event-hero .lede { max-width: 49rem; margin-top: .75rem; color: var(--cfp-muted); font-size: 1rem; line-height: 1.65; }
@@ -1178,10 +1178,10 @@ form.validation-attempted :is(input, textarea, select):invalid { border-color: v
   .proposal-inbox td::before { color: #64748b; content: attr(data-label); font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .proposal-inbox td[data-label="Include"] { grid-column: 1; grid-row: 1; }
   .proposal-inbox td[data-label="Status"] { grid-column: 3; grid-row: 1; justify-items: end; }
-  .proposal-inbox td[data-label="Speaker"], .proposal-inbox td[data-label="Proposal"], .proposal-inbox td[data-label="Abstract"], .proposal-inbox td[data-label="Details"] { grid-column: 1 / -1; }
+  .proposal-inbox td[data-label="Speaker"], .proposal-inbox td[data-label="Proposal"], .proposal-inbox td[data-label="Actions"] { grid-column: 1 / -1; }
   .proposal-inbox__title { font-size: 1rem; font-weight: 800; }
   .proposal-inbox__abstract { display: -webkit-box !important; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .proposal-inbox td[data-label="Details"] button { width: 100%; }
+  .proposal-inbox td[data-label="Actions"] button { width: 100%; }
   .proposal-selection-actions #configure-round { width: 100%; margin-left: 0; }
   .event-management-toolbar { align-items: stretch; flex-direction: column; }
   .event-filter-tabs, .event-toolbar-controls, .event-search { width: 100%; overflow-x: auto; }

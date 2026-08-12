@@ -37,7 +37,21 @@ release_compose run --rm --no-deps worker uv run ruff check .
 release_compose run --rm --no-deps worker uv run pytest -q
 release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
 
-release_compose run --rm e2e sh -lc "npm ci && npx playwright test --workers=4"
+release_compose run --rm e2e sh -lc '
+  ready=0
+  for attempt in $(seq 1 60); do
+    if node -e "fetch(\"http://worker:8787/health\").then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+      ready=$((ready + 1))
+      [ "$ready" -ge 3 ] && break
+    else
+      ready=0
+    fi
+    sleep 1
+  done
+  [ "$ready" -ge 3 ]
+  npm ci
+  npx playwright test --workers=${PW_WORKERS:-4}
+'
 
 release_compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \
   --base-url http://worker:8787 --route /api/v1/engine-room/status \

@@ -126,17 +126,23 @@
 
   function syncEventTrackField() {
     const index = state.fields.findIndex((field) => field.key === "track");
-    if (!state.eventTracks.length) {
-      if (index >= 0) state.fields.splice(index, 1);
-      return;
-    }
+    const hasTracks = state.eventTracks.length > 0;
+    // The row stays even with no tracks. Removing it told two eval organizers
+    // that the product has no track support at all, and both rebuilt Track as a
+    // custom question -- which loses routing, agenda linkage and blind review.
+    // Tracks are created on the Agenda page, which this screen otherwise never
+    // mentions, so the empty state has to say where to go. `readFields` drops
+    // the field from the published form while it has no choices, because
+    // `FormFieldDefinition.validate_choices` requires at least one.
     const trackField = {
       key: "track",
       type: "select",
       label: "Track",
-      help_text: "Choose the event track that best fits this proposal.",
+      help_text: hasTracks
+        ? "Choose the event track that best fits this proposal."
+        : "No tracks yet. Add them on the Agenda page to offer this question.",
       placeholder: "",
-      required: true,
+      required: hasTracks,
       choices: [...state.eventTracks],
       blind_visible: true
     };
@@ -858,7 +864,13 @@
       fields.push(field);
     });
     state.fields = fields;
-    return { fields: fields.map(({ condition, ...field }) => field), conditions };
+    // A choice-less Track is a builder affordance, not a publishable field:
+    // the server requires at least one choice for it (cfp/models.py
+    // `validate_choices`), so publishing with an empty one would 422.
+    const publishable = fields.filter(
+      (field) => field.key !== "track" || (field.choices || []).length > 0
+    );
+    return { fields: publishable.map(({ condition, ...field }) => field), conditions };
   }
 
   function renderRoutingRules() {
@@ -1028,10 +1040,19 @@
     }
 
     const schema = readFields();
-    const keys = new Set(schema.fields.map((field) => field.key));
-    const keyCounts = schema.fields.reduce((counts, field) => counts.set(field.key, (counts.get(field.key) || 0) + 1), new Map());
+    // Validate against state.fields, not schema.fields. `readFields` drops a
+    // choice-less Track from the publishable list while `renderFields` still
+    // renders a card for it, so schema.fields is one short of the card list:
+    // indexing by card position would validate every field after Track against
+    // its neighbour's data and the last card against undefined. state.fields is
+    // built from these same cards, so it stays 1:1 with them. Keys come from it
+    // too, or a rule pointing at the visible-but-unpublished Track would be
+    // reported as referencing a question that does not exist.
+    const builderFields = state.fields;
+    const keys = new Set(builderFields.map((field) => field.key));
+    const keyCounts = builderFields.reduce((counts, field) => counts.set(field.key, (counts.get(field.key) || 0) + 1), new Map());
     byId("form-fields").querySelectorAll("fieldset").forEach((card, index) => {
-      const field = schema.fields[index];
+      const field = builderFields[index];
       const keyInput = card.elements.field_key;
       keyInput.setCustomValidity(keyCounts.get(field.key) > 1 ? "Use a unique field key." : "");
       const choices = card.elements.field_choices;
@@ -1074,7 +1095,7 @@
       let source = dependencies.get(target);
       while (source && dependencies.has(source)) {
         if (visited.has(source)) {
-          const index = schema.fields.findIndex((field) => field.key === target);
+          const index = builderFields.findIndex((field) => field.key === target);
           const input = byId("form-fields").querySelectorAll("fieldset")[index]?.elements.condition_source;
           input?.setCustomValidity("This display condition creates a circular dependency.");
           break;

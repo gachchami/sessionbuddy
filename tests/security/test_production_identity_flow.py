@@ -1648,7 +1648,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         async with _client(environment) as reviewer:
             await reviewer.post(
                 "/api/v1/auth/magic-links",
-                json={"email": "reviewer@example.com", "redirect_path": "/reviews"},
+                json={"email": "reviewer@example.com", "redirect_path": "/admin"},
             )
             verified = await reviewer.post(
                 "/auth/verify",
@@ -1656,6 +1656,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 follow_redirects=False,
             )
             assert verified.status_code == 303
+            assert verified.headers["location"] == "/reviews"
             reviewer_session = (await reviewer.get("/api/v1/auth/session")).json()
             assert reviewer_session["organization_access"] == []
             assert reviewer_session["event_access"] == [
@@ -2081,24 +2082,31 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
         temporary = await client.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=headers,
-            json={"email": "reviewer@example.com", "role": "evaluator"},
+            json={
+                "email": "reviewer@example.com",
+                "role": "evaluator",
+                "display_name": "Sam Whitfield",
+            },
         )
         assert temporary.status_code == 201
-        # The one-time acceptance link is delivered only by email — never in
-        # the API response, where the inviter could use it to sign in as the
-        # invitee.
-        assert "accept_url" not in temporary.json()
+        # Authorized invitation managers receive the newly minted bearer URL
+        # once so they can copy it into an approved delivery channel. Lists
+        # never disclose it later.
+        assert temporary.json()["access_url"].startswith(
+            "https://test/auth/verify#token="
+        )
         assert _token(connection, "reviewer@example.com")
         listed = await client.get(f"/api/v1/admin/events/{event_id}/invitations")
         assert listed.json()["data"][0]["id"] == temporary.json()["id"]
-        assert "accept_url" not in listed.json()["data"][0]
+        assert "access_url" not in listed.json()["data"][0]
         resent = await client.post(
             f"/api/v1/admin/events/{event_id}/invitations/{temporary.json()['id']}/resend",
             headers=headers,
             json={},
         )
         assert resent.status_code == 200
-        assert "accept_url" not in resent.json()
+        assert resent.json()["access_url"].startswith("https://test/auth/verify#token=")
+        assert resent.json()["access_url"] != temporary.json()["access_url"]
         resend_rows = connection.execute(
             """SELECT html_body FROM communication_messages
                WHERE recipient_email='reviewer@example.com'"""
@@ -2200,7 +2208,11 @@ async def test_accepted_reviewer_can_sign_in_before_a_round_without_event_access
         invitation = await admin.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=headers,
-            json={"email": "reviewer@example.com", "role": "evaluator"},
+            json={
+                "email": "reviewer@example.com",
+                "role": "evaluator",
+                "display_name": "Sam Whitfield",
+            },
         )
         assert invitation.status_code == 201
 
@@ -2211,10 +2223,14 @@ async def test_accepted_reviewer_can_sign_in_before_a_round_without_event_access
             follow_redirects=False,
         )
         assert accepted.status_code == 303
+        assert accepted.headers["location"] == "/account?onboarding=1&next=/reviews"
 
     reviewer_user_id = connection.execute(
         "SELECT id FROM users WHERE normalized_email='reviewer@example.com'"
     ).fetchone()[0]
+    assert connection.execute(
+        "SELECT display_name FROM users WHERE id=?", (reviewer_user_id,)
+    ).fetchone()[0] == "Sam Whitfield"
     assert connection.execute(
         "SELECT COUNT(*) FROM organization_memberships WHERE user_id=?",
         (reviewer_user_id,),

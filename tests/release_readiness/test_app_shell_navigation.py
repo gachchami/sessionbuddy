@@ -77,8 +77,9 @@ def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
-    assert 'if (accountRoles.has("reviewer")) utilityNav.append' in javascript
-    assert 'navLink("My reviews", "/reviews"' in javascript
+    assert 'if (accountRoles.has("reviewer")) utilityNav.append' not in javascript
+    assert 'navLink("My reviews", "/reviews"' not in javascript
+    assert "if (utilityNav.children.length) sidebar.append(utilityGroup);" in javascript
 
 
 def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
@@ -88,12 +89,8 @@ def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
         'const hasSidebarNavigation = Boolean(sidebar.querySelector(".sb-sidebar__nav a"));'
         in javascript
     )
-    assert (
-        "const topbarOnlyWorkspace = singleSpeakerWorkspace || organizerWorkspace || "
-        "!hasSidebarNavigation"
-        in javascript
-    )
-    assert "} else if (!hasSidebarNavigation) {" in javascript
+    assert '|| section === "reviews" || !hasSidebarNavigation;' in javascript
+    assert '} else if (!hasSidebarNavigation || section === "reviews") {' in javascript
     assert 'topbar.append(accountBrand, crumb, accountMenu(session, roles));' in javascript
     assert "if (topbarOnlyWorkspace) {" in javascript
 
@@ -175,7 +172,7 @@ def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
 def test_single_speaker_shell_has_no_redundant_page_heading() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     branch = javascript.split("} else if (singleSpeakerWorkspace) {", 1)[1].split(
-        "} else if (!hasSidebarNavigation) {", 1
+        '} else if (!hasSidebarNavigation || section === "reviews") {', 1
     )[0]
     assert "crumb" not in branch
     assert "topbar.append(speakerBrand, accountMenu(session, roles));" in branch

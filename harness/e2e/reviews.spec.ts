@@ -43,6 +43,7 @@ test.describe("reviewer workspace", () => {
 
     // Non-organizer portals do not render an empty Main navigation card.
     await expect(page.locator(".sb-sidebar__primary")).toHaveCount(0);
+    await expect(page.locator(".sb-sidebar")).toHaveCount(0);
     await expect(page.locator(".sb-account__identity strong")).toHaveText("Rhea Reviewer · Reviewer");
 
     // The accessibility link is visually clipped until keyboard focus.
@@ -50,5 +51,60 @@ test.describe("reviewer workspace", () => {
     expect((await skipLink.boundingBox())?.width).toBe(1);
     await skipLink.focus();
     expect((await skipLink.boundingBox())?.width).toBeGreaterThan(1);
+  });
+
+  test("shows a compact docket and opens one focused scorecard", async ({ page }) => {
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: reviewerSession }));
+    await page.route("**/api/v1/evaluator/assignments**", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 1,
+          completed_count: 0,
+          next_cursor: null,
+          data: [{
+            id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            round_name: "Initial review",
+            proposal_title: "Building reliable platform tooling",
+            proposal_abstract: "A practical session about reliable internal platforms and clear operational feedback.",
+            speaker_name: "Hidden for blind review",
+            rating_min: 1,
+            rating_max: 5,
+            recommendations: ["accept", "reject"],
+            evaluator_guidance: "Score the proposal itself.",
+            evaluation_state: "not_started",
+            comment_required: false,
+            rating: null,
+            recommendation: null,
+            internal_comment: "",
+            criteria: [
+              { key: "relevance", label: "Relevance", weight: 40 },
+              { key: "quality", label: "Quality", weight: 35 },
+              { key: "audience_value", label: "Audience value", weight: 25 },
+            ],
+            criterion_scores: {},
+            blind_review: true,
+            review_closes_at_ms: null,
+            answers: [{ label: "Track", value: "Platform & Infra" }],
+            hidden_answer_count: 3,
+          }],
+        }),
+      }));
+
+    await page.goto("/reviews");
+
+    await expect(page.getByRole("heading", { name: "Building reliable platform tooling" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Scorecard" })).toHaveCount(0);
+    await expect(page.locator(".sb-sidebar")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Open review" }).click();
+    await expect(page.getByRole("group", { name: "Scorecard" })).toBeVisible();
+    await expect(page.getByText("Full proposal (1 answer)")).toBeVisible();
+    await expect(page.getByText("Platform & Infra")).not.toBeVisible();
+    await page.getByText("Full proposal (1 answer)").click();
+    await expect(page.getByText("Platform & Infra")).toBeVisible();
+    await page.getByRole("button", { name: "Back to assigned proposals" }).click();
+    await expect(page.getByRole("button", { name: "Open review" })).toBeVisible();
   });
 });

@@ -6,6 +6,12 @@
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
   let csrf = "";
 
+  function showAccessLink(accessUrl, email) {
+    byId("invitation-access-url").value = accessUrl;
+    byId("invitation-access-title").textContent = `Access link for ${email}`;
+    byId("invitation-access").hidden = false;
+  }
+
   const statusTone = (status) => status === "accepted" ? "success"
     : ["revoked", "expired"].includes(status) ? "overdue" : "";
 
@@ -23,7 +29,7 @@
     const person = document.createElement("div");
     person.className = "people-person-cell";
     person.setAttribute("role", "cell");
-    const displayName = invitation.display_name || invitation.email.split("@", 1)[0];
+    const displayName = invitation.display_name || invitation.email;
     const initials = document.createElement("span");
     initials.className = "people-monogram";
     initials.setAttribute("aria-hidden", "true");
@@ -54,11 +60,12 @@
       resend.addEventListener("click", async () => {
         resend.disabled = true;
         try {
-          await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}/resend`, {
+          const issued = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}/resend`, {
             method: "POST",
             headers: { "content-type": "application/json", "x-csrf-token": csrf },
             body: "{}"
           });
+          showAccessLink(issued.access_url, invitation.email);
           byId("status").textContent = `A new invitation was sent to ${invitation.email}.`;
         } catch (error) {
           byId("status").textContent = window.SessionBuddyApi.message(error);
@@ -190,15 +197,16 @@
     const values = Object.fromEntries(new FormData(form));
     button.disabled = true;
     try {
-      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, {
+      const issued = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": csrf },
         body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) })
       });
       form.reset();
       byId("invite-dialog").close();
+      showAccessLink(issued.access_url, issued.email);
       await load();
-      byId("status").textContent = "Reviewer invitation created and emailed.";
+      byId("status").textContent = "Reviewer invitation created and emailed. The access link is ready to copy.";
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").focus();
@@ -209,6 +217,17 @@
   byId("open-invite").addEventListener("click", () => dialog.showModal());
   byId("close-invite").addEventListener("click", () => dialog.close());
   byId("cancel-invite").addEventListener("click", () => dialog.close());
+  byId("copy-invitation-access").addEventListener("click", async () => {
+    const input = byId("invitation-access-url");
+    try {
+      await navigator.clipboard.writeText(input.value);
+      byId("status").textContent = "Reviewer access link copied.";
+    } catch (_) {
+      input.focus();
+      input.select();
+      byId("status").textContent = "Copy was unavailable. The access link is selected for manual copying.";
+    }
+  });
   if (!eventId) {
     byId("status").textContent = "This event link is invalid.";
     return;

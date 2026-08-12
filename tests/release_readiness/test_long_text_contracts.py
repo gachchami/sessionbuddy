@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -122,19 +123,15 @@ def test_dynamic_javascript_and_react_textareas_match_api_limits() -> None:
 
     react = (ROOT / "frontend" / "src" / "main.tsx").read_text(encoding="utf-8")
     for marker in (
-        'name="internal_comment"\n                  rows={4}\n                  maxLength={5000}',
-        'id={`conflict-note-${assignment.id}`}\n'
-        "                    rows={3}\n"
-        "                    maxLength={1000}",
-        'rows={3}\n              maxLength={2000}\n              value={forceCloseReason}',
-        'id={`reason-${submission.submission_id}`}\n'
-        "                        rows={3}\n"
-        "                        maxLength={2000}",
-        "rows={3}\n"
-        "                            maxLength={4000}\n"
-        "                            value={speakerMessage}",
+        r'name="internal_comment"\s+rows=\{4\}\s+maxLength=\{5000\}',
+        r'id=\{`conflict-note-\$\{assignment\.id\}`\}\s+'
+        r'rows=\{3\}\s+maxLength=\{1000\}',
+        r'rows=\{3\}\s+maxLength=\{2000\}\s+value=\{forceCloseReason\}',
+        r'id=\{`reason-\$\{submission\.submission_id\}`\}\s+'
+        r'rows=\{3\}\s+maxLength=\{2000\}',
+        r'rows=\{3\}\s+maxLength=\{4000\}\s+value=\{speakerMessage\}',
     ):
-        assert marker in react
+        assert re.search(marker, react)
 
 
 def test_api_long_text_limits_match_the_user_interface_contract() -> None:

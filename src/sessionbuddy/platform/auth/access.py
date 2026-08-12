@@ -438,6 +438,10 @@ class InvitationView(BaseModel):
     company: str = ""
 
 
+class InvitationIssued(InvitationView):
+    access_url: str
+
+
 class InvitationList(BaseModel):
     data: list[InvitationView]
 
@@ -3484,13 +3488,13 @@ async def revoke_event_access_grant(event_id: str, user_id: str, request: Reques
 
 @access_router.post(
     "/api/v1/admin/events/{event_id}/invitations",
-    response_model=InvitationView,
+    response_model=InvitationIssued,
     status_code=201,
     tags=["administration"],
 )
 async def create_invitation(
     event_id: str, body: InvitationCreate, request: Request
-) -> InvitationView:
+) -> InvitationIssued:
     db = database(request)
     event = row_mapping(
         await db.prepare(
@@ -3584,7 +3588,7 @@ async def create_invitation(
         )
     )
     await audit.execute()
-    await _issue_invitation_link(
+    access_url = await _issue_invitation_link(
         request,
         invitation_id=str(row["id"]),
         organization_id=str(event["organization_id"]),
@@ -3594,7 +3598,7 @@ async def create_invitation(
         role=body.role,
         now=now,
     )
-    return InvitationView(**row)
+    return InvitationIssued(**row, access_url=access_url)
 
 
 async def _issue_invitation_link(
@@ -3607,22 +3611,21 @@ async def _issue_invitation_link(
     normalized_email: str,
     role: InvitationRole,
     now: int,
-) -> None:
+) -> str:
     """Create a short-lived, one-time acceptance link and queue its delivery.
 
-    The link is delivered ONLY by email to the invitee. It is never returned
-    to the caller: an acceptance link signs the invitee in, so exposing it to
-    the inviting administrator would let them accept the invitation as the
-    invitee.
+    The link is emailed to the invitee and returned once to the authorized
+    invitation manager so it can be copied into an approved delivery channel.
+    It is a bearer credential and is never persisted in plaintext.
     """
     base = str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip("/")
     parsed = urlparse(base)
     is_local = parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
     if parsed.scheme != "https" and not is_local:
-        return
+        raise HTTPException(status_code=503, detail="Invitation delivery is unavailable")
     destination = {
         "speaker": "/speaker",
-        "evaluator": "/reviews",
+        "evaluator": "/account?onboarding=1&next=/reviews",
         "event_admin": "/admin",
         "organization_admin": "/admin",
     }[role]
@@ -3646,6 +3649,12 @@ async def _issue_invitation_link(
     raw_token, challenge_id, message_id = generate_token(), new_id(), new_id()
     accept_url = f"{base}/auth/verify#token={raw_token}"
     batch = CommandBatch(db)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE authentication_challenges SET consumed_at_ms=?1
+               WHERE invitation_id=?2 AND consumed_at_ms IS NULL"""
+        ).bind(now, invitation_id)
+    )
     batch.add_statement(
         db.prepare(
             """INSERT INTO authentication_challenges
@@ -3685,6 +3694,7 @@ async def _issue_invitation_link(
     queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
     if queue is not None:
         await queue.send({"schema_version": 1, "message_id": message_id})
+    return accept_url
 
 
 async def _managed_event(
@@ -3737,12 +3747,12 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
 
 @access_router.post(
     "/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
-    response_model=InvitationView,
+    response_model=InvitationIssued,
     tags=["administration"],
 )
 async def resend_invitation(
     event_id: str, invitation_id: str, request: Request
-) -> InvitationView:
+) -> InvitationIssued:
     db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
     now = utc_now_ms()
     row = row_mapping(
@@ -3766,7 +3776,7 @@ async def resend_invitation(
             mutation=True,
         )
     role: InvitationRole = row["role"]
-    await _issue_invitation_link(
+    access_url = await _issue_invitation_link(
         request,
         invitation_id=invitation_id,
         organization_id=organization_id,
@@ -3793,7 +3803,7 @@ async def resend_invitation(
         )
     )
     await audit.execute()
-    return InvitationView(**row)
+    return InvitationIssued(**row, access_url=access_url)
 
 
 @access_router.delete(
@@ -5119,9 +5129,24 @@ async def _finish_magic_link_sign_in(
             batch.add_statement(
                 db.prepare(
                     """INSERT INTO users
-                   (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,'active',?4,?4,?4)"""
-                ).bind(user_id, invitation["email"], invitation["normalized_email"], now)
+                   (id,email,normalized_email,display_name,status,email_verified_at_ms,
+                    created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,NULLIF(?4,''),'active',?5,?5,?5)"""
+                ).bind(
+                    user_id,
+                    invitation["email"],
+                    invitation["normalized_email"],
+                    str(invitation["display_name"] or "").strip(),
+                    now,
+                )
+            )
+        elif str(invitation["display_name"] or "").strip():
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE users SET display_name=CASE
+                         WHEN TRIM(COALESCE(display_name,''))='' THEN ?1 ELSE display_name END,
+                       updated_at_ms=?2 WHERE id=?3"""
+                ).bind(str(invitation["display_name"]).strip(), now, user_id)
             )
         if invitation["role"] in {"organization_admin", "event_admin"}:
             # Keep a non-authorizing affiliation row for legacy composite
@@ -5407,10 +5432,8 @@ async def _finish_magic_link_sign_in(
     return SessionCreated(
         user_id=str(user_id),
         csrf_token=csrf,
-        redirect_path=(
-            _role_destination(session_role)
-            if str(challenge["redirect_path"]) == "/"
-            else str(challenge["redirect_path"])
+        redirect_path=_role_compatible_redirect(
+            str(challenge["redirect_path"]), session_role
         ),
     )
 
