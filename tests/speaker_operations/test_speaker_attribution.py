@@ -8,6 +8,7 @@ later-submitted rejected proposal displaced the accepted session on all of
 these surfaces at once.
 """
 
+import json
 import sqlite3
 
 from tests.security.test_production_identity_flow import (
@@ -228,10 +229,22 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
                 "location": "",
                 "links": [],
                 "version": 1,
+                "confirmation_status": "confirmed",
             },
         )
         assert record.status_code == 200, record.text
         assert record.json()["proposal_title"] == "Accepted talk"
+        assert record.json()["confirmation_status"] == "confirmed"
+        refreshed_targets = await client.get(
+            f"/api/v1/admin/events/{event_id}/speaker-targets"
+        )
+        assert refreshed_targets.status_code == 200, refreshed_targets.text
+        refreshed = next(
+            row
+            for row in refreshed_targets.json()["data"]
+            if row["event_speaker_id"] == speaker_id
+        )
+        assert refreshed["confirmation_status"] == "confirmed"
 
         # Onboarding dashboard rows: the SESSION column.
         dashboard = await client.get(
@@ -257,6 +270,55 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
             if row["person_id"] == "person-1"
         )
         assert recent["proposal_title"] == "Accepted talk"
+
+        # SessionBoard consumers historically receive the primary speaker
+        # first. Pin that contract with a co-speaker whose name would otherwise
+        # sort ahead of Priya alphabetically.
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('person-co',?,'Aaron Co-speaker',1000,1000)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('speaker-co',?,?,'person-co','onboarding','accepted',
+                       3000,3000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                snapshot_name,created_at_ms)
+               VALUES ('link-co',?,?,'submission-accepted','speaker-co','co_speaker',
+                       'Aaron Co-speaker',1000)""",
+            (organization_id, event_id),
+        )
+        connection.commit()
+        token = await client.post(
+            f"/api/v1/admin/events/{event_id}/integrations/accelevents/tokens",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "primary-first-export",
+            },
+            json={"label": "Primary-first export"},
+        )
+        assert token.status_code == 201, token.text
+        exported = await client.post(
+            f"/v1/event/{event_id}/sessions",
+            headers={"x-access-token": token.json()["token"]},
+        )
+        assert exported.status_code == 200, exported.text
+        accepted = next(
+            item for item in exported.json()["results"] if item["title"] == "Accepted talk"
+        )
+        assert [speaker["full_name"] for speaker in accepted["speakers"]] == [
+            "Priya Raman",
+            "Aaron Co-speaker",
+        ]
 
 
 async def test_speaker_without_accepted_submission_falls_back_to_latest(
@@ -318,6 +380,49 @@ async def test_registered_speaker_can_receive_custom_onboarding_tasks(
         assert created.json()["owner_type"] == "event_speaker"
         assert created.json()["event_speaker_id"] == speaker_id
         assert created.json()["invitation_id"] is None
+
+
+async def test_organizer_can_create_enforceable_file_request_task(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection, organization_id, event_id
+        )
+        created = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "speaker-slides-request",
+            },
+            json={
+                "event_speaker_id": speaker_id,
+                "submission_id": None,
+                "title": "Upload final slides",
+                "help_text": "PDF only.",
+                "due_at_ms": 1_900_000_000_000,
+                "task_type": "slides",
+                "upload_enabled": True,
+                "allowed_content_types": ["application/pdf"],
+                "max_file_bytes": 50 * 1024 * 1024,
+                "fields": [],
+            },
+        )
+
+        assert created.status_code == 201, created.text
+        task_type, destination_type, schema_json = connection.execute(
+            "SELECT task_type,destination_type,form_schema_json FROM speaker_tasks WHERE id=?",
+            (created.json()["id"],),
+        ).fetchone()
+        assert (task_type, destination_type) == ("slides", "slides")
+        assert json.loads(schema_json)["upload"] == {
+            "enabled": True,
+            "allowed_content_types": ["application/pdf"],
+            "max_file_bytes": 50 * 1024 * 1024,
+        }
 
 
 async def test_pending_invitation_can_receive_task_before_registration(

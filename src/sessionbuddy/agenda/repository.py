@@ -13,7 +13,8 @@ class AgendaRepository:
         slot.validate()
         rows = result_rows(
             await self._db.prepare(
-                """SELECT 'room' AS kind, other.id AS item_id FROM agenda_items other
+                """SELECT DISTINCT kind,item_id FROM (
+               SELECT 'room' AS kind, other.id AS item_id FROM agenda_items other
                WHERE other.organization_id=?1 AND other.event_id=?2
                  AND other.revision_id=?3 AND other.id<>COALESCE(?10,'')
                  AND other.room_id=?4 AND other.starts_at_ms<?7 AND other.ends_at_ms>?6
@@ -33,6 +34,25 @@ class AgendaRepository:
                  AND other.revision_id=?3 AND other.id<>COALESCE(?10,'')
                  AND speaker.event_speaker_id IN (SELECT value FROM json_each(?8))
                  AND other.starts_at_ms<?7 AND other.ends_at_ms>?6
+               UNION ALL
+               SELECT 'speaker', other.id FROM agenda_items other
+               JOIN accepted_session_participants participant
+                 ON participant.accepted_session_id=other.accepted_session_id
+               WHERE other.organization_id=?1 AND other.event_id=?2
+                 AND other.revision_id=?3 AND other.id<>COALESCE(?10,'')
+                 AND participant.event_speaker_id IN (SELECT value FROM json_each(?8))
+                 AND other.starts_at_ms<?7 AND other.ends_at_ms>?6
+               UNION ALL
+               SELECT 'speaker', other.id FROM agenda_items other
+               JOIN accepted_session_participants participant
+                 ON participant.accepted_session_id=other.accepted_session_id
+               WHERE other.organization_id=?1 AND other.event_id=?2
+                 AND other.revision_id=?3 AND other.id<>COALESCE(?10,'')
+                 AND ('invite:' || participant.pending_invitation_id)
+                     IN (SELECT value FROM json_each(?8))
+                 AND participant.pending_invitation_id IS NOT NULL
+                 AND other.starts_at_ms<?7 AND other.ends_at_ms>?6
+               ) conflict_candidates
                ORDER BY kind,item_id LIMIT ?9"""
             )
             .bind(

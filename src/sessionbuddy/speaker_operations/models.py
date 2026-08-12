@@ -57,6 +57,7 @@ class SpeakerTaskView(BaseModel):
     due_at_ms: int | None
     completed_at_ms: int | None
     form_fields: list[dict[str, object]] = Field(default_factory=list)
+    upload_rules: dict[str, object] = Field(default_factory=dict)
     response: dict[str, object] = Field(default_factory=dict)
     version: int = 1
 

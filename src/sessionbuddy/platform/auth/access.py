@@ -1666,8 +1666,13 @@ async def upload_admin_speaker_headshot(
                  speaker_asset_version_id=excluded.speaker_asset_version_id,
                  updated_at_ms=excluded.updated_at_ms"""
         ).bind(
-            target["user_id"], asset_version_id, object_key, content_type,
-            len(body), checksum, now,
+            target["user_id"],
+            asset_version_id,
+            object_key,
+            content_type,
+            len(body),
+            checksum,
+            now,
         )
     )
     batch.audit(
@@ -1991,9 +1996,12 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
     # scanning submission_speakers, and speakers are counted as UNIQUE people
     # (DISTINCT person_id), not per-event appearances.
     has_proposal = (
-        "EXISTS (SELECT 1 FROM submission_speakers ss"
+        "(EXISTS (SELECT 1 FROM submission_speakers ss"
         " WHERE ss.organization_id=es.organization_id"
         " AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id)"
+        " OR EXISTS (SELECT 1 FROM accepted_session_participants participant"
+        " WHERE participant.organization_id=es.organization_id"
+        " AND participant.event_id=es.event_id AND participant.event_speaker_id=es.id))"
     )
     if False:  # pragma: no cover - retained temporarily while legacy SQL is removed
         event_count = await (
@@ -2038,6 +2046,12 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
                 "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
                 "e.name AS event_name,es.selection_status,"
                 "COALESCE("
+                "(SELECT ac.organizer_title FROM accepted_sessions ac"
+                " JOIN accepted_session_participants participant"
+                " ON participant.accepted_session_id=ac.id"
+                " WHERE participant.event_speaker_id=es.id"
+                " AND ac.source_type='organizer_created'"
+                " ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),"
                 # Prefer the ACCEPTED submission; fall back to the newest one.
                 "(SELECT s.proposal_title FROM submission_speakers ss"
                 " JOIN submissions s ON s.id=ss.submission_id"
@@ -2136,6 +2150,12 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
                 "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
                 "e.name AS event_name,es.selection_status,"
                 "COALESCE("
+                "(SELECT ac.organizer_title FROM accepted_sessions ac"
+                " JOIN accepted_session_participants participant"
+                " ON participant.accepted_session_id=ac.id"
+                " WHERE participant.event_speaker_id=es.id"
+                " AND ac.source_type='organizer_created'"
+                " ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),"
                 # Prefer the ACCEPTED submission; fall back to the newest one.
                 "(SELECT s.proposal_title FROM submission_speakers ss"
                 " JOIN submissions s ON s.id=ss.submission_id"
@@ -4246,8 +4266,9 @@ async def list_organization_activity(
                       WHERE es.id=resource_entity.internal_id
                       AND es.organization_id=?1 LIMIT 1)
                     WHEN 'accepted_session' THEN (
-                      SELECT s.proposal_title FROM accepted_sessions ac
-                      JOIN submissions s ON s.id=ac.submission_id
+                      SELECT COALESCE(s.proposal_title,ac.organizer_title)
+                      FROM accepted_sessions ac
+                      LEFT JOIN submissions s ON s.id=ac.submission_id
                         AND s.organization_id=ac.organization_id
                         AND s.event_id=ac.event_id
                       WHERE ac.id=resource_entity.internal_id
@@ -5447,6 +5468,82 @@ async def _finish_magic_link_sign_in(
                     invitation["event_id"],
                 )
             )
+            scheduled_participant_rows = result_rows(
+                await db.prepare(
+                    """SELECT ai.id AS agenda_item_id,ai.revision_id
+                         FROM accepted_session_participants participant
+                         JOIN agenda_items ai
+                           ON ai.organization_id=participant.organization_id
+                          AND ai.event_id=participant.event_id
+                          AND ai.accepted_session_id=participant.accepted_session_id
+                         JOIN schedule_revisions revision ON revision.id=ai.revision_id
+                        WHERE participant.organization_id=?1 AND participant.event_id=?2
+                          AND participant.pending_invitation_id=?3
+                          AND revision.status!='published'"""
+                )
+                .bind(
+                    invitation["organization_id"],
+                    invitation["event_id"],
+                    invitation["id"],
+                )
+                .all()
+            )
+            batch.add_statement(
+                db.prepare(
+                    """DELETE FROM accepted_session_participants AS pending
+                       WHERE pending.organization_id=?1 AND pending.event_id=?2
+                         AND pending.pending_invitation_id=?3
+                         AND EXISTS (
+                           SELECT 1 FROM accepted_session_participants active
+                            WHERE active.accepted_session_id=pending.accepted_session_id
+                              AND active.event_speaker_id=?4
+                         )"""
+                ).bind(
+                    invitation["organization_id"],
+                    invitation["event_id"],
+                    invitation["id"],
+                    event_speaker_id,
+                )
+            )
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE accepted_session_participants
+                          SET event_speaker_id=?1,pending_invitation_id=NULL,
+                              display_name_snapshot=COALESCE(
+                                (SELECT person.display_name FROM people person
+                                  JOIN event_speakers speaker
+                                    ON speaker.organization_id=person.organization_id
+                                   AND speaker.person_id=person.id
+                                 WHERE speaker.id=?1 LIMIT 1),
+                                display_name_snapshot),
+                              updated_at_ms=?2
+                        WHERE organization_id=?3 AND event_id=?4
+                          AND pending_invitation_id=?5"""
+                ).bind(
+                    event_speaker_id,
+                    now,
+                    invitation["organization_id"],
+                    invitation["event_id"],
+                    invitation["id"],
+                )
+            )
+            for scheduled_participant in scheduled_participant_rows:
+                batch.add_statement(
+                    db.prepare(
+                        """INSERT OR IGNORE INTO agenda_item_speakers
+                           (id,organization_id,event_id,revision_id,agenda_item_id,
+                            event_speaker_id,created_at_ms)
+                           VALUES (?1,?2,?3,?4,?5,?6,?7)"""
+                    ).bind(
+                        new_id(),
+                        invitation["organization_id"],
+                        invitation["event_id"],
+                        scheduled_participant["revision_id"],
+                        scheduled_participant["agenda_item_id"],
+                        event_speaker_id,
+                        now,
+                    )
+                )
         batch.add_statement(
             db.prepare(
                 """UPDATE identity_invitations

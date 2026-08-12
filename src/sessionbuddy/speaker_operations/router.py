@@ -465,6 +465,14 @@ async def get_admin_onboarding_dashboard(
                            COALESCE(es.last_activity_at_ms,i.updated_at_ms) AS last_activity_at_ms,
                            COALESCE(p.display_name,i.display_name,i.email) AS display_name,
                            COALESCE(
+                             (SELECT ac.organizer_title FROM accepted_sessions ac
+                               JOIN accepted_session_participants participant
+                                 ON participant.accepted_session_id=ac.id
+                               WHERE ac.organization_id=t.organization_id
+                                 AND ac.event_id=t.event_id
+                                 AND participant.event_speaker_id=t.event_speaker_id
+                                 AND ac.source_type='organizer_created'
+                               ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
                              -- Prefer the ACCEPTED submission; fall back to newest.
                              (SELECT s.proposal_title FROM submission_speakers ss
                                JOIN submissions s ON s.organization_id = ss.organization_id
@@ -745,6 +753,11 @@ async def get_speaker_portal(
                 json.loads(str(task["form_schema_json"])).get("fields", [])
                 if task["form_schema_json"]
                 else []
+            ),
+            upload_rules=(
+                json.loads(str(task["form_schema_json"])).get("upload", {})
+                if task["form_schema_json"]
+                else {}
             ),
             response=(json.loads(str(task["response_json"])) if task["response_json"] else {}),
             version=int(task["version"]),
@@ -1677,7 +1690,7 @@ async def authorize_speaker_upload(
     if body.task_id is not None:
         task = row_mapping(
             await db.prepare(
-                """SELECT task_type FROM speaker_tasks WHERE organization_id = ?1
+                """SELECT task_type,form_schema_json FROM speaker_tasks WHERE organization_id = ?1
                AND event_id = ?2 AND event_speaker_id = ?3 AND id = ?4
                AND state = 'open' LIMIT 1"""
             )
@@ -1691,6 +1704,19 @@ async def authorize_speaker_upload(
         )
         if task is None or str(task["task_type"]) != body.kind:
             raise HTTPException(status_code=404)
+        try:
+            task_schema = json.loads(str(task["form_schema_json"] or "{}"))
+            upload_rules = task_schema.get("upload", {})
+            task_types = set(upload_rules.get("allowed_content_types", ()))
+            task_max_bytes = int(upload_rules.get("max_file_bytes") or 0)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise HTTPException(status_code=409) from None
+        if (
+            upload_rules.get("enabled") is not True
+            or body.content_type not in task_types
+            or body.byte_size > task_max_bytes
+        ):
+            raise HTTPException(status_code=400)
     key = _key(idempotency_key)
     route = "POST /api/v1/speaker/events/{event_id}/upload-authorizations"
     fingerprint = _fingerprint(body)

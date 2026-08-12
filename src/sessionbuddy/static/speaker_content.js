@@ -5,6 +5,27 @@
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   const byId = (id) => document.getElementById(id);
   const state = { csrf: "", timeZone: "", taskMutation: null };
+  const uploadRules = {
+    headshot: { max: 5, types: ["image/jpeg", "image/png", "image/webp"] },
+    slides: { max: 50, types: ["application/pdf", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.oasis.opendocument.presentation"] },
+    supporting_document: { max: 20, types: ["application/pdf"] }
+  };
+
+  function updateTaskType() {
+    const type = byId("task-type").value;
+    const rules = uploadRules[type];
+    byId("response-options").hidden = Boolean(rules);
+    byId("upload-options").hidden = !rules;
+    const uploadEnabled = byId("task-form").elements.upload_enabled;
+    uploadEnabled.disabled = !rules;
+    uploadEnabled.checked = Boolean(rules);
+    if (rules) {
+      const max = byId("task-form").elements.max_file_mb;
+      max.max = String(rules.max);
+      max.value = String(rules.max);
+      byId("allowed-file-types").textContent = `Allowed: ${rules.types.join(", ")}. Files remain quarantined until safety checks pass.`;
+    }
+  }
 
   function idempotencyKey() {
     const bytes = new Uint8Array(32);
@@ -236,8 +257,21 @@
     const due = inputMillis(values.due_at);
     dueInput.setCustomValidity(Number.isNaN(due) ? `Choose a valid local time in ${state.timeZone}.` : "");
     if (!form.reportValidity()) return;
-    const fields = values.field_label ? [{ key: "response", label: values.field_label, type: values.field_type, required: Boolean(values.field_required), choices: [] }] : [];
-    const payloads = speakerIds.map((eventSpeakerId) => ({ event_speaker_id: eventSpeakerId, submission_id: null, title: values.title, help_text: values.help_text, due_at_ms: due, fields }));
+    const taskType = String(values.task_type || "custom");
+    const rules = uploadRules[taskType];
+    const uploadEnabled = Boolean(values.upload_enabled);
+    if (rules && !uploadEnabled) {
+      setStatus("Enable speaker uploads to create a file request.", true);
+      return;
+    }
+    const fields = !rules && values.field_label ? [{ key: "response", label: values.field_label, type: values.field_type, required: Boolean(values.field_required), choices: [] }] : [];
+    const maxFileBytes = rules ? Number(values.max_file_mb) * 1024 * 1024 : null;
+    const payloads = speakerIds.map((eventSpeakerId) => ({
+      event_speaker_id: eventSpeakerId, submission_id: null, title: values.title,
+      help_text: values.help_text, due_at_ms: due, task_type: taskType,
+      upload_enabled: uploadEnabled, allowed_content_types: rules?.types || [],
+      max_file_bytes: maxFileBytes, fields
+    }));
     const fingerprint = JSON.stringify(payloads);
     if (!state.taskMutation || state.taskMutation.fingerprint !== fingerprint) {
       state.taskMutation = {
@@ -256,6 +290,7 @@
         })
       ));
       form.reset();
+      updateTaskType();
       state.taskMutation = null;
       setStatus(`Task assigned to ${speakerIds.length} speaker${speakerIds.length === 1 ? "" : "s"}.`);
     } catch (error) {
@@ -263,11 +298,13 @@
     } finally { button.disabled = false; }
   });
   byId("task-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("task-type").addEventListener("change", updateTaskType);
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");
     const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
     state.timeZone = await loadEventTimeZone();
     byId("task-time-zone").textContent = state.timeZone;
+    updateTaskType();
     const results = await Promise.allSettled([loadResources(), loadTargets(), loadAssets()]);
     if (results.some((result) => result.status === "rejected")) {
       setStatus("Some speaker information could not be loaded. Refresh to try again.", true);

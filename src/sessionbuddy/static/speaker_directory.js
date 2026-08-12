@@ -77,7 +77,7 @@
     const selectionStatus = byId("speaker-status").value;
     return item.participations.filter((participation) => (
       (!eventId || participation.event_id === eventId)
-      && (!selectionStatus || participation.selection_status === selectionStatus)
+      && (!selectionStatus || participation.confirmation_status === selectionStatus)
     ));
   }
   function relevantAssociations(item) {
@@ -255,6 +255,7 @@
         event_name: event.name,
         event_speaker_id: target.event_speaker_id,
         selection_status: target.selection_status,
+        confirmation_status: target.confirmation_status,
         proposal_title: target.proposal_title,
       }],
     };
@@ -334,16 +335,19 @@
       },
       event_speaker_id: participation.event_speaker_id,
       selection_status: participation.selection_status,
+      confirmation_status: participation.confirmation_status,
       proposal_title: participation.proposal_title,
     };
     byId("speaker-detail").hidden = false;
-    byId("speaker-event").textContent = `${person.organization_name} · ${participation.event_name} · ${participation.selection_status}`;
+    byId("speaker-event").textContent = `${person.organization_name} · ${participation.event_name} · ${participation.confirmation_status.replaceAll("_", " ")}`;
     byId("speaker-name").textContent = person.display_name;
     byId("speaker-proposal").textContent = participation.proposal_title;
     const form = byId("speaker-form");
     ["display_name", "email", "job_title", "company", "location", "biography", "version"].forEach((name) => {
       form.elements[name].value = person[name] ?? "";
     });
+    form.elements.confirmation_status.value = participation.confirmation_status;
+    byId("speaker-confirmation-field").hidden = false;
     window.SessionBuddyApi.refreshCharacterCounters(form);
     form.elements.links.value = (person.links || []).join("\n");
     byId("speaker-onboarding").href = `/admin/events/${encodeURIComponent(participation.event_id)}/onboarding`;
@@ -408,6 +412,7 @@
     byId("speaker-events").replaceChildren(...participationNodes);
     const form = byId("speaker-form");
     form.hidden = !profile.can_edit;
+    byId("speaker-confirmation-field").hidden = true;
     byId("speaker-onboarding").hidden = true;
     byId("speaker-directory").hidden = !sessionHasOrganizerAccess;
     if (profile.can_edit) {
@@ -546,6 +551,12 @@
   byId("import-speakers").addEventListener("click", () => importDialog.showModal());
   byId("close-speaker-import").addEventListener("click", () => importDialog.close());
   byId("cancel-speaker-import").addEventListener("click", () => importDialog.close());
+  byId("import-speakers-form").elements.speaker_csv.addEventListener("change", (event) => {
+    const form = event.currentTarget.form;
+    form.elements.confirm_name_duplicates.checked = false;
+    byId("speaker-import-duplicates").hidden = true;
+    byId("speaker-import-duplicate-list").replaceChildren();
+  });
   byId("import-speakers-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -558,6 +569,31 @@
     try {
       const invitations = speakerInvitationsFromCsv(await file.text());
       if (!invitations.length) throw new Error("The CSV has no speaker rows.");
+      const existingByName = new Map(allSpeakers.map((speaker) => [speaker.display_name.trim().toLowerCase(), speaker]));
+      const csvNameCounts = invitations.reduce((counts, invitation) => {
+        const name = invitation.display_name.trim().toLowerCase();
+        counts.set(name, (counts.get(name) || 0) + 1);
+        return counts;
+      }, new Map());
+      const duplicates = invitations.filter((invitation) => {
+        const existing = existingByName.get(invitation.display_name.trim().toLowerCase());
+        return csvNameCounts.get(invitation.display_name.trim().toLowerCase()) > 1
+          || (existing && existing.email.trim().toLowerCase() !== invitation.email.trim().toLowerCase());
+      });
+      const duplicatePanel = byId("speaker-import-duplicates");
+      if (duplicates.length && !form.elements.confirm_name_duplicates.checked) {
+        byId("speaker-import-duplicate-list").replaceChildren(...duplicates.map((invitation) => {
+          const item = document.createElement("li");
+          const existing = existingByName.get(invitation.display_name.trim().toLowerCase());
+          item.textContent = existing
+            ? `${invitation.display_name}: existing ${existing.email || "email unavailable"}; CSV ${invitation.email}`
+            : `${invitation.display_name}: this name occurs more than once in the CSV.`;
+          return item;
+        }));
+        duplicatePanel.hidden = false;
+        form.elements.confirm_name_duplicates.focus();
+        throw new Error("Review and confirm the possible duplicate identities before importing.");
+      }
       for (let index = 0; index < invitations.length; index += 1) {
         importStatus.textContent = `Sending invitation ${index + 1} of ${invitations.length}…`;
         await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/invitations`, {
@@ -599,6 +635,7 @@
           location: values.location,
           links,
           version: Number(values.version),
+          ...(profileScoped ? {} : { confirmation_status: values.confirmation_status }),
         }),
       });
       selectedSpeaker = { ...selectedSpeaker, ...updated };

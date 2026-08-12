@@ -84,6 +84,7 @@ class SpeakerTarget(BaseModel):
     links: list[str]
     version: int
     selection_status: Literal["invited", "submitted", "accepted", "rejected"]
+    confirmation_status: Literal["invited", "pending", "confirmed", "declined"]
     proposal_title: str
 
 
@@ -108,6 +109,7 @@ class OrganizationSpeakerParticipation(BaseModel):
     event_name: str
     event_speaker_id: str
     selection_status: Literal["invited", "submitted", "accepted", "rejected"]
+    confirmation_status: Literal["invited", "pending", "confirmed", "declined"]
     proposal_title: str
 
 
@@ -174,6 +176,10 @@ class AdminSpeakerUpdate(BaseModel):
         return values
 
 
+class AdminEventSpeakerUpdate(AdminSpeakerUpdate):
+    confirmation_status: Literal["pending", "confirmed", "declined"] | None = None
+
+
 class SessionContentVersionView(BaseModel):
     version: int
     title: str
@@ -213,6 +219,10 @@ class SpeakerTaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     help_text: str = Field(default="", max_length=2000)
     due_at_ms: int | None = Field(default=None, ge=0)
+    task_type: Literal["custom", "headshot", "slides", "supporting_document"] = "custom"
+    upload_enabled: bool = False
+    allowed_content_types: tuple[str, ...] = Field(default=(), max_length=12)
+    max_file_bytes: int | None = Field(default=None, ge=1, le=50 * 1024 * 1024)
     fields: tuple[TaskFormField, ...] = Field(default=(), max_length=40)
 
     @model_validator(mode="after")
@@ -220,6 +230,23 @@ class SpeakerTaskCreate(BaseModel):
         keys = [field.key for field in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError("task form field keys must be unique")
+        file_task = self.task_type in {"headshot", "slides", "supporting_document"}
+        if file_task != self.upload_enabled:
+            raise ValueError("file request tasks must enable uploads")
+        if file_task and (not self.allowed_content_types or self.max_file_bytes is None):
+            raise ValueError("file request tasks require upload constraints")
+        if not file_task and (self.allowed_content_types or self.max_file_bytes is not None):
+            raise ValueError("custom response tasks cannot define upload constraints")
+        if file_task and self.fields:
+            raise ValueError("file request tasks cannot define response fields")
+        if any(
+            not value
+            or len(value) > 150
+            or "/" not in value
+            or value.lower() != value
+            for value in self.allowed_content_types
+        ):
+            raise ValueError("allowed content types must be lowercase MIME types")
         return self
 
 
@@ -228,6 +255,7 @@ class AdminSpeakerTaskView(BaseModel):
     owner_type: Literal["event_speaker", "invitation"]
     event_speaker_id: str | None = None
     invitation_id: str | None = None
+    task_type: Literal["custom", "headshot", "slides", "supporting_document"]
     title: str
     state: Literal["open", "completed", "waived"]
     due_at_ms: int | None

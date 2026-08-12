@@ -125,6 +125,7 @@ async def test_event_labels_are_owned_assignable_and_public(
             "archived_tracks",
             "archived_labels",
             "can_manage_resource_lifecycle",
+            "session_participants",
         }
         assigned = await client.put(
             f"/api/v1/admin/events/{event_id}/sessions/{session_id}/labels",
@@ -133,9 +134,7 @@ async def test_event_labels_are_owned_assignable_and_public(
         )
         assert assigned.status_code == 200, assigned.text
         assert assigned.json()["version"] == 2
-        assert [item["name"] for item in assigned.json()["labels"]] == [
-            "Beginner friendly"
-        ]
+        assert [item["name"] for item in assigned.json()["labels"]] == ["Beginner friendly"]
 
         stale = await client.put(
             f"/api/v1/admin/events/{event_id}/sessions/{session_id}/labels",
@@ -158,6 +157,7 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert agenda.json()["unscheduled_sessions"][0]["speaker_names"] == "Priya Raman"
         assert set(agenda.json()["unscheduled_sessions"][0]) == {
             "session_id",
+            "source_type",
             "title",
             "abstract",
             "content_status",
@@ -168,6 +168,7 @@ async def test_event_labels_are_owned_assignable_and_public(
             "track_id",
             "track_name",
             "speaker_names",
+            "participants",
         }
 
         room_id = setup.json()["rooms"][0]["id"]
@@ -248,12 +249,16 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert archived.status_code == 200, archived.text
         assert archived.json()["status"] == "archived"
         assert (await client.get(labels_url)).json()["data"] == []
-        assert connection.execute(
-            "SELECT status FROM events WHERE id=?", (event_id,)
-        ).fetchone()[0] == "active"
-        assert connection.execute(
-            "SELECT status FROM owned_resources WHERE id=?", (event_id,)
-        ).fetchone()[0] == "active"
+        assert (
+            connection.execute("SELECT status FROM events WHERE id=?", (event_id,)).fetchone()[0]
+            == "active"
+        )
+        assert (
+            connection.execute(
+                "SELECT status FROM owned_resources WHERE id=?", (event_id,)
+            ).fetchone()[0]
+            == "active"
+        )
         session_after_archive = await client.get("/api/v1/auth/session")
         assert session_after_archive.status_code == 200, session_after_archive.text
         assert any(
@@ -277,9 +282,12 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert restored.status_code == 200, restored.text
         assert restored.json()["status"] == "active"
         assert (await client.get(labels_url)).json()["data"][0]["id"] == label["id"]
-        assert connection.execute(
-            "SELECT status FROM owned_resources WHERE id=?", (label["id"],)
-        ).fetchone()[0] == "active"
+        assert (
+            connection.execute(
+                "SELECT status FROM owned_resources WHERE id=?", (label["id"],)
+            ).fetchone()[0]
+            == "active"
+        )
         query_plan = " ".join(
             str(row[3])
             for row in connection.execute(

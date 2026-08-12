@@ -672,6 +672,7 @@ test.describe("form validation and workflow wiring", () => {
     await mockSession(page);
     let resourceWrites = 0;
     let taskWrites = 0;
+    const taskPayloads: Record<string, unknown>[] = [];
     let tokenWrites = 0;
     await page.route(`**/api/v1/admin/events/${eventId}/resources`, async (route) => {
       if (route.request().method() === "POST") resourceWrites += 1;
@@ -682,7 +683,7 @@ test.describe("form validation and workflow wiring", () => {
       body: JSON.stringify({ id: eventId, time_zone: "Asia/Kolkata" }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}/speaker-targets`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ event_speaker_id: assignmentId, display_name: "Speaker", proposal_title: "A proposal", selection_status: "accepted" }] }) }));
-    await page.route(`**/api/v1/admin/events/${eventId}/speaker-tasks`, async (route) => { taskWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({}) }); });
+    await page.route(`**/api/v1/admin/events/${eventId}/speaker-tasks`, async (route) => { taskWrites += 1; taskPayloads.push(route.request().postDataJSON()); await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({}) }); });
     await page.route(`**/api/v1/admin/events/${eventId}/integrations/accelevents/tokens`, async (route) => { tokenWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ token: "one-time-token" }) }); });
 
     await page.goto(`/admin/events/${eventId}/speaker-content`);
@@ -706,6 +707,18 @@ test.describe("form validation and workflow wiring", () => {
     await task.getByLabel("Question label").fill("Dietary requirements");
     await task.getByRole("button", { name: "Assign task" }).click();
     await expect.poll(() => taskWrites).toBe(1);
+    expect(taskPayloads[0]).toMatchObject({ task_type: "custom", upload_enabled: false });
+
+    await task.locator(`input[name="event_speaker_id"][value="${assignmentId}"]`).check();
+    await task.getByLabel("Request type").selectOption("slides");
+    await task.getByLabel("Task title").fill("Upload slides");
+    await task.getByRole("button", { name: "Assign task" }).click();
+    await expect.poll(() => taskWrites).toBe(2);
+    expect(taskPayloads[1]).toMatchObject({
+      task_type: "slides",
+      upload_enabled: true,
+      max_file_bytes: 50 * 1024 * 1024,
+    });
 
     await page.goto(`/admin/events/${eventId}/workspace`);
     await page.getByText("Connect Accelevents", { exact: true }).click();

@@ -129,7 +129,11 @@ speaker permissions before acceptance and are available to invitation-safe
 bulk communications with an explicit invited-recipient label. Registered invited speakers can receive
 onboarding tasks before a proposal is accepted, organizers can edit their
 event-scoped speaker details, and event rosters accept validated CSV invitation
-imports of up to 500 speakers. Organizers can also maintain private, configurable
+imports of up to 500 speakers. CSV imports require an explicit identity review
+before creating a same-name person under a different email. Post-acceptance
+participation is tracked independently from proposal selection, and organizers
+can persist awaiting-confirmation, confirmed, or declined status. Organizers can
+also maintain private, configurable
 label/value notes for event-specific travel, logistics, accessibility, and hospitality
 details. Speaker and welcome-message attribution prefers
 the accepted session over a newer unrelated proposal. Public profiles include
@@ -152,6 +156,12 @@ accepted speakers and sessions into Accelevents.
 Accepted-session handoff preserves the proposal's routed track when it matches
 an active agenda track and exposes the primary and co-speaker names in the
 schedule editor.
+
+Organizers can also create first-class sessions directly in the agenda without
+manufacturing a proposal or acceptance decision. A session may name active
+speakers or pending speaker invitees; pending people remain invitations until
+acceptance, when their session participant and any scheduled agenda association
+are transactionally linked to the newly created event speaker.
 
 The agenda editor's authenticated unschedule action includes the required JSON
 media type, and the public schedule identifies the published revision number

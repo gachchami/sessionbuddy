@@ -33,10 +33,34 @@ def test_invited_and_registered_speakers_are_eligible_for_custom_tasks() -> None
     assert "Choose at least one invited, registered, or accepted speaker." in javascript
 
 
+def test_organizer_can_create_constrained_file_request_tasks() -> None:
+    javascript = source("speaker_content.js")
+    html = source("speaker_content.html")
+    assert '<option value="headshot">Headshot upload</option>' in html
+    assert '<option value="slides">Slides upload</option>' in html
+    assert '<option value="supporting_document">Supporting document upload</option>' in html
+    assert 'name="upload_enabled"' in html
+    assert 'name="max_file_mb"' in html
+    assert "allowed_content_types: rules?.types || []" in javascript
+    assert "max_file_bytes: maxFileBytes" in javascript
+    assert "uploadEnabled.disabled = !rules" in javascript
+    assert "uploadEnabled.checked = Boolean(rules)" in javascript
+
+
 def test_manual_speaker_invitation_collects_biography() -> None:
     html = source("speaker_directory.html")
-    javascript = source("speaker_directory.js")
     assert '<textarea name="biography"' in html
+
+
+def test_speaker_participation_status_and_csv_duplicate_review_are_exposed() -> None:
+    html = source("speaker_directory.html")
+    javascript = source("speaker_directory.js")
+    assert 'name="confirmation_status"' in html
+    assert "Awaiting confirmation" in html
+    assert "Confirmed" in html
+    assert "Declined" in html
+    assert 'id="speaker-import-duplicates"' in html
+    assert "Review and confirm the possible duplicate identities" in javascript
     assert "Object.fromEntries(new FormData(form))" in javascript
 
 

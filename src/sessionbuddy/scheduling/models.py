@@ -147,6 +147,35 @@ class AgendaAutoSchedule(StrictModel):
         return values
 
 
+class ManualSessionCreate(StrictModel):
+    title: str = Field(min_length=1, max_length=200)
+    abstract: str = Field(min_length=1, max_length=5000)
+    participant_ids: list[str] = Field(min_length=1, max_length=50)
+
+    @field_validator("title", "abstract")
+    @classmethod
+    def clean_content(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("session content is required")
+        return cleaned
+
+    @field_validator("participant_ids")
+    @classmethod
+    def validate_participants(cls, values: list[str]) -> list[str]:
+        if any(not value or len(value) > 128 for value in values):
+            raise ValueError("invalid participant id")
+        if len(values) != len(set(values)):
+            raise ValueError("participants must be unique")
+        return values
+
+
+class ManualSessionParticipantView(StrictModel):
+    id: str
+    display_name: str
+    recipient_state: Literal["active", "invited"]
+
+
 class AgendaEventView(StrictModel):
     id: str
     name: str
@@ -183,6 +212,7 @@ class ScheduleLabelView(StrictModel):
 class AgendaScheduledItemView(StrictModel):
     id: str
     session_id: str
+    source_type: Literal["accepted_proposal", "organizer_created"]
     title: str
     abstract: str
     content_status: Literal["draft", "approved"]
@@ -195,6 +225,7 @@ class AgendaScheduledItemView(StrictModel):
     track_id: str | None
     track_name: str | None
     speaker_names: str
+    participants: list[ManualSessionParticipantView] = Field(default_factory=list)
     version: int = Field(ge=1)
     labels: list[EventLabelView]
     label_ids: list[str]
@@ -202,6 +233,7 @@ class AgendaScheduledItemView(StrictModel):
 
 class AgendaUnscheduledSessionView(StrictModel):
     session_id: str
+    source_type: Literal["accepted_proposal", "organizer_created"]
     title: str
     abstract: str
     content_status: Literal["draft", "approved"]
@@ -210,6 +242,7 @@ class AgendaUnscheduledSessionView(StrictModel):
     track_id: str | None = None
     track_name: str | None = None
     speaker_names: str
+    participants: list[ManualSessionParticipantView] = Field(default_factory=list)
     labels: list[EventLabelView]
     label_ids: list[str]
 
@@ -227,6 +260,7 @@ class AdminAgendaView(StrictModel):
     archived_tracks: list[AgendaResourceView]
     archived_labels: list[EventLabelView]
     can_manage_resource_lifecycle: bool
+    session_participants: list[ManualSessionParticipantView]
 
 
 class AgendaAutoScheduleResult(StrictModel):

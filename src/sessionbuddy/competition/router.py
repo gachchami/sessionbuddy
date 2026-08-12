@@ -15,6 +15,7 @@ from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mappi
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
 from .models import (
+    AdminEventSpeakerUpdate,
     AdminSessionContentRestore,
     AdminSessionContentUpdate,
     AdminSessionContentView,
@@ -382,7 +383,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                         COALESCE(p.company,'') AS company,
                         COALESCE(p.biography,'') AS biography,
                         COALESCE(p.location,'') AS location,p.links_json,p.version,
-                        es.selection_status,
+                        es.selection_status,es.confirmation_status,
                         COALESCE(
                           -- Prefer the ACCEPTED submission; fall back to newest.
                           (SELECT s.proposal_title FROM submission_speakers ss
@@ -407,7 +408,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                  UNION ALL
                  SELECT i.id,NULL,NULL,i.email,
                         COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
-                        '','','[]',1,'invited','Invitation pending'
+                        '','','[]',1,'invited','invited','Invitation pending'
                  FROM identity_invitations i
                  WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
                    AND i.status='pending' AND i.expires_at_ms>?3
@@ -444,7 +445,7 @@ async def list_organization_speakers(
                       COALESCE(p.biography,'') AS biography,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
                       es.id AS event_speaker_id,es.event_id,e.name AS event_name,
-                      es.selection_status,
+                      es.selection_status,es.confirmation_status,
                       -- Prefer the ACCEPTED submission; fall back to newest.
                       COALESCE((SELECT s.proposal_title FROM submission_speakers ss
                         JOIN submissions s ON s.organization_id=ss.organization_id
@@ -514,6 +515,7 @@ async def list_organization_speakers(
                 event_name=str(row["event_name"]),
                 event_speaker_id=str(row["event_speaker_id"]),
                 selection_status=str(row["selection_status"]),
+                confirmation_status=str(row["confirmation_status"]),
                 proposal_title=str(row["proposal_title"]),
             )
         )
@@ -631,6 +633,7 @@ def _speaker_target(row) -> SpeakerTarget:
         links=json.loads(str(row["links_json"])),
         version=int(row["version"]),
         selection_status=str(row["selection_status"]),
+        confirmation_status=str(row["confirmation_status"]),
         proposal_title=str(row["proposal_title"]),
     )
 
@@ -659,7 +662,7 @@ async def _speaker_profile_page(
     participation_rows = result_rows(
         await db.prepare(
             """SELECT es.event_id,e.name AS event_name,es.id AS event_speaker_id,
-                      es.selection_status,
+                      es.selection_status,es.confirmation_status,
                       -- Prefer the ACCEPTED submission; fall back to newest.
                       COALESCE((SELECT s.proposal_title FROM submission_speakers ss
                         JOIN submissions s ON s.organization_id=ss.organization_id
@@ -738,6 +741,7 @@ async def _speaker_profile_page(
             event_name=str(row["event_name"]),
             event_speaker_id=str(row["event_speaker_id"]),
             selection_status=str(row["selection_status"]),
+            confirmation_status=str(row["confirmation_status"]),
             proposal_title=str(row["proposal_title"]),
         )
         for row in participation_rows
@@ -811,7 +815,7 @@ async def update_own_speaker_profile_page(
     tags=["speaker-onboarding"],
 )
 async def update_admin_speaker(
-    event_id: str, event_speaker_id: str, body: AdminSpeakerUpdate, request: Request
+    event_id: str, event_speaker_id: str, body: AdminEventSpeakerUpdate, request: Request
 ) -> SpeakerTarget:
     event, auth = await _managed_event(request, event_id, mutation=True)
     db, now = _db(request), utc_now_ms()
@@ -849,6 +853,18 @@ async def update_admin_speaker(
             .first("found")
         )
         raise HTTPException(status_code=409 if exists is not None else 404)
+    await db.prepare(
+        """UPDATE event_speakers
+           SET confirmation_status=COALESCE(?1,confirmation_status),updated_at_ms=?2,
+                  version=version+1
+           WHERE id=?3 AND organization_id=?4 AND event_id=?5"""
+    ).bind(
+        body.confirmation_status,
+        now,
+        event_speaker_id,
+        event["organization_id"],
+        event_id,
+    ).run()
     audit = CommandBatch(db)
     audit.audit(
         AuditEvent(
@@ -872,7 +888,7 @@ async def update_admin_speaker(
                       p.display_name,COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
-                      es.selection_status,
+                      es.selection_status,es.confirmation_status,
                       COALESCE(
                         -- Prefer the ACCEPTED submission; fall back to newest.
                         (SELECT s.proposal_title FROM submission_speakers ss
@@ -984,9 +1000,10 @@ async def _session_content_view(
 ) -> AdminSessionContentView:
     current = row_mapping(
         await db.prepare(
-            """SELECT ac.id,s.proposal_title,s.proposal_abstract,
+            """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS proposal_abstract,
                       ac.content_status,ac.version
-               FROM accepted_sessions ac JOIN submissions s
+               FROM accepted_sessions ac LEFT JOIN submissions s
                  ON s.organization_id=ac.organization_id AND s.event_id=ac.event_id
                 AND s.id=ac.submission_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND ac.id=?3 LIMIT 1"""
@@ -1054,9 +1071,10 @@ async def _save_session_content(
     db, organization_id = _db(request), str(event["organization_id"])
     session = row_mapping(
         await db.prepare(
-            """SELECT ac.submission_id,ac.version,ac.content_status,
-                      s.proposal_title,s.proposal_abstract
-               FROM accepted_sessions ac JOIN submissions s
+            """SELECT ac.source_type,ac.submission_id,ac.version,ac.content_status,
+                      COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS proposal_abstract
+               FROM accepted_sessions ac LEFT JOIN submissions s
                  ON s.organization_id=ac.organization_id AND s.event_id=ac.event_id
                 AND s.id=ac.submission_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND ac.id=?3 LIMIT 1"""
@@ -1100,20 +1118,35 @@ async def _save_session_content(
             now,
         )
     )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
-                      updated_at_ms=?3
-               WHERE organization_id=?4 AND event_id=?5 AND id=?6"""
-        ).bind(
-            body.title,
-            body.abstract,
-            now,
-            organization_id,
-            event_id,
-            session["submission_id"],
+    if str(session["source_type"]) == "organizer_created":
+        batch.add_statement(
+            db.prepare(
+                """UPDATE accepted_sessions SET organizer_title=?1,organizer_abstract=?2
+                   WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND version=?6"""
+            ).bind(
+                body.title,
+                body.abstract,
+                organization_id,
+                event_id,
+                accepted_session_id,
+                body.version,
+            )
         )
-    )
+    else:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
+                          updated_at_ms=?3
+                   WHERE organization_id=?4 AND event_id=?5 AND id=?6"""
+            ).bind(
+                body.title,
+                body.abstract,
+                now,
+                organization_id,
+                event_id,
+                session["submission_id"],
+            )
+        )
     batch.add_statement(
         db.prepare(
             """UPDATE accepted_sessions SET content_status=?1,version=version+1
@@ -1226,7 +1259,7 @@ async def restore_admin_session_content(
     status_code=201,
     tags=["speaker-onboarding"],
 )
-async def create_custom_speaker_task(
+async def create_speaker_task(
     event_id: str,
     body: SpeakerTaskCreate,
     request: Request,
@@ -1258,7 +1291,7 @@ async def create_custom_speaker_task(
                 """SELECT id,event_speaker_id,pending_invitation_id AS invitation_id,
                           CASE WHEN event_speaker_id IS NULL THEN 'invitation'
                                ELSE 'event_speaker' END AS owner_type,
-                          title,state,due_at_ms FROM speaker_tasks WHERE id=?1"""
+                          task_type,title,state,due_at_ms FROM speaker_tasks WHERE id=?1"""
             )
             .bind(task_id)
             .first()
@@ -1303,7 +1336,7 @@ async def create_custom_speaker_task(
                (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
                 submission_id,task_type,title,
                 help_text,destination_type,state,due_at_ms,form_schema_json,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,'custom',?7,?8,'custom','open',?9,?10,?11,?11)"""
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?7,'open',?10,?11,?12,?12)"""
         ).bind(
             task_id,
             event["organization_id"],
@@ -1311,11 +1344,19 @@ async def create_custom_speaker_task(
             body.event_speaker_id if owner is not None else None,
             pending_invitation_id,
             body.submission_id,
+            body.task_type,
             body.title,
             body.help_text,
             body.due_at_ms,
             json.dumps(
-                {"fields": [field.model_dump() for field in body.fields]},
+                {
+                    "fields": [field.model_dump() for field in body.fields],
+                    "upload": {
+                        "enabled": body.upload_enabled,
+                        "allowed_content_types": list(body.allowed_content_types),
+                        "max_file_bytes": body.max_file_bytes,
+                    },
+                },
                 separators=(",", ":"),
             ),
             now,
@@ -1352,6 +1393,7 @@ async def create_custom_speaker_task(
         owner_type="event_speaker" if owner is not None else "invitation",
         event_speaker_id=body.event_speaker_id if owner is not None else None,
         invitation_id=pending_invitation_id,
+        task_type=body.task_type,
         title=body.title,
         state="open",
         due_at_ms=body.due_at_ms,
@@ -1529,9 +1571,11 @@ async def sessionboard_compatible_sessions(
     rows = result_rows(
         await _db(request)
         .prepare(
-            """SELECT ac.id,s.proposal_title,s.proposal_abstract,ai.starts_at_ms,ai.ends_at_ms,
+            """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS proposal_abstract,
+                      ai.starts_at_ms,ai.ends_at_ms,
                       r.name AS room_name,t.name AS track_name
-               FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
+               FROM accepted_sessions ac LEFT JOIN submissions s ON s.id=ac.submission_id
                LEFT JOIN agenda_items ai ON ai.accepted_session_id=ac.id
                  AND ai.revision_id=(SELECT id FROM schedule_revisions
                    WHERE organization_id=ac.organization_id AND event_id=ac.event_id
@@ -1550,11 +1594,23 @@ async def sessionboard_compatible_sessions(
             await _db(request)
             .prepare(
                 """SELECT es.id,p.display_name,p.company,p.job_title,u.email
-                   FROM accepted_sessions ac JOIN submission_speakers ss
-                     ON ss.submission_id=ac.submission_id
-                   JOIN event_speakers es ON es.id=ss.event_speaker_id
+                   FROM accepted_sessions ac
+                   JOIN (
+                     SELECT linked.id AS accepted_session_id,ss.event_speaker_id,
+                            CASE WHEN ss.role='primary' THEN 0 ELSE 1 END AS role_order
+                       FROM accepted_sessions linked
+                       JOIN submission_speakers ss ON ss.submission_id=linked.submission_id
+                     UNION ALL
+                     SELECT participant.accepted_session_id,participant.event_speaker_id,
+                            0 AS role_order
+                       FROM accepted_session_participants participant
+                      WHERE participant.event_speaker_id IS NOT NULL
+                   ) speaker_link ON speaker_link.accepted_session_id=ac.id
+                   JOIN event_speakers es ON es.id=speaker_link.event_speaker_id
                    JOIN people p ON p.id=es.person_id LEFT JOIN users u ON u.id=p.user_id
-                   WHERE ac.id=?1 ORDER BY ss.role DESC,p.display_name"""
+                   WHERE ac.id=?1
+                   GROUP BY es.id,p.display_name,p.company,p.job_title,u.email
+                   ORDER BY MIN(speaker_link.role_order),p.display_name,es.id"""
             )
             .bind(row["id"])
             .all()
@@ -1611,7 +1667,15 @@ async def sessionboard_compatible_speakers(
                       p.links_json,u.email,p.created_at_ms,p.updated_at_ms
                FROM event_speakers es JOIN people p ON p.id=es.person_id
                LEFT JOIN users u ON u.id=p.user_id
-               WHERE es.organization_id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
+               WHERE es.organization_id=?1 AND es.event_id=?2 AND (
+                 es.selection_status='accepted' OR EXISTS (
+                   SELECT 1 FROM accepted_session_participants participant
+                   JOIN accepted_sessions session ON session.id=participant.accepted_session_id
+                   JOIN agenda_items item ON item.accepted_session_id=session.id
+                   JOIN schedule_revisions revision ON revision.id=item.revision_id
+                   WHERE participant.event_speaker_id=es.id
+                     AND session.content_status='approved'
+                     AND revision.status='published'))
                ORDER BY p.display_name,es.id"""
         )
         .bind(event["organization_id"], event_id)
@@ -1679,7 +1743,15 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                         OR EXISTS(SELECT 1 FROM user_headshots uh WHERE uh.user_id=p.user_id))
                         AS has_headshot
                FROM event_speakers es JOIN people p ON p.id=es.person_id
-               WHERE es.organization_id=?1 AND es.event_id=?2 AND es.selection_status='accepted'
+               WHERE es.organization_id=?1 AND es.event_id=?2 AND (
+                 es.selection_status='accepted' OR EXISTS (
+                   SELECT 1 FROM accepted_session_participants participant
+                   JOIN accepted_sessions session ON session.id=participant.accepted_session_id
+                   JOIN agenda_items item ON item.accepted_session_id=session.id
+                   JOIN schedule_revisions revision ON revision.id=item.revision_id
+                   WHERE participant.event_speaker_id=es.id
+                     AND session.content_status='approved'
+                     AND revision.status='published'))
                ORDER BY p.display_name,es.id"""
         )
         .bind(event["organization_id"], event_id)
@@ -1690,16 +1762,21 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         sessions = result_rows(
             await _db(request)
             .prepare(
-                """SELECT ac.id,s.proposal_title,ai.starts_at_ms,ai.ends_at_ms,
+                """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+                          ai.starts_at_ms,ai.ends_at_ms,
                           r.name AS room_name,COALESCE(t.name,'') AS track_name
-                   FROM submission_speakers ss
-                   JOIN accepted_sessions ac ON ac.submission_id=ss.submission_id
-                   JOIN submissions s ON s.id=ss.submission_id
+                   FROM accepted_sessions ac
+                   LEFT JOIN submissions s ON s.id=ac.submission_id
                    JOIN agenda_items ai ON ai.accepted_session_id=ac.id
                    JOIN schedule_revisions sr ON sr.id=ai.revision_id
                    JOIN event_rooms r ON r.id=ai.room_id
                    LEFT JOIN event_tracks t ON t.id=ai.track_id
-                   WHERE ss.event_speaker_id=?1 AND ac.content_status='approved'
+                   WHERE ac.content_status='approved' AND (
+                     EXISTS(SELECT 1 FROM submission_speakers ss
+                       WHERE ss.submission_id=ac.submission_id AND ss.event_speaker_id=?1)
+                     OR EXISTS(SELECT 1 FROM accepted_session_participants participant
+                       WHERE participant.accepted_session_id=ac.id
+                         AND participant.event_speaker_id=?1))
                      AND sr.status='published'
                    ORDER BY ai.starts_at_ms,s.proposal_title"""
             )

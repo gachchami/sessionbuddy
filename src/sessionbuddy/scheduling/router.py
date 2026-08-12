@@ -58,6 +58,8 @@ from .models import (
     EventLabelView,
     EventTrackList,
     EventTrackView,
+    ManualSessionCreate,
+    ManualSessionParticipantView,
     PublicScheduleEventView,
     PublicScheduleItemView,
     PublicScheduleView,
@@ -105,7 +107,6 @@ _RESOURCE_UPDATE = {
     "track": """UPDATE event_tracks SET status=?1,version=version+1,updated_at_ms=?2
                 WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND version=?6""",
 }
-
 
 
 def _db(request: Request):
@@ -200,7 +201,9 @@ def _blob(value: object) -> bytes:
     return converted if isinstance(converted, bytes) else bytes(converted)
 
 
-def _fingerprint(body: AgendaAutoSchedule | AgendaCandidate | AgendaSetup) -> bytes:
+def _fingerprint(
+    body: AgendaAutoSchedule | AgendaCandidate | AgendaSetup | ManualSessionCreate,
+) -> bytes:
     return hashlib.sha256(
         json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
     ).digest()
@@ -224,7 +227,19 @@ async def _speaker_ids(db, organization_id: str, event_id: str, accepted_session
                JOIN submission_speakers ss ON ss.organization_id=ac.organization_id
                  AND ss.event_id=ac.event_id AND ss.submission_id=ac.submission_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND ac.id=?3
-               ORDER BY ss.event_speaker_id"""
+               UNION
+               SELECT participant.event_speaker_id
+               FROM accepted_session_participants participant
+               WHERE participant.organization_id=?1 AND participant.event_id=?2
+                 AND participant.accepted_session_id=?3
+                 AND participant.event_speaker_id IS NOT NULL
+               UNION
+               SELECT 'invite:' || participant.pending_invitation_id AS event_speaker_id
+               FROM accepted_session_participants participant
+               WHERE participant.organization_id=?1 AND participant.event_id=?2
+                 AND participant.accepted_session_id=?3
+                 AND participant.pending_invitation_id IS NOT NULL
+               ORDER BY event_speaker_id"""
         )
         .bind(organization_id, event_id, accepted_session_id)
         .all()
@@ -333,6 +348,7 @@ def _scheduled_item(row: dict) -> AgendaScheduledItemView:
     return AgendaScheduledItemView(
         id=str(row["id"]),
         session_id=str(row["session_id"]),
+        source_type=str(row["source_type"]),
         title=str(row["title"]),
         abstract=str(row["abstract"]),
         content_status=str(row["content_status"]),
@@ -345,6 +361,10 @@ def _scheduled_item(row: dict) -> AgendaScheduledItemView:
         track_id=str(row["track_id"]) if row["track_id"] is not None else None,
         track_name=str(row["track_name"]) if row["track_name"] is not None else None,
         speaker_names=str(row["speaker_names"]),
+        participants=[
+            ManualSessionParticipantView.model_validate(value)
+            for value in json.loads(str(row.get("participants_json") or "[]"))
+        ],
         version=int(row["version"]),
         labels=[_agenda_label(label) for label in row["labels"]],
         label_ids=[str(label_id) for label_id in row["label_ids"]],
@@ -354,6 +374,7 @@ def _scheduled_item(row: dict) -> AgendaScheduledItemView:
 def _unscheduled_item(row: dict) -> AgendaUnscheduledSessionView:
     return AgendaUnscheduledSessionView(
         session_id=str(row["session_id"]),
+        source_type=str(row["source_type"]),
         title=str(row["title"]),
         abstract=str(row["abstract"]),
         content_status=str(row["content_status"]),
@@ -362,8 +383,43 @@ def _unscheduled_item(row: dict) -> AgendaUnscheduledSessionView:
         track_id=str(row["track_id"]) if row["track_id"] is not None else None,
         track_name=str(row["track_name"]) if row["track_name"] is not None else None,
         speaker_names=str(row["speaker_names"]),
+        participants=[
+            ManualSessionParticipantView.model_validate(value)
+            for value in json.loads(str(row.get("participants_json") or "[]"))
+        ],
         labels=[_agenda_label(label) for label in row["labels"]],
         label_ids=[str(label_id) for label_id in row["label_ids"]],
+    )
+
+
+async def _manual_session_candidates(db, organization_id: str, event_id: str):
+    return result_rows(
+        await db.prepare(
+            """SELECT es.id,p.display_name,'active' AS recipient_state
+                 FROM event_speakers es JOIN people p
+                   ON p.organization_id=es.organization_id AND p.id=es.person_id
+                WHERE es.organization_id=?1 AND es.event_id=?2 AND es.status!='withdrawn'
+                  AND es.selection_status IN ('submitted','accepted')
+               UNION ALL
+               SELECT invitation.id,
+                      COALESCE(NULLIF(trim(invitation.display_name),''),'Invited speaker'),
+                      'invited' AS recipient_state
+                 FROM identity_invitations invitation
+                WHERE invitation.organization_id=?1 AND invitation.event_id=?2
+                  AND invitation.role='speaker' AND invitation.status='pending'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM event_speakers existing
+                    JOIN people person ON person.organization_id=existing.organization_id
+                                      AND person.id=existing.person_id
+                    JOIN users account ON account.id=person.user_id
+                    WHERE existing.organization_id=invitation.organization_id
+                      AND existing.event_id=invitation.event_id
+                      AND lower(trim(account.email))=invitation.normalized_email
+                      AND existing.status!='withdrawn')
+               ORDER BY 2 COLLATE NOCASE,1"""
+        )
+        .bind(organization_id, event_id)
+        .all()
     )
 
 
@@ -379,16 +435,30 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
     )
     items = result_rows(
         await db.prepare(
-            """SELECT ai.id,ai.accepted_session_id AS session_id,s.proposal_title AS title,
-                      s.proposal_abstract AS abstract,ac.content_status,
+            """SELECT ai.id,ai.accepted_session_id AS session_id,ac.source_type,
+                      COALESCE(s.proposal_title,ac.organizer_title) AS title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS abstract,
+                      ac.content_status,
                       ac.version AS content_version,ac.label_version,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                       ai.room_id,r.name AS room_name,ai.track_id,t.name AS track_name,ai.version,
-                      COALESCE((SELECT group_concat(ss.snapshot_name, ', ')
+                      CASE WHEN ac.source_type='organizer_created' THEN
+                        COALESCE((SELECT group_concat(participant.display_name_snapshot, ', ')
+                          FROM accepted_session_participants participant
+                          WHERE participant.accepted_session_id=ac.id),'')
+                      ELSE COALESCE((SELECT group_concat(ss.snapshot_name, ', ')
                         FROM submission_speakers ss WHERE ss.submission_id=s.id),s.speaker_name)
-                        AS speaker_names
+                      END AS speaker_names,
+                      COALESCE((SELECT json_group_array(json_object(
+                        'id',COALESCE(participant.event_speaker_id,participant.pending_invitation_id),
+                        'display_name',participant.display_name_snapshot,
+                        'recipient_state',CASE WHEN participant.event_speaker_id IS NULL
+                          THEN 'invited' ELSE 'active' END))
+                        FROM accepted_session_participants participant
+                        WHERE participant.accepted_session_id=ac.id),'[]') AS participants_json
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
-               JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
+               LEFT JOIN submissions s ON s.id=ac.submission_id
+               JOIN event_rooms r ON r.id=ai.room_id
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
                ORDER BY ai.starts_at_ms,ai.id"""
@@ -398,21 +468,34 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
     )
     unscheduled = result_rows(
         await db.prepare(
-            """SELECT ac.id AS session_id,s.proposal_title AS title,
-                      s.proposal_abstract AS abstract,ac.content_status,
+            """SELECT ac.id AS session_id,ac.source_type,
+                      COALESCE(s.proposal_title,ac.organizer_title) AS title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS abstract,
+                      ac.content_status,
                       ac.version AS content_version,ac.label_version,
                       t.id AS track_id,t.name AS track_name,
-                      COALESCE((SELECT group_concat(ss.snapshot_name, ', ')
+                      CASE WHEN ac.source_type='organizer_created' THEN
+                        COALESCE((SELECT group_concat(participant.display_name_snapshot, ', ')
+                          FROM accepted_session_participants participant
+                          WHERE participant.accepted_session_id=ac.id),'')
+                      ELSE COALESCE((SELECT group_concat(ss.snapshot_name, ', ')
                         FROM submission_speakers ss WHERE ss.submission_id=s.id),s.speaker_name)
-                        AS speaker_names
-               FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
+                      END AS speaker_names,
+                      COALESCE((SELECT json_group_array(json_object(
+                        'id',COALESCE(participant.event_speaker_id,participant.pending_invitation_id),
+                        'display_name',participant.display_name_snapshot,
+                        'recipient_state',CASE WHEN participant.event_speaker_id IS NULL
+                          THEN 'invited' ELSE 'active' END))
+                        FROM accepted_session_participants participant
+                        WHERE participant.accepted_session_id=ac.id),'[]') AS participants_json
+               FROM accepted_sessions ac LEFT JOIN submissions s ON s.id=ac.submission_id
                LEFT JOIN event_tracks t ON t.organization_id=s.organization_id
                  AND t.event_id=s.event_id AND t.status='active'
                  AND lower(trim(t.name))=lower(trim(s.routed_track))
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
                    AND ai.accepted_session_id=ac.id)
-               ORDER BY s.proposal_title,ac.id"""
+               ORDER BY title,ac.id"""
         )
         .bind(organization_id, event_id, revision["id"])
         .all()
@@ -459,6 +542,7 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
     )
     await _attach_session_labels(db, organization_id, event_id, items, actor)
     await _attach_session_labels(db, organization_id, event_id, unscheduled, actor)
+    participant_rows = await _manual_session_candidates(db, organization_id, event_id)
     return AdminAgendaView(
         event=AgendaEventView(
             id=str(event["id"]),
@@ -490,6 +574,14 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
         archived_tracks=[_agenda_resource(track) for track in archived_tracks],
         archived_labels=archived_labels,
         can_manage_resource_lifecycle=_can_manage_event(actor, event_id),
+        session_participants=[
+            ManualSessionParticipantView(
+                id=str(row["id"]),
+                display_name=str(row["display_name"]),
+                recipient_state=str(row["recipient_state"]),
+            )
+            for row in participant_rows
+        ],
     )
 
 
@@ -499,13 +591,277 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
     tags=["agenda"],
 )
 async def get_admin_agenda(event_id: str, request: Request) -> AdminAgendaView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=False
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=False)
     revision = await _revision(_db(request), str(event["organization_id"]), event_id)
     if revision is None:
         raise HTTPException(status_code=404)
     return await _agenda_model(_db(request), event, revision, auth.actor)
+
+
+@scheduling_router.post(
+    "/api/v1/admin/events/{event_id}/sessions",
+    response_model=AdminAgendaView,
+    status_code=201,
+    tags=["agenda"],
+)
+async def create_organizer_session(
+    event_id: str,
+    request: Request,
+    body: ManualSessionCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> AdminAgendaView:
+    """Create a program session without manufacturing a CFP acceptance.
+
+    Pending invitees remain invitations. Their participant row is linked to an
+    event speaker only when the invitation is accepted.
+    """
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
+    db, organization_id = _db(request), str(event["organization_id"])
+    revision = await _revision(db, organization_id, event_id)
+    if revision is None:
+        raise HTTPException(status_code=409, detail="Set up the agenda first")
+    key, fingerprint = _key(idempotency_key), _fingerprint(body)
+    route = "POST /api/v1/admin/events/{event_id}/sessions"
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND event_id=?4 AND state='completed'"""
+        )
+        .bind(auth.actor.user_id, route, hashlib.sha256(key.encode()).digest(), event_id)
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return await _agenda_model(db, event, revision, auth.actor)
+    candidates = await _manual_session_candidates(db, organization_id, event_id)
+    by_id = {str(row["id"]): row for row in candidates}
+    if any(participant_id not in by_id for participant_id in body.participant_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="Choose active speakers or pending speaker invitees from this event",
+        )
+    now, session_id = utc_now_ms(), new_id()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO accepted_sessions
+               (id,organization_id,event_id,source_type,submission_id,decision_id,
+                organizer_title,organizer_abstract,created_at_ms,content_status,
+                version,label_version)
+               VALUES (?1,?2,?3,'organizer_created',NULL,NULL,?4,?5,?6,'draft',1,1)"""
+        ).bind(session_id, organization_id, event_id, body.title, body.abstract, now)
+    )
+    for participant_id in body.participant_ids:
+        participant = by_id[participant_id]
+        active = str(participant["recipient_state"]) == "active"
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO accepted_session_participants
+                   (id,organization_id,event_id,accepted_session_id,event_speaker_id,
+                    pending_invitation_id,display_name_snapshot,created_at_ms,updated_at_ms)
+                   VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?8)"""
+            ).bind(
+                new_id(),
+                organization_id,
+                event_id,
+                session_id,
+                participant_id if active else None,
+                None if active else participant_id,
+                participant["display_name"],
+                now,
+            )
+        )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_content_versions
+               (id,organization_id,event_id,accepted_session_id,version,title,abstract,
+                content_status,changed_by_user_id,created_at_ms)
+               VALUES (?1,?2,?3,?4,1,?5,?6,'draft',?7,?8)"""
+        ).bind(
+            new_id(),
+            organization_id,
+            event_id,
+            session_id,
+            body.title,
+            body.abstract,
+            auth.actor.user_id,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.session.create",
+            target_type="accepted_session",
+            target_id=session_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={
+                "source_type": "organizer_created",
+                "participant_count": len(body.participant_ids),
+            },
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="accepted_session",
+        resource_id=session_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409, detail="The session could not be created") from exc
+    return await _agenda_model(db, event, revision, auth.actor)
+
+
+@scheduling_router.delete(
+    "/api/v1/admin/events/{event_id}/sessions/{session_id}",
+    status_code=204,
+    tags=["agenda"],
+)
+async def delete_manual_session(event_id: str, session_id: str, request: Request) -> Response:
+    """Remove an organizer-created session that has never been scheduled."""
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
+    db, organization_id = _db(request), str(event["organization_id"])
+    session = row_mapping(
+        await db.prepare(
+            """SELECT id,source_type,
+                      EXISTS(SELECT 1 FROM agenda_items item
+                        WHERE item.accepted_session_id=accepted_sessions.id) AS scheduled
+               FROM accepted_sessions
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
+        )
+        .bind(session_id, organization_id, event_id)
+        .first()
+    )
+    if session is None:
+        return Response(status_code=204)
+    if str(session["source_type"]) != "organizer_created" or bool(session["scheduled"]):
+        raise HTTPException(
+            status_code=409,
+            detail="Only an unscheduled organizer-created session can be deleted",
+        )
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    for statement in (
+        "DELETE FROM accepted_session_labels WHERE accepted_session_id=?1",
+        "DELETE FROM session_content_versions WHERE accepted_session_id=?1",
+        "DELETE FROM accepted_session_participants WHERE accepted_session_id=?1",
+    ):
+        batch.add_statement(db.prepare(statement).bind(session_id))
+    batch.add_statement(
+        db.prepare(
+            "DELETE FROM accepted_sessions WHERE id=?1 AND organization_id=?2 AND event_id=?3"
+        ).bind(session_id, organization_id, event_id)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.session.delete",
+            target_type="accepted_session",
+            target_id=session_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={"source_type": "organizer_created"},
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409, detail="The session could not be deleted") from exc
+    return Response(status_code=204)
+
+
+@scheduling_router.delete(
+    "/api/v1/admin/events/{event_id}/sessions/{session_id}/participants/{participant_id}",
+    status_code=204,
+    tags=["agenda"],
+)
+async def remove_manual_session_participant(
+    event_id: str, session_id: str, participant_id: str, request: Request
+) -> Response:
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
+    db, organization_id = _db(request), str(event["organization_id"])
+    participant = row_mapping(
+        await db.prepare(
+            """SELECT participant.id,participant.event_speaker_id
+               FROM accepted_session_participants participant
+               JOIN accepted_sessions session ON session.id=participant.accepted_session_id
+               WHERE participant.organization_id=?1 AND participant.event_id=?2
+                 AND participant.accepted_session_id=?3
+                 AND COALESCE(participant.event_speaker_id,participant.pending_invitation_id)=?4
+                 AND session.source_type='organizer_created'
+                 AND (SELECT COUNT(*) FROM accepted_session_participants remaining
+                       WHERE remaining.accepted_session_id=session.id)>1
+                 AND NOT EXISTS (
+                   SELECT 1 FROM agenda_items item JOIN schedule_revisions revision
+                     ON revision.id=item.revision_id
+                   WHERE item.accepted_session_id=session.id AND revision.status='published')
+               LIMIT 1"""
+        )
+        .bind(organization_id, event_id, session_id, participant_id)
+        .first()
+    )
+    if participant is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Keep at least one participant and edit only an unpublished organizer session",
+        )
+    now = utc_now_ms()
+    batch = CommandBatch(db)
+    if participant["event_speaker_id"] is not None:
+        batch.add_statement(
+            db.prepare(
+                """DELETE FROM agenda_item_speakers
+                   WHERE event_speaker_id=?1 AND agenda_item_id IN (
+                     SELECT id FROM agenda_items WHERE accepted_session_id=?2)"""
+            ).bind(participant["event_speaker_id"], session_id)
+        )
+    batch.add_statement(
+        db.prepare("DELETE FROM accepted_session_participants WHERE id=?1").bind(participant["id"])
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="agenda.session.participant.remove",
+            target_type="accepted_session",
+            target_id=session_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            organization_id=organization_id,
+            event_id=event_id,
+            occurred_at_ms=now,
+            metadata={"participant_id": participant_id},
+        )
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409, detail="The participant could not be removed") from exc
+    return Response(status_code=204)
 
 
 @scheduling_router.post(
@@ -520,9 +876,7 @@ async def setup_admin_agenda(
     body: AgendaSetup,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> AdminAgendaView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     key, fingerprint = _key(idempotency_key), _fingerprint(body)
     route = "POST /api/v1/admin/events/{event_id}/agenda/setup"
@@ -621,9 +975,7 @@ async def _create_agenda_resource(
     *,
     resource: str,
 ) -> AdminAgendaView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     revision = await _revision(db, organization_id, event_id)
     if revision is None:
@@ -685,9 +1037,7 @@ async def _update_agenda_resource(
     *,
     resource: str,
 ) -> AdminAgendaView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     revision = await _revision(db, organization_id, event_id)
     if revision is None:
@@ -781,9 +1131,7 @@ async def create_agenda_room(
 async def update_agenda_room(
     event_id: str, room_id: str, request: Request, body: AgendaResourceUpdate
 ) -> AdminAgendaView:
-    return await _update_agenda_resource(
-        event_id, room_id, request, body, resource="room"
-    )
+    return await _update_agenda_resource(event_id, room_id, request, body, resource="room")
 
 
 @scheduling_router.post(
@@ -803,9 +1151,7 @@ async def create_agenda_track(
     tags=["agenda"],
 )
 async def list_event_tracks(event_id: str, request: Request) -> EventTrackList:
-    event, _ = await _event_scope(
-        request, event_id, Permission.FORM_MANAGE, mutation=False
-    )
+    event, _ = await _event_scope(request, event_id, Permission.FORM_MANAGE, mutation=False)
     tracks = result_rows(
         await _db(request)
         .prepare(
@@ -838,9 +1184,7 @@ async def list_event_tracks(event_id: str, request: Request) -> EventTrackList:
 async def update_agenda_track(
     event_id: str, track_id: str, request: Request, body: AgendaResourceUpdate
 ) -> AdminAgendaView:
-    return await _update_agenda_resource(
-        event_id, track_id, request, body, resource="track"
-    )
+    return await _update_agenda_resource(event_id, track_id, request, body, resource="track")
 
 
 @scheduling_router.get(
@@ -849,9 +1193,7 @@ async def update_agenda_track(
     tags=["agenda"],
 )
 async def list_event_labels(event_id: str, request: Request) -> EventLabelList:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=False
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=False)
     rows = await _event_label_rows(
         _db(request), str(event["organization_id"]), event_id, auth.actor
     )
@@ -867,9 +1209,7 @@ async def list_event_labels(event_id: str, request: Request) -> EventLabelList:
 async def create_event_label(
     event_id: str, request: Request, body: EventLabelCreate
 ) -> EventLabelView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     active = row_mapping(
         await db.prepare(
@@ -948,9 +1288,7 @@ async def update_event_label(
     request: Request,
     body: EventLabelUpdate,
 ) -> EventLabelView:
-    event, _ = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=False
-    )
+    event, _ = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=False)
     db, organization_id = _db(request), str(event["organization_id"])
     current = row_mapping(
         await db.prepare(
@@ -1070,9 +1408,7 @@ async def assign_session_labels(
     request: Request,
     body: SessionLabelAssignmentUpdate,
 ) -> SessionLabelAssignmentView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     session = row_mapping(
         await db.prepare(
@@ -1182,9 +1518,7 @@ async def auto_schedule_agenda(
     body: AgendaAutoSchedule,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> AutoScheduledAgendaView:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     revision = await _revision(db, organization_id, event_id)
     if revision is None:
@@ -1222,12 +1556,12 @@ async def auto_schedule_agenda(
         raise HTTPException(status_code=409, detail="Add an active room first")
     sessions = result_rows(
         await db.prepare(
-            """SELECT ac.id,s.proposal_title
-               FROM accepted_sessions ac JOIN submissions s ON s.id=ac.submission_id
+            """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS title
+               FROM accepted_sessions ac LEFT JOIN submissions s ON s.id=ac.submission_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
                    AND ai.accepted_session_id=ac.id)
-               ORDER BY s.proposal_title,ac.id"""
+               ORDER BY title,ac.id"""
         )
         .bind(organization_id, event_id, revision["id"])
         .all()
@@ -1235,11 +1569,23 @@ async def auto_schedule_agenda(
     existing = result_rows(
         await db.prepare(
             """SELECT ai.id,ai.room_id,ai.starts_at_ms,ai.ends_at_ms,
-                      COALESCE(group_concat(ais.event_speaker_id, ','),'') AS speaker_ids
-               FROM agenda_items ai LEFT JOIN agenda_item_speakers ais
-                 ON ais.agenda_item_id=ai.id AND ais.revision_id=ai.revision_id
-               WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
-               GROUP BY ai.id"""
+                      COALESCE((SELECT group_concat(identity, ',') FROM (
+                        SELECT ais.event_speaker_id AS identity
+                          FROM agenda_item_speakers ais
+                         WHERE ais.agenda_item_id=ai.id AND ais.revision_id=ai.revision_id
+                        UNION
+                        SELECT participant.event_speaker_id
+                          FROM accepted_session_participants participant
+                         WHERE participant.accepted_session_id=ai.accepted_session_id
+                           AND participant.event_speaker_id IS NOT NULL
+                        UNION
+                        SELECT 'invite:' || participant.pending_invitation_id
+                          FROM accepted_session_participants participant
+                         WHERE participant.accepted_session_id=ai.accepted_session_id
+                           AND participant.pending_invitation_id IS NOT NULL
+                      )),'') AS speaker_ids
+               FROM agenda_items ai
+               WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3"""
         )
         .bind(organization_id, event_id, revision["id"])
         .all()
@@ -1270,10 +1616,7 @@ async def auto_schedule_agenda(
                     for value in allocations
                     if value["start"] < candidate + duration
                     and value["end"] > candidate
-                    and (
-                        value["room_id"] == room_id
-                        or bool(value["speakers"] & speaker_ids)
-                    )
+                    and (value["room_id"] == room_id or bool(value["speakers"] & speaker_ids))
                 ]
                 if not conflicts:
                     choices.append((candidate, room_id))
@@ -1327,6 +1670,8 @@ async def auto_schedule_agenda(
             )
         )
         for speaker_id in item["speakers"]:
+            if str(speaker_id).startswith("invite:"):
+                continue
             batch.add_statement(
                 db.prepare(
                     """INSERT INTO agenda_item_speakers
@@ -1384,10 +1729,18 @@ async def _slot(request: Request, event, revision, body: AgendaCandidate) -> Age
         _db(request), str(event["organization_id"]), str(event["id"]), body.session_id
     )
     if not speaker_ids:
-        raise HTTPException(status_code=400)
-    event_date = body.event_date or _agenda_date(
-        body.start_at_ms, str(event["time_zone"])
-    )
+        session_exists = await (
+            _db(request)
+            .prepare(
+                """SELECT id FROM accepted_sessions
+                   WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+            )
+            .bind(event["organization_id"], event["id"], body.session_id)
+            .first("id")
+        )
+        if session_exists is None:
+            raise HTTPException(status_code=404)
+    event_date = body.event_date or _agenda_date(body.start_at_ms, str(event["time_zone"]))
     return AgendaSlot(
         organization_id=str(event["organization_id"]),
         event_id=str(event["id"]),
@@ -1440,16 +1793,15 @@ async def preview_agenda(
     return AgendaPreviewView(valid=not conflicts, conflicts=_conflict_view(conflicts))
 
 
-async def _saved_item(
-    db, organization_id: str, event_id: str, item_id: str
-) -> AgendaItemView:
+async def _saved_item(db, organization_id: str, event_id: str, item_id: str) -> AgendaItemView:
     row = row_mapping(
         await db.prepare(
-            """SELECT ai.id,ai.accepted_session_id AS session_id,s.proposal_title AS title,
+            """SELECT ai.id,ai.accepted_session_id AS session_id,
+                  COALESCE(s.proposal_title,ac.organizer_title) AS title,
                   ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                   ai.room_id,r.name AS room_name,ai.track_id,t.name AS track_name,ai.version
            FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
-           JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
+           LEFT JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
            LEFT JOIN event_tracks t ON t.id=ai.track_id
            WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.id=?3"""
         )
@@ -1539,6 +1891,8 @@ async def _save_item(
             )
         )
         for speaker_id in slot.speaker_ids:
+            if speaker_id.startswith("invite:"):
+                continue
             batch.add_statement(
                 db.prepare(
                     """INSERT INTO agenda_item_speakers
@@ -1653,9 +2007,7 @@ async def unschedule_agenda_item(
     version: int = Query(ge=1),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> Response:
-    event, auth = await _event_scope(
-        request, event_id, Permission.AGENDA_MANAGE, mutation=True
-    )
+    event, auth = await _event_scope(request, event_id, Permission.AGENDA_MANAGE, mutation=True)
     db, organization_id = _db(request), str(event["organization_id"])
     revision = await _revision(db, organization_id, event_id)
     if revision is None:
@@ -1811,9 +2163,11 @@ async def publish_agenda(
         raise HTTPException(status_code=409)
     item_rows = result_rows(
         await db.prepare(
-            """SELECT ai.*,s.proposal_title,s.proposal_abstract,r.name AS room_name
+            """SELECT ai.*,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS proposal_abstract,
+                      r.name AS room_name
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
-               JOIN submissions s ON s.id=ac.submission_id
+               LEFT JOIN submissions s ON s.id=ac.submission_id
                JOIN event_rooms r ON r.id=ai.room_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
                ORDER BY ai.id"""
@@ -1828,7 +2182,14 @@ async def publish_agenda(
             """SELECT ais.agenda_item_id,ais.event_speaker_id
                FROM agenda_item_speakers ais
                WHERE ais.organization_id=?1 AND ais.event_id=?2 AND ais.revision_id=?3
-               ORDER BY ais.agenda_item_id,ais.event_speaker_id"""
+               UNION
+               SELECT item.id,participant.event_speaker_id
+                 FROM agenda_items item
+                 JOIN accepted_session_participants participant
+                   ON participant.accepted_session_id=item.accepted_session_id
+                WHERE item.organization_id=?1 AND item.event_id=?2 AND item.revision_id=?3
+                  AND participant.event_speaker_id IS NOT NULL
+               ORDER BY agenda_item_id,event_speaker_id"""
         )
         .bind(organization_id, event_id, body.revision_id)
         .all()
@@ -1848,6 +2209,23 @@ async def publish_agenda(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    for speaker_row in speaker_rows:
+        batch.add_statement(
+            db.prepare(
+                """INSERT OR IGNORE INTO agenda_item_speakers
+                   (id,organization_id,event_id,revision_id,agenda_item_id,
+                    event_speaker_id,created_at_ms)
+                   VALUES (?1,?2,?3,?4,?5,?6,?7)"""
+            ).bind(
+                new_id(),
+                organization_id,
+                event_id,
+                body.revision_id,
+                speaker_row["agenda_item_id"],
+                speaker_row["event_speaker_id"],
+                now,
+            )
+        )
     batch.add_statement(
         db.prepare(
             """UPDATE schedule_revisions SET status='superseded',version=version+1,
@@ -2069,12 +2447,17 @@ async def get_schedule(event_id: str, request: Request) -> ScheduleView:
     items = result_rows(
         await _db(request)
         .prepare(
-            """SELECT ai.id,ac.id AS session_id,s.proposal_title AS title,
+            """SELECT ai.id,ac.id AS session_id,
+                  COALESCE(s.proposal_title,ac.organizer_title) AS title,
                   ai.starts_at_ms AS start_at_ms,
                   ai.ends_at_ms AS end_at_ms,r.name AS room_name,t.name AS track_name,
-                  COALESCE(group_concat(ss.snapshot_name, ', '),'') AS speaker_names
+                  CASE WHEN ac.source_type='organizer_created' THEN
+                    COALESCE((SELECT group_concat(participant.display_name_snapshot, ', ')
+                      FROM accepted_session_participants participant
+                      WHERE participant.accepted_session_id=ac.id),'')
+                  ELSE COALESCE(group_concat(ss.snapshot_name, ', '),'') END AS speaker_names
            FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
-           JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
+           LEFT JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
            LEFT JOIN event_tracks t ON t.id=ai.track_id
            LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
            WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
@@ -2083,9 +2466,7 @@ async def get_schedule(event_id: str, request: Request) -> ScheduleView:
         .bind(event["organization_id"], event_id, revision["id"])
         .all()
     )
-    await _attach_session_labels(
-        _db(request), str(event["organization_id"]), event_id, items
-    )
+    await _attach_session_labels(_db(request), str(event["organization_id"]), event_id, items)
     return ScheduleView(
         event=ScheduleEventView(
             id=str(event["id"]),
@@ -2130,20 +2511,14 @@ async def get_public_schedule(
                 name=str(event["name"]),
                 time_zone=str(event["time_zone"]),
                 accent_color=(
-                    str(event["accent_color"])
-                    if event["accent_color"] is not None
-                    else None
+                    str(event["accent_color"]) if event["accent_color"] is not None else None
                 ),
                 logo_url=str(event["logo_url"]) if event["logo_url"] is not None else None,
                 cover_image_url=(
-                    str(event["cover_image_url"])
-                    if event["cover_image_url"] is not None
-                    else None
+                    str(event["cover_image_url"]) if event["cover_image_url"] is not None else None
                 ),
                 website_url=(
-                    str(event["website_url"])
-                    if event["website_url"] is not None
-                    else None
+                    str(event["website_url"]) if event["website_url"] is not None else None
                 ),
             ),
             revision=None,
@@ -2151,13 +2526,20 @@ async def get_public_schedule(
         )
     items = result_rows(
         await db.prepare(
-            """SELECT ai.id,ac.id AS session_id,s.proposal_title AS title,
-                      s.proposal_abstract AS description,
+            """SELECT ai.id,ac.id AS session_id,
+                      COALESCE(s.proposal_title,ac.organizer_title) AS title,
+                      COALESCE(s.proposal_abstract,ac.organizer_abstract) AS description,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                       r.name AS room_name,t.name AS track_name,
-                      COALESCE(group_concat(ss.snapshot_name, ', '),'') AS speaker_names
+                      CASE WHEN ac.source_type='organizer_created' THEN
+                        COALESCE((SELECT group_concat(participant.display_name_snapshot, ', ')
+                          FROM accepted_session_participants participant
+                          WHERE participant.accepted_session_id=ac.id
+                            AND participant.event_speaker_id IS NOT NULL),'')
+                      ELSE COALESCE(group_concat(ss.snapshot_name, ', '),'') END AS speaker_names
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
-               JOIN submissions s ON s.id=ac.submission_id JOIN event_rooms r ON r.id=ai.room_id
+               LEFT JOIN submissions s ON s.id=ac.submission_id
+               JOIN event_rooms r ON r.id=ai.room_id
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
@@ -2178,13 +2560,9 @@ async def get_public_schedule(
             ),
             logo_url=str(event["logo_url"]) if event["logo_url"] is not None else None,
             cover_image_url=(
-                str(event["cover_image_url"])
-                if event["cover_image_url"] is not None
-                else None
+                str(event["cover_image_url"]) if event["cover_image_url"] is not None else None
             ),
-            website_url=(
-                str(event["website_url"]) if event["website_url"] is not None else None
-            ),
+            website_url=(str(event["website_url"]) if event["website_url"] is not None else None),
         ),
         revision=ScheduleRevisionView(
             id=str(revision["id"]),

@@ -15,6 +15,7 @@
     previewTimer: null,
     previewToken: 0,
     pendingArchive: null,
+    pendingDeleteSession: null,
     publishMutation: null,
   };
   const byId = (id) => document.getElementById(id);
@@ -172,6 +173,30 @@
       );
     }
     node.append(make("p", item.content_status === "approved" ? "Public content approved" : "Content draft", "help"));
+    if (item.source_type === "organizer_created" && item.participants?.length > 1) {
+      const people = make("details", undefined, "session-participants");
+      people.append(make("summary", `Participants (${item.participants.length})`));
+      item.participants.forEach((participant) => {
+        const removeParticipant = make("button", `Remove ${participant.display_name}`, "tertiary danger-text");
+        removeParticipant.type = "button";
+        removeParticipant.addEventListener("click", async () => {
+          removeParticipant.disabled = true;
+          try {
+            await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(item.session_id)}/participants/${encodeURIComponent(participant.id)}`, {
+              method: "DELETE",
+              headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+            });
+            await load(false);
+            status(`${participant.display_name} removed from the session.`);
+          } catch (error) {
+            status(window.SessionBuddyApi.message(error, "The participant could not be removed."), true);
+            removeParticipant.disabled = false;
+          }
+        });
+        people.append(removeParticipant);
+      });
+      node.append(people);
+    }
     const edit = make("button", scheduled ? "Edit schedule" : "Schedule", "secondary");
     edit.type = "button";
     edit.setAttribute(
@@ -180,6 +205,16 @@
     );
     edit.addEventListener("click", () => openEditor(item));
     node.append(edit);
+    if (!scheduled && item.source_type === "organizer_created") {
+      const remove = make("button", "Delete session", "tertiary danger-text");
+      remove.type = "button";
+      remove.addEventListener("click", () => {
+        state.pendingDeleteSession = item;
+        byId("delete-session-summary").textContent = `“${item.title}” will be deleted.`;
+        byId("delete-session-dialog").showModal();
+      });
+      node.append(remove);
+    }
     node.addEventListener("dragstart", (event) => {
       state.selected = item;
       node.classList.add("dragging");
@@ -195,6 +230,18 @@
     return node;
   }
   function renderResources() {
+    const participantSelect = byId("manual-session-form").elements.participant_ids;
+    participantSelect.replaceChildren();
+    (state.model.session_participants || []).forEach((participant) => {
+      const option = make(
+        "option",
+        participant.recipient_state === "invited"
+          ? `${participant.display_name} — invited, awaiting acceptance`
+          : participant.display_name,
+      );
+      option.value = participant.id;
+      participantSelect.append(option);
+    });
     const renderList = (kind, values, archivedValues = []) => {
       const list = byId(`${kind}-list`);
       list.replaceChildren();
@@ -316,7 +363,7 @@
           "li",
           model.items.length
             ? "All accepted sessions are scheduled."
-            : "No accepted sessions are ready yet. Accept proposals after review to schedule them.",
+            : "No sessions are ready yet. Accept a proposal or create a session under Schedule tools.",
           "empty",
         ),
       );
@@ -335,7 +382,7 @@
     byId("empty").hidden = model.items.length !== 0;
     byId("empty").querySelector("p").textContent = model.unscheduled_sessions.length
       ? "Add an accepted session from the unscheduled list."
-      : "Accepted sessions will appear here after review.";
+      : "Accepted proposals and organizer-created sessions will appear here.";
     [...groups].sort(([left], [right]) => left.localeCompare(right)).forEach(
       ([name, items]) => {
         const section = make("section", undefined, "agenda-group");
@@ -949,6 +996,46 @@
       button.disabled = state.model?.unscheduled_sessions.length === 0;
     }
   });
+  byId("manual-session-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const participantIds = [...form.elements.participant_ids.selectedOptions]
+      .map((option) => option.value);
+    if (!participantIds.length) {
+      form.elements.participant_ids.setCustomValidity("Choose at least one participant.");
+      form.elements.participant_ids.reportValidity();
+      return;
+    }
+    form.elements.participant_ids.setCustomValidity("");
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      state.model = await api(
+        `/api/v1/admin/events/${encodeURIComponent(eventId)}/sessions`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": state.csrf,
+            "idempotency-key": key(),
+          },
+          body: JSON.stringify({
+            title: form.elements.title.value.trim(),
+            abstract: form.elements.abstract.value.trim(),
+            participant_ids: participantIds,
+          }),
+        },
+      );
+      form.reset();
+      render();
+      status("Session created and added to the unscheduled list.");
+    } catch (error) {
+      status(error.message || "The session could not be created.", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
   byId("agenda-setup-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -998,6 +1085,34 @@
     "click",
     () => load().catch(() => status("Agenda could not be refreshed.", true)),
   );
+  byId("cancel-delete-session").addEventListener("click", () => {
+    state.pendingDeleteSession = null;
+    byId("delete-session-dialog").close();
+  });
+  byId("delete-session-dialog").addEventListener("cancel", () => {
+    state.pendingDeleteSession = null;
+  });
+  byId("delete-session-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const item = state.pendingDeleteSession;
+    if (!item) return;
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/sessions/${encodeURIComponent(item.session_id)}`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+      });
+      state.pendingDeleteSession = null;
+      byId("delete-session-dialog").close();
+      await load(false);
+      status("Session deleted.");
+    } catch (error) {
+      status(window.SessionBuddyApi.message(error, "The session could not be deleted."), true);
+    } finally {
+      button.disabled = false;
+    }
+  });
   byId("publish").addEventListener("click", () => {
     const scheduled = state.model?.items.length || 0;
     const hiddenDrafts = state.model?.items.filter((item) => item.content_status !== "approved").length || 0;

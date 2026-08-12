@@ -290,7 +290,16 @@ class D1CommunicationsService:
                               -- queue_speaker_message renders what it sends from this same
                               -- query, so a newest-wins title here is not a preview artefact:
                               -- it is the text mailed to the speaker.
-                              COALESCE((SELECT s.proposal_title
+                              COALESCE((SELECT ac.organizer_title
+                                FROM accepted_sessions ac
+                                JOIN accepted_session_participants participant
+                                  ON participant.accepted_session_id=ac.id
+                                WHERE ac.organization_id=es.organization_id
+                                  AND ac.event_id=es.event_id
+                                  AND participant.event_speaker_id=es.id
+                                  AND ac.source_type='organizer_created'
+                                ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+                               (SELECT s.proposal_title
                                 FROM submission_speakers ss JOIN submissions s
                                   ON s.organization_id=ss.organization_id
                                  AND s.event_id=ss.event_id AND s.id=ss.submission_id

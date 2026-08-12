@@ -276,15 +276,15 @@
       item.append(heading);
       if (help) item.append(help);
       item.append(meta);
-      if (["profile", "biography", "headshot"].includes(task.task_type)) {
-        const action = make("a", task.task_type === "headshot" ? "Manage headshot" : "Edit profile", "task-link");
+      if (["profile", "biography"].includes(task.task_type)) {
+        const action = make("a", "Edit profile", "task-link");
         action.href = "/account";
         item.append(action);
       } else if (task.task_type === "custom") {
         item.append(customTaskForm(task, list.dataset.eventId));
-      } else if (["slides", "supporting_document"].includes(task.task_type)) {
+      } else if (["headshot", "slides", "supporting_document"].includes(task.task_type)) {
         const submissionId = submissions.length === 1 ? submissions[0].id : "";
-        item.append(createUploadForm(task.task_type, submissionId));
+        item.append(createUploadForm(task.task_type, submissionId, task));
       } else {
         const action = make("a", task.action_label || "Complete task", "task-link");
         action.href = taskDestination(task);
@@ -909,12 +909,14 @@
     }
   }
 
-  function createUploadForm(kind, submissionId) {
+  function createUploadForm(kind, submissionId, task = null) {
     const slides = kind === "slides";
     const headshot = kind === "headshot";
     const form = make("form", undefined, "session-upload-card");
     form.dataset.kind = kind;
     form.dataset.submissionId = submissionId;
+    form.dataset.taskId = task?.id || "";
+    if (task?.upload_rules?.max_file_bytes) form.dataset.maxFileBytes = String(task.upload_rules.max_file_bytes);
     const title = headshot ? "Headshot" : slides ? "Slides" : "Supporting document";
     const fileLabel = make("label", `Choose ${headshot ? "headshot" : slides ? "slides" : "document"}`);
     const file = document.createElement("input");
@@ -1399,10 +1401,6 @@
     return null;
   }
 
-  function taskForKind(kind) {
-    return state.portal?.tasks?.find((task) => task.task_type === kind && task.state === "open")?.id || null;
-  }
-
   function safeEmbedUrl(value) {
     try {
       const url = new URL(value);
@@ -1454,7 +1452,10 @@
     const progress = form.querySelector("progress");
     const button = form.querySelector("button[type=submit]");
     const versionComment = form.elements.version_comment.value.trim();
-    const validation = validateFile(kind, file);
+    const taskLimit = Number(form.dataset.maxFileBytes || 0);
+    const validation = validateFile(kind, file)
+      || (taskLimit && file?.size > taskLimit
+        ? `This request allows files up to ${Math.round(taskLimit / 1024 / 1024)} MB.` : null);
     if (validation) { status.textContent = validation; status.classList.add("error"); return; }
     if (!versionComment) {
       form.elements.version_comment.setCustomValidity("Describe what changed in this version.");
@@ -1469,7 +1470,7 @@
       if (!eventId) throw new Error("Speaker event is unavailable.");
       const uploadRequest = {
         kind, submission_id: form.dataset.submissionId || null,
-        task_id: taskForKind(kind), filename: file.name, content_type: file.type,
+        task_id: form.dataset.taskId || null, filename: file.name, content_type: file.type,
         byte_size: file.size, checksum_sha256: await checksum(file),
         version_comment: versionComment
       };

@@ -395,6 +395,13 @@
             "title": "Rooms",
             "type": "array"
           },
+          "session_participants": {
+            "items": {
+              "$ref": "#/components/schemas/ManualSessionParticipantView"
+            },
+            "title": "Session Participants",
+            "type": "array"
+          },
           "tracks": {
             "items": {
               "$ref": "#/components/schemas/AgendaResourceView"
@@ -422,9 +429,80 @@
           "archived_rooms",
           "archived_tracks",
           "archived_labels",
-          "can_manage_resource_lifecycle"
+          "can_manage_resource_lifecycle",
+          "session_participants"
         ],
         "title": "AdminAgendaView",
+        "type": "object"
+      },
+      "AdminEventSpeakerUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "biography": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "confirmation_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "confirmed",
+                  "declined"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Status"
+          },
+          "display_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "job_title": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Job Title",
+            "type": "string"
+          },
+          "links": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Links",
+            "type": "array"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Location",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display_name",
+          "version"
+        ],
+        "title": "AdminEventSpeakerUpdate",
         "type": "object"
       },
       "AdminPublishedFormView": {
@@ -1015,6 +1093,16 @@
             "title": "State",
             "type": "string"
           },
+          "task_type": {
+            "enum": [
+              "custom",
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Task Type",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -1023,6 +1111,7 @@
         "required": [
           "id",
           "owner_type",
+          "task_type",
           "title",
           "state",
           "due_at_ms"
@@ -1585,6 +1674,13 @@
             "title": "Labels",
             "type": "array"
           },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ManualSessionParticipantView"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -1595,6 +1691,14 @@
           },
           "session_id": {
             "title": "Session Id",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "accepted_proposal",
+              "organizer_created"
+            ],
+            "title": "Source Type",
             "type": "string"
           },
           "speaker_names": {
@@ -1641,6 +1745,7 @@
         "required": [
           "id",
           "session_id",
+          "source_type",
           "title",
           "abstract",
           "content_status",
@@ -1726,8 +1831,23 @@
             "title": "Labels",
             "type": "array"
           },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ManualSessionParticipantView"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
           "session_id": {
             "title": "Session Id",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "accepted_proposal",
+              "organizer_created"
+            ],
+            "title": "Source Type",
             "type": "string"
           },
           "speaker_names": {
@@ -1763,6 +1883,7 @@
         },
         "required": [
           "session_id",
+          "source_type",
           "title",
           "abstract",
           "content_status",
@@ -1920,6 +2041,13 @@
             "title": "Rooms",
             "type": "array"
           },
+          "session_participants": {
+            "items": {
+              "$ref": "#/components/schemas/ManualSessionParticipantView"
+            },
+            "title": "Session Participants",
+            "type": "array"
+          },
           "tracks": {
             "items": {
               "$ref": "#/components/schemas/AgendaResourceView"
@@ -1947,7 +2075,8 @@
           "archived_rooms",
           "archived_tracks",
           "archived_labels",
-          "can_manage_resource_lifecycle"
+          "can_manage_resource_lifecycle",
+          "session_participants"
         ],
         "title": "AutoScheduledAgendaView",
         "type": "object"
@@ -5937,6 +6066,67 @@
         "title": "ManualSendResponse",
         "type": "object"
       },
+      "ManualSessionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Abstract",
+            "type": "string"
+          },
+          "participant_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Participant Ids",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "abstract",
+          "participant_ids"
+        ],
+        "title": "ManualSessionCreate",
+        "type": "object"
+      },
+      "ManualSessionParticipantView": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "recipient_state": {
+            "enum": [
+              "active",
+              "invited"
+            ],
+            "title": "Recipient State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "recipient_state"
+        ],
+        "title": "ManualSessionParticipantView",
+        "type": "object"
+      },
       "OnboardingDashboardView": {
         "additionalProperties": false,
         "properties": {
@@ -6504,6 +6694,16 @@
       },
       "OrganizationSpeakerParticipation": {
         "properties": {
+          "confirmation_status": {
+            "enum": [
+              "invited",
+              "pending",
+              "confirmed",
+              "declined"
+            ],
+            "title": "Confirmation Status",
+            "type": "string"
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
@@ -6536,6 +6736,7 @@
           "event_name",
           "event_speaker_id",
           "selection_status",
+          "confirmation_status",
           "proposal_title"
         ],
         "title": "OrganizationSpeakerParticipation",
@@ -9497,6 +9698,16 @@
             "title": "Company",
             "type": "string"
           },
+          "confirmation_status": {
+            "enum": [
+              "invited",
+              "pending",
+              "confirmed",
+              "declined"
+            ],
+            "title": "Confirmation Status",
+            "type": "string"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -9578,6 +9789,7 @@
           "links",
           "version",
           "selection_status",
+          "confirmation_status",
           "proposal_title"
         ],
         "title": "SpeakerTarget",
@@ -9602,6 +9814,15 @@
       "SpeakerTaskCreate": {
         "additionalProperties": false,
         "properties": {
+          "allowed_content_types": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Allowed Content Types",
+            "type": "array"
+          },
           "due_at_ms": {
             "anyOf": [
               {
@@ -9635,6 +9856,19 @@
             "title": "Help Text",
             "type": "string"
           },
+          "max_file_bytes": {
+            "anyOf": [
+              {
+                "maximum": 52428800.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max File Bytes"
+          },
           "submission_id": {
             "anyOf": [
               {
@@ -9647,11 +9881,27 @@
             ],
             "title": "Submission Id"
           },
+          "task_type": {
+            "default": "custom",
+            "enum": [
+              "custom",
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Task Type",
+            "type": "string"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,
             "title": "Title",
             "type": "string"
+          },
+          "upload_enabled": {
+            "default": false,
+            "title": "Upload Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -9794,6 +10044,10 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "upload_rules": {
+            "title": "Upload Rules",
+            "type": "object"
           },
           "version": {
             "default": 1,
@@ -14625,6 +14879,75 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/sessions": {
+      "post": {
+        "description": "Create a program session without manufacturing a CFP acceptance.\n\nPending invitees remain invitations. Their participant row is linked to an\nevent speaker only when the invitation is accepted.",
+        "operationId": "create_organizer_session_api_v1_admin_events__event_id__sessions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgendaView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Organizer Session",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/sessions/{accepted_session_id}/content": {
       "get": {
         "operationId": "get_admin_session_content_api_v1_admin_events__event_id__sessions__accepted_session_id__content_get",
@@ -14796,6 +15119,51 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/sessions/{session_id}": {
+      "delete": {
+        "description": "Remove an organizer-created session that has never been scheduled.",
+        "operationId": "delete_manual_session_api_v1_admin_events__event_id__sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Manual Session",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/sessions/{session_id}/labels": {
       "put": {
         "operationId": "assign_session_labels_api_v1_admin_events__event_id__sessions__session_id__labels_put",
@@ -14857,6 +15225,59 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/sessions/{session_id}/participants/{participant_id}": {
+      "delete": {
+        "operationId": "remove_manual_session_participant_api_v1_admin_events__event_id__sessions__session_id__participants__participant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "participant_id",
+            "required": true,
+            "schema": {
+              "title": "Participant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Manual Session Participant",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/speaker-targets": {
       "get": {
         "operationId": "list_speaker_targets_api_v1_admin_events__event_id__speaker_targets_get",
@@ -14901,7 +15322,7 @@
     },
     "/api/v1/admin/events/{event_id}/speaker-tasks": {
       "post": {
-        "operationId": "create_custom_speaker_task_api_v1_admin_events__event_id__speaker_tasks_post",
+        "operationId": "create_speaker_task_api_v1_admin_events__event_id__speaker_tasks_post",
         "parameters": [
           {
             "in": "path",
@@ -14961,7 +15382,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Custom Speaker Task",
+        "summary": "Create Speaker Task",
         "tags": [
           "speaker-onboarding"
         ]
@@ -15061,7 +15482,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminSpeakerUpdate"
+                "$ref": "#/components/schemas/AdminEventSpeakerUpdate"
               }
             }
           },

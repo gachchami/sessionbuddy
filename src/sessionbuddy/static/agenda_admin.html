@@ -12,7 +12,7 @@
 </script>
     <script src="/app-shell/assets/app-shell.js?v=23" defer type="text/javascript">
 </script>
-    <script src="/admin/agenda/assets/agenda.js?v=6" defer type="text/javascript">
+    <script src="/admin/agenda/assets/agenda.js?v=7" defer type="text/javascript">
 </script>
   </head>
   <body class="app-body workflow-page workflow-page--agenda">
@@ -67,6 +67,16 @@
         <details class="panel agenda-tools workflow-action">
           <summary>Schedule tools</summary>
           <div class="tool-grid">
+            <section aria-labelledby="create-session-title">
+              <h2 id="create-session-title">Create a session</h2>
+              <p class="help">Add an organizer-created session for active speakers or invited speakers who have not accepted yet.</p>
+              <form id="manual-session-form">
+                <label>Title<input name="title" maxlength="200" required></label>
+                <label>Abstract<textarea name="abstract" rows="4" maxlength="5000" required></textarea></label>
+                <label>Participants<select name="participant_ids" multiple size="6" required aria-describedby="manual-session-participants-help"></select><small id="manual-session-participants-help">Invited participants stay pending until they accept. Hold Control or Command to choose more than one.</small></label>
+                <button type="submit">Create session</button>
+              </form>
+            </section>
             <section aria-labelledby="auto-title">
               <h2 id="auto-title">Build a first draft</h2>
               <p class="help">Place unscheduled sessions into available rooms without room or speaker conflicts. Review everything before publishing.</p>
@@ -227,6 +237,18 @@
           <p id="publish-dialog-draft-note" class="preview-state" hidden></p>
           <div class="actions">
             <button id="cancel-publish" class="secondary" type="button">Cancel</button><button id="confirm-publish" type="submit">Publish agenda</button>
+          </div>
+        </form>
+      </dialog>
+      <dialog id="delete-session-dialog" class="confirmation-dialog" aria-labelledby="delete-session-title" aria-describedby="delete-session-summary">
+        <form id="delete-session-form">
+          <p class="eyebrow">Organizer-created session</p>
+          <h2 id="delete-session-title">Delete this session?</h2>
+          <p id="delete-session-summary"></p>
+          <p class="help">The unscheduled session and its participant links will be permanently removed.</p>
+          <div class="actions">
+            <button id="cancel-delete-session" class="secondary" type="button">Cancel</button>
+            <button class="danger" type="submit">Delete session</button>
           </div>
         </form>
       </dialog>

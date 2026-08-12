@@ -22,17 +22,51 @@ CREATE TABLE accepted_sessions (
   id TEXT PRIMARY KEY NOT NULL,
   organization_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
-  submission_id TEXT NOT NULL,
-  decision_id TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'accepted_proposal'
+    CHECK (source_type IN ('accepted_proposal', 'organizer_created')),
+  submission_id TEXT,
+  decision_id TEXT,
+  organizer_title TEXT,
+  organizer_abstract TEXT,
   created_at_ms INTEGER NOT NULL, content_status TEXT NOT NULL DEFAULT 'draft'
   CHECK (content_status IN ('draft', 'approved')), version INTEGER NOT NULL DEFAULT 1
   CHECK (version >= 1), label_version INTEGER NOT NULL DEFAULT 1 CHECK(label_version >= 1),
+  CHECK (
+    (source_type='accepted_proposal' AND submission_id IS NOT NULL
+      AND decision_id IS NOT NULL AND organizer_title IS NULL
+      AND organizer_abstract IS NULL)
+    OR
+    (source_type='organizer_created' AND submission_id IS NULL
+      AND decision_id IS NULL AND length(trim(organizer_title)) BETWEEN 1 AND 200
+      AND length(trim(organizer_abstract)) BETWEEN 1 AND 5000)
+  ),
   FOREIGN KEY (organization_id, event_id, submission_id)
     REFERENCES submissions(organization_id, event_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (decision_id) REFERENCES submission_decisions(id) ON DELETE RESTRICT,
   UNIQUE (organization_id, event_id, id),
   UNIQUE (organization_id, event_id, submission_id),
   UNIQUE (decision_id)
+);
+
+CREATE TABLE accepted_session_participants (
+  id TEXT PRIMARY KEY NOT NULL,
+  organization_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  accepted_session_id TEXT NOT NULL,
+  event_speaker_id TEXT,
+  pending_invitation_id TEXT,
+  display_name_snapshot TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  CHECK ((event_speaker_id IS NOT NULL) <> (pending_invitation_id IS NOT NULL)),
+  FOREIGN KEY (organization_id,event_id,accepted_session_id)
+    REFERENCES accepted_sessions(organization_id,event_id,id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id,event_id,event_speaker_id)
+    REFERENCES event_speakers(organization_id,event_id,id) ON DELETE RESTRICT,
+  FOREIGN KEY (organization_id,event_id,pending_invitation_id)
+    REFERENCES identity_invitations(organization_id,event_id,id) ON DELETE RESTRICT,
+  UNIQUE (accepted_session_id,event_speaker_id),
+  UNIQUE (accepted_session_id,pending_invitation_id)
 );
 
 CREATE TABLE agenda_item_speakers (
@@ -665,6 +699,8 @@ CREATE TABLE event_speakers (
     CHECK (json_valid(organizer_notes_json) AND json_type(organizer_notes_json)='array'),
   withdrawn_at_ms INTEGER, selection_status TEXT NOT NULL DEFAULT 'accepted'
   CHECK (selection_status IN ('submitted', 'accepted', 'rejected')),
+  confirmation_status TEXT NOT NULL DEFAULT 'pending'
+  CHECK (confirmation_status IN ('pending', 'confirmed', 'declined')),
   FOREIGN KEY (organization_id, event_id)
     REFERENCES events(organization_id, id) ON DELETE RESTRICT,
   FOREIGN KEY (organization_id, person_id)
@@ -755,7 +791,8 @@ CREATE TABLE "identity_invitations" (
   biography TEXT NOT NULL DEFAULT '' CHECK(length(biography) <= 5000),
   FOREIGN KEY (organization_id,event_id) REFERENCES events(organization_id,id),
   FOREIGN KEY (invited_by_user_id) REFERENCES users(id),
-  UNIQUE (organization_id,event_id,normalized_email,role)
+  UNIQUE (organization_id,event_id,normalized_email,role),
+  UNIQUE (organization_id,event_id,id)
 );
 
 CREATE TABLE instance_setup (
@@ -1981,7 +2018,7 @@ END;
 
 CREATE TRIGGER validate_accepted_session_decision
 BEFORE INSERT ON accepted_sessions
-WHEN NOT EXISTS (
+WHEN NEW.source_type='accepted_proposal' AND NOT EXISTS (
   SELECT 1 FROM submission_decisions d
   WHERE d.id=NEW.decision_id AND d.organization_id=NEW.organization_id
     AND d.event_id=NEW.event_id AND d.submission_id=NEW.submission_id
@@ -1993,7 +2030,7 @@ END;
 
 CREATE TRIGGER validate_accepted_session_decision_update
 BEFORE UPDATE OF organization_id,event_id,submission_id,decision_id ON accepted_sessions
-WHEN NOT EXISTS (
+WHEN NEW.source_type='accepted_proposal' AND NOT EXISTS (
   SELECT 1 FROM submission_decisions d
   WHERE d.id=NEW.decision_id AND d.organization_id=NEW.organization_id
     AND d.event_id=NEW.event_id AND d.submission_id=NEW.submission_id
@@ -2041,6 +2078,14 @@ WHEN NOT EXISTS (
     AND ss.event_id=ac.event_id AND ss.submission_id=ac.submission_id
   WHERE ai.id=NEW.agenda_item_id AND ai.revision_id=NEW.revision_id
     AND ss.event_speaker_id=NEW.event_speaker_id
+  UNION ALL
+  SELECT 1 FROM agenda_items ai
+  JOIN accepted_session_participants participant
+    ON participant.organization_id=ai.organization_id
+   AND participant.event_id=ai.event_id
+   AND participant.accepted_session_id=ai.accepted_session_id
+  WHERE ai.id=NEW.agenda_item_id AND ai.revision_id=NEW.revision_id
+    AND participant.event_speaker_id=NEW.event_speaker_id
 )
 BEGIN
   SELECT RAISE(ABORT, 'agenda speaker must belong to accepted submission');

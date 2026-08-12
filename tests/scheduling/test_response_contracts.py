@@ -5,6 +5,7 @@ def test_scheduling_routes_publish_explicit_response_schemas() -> None:
     document = app.openapi()
     contracts = {
         ("get", "/api/v1/admin/events/{event_id}/agenda", "200"): "AdminAgendaView",
+        ("post", "/api/v1/admin/events/{event_id}/sessions", "201"): "AdminAgendaView",
         ("post", "/api/v1/admin/events/{event_id}/agenda/setup", "201"): "AdminAgendaView",
         ("post", "/api/v1/admin/events/{event_id}/agenda/rooms", "200"): "AdminAgendaView",
         (

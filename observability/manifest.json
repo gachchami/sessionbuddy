@@ -65,6 +65,32 @@
         "p95_ms": 400
       }
     },
+    "DELETE /api/v1/admin/events/{event_id}/sessions/{session_id}": {
+      "benchmark": "scheduling-delete-manual-session",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
+    "DELETE /api/v1/admin/events/{event_id}/sessions/{session_id}/participants/{participant_id}": {
+      "benchmark": "scheduling-remove-manual-session-participant",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "DELETE /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
       "benchmark": "identity-revoke-organization-access-grant",
       "dashboards": [
@@ -1510,6 +1536,19 @@
       ],
       "owner": "speaker-onboarding",
       "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/sessions": {
+      "benchmark": "scheduling-create-organizer-session",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "agenda",
+      "runbook": "docs/debugging-runbook.md#agenda",
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 600
