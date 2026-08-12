@@ -16,7 +16,6 @@ test.describe("read-only API documentation", () => {
     expect(response?.status()).toBe(200);
     await expect(page).toHaveTitle("API contract · SessionBuddy");
     await expect(page.getByRole("heading", { name: "API contract, without side effects." })).toBeVisible();
-    await expect(page.getByText("No request runner. No credentials entered. No data changed.")).toBeVisible();
     await expect(page.locator("#result-count")).toHaveText(/\d+ operations shown/);
     await expect(page.getByRole("link", { name: "View JSON" })).toHaveAttribute("href", "/api/v1/openapi.json");
 
@@ -31,11 +30,12 @@ test.describe("read-only API documentation", () => {
     const agendaFilter = page.locator('.tag-filter[data-tag="agenda"]');
     await agendaFilter.click();
     await expect(agendaFilter).toHaveAttribute("aria-current", "true");
-    await expect(page.locator("#result-count")).toHaveText(/18 operations shown/);
+    await expect(page.locator("#result-count")).toHaveText(/21 operations shown/);
 
     const firstOperation = page.locator(".operation-card").first();
-    await firstOperation.getByText("Contract details").click();
-    await expect(firstOperation.getByText("Operation ID")).toBeVisible();
+    await firstOperation.getByText("Request and response reference").click();
+    await expect(firstOperation.getByRole("heading", { name: "Authentication" })).toBeVisible();
+    await expect(firstOperation.getByRole("heading", { name: "Responses" })).toBeVisible();
     expect(nonGetRequests).toEqual([]);
   });
 });
