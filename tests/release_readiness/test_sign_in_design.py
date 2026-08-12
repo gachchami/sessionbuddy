@@ -61,3 +61,16 @@ def test_setup_collects_exact_administrator_name_parts() -> None:
     assert "lastName.value.trim()" in javascript
     assert "admin_first_name: adminFirstName" in javascript
     assert "admin_last_name: adminLastName" in javascript
+
+
+def test_setup_optional_field_metadata_stays_inline_with_its_label() -> None:
+    markup = source("setup.html")
+
+    assert (
+        '<span class="field-label">Job title '
+        '<span class="optional">Optional</span></span>' in markup
+    )
+    assert (
+        '<span class="field-label">Time zone '
+        '<span class="optional">Optional</span></span>' in markup
+    )

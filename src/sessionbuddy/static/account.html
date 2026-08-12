@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=58">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=19">
+  <link rel="stylesheet" href="/product/assets/product.css?v=66">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=22">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
   <script src="/account/assets/account.js?v=13" defer></script>
@@ -40,6 +40,10 @@
           <label>LinkedIn<input name="linkedin_url" type="url" inputmode="url" maxlength="500" placeholder="https://linkedin.com/in/username"></label>
           <label>X<input name="x_url" type="url" inputmode="url" maxlength="500" placeholder="https://x.com/username"></label>
         </div></fieldset>
+        <label class="account-profile-visibility">
+          <input name="public_profile_enabled" type="checkbox">
+          <span><strong>Public profile</strong><small>Allow anyone with your profile link to see your name, biography, profile links, and headshot.</small></span>
+        </label>
         <fieldset class="account-password-fields">
           <legend id="password-legend">Create a password <span class="optional">Optional</span></legend>
           <p id="password-help">Add a password to sign in without waiting for an email link. Use at least 15 characters. Changing it signs you out on every device.</p>

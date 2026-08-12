@@ -825,6 +825,88 @@ async def _form_context(db, slug: str):
     )
 
 
+async def _workspace_form(request: Request, slug: str):
+    """Authorize the speaker-only proposal workspace for one published CFP.
+
+    The workspace deliberately reuses the public form and own-submission
+    contracts.  It is a document route only; all reads and writes still pass
+    through the existing scoped CFP endpoints.
+    """
+    authenticated = await authenticate_request(request)
+    form = await _form_context(_db(request), slug)
+    if form is None:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(form["organization_id"]),
+            str(form["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=False,
+    )
+    return authenticated, form
+
+
+async def _require_workspace_submission(
+    request: Request, slug: str, submission_id: str
+) -> None:
+    """Make opaque workspace URLs return 404 outside the speaker's scope."""
+    authenticated, form = await _workspace_form(request, slug)
+    normalized_email = await (
+        _db(request)
+        .prepare("SELECT normalized_email FROM users WHERE id=?1 AND status='active' LIMIT 1")
+        .bind(authenticated.actor.user_id)
+        .first("normalized_email")
+    )
+    found = await (
+        _db(request)
+        .prepare(
+            """SELECT 1 AS found FROM submissions s
+               WHERE s.id=?1 AND s.form_id=?2 AND (
+                 s.submitter_user_id=?3 OR EXISTS (
+                   SELECT 1 FROM submission_contributors c
+                   WHERE c.submission_id=s.id AND c.normalized_email=?4
+                     AND c.invitation_status='accepted'
+                 )
+               ) LIMIT 1"""
+        )
+        .bind(submission_id, form["id"], authenticated.actor.user_id, normalized_email)
+        .first("found")
+    )
+    if found is None:
+        raise HTTPException(status_code=404)
+
+
+@cfp_router.get(
+    "/speaker/proposals/{slug}", response_class=RedirectResponse, include_in_schema=False
+)
+async def speaker_proposals_page(slug: str, request: Request) -> RedirectResponse:
+    await _workspace_form(request, slug)
+    return RedirectResponse("/speaker", status_code=303)
+
+
+@cfp_router.get(
+    "/speaker/proposals/{slug}/new", response_class=RedirectResponse, include_in_schema=False
+)
+async def new_speaker_proposal_page(slug: str, request: Request) -> RedirectResponse:
+    await _workspace_form(request, slug)
+    return RedirectResponse("/speaker", status_code=303)
+
+
+@cfp_router.get(
+    "/speaker/proposals/{slug}/{submission_id}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+async def speaker_proposal_editor_page(
+    slug: str, submission_id: str, request: Request
+) -> HTMLResponse:
+    await _require_workspace_submission(request, slug, submission_id)
+    return HTMLResponse(_asset("public_cfp.html"), headers={"Cache-Control": "no-store"})
+
+
 @cfp_router.get(
     "/api/v1/forms/{slug}/draft",
     response_model=SubmissionDraftView | None,
@@ -2092,127 +2174,6 @@ async def withdraw_submission(
     return await _private_submission_by_id(db, submission_id, editable=False)
 
 
-@cfp_router.patch(
-    "/api/v1/admin/submissions/{submission_id}",
-    response_model=SubmissionView,
-    operation_id="updateEventSubmissionAsOrganizer",
-    tags=["submissions"],
-)
-async def update_submission_as_organizer(
-    submission_id: str, body: SubmissionUpdate, request: Request
-) -> SubmissionView:
-    authenticated = await authenticate_request(request)
-    db = _db(request)
-    row = row_mapping(
-        await db.prepare(
-            """SELECT s.organization_id,s.event_id,s.form_id,s.status,
-                      s.version,f.schema_json
-               FROM submissions s JOIN call_for_speaker_forms f ON f.id=s.form_id
-               WHERE s.id=?1 LIMIT 1"""
-        )
-        .bind(submission_id)
-        .first()
-    )
-    if row is None:
-        raise HTTPException(status_code=404)
-    await require_permission(
-        request,
-        Permission.SUBMISSION_MANAGE,
-        ResourceContext(str(row["organization_id"]), str(row["event_id"])),
-        mutation=True,
-    )
-    if row["status"] != "submitted":
-        raise HTTPException(status_code=409, detail="Only submitted proposals can be edited.")
-    if (
-        await db.prepare(
-            "SELECT 1 AS found FROM submission_decisions WHERE submission_id=?1 LIMIT 1"
-        )
-        .bind(submission_id)
-        .first("found")
-        is not None
-    ):
-        raise HTTPException(status_code=409, detail="A decided proposal cannot be edited.")
-    await _guard_new_co_speaker_invitations(
-        request,
-        actor_user_id=authenticated.actor.user_id,
-        event_id=str(row["event_id"]),
-        desired=body.co_speakers,
-        submission_id=submission_id,
-    )
-    schema = json.loads(str(row["schema_json"]))
-    _validate_submission_schema(schema, body)
-    routing = _route_submission(schema, body.answers)
-    await _validate_routed_track(
-        db,
-        organization_id=str(row["organization_id"]),
-        event_id=str(row["event_id"]),
-        routing=routing,
-    )
-    now = utc_now_ms()
-    updated = (
-        await db.prepare(
-            """UPDATE submissions SET proposal_title=?1,proposal_abstract=?2,
-                  speaker_name=?3,speaker_email=?4,answers_json=?5,
-                  routed_category=?6,routed_track=?7,routed_review_queue=?8,
-                  version=version+1,updated_at_ms=?9
-           WHERE id=?10 AND status='submitted' AND version=?11"""
-        )
-        .bind(
-            body.proposal_title,
-            body.proposal_abstract,
-            body.speaker_name,
-            body.speaker_email,
-            json.dumps(body.answers, separators=(",", ":"), sort_keys=True),
-            routing["category"],
-            routing["track"],
-            routing["review_queue"],
-            now,
-            submission_id,
-            body.version,
-        )
-        .run()
-    )
-    if not int(to_python(getattr(updated, "meta", {}).get("changes", 0)) or 0):
-        raise HTTPException(status_code=409)
-    await (
-        db.prepare(
-            """UPDATE submission_speakers SET snapshot_name=?1
-               WHERE submission_id=?2 AND role='primary'"""
-        )
-        .bind(body.speaker_name, submission_id)
-        .run()
-    )
-    await _reconcile_co_speakers(
-        request,
-        submission_id=submission_id,
-        organization_id=str(row["organization_id"]),
-        event_id=str(row["event_id"]),
-        invitation_deadline_ms=None,
-        proposal_title=body.proposal_title,
-        primary_name=body.speaker_name,
-        desired=body.co_speakers,
-        actor_user_id=authenticated.actor.user_id,
-    )
-    batch = CommandBatch(db)
-    batch.audit(
-        AuditEvent(
-            actor_type="user",
-            actor_user_id=authenticated.actor.user_id,
-            action="submission.organizer_update",
-            target_type="submission",
-            target_id=submission_id,
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            organization_id=str(row["organization_id"]),
-            event_id=str(row["event_id"]),
-            metadata={"version": body.version + 1},
-        )
-    )
-    await _execute(request, batch)
-    return await _submission_by_id(db, submission_id)
-
-
 @cfp_router.post(
     "/api/v1/forms/{slug}/submissions",
     response_model=PrivateSubmissionView,
@@ -2652,6 +2613,31 @@ def _submissions_next_cursor(
     )
 
 
+def _submission_answer_labels(
+    schema_json: str, answers: dict[str, object]
+) -> dict[str, str]:
+    """Return configured form labels for answer keys present in a submission."""
+    try:
+        schema = json.loads(schema_json)
+    except (TypeError, ValueError):
+        return {}
+    fields = schema.get("fields", []) if isinstance(schema, dict) else []
+    labels: dict[str, str] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        key = field.get("key")
+        label = field.get("label")
+        if (
+            isinstance(key, str)
+            and key in answers
+            and isinstance(label, str)
+            and label.strip()
+        ):
+            labels[key] = label.strip()
+    return labels
+
+
 @cfp_router.get(
     "/api/v1/admin/events/{event_id}/submissions",
     response_model=SubmissionList,
@@ -2685,10 +2671,12 @@ async def list_submissions(
     )
     window = _submissions_cursor(request, cursor, event_id=event_id)
     columns = """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
-                  s.proposal_abstract,s.answers_json,
+                  s.proposal_abstract,s.answers_json,f.schema_json AS form_schema_json,
                   COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                   s.routed_category,s.routed_track,s.routed_review_queue
-               FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
+               FROM submissions s
+               JOIN call_for_speaker_forms f ON f.id=s.form_id
+               LEFT JOIN submission_decisions d ON d.submission_id=s.id
                WHERE s.organization_id=?1 AND s.event_id=?2"""
     if window is None:
         statement = (
@@ -2717,6 +2705,9 @@ async def list_submissions(
     data = []
     for row in rows:
         answers = json.loads(str(row.pop("answers_json")))
+        answer_labels = _submission_answer_labels(
+            str(row.pop("form_schema_json")), answers
+        )
         contributors = result_rows(
             await _db(request)
             .prepare(
@@ -2729,7 +2720,14 @@ async def list_submissions(
             .all()
         )
         data.append(
-            SubmissionView.model_validate({**row, "answers": answers, "co_speakers": contributors})
+            SubmissionView.model_validate(
+                {
+                    **row,
+                    "answers": answers,
+                    "answer_labels": answer_labels,
+                    "co_speakers": contributors,
+                }
+            )
         )
     total_row = (
         await _db(request)

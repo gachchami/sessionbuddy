@@ -27,6 +27,51 @@ Before a live run, the launcher makes a safe request with each saved persona,
 checks the current `account_roles`/`active_role` contract, and stops immediately
 if a session has expired or is using the wrong active persona.
 
+## Reset the local evaluation database
+
+Run this from the SessionBuddy repository root before a genuinely fresh local
+evaluation. The reset exports an ignored, mode-`0600` full backup, extracts the
+single bootstrap organization/administrator bundle, drops all SessionBuddy
+tables, reapplies the canonical baseline, proves a repeat no-op, and restores
+only that bootstrap identity. Events, eval personas, sessions, challenges,
+proposals, reviews, and activity rows are intentionally removed.
+
+```sh
+docker compose stop worker activity-worker activity-poller
+
+docker compose run --rm --no-deps worker \
+  npm run worker:reset-data:local -- --confirm sessionbuddy-local
+
+docker compose up --detach worker activity-worker activity-poller
+```
+
+Use `docker compose up --build --detach ...` only when the image must be rebuilt
+for code or dependency changes. A routine data reset does not need `--build`.
+
+The reset fails closed unless `migrations_baseline/` contains exactly
+`0001_baseline.sql`. Cloudflare-owned local metadata tables are retained because
+Workerd forbids dropping them; the Wrangler migration ledger is emptied before
+the canonical baseline is applied, so an edited baseline is applied from zero.
+Do not start an eval if the reset reports an extra migration file or if either
+Worker is still reachable.
+
+After the reset, confirm the local application is ready:
+
+```sh
+docker compose ps worker activity-worker activity-poller
+curl -fsS http://127.0.0.1:8787/health
+```
+
+Expected application state is one organization, one bootstrap administrator,
+one active password credential, no events, and one migration-ledger row named
+`0001_baseline.sql`. The backup and bootstrap bundle paths and SHA-256 hashes
+are printed by the reset command. Do not paste either file into an eval report;
+the bootstrap bundle contains password-verifier material.
+
+The reset deliberately removes the eval Speaker and Reviewer. Provision all
+three eval personas again and recapture their ignored `.auth` browser states
+before starting the evaluator.
+
 ## Provision the starting personas through SessionBuddy
 
 Use the ordinary product UI and emailed links. Do not insert accounts in D1 or

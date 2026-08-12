@@ -352,6 +352,7 @@ class SubmissionUpdate(SubmissionCreate):
 
 class SubmissionView(SubmissionCreate):
     co_speakers: list[CoSpeakerView] = Field(default_factory=list, max_length=10)
+    answer_labels: dict[str, str] = Field(default_factory=dict, max_length=100)
     id: str
     status: Literal["submitted", "withdrawn", "accepted", "rejected"]
     submitted_at_ms: int

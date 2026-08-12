@@ -19,6 +19,7 @@ from sessionbuddy.cfp.router import (
     _condition_matches,
     _form_availability,
     _published_form_view,
+    _submission_answer_labels,
     _timed_first,
     _validate_cfp_deadline,
     _validate_draft_schema,
@@ -27,6 +28,34 @@ from sessionbuddy.cfp.router import (
     create_submission,
 )
 from sessionbuddy.console.models import BrowserTelemetryPayload
+
+
+def test_organizer_submission_answers_keep_configured_question_labels() -> None:
+    schema = json.dumps(
+        {
+            "fields": [
+                {"key": "question_4", "type": "text", "label": "Key takeaway"},
+                {"key": "question_5", "type": "select", "label": "Audience level"},
+                {
+                    "key": "question_6",
+                    "type": "textarea",
+                    "label": "Workshop prerequisites",
+                },
+            ]
+        }
+    )
+
+    assert _submission_answer_labels(
+        schema,
+        {"question_4": "Framework", "question_5": "Intermediate"},
+    ) == {
+        "question_4": "Key takeaway",
+        "question_5": "Audience level",
+    }
+
+
+def test_organizer_submission_label_projection_fails_closed() -> None:
+    assert _submission_answer_labels("not-json", {"question_4": "Framework"}) == {}
 
 
 @pytest.mark.parametrize(
@@ -262,8 +291,9 @@ def test_cfp_builder_uses_configurable_formats_for_display_rules() -> None:
     assert 'const option = new Option(candidate.label, candidate.label)' in script
     assert 'option.dataset.sourceKey = candidate.key' in script
     assert 'sourceControl?.selectedOptions[0]?.dataset.sourceKey' in script
-    assert 'eventFields.label = "Event proposal fields"' in script
-    assert 'customFields.label = "Custom questions"' in script
+    assert "const eventFields = [];" in script
+    assert "const customFields = [];" in script
+    assert "for (const option of [...eventFields, ...customFields])" in script
 
 
 def test_form_conditions_accept_configured_format_and_reject_unknown_choice() -> None:
@@ -403,8 +433,9 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     assert "Only the primary submitter can make changes." in public_script
     assert "state.submissions.find((submission) => submission.id === selectedId)" in public_script
     assert 'make("h2", "Your proposals")' not in public_script
-    assert 'make("a", "View your proposal", "button")' in public_script
-    assert "?submission_id=${encodeURIComponent(submission.id)}" in public_script
+    assert 'make("a", "Open in My proposals", "button")' not in public_script
+    assert 'make("a", "Back to speaker portal", "button")' in public_script
+    assert "const workspacePath" not in public_script
 
 
 def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() -> None:
@@ -526,17 +557,15 @@ def test_cfp_summary_excludes_conditional_questions_until_they_apply() -> None:
     )
 
 
-def test_organizer_edit_is_separate_from_speaker_edit_window() -> None:
+def test_organizer_can_view_but_cannot_edit_speaker_proposals() -> None:
     router = (Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py").read_text()
     admin = (Path(__file__).parents[2] / "src/sessionbuddy/static/admin_submissions.js").read_text()
 
-    organizer_route = router.split('"/api/v1/admin/submissions/{submission_id}"', 1)[1]
-    organizer_route = organizer_route.split("@cfp_router.post(", 1)[0]
-    assert "Permission.SUBMISSION_MANAGE" in organizer_route
-    assert "closes_at_ms" not in organizer_route
-    assert "A decided proposal cannot be edited." in organizer_route
-    assert "Edit proposal" in admin
-    assert "/api/v1/admin/submissions/" in admin
+    assert '"/api/v1/admin/submissions/{submission_id}"' not in router
+    assert "Edit proposal" not in admin
+    assert "Run AI first pass" not in admin
+    assert "View proposal" in admin
+    assert "create-proposal-link" in admin
 
 
 def test_required_dynamic_answers_are_enforced_by_the_backend() -> None:
@@ -877,7 +906,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'formElement.getAttribute("aria-busy") === "true"' in cfp_source
     assert 'error.code === "slug_conflict"' in cfp_source
     assert 'error.code === "stale_conflict"' in cfp_source
-    assert "Open proposal actions" in submissions_js.text
+    assert "View proposal" in submissions_js.text
     assert "item.answers" in submissions_js.text
     assert 'location.pathname.startsWith("/admin") && !organizer' in app_shell_js.text
     assert 'location.replace("/speaker")' in app_shell_js.text

@@ -566,10 +566,13 @@
         const conditionQuestion = document.createElement("select");
         conditionQuestion.name = "condition_source";
         conditionQuestion.add(new Option("Choose a question or event field", ""));
-        const eventFields = document.createElement("optgroup");
-        eventFields.label = "Event proposal fields";
-        const customFields = document.createElement("optgroup");
-        customFields.label = "Custom questions";
+        // Flat, deliberately: an <optgroup> hides every option nested inside it
+        // from the accessibility snapshot that browser automation reads, so the
+        // chosen option never reports as selected. An eval agent burned 15 turns
+        // re-selecting a dropdown that had been correct since the first attempt.
+        // Event proposal fields are still listed before custom questions.
+        const eventFields = [];
+        const customFields = [];
         state.fields.forEach((candidate, candidateIndex) => {
           if (candidate.key === field.key || candidateIndex >= index) return;
           // The browser-facing value intentionally matches the visible label.
@@ -577,10 +580,9 @@
           // that exposed value, while the stable schema key remains separate.
           const option = new Option(candidate.label, candidate.label);
           option.dataset.sourceKey = candidate.key;
-          (proposalFieldKeys.has(candidate.key) || candidate.key === "track" ? eventFields : customFields).append(option);
+          (proposalFieldKeys.has(candidate.key) || candidate.key === "track" ? eventFields : customFields).push(option);
         });
-        if (eventFields.children.length) conditionQuestion.append(eventFields);
-        if (customFields.children.length) conditionQuestion.append(customFields);
+        for (const option of [...eventFields, ...customFields]) conditionQuestion.add(option);
         const selectedConditionSource = [...conditionQuestion.options].find(
           (option) => option.dataset.sourceKey === field.condition?.source_key
         );
@@ -686,6 +688,9 @@
         );
         renderConditionAnswer();
         advanced.append(advancedSummary, advancedBody);
+        const syncAdvancedVisibility = () => { advancedBody.hidden = !advanced.open; };
+        advanced.addEventListener("toggle", syncAdvancedVisibility);
+        syncAdvancedVisibility();
         editorBody.append(advanced);
         const remove = make("button", "Remove field");
         remove.type = "button";
@@ -802,6 +807,10 @@
         : kind === "question" && card.dataset.index !== rawIndex;
     });
     byId("cfp-questions").classList.toggle("cfp-editor-section--single-question", ["question", "proposal"].includes(kind));
+    // The proposal screen lists only system fields, so "+ Add custom question"
+    // does not belong to it. Every other screen keeps the control -- including
+    // the single-question screen you land on right after adding one.
+    byId("cfp-questions").classList.toggle("cfp-editor-section--proposal", kind === "proposal");
     byId("cfp-questions").classList.toggle("cfp-editor-section--custom", kind === "custom");
     const customCount = state.fields.filter((field) => !["speaker_name", "speaker_email"].includes(field.key) && !proposalFieldKeys.has(field.key)).length;
     byId("cfp-custom-empty").hidden = kind !== "custom" || customCount > 0;

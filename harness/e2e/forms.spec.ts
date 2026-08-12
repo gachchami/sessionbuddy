@@ -280,6 +280,10 @@ test.describe("form validation and workflow wiring", () => {
       contentType: "application/json",
       body: JSON.stringify({ id: eventId, time_zone: "UTC" }),
     }));
+    await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ published_form: null }),
+    }));
     await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -337,7 +341,7 @@ test.describe("form validation and workflow wiring", () => {
     await expect(inlineDetail).toContainText("Platform");
     await expect(inlineDetail).toContainText("Audience level");
     await expect(inlineDetail).toContainText("Intermediate");
-    await inlineDetail.getByRole("button", { name: "Open proposal actions" }).click();
+    await inlineDetail.getByRole("button", { name: "View proposal" }).click();
     const detail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(detail).toContainText("speaker@example.com");
     await expect(detail).toContainText("Platform");
@@ -375,6 +379,8 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByLabel("Recommendations").fill("accept, reject");
     await page.getByRole("button", { name: "Open evaluation round" }).click();
     await expect.poll(() => roundWrites).toBe(1);
+    await expect(page.locator("#round-history")).toContainText("Initial review");
+    await expect(page.locator("#round-history")).not.toContainText("No evaluation rounds yet.");
 
     const assignment = {
       id: assignmentId, round_id: "11111111-1111-4111-8111-111111111111", round_name: "Initial review",

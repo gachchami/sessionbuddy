@@ -78,8 +78,12 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'id="speaker-headshot-form"' not in html
     assert 'Completed (${completed.length})' in javascript
     assert html.count('name="version_comment"') == 0
-    assert 'createUploadForm("slides", submission.id)' in javascript
-    assert 'createUploadForm("supporting_document", submission.id)' in javascript
+    assert (
+        "`/speaker/proposals/${encodeURIComponent(submission.form_slug)}"
+        "/${encodeURIComponent(submission.id)}`"
+    ) in javascript
+    assert 'createUploadForm("slides", submission.id)' not in javascript
+    assert 'createUploadForm("supporting_document", submission.id)' not in javascript
     assert "form.dataset.submissionId || null" in javascript
     assert "version_comment: versionComment" in javascript
     assert "Upload received. Retrying safety checks" in javascript

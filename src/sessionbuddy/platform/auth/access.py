@@ -232,6 +232,24 @@ async def speaker_profile_page(person_id: str) -> Response:
     )
 
 
+@access_router.get("/people/{user_id}", include_in_schema=False)
+async def public_person_profile_page(user_id: str) -> Response:
+    return Response(
+        _asset("public_profile.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@access_router.get("/people/assets/profile.js", include_in_schema=False)
+async def public_person_profile_javascript() -> Response:
+    return Response(
+        _asset("public_profile.js"),
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
 @access_router.get("/admin/events/{event_id}/messages", include_in_schema=False)
 async def speaker_messages_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
@@ -775,10 +793,25 @@ class AccountProfileView(BaseModel):
     linkedin_url: str | None = None
     x_url: str | None = None
     headshot_url: str | None = None
+    public_profile_enabled: bool = False
     profile_complete: bool
     roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(default_factory=list)
     has_password: bool = False
     version: int
+
+
+class PublicPersonProfileView(BaseModel):
+    """Intentionally small profile safe for an unauthenticated response."""
+
+    user_id: str
+    display_name: str
+    job_title: str | None = None
+    company: str | None = None
+    biography: str | None = None
+    website_url: str | None = None
+    linkedin_url: str | None = None
+    x_url: str | None = None
+    headshot_url: str | None = None
 
 
 class AccountProfileUpdate(BaseModel):
@@ -792,6 +825,7 @@ class AccountProfileUpdate(BaseModel):
     website_url: str | None = Field(default=None, max_length=500)
     linkedin_url: str | None = Field(default=None, max_length=500)
     x_url: str | None = Field(default=None, max_length=500)
+    public_profile_enabled: bool = False
     password: str | None = Field(default=None, min_length=1, max_length=128)
     password_confirmation: str | None = Field(default=None, min_length=1, max_length=128)
     version: int = Field(ge=1)
@@ -1042,7 +1076,8 @@ async def account_profile(request: Request) -> AccountProfileView:
         await db
         .prepare(
             """SELECT u.email,u.first_name,u.last_name,u.display_name,u.job_title,u.company,
-                      u.time_zone,u.description,u.website_url,u.linkedin_url,u.x_url,u.version,
+                      u.time_zone,u.description,u.website_url,u.linkedin_url,u.x_url,
+                      u.public_profile_enabled,u.version,
                       u.profile_completed_at_ms IS NOT NULL AS profile_complete,
                       CASE WHEN h.user_id IS NULL THEN NULL
                            ELSE '/api/v1/account/headshot' END AS headshot_url,
@@ -1096,10 +1131,11 @@ async def update_account_profile(
         db.prepare(
             """UPDATE users SET first_name=?1,last_name=?2,display_name=?3,job_title=?4,
                company=?5,time_zone=?6,description=?7,website_url=?8,linkedin_url=?9,x_url=?10,
-               profile_completed_at_ms=COALESCE(profile_completed_at_ms,?11),
-               authorization_version=authorization_version+?12,
-               version=version+1,updated_at_ms=?11
-               WHERE id=?13 AND status='active' AND version=?14"""
+               public_profile_enabled=?11,
+               profile_completed_at_ms=COALESCE(profile_completed_at_ms,?12),
+               authorization_version=authorization_version+?13,
+               version=version+1,updated_at_ms=?12
+               WHERE id=?14 AND status='active' AND version=?15"""
         ).bind(
             body.first_name,
             body.last_name,
@@ -1111,6 +1147,7 @@ async def update_account_profile(
             body.website_url or None,
             body.linkedin_url or None,
             body.x_url or None,
+            int(body.public_profile_enabled),
             now,
             1 if verifier is not None else 0,
             authenticated.actor.user_id,
@@ -1310,6 +1347,90 @@ async def account_headshot(request: Request) -> StreamingResponse:
         _stream_event_logo(stored),
         media_type=str(row["content_type"]),
         headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@access_router.get(
+    "/api/v1/public/people/{user_id}",
+    response_model=PublicPersonProfileView,
+    tags=["public-profiles"],
+)
+async def public_person_profile(user_id: str, request: Request) -> PublicPersonProfileView:
+    row = row_mapping(
+        await database(request)
+        .prepare(
+            """SELECT u.id,u.display_name,u.first_name,u.last_name,
+                      COALESCE(u.job_title,p.job_title) AS job_title,
+                      COALESCE(u.company,p.company) AS company,
+                      COALESCE(u.description,p.biography) AS description,
+                      u.website_url,u.linkedin_url,u.x_url,p.display_name AS person_name,
+                      CASE WHEN h.user_id IS NULL THEN 0 ELSE 1 END AS has_headshot
+               FROM users u LEFT JOIN user_headshots h ON h.user_id=u.id
+               LEFT JOIN people p ON p.id=(
+                 SELECT p2.id FROM people p2
+                 WHERE p2.user_id=u.id AND p2.archived_at_ms IS NULL
+                 ORDER BY p2.updated_at_ms DESC,p2.id DESC LIMIT 1
+               )
+               WHERE u.id=?1 AND u.status='active' AND u.deleted_at_ms IS NULL
+                 AND u.public_profile_enabled=1
+               LIMIT 1"""
+        )
+        .bind(user_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    name_parts = (
+        str(row["first_name"] or "").strip(),
+        str(row["last_name"] or "").strip(),
+    )
+    display_name = (
+        str(row["display_name"] or "").strip()
+        or " ".join(value for value in name_parts if value)
+        or str(row["person_name"] or "").strip()
+    )
+    if not display_name:
+        raise HTTPException(status_code=404)
+    return PublicPersonProfileView(
+        user_id=user_id,
+        display_name=display_name,
+        job_title=str(row["job_title"]) if row["job_title"] else None,
+        company=str(row["company"]) if row["company"] else None,
+        biography=str(row["description"]) if row["description"] else None,
+        website_url=str(row["website_url"]) if row["website_url"] else None,
+        linkedin_url=str(row["linkedin_url"]) if row["linkedin_url"] else None,
+        x_url=str(row["x_url"]) if row["x_url"] else None,
+        headshot_url=(f"/api/v1/public/people/{user_id}/headshot" if row["has_headshot"] else None),
+    )
+
+
+@access_router.get(
+    "/api/v1/public/people/{user_id}/headshot",
+    response_class=StreamingResponse,
+    tags=["public-profiles"],
+)
+async def public_person_headshot(user_id: str, request: Request) -> StreamingResponse:
+    row = row_mapping(
+        await database(request)
+        .prepare(
+            """SELECT h.object_key,h.content_type FROM user_headshots h
+               JOIN users u ON u.id=h.user_id
+               WHERE h.user_id=?1 AND u.status='active' AND u.deleted_at_ms IS NULL
+                 AND u.public_profile_enabled=1
+               LIMIT 1"""
+        )
+        .bind(user_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    stored = await _event_logo_bucket(request).get(str(row["object_key"]))
+    if stored is None:
+        raise HTTPException(status_code=404)
+    return StreamingResponse(
+        _stream_event_logo(stored),
+        media_type=str(row["content_type"]),
+        headers={"Cache-Control": "public, max-age=3600"},
     )
 
 

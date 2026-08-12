@@ -2,9 +2,11 @@
   "use strict";
   const byId = (id) => document.getElementById(id);
   const pathParts = location.pathname.split("/").filter(Boolean);
-  const slug = decodeURIComponent(pathParts.pop() || "");
-  const eventKey = pathParts.at(-1) || "";
-  const publicFormPath = `/cfp/${encodeURIComponent(eventKey)}/${encodeURIComponent(slug)}`;
+  const workspaceMatch = location.pathname.match(/^\/speaker\/proposals\/([^/]+)(?:\/([^/]+))?$/);
+  const workspaceMode = Boolean(workspaceMatch);
+  const workspaceSegment = workspaceMatch?.[2] ? decodeURIComponent(workspaceMatch[2]) : "";
+  const slug = workspaceMode ? decodeURIComponent(workspaceMatch[1]) : decodeURIComponent(pathParts.pop() || "");
+  if (workspaceMode) document.body.classList.add("proposal-management-page");
   const browserSessionId = () => {
     if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -21,11 +23,19 @@
     viewingSubmission: null, submissions: [], draftDirty: false, draftTimer: null,
     pendingSubmission: null
   };
-  const browserDraftKey = `sessionbuddy:cfp:${slug}:draft`;
+  const browserDraftKey = () => `sessionbuddy:cfp:${slug}:draft:${workspaceMode
+    ? (state.editingSubmission?.id || workspaceSegment) : "new"}`;
   const BROWSER_DRAFT_TTL_MS = 30 * 60 * 1000;
 
   function normalizedEmail(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function hasMeaningfulProposalAnswers(values) {
+    return Object.entries(values || {}).some(([key, value]) =>
+      !["speaker_name", "speaker_email"].includes(key)
+      && (Array.isArray(value) ? value.length > 0 : String(value ?? "").trim().length > 0)
+    );
   }
 
   function setStatus(message, kind = "") {
@@ -365,6 +375,7 @@
       document.getElementById(`${field.key}-existing-file`)?.remove();
     }
     state.applyConditions();
+    window.SessionBuddyApi.refreshCharacterCounters?.(byId("proposal-form"));
   }
 
   function restoreValues(values) {
@@ -401,10 +412,10 @@
 
   function browserDraft() {
     try {
-      const saved = JSON.parse(localStorage.getItem(browserDraftKey) || "null");
+      const saved = JSON.parse(localStorage.getItem(browserDraftKey()) || "null");
       if (!saved || saved.schemaVersion !== 1) return null;
       if (!Number.isSafeInteger(saved.savedAt) || Date.now() - saved.savedAt > BROWSER_DRAFT_TTL_MS || saved.savedAt > Date.now() + 60_000) {
-        localStorage.removeItem(browserDraftKey);
+        localStorage.removeItem(browserDraftKey());
         return null;
       }
       return saved;
@@ -423,7 +434,7 @@
       ownerEmail: normalizedEmail(answers({ includeUploads: false }).speaker_email),
       savedAt: Date.now()
     };
-    try { localStorage.setItem(browserDraftKey, JSON.stringify(value)); }
+    try { localStorage.setItem(browserDraftKey(), JSON.stringify(value)); }
     catch (_) { throw new Error("This browser could not retain the proposal. Enable site storage and try again."); }
     return value;
   }
@@ -444,6 +455,10 @@
     const saved = browserDraft();
     if (!saved || saved.formVersion !== state.form.version) return null;
     if (!saved.ownerEmail || saved.ownerEmail !== normalizedEmail(expectedEmail)) return null;
+    if (!hasMeaningfulProposalAnswers(saved.answers) && !(saved.coSpeakers || []).length && !(saved.fileNames || []).length && !saved.readyToSubmit) {
+      clearBrowserDraft();
+      return null;
+    }
     restoreValues(saved.answers || {});
     byId("co-speaker-rows").replaceChildren();
     (saved.coSpeakers || []).forEach(addCoSpeakerRow);
@@ -452,7 +467,7 @@
   }
 
   function clearBrowserDraft() {
-    try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
+    try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
   }
 
   async function loadDraft() {
@@ -463,7 +478,7 @@
       if ([401, 404].includes(error.status)) return;
       throw error;
     }
-    if (!draft) return;
+    if (!draft || !hasMeaningfulProposalAnswers(draft.answers)) return;
     state.draftVersion = draft.version;
     restoreValues(draft.answers || {});
     setStatus("Your saved draft has been restored.");
@@ -495,10 +510,11 @@
   }
 
   function chooseSubmission(submission) {
-    const editable = submission.editable === true;
+    const editable = submission.editable === true && state.form.accepting_submissions !== false;
     resetProposalFiles();
     state.viewingSubmission = submission;
     state.editingSubmission = editable ? submission : null;
+    byId("proposal-form-title").textContent = editable ? "Edit proposal" : "Proposal details";
     restoreValues({ ...submission.answers, speaker_name: submission.speaker_name,
       speaker_email: submission.speaker_email, proposal_title: submission.proposal_title,
       proposal_abstract: submission.proposal_abstract });
@@ -509,6 +525,7 @@
     validateCoSpeakers(form);
     for (const control of form.elements) control.disabled = !editable;
     if (editable) lockSignedInEmail();
+    byId("withdraw-proposal").hidden = !editable || submission.status === "withdrawn";
     byId("submit-proposal").textContent = editable ? "Save changes" : "Confirm submission";
     setStatus(
       editable
@@ -517,6 +534,28 @@
       "success"
     );
   }
+
+  byId("withdraw-proposal").addEventListener("click", async (event) => {
+    const submission = state.editingSubmission;
+    if (!submission || !confirm("Withdraw this proposal? It will become read-only and cannot enter review.")) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Withdrawing…";
+    try {
+      const updated = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(submission.id)}/withdraw`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${browserSessionId()}-${browserSessionId()}` },
+        body: "{}"
+      });
+      Object.assign(submission, updated, { editable: false });
+      chooseSubmission(submission);
+      setStatus("Proposal withdrawn. It is now read-only.", "success");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Withdraw proposal";
+      setStatus(window.SessionBuddyApi.message(error), "error");
+    }
+  });
 
   function renderReview() {
     const list = byId("review-list");
@@ -620,7 +659,13 @@
       renderCallBrief(state.form);
       renderImportantDates(state.form.important_dates);
       if (state.form.event_name) {
-        document.title = `Call for Proposals · ${state.form.event_name}`;
+        document.title = workspaceMode
+          ? `Proposal · ${state.form.event_name}`
+          : `Call for Proposals · ${state.form.event_name}`;
+      }
+      if (workspaceMode) {
+        byId("title").textContent = "Proposal";
+        byId("welcome").textContent = state.form.event_name;
       }
       if (state.form.accent_color) document.documentElement.style.setProperty("--blue", state.form.accent_color);
       if (state.form.logo_url) { byId("event-logo").src = state.form.logo_url; byId("event-logo").hidden = false; }
@@ -632,7 +677,7 @@
         byId("closed-card").hidden = false;
         byId("availability").textContent = state.form.availability_message;
         setStatus(state.form.availability_message);
-        return;
+        if (!workspaceMode) return;
       }
       const saved = browserDraft();
       try {
@@ -641,51 +686,37 @@
         state.csrf = session.csrf_token;
         state.sessionEmail = session.email || "";
         state.sessionDisplayName = session.display_name || "";
-        const restored = saved?.submissionId
-          ? null
-          : restoreBrowserDraft(state.sessionEmail);
-        applySignedInIdentity();
-        try {
-          const mine = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`);
-          state.submissions = mine.data || [];
-        } catch (error) {
-          if (![401, 403, 404].includes(error.status)) throw error;
-          state.submissions = [];
-        }
-        const requested = new URLSearchParams(location.search).get("submission_id");
-        const selectedId = requested || saved?.submissionId;
-        const selected = state.submissions.find((submission) => submission.id === selectedId);
         byId("proposal-card").hidden = false;
         byId("sign-in-card").hidden = true;
-        if (selected) {
-          chooseSubmission(selected);
-          if (saved?.submissionId === selected.id && restoreBrowserDraft(state.sessionEmail)) {
-            setStatus("Your unsaved proposal changes were restored from this browser.", "success");
-          }
-        }
-        else if (restored && !saved?.submissionId) {
+        if (!workspaceMode) {
+          const restored = saved?.submissionId ? null : restoreBrowserDraft(state.sessionEmail);
           applySignedInIdentity();
-          const needsFiles = (restored.fileNames || []).length > 0;
-          const readyToReview = Boolean(restored.readyToSubmit)
-            && !needsFiles
-            && byId("proposal-form").checkValidity();
-          showReview(readyToReview);
-          setStatus(needsFiles
-            ? "Email verified. Your answers were restored; reattach the selected files before continuing."
-            : readyToReview
-              ? "Email verified. Review your restored proposal, then confirm submission."
-            : "Your proposal was restored from this browser.", "success");
-          // Keep the restored proposal on the review step. Email verification
-          // proves identity, but the speaker still explicitly confirms the
-          // final submission.
-        }
-        else {
-          if (saved?.submissionId) {
-            try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
+          if (restored) {
+            const needsFiles = (restored.fileNames || []).length > 0;
+            const readyToReview = Boolean(restored.readyToSubmit)
+              && !needsFiles
+              && byId("proposal-form").checkValidity();
+            showReview(readyToReview);
+            setStatus(needsFiles
+              ? "Email verified. Your answers were restored; reattach the selected files before continuing."
+              : readyToReview
+                ? "Email verified. Review your restored proposal, then confirm submission."
+                : "Your proposal was restored from this browser.", "success");
+          } else {
+            setStatus("Start a new proposal below.");
+            await loadDraft();
+            applySignedInIdentity();
           }
-          setStatus("Start a new proposal below.");
-          await loadDraft();
-          applySignedInIdentity();
+          return;
+        }
+        state.submissions = (await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`)).data || [];
+        const selected = state.submissions.find((submission) => submission.id === workspaceSegment);
+        if (!selected) throw new Error("This proposal is unavailable.");
+        chooseSubmission(selected);
+        byId("title").textContent = selected.editable ? "Edit proposal" : "View proposal";
+        byId("welcome").textContent = selected.proposal_title || state.form.event_name;
+        if (saved?.submissionId === selected.id && restoreBrowserDraft(state.sessionEmail)) {
+          setStatus("Your unsaved proposal changes were restored from this browser.", "success");
         }
       } catch (error) {
         if (![401, 403].includes(error.status)) throw error;
@@ -812,14 +843,14 @@
         state.editingSubmission = submission;
         state.submissions = state.submissions.map((item) => item.id === submission.id ? submission : item);
         state.draftDirty = false;
-        try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
+        try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
         setStatus("Changes saved to this proposal.", "success");
         return;
       }
       const draft = await api(`/api/v1/forms/${encodeURIComponent(slug)}/draft`, { method: "PUT", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: JSON.stringify({ answers: answers({ includeUploads: false }), version: state.draftVersion }) });
       state.draftVersion = draft.version;
       state.draftDirty = false;
-      try { localStorage.removeItem(browserDraftKey); } catch (_) { /* best effort */ }
+      try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
       setStatus("Draft saved.", "success");
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   });
@@ -908,9 +939,11 @@
       const receipt = byId("receipt");
       receipt.className = "empty-state";
       receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
-      const proposalLink = make("a", "View your proposal", "button");
-      proposalLink.href = `${publicFormPath}?submission_id=${encodeURIComponent(submission.id)}`;
-      receipt.append(proposalLink);
+      if (workspaceMode) {
+        const proposalLink = make("a", "Back to speaker portal", "button");
+        proposalLink.href = "/speaker";
+        receipt.append(proposalLink);
+      }
       if (state.form.redirect_to_portal) {
         const link = make("a", "Open speaker portal", "button secondary");
         link.href = "/speaker";
@@ -925,7 +958,8 @@
       clearBrowserDraft();
       resetProposalFiles();
     } catch (error) {
-      setStatus(window.SessionBuddyApi.message(error, "Check the highlighted proposal fields and try again."), "error");
+      const clientMessage = error instanceof Error && !error.status ? error.message : "";
+      setStatus(clientMessage || window.SessionBuddyApi.message(error, "Check the highlighted proposal fields and try again."), "error");
       byId("status").focus();
     } finally {
       form.setAttribute("aria-busy", "false");

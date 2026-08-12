@@ -21,6 +21,8 @@
     "worker:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev --deployment-only",
     "worker:activation:preflight:dev": "uv run python scripts/cloudflare_preflight.py --env dev",
     "worker:setup-key:dev": "uv run python scripts/setup_key.py --env dev",
+    "worker:reset-data:dev": "uv run python scripts/reset_development_data.py --env dev",
+    "worker:reset-data:local": "uv run python scripts/reset_development_data.py --local",
     "worker:bootstrap:dev": "uv run python scripts/bootstrap_cloudflare.py --env dev"
   },
   "devDependencies": {

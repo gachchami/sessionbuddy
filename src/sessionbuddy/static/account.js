@@ -31,6 +31,16 @@
     catch (_) { return false; }
   }
 
+  function validProfileUrl(value) {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password;
+    } catch (_) {
+      return false;
+    }
+  }
+
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function showStatus(message, kind = "", focus = false) {
@@ -39,6 +49,12 @@
     status.className = `status${kind ? ` ${kind}` : ""}`;
     status.textContent = message;
     if (focus) status.focus();
+  }
+
+  function setProfileSaveState(state) {
+    const button = byId("save-profile");
+    button.dataset.state = state;
+    button.textContent = state === "saving" ? "Saving…" : state === "saved" ? "✓ Saved" : "Save profile";
   }
 
   function setProfile(profile) {
@@ -63,6 +79,7 @@
     form.elements.website_url.value = profile.website_url || "";
     form.elements.linkedin_url.value = profile.linkedin_url || "";
     form.elements.x_url.value = profile.x_url || "";
+    form.elements.public_profile_enabled.checked = profile.public_profile_enabled === true;
     const roleNodes = (profile.roles || []).map((role) => {
       const item = document.createElement("span");
       item.className = "account-role-chip";
@@ -635,7 +652,11 @@
     }
   }
 
-  byId("profile-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("profile-form").addEventListener("input", (event) => {
+    event.target.setCustomValidity?.("");
+    setProfileSaveState("idle");
+    byId("save-profile").disabled = false;
+  });
   byId("default-role-form").addEventListener("change", () => {
     byId("save-default-role").disabled = false;
     for (const choice of byId("default-role-list").querySelectorAll(".default-role-choice")) {
@@ -669,6 +690,7 @@
     byId("headshot-preview").src = previewObjectUrl;
     byId("headshot-preview").hidden = false;
     byId("headshot-fallback").hidden = true;
+    setProfileSaveState("idle");
     byId("save-profile").disabled = false;
   });
   byId("remove-headshot").addEventListener("click", async () => {
@@ -772,14 +794,22 @@
     const form = event.currentTarget;
     const timeZone = form.elements.time_zone;
     timeZone.setCustomValidity(validTimeZone(timeZone.value.trim()) ? "" : "Enter a valid IANA time zone, such as Asia/Kolkata.");
+    for (const name of ["website_url", "linkedin_url", "x_url"]) {
+      const field = form.elements[name];
+      field.setCustomValidity(validProfileUrl(field.value.trim())
+        ? ""
+        : "Enter a complete HTTPS URL, such as https://example.com, without a username or password.");
+    }
     const password = form.elements.password;
     const confirmation = form.elements.password_confirmation;
     confirmation.setCustomValidity(password.value === confirmation.value ? "" : "Passwords must match.");
     if (!form.reportValidity()) return;
     const button = byId("save-profile");
     button.disabled = true;
+    setProfileSaveState("saving");
     showStatus("Saving your profile…");
     const values = Object.fromEntries(new FormData(form).entries());
+    let saved = false;
     try {
       let profile = await api("/api/v1/account/profile", {
         method: "PATCH",
@@ -794,6 +824,7 @@
           website_url: values.website_url || null,
           linkedin_url: values.linkedin_url || null,
           x_url: values.x_url || null,
+          public_profile_enabled: form.elements.public_profile_enabled.checked,
           password: values.password || null,
           password_confirmation: values.password_confirmation || null,
           version
@@ -814,6 +845,8 @@
       showStatus(values.password
         ? "Profile and password saved. Sign in again to continue."
         : "Profile saved.", "success");
+      saved = true;
+      setProfileSaveState("saved");
       form.elements.password.value = "";
       form.elements.password_confirmation.value = "";
       window.dispatchEvent(new CustomEvent("sessionbuddy:profile-updated", { detail: profile }));
@@ -829,9 +862,10 @@
         : error.status === 503 && values.password
         ? "Your profile was not saved because password sign-in is temporarily unavailable. Leave both password fields blank to save the rest of your profile now, or ask the administrator to check password configuration."
         : window.SessionBuddyApi.message(error);
+      setProfileSaveState("idle");
       showStatus(message, "error", true);
     } finally {
-      button.disabled = false;
+      button.disabled = saved;
     }
   });
 

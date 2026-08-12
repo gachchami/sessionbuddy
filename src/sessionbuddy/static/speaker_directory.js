@@ -70,17 +70,19 @@
     initials.textContent = item.display_name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?";
     const identity = document.createElement("span");
     const heading = document.createElement("strong");
-    if (item.person_id) {
+    if (item.user_id && item.public_profile_enabled) {
       const profileLink = document.createElement("a");
-      profileLink.href = `/speakers/${encodeURIComponent(item.person_id)}`;
+      profileLink.href = `/people/${encodeURIComponent(item.user_id)}`;
       profileLink.textContent = item.display_name;
+      profileLink.setAttribute("aria-label", `View ${item.display_name}'s public profile`);
       heading.append(profileLink);
     } else {
       heading.textContent = item.display_name;
     }
     const detail = document.createElement("small");
-    detail.textContent = [item.job_title, item.company].filter(Boolean).join(" · ") || "Profile details not added";
-    identity.append(heading, detail);
+    detail.textContent = [item.job_title, item.company].filter(Boolean).join(" · ");
+    identity.append(heading);
+    if (detail.textContent) identity.append(detail);
     person.append(initials, identity);
 
     const cell = (text, className = "") => {

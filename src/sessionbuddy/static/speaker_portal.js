@@ -20,6 +20,9 @@
     supporting_document: { max: 20 * 1024 * 1024, types: new Set(["application/pdf"]) }
   };
   const byId = (id) => document.getElementById(id);
+  // The proposal composer moved to the shared CFP workspace. These helpers
+  // remain only for an in-flight page instance that may finish unloading.
+  const retiredComposerNode = (id) => document.getElementById(id);
   const make = (tag, text, className) => {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -45,7 +48,7 @@
   }
 
   function composerIsDirty() {
-    const form = byId("proposal-composer-form");
+    const form = retiredComposerNode("proposal-composer-form");
     return Boolean(form?.dataset.dirty === "true" || state.files.size || state.uploaded.size);
   }
 
@@ -62,7 +65,7 @@
   }
 
   function saveComposerDraft() {
-    const form = byId("proposal-composer-form");
+    const form = retiredComposerNode("proposal-composer-form");
     const key = composerDraftKey();
     if (!form || !key) return;
     const values = {};
@@ -77,7 +80,7 @@
   }
 
   function showComposerError(message, control = null) {
-    const summary = byId("proposal-composer-error");
+    const summary = retiredComposerNode("proposal-composer-error");
     if (!summary) {
       setStatus(message, "error");
       return;
@@ -89,9 +92,9 @@
   }
 
   function clearComposerErrors() {
-    const summary = byId("proposal-composer-error");
+    const summary = retiredComposerNode("proposal-composer-error");
     if (summary) { summary.hidden = true; summary.textContent = ""; }
-    byId("proposal-composer-form")?.querySelectorAll('[aria-invalid="true"]').forEach((control) => control.removeAttribute("aria-invalid"));
+    retiredComposerNode("proposal-composer-form")?.querySelectorAll('[aria-invalid="true"]').forEach((control) => control.removeAttribute("aria-invalid"));
   }
 
   function recordTelemetry(started, response) {
@@ -220,7 +223,7 @@
     return form;
   }
 
-  function renderTasks(tasks, timezone, list) {
+  function renderTasks(tasks, timezone, list, submissions = []) {
     list.replaceChildren();
     const outstanding = tasks.filter((task) => !["completed", "waived"].includes(task.state));
     if (!outstanding.length) list.append(make("li", "No actions due.", "empty"));
@@ -246,6 +249,9 @@
         item.append(action);
       } else if (task.task_type === "custom") {
         item.append(customTaskForm(task, list.dataset.eventId));
+      } else if (["slides", "supporting_document"].includes(task.task_type)) {
+        const submissionId = submissions.length === 1 ? submissions[0].id : "";
+        item.append(createUploadForm(task.task_type, submissionId));
       } else {
         const action = make("a", task.action_label || "Complete task", "task-link");
         action.href = taskDestination(task);
@@ -315,137 +321,24 @@
     return fields;
   }
 
-  function renderSubmissions(submissions, list, assetsBySubmission) {
+  function renderSubmissions(submissions, list) {
     list.replaceChildren();
     if (!submissions.length) {
       list.append(make("li", "No proposals are connected to this account yet.", "empty"));
       return;
     }
-    submissions.forEach((submission, index) => {
-      const item = make("li", undefined, "item-card");
+    submissions.forEach((submission) => {
+      const item = make("li", undefined, "proposal-summary-row");
+      const link = make("a", undefined, "proposal-summary-row__link");
+      link.href = `/speaker/proposals/${encodeURIComponent(submission.form_slug)}/${encodeURIComponent(submission.id)}`;
       const statusLabel = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
       const tone = SUBMISSION_TONE[submission.status] || "";
-      const head = make("div", undefined, "item-card__head");
-      head.append(
-        make("span", String(index + 1), "item-card__index"),
-        make("h3", submission.proposal_title),
-        make("p", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`)
+      link.append(
+        make("strong", submission.proposal_title),
+        make("span", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`),
+        make("span", "→", "proposal-summary-row__arrow")
       );
-      const sessionAssets = assetsBySubmission.filter((asset) => asset.submission_id === submission.id);
-      item.append(head, submissionFields(submission, sessionAssets));
-      if (submission.proposal_abstract) {
-        item.append(make("p", submission.proposal_abstract, "item-card__abstract"));
-      }
-      if (submission.editable) {
-        const edit = make("button", "Edit proposal", "secondary");
-        edit.type = "button";
-        edit.addEventListener("click", () => {
-          document.querySelectorAll(".proposal-editor").forEach((editor) => editor.remove());
-          const editor = make("form", undefined, "proposal-editor");
-          const titleLabel = make("label", "Proposal title");
-          const title = document.createElement("input");
-          title.name = "proposal_title";
-          title.maxLength = 300;
-          title.required = true;
-          title.value = submission.proposal_title;
-          titleLabel.append(title);
-          const abstractLabel = make("label", "Proposal abstract");
-          const abstract = document.createElement("textarea");
-          abstract.name = "proposal_abstract";
-          abstract.rows = 7;
-          abstract.maxLength = 5000;
-          abstract.required = true;
-          abstract.value = submission.proposal_abstract;
-          abstractLabel.append(abstract);
-          const actions = make("div", undefined, "actions");
-          const cancel = make("button", "Cancel", "secondary");
-          cancel.type = "button";
-          cancel.addEventListener("click", () => editor.remove());
-          const save = make("button", "Save changes");
-          save.type = "submit";
-          actions.append(cancel, save);
-          editor.append(titleLabel, abstractLabel, actions);
-          editor.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            if (!editor.reportValidity()) return;
-            save.disabled = true;
-            save.textContent = "Saving…";
-            try {
-              const updated = await api(`/api/v1/forms/${encodeURIComponent(submission.form_slug)}/submissions/${encodeURIComponent(submission.id)}`, {
-                method: "PATCH",
-                headers: {
-                  "content-type": "application/json",
-                  "x-csrf-token": state.csrf,
-                  "idempotency-key": idempotencyKey()
-                },
-                body: JSON.stringify({
-                  speaker_name: submission.speaker_name,
-                  speaker_email: submission.speaker_email,
-                  proposal_title: title.value.trim(),
-                  proposal_abstract: abstract.value.trim(),
-                  answers: {
-                    ...submission.answers,
-                    proposal_title: title.value.trim(),
-                    proposal_abstract: abstract.value.trim()
-                  },
-                  version: submission.version
-                })
-              });
-              Object.assign(submission, updated);
-              renderPortfolio();
-              setStatus("Proposal changes saved.", "success");
-            } catch (error) {
-              setStatus(error.status === 409
-                ? "This proposal changed elsewhere. Reload the portal and try again."
-                : window.SessionBuddyApi.message(error, "The proposal could not be saved."), "error");
-              save.disabled = false;
-              save.textContent = "Save changes";
-            }
-          });
-          item.append(editor);
-          title.focus();
-        });
-        item.append(edit);
-        const withdraw = make("button", "Withdraw proposal", "secondary");
-        withdraw.type = "button";
-        withdraw.addEventListener("click", async () => {
-          if (!confirm("Withdraw this proposal? It will become read-only and cannot enter review.")) return;
-          withdraw.disabled = true;
-          withdraw.textContent = "Withdrawing…";
-          try {
-            const updated = await api(`/api/v1/forms/${encodeURIComponent(submission.form_slug)}/submissions/${encodeURIComponent(submission.id)}/withdraw`, {
-              method: "POST",
-              headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
-              body: "{}"
-            });
-            Object.assign(submission, updated);
-            renderPortfolio();
-            setStatus("Proposal withdrawn. It is now read-only.", "success");
-          } catch (error) {
-            setStatus(window.SessionBuddyApi.message(error, "The proposal could not be withdrawn."), "error");
-            withdraw.disabled = false;
-            withdraw.textContent = "Withdraw proposal";
-          }
-        });
-        item.append(withdraw);
-      }
-      if (submission.status === "withdrawn") item.append(make("p", "This proposal is withdrawn and read-only.", "help"));
-      const files = document.createElement("details");
-      files.className = "session-files";
-      files.append(make("summary", "Files"));
-      const saved = make("ul", undefined, "session-file-list");
-      if (!sessionAssets.length) saved.append(make("li", "No files uploaded for this session.", "empty"));
-      sessionAssets.forEach((asset) => saved.append(make("li", `${asset.kind === "slides" ? "Slides" : "Document"}: ${asset.filename}`)));
-      files.append(saved);
-      if (submission.status !== "withdrawn") {
-        const uploads = make("div", undefined, "session-upload-grid");
-        uploads.append(
-          createUploadForm("slides", submission.id),
-          createUploadForm("supporting_document", submission.id)
-        );
-        files.append(uploads);
-      }
-      item.append(files);
+      item.append(link);
       list.append(item);
     });
   }
@@ -460,37 +353,17 @@
   }
 
   function renderOpenCall(call) {
-    const trigger = byId("open-proposal-composer");
     const availability = byId("call-availability");
-    // A half-written proposal survives incidental portal refreshes (completing
-    // a task, uploading session files). Only a different event, or the call
-    // disappearing, discards it.
-    const composing = !byId("proposal-composer").hidden;
-    if (!composing || !call || state.composerEventId !== state.portal?.event?.id) closeComposer();
     if (!call) {
-      trigger.hidden = true;
       availability.hidden = true;
       return;
     }
-    const composerOpen = !byId("proposal-composer").hidden;
-    trigger.hidden = !call.accepting_submissions && !composerOpen;
     availability.hidden = call.accepting_submissions;
     if (!call.accepting_submissions) availability.textContent = call.availability_message;
-    if (call.accepting_submissions && typeof call.remaining_submissions === "number") {
-      trigger.textContent = call.remaining_submissions === 1
-        ? "Submit a proposal (1 left)"
-        : `Submit a proposal (${call.remaining_submissions} left)`;
-    } else {
-      trigger.textContent = "Submit a proposal";
-    }
   }
 
   function closeComposer({ discardDraft = false } = {}) {
     if (discardDraft) clearComposerDraft();
-    const composer = byId("proposal-composer");
-    composer.replaceChildren();
-    composer.hidden = true;
-    byId("open-proposal-composer").setAttribute("aria-expanded", "false");
     state.form = null;
     state.composerEventId = null;
     state.files.clear();
@@ -499,7 +372,7 @@
   }
 
   function proposalFieldValue(field) {
-    const form = byId("proposal-composer-form");
+    const form = retiredComposerNode("proposal-composer-form");
     const control = form?.elements.namedItem(field.key);
     if (!control) return null;
     if (field.type === "checkbox") return Boolean(control.checked);
@@ -592,7 +465,7 @@
       container.append(label);
     }
     state.applyConditions = () => {
-      const form = byId("proposal-composer-form");
+      const form = retiredComposerNode("proposal-composer-form");
       for (const field of fields) {
         const related = conditions.filter((condition) => condition.target_key === field.key);
         const visible = related.every(proposalConditionMatches);
@@ -721,7 +594,7 @@
   }
 
   function buildComposer(call, form) {
-    const composer = byId("proposal-composer");
+    const composer = retiredComposerNode("proposal-composer");
     const shell = make("form", undefined, "proposal-composer__form");
     shell.id = "proposal-composer-form";
     const heading = make("div", undefined, "proposal-composer__heading");
@@ -761,7 +634,7 @@
     cancel.addEventListener("click", () => {
       if (!confirmComposerDiscard()) return;
       closeComposer({ discardDraft: true });
-      byId("open-proposal-composer").focus();
+      retiredComposerNode("open-proposal-composer")?.focus();
     });
     const submit = make("button", "Submit proposal");
     submit.type = "submit";
@@ -811,7 +684,7 @@
     });
     shell.addEventListener("invalid", (event) => {
       event.preventDefault();
-      if (byId("proposal-composer-error")?.hidden) {
+      if (retiredComposerNode("proposal-composer-error")?.hidden) {
         showComposerError("Complete the highlighted field before submitting.", event.target);
       }
     }, true);
@@ -922,7 +795,7 @@
       } catch (_) {
         setStatus(`Proposal submitted (receipt ${created.id}), but the portal could not be refreshed. Reload to see it.`, "success");
       }
-      const trigger = byId("open-proposal-composer");
+      const trigger = retiredComposerNode("open-proposal-composer");
       (trigger.hidden ? byId("status") : trigger).focus();
     });
     const firstField = fields.querySelector("input:not(:disabled), textarea:not(:disabled), select:not(:disabled)");
@@ -933,7 +806,7 @@
     const call = state.portal?.open_call;
     if (!call?.accepting_submissions) return;
     const requestedEventId = state.portal?.event?.id || "";
-    const trigger = byId("open-proposal-composer");
+    const trigger = retiredComposerNode("open-proposal-composer");
     trigger.disabled = true;
     setStatus("Loading the call for proposals…");
     try {
@@ -1041,7 +914,6 @@
     const publicProfile = byId("public-profile-link");
     publicProfile.hidden = !portal.public_profile_url;
     if (portal.public_profile_url) publicProfile.href = portal.public_profile_url;
-    byId("session-event-label").textContent = `${portal.event.name} · Event time (${portal.event.time_zone})`;
     renderOpenCall(portal.open_call || null);
     renderPortfolio();
     byId("auth-state").hidden = true;
@@ -1084,7 +956,7 @@
     );
     copy.append(title, meta);
     const submissions = portal?.submissions || [];
-    heading.append(copy, make("span", `${submissions.length} submission${submissions.length === 1 ? "" : "s"}`, "count-badge"));
+    heading.append(copy);
     section.setAttribute("aria-labelledby", title.id);
     section.append(heading);
 
@@ -1093,63 +965,82 @@
       return section;
     }
 
+    const outstanding = (portal.tasks || []).filter((task) => !["completed", "waived"].includes(task.state));
+    const notifications = portal.notifications || [];
+    const resources = state.resources.filter((resource) => resource.event_id === event.id);
+    const assets = entry.assets || [];
+    const activities = portal.activities || [];
+    if (!submissions.length && !outstanding.length && !notifications.length
+        && !resources.length && !assets.length && !activities.length) {
+      section.classList.add("is-empty-event");
+      section.append(make("p", "No proposals or actions for this event.", "event-group__empty"));
+      return section;
+    }
+
+    const proposalBlock = make("section", undefined, "event-group__primary");
+    proposalBlock.append(subHeading("Your proposals", submissions.length));
     const sessionList = make("ul", undefined, "item-list submission-list");
     sessionList.dataset.eventId = event.id;
-    renderSubmissions(submissions, sessionList, entry.assets || []);
-    section.append(sessionList);
+    renderSubmissions(submissions, sessionList);
+    proposalBlock.append(sessionList);
+    section.append(proposalBlock);
 
-    // Tasks always get a block, even when empty: "nothing is due" is the
-    // answer a speaker opens this page for.
-    const outstanding = (portal.tasks || []).filter((task) => !["completed", "waived"].includes(task.state));
-    const tasksBlock = make("section", undefined, "event-group__block");
-    tasksBlock.append(subHeading("Needs attention", outstanding.length));
-    if ((portal.tasks || []).length) {
+    // Required work is the only secondary object promoted above messages and
+    // reference material. An empty task collection is represented by absence,
+    // not a full table that competes with the proposal.
+    if (outstanding.length) {
+      const tasksBlock = make("section", undefined, "event-group__block event-group__attention");
+      tasksBlock.append(subHeading("Needs attention", outstanding.length));
       const taskList = make("ul", undefined, "item-list task-list");
       taskList.dataset.eventId = event.id;
-      renderTasks(portal.tasks || [], event.time_zone, taskList);
+      renderTasks(outstanding, event.time_zone, taskList, submissions);
       tasksBlock.append(taskList);
-    } else {
-      tasksBlock.append(emptyDataTable("Task", "Status", "No tasks assigned", "0"));
-    }
-    section.append(tasksBlock);
-
-    const notifications = portal.notifications || [];
-    if (notifications.length) {
-      const updates = make("section", undefined, "event-group__block");
-      updates.append(subHeading("Event updates", notifications.length));
-      const list = make("ul", undefined, "notification-list");
-      list.dataset.eventId = event.id;
-      renderNotifications(notifications, event.time_zone, list);
-      updates.append(list);
-      section.append(updates);
+      section.append(tasksBlock);
     }
 
-    const resources = state.resources.filter((resource) => resource.event_id === event.id);
-    const resourceBlock = make("section", undefined, "event-group__block");
-    resourceBlock.append(subHeading("Resources", resources.length));
-    const resourceContainer = make("div", undefined, "resource-list");
-    renderResources(resources, resourceContainer);
-    resourceBlock.append(resourceContainer);
-    section.append(resourceBlock);
-
-    const assets = entry.assets || [];
-    const assetBlock = make("section", undefined, "event-group__block");
-    assetBlock.append(subHeading("Files", assets.length));
-    assetBlock.append(assetTable(assets));
-    section.append(assetBlock);
-
-    const activities = portal.activities || [];
-    const activityBlock = make("section", undefined, "event-group__block");
-    activityBlock.append(subHeading("Activities", activities.length));
-    activityBlock.append(activityTable(activities, event.time_zone));
-    section.append(activityBlock);
-
-    if (portal.open_call?.accepting_submissions && event.id !== state.activeEventId) {
-      const submit = make("button", "Submit a proposal", "secondary event-group__submit");
-      submit.type = "button";
-      submit.addEventListener("click", () => selectEvent(event.id, { openComposer: true }));
-      section.append(submit);
+    if (notifications.length || resources.length) {
+      const support = make("div", undefined, "event-group__support");
+      if (notifications.length) {
+        const messages = make("section", undefined, "event-group__block event-group__messages");
+        messages.append(subHeading("Messages", notifications.length));
+        const list = make("ul", undefined, "notification-list");
+        list.dataset.eventId = event.id;
+        renderNotifications(notifications, event.time_zone, list);
+        messages.append(list);
+        support.append(messages);
+      }
+      if (resources.length) {
+        const resourceBlock = make("section", undefined, "event-group__block event-group__resources");
+        resourceBlock.append(subHeading("Resources", resources.length));
+        const resourceContainer = make("div", undefined, "resource-list");
+        renderResources(resources, resourceContainer);
+        resourceBlock.append(resourceContainer);
+        support.append(resourceBlock);
+      }
+      section.append(support);
     }
+
+    if (assets.length || activities.length) {
+      const more = make("details", undefined, "event-group__more");
+      const moreSummary = make("summary");
+      moreSummary.append(
+        make("span", "Files and activity"),
+        make("span", String(assets.length + activities.length), "count-badge")
+      );
+      more.append(moreSummary);
+      if (assets.length) {
+        const assetBlock = make("section", undefined, "event-group__block");
+        assetBlock.append(subHeading("Files", assets.length), assetTable(assets));
+        more.append(assetBlock);
+      }
+      if (activities.length) {
+        const activityBlock = make("section", undefined, "event-group__block");
+        activityBlock.append(subHeading("Activity", activities.length), activityTable(activities, event.time_zone));
+        more.append(activityBlock);
+      }
+      section.append(more);
+    }
+
     return section;
   }
 
@@ -1225,11 +1116,16 @@
       .filter(Boolean)
       .filter((entry) => entry.event.id === state.activeEventId || entry.portal);
     const totals = summaryCounts(entries);
-    byId("summary-total").textContent = String(totals.total);
-    byId("summary-accepted").textContent = String(totals.accepted);
-    byId("summary-review").textContent = String(totals.review);
-    byId("summary-rejected").textContent = String(totals.rejected);
-    byId("summary-actions").textContent = String(totals.actions);
+    const setSummary = (id, value, always = false) => {
+      const output = byId(id);
+      output.textContent = String(value);
+      output.closest(".summary-tile").hidden = !always && value === 0;
+    };
+    setSummary("summary-total", totals.total, true);
+    setSummary("summary-accepted", totals.accepted);
+    setSummary("summary-review", totals.review);
+    setSummary("summary-rejected", totals.rejected);
+    setSummary("summary-actions", totals.actions);
     byId("portal-summary").textContent = entries.length === 1
       ? "Manage sessions, tasks, and resources for your event."
       : `Manage sessions, tasks, and resources across ${entries.length} events.`;
@@ -1372,8 +1268,8 @@
     renderPortfolio();
   }
 
-  async function selectEvent(eventId, { openComposer: shouldCompose = false } = {}) {
-    if (eventId === state.activeEventId && !shouldCompose) return;
+  async function selectEvent(eventId) {
+    if (eventId === state.activeEventId) return;
     if (!confirmComposerDiscard()) return;
     closeComposer({ discardDraft: true });
     setStatus("Loading event…");
@@ -1382,7 +1278,6 @@
       renderPortal(portal);
       await Promise.all([loadAssets(), loadResources()]);
       setStatus("Speaker details are ready.", "success");
-      if (shouldCompose) byId("open-proposal-composer").click();
     } catch (error) {
       setStatus(window.SessionBuddyApi.message(error, "This event could not be loaded."), "error");
     }
@@ -1390,24 +1285,6 @@
 
   byId("speaker-sign-in").addEventListener("click", () => {
     location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
-  });
-
-  byId("open-proposal-composer").addEventListener("click", () => {
-    if (byId("proposal-composer").hidden) {
-      openComposer();
-      return;
-    }
-    // Never discard a proposal that is mid-flight; its uploads are still being
-    // staged and the submission may already be on the wire.
-    if (byId("proposal-composer-form")?.getAttribute("aria-busy") === "true") return;
-    if (!confirmComposerDiscard()) return;
-    closeComposer({ discardDraft: true });
-  });
-
-  addEventListener("beforeunload", (event) => {
-    if (!composerIsDirty()) return;
-    event.preventDefault();
-    event.returnValue = "";
   });
 
   function safeUploadUrl(value) {

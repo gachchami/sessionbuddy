@@ -14,7 +14,7 @@
   const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
-  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], nextCursor: null, addRoundMutation: null };
+  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null };
   function selectedSubmissionIds() {
     return [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
   }
@@ -159,6 +159,7 @@
   commentRequired.append(commentRequiredInput, " Require a written reviewer comment");
   guidance.after(commentRequired);
   function renderRoundHistory(rounds) {
+    state.rounds = rounds;
     const container = byId("round-history");
     container.replaceChildren();
     if (!rounds.length) {
@@ -281,6 +282,9 @@
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return value;
   }
+  function answerLabel(item, key) {
+    return item.answer_labels?.[key] || humanize(key);
+  }
   function showSubmission(item, trigger) {
     const details = byId("submission-detail-list");
     details.replaceChildren(
@@ -293,57 +297,11 @@
       detailRow("Routed category", item.routed_category),
       detailRow("Routed track", item.routed_track),
       detailRow("Review queue", item.routed_review_queue),
-      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(humanize(key), answerText(value)))
+      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(answerLabel(item, key), answerText(value)))
     );
     if (item.co_speakers?.length) {
       details.append(detailRow("Co-speakers", item.co_speakers.map((person) => `${person.display_name} (${person.email}) · ${person.role === "co_speaker" ? "Co-speaker" : person.role}`).join(", ")));
     }
-    const aiActions = document.createElement("div"); aiActions.className = "actions";
-    const edit = document.createElement("button"); edit.type = "button"; edit.className = "secondary"; edit.textContent = "Edit proposal";
-    edit.disabled = item.status !== "submitted";
-    if (edit.disabled) edit.title = "Decided proposals cannot be edited.";
-    edit.addEventListener("click", () => {
-      const form = document.createElement("form"); form.className = "card";
-      const fields = [
-        ["speaker_name", "Speaker name", "input"], ["speaker_email", "Speaker email", "input"],
-        ["proposal_title", "Proposal title", "input"], ["proposal_abstract", "Proposal abstract", "textarea"]
-      ];
-      fields.forEach(([name, labelText, tag]) => {
-        const label = document.createElement("label"); label.textContent = labelText;
-        const input = document.createElement(tag); input.name = name; input.required = true;
-        input.maxLength = name === "proposal_abstract" ? 5000 : name === "speaker_email" ? 320 : 200;
-        if (name === "speaker_email") input.type = "email";
-        input.value = item[name] || ""; label.append(input); form.append(label);
-      });
-      const save = document.createElement("button"); save.type = "submit"; save.textContent = "Save proposal";
-      const cancel = document.createElement("button"); cancel.type = "button"; cancel.className = "secondary"; cancel.textContent = "Cancel";
-      cancel.addEventListener("click", () => form.remove()); form.append(save, cancel);
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault(); save.disabled = true;
-        const values = Object.fromEntries(new FormData(form));
-        const answers = { ...(item.answers || {}), ...values };
-        try {
-          const updated = await api(`/api/v1/admin/submissions/${encodeURIComponent(item.id)}`, {
-            method: "PATCH", headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
-            body: JSON.stringify({ ...values, answers, co_speakers: item.co_speakers || [], version: item.version })
-          });
-          Object.assign(item, updated); byId("status").textContent = "Proposal updated.";
-          form.remove(); dialog.close(); await load();
-        } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error); byId("status").classList.add("error"); save.disabled = false; }
-      });
-      aiActions.after(form);
-    });
-    const triage = document.createElement("button"); triage.type = "button"; triage.className = "secondary"; triage.textContent = "Run AI first pass";
-    triage.addEventListener("click", async () => {
-      triage.disabled = true; triage.textContent = "Analyzing…";
-      try {
-        const result = await api(`/api/v1/admin/submissions/${encodeURIComponent(item.id)}/ai-triage`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: "{}" });
-        details.append(detailRow("AI score", `${result.score}/10`), detailRow("AI recommendation", result.recommendation), detailRow("AI rationale", result.rationale), detailRow("Source", "Workers AI · advisory only; not a human review"));
-        byId("status").textContent = "AI first pass ready. A human reviewer still makes the decision.";
-      } catch (error) { byId("status").textContent = window.SessionBuddyApi.message(error, "AI triage is temporarily unavailable."); byId("status").classList.add("error"); }
-      finally { triage.disabled = false; triage.textContent = "Run AI first pass"; }
-    });
-    aiActions.append(edit, triage); details.after(aiActions);
     const dialog = byId("submission-detail");
     dialog.addEventListener("close", () => trigger.focus(), { once: true });
     dialog.showModal();
@@ -367,7 +325,7 @@
       detailRow("Category", item.routed_category),
       detailRow("Track", item.routed_track),
       detailRow("Review queue", item.routed_review_queue),
-      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(humanize(key), answerText(value)))
+      ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(answerLabel(item, key), answerText(value)))
     );
     if (item.co_speakers?.length) {
       details.append(detailRow("Co-speakers", item.co_speakers.map((person) => person.display_name).join(", ")));
@@ -377,7 +335,7 @@
     const open = document.createElement("button");
     open.type = "button";
     open.className = "secondary";
-    open.textContent = "Open proposal actions";
+    open.textContent = "View proposal";
     open.addEventListener("click", () => showSubmission(item, open));
     actions.append(open);
     panel.append(details, actions);
@@ -407,6 +365,12 @@
       window.dispatchEvent(new Event("sessionbuddy:event-context"));
       byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
       byId("cfp-workspace-link").hidden = false;
+      const cfp = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`);
+      if (cfp.published_form?.accepting_submissions) {
+        const eventKey = eventId.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 6);
+        byId("create-proposal-link").href = `/cfp/${eventKey}/${encodeURIComponent(cfp.published_form.slug)}`;
+        byId("create-proposal-link").hidden = false;
+      }
       renderEvaluatorChoices();
       state.nextCursor = result.next_cursor || null;
       const body = byId("submissions");
@@ -574,6 +538,7 @@
         body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids") })
       });
       byId("status").textContent = `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
+      renderRoundHistory([round, ...state.rounds.filter((item) => item.id !== round.id)]);
       showRound(round);
     } catch (error) {
       showRoundError(window.SessionBuddyApi.message(error));

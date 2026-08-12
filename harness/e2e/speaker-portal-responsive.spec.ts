@@ -154,10 +154,16 @@ test.describe("speaker portal responsive design", () => {
       await page.goto("/speaker");
 
       await expect(page.locator("#status")).toHaveText("Speaker details are ready.");
-      await expect(page.getByRole("heading", { name: "Needs attention" })).toBeVisible();
+      const activeEvent = page.locator('.event-group[data-event-id="event-responsive"]');
+      await expect(activeEvent.getByRole("heading", { name: "Your proposals" })).toBeVisible();
+      await expect(activeEvent.getByRole("heading", { name: "Needs attention" })).toHaveCount(0);
+      await expect(activeEvent.getByRole("heading", { name: "Messages" })).toBeVisible();
+      await expect(activeEvent.getByRole("heading", { name: "Files" })).toHaveCount(0);
+      await expect(activeEvent.getByRole("heading", { name: "Activity" })).toHaveCount(0);
+      await expect(activeEvent.locator(".portal-data-table.is-empty")).toHaveCount(0);
       await expect(page.locator(".portal-hero__title")).toContainText("Welcome, Alex Speaker");
       await expect(page.getByRole("link", { name: "Public profile" })).toBeVisible();
-      await expect(page.locator(".session-files")).toHaveCount(1);
+      await expect(page.locator(".session-files")).toHaveCount(0);
       await expect(page.locator(".notification-list")).toContainText("Slides are due Friday");
       await page.locator(".notification-list summary").click();
       await expect(page.locator(".notification-list")).toContainText("The original email is not required.");
@@ -166,8 +172,7 @@ test.describe("speaker portal responsive design", () => {
       await expect(page.locator("#profile")).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Speaker portal" })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      expect(await page.locator(".session-fields").first().evaluate((element) =>
-        getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+      await expect(page.locator(".proposal-summary-row")).toHaveCount(1);
     });
   }
 
@@ -182,36 +187,15 @@ test.describe("speaker portal responsive design", () => {
     expect(results.violations).toEqual([]);
   });
 
-  test("proposal editing stays inside the speaker portal", async ({ page }) => {
+  test("proposal management links to the dedicated workspace", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await servePortal(page);
     await page.goto("/speaker");
     await expect(page.locator("#status")).toHaveText("Speaker details are ready.");
 
-    await page.getByRole("button", { name: "Edit proposal" }).click();
-    await expect(page.locator(".proposal-editor")).toBeVisible();
-    await page.getByLabel("Proposal title").fill("Updated proposal title");
-    await page.getByRole("button", { name: "Save changes" }).click();
-
-    await expect(page.locator("#status")).toHaveText("Proposal changes saved.");
-    await expect(page).toHaveURL(/\/speaker$/);
-    await expect(page.getByRole("heading", { name: "Updated proposal title" })).toBeVisible();
-  });
-
-  test("primary speaker can withdraw an unreviewed proposal", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await servePortal(page);
-    await page.goto("/speaker");
-    page.once("dialog", (dialog) => dialog.accept());
-
-    await page.getByRole("button", { name: "Withdraw proposal" }).click();
-
-    await expect(page.locator("#status")).toHaveText("Proposal withdrawn. It is now read-only.");
-    await expect(page.locator(".submission-list")).toContainText("Withdrawn");
-    await expect(page.locator(".submission-list")).toContainText("withdrawn and read-only");
-    await expect(page.getByRole("button", { name: "Edit proposal" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Withdraw proposal" })).toHaveCount(0);
-    await expect(page.locator(".session-upload-grid")).toHaveCount(0);
+    const proposal = page.getByRole("link", { name: /A deliberately long session title/ });
+    await expect(proposal).toHaveAttribute("href", /\/speaker\/proposals\/.+\/.+/);
+    await expect(page.locator(".proposal-editor")).toHaveCount(0);
   });
 
   test("every event the speaker belongs to is grouped on one page", async ({ page }) => {
@@ -224,13 +208,32 @@ test.describe("speaker portal responsive design", () => {
     await expect(page.getByRole("heading", { name: "Applied AI Conference 2027" })).toBeVisible();
 
     const second = page.locator('.event-group[data-event-id="event-second"]');
-    await expect(second.locator(".submission-list")).toContainText("No proposals");
+    await expect(second.locator(".event-group__empty")).toHaveText("No proposals or actions for this event.");
+    await expect(second.locator(".submission-list")).toHaveCount(0);
     await expect(second.locator(".notification-list")).toHaveCount(0);
     await expect(page.locator("#summary-total")).toHaveText("1");
   });
 
   test("a failed safety check retries the same upload intent", async ({ page }) => {
     await servePortal(page);
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...portal,
+        events: [portal.event],
+        tasks: [{
+          id: "task-supporting-document",
+          event_id: "event-responsive",
+          task_type: "supporting_document",
+          title: "Upload moderator briefing",
+          help_text: "Share the latest PDF.",
+          state: "open",
+          version: 1,
+          due_at_ms: null,
+          form_fields: [],
+        }],
+      }),
+    }));
     let authorizations = 0;
     let uploads = 0;
     let completions = 0;
@@ -267,7 +270,7 @@ test.describe("speaker portal responsive design", () => {
     });
 
     await page.goto("https://sessionbuddy.test/speaker");
-    await page.locator(".session-files summary").click();
+    await expect(page.locator("#status")).toHaveText("Speaker details are ready.");
     const uploadForm = page.locator('form[data-kind="supporting_document"]');
     await uploadForm.locator('input[type="file"]').setInputFiles({
       name: "briefing.pdf",
@@ -277,6 +280,7 @@ test.describe("speaker portal responsive design", () => {
     await uploadForm.getByLabel(/What changed/).fill("Updated moderator briefing.");
     await uploadForm.getByRole("button", { name: "Upload document" }).click();
     const uploadStatus = uploadForm.locator(".upload-status");
+    await expect.poll(() => completions).toBe(1);
     await expect(uploadStatus).toHaveText(
       "File received. Safety checks are temporarily unavailable, so this file is not public or current yet. "
       + "Press “Upload document” again to retry. You do not need to choose or upload the file again.",
@@ -292,7 +296,27 @@ test.describe("speaker portal responsive design", () => {
 
   test("an authorization failure does not claim the file was received", async ({ page }) => {
     await servePortal(page);
+    let authorizations = 0;
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...portal,
+        events: [portal.event],
+        tasks: [{
+          id: "task-supporting-document",
+          event_id: "event-responsive",
+          task_type: "supporting_document",
+          title: "Upload moderator briefing",
+          help_text: "Share the latest PDF.",
+          state: "open",
+          version: 1,
+          due_at_ms: null,
+          form_fields: [],
+        }],
+      }),
+    }));
     await page.route("**/api/v1/speaker/events/event-responsive/upload-authorizations", async (route) => {
+      authorizations += 1;
       await route.fulfill({
         status: 503,
         contentType: "application/json",
@@ -303,7 +327,7 @@ test.describe("speaker portal responsive design", () => {
     });
 
     await page.goto("https://sessionbuddy.test/speaker");
-    await page.locator(".session-files summary").click();
+    await expect(page.locator("#status")).toHaveText("Speaker details are ready.");
     const uploadForm = page.locator('form[data-kind="supporting_document"]');
     await uploadForm.locator('input[type="file"]').setInputFiles({
       name: "briefing.pdf",
@@ -313,6 +337,7 @@ test.describe("speaker portal responsive design", () => {
     await uploadForm.getByLabel(/What changed/).fill("Updated moderator briefing.");
     await uploadForm.getByRole("button", { name: "Upload document" }).click();
 
+    await expect.poll(() => authorizations).toBe(1);
     await expect(uploadForm.locator(".upload-status")).toHaveText("Something went wrong on our side. Try again.");
     await expect(uploadForm.locator(".upload-status")).not.toContainText("File received");
   });

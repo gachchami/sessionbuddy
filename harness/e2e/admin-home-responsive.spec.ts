@@ -59,9 +59,9 @@ for (const viewport of [
           next_cursor: null,
         } : {
           data: [
-            { id: "event-1", name: "Spring Summit", starts_at_ms: 1772323200000, time_zone: "UTC", delivery_mode: "hybrid", status: "active" },
-            { id: "event-2", name: "Summer School", starts_at_ms: 1780272000000, time_zone: "UTC", delivery_mode: "online", status: "active" },
-            { id: "event-old", name: "Winter Archive", starts_at_ms: 1735689600000, time_zone: "UTC", delivery_mode: "in_person", status: "archived" },
+            { id: "event-1", name: "Spring Summit", starts_at_ms: 1772323200000, time_zone: "UTC", delivery_mode: "hybrid", status: "active", schedule_status: "ready" },
+            { id: "event-2", name: "Summer School", starts_at_ms: 1780272000000, time_zone: "UTC", delivery_mode: "online", status: "active", schedule_status: "not_started" },
+            { id: "event-old", name: "Winter Archive", starts_at_ms: 1735689600000, time_zone: "UTC", delivery_mode: "in_person", status: "archived", schedule_status: "updates_pending" },
           ],
           next_cursor: "page-2",
         }),
@@ -87,12 +87,15 @@ for (const viewport of [
     await expect(page.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/organization");
     await expect(page.getByRole("link", { name: "Create event" })).toHaveAttribute("href", "/admin/events#event-form");
     await expect(page.getByRole("link", { name: /Spring Summit/ })).toHaveAttribute("href", "/admin/events/event-1");
+    await expect(page.getByRole("link", { name: /Spring Summit/ })).toContainText("Schedule ready");
     await expect(page.getByRole("link", { name: /Summer School/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Summer School/ })).toContainText("No schedule");
     await expect(page.getByRole("heading", { name: "Current events" })).toBeVisible();
     await expect(page.getByRole("link", { name: /Winter Archive/ })).toBeHidden();
     await page.getByText("Archived events (1)", { exact: true }).click();
     await expect(page.getByRole("link", { name: /Winter Archive/ })).toBeVisible();
     await expect(page.getByRole("link", { name: /Winter Archive/ })).toContainText("In person");
+    await expect(page.getByRole("link", { name: /Winter Archive/ })).toContainText("Schedule update ready");
     await expect(page.getByText("Organization workspace")).toHaveCount(0);
     await expect(page.getByText("Your program at a glance")).toHaveCount(0);
     await expect(page.getByText("Recent activity")).toHaveCount(0);

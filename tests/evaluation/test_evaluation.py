@@ -187,6 +187,8 @@ def test_decision_readiness_ignores_revoked_conflict_assignments() -> None:
         "JOIN evaluation_assignments a ON a.round_id = r.id "
         "AND a.status != 'revoked'"
     ) in decision
+    assert "JOIN speaker_asset_versions av ON av.asset_id=sa.id" in decision
+    assert "JOIN asset_versions av" not in decision
 
 
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:

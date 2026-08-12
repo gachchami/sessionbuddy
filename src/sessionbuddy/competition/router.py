@@ -434,6 +434,7 @@ async def list_organization_speakers(
         await _db(request)
         .prepare(
             """SELECT p.id AS person_id,p.user_id,COALESCE(u.email,'') AS email,
+                      COALESCE(u.public_profile_enabled,0) AS public_profile_enabled,
                       p.display_name,COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,
                       COALESCE(p.biography,'') AS biography,
@@ -478,6 +479,7 @@ async def list_organization_speakers(
             person = OrganizationSpeaker(
                 person_id=person_id,
                 user_id=str(row["user_id"]) if row["user_id"] is not None else None,
+                public_profile_enabled=bool(row["public_profile_enabled"]),
                 email=str(row["email"]),
                 display_name=str(row["display_name"]),
                 job_title=str(row["job_title"]),
@@ -504,7 +506,7 @@ async def list_organization_speakers(
             role="Speaker", status=str(row["selection_status"]),
         ))
     organizer_rows = result_rows(await _db(request).prepare(
-        """SELECT DISTINCT u.id AS user_id,u.email,
+        """SELECT DISTINCT u.id AS user_id,u.email,u.public_profile_enabled,
                   COALESCE(NULLIF(u.display_name,''),u.email) AS display_name
            FROM users u WHERE u.status='active' AND (
              EXISTS(SELECT 1 FROM owned_resources o WHERE o.id=?1
@@ -523,13 +525,17 @@ async def list_organization_speakers(
                 by_user[user_id].organization_roles.insert(0, "Organizer")
         else:
             people[f"organizer:{user_id}"] = OrganizationSpeaker(
-                person_id="", user_id=user_id, email=str(row["email"]),
+                person_id="", user_id=user_id,
+                public_profile_enabled=bool(row["public_profile_enabled"]),
+                email=str(row["email"]),
                 display_name=str(row["display_name"]), job_title="", company="",
                 biography="", location="", links=[], version=1,
                 organization_roles=["Organizer"], event_associations=[], participations=[])
     invitations = result_rows(await _db(request).prepare(
         """SELECT i.normalized_email,i.email,i.display_name,i.role,i.status,i.event_id,
-                  e.name AS event_name,u.id AS user_id FROM identity_invitations i
+                  e.name AS event_name,u.id AS user_id,
+                  COALESCE(u.public_profile_enabled,0) AS public_profile_enabled
+           FROM identity_invitations i
            JOIN events e ON e.id=i.event_id AND e.organization_id=i.organization_id
            LEFT JOIN users u ON u.normalized_email=i.normalized_email AND u.status='active'
            WHERE i.organization_id=?1 AND i.role IN ('speaker','evaluator')
@@ -543,6 +549,7 @@ async def list_organization_speakers(
         if person is None:
             person = OrganizationSpeaker(
                 person_id="", user_id=(str(row["user_id"]) if row["user_id"] else None),
+                public_profile_enabled=bool(row["public_profile_enabled"]),
                 email=email, display_name=str(row["display_name"] or email), job_title="",
                 company="", biography="", location="", links=[], version=1,
                 organization_roles=[role], event_associations=[], participations=[])

@@ -12,6 +12,8 @@ def test_public_cfp_browser_draft_expires_and_requires_verified_owner() -> None:
     assert "saved.ownerEmail !== normalizedEmail(expectedEmail)" in script
     assert "restoreBrowserDraft(state.sessionEmail)" in script
     assert "const saved = restoreBrowserDraft();" not in script
+    assert "hasMeaningfulProposalAnswers(saved.answers)" in script
+    assert "clearBrowserDraft();" in script
 
 
 def test_public_cfp_autosaves_and_warns_about_unsaved_changes() -> None:
@@ -22,6 +24,7 @@ def test_public_cfp_autosaves_and_warns_about_unsaved_changes() -> None:
     assert 'window.addEventListener("beforeunload"' in script
     assert "saveBrowserDraft(false)" in script
     assert "submissionId: state.editingSubmission?.id || null" in script
+    assert "refreshCharacterCounters?." in script
 
 
 def test_public_cfp_core_field_limits_match_the_api_contract() -> None:

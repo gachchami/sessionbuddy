@@ -216,6 +216,15 @@ test.describe("account profile responsive design", () => {
     await expect(page.getByRole("button", { name: "Save profile" })).toBeEnabled();
     expect(savedProfile).toBeNull();
 
+    await page.getByLabel("LinkedIn").fill("htttps://linkedin.com");
+    await page.getByRole("button", { name: "Save profile" }).click();
+    await expect(page.getByLabel("LinkedIn")).toHaveJSProperty(
+      "validationMessage",
+      "Enter a complete HTTPS URL, such as https://example.com, without a username or password.",
+    );
+    expect(savedProfile).toBeNull();
+    await page.getByLabel("LinkedIn").fill("");
+
     await page.getByLabel("First name").fill("Devang H.");
     await page.getByRole("button", { name: "Save profile" }).click();
     await expect.poll(() => savedProfile).toMatchObject({
@@ -316,6 +325,9 @@ test.describe("account profile responsive design", () => {
     await page.getByRole("button", { name: "Save profile" }).click();
 
     await expect(status).toHaveText("Profile saved.");
+    await expect(page.getByRole("button", { name: "✓ Saved" })).toBeDisabled();
+    await page.getByLabel("Job title").fill("Lead program chair");
+    await expect(page.getByRole("button", { name: "Save profile" })).toBeEnabled();
     expect(submittedProfiles).toHaveLength(2);
     expect(submittedProfiles[0]).toMatchObject({
       job_title: "Program chair",

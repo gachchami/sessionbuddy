@@ -117,7 +117,8 @@ def test_dynamic_javascript_and_react_textareas_match_api_limits() -> None:
     assert "input.maxLength = 4000;" in task_textarea
 
     submissions = (STATIC / "admin_submissions.js").read_text(encoding="utf-8")
-    assert 'name === "proposal_abstract" ? 5000' in submissions
+    assert 'detailRow("Full abstract", item.proposal_abstract)' in submissions
+    assert 'name === "proposal_abstract"' not in submissions
 
     react = (ROOT / "frontend" / "src" / "main.tsx").read_text(encoding="utf-8")
     for marker in (

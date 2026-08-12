@@ -24,7 +24,6 @@ from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 
 from .models import (
-    AiTriageView,
     AssignmentReassign,
     ConflictDeclaration,
     ConflictProgress,
@@ -57,7 +56,6 @@ from .models import (
 
 evaluation_router = APIRouter()
 
-AI_TRIAGE_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast"
 EVALUATION_PAGE_LIMIT = 50
 
 
@@ -625,91 +623,6 @@ async def list_event_evaluators(
         .all()
     )
     return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
-
-
-@evaluation_router.post(
-    "/api/v1/admin/submissions/{submission_id}/ai-triage",
-    response_model=AiTriageView,
-    operation_id="triageSubmissionWithWorkersAi",
-    tags=["evaluations", "ai"],
-)
-async def triage_submission(submission_id: str, request: Request) -> AiTriageView:
-    db = _db(request)
-    submission = row_mapping(
-        await db.prepare(
-            """SELECT organization_id,event_id,proposal_title,proposal_abstract
-               FROM submissions WHERE id=?1 LIMIT 1"""
-        ).bind(submission_id).first()
-    )
-    if submission is None:
-        raise HTTPException(status_code=404)
-    auth = await require_permission(
-        request, Permission.EVALUATION_RESULTS_READ,
-        ResourceContext(str(submission["organization_id"]), str(submission["event_id"])),
-        mutation=True,
-    )
-    ai = getattr(request.scope.get("env"), "AI", None)
-    if ai is None:
-        raise HTTPException(status_code=503)
-    payload = {
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a conference proposal triage assistant. Evaluate only the proposal "
-                    "content. Return a 0-10 score, one recommendation, and a specific rationale. "
-                    "This is advisory; a human makes the final decision. Do not infer protected "
-                    "traits or score the identity, reputation, employer, or demographic profile "
-                    "of any speaker."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Title: {submission['proposal_title']}\n\n"
-                    f"Abstract: {submission['proposal_abstract']}"
-                ),
-            },
-        ],
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {
-                "type": "object",
-                "properties": {
-                    "score": {"type": "integer", "minimum": 0, "maximum": 10},
-                    "recommendation": {"type": "string"},
-                    "rationale": {"type": "string"},
-                },
-                "required": ["score", "recommendation", "rationale"],
-            },
-        },
-    }
-    try:
-        raw = await ai.run(AI_TRIAGE_MODEL, payload)
-        converted = to_python(raw)
-        result = converted.get("response", converted) if isinstance(converted, dict) else None
-        if isinstance(result, str):
-            result = json.loads(result)
-        if not isinstance(result, dict):
-            raise ValueError("Workers AI returned no structured response")
-        view = AiTriageView(
-            submission_id=submission_id, model=AI_TRIAGE_MODEL,
-            score=int(result["score"]), recommendation=str(result["recommendation"]),
-            rationale=str(result["rationale"]), generated_at_ms=utc_now_ms(),
-        )
-        await db.prepare(
-            """INSERT INTO ai_triage_results
-               (id,organization_id,event_id,submission_id,model,score,recommendation,
-                rationale,generated_by_user_id,generated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"""
-        ).bind(
-            new_id(), submission["organization_id"], submission["event_id"], submission_id,
-            view.model, view.score, view.recommendation, view.rationale,
-            auth.actor.user_id, view.generated_at_ms,
-        ).run()
-        return view
-    except Exception as exc:
-        raise HTTPException(status_code=502) from exc
 
 
 @evaluation_router.post(
@@ -2297,7 +2210,7 @@ async def record_submission_decision(
                       ) AS has_account_headshot,
                       EXISTS(
                         SELECT 1 FROM speaker_assets sa
-                        JOIN asset_versions av ON av.asset_id=sa.id
+                        JOIN speaker_asset_versions av ON av.asset_id=sa.id
                           AND av.is_current=1 AND av.scan_state='clean'
                          WHERE sa.organization_id=s.organization_id
                            AND sa.event_id=s.event_id

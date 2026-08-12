@@ -6,6 +6,18 @@ services:
 
   worker:
     ports: !reset []
+    # The gate is a hermetic local rehearsal. Depending on `tunnel-vars` would
+    # make it require internet and a live quick tunnel, and would let the gate
+    # rewrite the developer's real .dev.vars as a side effect. `!override`
+    # replaces the mapping instead of merging into it, so the tunnel services
+    # are never started for this project.
+    depends_on: !override
+      scanner:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+      activity-poller:
+        condition: service_started
     environment:
       RELEASE_GATE_STATE: ${RELEASE_GATE_STATE:?set by scripts/release_gate.sh}
     command:

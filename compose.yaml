@@ -32,6 +32,39 @@ services:
       worker:
         condition: service_healthy
 
+  # Public HTTPS origin for local development. Magic links must be reachable
+  # over HTTPS: `Secure` session cookies are dropped on a plain-http origin,
+  # and the eval kit's containerized Chromium rejects Caddy's internal
+  # certificate. A quick tunnel needs no Cloudflare account, but its hostname
+  # is regenerated on every start, so it is resolved at boot rather than
+  # committed to wrangler.jsonc.
+  tunnel:
+    image: cloudflare/cloudflared:2026.8.1
+    volumes:
+      - tunnel-state:/tunnel
+    # Deliberately no depends_on worker: cloudflared starts fine against an
+    # origin that is not up yet (requests 502 until it is). Waiting for the
+    # worker would deadlock, because the worker needs this hostname to boot.
+    command:
+      [
+        "tunnel",
+        "--no-autoupdate",
+        "--url",
+        "http://worker:8787",
+        "--logfile",
+        "/tunnel/tunnel.log",
+      ]
+
+  tunnel-vars:
+    image: alpine:3.22
+    depends_on:
+      tunnel:
+        condition: service_started
+    volumes:
+      - .:/workspace
+      - tunnel-state:/tunnel
+    command: ["sh", "/workspace/scripts/tunnel_vars.sh"]
+
   clamav:
     image: clamav/clamav:1.4.5-debian13-slim
     healthcheck:
@@ -82,6 +115,10 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_healthy
+      # PUBLIC_BASE_URL and ALLOWED_ORIGINS are read once at startup, so the
+      # tunnel hostname must be in .dev.vars before the worker boots.
+      tunnel-vars:
+        condition: service_completed_successfully
       # API mutations append raw activities. Keep the independent projector
       # running even when developers start only the main worker service.
       activity-poller:
@@ -139,6 +176,7 @@ services:
 
 volumes:
   caddy-data:
+  tunnel-state:
   node-modules:
   python-venv:
   tool-cache:

@@ -258,12 +258,19 @@ def test_profile_identity_supports_description_links_and_one_private_headshot(
     db: sqlite3.Connection,
 ) -> None:
     user_columns = {row[1] for row in db.execute("PRAGMA table_info(users)")}
-    assert {"description", "website_url", "linkedin_url", "x_url"} <= user_columns
+    assert {
+        "description", "website_url", "linkedin_url", "x_url", "public_profile_enabled"
+    } <= user_columns
     db.execute(
         """INSERT INTO users
            (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
            VALUES('profile','profile@example.test','profile@example.test','active',1,1,1)"""
     )
+    assert db.execute(
+        "SELECT public_profile_enabled FROM users WHERE id='profile'"
+    ).fetchone() == (0,)
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("UPDATE users SET public_profile_enabled=2 WHERE id='profile'")
     db.execute(
         """INSERT INTO user_headshots
            (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)

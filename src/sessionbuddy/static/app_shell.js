@@ -704,21 +704,33 @@
       session = await window.SessionBuddyApi.request("/api/v1/auth/session");
     } catch (error) {
       if (error.status !== 401) {
-        if (shell) renderUnavailableShell();
+        try {
+          session = await window.SessionBuddyApi.request("/api/v1/auth/session");
+        } catch (retryError) {
+          error = retryError;
+        }
+      }
+      if (session) {
+        // Continue with the recovered session. The page and shell load independently,
+        // so a single transient response must not remove navigation or sign-out.
+      } else {
+        if (error.status !== 401) {
+          if (shell) renderUnavailableShell();
+          return;
+        }
+        if (landingAccount) {
+          try {
+            const setupState = await window.SessionBuddyApi.request("/api/v1/setup/status");
+            if (!setupState.configured) {
+              location.assign("/setup");
+              return;
+            }
+          } catch (_) { /* The public landing page remains available if setup status is unavailable. */ }
+        }
+        if (shell?.hasAttribute("data-allow-guest")) renderGuestShell();
+        else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         return;
       }
-      if (landingAccount) {
-        try {
-          const setupState = await window.SessionBuddyApi.request("/api/v1/setup/status");
-          if (!setupState.configured) {
-            location.assign("/setup");
-            return;
-          }
-        } catch (_) { /* The public landing page remains available if setup status is unavailable. */ }
-      }
-      if (shell?.hasAttribute("data-allow-guest")) renderGuestShell();
-      else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
-      return;
     }
     if (!activeRole(session)) {
       renderSessionContractError();

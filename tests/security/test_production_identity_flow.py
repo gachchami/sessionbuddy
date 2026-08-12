@@ -7,6 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from sessionbuddy.api.app import app
+from sessionbuddy.platform.auth.passwords import hash_password
 from tests.schema import MIGRATIONS
 
 
@@ -115,6 +116,32 @@ def _deployment_key(connection: sqlite3.Connection) -> str:
     ).fetchone()
     assert row is not None
     return str(row[0])
+
+
+def _insert_password_speaker(
+    connection: sqlite3.Connection, *, user_id: str, email: str, password: str
+) -> None:
+    verifier = hash_password(password, b"p" * 32)
+    connection.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,email_verified_at_ms,display_name,
+            profile_completed_at_ms,created_at_ms,updated_at_ms)
+           VALUES(?,?,?,'active',1,?,1,1,1)""",
+        (user_id, email, email.casefold(), email.split("@", 1)[0]),
+    )
+    connection.execute(
+        """INSERT INTO user_roles
+           (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+           VALUES(?,'speaker','active',1,1,1)""",
+        (user_id,),
+    )
+    connection.execute(
+        """INSERT INTO password_credentials
+           (user_id,verifier_phc,pepper_version,status,created_at_ms,updated_at_ms)
+           VALUES(?,?,1,'active',1,1)""",
+        (user_id, verifier),
+    )
+    connection.commit()
 
 
 @pytest.fixture
@@ -1269,6 +1296,67 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             },
         )
         assert submission.status_code == 201
+        workspace_path = f"/speaker/proposals/speaker-summit/{submission.json()['id']}"
+        owner_workspace = await speaker.get(workspace_path)
+        assert owner_workspace.status_code == 200
+        assert "Proposal" in owner_workspace.text
+
+        outsider_password = "outsider private passphrase"  # noqa: S105 - synthetic test credential
+        contributor_password = "contributor private passphrase"  # noqa: S105 - synthetic test credential
+        _insert_password_speaker(
+            connection,
+            user_id="workspace-outsider",
+            email="workspace-outsider@example.com",
+            password=outsider_password,
+        )
+        _insert_password_speaker(
+            connection,
+            user_id="workspace-contributor",
+            email="workspace-contributor@example.com",
+            password=contributor_password,
+        )
+        connection.execute(
+            """INSERT INTO submission_contributors
+               (id,organization_id,event_id,submission_id,display_name,email,
+                normalized_email,created_at_ms,updated_at_ms,invitation_status,
+                accepted_at_ms,user_id)
+               VALUES('workspace-contributor-link',?,?,?,?,?,?,1,1,'accepted',1,?)""",
+            (
+                organization_id,
+                event_id,
+                submission.json()["id"],
+                "Workspace Contributor",
+                "workspace-contributor@example.com",
+                "workspace-contributor@example.com",
+                "workspace-contributor",
+            ),
+        )
+        connection.commit()
+
+        async with _client(environment) as outsider:
+            signed_in = await outsider.post(
+                "/api/v1/auth/password/sign-in",
+                json={
+                    "email": "workspace-outsider@example.com",
+                    "password": outsider_password,
+                    "redirect_path": "/speaker",
+                },
+            )
+            assert signed_in.status_code == 200
+            assert (await outsider.get(workspace_path)).status_code == 404
+
+        async with _client(environment) as contributor:
+            signed_in = await contributor.post(
+                "/api/v1/auth/password/sign-in",
+                json={
+                    "email": "workspace-contributor@example.com",
+                    "password": contributor_password,
+                    "redirect_path": "/speaker",
+                },
+            )
+            assert signed_in.status_code == 200
+            assert (await contributor.get(workspace_path)).status_code == 200
+
         assert (await speaker.get("/api/v1/forms/speaker-summit/draft")).json() is None
         withdrawal_candidate = await speaker.post(
             "/api/v1/forms/speaker-summit/submissions",
@@ -1329,6 +1417,49 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert own_profile.status_code == 200
         assert own_profile.json()["can_edit"] is True
         assert own_profile.json()["email"] == "speaker@example.com"
+
+        async with _client(environment, origin=None) as anonymous:
+            private_profile = await anonymous.get(
+                f"/api/v1/public/people/{speaker_session['user_id']}"
+            )
+            assert private_profile.status_code == 404
+
+        account = (await speaker.get("/api/v1/account/profile")).json()
+        assert account["public_profile_enabled"] is False
+        enabled = await speaker.patch(
+            "/api/v1/account/profile",
+            headers=speaker_headers,
+            json={
+                "first_name": account["first_name"] or "Integration",
+                "last_name": account["last_name"] or "Speaker",
+                "job_title": account["job_title"],
+                "company": account["company"],
+                "time_zone": account["time_zone"],
+                "description": account["description"],
+                "website_url": account["website_url"],
+                "linkedin_url": account["linkedin_url"],
+                "x_url": account["x_url"],
+                "public_profile_enabled": True,
+                "version": account["version"],
+            },
+        )
+        assert enabled.status_code == 200
+        assert enabled.json()["public_profile_enabled"] is True
+
+        async with _client(environment, origin=None) as anonymous:
+            public_profile = await anonymous.get(
+                f"/api/v1/public/people/{speaker_session['user_id']}"
+            )
+            assert public_profile.status_code == 200
+            public_payload = public_profile.json()
+            assert public_payload["user_id"] == speaker_session["user_id"]
+            assert public_payload["display_name"]
+            assert "email" not in public_payload
+            assert "roles" not in public_payload
+            assert "organization_id" not in public_payload
+            assert "event_id" not in public_payload
+            public_page = await anonymous.get(f"/people/{speaker_session['user_id']}")
+            assert public_page.status_code == 200
 
     async with _client(environment) as admin_again:
         await admin_again.post(

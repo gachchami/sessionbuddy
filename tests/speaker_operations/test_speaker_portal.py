@@ -301,66 +301,35 @@ async def test_open_call_only_considers_published_forms_on_active_events() -> No
     assert "f.organization_id=?1" in form_query and "f.event_id=?2" in form_query
 
 
-def test_portal_submits_proposals_through_the_shared_call_endpoint() -> None:
+def test_portal_links_rows_to_exact_proposals_and_new_work_to_the_public_cfp() -> None:
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
     portal = (static / "speaker_portal.js").read_text()
     page = (static / "speaker_portal.html").read_text()
 
-    # One create path, server-validated: the portal reuses the public form's
-    # endpoint rather than a portal-only copy of submission validation.
-    assert "`/api/v1/forms/${encodeURIComponent(call.slug)}/submissions`" in portal
-    assert '"x-public-session-id": pendingSubmission.session' in portal
-    assert '"x-csrf-token": state.csrf' in portal
-    assert 'id="open-proposal-composer"' in page
-    assert 'aria-controls="proposal-composer"' in page
+    assert 'id="my-proposals-link"' not in page
+    assert "New proposal" not in page
+    assert "portal.open_call.public_path" not in portal
+    assert (
+        "`/speaker/proposals/${encodeURIComponent(submission.form_slug)}/"
+        "${encodeURIComponent(submission.id)}`" in portal
+    )
+    assert 'id="open-proposal-composer"' not in page
     assert "renderOpenCall(portal.open_call || null)" in portal
     assert "innerHTML" not in portal
-
-
-def test_portal_binds_the_proposal_email_to_the_signed_in_account() -> None:
-    # create_submission rejects a proposal whose speaker_email is not the
-    # account's own address, so the composer must read the account view (which
-    # carries the email) and must not let the speaker type a different one.
-    portal = (
-        Path(__file__).parents[2] / "src/sessionbuddy/static/speaker_portal.js"
-    ).read_text()
-
-    assert '"/api/v1/auth/session"' in portal
-    assert "state.sessionEmail = account.email" in portal
-    assert "if (state.sessionEmail) input.readOnly = true;" in portal
-
-
-def test_portal_never_reports_a_stored_proposal_as_a_failed_submission() -> None:
-    # A failed refresh after a 201 must not tell the speaker to submit again;
-    # each retry mints a fresh idempotency key and would create a duplicate.
-    portal = (
-        Path(__file__).parents[2] / "src/sessionbuddy/static/speaker_portal.js"
-    ).read_text()
-    submit_block = portal.split("async function openComposer", 1)[0]
-    after_create = submit_block.rsplit("if (!created) return;", 1)[1]
-
-    assert "loadEvent" in after_create
-    assert "could not be submitted" not in after_create
-    assert "could not be refreshed" in after_create
 
 
 def test_proposal_surfaces_hold_the_idempotency_key_across_retries() -> None:
     # A lost response leaves the proposal stored. Retrying under a fresh key
     # would be a second proposal rather than a replay of the first.
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
-    portal = (static / "speaker_portal.js").read_text()
     public = (static / "public_cfp.js").read_text()
 
-    assert '"idempotency-key": pendingSubmission.key' in portal
-    assert "pendingSubmission.payload !== payload" in portal
     assert '"idempotency-key": state.pendingSubmission.key' in public
     assert "state.pendingSubmission?.attempt !== attempt" in public
     # The key must still move when the proposal changes; reusing it with a
     # different fingerprint is a 409 server-side.
-    assert "key: idempotencyKey()" in portal
-    for source in (portal, public):
-        create_call = source.split("submissions`", 1)[-1][:400]
-        assert '"idempotency-key": idempotencyKey()' not in create_call
+    create_call = public.split("submissions`", 1)[-1][:400]
+    assert '"idempotency-key": idempotencyKey()' not in create_call
 
 
 def test_delivered_message_content_strips_active_markup_and_allowlists_links() -> None:

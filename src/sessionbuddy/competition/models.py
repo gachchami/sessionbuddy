@@ -109,6 +109,7 @@ class OrganizationPersonEventAssociation(BaseModel):
 class OrganizationSpeaker(BaseModel):
     person_id: str
     user_id: str | None
+    public_profile_enabled: bool = False
     email: str
     display_name: str
     job_title: str

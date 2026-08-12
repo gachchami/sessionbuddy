@@ -69,6 +69,16 @@ failed run because the evaluator reuses terminal `evidence.json` files.
 ## Clean rerun gate
 
 - [ ] Back up and recreate the development D1 resource; do not use a reset migration.
+- [ ] For a local eval, stop `worker`, `activity-worker`, and `activity-poller`,
+      run `docker compose run --rm --no-deps worker npm run
+      worker:reset-data:local -- --confirm sessionbuddy-local`, then restart them
+      with `docker compose up --detach worker activity-worker activity-poller`.
+- [ ] Confirm the reset reports exactly one canonical migration,
+      `0001_baseline.sql`, and refuses any additional baseline SQL file.
+- [ ] Confirm the fresh local state has one organization/admin/password and zero
+      events, sessions, submissions, challenges, and activity rows.
+- [ ] Reprovision Organizer, Speaker, and Reviewer and recapture `.auth`; the
+      bootstrap-only reset intentionally removes the Speaker and Reviewer.
 - [ ] Apply only the canonical baseline and prove the second application is a no-op.
 - [ ] Deploy the verified Worker package with no fixture material.
 - [ ] Bootstrap and reprovision organizer, speaker, and reviewer identities.

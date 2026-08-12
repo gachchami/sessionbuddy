@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Profile · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=66">
+  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
+  <script src="/people/assets/profile.js?v=1" defer></script>
+</head>
+<body class="public-body public-profile-page">
+  <a class="skip-link" href="#main">Skip to profile</a>
+  <header class="public-header">
+    <div class="shell">
+      <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><b>SessionBuddy</b></a>
+    </div>
+  </header>
+  <main id="main" class="shell public-profile-shell" tabindex="-1">
+    <div id="profile-status" class="status" role="status" aria-live="polite">Loading profile…</div>
+    <article id="public-profile" class="public-profile-card" hidden aria-labelledby="profile-name">
+      <div class="public-profile-card__rail" aria-hidden="true"></div>
+      <div class="public-profile-card__identity">
+        <div class="public-profile-card__portrait">
+          <img id="profile-headshot" alt="" hidden>
+          <span id="profile-monogram" aria-hidden="true">?</span>
+        </div>
+        <div>
+          <p class="public-profile-card__credential">SessionBuddy identity</p>
+          <h1 id="profile-name"></h1>
+          <p id="profile-role" class="public-profile-card__role"></p>
+        </div>
+      </div>
+      <section id="profile-about" class="public-profile-card__about" aria-labelledby="profile-about-title" hidden>
+        <h2 id="profile-about-title">About</h2>
+        <p id="profile-biography"></p>
+      </section>
+      <nav id="profile-links" class="public-profile-links" aria-label="Profile links" hidden></nav>
+      <footer class="public-profile-card__footer"><span>Community profile</span><span aria-hidden="true">SB</span></footer>
+    </article>
+    <section id="profile-missing" class="card" hidden>
+      <h1>Profile not available</h1>
+      <p>This person has not published a complete profile.</p>
+    </section>
+  </main>
+</body>
+</html>

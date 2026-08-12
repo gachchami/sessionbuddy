@@ -60,13 +60,25 @@ def test_each_reusable_profile_exposes_all_matching_event_participations() -> No
     assert "known.has(part.event_speaker_id)" in script
 
 
-def test_speaker_cards_share_one_person_profile_route() -> None:
+def test_people_rows_link_activated_users_to_public_profiles() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
     assert 'id="speaker-profile-view"' in page
     assert "const profileMatch = location.pathname.match" in script
-    assert "`/speakers/${encodeURIComponent(item.person_id)}`" in script
+    assert "`/people/${encodeURIComponent(item.user_id)}`" in script
+    assert "item.user_id && item.public_profile_enabled" in script
+    assert "Profile details not added" not in script
+    assert "if (detail.textContent) identity.append(detail);" in script
+    assert "View ${item.display_name}'s public profile" in script
+
+
+def test_private_speaker_edit_route_remains_separate_from_public_profiles() -> None:
+    page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
+    script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
+
+    assert 'id="speaker-profile-view"' in page
+    assert "const profileMatch = location.pathname.match" in script
     assert "`/api/v1/speaker-profiles/${encodeURIComponent(selectedPersonId)}`" in script
     assert 'form.hidden = !profile.can_edit;' in script
     legacy_redirect = (

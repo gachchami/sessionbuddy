@@ -105,6 +105,32 @@
       ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
+    "GET /api/v1/public/people/{user_id}": {
+      "owner": "platform",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "public-person-profile",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
+    "GET /api/v1/public/people/{user_id}/headshot": {
+      "owner": "platform",
+      "slo": {
+        "p95_ms": 500,
+        "error_rate_max": 0.001
+      },
+      "benchmark": "public-person-headshot",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "runbook": "docs/debugging-runbook.md#api-regression"
+    },
     "GET /api/v1/speaker-profiles/{person_id}": {
       "owner": "speaker-operations",
       "slo": {
@@ -1421,32 +1447,6 @@
       ],
       "runbook": "docs/debugging-runbook.md#api-regression"
     },
-    "POST /api/v1/admin/submissions/{submission_id}/ai-triage": {
-      "owner": "evaluation",
-      "slo": {
-        "p95_ms": 5000,
-        "error_rate_max": 0.01
-      },
-      "benchmark": "evaluation-ai-advisory-triage",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
-    "PATCH /api/v1/admin/submissions/{submission_id}": {
-      "owner": "cfp",
-      "slo": {
-        "p95_ms": 500,
-        "error_rate_max": 0.001
-      },
-      "benchmark": "cfp-organizer-update-submission",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "runbook": "docs/debugging-runbook.md#api-regression"
-    },
     "GET /api/v1/speaker/portal": {
       "owner": "speaker-onboarding",
       "slo": {
@@ -2036,6 +2036,33 @@
       ],
       "runbook": "docs/debugging-runbook.md#page-regression"
     },
+    "/speaker/proposals/{slug}": {
+      "owner": "cfp",
+      "classification": "personalized/local",
+      "journeys": ["speaker-proposal-management"],
+      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": ["release-health", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/speaker/proposals/{slug}/new": {
+      "owner": "cfp",
+      "classification": "personalized/local",
+      "journeys": ["speaker-proposal-management"],
+      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": ["release-health", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/speaker/proposals/{slug}/{submission_id}": {
+      "owner": "cfp",
+      "classification": "personalized/local",
+      "journeys": ["speaker-proposal-management"],
+      "web_vitals": {"lcp_p75_ms": 2500, "inp_p75_ms": 200, "cls_p75_max": 0.1},
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": ["release-health", "page-performance"],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
     "/admin/events/{event_id}/onboarding": {
       "owner": "speaker-onboarding",
       "classification": "personalized/local",
@@ -2347,6 +2374,24 @@
       "classification": "authenticated",
       "journeys": [
         "browse-organization-people"
+      ],
+      "web_vitals": {
+        "lcp_p75_ms": 2500,
+        "inp_p75_ms": 200,
+        "cls_p75_max": 0.1
+      },
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "runbook": "docs/debugging-runbook.md#page-regression"
+    },
+    "/people/{user_id}": {
+      "owner": "platform",
+      "classification": "public",
+      "journeys": [
+        "view-public-person-profile"
       ],
       "web_vitals": {
         "lcp_p75_ms": 2500,

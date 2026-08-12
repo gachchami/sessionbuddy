@@ -40,13 +40,15 @@ test.describe("platform People directory", () => {
         organization_id: organizationId,
         data: [
           {
-            person_id: "person-alex", user_id: "user-alex", email: "alex@example.test",
+            person_id: "person-alex", user_id: "user-alex", public_profile_enabled: false,
+            email: "alex@example.test",
             display_name: "Alex Morgan", job_title: "Community Lead", company: "Northstar Labs",
             biography: "", location: "", links: [], version: 1,
             organization_roles: ["Organizer"], event_associations: [], participations: [],
           },
           {
-            person_id: "person-riley", user_id: "user-riley", email: "riley@example.test",
+            person_id: "person-riley", user_id: "user-riley", public_profile_enabled: true,
+            email: "riley@example.test",
             display_name: "Riley Chen", job_title: "Principal Engineer", company: "Orbit Systems",
             biography: "", location: "", links: [], version: 1,
             organization_roles: ["Speaker"],
@@ -54,7 +56,8 @@ test.describe("platform People directory", () => {
             participations: [{ event_id: "event-two", event_name: "Cloud Forum", event_speaker_id: "speaker-riley", selection_status: "accepted", proposal_title: "Reliable agents" }],
           },
           {
-            person_id: "", user_id: "user-riley", email: "riley@example.test",
+            person_id: "", user_id: "user-riley", public_profile_enabled: true,
+            email: "riley@example.test",
             display_name: "Riley Chen", job_title: "", company: "",
             biography: "", location: "", links: [], version: 1,
             organization_roles: ["Organizer", "Reviewer"],
@@ -74,6 +77,8 @@ test.describe("platform People directory", () => {
     await expect(page.getByRole("row", { name: /Riley Chen/ })).toContainText("Organizer");
     await expect(page.getByRole("row", { name: /Riley Chen/ })).toContainText("Reviewer");
     await expect(page.getByRole("row", { name: /Riley Chen/ })).toContainText("Speaker");
+    await expect(page.getByText("Alex Morgan", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "View Alex Morgan's public profile" })).toHaveCount(0);
 
     const search = page.getByRole("searchbox", { name: "Search people…" });
     const field = page.getByRole("combobox", { name: "Search field" });
@@ -107,5 +112,43 @@ test.describe("platform People directory", () => {
     await expect(page.locator(".people-table-row")).toHaveCount(2);
     await expect(page.getByRole("searchbox", { name: "Search people…" })).toBeVisible();
     await expect(page.getByRole("row", { name: /Riley Chen/ })).toBeVisible();
+  });
+
+  test("opens a privacy-safe public identity card from a People row", async ({ page }) => {
+    await page.route("**/api/v1/public/people/user-riley", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        user_id: "user-riley",
+        display_name: "Riley Chen",
+        job_title: "Principal Engineer",
+        company: "Orbit Systems",
+        biography: "Builds reliable systems for humans and agents.",
+        website_url: "https://riley.example.test",
+        linkedin_url: "https://www.linkedin.com/in/riley-chen",
+        x_url: null,
+        headshot_url: null,
+      }),
+    }));
+    await page.goto("/admin/people");
+    await page.getByRole("link", { name: "View Riley Chen's public profile" }).click();
+    await expect(page).toHaveURL(/\/people\/user-riley$/);
+    await expect(page.getByRole("heading", { name: "Riley Chen" })).toBeVisible();
+    await expect(page.getByText("Principal Engineer · Orbit Systems")).toBeVisible();
+    await expect(page.getByText("Builds reliable systems for humans and agents.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "https://riley.example.test" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "https://www.linkedin.com/in/riley-chen" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Website", exact: true })).toHaveCount(0);
+    await expect(page.getByText("riley@example.test")).toHaveCount(0);
+    await expect(page.getByText("Reviewer")).toHaveCount(0);
+
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(results.violations.filter(({ impact }) => impact === "critical" || impact === "serious"))
+      .toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator(".public-profile-card")).toBeVisible();
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "auto");
   });
 });

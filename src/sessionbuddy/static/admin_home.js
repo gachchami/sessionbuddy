@@ -64,7 +64,13 @@
     cfp.textContent = `CFP ${({ not_started: "not set", draft: "draft", published: "published", closed: "closed" })[event.cfp_status] || "not set"}`;
     const schedule = document.createElement("small");
     schedule.className = `organizer-home-event-schedule organizer-home-event-schedule--${event.schedule_status || "not_started"}`;
-    schedule.textContent = ({ not_started: "Schedule not started", draft: "Schedule draft", ready: "Ready to publish", published: "Schedule published", updates_pending: "Schedule updates pending" })[event.schedule_status] || "Schedule not started";
+    schedule.textContent = ({
+      not_started: "No schedule",
+      draft: "Draft schedule",
+      ready: "Schedule ready",
+      published: "Schedule published",
+      updates_pending: "Schedule update ready"
+    })[event.schedule_status] || "No schedule";
     schedule.title = schedule.textContent;
     program.append(cfp, schedule);
     const trailing = document.createElement("span");

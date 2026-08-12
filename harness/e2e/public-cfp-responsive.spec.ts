@@ -150,7 +150,7 @@ test.describe("public CFP responsive design", () => {
     await page.addInitScript(() => {
       if (sessionStorage.getItem("identity-draft-seeded")) return;
       sessionStorage.setItem("identity-draft-seeded", "true");
-      localStorage.setItem("sessionbuddy:cfp:responsive-conference:draft", JSON.stringify({
+      localStorage.setItem("sessionbuddy:cfp:responsive-conference:draft:new", JSON.stringify({
         schemaVersion: 1,
         formVersion: 1,
         answers: { speaker_name: "Stale Draft Name", proposal_title: "Title from browser draft" },
@@ -227,6 +227,8 @@ test.describe("public CFP responsive design", () => {
     expect(pageErrors).toEqual([]);
     await expect(page.locator("#proposal-card")).toBeVisible();
     await expect(page.locator("#sign-in-card")).toBeHidden();
+    await expect(page.getByRole("link", { name: "My proposals" })).toHaveCount(0);
+    await expect(page.locator("#proposal-workspace")).toBeHidden();
     const columns = await page.locator("#dynamic-fields").evaluate(
       (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length,
     );
@@ -293,7 +295,7 @@ test.describe("public CFP responsive design", () => {
     await page.waitForTimeout(600);
 
     const recovery = await page.evaluate(() => {
-      const key = "sessionbuddy:cfp:responsive-conference:draft";
+      const key = "sessionbuddy:cfp:responsive-conference:draft:new";
       const saved = JSON.parse(localStorage.getItem(key) || "null");
       const unload = new Event("beforeunload", { cancelable: true });
       window.dispatchEvent(unload);

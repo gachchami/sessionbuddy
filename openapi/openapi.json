@@ -90,6 +90,11 @@
             ],
             "title": "Password Confirmation"
           },
+          "public_profile_enabled": {
+            "default": false,
+            "title": "Public Profile Enabled",
+            "type": "boolean"
+          },
           "time_zone": {
             "anyOf": [
               {
@@ -241,6 +246,11 @@
           },
           "profile_complete": {
             "title": "Profile Complete",
+            "type": "boolean"
+          },
+          "public_profile_enabled": {
+            "default": false,
+            "title": "Public Profile Enabled",
             "type": "boolean"
           },
           "roles": {
@@ -1632,58 +1642,6 @@
           "label_ids"
         ],
         "title": "AgendaUnscheduledSessionView",
-        "type": "object"
-      },
-      "AiTriageView": {
-        "additionalProperties": false,
-        "properties": {
-          "generated_at_ms": {
-            "minimum": 0.0,
-            "title": "Generated At Ms",
-            "type": "integer"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          },
-          "rationale": {
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Rationale",
-            "type": "string"
-          },
-          "recommendation": {
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Recommendation",
-            "type": "string"
-          },
-          "score": {
-            "maximum": 10.0,
-            "minimum": 0.0,
-            "title": "Score",
-            "type": "integer"
-          },
-          "source": {
-            "const": "workers_ai",
-            "default": "workers_ai",
-            "title": "Source",
-            "type": "string"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "submission_id",
-          "model",
-          "score",
-          "recommendation",
-          "rationale",
-          "generated_at_ms"
-        ],
-        "title": "AiTriageView",
         "type": "object"
       },
       "ApiHealthResponse": {
@@ -6115,6 +6073,11 @@
             "title": "Person Id",
             "type": "string"
           },
+          "public_profile_enabled": {
+            "default": false,
+            "title": "Public Profile Enabled",
+            "type": "boolean"
+          },
           "user_id": {
             "anyOf": [
               {
@@ -6374,6 +6337,14 @@
       "PrivateSubmissionView": {
         "additionalProperties": false,
         "properties": {
+          "answer_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 100,
+            "title": "Answer Labels",
+            "type": "object"
+          },
           "answers": {
             "additionalProperties": {
               "anyOf": [
@@ -6594,6 +6565,102 @@
           "speaker_count"
         ],
         "title": "PublicEventSummary",
+        "type": "object"
+      },
+      "PublicPersonProfileView": {
+        "description": "Intentionally small profile safe for an unauthenticated response.",
+        "properties": {
+          "biography": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography"
+          },
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "headshot_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headshot Url"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title"
+          },
+          "linkedin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linkedin Url"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "website_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website Url"
+          },
+          "x_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Url"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name"
+        ],
+        "title": "PublicPersonProfileView",
         "type": "object"
       },
       "PublicScheduleEventView": {
@@ -8663,6 +8730,11 @@
             "title": "Person Id",
             "type": "string"
           },
+          "public_profile_enabled": {
+            "default": false,
+            "title": "Public Profile Enabled",
+            "type": "boolean"
+          },
           "user_id": {
             "anyOf": [
               {
@@ -9798,6 +9870,14 @@
       "SubmissionView": {
         "additionalProperties": false,
         "properties": {
+          "answer_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 100,
+            "title": "Answer Labels",
+            "type": "object"
+          },
           "answers": {
             "additionalProperties": {
               "anyOf": [
@@ -15088,101 +15168,6 @@
         ]
       }
     },
-    "/api/v1/admin/submissions/{submission_id}": {
-      "patch": {
-        "operationId": "updateEventSubmissionAsOrganizer",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmissionUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubmissionView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Submission As Organizer",
-        "tags": [
-          "submissions"
-        ]
-      }
-    },
-    "/api/v1/admin/submissions/{submission_id}/ai-triage": {
-      "post": {
-        "operationId": "triageSubmissionWithWorkersAi",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AiTriageView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Triage Submission",
-        "tags": [
-          "evaluations",
-          "ai"
-        ]
-      }
-    },
     "/api/v1/assets/download": {
       "post": {
         "operationId": "consumePrivateAssetDownloadGrant",
@@ -16724,6 +16709,83 @@
         "summary": "Public Speaker Headshot",
         "tags": [
           "public-program"
+        ]
+      }
+    },
+    "/api/v1/public/people/{user_id}": {
+      "get": {
+        "operationId": "public_person_profile_api_v1_public_people__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicPersonProfileView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Person Profile",
+        "tags": [
+          "public-profiles"
+        ]
+      }
+    },
+    "/api/v1/public/people/{user_id}/headshot": {
+      "get": {
+        "operationId": "public_person_headshot_api_v1_public_people__user_id__headshot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Public Person Headshot",
+        "tags": [
+          "public-profiles"
         ]
       }
     },

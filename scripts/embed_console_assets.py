@@ -34,6 +34,8 @@ ASSETS = {
     "speaker_directory.html": "SPEAKER_DIRECTORY_HTML",
     "speaker_directory.js": "SPEAKER_DIRECTORY_JS",
     "people_search.js": "PEOPLE_SEARCH_JS",
+    "public_profile.html": "PUBLIC_PROFILE_HTML",
+    "public_profile.js": "PUBLIC_PROFILE_JS",
     "speaker_messages.html": "SPEAKER_MESSAGES_HTML",
     "speaker_messages.js": "SPEAKER_MESSAGES_JS",
     "account.html": "ACCOUNT_HTML",

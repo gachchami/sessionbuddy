@@ -19,7 +19,11 @@ const pageHtml = readFileSync(resolve(staticDir, "admin_programs.html"), "utf8")
       + `<script>${readFileSync(resolve(staticDir, "admin_programs.js"), "utf8")}</script></body>`,
   );
 
-async function serveBuilder(page: Page, publishedForm: Record<string, unknown> | null = null) {
+async function serveBuilder(
+  page: Page,
+  publishedForm: Record<string, unknown> | null = null,
+  tracks: string[] = [],
+) {
   await page.route(`**/admin/events/${eventId}/cfp`, (route) => route.fulfill({
     contentType: "text/html",
     body: pageHtml,
@@ -51,8 +55,25 @@ async function serveBuilder(page: Page, publishedForm: Record<string, unknown> |
   }));
   await page.route(`**/api/v1/admin/events/${eventId}/agenda/tracks`, (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify({ data: [] }),
+    body: JSON.stringify({ data: tracks.map((name, index) => ({ id: `track-${index}`, name })) }),
   }));
+}
+
+async function addCustomQuestion(
+  page: Page,
+  label: string,
+  type: "text" | "textarea" | "select",
+  options: { required?: boolean; choices?: string[] } = {},
+) {
+  await page.locator("#add-field").click();
+  const card = page.locator('fieldset.question-card[data-index]').last();
+  await card.getByRole("textbox", { name: /^Question/ }).fill(label);
+  await card.getByLabel("Answer format").selectOption(type);
+  if (options.required) await card.getByLabel("Required").check();
+  if (options.choices) {
+    await card.getByLabel("Answer choices").fill(options.choices.join(", "));
+  }
+  return card;
 }
 
 for (const viewport of [
@@ -78,6 +99,8 @@ for (const viewport of [
     const custom = page.locator('fieldset.question-card[data-index]').filter({ hasText: "New question" }).last();
     await custom.getByRole("textbox", { name: /^Question/ }).fill("Workshop prerequisites");
     await custom.getByLabel("Answer format").selectOption("textarea");
+    await expect(custom.locator(".question-advanced > div")).toBeHidden();
+    await expect(custom.getByLabel("Question or event field")).toBeHidden();
     await custom.getByText("Display rules (optional)").click();
     const source = custom.getByLabel("Question or event field");
     const stableAnswer = custom.locator('select[name="condition_value"]');
@@ -156,6 +179,120 @@ for (const viewport of [
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 }
+
+test("builds and publishes the complete CFP-S1 evaluation form without retry loops", async ({ page }) => {
+  test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.addInitScript(() => {
+    if (!crypto.randomUUID) {
+      Object.defineProperty(crypto, "randomUUID", {
+        configurable: true,
+        value: () => "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      });
+    }
+  });
+  const tracks = ["AI Engineering", "Developer Experience", "Platform & Infra"];
+  await serveBuilder(page, null, tracks);
+
+  let publishedBody: Record<string, any> | null = null;
+  await page.route(`**/api/v1/admin/events/${eventId}/cfp/publish`, async (route) => {
+    publishedBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        event_id: eventId,
+        version: 1,
+        ...publishedBody,
+      }),
+    });
+  });
+
+  await page.goto(`/admin/events/${eventId}/cfp`);
+  await page.locator("#cfp-description-editor").fill(
+    "Share practical lessons with the DevFlow community.",
+  );
+
+  await page.locator('.cfp-outline-item[data-selection="proposal"]').click();
+  const formatCard = page.locator('fieldset.question-card[data-index]').filter({ hasText: "Session format" });
+  await formatCard.locator("summary").click();
+  await formatCard.getByLabel("Session format choices").fill([
+    "Keynote (45 min)",
+    "Talk (30 min)",
+    "Lightning Talk (10 min)",
+    "Workshop (120 min)",
+    "Panel (45 min)",
+  ].join(", "));
+
+  await page.locator('.cfp-outline-item[data-selection="custom"]').click();
+  const takeaway = await addCustomQuestion(page, "Key takeaway", "textarea", { required: true });
+  await takeaway.getByRole("button", { name: "Done editing question" }).click();
+
+  const audience = await addCustomQuestion(page, "Audience level", "select", {
+    required: true,
+    choices: ["Beginner", "Intermediate", "Advanced"],
+  });
+  await audience.getByRole("button", { name: "Done editing question" }).click();
+
+  const workshop = await addCustomQuestion(page, "Workshop prerequisites", "textarea", {
+    required: true,
+  });
+  // The eval previously selected this hidden control repeatedly. A real user
+  // must first expand the disclosure, after which both native selects must be
+  // immediately actionable by their visible values.
+  await workshop.getByText("Display rules (optional)").click();
+  const source = workshop.getByLabel("Question or event field");
+  await expect(source).toBeVisible();
+  await source.selectOption("Session format");
+  const conditionAnswer = workshop.locator('select[name="condition_value"]');
+  await expect(conditionAnswer).toBeEnabled();
+  await conditionAnswer.selectOption("Workshop (120 min)");
+  await workshop.getByRole("button", { name: "Done editing question" }).click();
+
+  await page.getByRole("button", { name: "Publish CFP" }).click();
+  await expect(page.locator("#status")).toHaveText("Your CFP was published successfully.");
+
+  expect(publishedBody).not.toBeNull();
+  expect(publishedBody!.slug).toBe("format-conference");
+  expect(publishedBody!.fields).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      key: "session_type",
+      label: "Session format",
+      required: true,
+      choices: [
+        "Keynote (45 min)",
+        "Talk (30 min)",
+        "Lightning Talk (10 min)",
+        "Workshop (120 min)",
+        "Panel (45 min)",
+      ],
+    }),
+    expect.objectContaining({
+      key: "track",
+      label: "Track",
+      required: true,
+      choices: tracks,
+    }),
+    expect.objectContaining({ label: "Key takeaway", type: "textarea", required: true }),
+    expect.objectContaining({
+      label: "Audience level",
+      type: "select",
+      required: true,
+      choices: ["Beginner", "Intermediate", "Advanced"],
+    }),
+    expect.objectContaining({ label: "Workshop prerequisites", type: "textarea", required: true }),
+  ]));
+  const workshopField = publishedBody!.fields.find(
+    (field: Record<string, unknown>) => field.label === "Workshop prerequisites",
+  );
+  expect(publishedBody!.conditions).toContainEqual({
+    source_key: "session_type",
+    operator: "equals",
+    value: "Workshop (120 min)",
+    target_key: workshopField.key,
+  });
+});
 
 test("keeps unresolved saved display rules visible and blocks publish until explicit clear", async ({ page }) => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");

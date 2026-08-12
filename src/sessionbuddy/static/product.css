@@ -43,6 +43,35 @@ html { max-width: 100%; scroll-behavior: smooth; }
 body { min-width: 0; max-width: 100%; margin: 0; overflow-x: hidden; background: #f7f8fa; }
 body.app-body { background: radial-gradient(circle at 88% 0, rgba(109,74,255,.07), transparent 26rem), #f7f7fc; }
 body.public-body { background: radial-gradient(circle at 10% 0, rgba(109,74,255,.06), transparent 28rem), #fbfaff; }
+
+.public-profile-shell { padding-block: clamp(2rem, 8vw, 5rem); }
+.public-profile-card { position: relative; max-width: 52rem; display: grid; gap: 2rem; overflow: hidden; margin-inline: auto; padding: clamp(1.4rem, 4vw, 2.75rem); border: 1px solid #d7d1ed; border-radius: 1.4rem; background: linear-gradient(145deg, #fff 0%, #fbf9ff 62%, #f1f5ff 100%); box-shadow: 0 1.5rem 4rem rgba(57, 44, 105, .12); }
+.public-profile-card__rail { position: absolute; inset: 0 auto 0 0; width: .45rem; background: linear-gradient(#8149ef, #4d85ed); }
+.public-profile-card__identity { display: flex; align-items: center; gap: clamp(1rem, 4vw, 2rem); }
+.public-profile-card__portrait { width: clamp(5.5rem, 14vw, 8rem); aspect-ratio: 1; flex: 0 0 auto; display: grid; place-items: center; overflow: hidden; border: .35rem solid rgba(255,255,255,.9); border-radius: 1.6rem; background: linear-gradient(145deg, #7447e9, #4f83ef); color: white; box-shadow: 0 .8rem 2rem rgba(80, 74, 170, .22); font-size: clamp(1.6rem, 5vw, 2.5rem); font-weight: 800; }
+.public-profile-card__portrait img { width: 100%; height: 100%; object-fit: cover; }
+.public-profile-card__credential { margin: 0 0 .5rem; color: #6d4bc6; font-size: .75rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.public-profile-card__role { margin: .45rem 0 0; color: #596579; font-size: clamp(1rem, 2vw, 1.125rem); }
+.public-profile-card__about { padding-top: 1.5rem; border-top: 1px solid #e4e0f1; }
+.public-profile-card__about p { max-width: 65ch; margin-bottom: 0; white-space: pre-line; }
+.public-profile-links { display: flex; flex-wrap: wrap; gap: .65rem; }
+.public-profile-links a { min-height: 2.75rem; max-width: 100%; display: inline-flex; align-items: center; padding: .65rem .9rem; border: 1px solid #d7d0ed; border-radius: .7rem; background: white; font-weight: 700; overflow-wrap: anywhere; text-decoration: none; }
+.public-profile-links a:hover { border-color: #7652dc; background: #f7f3ff; }
+.proposal-management-page .cfp-event-header,
+.proposal-management-page .cfp-brief,
+.proposal-management-page .cfp-application-context { display: none !important; }
+.proposal-management-page .public-event-hero { max-width: 72rem; margin-inline: auto; }
+.proposal-management-page .cfp-application-layout { max-width: 72rem; grid-template-columns: minmax(0, 1fr); margin-inline: auto; }
+.proposal-summary-row { list-style: none; }
+.proposal-summary-row__link { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .75rem; min-height: 3.5rem; padding: .7rem .85rem; border-bottom: 1px solid #e6e2ef; color: inherit; text-decoration: none; }
+.proposal-summary-row__link:hover { background: #f8f6ff; }
+.proposal-summary-row__link strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proposal-summary-row__arrow { color: #7455d9; font-size: 1.125rem; }
+.public-profile-card__footer { display: flex; justify-content: space-between; gap: 1rem; padding-top: 1rem; border-top: 1px solid #e4e0f1; color: #7b728f; font-size: .75rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+@media (max-width: 520px) {
+  .public-profile-card__identity { align-items: flex-start; flex-direction: column; }
+  .public-profile-card__portrait { border-radius: 1.25rem; }
+}
 img, svg, iframe { max-width: 100%; }
 a { color: var(--blue-dark); text-underline-offset: .2em; }
 p { line-height: 1.55; }
@@ -164,17 +193,28 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-notification-settings { margin-top: 1.25rem; }
 .cfp-notification-settings .section-heading { margin-bottom: .2rem; }
 .cfp-notification-settings label { max-width: 42rem; }
+/* The builder stacks two sticky bars below the fixed shell chrome -- the form
+   outline (.cfp-section-nav, ~3.3rem) and the add-question bar
+   (.cfp-question-actions, ~3.7rem). Anything scrolled to on this page has to
+   clear all three, not just the shell. */
+.app-body.sb-shell-authenticated.cfp-page { --sb-scroll-offset: calc(var(--sb-chrome-top, 9.5rem) + 7rem); }
 .cfp-page .page-heading h1 { font-size: clamp(1.65rem, 2.5vw, 2rem); }
 .cfp-page .lede { font-size: .875rem; }
 .cfp-page .cfp-link-card { padding: 1.1rem 1.25rem; }
-.cfp-builder { overflow: clip; border-top: 1px solid var(--line); background: white; }
+/* The builder is a pane, not a document: it pins below the shell chrome and
+   fills the rest of the viewport, and its form scrolls *inside* it. That is
+   what stops the outline nav and the publish bar from ever painting over the
+   question rows -- an eval agent's clicks were being intercepted by both, at
+   every scroll position it tried. */
+.cfp-builder { position: sticky; top: var(--sb-chrome-top, 9.5rem); height: calc(100dvh - var(--sb-chrome-top, 9.5rem)); display: flex; flex-direction: column; overflow: clip; border-top: 1px solid var(--line); background: white; }
 .cfp-builder__heading { display: none; }
 .cfp-builder__heading h2 { margin: 0; font-size: 1.125rem; }
 .cfp-builder__heading p { margin: .2rem 0 0; color: var(--muted); font-size: .875rem; }
 .cfp-builder__state { display: flex; align-items: center; gap: .65rem; }
 .draft-state { color: var(--muted); font-size: .75rem; font-weight: 700; }
-.cfp-editor-layout { width: 100%; min-width: 0; display: block; }
-.cfp-section-nav { position: sticky; top: var(--sb-chrome-top, 9.5rem); z-index: 4; width: 100%; min-width: 0; padding: 0 1rem; overflow: visible; border-bottom: 1px solid var(--line); background: white; }
+.cfp-editor-layout { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* Outside the scrolling region now, so it never needs to overlap it. */
+.cfp-section-nav { flex: 0 0 auto; z-index: 4; width: 100%; min-width: 0; padding: 0 1rem; overflow: visible; border-bottom: 1px solid var(--line); background: white; }
 .cfp-outline-items { display: flex; flex-wrap: wrap; align-items: center; gap: 0 1.15rem; }
 .cfp-outline-item, .cfp-outline-add { position: relative; width: auto; min-height: 3.2rem; display: flex; align-items: center; gap: .4rem; padding: .7rem 0 .75rem; border: 0; border-radius: 0; background: transparent; color: #667085; box-shadow: none; text-align: left; white-space: nowrap; }
 .cfp-outline-item:hover, .cfp-outline-add:hover { background: transparent; color: var(--ink); }
@@ -184,7 +224,10 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-outline-item small { min-width: 1.25rem; padding: .05rem .32rem; border-radius: 999px; background: #f0f2f5; color: #7b8494; font-size: .75rem; text-align: center; }
 .cfp-outline-item[aria-pressed="true"] small { background: #ebe8ff; color: #5145b5; }
 .cfp-outline-add { margin-top: .35rem; color: #5145b5; }
-.cfp-editor { min-width: 0; background: #f8fafc; }
+/* Room under the sticky publish bar, so the last rows of the form can always
+   be scrolled clear of it instead of resting permanently underneath. */
+/* The one intentional scrollport on this page. Its sticky children pin to it. */
+.cfp-editor { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; background: #f8fafc; }
 .cfp-selection-heading { display: none; }
 .cfp-selection-heading .eyebrow { margin: 0 0 .15rem; font-size: .75rem; }
 .cfp-selection-heading h3 { margin: 0; font-size: 1.125rem; }
@@ -220,9 +263,17 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-editor-section__heading { display: flex; align-items: flex-start; gap: .75rem; margin-bottom: .9rem; }
 .cfp-editor > .cfp-editor-section > .cfp-editor-section__heading { display: none; }
 .cfp-editor-section--single-question > .help { display: none; }
-.cfp-question-actions { position: sticky; top: calc(var(--sb-chrome-top, 9.5rem) + 3.3rem); z-index: 2; display: flex; justify-content: flex-end; padding: .45rem 0; background: linear-gradient(180deg, var(--surface) 72%, transparent); }
+.cfp-question-actions { pointer-events: none; position: sticky; top: 0; z-index: 2; display: flex; justify-content: flex-end; padding: .45rem 0; background: linear-gradient(180deg, var(--surface) 72%, transparent); }
+/* The bar's background fades to transparent over its lower third, so question
+   rows scrolling beneath it stay visible while it silently takes their clicks. */
+.cfp-question-actions > * { pointer-events: auto; }
 .field-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
 .cfp-editor-section--custom > .cfp-profile-note { display: none; }
+/* The add-question bar belongs to the Custom-questions screen. On a
+   single-question screen it lists nothing, yet its sticky band still costs
+   ~3.7rem of permanent occlusion over the system-field rows below it -- which
+   is one of the layers the CFP-S1 eval agent's clicks kept landing on. */
+.cfp-editor-section--proposal > .cfp-question-actions { display: none; }
 .cfp-custom-empty { display: grid; gap: .25rem; margin: 1rem 0; padding: 1.25rem; border: 1px dashed var(--line); border-radius: .75rem; color: var(--muted); }
 .cfp-custom-empty[hidden] { display: none; }
 .cfp-custom-empty strong { color: var(--ink); font-size: .875rem; }
@@ -240,7 +291,7 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-editor-actions > .actions { display: flex; }
 .cfp-editor-actions strong { font-size: .875rem; }
 .cfp-editor-actions .result { margin: 0; font-size: .75rem; }
-.question-editor__body :is(input, select, textarea, button, details) { scroll-margin-block: 6rem 8rem; }
+.question-editor__body :is(input, select, textarea, button, details) { scroll-margin-bottom: 8rem; }
 .condition-warning { margin: .75rem 0; padding: .7rem .8rem; border: 1px solid var(--status-danger-border); border-radius: .5rem; background: var(--status-danger-surface); color: var(--status-danger-text); font-size: .75rem; font-weight: 600; line-height: 1.45; }
 .condition-warning[hidden] { display: none; }
 .validation-summary { margin: 1rem 1.5rem 0; padding: .9rem 1rem; border: 1px solid #efb7b0; border-radius: .65rem; background: #fff5f3; color: #8f1f16; }
@@ -752,7 +803,11 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .program-step--complete h2 { margin: 0; font-size: 1rem; }
 .program-step--complete .help { display: none; }
 .program-step--complete .result { margin: 0 0 0 auto; }
-.question-card { margin: .65rem 0; padding: 0; overflow: hidden; background: white; }
+/* `overflow: clip`, never `hidden`: `hidden` makes the card a scroll container,
+   which then becomes the scrollport `scrollIntoView` resolves against, so the
+   shell's scroll-margin is discarded and the row lands behind the fixed header.
+   Same defect that made every sticky rule in `.cfp-builder` inert. */
+.question-card { margin: .65rem 0; padding: 0; overflow: clip; background: white; }
 .question-card--system { background: #f8fbff; }
 .question-card--system .question-editor > summary small { font-family: inherit; font-size: .75rem; }
 .question-editor > summary { min-height: 4.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; cursor: pointer; list-style: none; }
@@ -869,11 +924,12 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .cfp-application-main .step-indicator li[aria-current="step"] span { color: var(--cfp-accent); }
 .cfp-application-main > .status:empty { display: none; }
 .cfp-application-main > .status { margin: 0 0 1rem; border-radius: .65rem; font-size: .875rem; }
+.cfp-form-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .cfp-application-main .flow-form-card { padding: 0; overflow: clip; border-color: #cfd5df; border-radius: .55rem; box-shadow: 0 .4rem 1.2rem rgba(35,43,72,.04); }
 .cfp-form-heading { padding: 1.35rem 1.5rem 1.15rem; border-bottom: 1px solid #e5e8ef; }
 .cfp-form-heading .eyebrow { margin: 0 0 .25rem; font-size: .75rem; }
 .cfp-form-heading h2 { margin: 0; font-size: 1.375rem; }
-.cfp-form-heading p:last-child { margin: .25rem 0 0; color: #737d8f; font-size: .75rem; }
+.cfp-form-heading p:last-child { margin: .25rem 0 0; color: #687386; font-size: .75rem; }
 .cfp-public-page #proposal-form { padding: 1.35rem 1.5rem 1.5rem; }
 .cfp-public-page #dynamic-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem 1.15rem; }
 .cfp-public-page #dynamic-fields > label { min-width: 0; margin: 0; }
@@ -884,8 +940,8 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .cfp-co-speakers__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .cfp-co-speakers__header > div { min-width: 0; }
 .cfp-co-speakers__header h3 { margin: 0; color: #293449; font-size: 1rem; line-height: 1.3; }
-.cfp-co-speakers__header h3 .optional { margin-left: .3rem; color: #7b8495; font-size: .75rem; font-weight: 600; }
-.cfp-co-speakers__header .help { max-width: 37rem; margin: .25rem 0 0; color: #697488; font-size: .875rem; line-height: 1.45; }
+.cfp-co-speakers__header h3 .optional { margin-left: .3rem; color: #626d80; font-size: .75rem; font-weight: 600; }
+.cfp-co-speakers__header .help { max-width: 37rem; margin: .25rem 0 0; color: #606b7e; font-size: .875rem; line-height: 1.45; }
 .cfp-co-speakers__header #add-co-speaker { flex: 0 0 auto; min-height: 2.5rem; padding: .5rem .75rem; font-size: .875rem; }
 .cfp-co-speakers #co-speaker-rows:not(:empty) { margin-top: .9rem; }
 .cfp-public-page #proposal-form > .actions { position: sticky; bottom: 0; z-index: 2; margin: 1.5rem -1.5rem -1.5rem; padding: 1rem 1.5rem; border-top: 1px solid #e3e6ed; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
@@ -984,12 +1040,21 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .account-headshot__choose input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 .account-link-fields { margin-top: 1.5rem; background: #fff; }
 .account-link-fields .form-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.account-profile-visibility { display: flex; align-items: flex-start; gap: .75rem; margin-top: 1rem; padding: 1rem; border: 1px solid #e3def2; border-radius: .8rem; background: #faf9fd; }
+.account-profile-visibility input { width: 1.15rem; height: 1.15rem; margin-top: .15rem; }
+.account-profile-visibility span { display: grid; gap: .25rem; }
+.account-profile-visibility small { color: var(--muted); }
 .account-password-fields { margin: 1.75rem 0 0; padding: 1.25rem; border: 1px solid #e3def2; border-radius: .8rem; background: #faf9fd; }
 .account-password-fields legend { padding: 0 .35rem; color: #182230; font-size: 1rem; font-weight: 700; }
 .account-password-fields > p { margin: -.1rem 0 1rem; color: var(--muted); font-size: .875rem; }
 .account-form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 1.5rem; margin-top: 1.25rem; }
 .account-form-footer .help { max-width: 42rem; margin: 0; }
 .account-form-footer button { flex: 0 0 auto; }
+.account-form-footer button[data-state="saved"] {
+  background: #16754a;
+  border-color: #16754a;
+  color: #fff;
+}
 .default-role-picker { margin-top: 1.25rem; }
 .default-role-picker fieldset { margin: 0; background: #fff; }
 .default-role-picker > button { margin-top: .85rem; }

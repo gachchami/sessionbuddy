@@ -16,6 +16,8 @@ def test_profile_form_is_registration_ready_without_editable_roles() -> None:
     assert 'name="website_url" type="url"' in markup
     assert 'name="linkedin_url" type="url"' in markup
     assert 'name="x_url" type="url"' in markup
+    assert 'name="public_profile_enabled" type="checkbox"' in markup
+    assert "Allow anyone with your profile link" in markup
     assert "Your email is verified and cannot be changed here.</small>" in markup
     assert "Changing it signs you out on every device." in markup
     assert '<h2 id="access-title">Roles and Access</h2>' in markup

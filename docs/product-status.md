@@ -24,6 +24,14 @@ test fixtures, release scripts, and baseline validation do not depend on the
 historical migration directory; rebasing intentionally requires every existing
 database to be recreated and provides no incremental compatibility path.
 
+Development reset tooling follows that same fresh-install contract. It exports
+a complete recovery backup plus a minimal explicit-column bootstrap identity
+bundle, recreates local or remote development D1 schema from the canonical
+baseline, restores only the organization owner and complete password credential,
+and verifies that operational tables are empty. Remote recreation also updates
+both Worker bindings and redeploys them; local recreation refuses to run while
+the local application or activity Worker is reachable.
+
 The active-role and resource-consumption redesign is in progress. Its durable
 handoff, intended user-story arc, completed UI work, and known transitional gaps
 are recorded in `docs/rbac-redesign-handoff.md`.
@@ -154,24 +162,21 @@ development rehearsal are tracked in `delivery-completion-audit.md`.
 
 ## Updates — 2026-08-16
 
-Speakers can now submit a proposal from the speaker portal instead of having to
-find the public CFP link. `/api/v1/speaker/portal` reports the event's published
-call as `open_call` — slug, window, per-speaker limit and remaining
-allowance — and the Sessions panel offers an inline composer that renders the
-published field schema, conditional fields, co-speakers, and upload questions.
-The composer posts to the existing `POST /api/v1/forms/{slug}/submissions`, so
-submission validation, routing, idempotency, and the per-speaker limit stay on
-one server-enforced path; the portal only decides whether to offer the control.
-Open/closed reasoning is shared with the public form through
-`sessionbuddy.cfp.availability`, so the two surfaces cannot disagree about
-whether a call accepts proposals.
-
-The portal rechecks the authenticated event call before opening the composer,
-so a newly exhausted allowance or event switch is resolved before uploads begin.
+The public CFP is the anonymous/new-submission entry point. Authenticated
+speakers see compact proposal rows in their portal and open one exact, URL-addressable proposal
+page at `/speaker/proposals/{slug}/{submission_id}`. New proposals are created
+only from the published CFP page. The exact proposal page uses the same
+published schema, conditional fields, browser/server drafts, staged uploads,
+validation, create, and patch contracts as the public CFP; the speaker portal
+links to that workspace instead of maintaining a second proposal editor.
+Open/closed reasoning remains shared through `sessionbuddy.cfp.availability`.
 Speaker profile and headshot management use one coordinated save flow in Account;
 the canonical identity synchronizes to linked speaker records, and its private
 headshot is the public-gallery fallback when an event has no legacy event-specific
-image. Profile and headshot tasks link to that Account flow and reconcile when the
+image. Public profiles are private by default and require an explicit account opt-in.
+Organization People rows link to a public profile only while that opt-in remains enabled;
+disabling it makes both the anonymous profile and headshot unavailable immediately.
+Profile and headshot tasks link to that Account flow and reconcile when the
 canonical data is saved. Organizers can preview and replace a linked speaker's headshot from
 the event-scoped directory; the route requires exact event speaker-management
 authority, validates and scans the image when a scanner is configured, and emits
