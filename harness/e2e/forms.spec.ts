@@ -302,6 +302,20 @@ test.describe("form validation and workflow wiring", () => {
           routed_review_queue: "Technical",
           answers: { audience_level: "Intermediate" },
         }, {
+          id: "33333333-3333-4333-8333-333333333333",
+          speaker_name: "Round speaker",
+          speaker_email: "round@example.com",
+          proposal_title: "A proposal already in review",
+          proposal_abstract: "Review is underway",
+          status: "submitted",
+          submitted_at_ms: 1_900_000_000_000,
+          routed_category: null,
+          routed_track: null,
+          routed_review_queue: null,
+          evaluation_round_id: "11111111-1111-4111-8111-111111111111",
+          evaluation_round_name: "Initial review",
+          answers: {},
+        }, {
           id: "22222222-2222-4222-8222-222222222222",
           speaker_name: "Decided speaker",
           speaker_email: "decided@example.com",
@@ -341,6 +355,16 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/submissions`);
+    await page.getByRole("button", { name: "View proposal" }).nth(1).click();
+    const reviewedDetail = page.getByRole("dialog", { name: "Proposal details" });
+    await expect(reviewedDetail.getByText("Evaluation round", { exact: true })).toBeVisible();
+    await expect(reviewedDetail.getByText("Initial review", { exact: true })).toBeVisible();
+    await expect(reviewedDetail.getByRole("button", { name: "Reject without review" })).toHaveCount(0);
+    await expect(reviewedDetail.getByRole("link", { name: "Open Initial review to decide" })).toHaveAttribute(
+      "href",
+      "/admin/evaluation-rounds/11111111-1111-4111-8111-111111111111",
+    );
+    await reviewedDetail.getByRole("button", { name: "Close" }).click();
     await page.getByRole("button", { name: "View proposal" }).first().click();
     const detail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(detail).toContainText("speaker@example.com");
@@ -360,6 +384,7 @@ test.describe("form validation and workflow wiring", () => {
     await expect(page.getByRole("heading", { name: "Proposal inbox" })).toBeVisible();
     await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
     await expect(page.getByText("Already decided", { exact: true })).toBeVisible();
+    await expect(page.getByText("In Initial review", { exact: true })).toBeVisible();
     await expect(page.locator('input[name="submission_ids"]')).toHaveCount(1);
     await page.getByRole("button", { name: "Select submitted" }).click();
     await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
@@ -420,6 +445,99 @@ test.describe("form validation and workflow wiring", () => {
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Remove my assignment" }).click();
     await expect.poll(() => conflictWrites).toBe(1);
+  });
+
+  test("a failed rejection leaves the confirm and cancel controls reachable", async ({ page }) => {
+    // Regression: the alert paragraph sits directly above the confirm/cancel row inside
+    // a dialog that scrolls. Focusing the alert parked its bottom edge flush with the
+    // dialog's bottom edge, pushing both buttons below the fold -- enabled, but invisible
+    // and not hit-testable, so the only way out of the modal was Escape or a reload.
+    // toBeEnabled() passes with the bug present and Playwright's click() auto-scrolls, so
+    // this asserts geometry: the buttons must sit inside the dialog's visible box and be
+    // the topmost element at their own centre point.
+    await polyfillUuid(page);
+    await mockSession(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ id: eventId, time_zone: "UTC" }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ published_form: null }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: [{
+          id: assignmentId,
+          speaker_name: "Speaker",
+          speaker_email: "speaker@example.com",
+          proposal_title: "A proposal",
+          proposal_abstract: "Abstract",
+          status: "submitted",
+          submitted_at_ms: 1_900_000_000_000,
+          routed_category: null,
+          routed_track: "Platform",
+          routed_review_queue: "Technical",
+          answers: { audience_level: "Intermediate" },
+        }],
+        total: 1,
+      }),
+    }));
+    // A conflict that is NOT the round guardrail, so it reaches the in-panel alert
+    // instead of being prevented upstream by the round link.
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions/${assignmentId}/reject`, (route) => route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      headers: { "x-request-id": "req_regression" },
+      body: JSON.stringify({
+        error: { code: "conflict", message: "This proposal already has a decision recorded." },
+        request_id: "req_regression",
+      }),
+    }));
+
+    const reachable = () => page.evaluate(() => {
+      const dialog = document.querySelector("#submission-detail") as HTMLDialogElement;
+      const box = dialog.getBoundingClientRect();
+      return Array.from(dialog.querySelectorAll(".reject-without-review__panel .actions button")).map((node) => {
+        const rect = node.getBoundingClientRect();
+        const topmost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return {
+          label: node.textContent,
+          insideDialog: rect.top >= box.top && rect.bottom <= box.bottom,
+          hitTestReachesButton: topmost === node || node.contains(topmost),
+        };
+      });
+    });
+
+    await page.goto(`/admin/events/${eventId}/submissions`);
+    await page.getByRole("button", { name: "View proposal" }).first().click();
+    const detail = page.getByRole("dialog", { name: "Proposal details" });
+    await detail.getByRole("button", { name: "Reject without review" }).click();
+
+    // The local validation error must not scroll away the field it is talking about.
+    await detail.getByRole("button", { name: "Confirm rejection" }).click();
+    await expect(detail.getByText("Add an internal reason before rejecting.")).toBeInViewport();
+    await expect(detail.getByLabel("Internal reason")).toBeInViewport();
+
+    await detail.getByLabel("Internal reason").fill("Outside the program scope");
+    await detail.getByRole("button", { name: "Confirm rejection" }).click();
+    await expect(detail.getByText("This proposal already has a decision recorded.")).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Confirm rejection" })).toBeEnabled();
+    await expect(detail.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(await reachable()).toEqual([
+      { label: "Confirm rejection", insideDialog: true, hitTestReachesButton: true },
+      { label: "Cancel", insideDialog: true, hitTestReachesButton: true },
+    ]);
+
+    // And the way out of the panel works without Escape or a reload.
+    await detail.getByRole("button", { name: "Cancel" }).click();
+    await expect(detail.getByRole("button", { name: "Reject without review" })).toBeVisible();
   });
 
   test("workspace resource, task, and token forms enforce their contracts", async ({ page }) => {

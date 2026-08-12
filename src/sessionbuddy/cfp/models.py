@@ -360,6 +360,8 @@ class SubmissionView(SubmissionCreate):
     routed_category: str | None = None
     routed_track: str | None = None
     routed_review_queue: str | None = None
+    evaluation_round_id: str | None = None
+    evaluation_round_name: str | None = None
 
 
 class PrivateSubmissionView(SubmissionView):

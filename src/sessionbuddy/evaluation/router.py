@@ -2498,6 +2498,7 @@ async def record_submission_decision(
                             "be rejected without review. Reject it from the round instead, where "
                             "the organizer override and its reason are recorded."
                         ),
+                        headers={"X-Conflict-Type": "round"},
                     )
     else:
         context = row_mapping(

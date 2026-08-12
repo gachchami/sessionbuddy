@@ -94,6 +94,9 @@ waives outstanding onboarding; either decision can queue a speaker email with
 organizer-controlled copy. Organizers can also reject an unreviewed proposal
 directly with a required audited reason, without creating a reviewer assignment;
 that confirmation defaults to notifying the speaker and supports custom copy.
+Once a proposal belongs to an active evaluation round, the proposal inbox removes
+the direct-rejection action and links organizers to that round's audited decision
+controls instead.
 A rejection immediately revokes unfinished assignments while preserving final
 reviews as immutable history.
 

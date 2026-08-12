@@ -28,7 +28,6 @@ release_compose run --rm --no-deps worker npm run worker:migrate -- \
 release_compose run --rm --no-deps worker uv run pywrangler d1 execute DB \
   --local --persist-to "/workspace/$RELEASE_GATE_STATE" \
   --command "INSERT INTO instance_setup (singleton_key,completed_at_ms) VALUES ('primary',unixepoch() * 1000); DELETE FROM instance_setup_credentials WHERE singleton_key='primary';"
-release_compose up --detach worker
 release_compose run --rm --no-deps worker npm run frontend:check
 release_compose run --rm --no-deps worker npm run frontend:build
 release_compose run --rm --no-deps worker npm run fixtures:check-assets
@@ -37,6 +36,7 @@ release_compose run --rm --no-deps worker uv run ruff check .
 release_compose run --rm --no-deps worker uv run pytest -q
 release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
 
+release_compose up --detach worker
 release_compose run --rm e2e sh -lc '
   ready=0
   for attempt in $(seq 1 60); do

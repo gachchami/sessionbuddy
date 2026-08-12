@@ -530,6 +530,12 @@
     resetProposalFiles();
     state.viewingSubmission = submission;
     state.editingSubmission = editable ? submission : null;
+    if (!editable) {
+      clearTimeout(state.draftTimer);
+      state.draftTimer = null;
+      state.draftDirty = false;
+      clearBrowserDraft();
+    }
     byId("proposal-form-title").textContent = editable ? "Edit proposal" : "Proposal details";
     restoreValues({ ...submission.answers, speaker_name: submission.speaker_name,
       speaker_email: submission.speaker_email, proposal_title: submission.proposal_title,
@@ -742,7 +748,7 @@
         chooseSubmission(selected);
         byId("title").textContent = selected.editable ? "Edit proposal" : "View proposal";
         byId("welcome").textContent = selected.proposal_title || state.form.event_name;
-        if (saved?.submissionId === selected.id && restoreBrowserDraft(state.sessionEmail)) {
+        if (state.editingSubmission && saved?.submissionId === selected.id && restoreBrowserDraft(state.sessionEmail)) {
           setStatus("Your unsaved proposal changes were restored from this browser.", "success");
         }
       } catch (error) {
@@ -881,7 +887,17 @@
         state.draftTimer = null;
         try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
       setStatus("Draft saved.", "success");
-    } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
+    } catch (error) {
+      if (error.code === "decision_conflict" && state.editingSubmission) {
+        const submissionId = state.editingSubmission.id;
+        clearBrowserDraft();
+        state.draftDirty = false;
+        await reloadSubmissions(submissionId);
+        setStatus("A final decision was recorded while you were editing. Your unsaved changes were not saved, and this proposal is now read-only.", "error");
+        return;
+      }
+      setStatus(window.SessionBuddyApi.message(error), "error");
+    }
   });
 
   byId("review-proposal").addEventListener("click", () => {
@@ -989,6 +1005,15 @@
       clearBrowserDraft();
       resetProposalFiles();
     } catch (error) {
+      if (error.code === "decision_conflict" && state.editingSubmission) {
+        const submissionId = state.editingSubmission.id;
+        clearBrowserDraft();
+        state.draftDirty = false;
+        await reloadSubmissions(submissionId);
+        showReview(false);
+        setStatus("A final decision was recorded while you were editing. Your unsaved changes were not saved, and this proposal is now read-only.", "error");
+        return;
+      }
       const clientMessage = error instanceof Error && !error.status ? error.message : "";
       setStatus(clientMessage || window.SessionBuddyApi.message(error, "Check the highlighted proposal fields and try again."), "error");
       byId("status").focus();

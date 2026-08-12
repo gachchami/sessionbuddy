@@ -6489,6 +6489,28 @@
             "title": "Editable",
             "type": "boolean"
           },
+          "evaluation_round_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Round Id"
+          },
+          "evaluation_round_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Round Name"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -10035,6 +10057,28 @@
             "maxItems": 10,
             "title": "Co Speakers",
             "type": "array"
+          },
+          "evaluation_round_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Round Id"
+          },
+          "evaluation_round_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Round Name"
           },
           "id": {
             "title": "Id",

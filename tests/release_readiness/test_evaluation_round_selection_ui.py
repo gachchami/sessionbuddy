@@ -15,7 +15,9 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert "selection.checked = false" in javascript
     assert "selection.checked = item.status === \"submitted\"" not in javascript
     assert 'selection.addEventListener("change", updateSelectedCount)' in javascript
-    assert 'decided.textContent = "Already decided"' in javascript
+    assert "item.evaluation_round_name" in javascript
+    assert "`In ${item.evaluation_round_name}`" in javascript
+    assert ': "Already decided"' in javascript
     assert 'byId("configure-round").disabled = count === 0' in javascript
 
 

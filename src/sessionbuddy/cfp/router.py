@@ -1097,7 +1097,10 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
                       s.proposal_abstract,s.answers_json,
                       COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                       s.routed_category,s.routed_track,s.routed_review_queue,
-                      CASE WHEN s.submitter_user_id=?2 THEN 1 ELSE 0 END AS editable
+                      CASE WHEN s.submitter_user_id=?2
+                                  AND s.status='submitted'
+                                  AND d.submission_id IS NULL
+                           THEN 1 ELSE 0 END AS editable
                FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
                WHERE s.form_id=?1 AND (
                  s.submitter_user_id=?2 OR EXISTS (
@@ -1991,7 +1994,11 @@ async def update_submission(
         .first("found")
     )
     if decided is not None:
-        raise HTTPException(status_code=409)
+        raise HTTPException(
+            status_code=409,
+            detail="A final decision has been recorded, so this proposal is read-only.",
+            headers={"X-Conflict-Type": "decision"},
+        )
     normalized_email = (
         await db.prepare("SELECT normalized_email FROM users WHERE id=?1")
         .bind(authenticated.actor.user_id)
@@ -2729,10 +2736,20 @@ async def list_submissions(
     columns = """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                   s.proposal_abstract,s.answers_json,f.schema_json AS form_schema_json,
                   COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
-                  s.routed_category,s.routed_track,s.routed_review_queue
+                  s.routed_category,s.routed_track,s.routed_review_queue,
+                  er.id AS evaluation_round_id,er.name AS evaluation_round_name
                FROM submissions s
                JOIN call_for_speaker_forms f ON f.id=s.form_id
                LEFT JOIN submission_decisions d ON d.submission_id=s.id
+               LEFT JOIN evaluation_assignments ea ON ea.id=(
+                 SELECT a.id FROM evaluation_assignments a
+                 JOIN evaluation_rounds candidate ON candidate.id=a.round_id
+                 WHERE a.submission_id=s.id AND a.status!='revoked'
+                   AND candidate.status!='draft'
+                 ORDER BY CASE candidate.status WHEN 'open' THEN 0 ELSE 1 END,
+                          candidate.updated_at_ms DESC,a.id DESC LIMIT 1
+               )
+               LEFT JOIN evaluation_rounds er ON er.id=ea.round_id
                WHERE s.organization_id=?1 AND s.event_id=?2"""
     if window is None:
         statement = (

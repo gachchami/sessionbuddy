@@ -387,8 +387,22 @@
     cancelButton.textContent = "Cancel";
     const buttons = document.createElement("div");
     buttons.className = "actions";
+    // Keep the row clear of the dialog's bottom padding when it is scrolled into view.
+    buttons.style.scrollMarginBottom = "1.5rem";
     buttons.append(confirmButton, cancelButton);
     panel.append(label, help, notifyLabel, speakerMessageLabel, message, buttons);
+    // This panel sits at the bottom of a dialog that scrolls, and the alert sits
+    // directly above the confirm/cancel row. Focusing the alert on its own parks its
+    // bottom edge flush with the dialog's bottom edge, which leaves the buttons just
+    // below the fold: still enabled, but invisible and not hit-testable, so the
+    // organizer reads the guardrail as a dead end and escapes with Esc or a reload.
+    // Scroll the action row into view instead -- it carries the alert with it.
+    function showPanelError(text, focusTarget) {
+      message.textContent = text;
+      message.classList.add("error");
+      focusTarget.focus({ preventScroll: true });
+      buttons.scrollIntoView({ block: "nearest" });
+    }
     trigger.addEventListener("click", () => {
       trigger.hidden = true;
       panel.hidden = false;
@@ -404,9 +418,7 @@
     confirmButton.addEventListener("click", async () => {
       const internalReason = reason.value.trim();
       if (!internalReason) {
-        message.textContent = "Add an internal reason before rejecting.";
-        message.classList.add("error");
-        reason.focus();
+        showPanelError("Add an internal reason before rejecting.", reason);
         return;
       }
       confirmButton.disabled = true;
@@ -433,11 +445,14 @@
         // Chief among these is the 409 the server returns once the proposal is
         // in a round: it names the round path, so surface it in place rather
         // than on the page status line the dialog covers.
-        message.textContent = window.SessionBuddyApi.message(error);
-        message.classList.add("error");
-        message.focus();
         confirmButton.disabled = false;
         cancelButton.disabled = false;
+        showPanelError(
+          error.code === "round_conflict"
+            ? "This proposal is already being reviewed. Open its evaluation round to record the decision."
+            : window.SessionBuddyApi.message(error),
+          message
+        );
       }
     });
     wrap.append(trigger, panel);
@@ -455,6 +470,7 @@
       detailRow("Routed category", item.routed_category),
       detailRow("Routed track", item.routed_track),
       detailRow("Review queue", item.routed_review_queue),
+      ...(item.evaluation_round_name ? [detailRow("Evaluation round", item.evaluation_round_name)] : []),
       ...Object.entries(item.answers || {}).map(([key, value]) => detailRow(answerLabel(item, key), answerText(value)))
     );
     if (item.co_speakers?.length) {
@@ -462,7 +478,15 @@
     }
     const decisionActions = byId("submission-detail-actions");
     decisionActions.replaceChildren();
-    if (item.status === "submitted") decisionActions.append(rejectWithoutReviewControl(item));
+    if (item.status === "submitted" && item.evaluation_round_id) {
+      const roundLink = document.createElement("a");
+      roundLink.className = "button";
+      roundLink.href = `/admin/evaluation-rounds/${encodeURIComponent(item.evaluation_round_id)}`;
+      roundLink.textContent = `Open ${item.evaluation_round_name || "evaluation round"} to decide`;
+      decisionActions.append(roundLink);
+    } else if (item.status === "submitted") {
+      decisionActions.append(rejectWithoutReviewControl(item));
+    }
     const dialog = byId("submission-detail");
     dialog.addEventListener("close", () => trigger.focus(), { once: true });
     dialog.showModal();
@@ -521,7 +545,7 @@
         const row = document.createElement("tr");
         const selectionCell = document.createElement("td");
         selectionCell.dataset.label = "Include";
-        if (item.status === "submitted") {
+        if (item.status === "submitted" && !item.evaluation_round_id) {
           const selection = document.createElement("input");
           selection.type = "checkbox";
           selection.name = "submission_ids";
@@ -533,7 +557,9 @@
         } else {
           const decided = document.createElement("span");
           decided.className = "proposal-selection-unavailable";
-          decided.textContent = "Already decided";
+          decided.textContent = item.evaluation_round_name
+            ? `In ${item.evaluation_round_name}`
+            : "Already decided";
           selectionCell.append(decided);
         }
         row.append(selectionCell);

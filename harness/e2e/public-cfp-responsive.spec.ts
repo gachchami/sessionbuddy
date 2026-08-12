@@ -217,6 +217,52 @@ test.describe("public CFP responsive design", () => {
     await expect(page.getByLabel("Proposal title")).toBeDisabled();
   });
 
+  test("a decided proposal is read-only and discards stale browser-only co-speaker edits", async ({ page }) => {
+    const submission = {
+      id: "88888888-8888-4888-8888-888888888888",
+      proposal_title: "Accepted systems talk",
+      proposal_abstract: "The version accepted by the organizers.",
+      speaker_name: "Priya Raman",
+      speaker_email: "speaker@example.test",
+      status: "accepted",
+      editable: false,
+      version: 3,
+      answers: {},
+      co_speakers: [],
+    };
+    await servePublicCfp(page, true, [submission]);
+    await page.addInitScript((submissionId) => {
+      localStorage.setItem(`sessionbuddy:cfp:responsive-conference:draft:${submissionId}`, JSON.stringify({
+        schemaVersion: 1,
+        formVersion: 1,
+        answers: {
+          speaker_name: "Priya Raman",
+          speaker_email: "speaker@example.test",
+          proposal_title: "Accepted systems talk",
+          proposal_abstract: "The version accepted by the organizers.",
+        },
+        coSpeakers: [{ display_name: "Marcus Okafor", email: "marcus@example.test" }],
+        submissionId,
+        fileNames: [],
+        readyToSubmit: false,
+        ownerEmail: "speaker@example.test",
+        savedAt: Date.now(),
+      }));
+    }, submission.id);
+
+    await page.goto(`/speaker/proposals/responsive-conference/${submission.id}`);
+
+    await expect(page.locator("#status")).toContainText(
+      "A final decision has been recorded, so this proposal is read-only.",
+    );
+    await expect(page.getByLabel("Proposal title")).toBeDisabled();
+    await expect(page.getByText("Marcus Okafor")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(
+      (submissionId) => localStorage.getItem(`sessionbuddy:cfp:responsive-conference:draft:${submissionId}`),
+      submission.id,
+    )).toBeNull();
+  });
+
   test("password sign-in and email signup send separate authentication payloads", async ({ page }) => {
     await servePublicCfp(page, false);
     let passwordPayload: unknown;

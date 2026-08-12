@@ -419,7 +419,8 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     )[0]
     assert "s.submitter_user_id=?2 OR EXISTS" in private_list
     assert "c.normalized_email=?3" in private_list
-    assert "CASE WHEN s.submitter_user_id=?2 THEN 1 ELSE 0 END AS editable" in private_list
+    assert "AND s.status='submitted'" in private_list
+    assert "AND d.submission_id IS NULL" in private_list
     primary_patch = router.split("async def update_submission(", 1)[1].split(
         "@cfp_router.patch(", 1
     )[0]
@@ -430,6 +431,8 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
         Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js"
     ).read_text()
     assert "const editable = submission.editable === true" in public_script
+    assert "state.editingSubmission && saved?.submissionId === selected.id" in public_script
+    assert 'error.code === "decision_conflict"' in public_script
     assert "Only the primary submitter can make changes." in public_script
     assert "The call for proposals is closed, so this proposal is read-only." in public_script
     assert 'submission.status === "withdrawn"' in public_script
@@ -438,6 +441,22 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     assert 'make("a", "Open in My proposals", "button")' not in public_script
     assert 'make("a", "Back to speaker portal", "button")' in public_script
     assert "const workspacePath" not in public_script
+
+
+def test_admin_submission_inbox_links_assigned_proposals_to_their_round() -> None:
+    root = Path(__file__).parents[2]
+    router = (root / "src/sessionbuddy/cfp/router.py").read_text()
+    script = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
+
+    admin_list = router.split("async def list_submissions(", 1)[1].split(
+        "@cfp_router", 1
+    )[0]
+    assert "er.id AS evaluation_round_id" in admin_list
+    assert "candidate.status!='draft'" in admin_list
+    assert "a.status!='revoked'" in admin_list
+    assert "item.status === \"submitted\" && item.evaluation_round_id" in script
+    assert "Open ${item.evaluation_round_name || \"evaluation round\"} to decide" in script
+    assert 'error.code === "round_conflict"' in script
 
 
 def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() -> None:
