@@ -141,9 +141,16 @@
   }
 
   function renderCallDetails(form) {
-    byId("call-deadline").textContent = form.closes_at_ms
+    const deadlineLabel = form.closes_at_ms
       ? new Date(form.closes_at_ms).toLocaleString()
-      : "No closing date set";
+      : "";
+    byId("call-deadline").textContent = deadlineLabel || "No closing date set";
+    // The close date is the single most decision-relevant fact for a submitter,
+    // so it also belongs in the event header rather than only in the sidebar
+    // card, which sits below the fold in the two-column application layout.
+    const headerDeadline = byId("event-deadline");
+    headerDeadline.textContent = deadlineLabel ? `Proposal deadline: ${deadlineLabel}` : "";
+    headerDeadline.hidden = !deadlineLabel;
     const conditionalTargets = new Set((form.conditions || []).map((condition) => condition.target_key));
     const visibleFields = form.fields.filter((field) => !conditionalTargets.has(field.key));
     const effort = visibleFields.reduce((minutes, field) => minutes + (field.type === "textarea" ? 3 : ["file", "image"].includes(field.type) ? 2 : 1), 0);
