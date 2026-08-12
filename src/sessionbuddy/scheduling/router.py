@@ -1,6 +1,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime
+from html import escape
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -144,6 +145,7 @@ async def agenda_js(request: Request) -> Response:
 @scheduling_router.get("/events/{event_id}/sessions", include_in_schema=False)
 @scheduling_router.get("/embeds/events/{event_id}/schedule", include_in_schema=False)
 @scheduling_router.get("/embeds/events/{event_id}/sessions", include_in_schema=False)
+@scheduling_router.get("/embeds/events/{event_id}/itinerary", include_in_schema=False)
 async def schedule_page(event_id: str, request: Request) -> HTMLResponse:
     return HTMLResponse(
         _asset("schedule.html"),
@@ -461,6 +463,7 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
                JOIN event_rooms r ON r.id=ai.room_id
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+                 AND ac.lifecycle_status='active'
                ORDER BY ai.starts_at_ms,ai.id"""
         )
         .bind(organization_id, event_id, revision["id"])
@@ -492,7 +495,8 @@ async def _agenda_model(db, event, revision, actor) -> AdminAgendaView:
                LEFT JOIN event_tracks t ON t.organization_id=s.organization_id
                  AND t.event_id=s.event_id AND t.status='active'
                  AND lower(trim(t.name))=lower(trim(s.routed_track))
-               WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
+               WHERE ac.organization_id=?1 AND ac.event_id=?2
+                 AND ac.lifecycle_status='active' AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
                    AND ai.accepted_session_id=ac.id)
                ORDER BY title,ac.id"""
@@ -683,6 +687,81 @@ async def create_organizer_session(
                 now,
             )
         )
+        if active:
+            # An organizer-created session is just as real as a CFP-backed accepted
+            # session.  Active participants therefore need the same onboarding
+            # work, even though there is no proposal decision to create it for us.
+            # Preserve completed evidence when the profile or headshot predates the
+            # session, and do not duplicate tasks when the speaker is added to a
+            # second organizer-created session.
+            for task_type, title, due_days in (
+                ("profile", "Complete your speaker profile", 7),
+                ("headshot", "Upload your headshot", 7),
+                ("slides", "Upload your presentation slides", 10),
+            ):
+                batch.add_statement(
+                    db.prepare(
+                        """INSERT INTO speaker_tasks
+                           (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
+                            submission_id,task_type,title,help_text,destination_type,state,
+                            due_at_ms,completed_at_ms,created_at_ms,updated_at_ms,form_schema_json)
+                           SELECT ?1,?2,?3,?4,NULL,NULL,?5,?6,'',?5,
+                             CASE
+                               WHEN ?5='profile' AND NULLIF(TRIM(p.biography),'') IS NOT NULL
+                                 THEN 'completed'
+                               WHEN ?5='headshot' AND (
+                                 EXISTS (SELECT 1 FROM user_headshots h WHERE h.user_id=p.user_id)
+                                 OR EXISTS (
+                                   SELECT 1 FROM speaker_assets asset
+                                   JOIN speaker_asset_versions version
+                                     ON version.asset_id=asset.id AND version.is_current=1
+                                    AND version.scan_state='clean'
+                                   WHERE asset.organization_id=?2 AND asset.event_id=?3
+                                     AND asset.event_speaker_id=?4 AND asset.kind='headshot'
+                                 )
+                               ) THEN 'completed'
+                               ELSE 'open'
+                             END,
+                             ?7,
+                             CASE
+                               WHEN ?5='profile' AND NULLIF(TRIM(p.biography),'') IS NOT NULL
+                                 THEN ?8
+                               WHEN ?5='headshot' AND (
+                                 EXISTS (SELECT 1 FROM user_headshots h WHERE h.user_id=p.user_id)
+                                 OR EXISTS (
+                                   SELECT 1 FROM speaker_assets asset
+                                   JOIN speaker_asset_versions version
+                                     ON version.asset_id=asset.id AND version.is_current=1
+                                    AND version.scan_state='clean'
+                                   WHERE asset.organization_id=?2 AND asset.event_id=?3
+                                     AND asset.event_speaker_id=?4 AND asset.kind='headshot'
+                                 )
+                               ) THEN ?8
+                               ELSE NULL
+                             END,
+                             ?8,?8,'{}'
+                           FROM event_speakers es
+                           JOIN people p ON p.organization_id=es.organization_id
+                            AND p.id=es.person_id
+                           WHERE es.organization_id=?2 AND es.event_id=?3 AND es.id=?4
+                             AND NOT EXISTS (
+                               SELECT 1 FROM speaker_tasks existing
+                               WHERE existing.organization_id=?2 AND existing.event_id=?3
+                                 AND existing.event_speaker_id=?4
+                                 AND existing.task_type=?5
+                                 AND existing.state IN ('open','completed')
+                             )"""
+                    ).bind(
+                        new_id(),
+                        organization_id,
+                        event_id,
+                        participant_id,
+                        task_type,
+                        title,
+                        now + due_days * 86_400_000,
+                        now,
+                    )
+                )
     batch.add_statement(
         db.prepare(
             """INSERT INTO session_content_versions
@@ -1558,7 +1637,8 @@ async def auto_schedule_agenda(
         await db.prepare(
             """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS title
                FROM accepted_sessions ac LEFT JOIN submissions s ON s.id=ac.submission_id
-               WHERE ac.organization_id=?1 AND ac.event_id=?2 AND NOT EXISTS (
+               WHERE ac.organization_id=?1 AND ac.event_id=?2
+                 AND ac.lifecycle_status='active' AND NOT EXISTS (
                  SELECT 1 FROM agenda_items ai WHERE ai.revision_id=?3
                    AND ai.accepted_session_id=ac.id)
                ORDER BY title,ac.id"""
@@ -1733,7 +1813,8 @@ async def _slot(request: Request, event, revision, body: AgendaCandidate) -> Age
             _db(request)
             .prepare(
                 """SELECT id FROM accepted_sessions
-                   WHERE organization_id=?1 AND event_id=?2 AND id=?3 LIMIT 1"""
+                   WHERE organization_id=?1 AND event_id=?2 AND id=?3
+                     AND lifecycle_status='active' LIMIT 1"""
             )
             .bind(event["organization_id"], event["id"], body.session_id)
             .first("id")
@@ -2170,6 +2251,7 @@ async def publish_agenda(
                LEFT JOIN submissions s ON s.id=ac.submission_id
                JOIN event_rooms r ON r.id=ai.room_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+                 AND ac.lifecycle_status='active'
                ORDER BY ai.id"""
         )
         .bind(organization_id, event_id, body.revision_id)
@@ -2407,6 +2489,8 @@ def _public_schedule_item(row: dict) -> PublicScheduleItemView:
     return PublicScheduleItemView(
         **item.model_dump(),
         description=str(row["description"]),
+        format_name=str(row["format_name"]),
+        speaker_details=str(row["speaker_details"]),
     )
 
 
@@ -2461,6 +2545,7 @@ async def get_schedule(event_id: str, request: Request) -> ScheduleView:
            LEFT JOIN event_tracks t ON t.id=ai.track_id
            LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
            WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
+             AND ac.lifecycle_status='active'
            GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
         )
         .bind(event["organization_id"], event_id, revision["id"])
@@ -2490,7 +2575,11 @@ async def get_schedule(event_id: str, request: Request) -> ScheduleView:
 async def get_public_schedule(
     event_id: str, request: Request, response: Response
 ) -> PublicScheduleView:
-    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=300"
+    # A publication replaces the event's canonical revision at this same URL. Allowing
+    # stale responses here makes a successful publish appear to have failed for as long
+    # as five minutes, and there is no revision-specific URL the browser can switch to.
+    # Prefer immediate correctness; static schedule assets remain independently cacheable.
+    response.headers["Cache-Control"] = "no-store"
     db = _db(request)
     event = row_mapping(
         await db.prepare(
@@ -2529,6 +2618,28 @@ async def get_public_schedule(
             """SELECT ai.id,ac.id AS session_id,
                       COALESCE(s.proposal_title,ac.organizer_title) AS title,
                       COALESCE(s.proposal_abstract,ac.organizer_abstract) AS description,
+                      COALESCE(NULLIF(json_extract(s.answers_json,'$.format'),''),
+                        NULLIF(json_extract(s.answers_json,'$.session_type'),''),
+                        'Session') AS format_name,
+                      CASE WHEN ac.source_type='organizer_created' THEN
+                        COALESCE((SELECT group_concat(NULLIF(trim(
+                          COALESCE(person.job_title,'') ||
+                          CASE WHEN person.job_title IS NOT NULL AND person.company IS NOT NULL
+                            AND trim(person.job_title)!='' AND trim(person.company)!=''
+                            THEN ' at ' ELSE '' END || COALESCE(person.company,'')),''), ' · ')
+                          FROM accepted_session_participants participant
+                          JOIN event_speakers speaker ON speaker.id=participant.event_speaker_id
+                          JOIN people person ON person.id=speaker.person_id
+                          WHERE participant.accepted_session_id=ac.id),'')
+                      ELSE COALESCE((SELECT group_concat(NULLIF(trim(
+                        COALESCE(person.job_title,'') ||
+                        CASE WHEN person.job_title IS NOT NULL AND person.company IS NOT NULL
+                          AND trim(person.job_title)!='' AND trim(person.company)!=''
+                          THEN ' at ' ELSE '' END || COALESCE(person.company,'')),''), ' · ')
+                        FROM submission_speakers linked
+                        JOIN event_speakers speaker ON speaker.id=linked.event_speaker_id
+                        JOIN people person ON person.id=speaker.person_id
+                        WHERE linked.submission_id=ac.submission_id),'') END AS speaker_details,
                       ai.starts_at_ms AS start_at_ms,ai.ends_at_ms AS end_at_ms,
                       r.name AS room_name,t.name AS track_name,
                       CASE WHEN ac.source_type='organizer_created' THEN
@@ -2543,7 +2654,7 @@ async def get_public_schedule(
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
-                 AND ac.content_status='approved'
+                 AND ac.content_status='approved' AND ac.lifecycle_status='active'
                GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
         )
         .bind(event["organization_id"], event_id, revision["id"])
@@ -2570,4 +2681,72 @@ async def get_public_schedule(
             revision_number=int(revision["revision_number"]),
         ),
         items=[_public_schedule_item(item) for item in items],
+    )
+
+
+def _calendar_stamp(value: int) -> str:
+    return datetime.fromtimestamp(value / 1000, UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _calendar_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
+
+
+@scheduling_router.get(
+    "/api/v1/public/events/{event_id}/schedule.ics",
+    include_in_schema=False,
+)
+async def public_schedule_ical(event_id: str, request: Request) -> Response:
+    schedule = await get_public_schedule(event_id, request, Response())
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SessionBuddy//Schedule//EN"]
+    for item in schedule.items:
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:{_calendar_text(item.id)}@sessionbuddy",
+                f"DTSTART:{_calendar_stamp(item.start_at_ms)}",
+                f"DTEND:{_calendar_stamp(item.end_at_ms)}",
+                f"SUMMARY:{_calendar_text(item.title)}",
+                f"LOCATION:{_calendar_text(item.room_name)}",
+                f"DESCRIPTION:{_calendar_text(item.description)}",
+                "END:VEVENT",
+            ]
+        )
+    lines.append("END:VCALENDAR")
+    return Response(
+        "\r\n".join(lines) + "\r\n",
+        media_type="text/calendar; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@scheduling_router.get(
+    "/api/v1/public/events/{event_id}/schedule.xml",
+    include_in_schema=False,
+)
+async def public_schedule_xml(event_id: str, request: Request) -> Response:
+    schedule = await get_public_schedule(event_id, request, Response())
+    sessions = "".join(
+        "<session>"
+        f"<id>{escape(item.id)}</id><title>{escape(item.title)}</title>"
+        f"<description>{escape(item.description)}</description>"
+        f"<starts_at_ms>{item.start_at_ms}</starts_at_ms>"
+        f"<ends_at_ms>{item.end_at_ms}</ends_at_ms>"
+        f"<room>{escape(item.room_name)}</room>"
+        f"<track>{escape(item.track_name or '')}</track>"
+        f"<format>{escape(item.format_name)}</format>"
+        f"<speakers>{escape(item.speaker_names)}</speakers>"
+        "</session>"
+        for item in schedule.items
+    )
+    revision = schedule.revision.revision_number if schedule.revision else 0
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<schedule event_id="{escape(schedule.event.id)}" revision="{revision}">'
+        f"{sessions}</schedule>"
+    )
+    return Response(
+        body,
+        media_type="application/xml; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
     )

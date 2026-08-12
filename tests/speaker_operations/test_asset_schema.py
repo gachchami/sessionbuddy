@@ -133,6 +133,30 @@ def test_asset_versions_record_the_uploader_for_inventory_metadata(
     assert "speaker_asset_version_id" in headshot_columns
 
 
+def test_asset_comments_are_version_scoped_and_immutable(db: sqlite3.Connection) -> None:
+    add_asset(db)
+    add_version(db, "version-1", 1, state="clean", current=1)
+    db.execute(
+        """INSERT INTO speaker_asset_comments
+           (id,organization_id,event_id,asset_id,version_id,author_user_id,
+            body_text,created_at_ms)
+           VALUES ('comment-a','org-a','event-a','asset-a','version-1','user-a',
+                   'Please replace the crop.',1400)"""
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            """INSERT INTO speaker_asset_comments
+               (id,organization_id,event_id,asset_id,version_id,author_user_id,
+                body_text,created_at_ms)
+               VALUES ('comment-empty','org-a','event-a','asset-a','version-1','user-a',
+                       '   ',1500)"""
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "UPDATE speaker_asset_comments SET body_text='Changed' WHERE id='comment-a'"
+        )
+
+
 def test_scan_states_require_expected_metadata_and_timestamps(db: sqlite3.Connection) -> None:
     add_asset(db)
     add_version(db, "pending", 1)

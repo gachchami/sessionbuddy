@@ -1120,7 +1120,11 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
         await db.prepare(
             """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                       s.proposal_abstract,s.answers_json,
-                      COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
+                      COALESCE((SELECT c.corrected_decision
+                        FROM submission_decision_corrections c
+                        WHERE c.submission_id=s.id
+                        ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),
+                        d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                       s.routed_category,s.routed_track,s.routed_review_queue,
                       CASE WHEN s.submitter_user_id=?2
                                   AND s.status='submitted'
@@ -1197,7 +1201,11 @@ async def find_my_submission_by_title(
     row = row_mapping(
         await db.prepare(
             """SELECT s.id,s.proposal_title,s.submitted_at_ms,
-                      COALESCE(d.decision,s.status) AS status
+                      COALESCE((SELECT c.corrected_decision
+                        FROM submission_decision_corrections c
+                        WHERE c.submission_id=s.id
+                        ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),
+                        d.decision,s.status) AS status
                FROM submissions s
                LEFT JOIN submission_decisions d ON d.submission_id=s.id
                WHERE s.form_id=?1 AND s.submitter_user_id=?2
@@ -2810,7 +2818,11 @@ async def list_submissions(
     window = _submissions_cursor(request, cursor, event_id=event_id)
     columns = """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                   s.proposal_abstract,s.answers_json,f.schema_json AS form_schema_json,
-                  COALESCE(d.decision,s.status) AS status,s.submitted_at_ms,s.version,
+                  COALESCE((SELECT c.corrected_decision
+                    FROM submission_decision_corrections c
+                    WHERE c.submission_id=s.id
+                    ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),
+                    d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                   s.routed_category,s.routed_track,s.routed_review_queue,
                   er.id AS evaluation_round_id,er.name AS evaluation_round_name
                FROM submissions s

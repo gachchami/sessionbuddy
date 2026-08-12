@@ -64,6 +64,43 @@ async def test_communication_history_uses_stable_cursor_pagination() -> None:
 
 
 @pytest.mark.asyncio
+async def test_history_excludes_authentication_mail_and_categorizes_event_mail() -> None:
+    import sqlite3
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys=ON")
+    for migration in MIGRATIONS:
+        connection.executescript(migration.read_text())
+    seed_event(connection)
+    for message_id, subject, key in (
+        ("auth-message", "Your SessionBuddy sign-in link", "auth:challenge-a"),
+        ("reminder", "Next steps for Event a", "task-reminder:task-a:2026-08-18"),
+        ("schedule", "Schedule confirmation", "schedule:session-a"),
+    ):
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,queued_at_ms,updated_at_ms)
+               VALUES (?,?,?,?,?,?,?,'delivered',1000,1000)""",
+            (message_id, "org-a", "event-a", "speaker@example.test", subject, "<p>Body</p>", key),
+        )
+    request = SimpleNamespace(scope={"env": SimpleNamespace(
+        DB=AsyncSqlite(connection), CSRF_HMAC_KEY="communications-cursor-test-key-0000001"
+    )})
+    service = D1CommunicationsService(request)
+    service.organization_id = "org-a"
+
+    page = await service.statuses("event-a")
+
+    assert {item.id for item in page.data} == {"reminder", "schedule"}
+    assert {item.id: item.category for item in page.data} == {
+        "reminder": "reminder", "schedule": "schedule"
+    }
+    assert all(item.body_preview == "Body" for item in page.data)
+
+
+@pytest.mark.asyncio
 async def test_first_communication_history_page_does_not_bind_an_integer_sentinel() -> None:
     class Statement:
         def __init__(self) -> None:

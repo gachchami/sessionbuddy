@@ -80,6 +80,10 @@ def test_publish_uses_an_accessible_in_page_confirmation() -> None:
     assert 'aria-describedby="publish-dialog-summary publish-dialog-notice"' in html
     assert 'id="cancel-publish"' in html and 'id="confirm-publish"' in html
     assert 'byId("publish-dialog").showModal()' in javascript
+    assert 'id="publish-dialog-invite-warning"' in html
+    assert "Some scheduled sessions have invited speakers who have not accepted yet." in html
+    assert 'participant.recipient_state === "invited"' in javascript
+    assert 'make("li", item.title)' in javascript
     assert "Publish this agenda? ${scheduled}" not in javascript
 
 
@@ -127,6 +131,17 @@ def test_save_is_optimistic_with_visible_rollback_and_server_preview() -> None:
     assert ".rollback" in css and ".preview-conflict" in css
 
 
+def test_content_history_renders_saved_copy_and_restore_action() -> None:
+    javascript, css = read("agenda.js"), read("agenda.css")
+    assert "entry.title" in javascript
+    assert 'make("p", entry.abstract, "content-history-entry__abstract")' in javascript
+    assert "format(entry.created_at_ms" in javascript
+    assert "restoreContent(item, entry.version, restore)" in javascript
+    assert 'form.elements.content_version.value = content.version' in javascript
+    assert 'saveButton.disabled = true' in javascript
+    assert ".content-history-entry__abstract" in css
+
+
 def test_admin_and_schedule_are_accessible_responsive_and_safe() -> None:
     admin, schedule = read("agenda_admin.html"), read("schedule.html")
     javascript = read("agenda.js") + read("schedule.js")
@@ -143,7 +158,7 @@ def test_admin_and_schedule_are_accessible_responsive_and_safe() -> None:
 
 def test_read_only_schedule_has_staff_speaker_views_and_empty_error_states() -> None:
     html, javascript = read("schedule.html"), read("schedule.js")
-    for view in ("list", "day", "track", "room"):
+    for view in ("list", "day", "track", "room", "grid"):
         assert f'data-view="{view}"' in html
     assert "/api/v1/events/${encodeURIComponent(eventId)}/schedule" in javascript
     assert 'id="empty"' in html
@@ -152,3 +167,9 @@ def test_read_only_schedule_has_staff_speaker_views_and_empty_error_states() -> 
     assert 'id="download-calendar"' in html
     assert "BEGIN:VCALENDAR" in javascript
     assert "item.labels" in javascript and "schedule-label" in javascript
+    assert 'id="session-detail"' in html
+    assert 'id="track-filter"' in html
+    assert 'id="format-filter"' in html
+    assert 'id="room-filter"' in html
+    assert '"Show details"' in javascript
+    assert '"stage-board"' in javascript

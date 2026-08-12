@@ -48,12 +48,12 @@ docker compose up --detach worker activity-worker activity-poller
 Use `docker compose up --build --detach ...` only when the image must be rebuilt
 for code or dependency changes. A routine data reset does not need `--build`.
 
-The reset fails closed unless `migrations_baseline/` contains exactly
-`0001_baseline.sql`. Cloudflare-owned local metadata tables are retained because
-Workerd forbids dropping them; the Wrangler migration ledger is emptied before
-the canonical baseline is applied, so an edited baseline is applied from zero.
-Do not start an eval if the reset reports an extra migration file or if either
-Worker is still reachable.
+The reset fails closed unless `migrations_baseline/` starts with the immutable
+`0001_baseline.sql` and every later SQL file has a unique ordered name.
+Cloudflare-owned local metadata tables are retained because Workerd forbids
+dropping them; the Wrangler migration ledger is emptied before the complete
+chain is applied. Do not start an eval if the migration layout is invalid or if
+either Worker is still reachable.
 
 After the reset, confirm the local application is ready:
 

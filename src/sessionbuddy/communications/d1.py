@@ -1,6 +1,7 @@
 """Tenant-scoped D1 communications service used by HTTP and local development."""
 
 import hashlib
+from datetime import UTC, datetime
 from html import escape
 
 from fastapi import HTTPException, Request
@@ -28,6 +29,7 @@ from .models import (
     SpeakerMessagePreviewRequest,
     SpeakerMessageSendRequest,
 )
+from .presentation import message_category, message_preview
 from .rendering import render_template, validate_template
 
 
@@ -540,7 +542,8 @@ class D1CommunicationsService:
         if row is None:
             raise HTTPException(status_code=404)
         now, message_id = utc_now_ms(), new_id()
-        deterministic = hashlib.sha256(f"task:{task_id}:{idempotency_key}".encode()).hexdigest()
+        reminder_day = datetime.fromtimestamp(now / 1000, UTC).date().isoformat()
+        deterministic = f"task-reminder:{task_id}:{reminder_day}"
         fingerprint = hashlib.sha256(f"task-reminder:{event_id}:{task_id}".encode()).digest()
         record = IdempotencyRecord(
             principal_key=self.actor.user_id if self.actor else "missing-actor",
@@ -568,6 +571,9 @@ class D1CommunicationsService:
             .bind(row["organization_id"], event_id, deterministic)
             .first("id")
         )
+        if replay is None and existing is not None:
+            await self._publish_delivery_requests([str(existing)])
+            return ReminderQueuedResponse(message_id=str(existing))
         if replay is not None:
             if (
                 bytes(replay["request_fingerprint"]) != fingerprint
@@ -627,7 +633,18 @@ class D1CommunicationsService:
         try:
             await batch.execute()
         except PersistenceError as exc:
-            raise HTTPException(status_code=409) from exc
+            concurrent = (
+                await self.db.prepare(
+                    """SELECT id FROM communication_messages WHERE organization_id=?1
+                       AND event_id=?2 AND deterministic_key=?3 LIMIT 1"""
+                )
+                .bind(row["organization_id"], event_id, deterministic)
+                .first("id")
+            )
+            if concurrent is None:
+                raise HTTPException(status_code=409) from exc
+            await self._publish_delivery_requests([str(concurrent)])
+            return ReminderQueuedResponse(message_id=str(concurrent))
         await self._publish_delivery_requests([message_id])
         return ReminderQueuedResponse(message_id=message_id)
 
@@ -645,16 +662,18 @@ class D1CommunicationsService:
         before_ms, before_id = position if position is not None else (None, None)
         if before_ms is None:
             statement = self.db.prepare(
-                """SELECT id,recipient_email,subject,status,attempt_count,
-                          provider_message_id,last_error_code,updated_at_ms
+                """SELECT id,recipient_email,subject,html_body,deterministic_key,status,
+                          attempt_count,provider_message_id,last_error_code,updated_at_ms
                    FROM communication_messages WHERE organization_id=?1 AND event_id=?2
+                     AND deterministic_key NOT LIKE 'auth:%'
                    ORDER BY updated_at_ms DESC,id DESC LIMIT ?3"""
             ).bind(self.organization_id, event_id, limit + 1)
         else:
             statement = self.db.prepare(
-                """SELECT id,recipient_email,subject,status,attempt_count,
-                          provider_message_id,last_error_code,updated_at_ms
+                """SELECT id,recipient_email,subject,html_body,deterministic_key,status,
+                          attempt_count,provider_message_id,last_error_code,updated_at_ms
                    FROM communication_messages WHERE organization_id=?1 AND event_id=?2
+                     AND deterministic_key NOT LIKE 'auth:%'
                      AND (updated_at_ms<?3 OR (updated_at_ms=?3 AND id<?4))
                    ORDER BY updated_at_ms DESC,id DESC LIMIT ?5"""
             ).bind(self.organization_id, event_id, before_ms, before_id, limit + 1)
@@ -670,9 +689,15 @@ class D1CommunicationsService:
                 timestamp=int(last["updated_at_ms"]),
                 row_id=str(last["id"]),
             )
-        return CommunicationStatusList(
-            data=[CommunicationStatus(**row) for row in page], next_cursor=next_cursor
-        )
+        def present(row):
+            item = dict(row)
+            key = str(item.pop("deterministic_key", ""))
+            subject = str(item.get("subject", ""))
+            item["body_preview"] = message_preview(str(item.pop("html_body")))
+            item["category"] = message_category(key, subject)
+            return CommunicationStatus(**item)
+
+        return CommunicationStatusList(data=[present(row) for row in page], next_cursor=next_cursor)
 
     async def dispatch_local(self, event_id: str) -> DispatchResponse:
         if getattr(self.request.scope.get("env"), "APP_ENV", "production") != "local":

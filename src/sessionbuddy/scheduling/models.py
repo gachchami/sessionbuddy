@@ -344,6 +344,8 @@ class PublicScheduleEventView(ScheduleEventView):
 
 class PublicScheduleItemView(ScheduleItemView):
     description: str
+    format_name: str
+    speaker_details: str
 
 
 class PublicScheduleView(StrictModel):

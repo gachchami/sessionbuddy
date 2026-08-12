@@ -204,8 +204,10 @@ async def test_event_labels_are_owned_assignable_and_public(
             "end_at_ms",
             "room_name",
             "track_name",
-            "speaker_names",
-            "labels",
+                "speaker_names",
+                "speaker_details",
+                "format_name",
+                "labels",
             "label_ids",
         }
         assert public.json()["items"][0]["labels"] == [

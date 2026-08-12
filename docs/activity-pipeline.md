@@ -201,21 +201,13 @@ It must not return internal IDs, activity routing internals, arbitrary metadata,
 emails, or content bodies. UI labels are derived from structured CRUD fields;
 the database does not store presentation sentences.
 
-## 9. Schema ownership and fresh-install gate
+## 9. Schema ownership and migration gate
 
-SessionBuddy supports fresh installations only. All activity tables, indexes,
-foreign keys, and triggers must live in
-`migrations_baseline/0001_baseline.sql`.
-
-Do not deploy an incremental activity migration. The currently staged
-`migrations_baseline/0002_activity_pipeline.sql` is an integration artifact and
-must be folded into `0001_baseline.sql`, then removed, before a development
-deployment or release. Baseline validation must prove that `0001_baseline.sql`
-is the sole active schema file.
-
-After folding the schema into `0001_baseline.sql`, every development D1 database
-must be backed up, deleted, recreated, and initialized from the new baseline.
-Never apply the changed baseline to a data-bearing database.
+`migrations_baseline/0001_baseline.sql` is immutable. Activity schema changes
+after it ship as the next ordered migration and must preserve existing data.
+Validation applies the complete chain to a fresh database and the new migration
+to the preceding supported schema. Back up data-bearing D1 before upgrading;
+never fold a change into `0001` outside an explicitly planned baseline rebase.
 
 ## 10. Bring up locally, in serial order
 
@@ -223,10 +215,9 @@ Run every command from the repository root.
 
 ### 10.1 Check the schema gate
 
-1. Fold the activity schema into `migrations_baseline/0001_baseline.sql`.
-2. Remove `migrations_baseline/0002_activity_pipeline.sql`.
-3. Confirm the baseline directory contains only `0001_baseline.sql`.
-4. Validate it:
+1. Add the next uniquely numbered migration without editing earlier files.
+2. Add fresh-chain and preceding-schema upgrade tests.
+3. Validate the ordered chain:
 
 ```sh
 docker compose run --rm --no-deps worker \
@@ -337,8 +328,8 @@ scripts/release_gate.sh
 git diff --check
 ```
 
-Baseline validation must confirm that `0001_baseline.sql` is the only active
-migration.
+Migration validation must confirm that the chain starts with `0001`, applies in
+order, preserves foreign keys, and leaves no migration on a repeat run.
 
 ### 11.2 Verify Cloudflare authentication and inventory
 
@@ -363,32 +354,28 @@ docker compose run --rm --no-deps worker \
 
 Do not recreate queues that already exist.
 
-### 11.3 Back up and recreate development D1
+### 11.3 Back up development D1
 
 1. Export the existing development D1 database into ignored `.local/backups/`.
 2. Verify the export is non-empty, contains schema statements, and record its
    SHA-256 digest.
 3. Record the current D1 information and region.
-4. Delete only the exact development D1 database.
-5. Create a replacement in the same region.
-6. Update the `env.dev` D1 `database_id` in both `wrangler.jsonc` and
-   `wrangler.activity.jsonc` to the same new UUID.
+4. Retain the backup until upgrade and post-release validation complete.
 
 Do not change the database binding name or point either Worker at another
 environment's database. The backup contains personal data; keep it ignored and
 local.
 
-### 11.4 Apply the baseline and prove the repeat no-op
+### 11.4 Apply the migration chain and prove the repeat no-op
 
 ```sh
 docker compose run --rm --no-deps worker npm run worker:migrate:dev
 docker compose run --rm --no-deps worker npm run worker:migrate:dev
 ```
 
-The first command must apply only `0001_baseline.sql`. The second must report no
-migrations to apply. Verify fresh counts before bootstrap: zero organizations,
-users, and events; one setup credential; and only the canonical baseline in the
-migration ledger.
+The first command applies only migrations absent from the D1 ledger. The second
+must report no migrations to apply. Verify foreign keys, critical row counts,
+and the expected migration ledger before continuing.
 
 ### 11.5 Validate both Worker packages without uploading
 

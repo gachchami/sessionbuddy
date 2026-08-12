@@ -1,7 +1,9 @@
 import hashlib
 import hmac
+import io
 import json
 import re
+import zipfile
 from base64 import urlsafe_b64encode
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -13,6 +15,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from sessionbuddy.cfp.availability import form_availability
+from sessionbuddy.communications.presentation import message_category
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth import hash_token
@@ -48,11 +51,16 @@ from .asset_boundary import AssetAccessScope, AssetRepository, ScanJob
 from .models import (
     AdminSpeakerAssetList,
     AdminSpeakerAssetView,
+    AssetCommentCreate,
+    AssetCommentView,
+    AssetDetailView,
     AssetDownloadGrantView,
     AssetDownloadToken,
+    AssetExportCreate,
     OnboardingDashboardView,
     OnboardingRow,
     OnboardingSummary,
+    SpeakerAssetDetailView,
     SpeakerAssetList,
     SpeakerAssetVersionView,
     SpeakerAssetView,
@@ -141,9 +149,12 @@ def _speaker_message_content(value: object) -> tuple[str, list[str]]:
 
 def _speaker_notification_view(row) -> SpeakerNotificationView:
     body_text, links = _speaker_message_content(row["html_body"])
+    deterministic_key = str(row["deterministic_key"])
+    subject = str(row["subject"])
     return SpeakerNotificationView(
         id=str(row["id"]),
-        subject=str(row["subject"]),
+        subject=subject,
+        category=message_category(deterministic_key, subject),
         delivered_at_ms=int(row["delivered_at_ms"]),
         body_text=body_text,
         links=links,
@@ -183,6 +194,7 @@ async def _asset_versions_by_asset(
     organization_id: str,
     event_id: str,
     event_speaker_id: str | None = None,
+    asset_id: str | None = None,
 ) -> dict[str, list[SpeakerAssetVersionView]]:
     rows = result_rows(
         await _db(request)
@@ -196,10 +208,11 @@ async def _asset_versions_by_asset(
                 AND asset.event_id=version.event_id AND asset.id=version.asset_id
                WHERE version.organization_id=?1 AND version.event_id=?2
                  AND (?3 IS NULL OR asset.event_speaker_id=?3)
+                 AND (?4 IS NULL OR version.asset_id=?4)
                  AND version.scan_state IN ('clean','superseded')
                ORDER BY version.asset_id,version.generation DESC,version.id"""
         )
-        .bind(organization_id, event_id, event_speaker_id)
+        .bind(organization_id, event_id, event_speaker_id, asset_id)
         .all()
     )
     versions: dict[str, list[SpeakerAssetVersionView]] = {}
@@ -724,12 +737,13 @@ async def get_speaker_portal(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT id,subject,html_body,delivered_at_ms
+                """SELECT id,subject,html_body,deterministic_key,delivered_at_ms
                    FROM communication_messages
                    WHERE organization_id=?1 AND event_id=?2
                      AND recipient_user_id=?3 AND status='delivered'
                      AND delivered_at_ms IS NOT NULL
-                   ORDER BY delivered_at_ms DESC,id DESC LIMIT 20"""
+                     AND deterministic_key NOT LIKE 'auth:%'
+                   ORDER BY delivered_at_ms DESC,id DESC LIMIT 50"""
             ).bind(
                 row["organization_id"],
                 row["event_id"],
@@ -1324,6 +1338,299 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
 
 
 @speaker_operations_router.get(
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}",
+    response_model=SpeakerAssetDetailView,
+    operation_id="readOwnSpeakerAsset",
+    tags=["speaker-assets"],
+)
+async def read_speaker_asset(
+    event_id: str, asset_id: str, request: Request
+) -> SpeakerAssetDetailView:
+    """One of the speaker's own assets, with the shared half of its discussion.
+
+    Organizer notes default to 'internal' and are filtered out here; only
+    comments explicitly marked 'shared' cross the boundary.
+    """
+    authenticated, speaker = await _speaker_for_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_READ_OWN,
+        ResourceContext(
+            str(speaker["organization_id"]),
+            event_id,
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=False,
+    )
+    db = _db(request)
+    row = row_mapping(
+        await _timed_first(
+            request,
+            db.prepare(
+                """SELECT a.id,a.kind,a.submission_id,av.original_filename,
+                          av.content_type,av.byte_size,
+                          av.generation,av.uploaded_at_ms,av.version_comment,
+                          (SELECT COUNT(*) FROM speaker_asset_versions history
+                           WHERE history.asset_id=a.id AND history.scan_state IN
+                             ('clean','superseded')) AS version_count
+                   FROM speaker_assets a
+                   JOIN speaker_asset_versions av
+                     ON av.organization_id = a.organization_id AND av.event_id = a.event_id
+                    AND av.asset_id = a.id AND av.is_current = 1 AND av.scan_state = 'clean'
+                   WHERE a.organization_id = ?1 AND a.event_id = ?2
+                     AND a.event_speaker_id = ?3 AND a.id = ?4 LIMIT 1"""
+            ).bind(
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                asset_id,
+            ),
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    versions_by_asset = await _asset_versions_by_asset(
+        request,
+        str(speaker["organization_id"]),
+        event_id,
+        str(speaker["event_speaker_id"]),
+    )
+    comments = result_rows(
+        await db.prepare(
+            """SELECT c.id,c.version_id,c.body_text,c.parent_comment_id,c.visibility,
+                      c.created_at_ms,
+                      COALESCE(NULLIF(trim(p.display_name),''),
+                        CASE WHEN EXISTS (
+                          SELECT 1 FROM people author_person
+                          JOIN event_speakers author_speaker
+                            ON author_speaker.person_id=author_person.id
+                            AND author_speaker.organization_id=author_person.organization_id
+                          WHERE author_person.organization_id=c.organization_id
+                            AND author_person.user_id=c.author_user_id
+                            AND author_speaker.event_id=c.event_id
+                        ) THEN 'Speaker' ELSE 'Organizer' END) AS author_name
+               FROM speaker_asset_comments c JOIN users u ON u.id=c.author_user_id
+               LEFT JOIN people p ON p.user_id=u.id AND p.organization_id=c.organization_id
+               WHERE c.organization_id=?1 AND c.event_id=?2 AND c.asset_id=?3
+                 AND c.visibility='shared'
+               ORDER BY c.created_at_ms,c.id LIMIT 500"""
+        )
+        .bind(speaker["organization_id"], event_id, asset_id)
+        .all()
+    )
+    return SpeakerAssetDetailView(
+        id=str(row["id"]),
+        kind=str(row["kind"]),
+        submission_id=(str(row["submission_id"]) if row["submission_id"] else None),
+        filename=str(row["original_filename"]),
+        content_type=str(row["content_type"]),
+        byte_size=int(row["byte_size"]),
+        state="clean",
+        generation=int(row["generation"]),
+        uploaded_at_ms=int(row["uploaded_at_ms"]),
+        version_count=int(row["version_count"]),
+        version_comment=str(row["version_comment"]),
+        versions=versions_by_asset.get(str(row["id"]), []),
+        comments=[AssetCommentView(**dict(comment)) for comment in comments],
+    )
+
+
+@speaker_operations_router.post(
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/comments",
+    response_model=AssetCommentView,
+    status_code=201,
+    operation_id="commentOnOwnSpeakerAssetVersion",
+    tags=["speaker-assets"],
+)
+async def create_speaker_asset_comment(
+    event_id: str,
+    asset_id: str,
+    version_id: str,
+    body: AssetCommentCreate,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> AssetCommentView:
+    """A speaker replying on their own deliverable.
+
+    Always 'shared': a speaker cannot write into the organizers' private notes,
+    and would not be able to read back anything they wrote as 'internal'.
+    """
+    if not idempotency_key or not 16 <= len(idempotency_key) <= 255:
+        raise HTTPException(status_code=400)
+    authenticated, speaker = await _speaker_for_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_COMMENT_OWN,
+        ResourceContext(
+            str(speaker["organization_id"]),
+            event_id,
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    db, now = _db(request), utc_now_ms()
+    # Ownership and the version both resolve in one statement: an asset that is
+    # not this speaker's simply does not match.
+    version = row_mapping(
+        await db.prepare(
+            """SELECT v.id FROM speaker_asset_versions v
+               JOIN speaker_assets a ON a.id=v.asset_id
+                 AND a.organization_id=v.organization_id AND a.event_id=v.event_id
+               WHERE v.organization_id=?1 AND v.event_id=?2 AND v.asset_id=?3 AND v.id=?4
+                 AND a.event_speaker_id=?5
+                 AND v.scan_state IN ('clean','superseded') LIMIT 1"""
+        )
+        .bind(
+            speaker["organization_id"],
+            event_id,
+            asset_id,
+            version_id,
+            speaker["event_speaker_id"],
+        )
+        .first()
+    )
+    if version is None:
+        raise HTTPException(status_code=404)
+    if body.parent_comment_id:
+        # Scoped to this version, mirroring the composite foreign key: a reply
+        # may not reach across versions.
+        parent = (
+            await db.prepare(
+                """SELECT id FROM speaker_asset_comments
+                   WHERE organization_id=?1 AND event_id=?2 AND asset_id=?3
+                     AND version_id=?4 AND id=?5 AND visibility='shared' LIMIT 1"""
+            )
+            .bind(
+                speaker["organization_id"],
+                event_id,
+                asset_id,
+                version_id,
+                body.parent_comment_id,
+            )
+            .first("id")
+        )
+        if parent is None:
+            raise HTTPException(status_code=404)
+    fingerprint = hashlib.sha256(body.model_dump_json().encode()).digest()
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        route_key=f"speaker-assets.own-comments:{event_id}:{asset_id}:{version_id}",
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        organization_id=str(speaker["organization_id"]),
+        event_id=event_id,
+        expires_at_ms=now + 86_400_000,
+    )
+    existing = row_mapping(
+        await db.prepare(
+            """SELECT ir.request_fingerprint,ir.response_resource_id AS resource_id,
+                      c.version_id,c.body_text,c.visibility,
+                      c.parent_comment_id,c.created_at_ms,
+                      COALESCE(NULLIF(trim(p.display_name),''),
+                        CASE WHEN EXISTS (
+                          SELECT 1 FROM people author_person
+                          JOIN event_speakers author_speaker
+                            ON author_speaker.person_id=author_person.id
+                            AND author_speaker.organization_id=author_person.organization_id
+                          WHERE author_person.organization_id=c.organization_id
+                            AND author_person.user_id=c.author_user_id
+                            AND author_speaker.event_id=c.event_id
+                        ) THEN 'Speaker' ELSE 'Organizer' END) author_name
+               FROM idempotency_records ir
+               JOIN speaker_asset_comments c ON c.id=ir.response_resource_id
+               JOIN users u ON u.id=c.author_user_id
+               LEFT JOIN people p ON p.user_id=u.id AND p.organization_id=c.organization_id
+               WHERE ir.principal_key=?1 AND ir.route_key=?2 AND ir.idempotency_key_hash=?3
+                 AND ir.event_id=?4 AND ir.state='completed' LIMIT 1"""
+        )
+        .bind(record.principal_key, record.route_key, record.key_hash, event_id)
+        .first()
+    )
+    if existing:
+        if bytes(existing["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return AssetCommentView(
+            id=str(existing["resource_id"]),
+            **{
+                k: existing[k]
+                for k in (
+                    "version_id",
+                    "author_name",
+                    "body_text",
+                    "parent_comment_id",
+                    "visibility",
+                    "created_at_ms",
+                )
+            },
+        )
+    comment_id = new_id()
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO speaker_asset_comments
+               (id,organization_id,event_id,asset_id,version_id,author_user_id,
+                parent_comment_id,body_text,visibility,created_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'shared',?9)"""
+        ).bind(
+            comment_id,
+            speaker["organization_id"],
+            event_id,
+            asset_id,
+            version_id,
+            authenticated.actor.user_id,
+            body.parent_comment_id,
+            body.body_text,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(speaker["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="speaker.asset.comment.create_own",
+            target_type="speaker_asset",
+            target_id=asset_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"version_id": version_id},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="speaker_asset_comment",
+        resource_id=comment_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    author = (
+        await db.prepare(
+            """SELECT NULLIF(trim(display_name),'') AS author_name FROM people
+               WHERE organization_id=?1 AND user_id=?2 LIMIT 1"""
+        )
+        .bind(speaker["organization_id"], authenticated.actor.user_id)
+        .first("author_name")
+        or "Speaker"
+    )
+    return AssetCommentView(
+        id=comment_id,
+        version_id=version_id,
+        author_name=author,
+        body_text=body.body_text,
+        parent_comment_id=body.parent_comment_id,
+        visibility="shared",
+        created_at_ms=now,
+    )
+
+
+@speaker_operations_router.get(
     "/api/v1/admin/events/{event_id}/assets",
     response_model=AdminSpeakerAssetList,
     operation_id="listAdminSpeakerAssets",
@@ -1404,18 +1711,383 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                 ),
                 download_grant_url=(
                     f"/api/v1/admin/events/{event_id}/assets/{row['id']}/download-grants"
-                    if not row["profile_only"] else None
+                    if not row["profile_only"]
+                    else None
                 ),
                 direct_download_url=(
-                    f"/api/v1/admin/events/{event_id}/speakers/"
-                    f"{row['event_speaker_id']}/headshot"
-                    if row["profile_only"] else None
+                    f"/api/v1/admin/events/{event_id}/speakers/{row['event_speaker_id']}/headshot"
+                    if row["profile_only"]
+                    else None
                 ),
                 version_comment=str(row["version_comment"]),
                 versions=([] if row["profile_only"] else versions_by_asset.get(str(row["id"]), [])),
             )
         )
     return AdminSpeakerAssetList(data=data)
+
+
+async def _private_object_bytes(stored) -> bytes:
+    chunks = bytearray()
+    async for chunk in _stream_private_object(stored):
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+@speaker_operations_router.get(
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}",
+    response_model=AssetDetailView,
+    operation_id="getAdminSpeakerAssetDetail",
+    tags=["speaker-assets"],
+)
+async def get_admin_asset_detail(event_id: str, asset_id: str, request: Request) -> AssetDetailView:
+    event = await _admin_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_READ,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=False,
+    )
+    asset_row = row_mapping(
+        await _db(request)
+        .prepare(
+            """SELECT a.id,a.event_speaker_id,p.display_name AS speaker_name,a.kind,
+                      current.original_filename,current.content_type,current.byte_size,
+                      current.generation,current.uploaded_at_ms,current.version_comment,
+                      COALESCE(u.email,'System') AS uploaded_by,
+                      (SELECT count(*) FROM speaker_asset_versions history
+                       WHERE history.asset_id=a.id AND history.scan_state IN
+                         ('clean','superseded')) AS version_count
+               FROM speaker_assets a
+               JOIN event_speakers es ON es.id=a.event_speaker_id
+                 AND es.organization_id=a.organization_id AND es.event_id=a.event_id
+               JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
+               JOIN speaker_asset_versions current ON current.asset_id=a.id
+                 AND current.is_current=1 AND current.scan_state='clean'
+               LEFT JOIN users u ON u.id=current.uploaded_by_user_id
+               WHERE a.organization_id=?1 AND a.event_id=?2 AND a.id=?3 LIMIT 1"""
+        )
+        .bind(event["organization_id"], event_id, asset_id)
+        .first()
+    )
+    if asset_row is None:
+        raise HTTPException(status_code=404)
+    versions = (
+        await _asset_versions_by_asset(
+            request, str(event["organization_id"]), event_id, asset_id=asset_id
+        )
+    ).get(asset_id, [])
+    asset = AdminSpeakerAssetView(
+        id=asset_id,
+        event_speaker_id=str(asset_row["event_speaker_id"]),
+        speaker_name=str(asset_row["speaker_name"]),
+        kind=str(asset_row["kind"]),
+        filename=str(asset_row["original_filename"]),
+        content_type=str(asset_row["content_type"]),
+        byte_size=int(asset_row["byte_size"]),
+        generation=int(asset_row["generation"]),
+        version_count=int(asset_row["version_count"]),
+        uploaded_at_ms=int(asset_row["uploaded_at_ms"]),
+        uploaded_by=str(asset_row["uploaded_by"]),
+        preview_url=(
+            f"/api/v1/admin/events/{event_id}/speakers/{asset_row['event_speaker_id']}/headshot"
+            if asset_row["kind"] == "headshot"
+            else None
+        ),
+        download_grant_url=f"/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants",
+        direct_download_url=None,
+        version_comment=str(asset_row["version_comment"]),
+        versions=versions,
+    )
+    rows = result_rows(
+        await _db(request)
+        .prepare(
+            """SELECT c.id,c.version_id,c.body_text,c.parent_comment_id,c.visibility,
+                  c.created_at_ms,
+                  COALESCE(NULLIF(trim(p.display_name),''),
+                    CASE WHEN EXISTS (
+                          SELECT 1 FROM people author_person
+                          JOIN event_speakers author_speaker
+                            ON author_speaker.person_id=author_person.id
+                            AND author_speaker.organization_id=author_person.organization_id
+                          WHERE author_person.organization_id=c.organization_id
+                            AND author_person.user_id=c.author_user_id
+                            AND author_speaker.event_id=c.event_id
+                        ) THEN 'Speaker' ELSE 'Organizer' END) AS author_name
+           FROM speaker_asset_comments c JOIN users u ON u.id=c.author_user_id
+           LEFT JOIN people p ON p.user_id=u.id AND p.organization_id=c.organization_id
+           WHERE c.organization_id=?1 AND c.event_id=?2 AND c.asset_id=?3
+           ORDER BY c.created_at_ms,c.id LIMIT 500"""
+        )
+        .bind(event["organization_id"], event_id, asset_id)
+        .all()
+    )
+    return AssetDetailView(
+        **asset.model_dump(), comments=[AssetCommentView(**dict(row)) for row in rows]
+    )
+
+
+@speaker_operations_router.post(
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/comments",
+    response_model=AssetCommentView,
+    status_code=201,
+    operation_id="commentOnAdminSpeakerAssetVersion",
+    tags=["speaker-assets"],
+)
+async def create_admin_asset_comment(
+    event_id: str,
+    asset_id: str,
+    version_id: str,
+    body: AssetCommentCreate,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> AssetCommentView:
+    if not idempotency_key or not 16 <= len(idempotency_key) <= 255:
+        raise HTTPException(status_code=400)
+    authenticated = await authenticate_request(request)
+    event = await _admin_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_COMMENT,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
+    )
+    db, now = _db(request), utc_now_ms()
+    version = row_mapping(
+        await db.prepare(
+            """SELECT v.id FROM speaker_asset_versions v JOIN speaker_assets a ON a.id=v.asset_id
+           AND a.organization_id=v.organization_id AND a.event_id=v.event_id
+           WHERE v.organization_id=?1 AND v.event_id=?2 AND v.asset_id=?3 AND v.id=?4
+             AND v.scan_state IN ('clean','superseded') LIMIT 1"""
+        )
+        .bind(event["organization_id"], event_id, asset_id, version_id)
+        .first()
+    )
+    if version is None:
+        raise HTTPException(status_code=404)
+    if body.parent_comment_id:
+        parent = (
+            await db.prepare(
+                """SELECT id,visibility FROM speaker_asset_comments
+                   WHERE organization_id=?1 AND event_id=?2 AND asset_id=?3
+                     AND version_id=?4 AND id=?5 LIMIT 1"""
+            )
+            .bind(event["organization_id"], event_id, asset_id, version_id, body.parent_comment_id)
+            .first()
+        )
+        if parent is None:
+            raise HTTPException(status_code=404)
+        if body.visibility == "shared" and parent["visibility"] != "shared":
+            raise HTTPException(
+                status_code=422,
+                detail="A shared reply must reference a comment already shared with the speaker.",
+            )
+    fingerprint = hashlib.sha256(body.model_dump_json().encode()).digest()
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        route_key=f"speaker-assets.comments:{event_id}:{asset_id}:{version_id}",
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        organization_id=str(event["organization_id"]),
+        event_id=event_id,
+        expires_at_ms=now + 86_400_000,
+    )
+    existing = row_mapping(
+        await db.prepare(
+            """SELECT ir.request_fingerprint,ir.response_resource_id AS resource_id,
+                  c.version_id,c.body_text,c.visibility,
+                  c.parent_comment_id,c.created_at_ms,
+                  COALESCE(NULLIF(trim(p.display_name),''),
+                    CASE WHEN EXISTS (
+                          SELECT 1 FROM people author_person
+                          JOIN event_speakers author_speaker
+                            ON author_speaker.person_id=author_person.id
+                            AND author_speaker.organization_id=author_person.organization_id
+                          WHERE author_person.organization_id=c.organization_id
+                            AND author_person.user_id=c.author_user_id
+                            AND author_speaker.event_id=c.event_id
+                        ) THEN 'Speaker' ELSE 'Organizer' END) author_name
+           FROM idempotency_records ir
+           JOIN speaker_asset_comments c ON c.id=ir.response_resource_id
+           JOIN users u ON u.id=c.author_user_id LEFT JOIN people p ON p.user_id=u.id
+             AND p.organization_id=c.organization_id
+           WHERE ir.principal_key=?1 AND ir.route_key=?2 AND ir.idempotency_key_hash=?3
+             AND ir.event_id=?4 AND ir.state='completed' LIMIT 1"""
+        )
+        .bind(record.principal_key, record.route_key, record.key_hash, event_id)
+        .first()
+    )
+    if existing:
+        if bytes(existing["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return AssetCommentView(
+            id=str(existing["resource_id"]),
+            **{
+                k: existing[k]
+                for k in (
+                    "version_id",
+                    "author_name",
+                    "body_text",
+                    "parent_comment_id",
+                    "visibility",
+                    "created_at_ms",
+                )
+            },
+        )
+    comment_id = new_id()
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO speaker_asset_comments
+           (id,organization_id,event_id,asset_id,version_id,author_user_id,
+            parent_comment_id,body_text,visibility,created_at_ms)
+           VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"""
+        ).bind(
+            comment_id,
+            event["organization_id"],
+            event_id,
+            asset_id,
+            version_id,
+            authenticated.actor.user_id,
+            body.parent_comment_id,
+            body.body_text,
+            body.visibility,
+            now,
+        )
+    )
+    batch.audit(
+        AuditEvent(
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="speaker.asset.comment.create",
+            target_type="speaker_asset",
+            target_id=asset_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"version_id": version_id},
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=201,
+        resource_type="speaker_asset_comment",
+        resource_id=comment_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(status_code=409) from exc
+    author = (
+        await db.prepare(
+            """SELECT NULLIF(trim(display_name),'') AS author_name FROM people
+               WHERE organization_id=?1 AND user_id=?2 LIMIT 1"""
+        )
+        .bind(event["organization_id"], authenticated.actor.user_id)
+        .first("author_name")
+        or "Organizer"
+    )
+    return AssetCommentView(
+        id=comment_id,
+        version_id=version_id,
+        author_name=author,
+        body_text=body.body_text,
+        parent_comment_id=body.parent_comment_id,
+        visibility=body.visibility,
+        created_at_ms=now,
+    )
+
+
+@speaker_operations_router.post(
+    "/api/v1/admin/events/{event_id}/deliverables/export",
+    response_class=Response,
+    operation_id="exportAdminSpeakerDeliverables",
+    tags=["speaker-assets"],
+)
+async def export_admin_deliverables(
+    event_id: str, body: AssetExportCreate, request: Request
+) -> Response:
+    authenticated = await authenticate_request(request)
+    event = await _admin_event(request, event_id)
+    await require_permission(
+        request,
+        Permission.SPEAKER_ASSET_EXPORT,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
+    )
+    placeholders = ",".join(f"?{index + 3}" for index in range(len(body.asset_ids)))
+    rows = result_rows(
+        await _db(request)
+        .prepare(
+            f"""SELECT a.id,p.display_name,v.object_key,
+        v.original_filename,v.byte_size FROM speaker_assets a JOIN speaker_asset_versions v
+        ON v.asset_id=a.id AND v.organization_id=a.organization_id AND v.event_id=a.event_id
+        JOIN event_speakers es ON es.id=a.event_speaker_id AND es.organization_id=a.organization_id
+        JOIN people p ON p.id=es.person_id AND p.organization_id=es.organization_id
+        WHERE a.organization_id=?1 AND a.event_id=?2 AND a.id IN ({placeholders})
+        AND v.is_current=1 AND v.scan_state='clean' ORDER BY p.display_name,a.id"""  # noqa: S608
+        )
+        .bind(event["organization_id"], event_id, *body.asset_ids)
+        .all()
+    )
+    found_ids = {str(row["id"]) for row in rows}
+    missing_ids = [asset_id for asset_id in body.asset_ids if asset_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=("Unavailable or unchecked file selections: " + ", ".join(missing_ids)),
+        )
+    if sum(int(row["byte_size"]) for row in rows) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Export exceeds the 25 MB limit")
+    archive = io.BytesIO()
+    used: set[str] = set()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_STORED, allowZip64=False) as bundle:
+        for row in rows:
+            stored = await _bucket(request).get(str(row["object_key"]))
+            if stored is None:
+                raise HTTPException(status_code=404)
+            folder = (
+                re.sub(r"[^A-Za-z0-9._ -]+", "_", str(row["display_name"])).strip() or "speaker"
+            )
+            filename = (
+                re.sub(r"[^A-Za-z0-9._ -]+", "_", str(row["original_filename"])).strip() or "file"
+            )
+            name = f"{folder}/{filename}"
+            suffix = 2
+            while name in used:
+                name = f"{folder}/{suffix}-{filename}"
+                suffix += 1
+            used.add(name)
+            bundle.writestr(name, await _private_object_bytes(stored))
+    now = utc_now_ms()
+    batch = CommandBatch(_db(request))
+    batch.audit(
+        AuditEvent(
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            actor_user_id=authenticated.actor.user_id,
+            actor_type="user",
+            action="speaker.assets.export",
+            target_type="event",
+            target_id=event_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            metadata={"asset_count": len(rows)},
+        )
+    )
+    await batch.execute()
+    return Response(
+        archive.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": _attachment_header(f"deliverables-{event_id}.zip"),
+        },
+    )
 
 
 async def _stream_private_object(stored):
@@ -1771,6 +2443,12 @@ async def authorize_speaker_upload(
         )
         .first()
     )
+    if slot is not None and not body.version_comment:
+        raise HTTPException(
+            status_code=422,
+            detail="Describe what changed when uploading a new version.",
+        )
+    version_comment = body.version_comment or "Initial upload"
     asset_id = str(slot["id"]) if slot is not None else new_id()
     generation = int(
         await db.prepare(
@@ -1829,7 +2507,7 @@ async def authorize_speaker_upload(
             f"private/{version_id}/{new_id()}",
             body.filename,
             now,
-            body.version_comment,
+            version_comment,
             authenticated.actor.user_id,
         )
     )

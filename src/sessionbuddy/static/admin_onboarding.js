@@ -7,7 +7,7 @@
   let eventId = "";
   try { eventId = routeMatch ? decodeURIComponent(routeMatch[1]) : ""; } catch (_) { eventId = ""; }
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(eventId)) eventId = "";
-  const state = { timer: null, loading: false, cursor: null, rows: [], lastSuccess: null, timeZone: "UTC", csrf: "", channel: null };
+  const state = { timer: null, loading: false, cursor: null, rows: [], reminderTargets: [], lastSuccess: null, timeZone: "UTC", csrf: "", channel: null };
   const byId = (id) => document.getElementById(id);
   const make = (tag, value, className) => { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; };
 
@@ -131,7 +131,7 @@
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-tasks/${encodeURIComponent(row.task_id)}/reminders`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
+        headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": reminderKey(row.task_id) },
         body: "{}"
       });
       setStatus(`Reminder queued for ${row.display_name}.`);
@@ -141,6 +141,35 @@
         : "The reminder could not be queued. No message was sent.", true);
     } finally { button.disabled = false; }
   }
+
+  function reminderKey(taskId) {
+    return `task-reminder:${taskId}:${new Date().toISOString().slice(0, 10)}`;
+  }
+
+  byId("remind-visible").addEventListener("click", () => {
+    state.reminderTargets = state.rows.filter((row) => row.event_speaker_id && ["open", "overdue", "due_soon"].includes(row.state));
+    if (!state.reminderTargets.length) return;
+    byId("confirm-bulk-reminders-copy").textContent = `This will email ${state.reminderTargets.length} loaded outstanding task${state.reminderTargets.length === 1 ? "" : "s"}.`;
+    byId("confirm-bulk-reminders").showModal();
+  });
+  byId("cancel-bulk-reminders").addEventListener("click", () => byId("confirm-bulk-reminders").close());
+  byId("confirm-bulk-reminders-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = byId("send-bulk-reminders");
+    const targets = [...state.reminderTargets];
+    button.disabled = true;
+    const results = await Promise.allSettled(targets.map((row) => api(
+      `/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-tasks/${encodeURIComponent(row.task_id)}/reminders`,
+      { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": reminderKey(row.task_id) }, body: "{}" }
+    )));
+    const queued = results.filter((result) => result.status === "fulfilled").length;
+    const failed = targets.filter((_, index) => results[index].status === "rejected");
+    setStatus(failed.length
+      ? `${queued} of ${targets.length} reminders queued. Not queued: ${failed.map((row) => row.display_name).join(", ")}. You can retry safely today.`
+      : `${queued} reminders queued.`, Boolean(failed.length));
+    byId("confirm-bulk-reminders").close();
+    button.disabled = false;
+  });
 
   function render(data, append) {
     const summary = data.summary;
@@ -160,6 +189,7 @@
     }
     state.rows.push(...incoming);
     incoming.forEach((row) => { addTableRow(row); addCard(row); });
+    byId("remind-visible").disabled = !state.rows.some((row) => row.event_speaker_id && ["open", "overdue", "due_soon"].includes(row.state));
     byId("result-count").textContent = String(state.rows.length);
     byId("empty").hidden = state.rows.length !== 0;
     byId("load-more").hidden = !data.next_cursor;

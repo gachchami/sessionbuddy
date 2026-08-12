@@ -12,6 +12,7 @@
   let messageCursor = null;
   let mergeTarget = null;
   let eventTimeZone = "";
+  let historyMessages = [];
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function idempotencyKey() {
@@ -30,7 +31,7 @@
       const formatted = new Intl.DateTimeFormat(undefined, {
         dateStyle: "medium", timeStyle: "short", timeZone: eventTimeZone
       }).format(new Date(value));
-      return `${formatted} · Event time (${eventTimeZone})`;
+      return formatted;
     } catch (_) { return "Date unavailable"; }
   }
 
@@ -84,23 +85,43 @@
     const parameters = new URLSearchParams({ limit: "25" });
     if (append && messageCursor) parameters.set("cursor", messageCursor);
     const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/communications?${parameters}`);
-    const body = byId("message-history");
-    if (!append) body.replaceChildren();
-    if (!result.data.length && !append) {
-      const row = document.createElement("tr");
-      const cell = document.createElement("td"); cell.colSpan = 4; cell.textContent = "No messages sent for this event yet.";
-      row.append(cell); body.append(row);
-    }
-    result.data.forEach((message) => {
-      const row = document.createElement("tr");
-      [message.recipient_email, message.subject, message.status, eventTime(message.updated_at_ms)].forEach((value) => {
-        const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
-      });
-      body.append(row);
-    });
+    historyMessages = append ? historyMessages.concat(result.data) : result.data;
+    renderMessageHistory();
     messageCursor = result.next_cursor;
     byId("load-older-messages").hidden = !messageCursor;
     return result.data;
+  }
+
+  function renderMessageHistory() {
+    const list = byId("message-history");
+    const filter = byId("message-history-filter").value;
+    const messages = historyMessages.filter((message) => filter === "all" ||
+      (filter === "attention" ? ["failed", "cancelled"].includes(message.status) : message.category === filter));
+    list.replaceChildren();
+    if (!messages.length) {
+      const empty = document.createElement("p"); empty.className = "workflow-empty-state";
+      empty.textContent = historyMessages.length ? "No messages match this filter." : "No event messages have been sent yet.";
+      list.append(empty); return;
+    }
+    messages.forEach((message) => {
+      const details = document.createElement("details"); details.className = "message-history__item";
+      const summary = document.createElement("summary");
+      const rail = document.createElement("span"); rail.className = `message-history__rail message-history__rail--${message.category}`; rail.setAttribute("aria-hidden", "true");
+      const main = document.createElement("span"); main.className = "message-history__main";
+      const subject = document.createElement("strong"); subject.textContent = message.subject;
+      const recipient = document.createElement("span"); recipient.className = "message-history__recipient"; recipient.textContent = message.recipient_email;
+      main.append(subject, recipient);
+      const meta = document.createElement("span"); meta.className = "message-history__meta";
+      const category = document.createElement("span"); category.className = "message-history__category"; category.textContent = message.category;
+      const status = document.createElement("span"); status.className = `message-history__status message-history__status--${message.status}`; status.textContent = message.status;
+      const time = document.createElement("time"); time.dateTime = new Date(message.updated_at_ms).toISOString(); time.textContent = eventTime(message.updated_at_ms);
+      meta.append(category, status, time); summary.append(rail, main, meta);
+      const detail = document.createElement("div"); detail.className = "message-history__detail";
+      const body = document.createElement("p"); body.textContent = message.body_preview || "No message preview available.";
+      const delivery = document.createElement("p"); delivery.className = "message-history__delivery";
+      delivery.textContent = message.last_error_code ? `Delivery error: ${message.last_error_code}` : `Delivery attempts: ${message.attempt_count}`;
+      detail.append(body, delivery); details.append(summary, detail); list.append(details);
+    });
   }
 
   function payload() {
@@ -237,6 +258,7 @@
     button.disabled = true;
     try { await loadMessageHistory(true); } finally { button.disabled = false; }
   });
+  byId("message-history-filter").addEventListener("change", renderMessageHistory);
 
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");

@@ -1,0 +1,5 @@
+# Released migration contents. Add the next migration and its SHA-256; never
+# replace a digest for a migration that has already been applied.
+cfbba3bb0e8f30d9158e7672c20b54f06b4a9aa2c514501a7160aa771929ab7f  0001_baseline.sql
+7c8c04779db9a3d8f5ee1c667784fd4477e7dd6245df642e8eae2c917d6164b4  0002_decision_corrections.sql
+ca45dd0aa21e2b38da7be07625d9908db050cacb673d8dd64a526aa51c78481f  0003_asset_discussions_and_task_fingerprints.sql

@@ -176,6 +176,19 @@
     return `${formatDate(value, timezone)} · Event time (${timezone})`;
   }
 
+  function relativeTimeLabel(value) {
+    const elapsed = Date.now() - Number(value);
+    if (!Number.isFinite(elapsed) || elapsed < 0) return "Recently";
+    const minutes = Math.floor(elapsed / 60_000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+  }
+
   function safeMessageLink(value) {
     try {
       const url = new URL(value);
@@ -284,7 +297,7 @@
         item.append(customTaskForm(task, list.dataset.eventId));
       } else if (["headshot", "slides", "supporting_document"].includes(task.task_type)) {
         const submissionId = submissions.length === 1 ? submissions[0].id : "";
-        item.append(createUploadForm(task.task_type, submissionId, task));
+        item.append(createUploadForm(task.task_type, submissionId, task, false, null, list.dataset.eventId));
       } else {
         const action = make("a", task.action_label || "Complete task", "task-link");
         action.href = taskDestination(task);
@@ -909,13 +922,22 @@
     }
   }
 
-  function createUploadForm(kind, submissionId, task = null) {
+  function createUploadForm(kind, submissionId, task = null, isReplacement = false, assetId = null, eventId = null) {
     const slides = kind === "slides";
     const headshot = kind === "headshot";
     const form = make("form", undefined, "session-upload-card");
     form.dataset.kind = kind;
-    form.dataset.submissionId = submissionId;
+    form.dataset.submissionId = submissionId || "";
     form.dataset.taskId = task?.id || "";
+    form.dataset.replacement = isReplacement ? "true" : "false";
+    form.dataset.eventId = eventId || state.activeEventId || "";
+    // Identity comes from the asset id, which is unique per page; the filename
+    // is not (and is not safe in an id). The human-readable name stays in the
+    // section's aria-label.
+    if (assetId) {
+      form.id = `asset-upload-form-${assetId}`;
+      form.dataset.assetId = assetId;
+    }
     if (task?.upload_rules?.max_file_bytes) form.dataset.maxFileBytes = String(task.upload_rules.max_file_bytes);
     const title = headshot ? "Headshot" : slides ? "Slides" : "Supporting document";
     const fileLabel = make("label", `Choose ${headshot ? "headshot" : slides ? "slides" : "document"}`);
@@ -927,9 +949,14 @@
       ? "application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation"
       : "application/pdf";
     fileLabel.append(file);
-    const commentLabel = make("label", "What changed?");
+    const commentLabel = make("label", isReplacement ? "What changed?" : "Upload note");
+    if (!isReplacement) commentLabel.append(make("span", " Optional", "optional"));
     const comment = document.createElement("textarea");
-    comment.name = "version_comment"; comment.rows = 2; comment.minLength = 1; comment.maxLength = 1000; comment.required = true;
+    comment.name = "version_comment"; comment.rows = 2; comment.maxLength = 1000;
+    comment.required = isReplacement;
+    comment.placeholder = isReplacement
+      ? "Briefly describe what changed in this version."
+      : "Optional for the first upload.";
     commentLabel.append(comment);
     const button = make("button", `Upload ${headshot ? "headshot" : slides ? "slides" : "document"}`);
     button.type = "submit";
@@ -1059,7 +1086,15 @@
       const support = make("div", undefined, "event-group__support");
       if (notifications.length) {
         const messages = make("section", undefined, "event-group__block event-group__messages");
-        messages.append(subHeading("Messages", notifications.length));
+        const heading = make("div", undefined, "event-group__subheading updates-heading");
+        heading.append(
+          make("h4", "Updates"),
+          make("span", `${notifications.length} update${notifications.length === 1 ? "" : "s"}`, "updates-count")
+        );
+        messages.append(
+          heading,
+          make("p", `Times shown in ${event.time_zone}. Open an update to read the full message.`, "updates-help")
+        );
         const list = make("ul", undefined, "notification-list");
         list.dataset.eventId = event.id;
         renderNotifications(notifications, event.time_zone, list);
@@ -1087,7 +1122,7 @@
       more.append(moreSummary);
       if (assets.length) {
         const assetBlock = make("section", undefined, "event-group__block");
-        assetBlock.append(subHeading("Files", assets.length), assetTable(assets));
+        assetBlock.append(subHeading("Files", assets.length), assetTable(assets, event.id));
         more.append(assetBlock);
       }
       if (activities.length) {
@@ -1139,16 +1174,166 @@
     return dataTable([itemHeading, statusHeading], [], [itemText, statusText]);
   }
 
-  function assetTable(assets) {
-    return dataTable(
-      ["File", "Type", "Versions"],
-      assets.map((asset) => [
-        asset.filename,
-        asset.kind.replaceAll("_", " "),
-        String(asset.version_count || 1)
-      ]),
-      ["No files uploaded", "—", "0"]
+  // One fetch per asset, shared by every version's discussion panel. The list
+  // payload deliberately omits comments; only the detail endpoint applies the
+  // shared/internal filter, so organizer-private notes never reach the portal.
+  async function assetDiscussion(asset, cache, eventId) {
+    if (!cache.loaded) {
+      const detail = await api(
+        `/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}`
+      );
+      cache.comments = detail.comments || [];
+      cache.loaded = true;
+    }
+    return cache.comments;
+  }
+
+  function commentNode(comment, timezone) {
+    const item = make("li", undefined, "asset-comment");
+    item.append(
+      make("strong", comment.author_name || "Participant"),
+      make("p", comment.body_text, "asset-comment__body"),
+      make("span", eventTimeLabel(comment.created_at_ms, timezone), "help")
     );
+    return item;
+  }
+
+  function assetTable(assets, eventId) {
+    const list = make("div", undefined, "asset-history-list");
+    assets.forEach((asset) => {
+      const discussionCache = { loaded: false, comments: [] };
+      const details = make("details", undefined, "asset-history-card");
+      const summary = make("summary");
+      summary.append(
+        make("strong", asset.filename),
+        make("span", `${asset.version_count || 1} version${asset.version_count === 1 ? "" : "s"}`, "count-badge")
+      );
+      details.append(summary);
+
+      const versions = make("ol", undefined, "asset-version-list");
+      (asset.versions || []).forEach((version) => {
+        const item = make("li", undefined, "asset-version");
+        const title = make("div", undefined, "asset-version__title");
+        title.append(
+          make("strong", `Version ${version.generation}`),
+          make("span", version.state === "current" ? "Latest" : "Previous", version.state === "current" ? "status-badge success" : "status-badge")
+        );
+        item.append(
+          title,
+          make("p", version.version_comment, "asset-version__comment"),
+          make("p", `Uploaded by ${state.portal?.profile?.display_name || "speaker"} · ${eventTimeLabel(version.uploaded_at_ms, state.portal?.event?.time_zone)}`, "help")
+        );
+
+        const timezone = state.portal?.event?.time_zone;
+        const discussion = make("details", undefined, "asset-discussion");
+        discussion.append(make("summary", "Discussion"));
+        const thread = make("ul", undefined, "asset-comment-list");
+        const replyStatus = make("p", "", "help");
+        replyStatus.setAttribute("role", "status");
+        const replyForm = make("form", undefined, "asset-comment-form");
+        replyForm.setAttribute("aria-label", `Reply about version ${version.generation} of ${asset.filename}`);
+        const replyLabel = make("label", "Add a comment");
+        const reply = document.createElement("textarea");
+        reply.name = "body_text"; reply.rows = 2; reply.maxLength = 5000; reply.required = true;
+        replyLabel.append(reply);
+        const parentLabel = make("label", "Reply to (optional)");
+        const parent = document.createElement("select");
+        parent.name = "parent_comment_id";
+        parentLabel.append(parent);
+        const replyButton = make("button", "Post comment");
+        replyButton.type = "submit";
+        replyForm.append(replyLabel, parentLabel, replyButton, replyStatus);
+
+        const renderThread = (comments) => {
+          thread.replaceChildren();
+          const forVersion = comments.filter((comment) => comment.version_id === version.id);
+          const selectedParent = parent.value;
+          parent.replaceChildren();
+          const newComment = document.createElement("option");
+          newComment.value = ""; newComment.textContent = "New comment";
+          parent.append(newComment);
+          forVersion.forEach((comment) => {
+            const option = document.createElement("option");
+            option.value = comment.id;
+            option.textContent = `Reply to ${comment.author_name}: ${comment.body_text.slice(0, 50)}`;
+            parent.append(option);
+          });
+          if ([...parent.options].some((option) => option.value === selectedParent)) {
+            parent.value = selectedParent;
+          }
+          if (!forVersion.length) {
+            thread.append(make("li", "No comments on this version yet.", "help"));
+            return;
+          }
+          forVersion.forEach((comment) => thread.append(commentNode(comment, timezone)));
+        };
+
+        discussion.addEventListener("toggle", async () => {
+          if (!discussion.open || discussion.dataset.loaded) return;
+          discussion.dataset.loaded = "true";
+          thread.replaceChildren(make("li", "Loading discussion…", "help"));
+          try {
+            renderThread(await assetDiscussion(asset, discussionCache, eventId));
+          } catch (error) {
+            delete discussion.dataset.loaded;
+            thread.replaceChildren(make("li", window.SessionBuddyApi.message(error, "The discussion could not be loaded."), "help"));
+          }
+        });
+
+        replyForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const bodyText = reply.value.trim();
+          if (!bodyText) return;
+          replyButton.disabled = true;
+          replyStatus.textContent = "Posting…";
+          try {
+            const created = await api(
+              `/api/v1/speaker/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(version.id)}/comments`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
+                body: JSON.stringify({
+                  body_text: bodyText,
+                  parent_comment_id: parent.value || null
+                })
+              }
+            );
+            if (discussionCache.loaded) {
+              discussionCache.comments = discussionCache.comments.concat(created);
+              renderThread(discussionCache.comments);
+            } else {
+              renderThread(await assetDiscussion(asset, discussionCache, eventId));
+            }
+            reply.value = "";
+            parent.value = "";
+            replyStatus.textContent = "Comment posted.";
+          } catch (error) {
+            replyStatus.textContent = window.SessionBuddyApi.message(error, "The comment could not be posted.");
+          } finally {
+            replyButton.disabled = false;
+          }
+        });
+
+        discussion.append(thread, replyForm);
+        item.append(discussion);
+        versions.append(item);
+      });
+      // The replace form used to sit in a second <details> nested inside this
+      // card, appended after the entire version history - so its submit button
+      // was the last control on the longest page in the portal, two disclosures
+      // deep. Keep it one disclosure deep and put it ahead of the history so the
+      // file input, the "What changed?" field and the submit button stay
+      // together and stay reachable.
+      if (["slides", "supporting_document"].includes(asset.kind)) {
+        const replace = make("section", undefined, "asset-replace");
+        replace.setAttribute("aria-label", `Upload a new version of ${asset.filename}`);
+        replace.append(createUploadForm(asset.kind, asset.submission_id, null, true, asset.id, eventId));
+        details.append(replace);
+      }
+      details.append(versions);
+      list.append(details);
+    });
+    return list;
   }
 
   function activityTable(activities, timezone) {
@@ -1226,16 +1411,55 @@
       list.append(make("li", "No updates from this event yet.", "empty"));
       return;
     }
-    notifications.forEach((notification) => {
+    const labels = {
+      decision: "Decision", proposal: "Proposal", reminder: "Reminder",
+      announcement: "Event team", update: "Update"
+    };
+    const readKey = (id) => `sessionbuddy:read-update:${id}`;
+    const isRead = (id) => {
+      try { return localStorage.getItem(readKey(id)) === "1"; } catch (_) { return false; }
+    };
+    const markRead = (id) => {
+      try { localStorage.setItem(readKey(id), "1"); } catch (_) { /* Storage may be disabled. */ }
+    };
+    let visible = Math.min(5, notifications.length);
+    const draw = () => {
+      list.replaceChildren();
+      notifications.slice(0, visible).forEach((notification) => {
       const item = document.createElement("li");
+      item.className = `notification-item notification-item--${notification.category}`;
+      item.classList.toggle("is-unread", !isRead(notification.id));
       const detail = document.createElement("details");
       const summary = document.createElement("summary");
-      summary.append(
+      const copy = make("span", undefined, "notification-summary__copy");
+      const eyebrow = make("span", undefined, "notification-summary__eyebrow");
+      eyebrow.append(make("span", labels[notification.category] || "Update", "notification-category"));
+      if (!isRead(notification.id)) eyebrow.append(make("span", "New", "notification-new"));
+      const previewText = (notification.body_text || "Message content is unavailable.").replace(/\s+/g, " ").trim();
+      copy.append(
+        eyebrow,
         make("strong", notification.subject),
-        make("time", `Delivered ${eventTimeLabel(notification.delivered_at_ms, timezone)}`)
+        make("span", previewText.length > 125 ? `${previewText.slice(0, 122)}…` : previewText, "notification-preview")
       );
-      const body = make("p", notification.body_text || "Message content is unavailable.", "help");
+      const time = make("time", relativeTimeLabel(notification.delivered_at_ms));
+      time.dateTime = new Date(notification.delivered_at_ms).toISOString();
+      time.title = eventTimeLabel(notification.delivered_at_ms, timezone);
+      summary.append(
+        copy,
+        time
+      );
+      const body = make("div", undefined, "notification-body");
+      body.append(
+        make("p", notification.body_text || "Message content is unavailable."),
+        make("p", `Sent by the ${labels[notification.category] === "Event team" ? "event team" : "SessionBuddy event team"}.`, "notification-sender")
+      );
       detail.append(summary, body);
+      detail.addEventListener("toggle", () => {
+        if (!detail.open || isRead(notification.id)) return;
+        markRead(notification.id);
+        item.classList.remove("is-unread");
+        summary.querySelector(".notification-new")?.remove();
+      });
       const safeLinks = (notification.links || []).map(safeMessageLink).filter(Boolean);
       if (safeLinks.length) {
         const links = document.createElement("ul");
@@ -1249,11 +1473,21 @@
           row.append(link);
           links.append(row);
         });
-        detail.append(links);
+        body.append(links);
       }
       item.append(detail);
       list.append(item);
-    });
+      });
+      if (visible < notifications.length) {
+        const more = make("li", undefined, "notification-more");
+        const button = make("button", `Show older updates (${notifications.length - visible})`, "secondary");
+        button.type = "button";
+        button.addEventListener("click", () => { visible = Math.min(visible + 5, notifications.length); draw(); });
+        more.append(button);
+        list.append(more);
+      }
+    };
+    draw();
   }
 
   function announceOnboardingChange() {
@@ -1451,13 +1685,14 @@
     const status = form.querySelector(".upload-status");
     const progress = form.querySelector("progress");
     const button = form.querySelector("button[type=submit]");
-    const versionComment = form.elements.version_comment.value.trim();
+    const enteredVersionComment = form.elements.version_comment.value.trim();
+    const versionComment = enteredVersionComment || "Initial upload";
     const taskLimit = Number(form.dataset.maxFileBytes || 0);
     const validation = validateFile(kind, file)
       || (taskLimit && file?.size > taskLimit
         ? `This request allows files up to ${Math.round(taskLimit / 1024 / 1024)} MB.` : null);
     if (validation) { status.textContent = validation; status.classList.add("error"); return; }
-    if (!versionComment) {
+    if (form.dataset.replacement === "true" && !enteredVersionComment) {
       form.elements.version_comment.setCustomValidity("Describe what changed in this version.");
       form.elements.version_comment.reportValidity();
       return;
@@ -1466,7 +1701,7 @@
     button.disabled = true; progress.hidden = false; progress.value = 0;
     status.classList.remove("error"); status.textContent = "Checking file integrity…";
     try {
-      const eventId = state.portal?.event?.id;
+      const eventId = form.dataset.eventId;
       if (!eventId) throw new Error("Speaker event is unavailable.");
       const uploadRequest = {
         kind, submission_id: form.dataset.submissionId || null,
@@ -1513,8 +1748,14 @@
       form.elements.file.value = "";
       form.elements.version_comment.value = "";
       window.SessionBuddyApi.refreshCharacterCounters(form);
-      await loadAssets();
-      const portal = await api(portalPath()); renderPortal(portal);
+      await loadAssetsFor(eventId);
+      const portal = await api(portalPath(eventId));
+      rememberPortal(portal);
+      if (eventId === state.activeEventId) {
+        state.portal = portal;
+        state.assets = state.portfolio.get(eventId)?.assets || [];
+      }
+      renderPortfolio();
       announceOnboardingChange();
     } catch (error) {
       status.textContent = pendingCompletion

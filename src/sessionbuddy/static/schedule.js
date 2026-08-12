@@ -1,18 +1,31 @@
 (() => {
   "use strict";
-  const match = location.pathname.match(/^\/(?:embeds\/)?events\/([^/]+)\/(?:schedule|sessions)$/);
+  const match = location.pathname.match(/^\/(?:embeds\/)?events\/([^/]+)\/(?:schedule|sessions|itinerary)$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(eventId)) eventId = "";
   const embedded = location.pathname.startsWith("/embeds/");
   const sessionsOnly = location.pathname.endsWith("/sessions");
   const storageKey = `sessionbuddy:itinerary:${eventId}`;
-  const state = { model: null, view: "list", query: "", itinerary: new Set() };
+  const state = { model: null, view: "list", query: "", track: "", format: "", room: "", day: "", itinerary: new Set(), selected: null };
   try { state.itinerary = new Set(JSON.parse(localStorage.getItem(storageKey) || "[]")); } catch (_) { state.itinerary = new Set(); }
   const byId = (id) => document.getElementById(id);
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+  const trackPalette = ["#5b4bdb", "#087e8b", "#b54708", "#b4236a", "#2563a8", "#527a1f", "#8a3ffc", "#a63d40"];
+  function trackColor(item) {
+    const name = item.track_name || "No track";
+    let hash = 0;
+    for (const character of name) hash = ((hash * 31) + character.codePointAt(0)) >>> 0;
+    return trackPalette[hash % trackPalette.length];
+  }
+  function trackChip(item) {
+    const chip = make("span", item.track_name || "No track", "track-chip");
+    chip.style.setProperty("--track-color", trackColor(item));
+    return chip;
+  }
   function format(value, options) { try { return new Intl.DateTimeFormat(undefined, { timeZone: state.model.event.time_zone, ...options }).format(new Date(value)); } catch (_) { return "Date unavailable"; } }
   function day(item) { return format(item.start_at_ms, { weekday: "long", month: "long", day: "numeric" }); }
+  function dayKey(item) { return format(item.start_at_ms, { year: "numeric", month: "2-digit", day: "2-digit" }); }
   function group(item) { if (state.view === "room") return item.room_name; if (state.view === "track") return item.track_name || "No track"; if (["day", "week"].includes(state.view)) return day(item); if (state.view === "mine") return "My itinerary"; return "All sessions"; }
   function saveItinerary() { localStorage.setItem(storageKey, JSON.stringify([...state.itinerary])); byId("itinerary-count").textContent = String(state.itinerary.size); }
   function icsText(items) {
@@ -45,9 +58,80 @@
     byId("status").textContent = `Downloaded ${selected.length} session${selected.length === 1 ? "" : "s"} as a calendar file.`;
   }
   function toggleItinerary(id) { if (state.itinerary.has(id)) state.itinerary.delete(id); else state.itinerary.add(id); saveItinerary(); render(); }
+  function matches(item) {
+    const haystack = [item.title, item.description, item.speaker_names, item.speaker_details, item.format_name, item.room_name, item.track_name, ...(item.labels || []).map((label) => label.name)].join(" ").toLowerCase();
+    return (!state.query || haystack.includes(state.query))
+      && (!state.track || (item.track_name || "No track") === state.track)
+      && (!state.format || item.format_name === state.format)
+      && (!state.room || item.room_name === state.room)
+      && (!state.day || dayKey(item) === state.day);
+  }
+  function labelChips(item) {
+    const labels = make("div", undefined, "schedule-labels");
+    (item.labels || []).forEach((label) => {
+      const chip = make("span", label.name, "schedule-label");
+      chip.style.setProperty("--label-color", label.color);
+      labels.append(chip);
+    });
+    return labels;
+  }
+  function openDetail(item) {
+    state.selected = item;
+    const kicker = byId("session-detail-kicker");
+    kicker.replaceChildren(make("span", item.format_name, "session-format-name"), trackChip(item));
+    byId("session-detail").style.setProperty("--track-color", trackColor(item));
+    byId("session-detail-title").textContent = item.title;
+    byId("session-detail-speaker").textContent = item.speaker_names || "Speaker TBA";
+    if (item.speaker_details) byId("session-detail-speaker").append(make("small", item.speaker_details));
+    byId("session-detail-meta").textContent = `${format(item.start_at_ms, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })} · ${item.room_name}`;
+    byId("session-detail-description").textContent = item.description || "No session description is available.";
+    byId("session-detail-labels").replaceChildren(...labelChips(item).childNodes);
+    const itinerary = byId("session-detail-itinerary");
+    itinerary.textContent = state.itinerary.has(item.id) ? "Remove from my itinerary" : "Add to my itinerary";
+    byId("session-detail").showModal();
+  }
+  function sessionCard(item) {
+    const row = make("li", undefined, "schedule-item");
+    row.style.setProperty("--track-color", trackColor(item));
+    const time = make("time", `${format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`); time.dateTime = new Date(item.start_at_ms).toISOString();
+    const details = document.createElement("div");
+    const classification = make("p", undefined, "session-classification");
+    classification.append(make("span", item.format_name, "session-format-name"), trackChip(item));
+    details.append(classification, make("h3", item.title));
+    const speaker = make("p", item.speaker_names || "Speaker TBA", "session-speaker");
+    if (item.speaker_details) speaker.append(make("small", item.speaker_details));
+    details.append(speaker, make("p", item.room_name, "session-room"), labelChips(item));
+    const show = make("button", "Show details", "session-more secondary"); show.type = "button"; show.addEventListener("click", () => openDetail(item));
+    const add = make("button", state.itinerary.has(item.id) ? "✓" : "+", "itinerary-button"); add.type = "button"; add.setAttribute("aria-pressed", String(state.itinerary.has(item.id))); add.setAttribute("aria-label", `${state.itinerary.has(item.id) ? "Remove" : "Add"} ${item.title} ${state.itinerary.has(item.id) ? "from" : "to"} my itinerary`); add.addEventListener("click", () => toggleItinerary(item.id));
+    const actions = make("div", undefined, "session-actions"); actions.append(show); if (!sessionsOnly) actions.append(add);
+    row.append(time, details, actions);
+    return row;
+  }
+  function renderGrid(items) {
+    const root = byId("schedule");
+    const rooms = [...new Set(items.map((item) => item.room_name))];
+    const times = [...new Set(items.map((item) => item.start_at_ms))].sort((a, b) => a - b);
+    const board = make("div", undefined, "stage-board");
+    board.style.setProperty("--room-count", String(Math.max(1, rooms.length)));
+    board.append(make("div", "Time", "stage-board__corner"), ...rooms.map((room) => make("div", room, "stage-board__room")));
+    times.forEach((time) => {
+      board.append(make("time", format(time, { hour: "numeric", minute: "2-digit" }), "stage-board__time"));
+      rooms.forEach((room) => {
+        const cell = make("div", undefined, "stage-board__cell");
+        items.filter((item) => item.room_name === room && item.start_at_ms === time).forEach((item) => {
+          const button = make("button", undefined, "stage-session"); button.type = "button";
+          button.style.setProperty("--track-color", trackColor(item));
+          button.append(trackChip(item), make("strong", item.title), make("span", item.speaker_names || "Speaker TBA"), make("small", item.format_name));
+          button.addEventListener("click", () => openDetail(item)); cell.append(button);
+        });
+        board.append(cell);
+      });
+    });
+    root.append(board);
+  }
   function render() {
     const source = state.view === "mine" ? state.model.items.filter((item) => state.itinerary.has(item.id)) : state.model.items;
-    const visible = state.query ? source.filter((item) => [item.title, item.description, item.speaker_names, item.room_name, item.track_name, ...(item.labels || []).map((label) => label.name)].join(" ").toLowerCase().includes(state.query)) : source;
+    const visible = source.filter(matches);
     const groups = new Map();
     visible.forEach((item) => { const key = group(item); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item); });
     const root = byId("schedule"); root.replaceChildren(); root.classList.toggle("week-view", state.view === "week");
@@ -57,33 +141,40 @@
     byId("empty").hidden = visible.length !== 0;
     byId("download-calendar").disabled = state.itinerary.size === 0;
     byId("empty").querySelector("strong").textContent = state.view === "mine" ? "Choose + on a session to build your itinerary." : "No sessions are published yet.";
+    if (state.view === "grid") { renderGrid(visible); return; }
     [...groups].forEach(([name, items]) => {
       const section = make("section", undefined, "schedule-group"); section.append(make("h2", name));
       const list = make("ol", undefined, "schedule-list");
       items.sort((a, b) => a.start_at_ms - b.start_at_ms).forEach((item) => {
-        const row = make("li", undefined, "schedule-item");
-        const time = make("time", `${format(item.start_at_ms, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}–${format(item.end_at_ms, { hour: "numeric", minute: "2-digit" })}`); time.dateTime = new Date(item.start_at_ms).toISOString();
-        const details = document.createElement("div"); details.append(make("h3", item.title), make("p", `${item.speaker_names || "Speaker TBA"} · ${item.room_name}${item.track_name ? ` · ${item.track_name}` : ""}`));
-        if (item.labels?.length) {
-          const labels = make("div", undefined, "schedule-labels");
-          item.labels.forEach((label) => {
-            const chip = make("span", label.name, "schedule-label");
-            chip.style.setProperty("--label-color", label.color);
-            labels.append(chip);
-          });
-          details.append(labels);
-        }
-        if (item.description) details.append(make("p", item.description, "description"));
-        const add = make("button", state.itinerary.has(item.id) ? "✓" : "+", "itinerary-button"); add.type = "button"; add.setAttribute("aria-pressed", String(state.itinerary.has(item.id))); add.setAttribute("aria-label", `${state.itinerary.has(item.id) ? "Remove" : "Add"} ${item.title} ${state.itinerary.has(item.id) ? "from" : "to"} my itinerary`); add.addEventListener("click", () => toggleItinerary(item.id));
-        row.append(time, details);
-        if (!sessionsOnly) row.append(add);
-        list.append(row);
+        list.append(sessionCard(item));
       }); section.append(list); root.append(section);
     });
   }
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; document.querySelectorAll("[data-view]").forEach((item) => { const active = item === button; item.setAttribute("aria-pressed", String(active)); item.classList.toggle("secondary", !active); }); render(); }));
   byId("schedule-search").addEventListener("input", (event) => { state.query = event.currentTarget.value.trim().toLowerCase(); render(); });
+  [["track-filter", "track"], ["format-filter", "format"], ["room-filter", "room"]].forEach(([id, key]) => byId(id).addEventListener("change", (event) => { state[key] = event.currentTarget.value; render(); }));
   byId("download-calendar").addEventListener("click", downloadCalendar);
+  byId("close-session-detail").addEventListener("click", () => byId("session-detail").close());
+  byId("session-detail-itinerary").addEventListener("click", () => { if (state.selected) toggleItinerary(state.selected.id); byId("session-detail").close(); });
+  function populateSelect(id, values) {
+    const select = byId(id);
+    values.filter(Boolean).sort((a, b) => a.localeCompare(b)).forEach((value) => select.append(new Option(value, value)));
+  }
+  function populateDiscovery() {
+    populateSelect("track-filter", [...new Set(state.model.items.map((item) => item.track_name || "No track"))]);
+    populateSelect("format-filter", [...new Set(state.model.items.map((item) => item.format_name))]);
+    populateSelect("room-filter", [...new Set(state.model.items.map((item) => item.room_name))]);
+    const days = [...new Map(state.model.items.map((item) => [dayKey(item), day(item)])).entries()];
+    const tabs = byId("day-tabs"); tabs.hidden = days.length < 2;
+    const all = make("button", "All days", "secondary"); all.type = "button"; all.setAttribute("aria-pressed", "true");
+    all.addEventListener("click", () => { state.day = ""; [...tabs.children].forEach((button) => button.setAttribute("aria-pressed", String(button === all))); render(); });
+    tabs.append(all);
+    days.forEach(([key, label]) => {
+      const button = make("button", label, "secondary"); button.type = "button"; button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => { state.day = key; [...tabs.children].forEach((item) => item.setAttribute("aria-pressed", String(item === button))); render(); });
+      tabs.append(button);
+    });
+  }
   async function load() {
     if (!eventId) throw new Error("Invalid schedule link");
     let body;
@@ -94,6 +185,7 @@
       body = await window.SessionBuddyApi.request(`/api/v1/events/${encodeURIComponent(eventId)}/schedule`);
     }
     state.model = body; document.body.classList.toggle("embedded", embedded);
+    if (location.pathname.endsWith("/itinerary")) state.view = "mine";
     if (sessionsOnly) document.querySelector(".schedule-filters").hidden = true;
     byId("title").textContent = sessionsOnly ? `${body.event.name} sessions` : body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
     byId("timezone").textContent = body.revision
@@ -105,7 +197,14 @@
     if (body.event.accent_color) document.documentElement.style.setProperty("--blue", body.event.accent_color);
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").hidden = false; }
     if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
-    saveItinerary(); render();
+    populateDiscovery(); saveItinerary(); render();
+    const requestedParams = new URLSearchParams(location.search);
+    const requestedSearch = requestedParams.get("search") || "";
+    if (requestedSearch) { state.query = requestedSearch.trim().toLowerCase(); byId("schedule-search").value = requestedSearch; render(); }
+    const requestedTrack = requestedParams.get("track") || "";
+    if (requestedTrack && [...byId("track-filter").options].some((option) => option.value === requestedTrack)) {
+      state.track = requestedTrack; byId("track-filter").value = requestedTrack; render();
+    }
   }
   load().catch((error) => { byId("status").textContent = window.SessionBuddyApi.message(error, "The schedule is unavailable. Try again."); byId("status").classList.add("error"); });
 })();

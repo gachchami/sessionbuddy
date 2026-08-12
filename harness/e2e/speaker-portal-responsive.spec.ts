@@ -59,6 +59,7 @@ const portal = {
   notifications: [{
     id: "notification-responsive",
     subject: "Slides are due Friday",
+    category: "reminder",
     delivered_at_ms: Date.UTC(2026, 9, 10),
     body_text: "Please upload your slides. The original email is not required.",
     links: ["https://sessionbuddy.test/speaker", "javascript:alert(1)"],
@@ -162,7 +163,7 @@ test.describe("speaker portal responsive design", () => {
       const activeEvent = page.locator('.event-group[data-event-id="event-responsive"]');
       await expect(activeEvent.getByRole("heading", { name: "Your proposals" })).toBeVisible();
       await expect(activeEvent.getByRole("heading", { name: "Needs attention" })).toHaveCount(0);
-      await expect(activeEvent.getByRole("heading", { name: "Messages" })).toBeVisible();
+      await expect(activeEvent.getByRole("heading", { name: "Updates" })).toBeVisible();
       await expect(activeEvent.getByRole("heading", { name: "Files" })).toHaveCount(0);
       await expect(activeEvent.getByRole("heading", { name: "Activity" })).toHaveCount(0);
       await expect(activeEvent.locator(".portal-data-table.is-empty")).toHaveCount(0);
@@ -170,7 +171,10 @@ test.describe("speaker portal responsive design", () => {
       await expect(page.getByRole("link", { name: "Public profile" })).toBeVisible();
       await expect(page.locator(".session-files")).toHaveCount(0);
       await expect(page.locator(".notification-list")).toContainText("Slides are due Friday");
+      await expect(page.locator(".notification-category")).toHaveText("Reminder");
+      await expect(page.locator(".notification-new")).toHaveText("New");
       await page.locator(".notification-list summary").click();
+      await expect(page.locator(".notification-new")).toHaveCount(0);
       await expect(page.locator(".notification-list")).toContainText("The original email is not required.");
       await expect(page.locator('.notification-list a[href="https://sessionbuddy.test/speaker"]')).toHaveCount(1);
       await expect(page.locator('.notification-list a[href^="javascript:"]')).toHaveCount(0);
@@ -187,7 +191,7 @@ test.describe("speaker portal responsive design", () => {
     await page.goto("/speaker");
     await page.locator(".notification-list summary").click();
 
-    await expect(page.locator(".notification-list")).toContainText("Event time (America/New_York)");
+    await expect(page.locator(".notification-list time")).toHaveAttribute("title", /Event time \(America\/New_York\)/);
     const results = await new AxeBuilder({ page }).include("#submissions").analyze();
     expect(results.violations).toEqual([]);
   });
@@ -402,7 +406,7 @@ test.describe("speaker portal responsive design", () => {
     await expect(uploadForm.locator(".upload-status")).not.toContainText("File received");
   });
 
-  test("profile and headshot tasks lead to the coordinated Account flow", async ({ page }) => {
+  test("profile and headshot tasks lead to their supported completion flows", async ({ page }) => {
     await servePortal(page);
     const taskPortal = {
       ...portal,
@@ -416,7 +420,7 @@ test.describe("speaker portal responsive design", () => {
     }));
     await page.goto("/speaker");
     await expect(page.getByRole("link", { name: "Edit profile" })).toHaveAttribute("href", "/account");
-    await expect(page.getByRole("link", { name: "Manage headshot" })).toHaveAttribute("href", "/account");
+    await expect(page.getByRole("button", { name: "Upload headshot" })).toBeVisible();
     await expect(page.locator("#speaker-profile-tools")).toHaveCount(0);
   });
 });

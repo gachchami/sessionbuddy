@@ -661,6 +661,172 @@
     wrap.append(trigger, panel);
     return wrap;
   }
+  function decisionCorrectionControl(item) {
+    const wrap = document.createElement("div");
+    wrap.className = "reject-without-review";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "secondary";
+    trigger.textContent = "Correct decision";
+    const panel = document.createElement("div");
+    panel.className = "reject-without-review__panel";
+    panel.hidden = true;
+    const target = item.status === "accepted" ? "rejected" : "accepted";
+    const explanation = document.createElement("p");
+    explanation.textContent = target === "accepted"
+      ? "This preserves the original rejection and creates or restores an accepted session."
+      : "This preserves the original acceptance and withdraws the session from active scheduling.";
+    const label = document.createElement("label");
+    label.textContent = "Correction reason";
+    const reason = document.createElement("textarea");
+    reason.rows = 4;
+    reason.maxLength = 2000;
+    reason.required = true;
+    label.append(reason);
+    const feedback = document.createElement("p");
+    feedback.className = "status";
+    feedback.setAttribute("role", "alert");
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = target === "rejected" ? "danger" : "";
+    confirm.textContent = `Record correction to ${target}`;
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = "Cancel";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(cancel, confirm);
+    panel.append(explanation, label, feedback, actions);
+    trigger.addEventListener("click", () => {
+      trigger.hidden = true;
+      panel.hidden = false;
+      reason.focus();
+    });
+    cancel.addEventListener("click", () => {
+      panel.hidden = true;
+      trigger.hidden = false;
+      feedback.textContent = "";
+      trigger.focus();
+    });
+    confirm.addEventListener("click", async () => {
+      if (!reason.value.trim()) {
+        feedback.textContent = "Add the internal reason for this correction.";
+        feedback.classList.add("error");
+        reason.focus();
+        return;
+      }
+      confirm.disabled = true;
+      cancel.disabled = true;
+      try {
+        await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/decision-corrections`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": state.csrf,
+            "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+          },
+          body: JSON.stringify({ corrected_decision: target, reason: reason.value.trim() }),
+        });
+        byId("status").textContent = `Decision corrected to ${target}. The original decision remains in the audit history.`;
+        location.reload();
+      } catch (error) {
+        confirm.disabled = false;
+        cancel.disabled = false;
+        feedback.textContent = window.SessionBuddyApi.message(error, "The correction could not be recorded.");
+        feedback.classList.add("error");
+        feedback.focus();
+      }
+    });
+    wrap.append(trigger, panel);
+    return wrap;
+  }
+  function acceptWithoutReviewControl(item) {
+    const wrap = document.createElement("div");
+    wrap.className = "reject-without-review";
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.textContent = "Accept without review";
+    const panel = document.createElement("div");
+    panel.className = "reject-without-review__panel";
+    panel.hidden = true;
+    const explanation = document.createElement("p");
+    explanation.className = "help";
+    explanation.textContent = "Use this audited override only when review is intentionally unnecessary. It creates the accepted session and speaker onboarding work.";
+    const label = document.createElement("label");
+    label.textContent = "Internal acceptance reason";
+    const reason = document.createElement("textarea");
+    reason.rows = 3;
+    reason.maxLength = 2000;
+    label.append(reason);
+    const notifyLabel = document.createElement("label");
+    notifyLabel.className = "check-label";
+    const notify = document.createElement("input");
+    notify.type = "checkbox";
+    notify.checked = true;
+    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"}`));
+    const feedback = document.createElement("p");
+    feedback.className = "status";
+    feedback.setAttribute("role", "alert");
+    const confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.textContent = "Confirm acceptance";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "secondary";
+    cancel.textContent = "Cancel";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(cancel, confirm);
+    panel.append(explanation, label, notifyLabel, feedback, actions);
+    trigger.addEventListener("click", () => {
+      trigger.hidden = true;
+      panel.hidden = false;
+      reason.focus();
+    });
+    cancel.addEventListener("click", () => {
+      panel.hidden = true;
+      trigger.hidden = false;
+      feedback.textContent = "";
+      trigger.focus();
+    });
+    confirm.addEventListener("click", async () => {
+      if (!reason.value.trim()) {
+        feedback.textContent = "Add an internal reason before accepting without review.";
+        feedback.classList.add("error");
+        reason.focus();
+        return;
+      }
+      confirm.disabled = true;
+      cancel.disabled = true;
+      try {
+        await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/accept`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": state.csrf,
+            "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+          },
+          body: JSON.stringify({
+            decision: "accepted",
+            internal_reason: reason.value.trim(),
+            send_email: notify.checked,
+            speaker_message: "",
+            override_incomplete_reviews: false,
+          }),
+        });
+        byId("status").textContent = `“${item.proposal_title}” was accepted without review.`;
+        location.reload();
+      } catch (error) {
+        confirm.disabled = false;
+        cancel.disabled = false;
+        feedback.textContent = window.SessionBuddyApi.message(error, "The proposal could not be accepted.");
+        feedback.classList.add("error");
+      }
+    });
+    wrap.append(trigger, panel);
+    return wrap;
+  }
   function showSubmission(item, trigger) {
     const details = byId("submission-detail-list");
     details.replaceChildren(
@@ -688,7 +854,12 @@
       roundLink.textContent = `Open ${item.evaluation_round_name || "evaluation round"} to decide`;
       decisionActions.append(roundLink);
     } else if (item.status === "submitted") {
-      decisionActions.append(rejectWithoutReviewControl(item));
+      decisionActions.append(
+        acceptWithoutReviewControl(item),
+        rejectWithoutReviewControl(item),
+      );
+    } else if (item.status === "accepted" || item.status === "rejected") {
+      decisionActions.append(decisionCorrectionControl(item));
     }
     const dialog = byId("submission-detail");
     dialog.addEventListener("close", () => trigger.focus(), { once: true });

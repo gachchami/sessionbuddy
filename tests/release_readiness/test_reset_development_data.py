@@ -16,21 +16,30 @@ from scripts.reset_development_data import (
 )
 
 
-def test_reset_accepts_exactly_one_canonical_baseline(tmp_path: Path) -> None:
+def test_reset_accepts_canonical_baseline(tmp_path: Path) -> None:
     baseline = tmp_path / "0001_baseline.sql"
     baseline.write_text("CREATE TABLE example(id TEXT);", encoding="utf-8")
 
     assert_canonical_baseline_layout(baseline)
 
 
-def test_reset_refuses_an_incremental_baseline_file(tmp_path: Path) -> None:
+def test_reset_accepts_an_ordered_incremental_migration(tmp_path: Path) -> None:
     baseline = tmp_path / "0001_baseline.sql"
     baseline.write_text("CREATE TABLE example(id TEXT);", encoding="utf-8")
     (tmp_path / "0002_incremental.sql").write_text(
         "ALTER TABLE example ADD COLUMN name TEXT;", encoding="utf-8"
     )
 
-    with pytest.raises(ResetError, match="must contain only the canonical"):
+    assert_canonical_baseline_layout(baseline)
+
+
+def test_reset_refuses_duplicate_migration_sequence(tmp_path: Path) -> None:
+    baseline = tmp_path / "0001_baseline.sql"
+    baseline.write_text("CREATE TABLE example(id TEXT);", encoding="utf-8")
+    (tmp_path / "0002_first.sql").write_text("SELECT 1;", encoding="utf-8")
+    (tmp_path / "0002_second.sql").write_text("SELECT 1;", encoding="utf-8")
+
+    with pytest.raises(ResetError, match="unique ordered names"):
         assert_canonical_baseline_layout(baseline)
 
 

@@ -141,7 +141,11 @@
     } finally { button.disabled = false; }
   }
   async function downloadProfileHeadshot(asset, button) {
-    button.disabled = true;
+    if (button.dataset.busy === "true") return;
+    button.dataset.busy = "true";
+    const label = button.textContent;
+    button.textContent = "Downloading headshot…";
+    setStatus(`Preparing ${asset.filename} for download…`);
     try {
       const response = await fetch(asset.direct_download_url, { credentials: "same-origin" });
       if (!response.ok) throw new Error("The headshot could not be downloaded.");
@@ -152,13 +156,23 @@
       setStatus(`${asset.filename} downloaded.`);
     } catch (error) {
       setStatus(error.message || "The headshot could not be downloaded.", true);
-    } finally { button.disabled = false; }
+    } finally {
+      delete button.dataset.busy;
+      button.textContent = label;
+    }
   }
   async function loadAssets() {
     const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets`);
     byId("file-count").textContent = body.data.length;
     const nodes = body.data.map((asset) => {
       const item = document.createElement("li");
+      const exportable = !asset.id.startsWith("profile-headshot:");
+      const select = exportable ? document.createElement("input") : null;
+      if (select) {
+        select.type = "checkbox"; select.name = "export_asset"; select.value = asset.id;
+        select.setAttribute("aria-label", `Select ${asset.filename} from ${asset.speaker_name} for export`);
+        select.addEventListener("change", () => { byId("export-files").disabled = !document.querySelector('input[name="export_asset"]:checked'); });
+      }
       const title = document.createElement("strong"); title.textContent = asset.filename;
       const meta = document.createElement("span"); meta.className = "muted";
       meta.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")} · ${fileSize(asset.byte_size)} · uploaded ${eventTime(asset.uploaded_at_ms)} by ${asset.uploaded_by} · scan ${asset.scan_status} · ${asset.version_count} version${asset.version_count === 1 ? "" : "s"}`;
@@ -190,8 +204,82 @@
         versionItem.append(versionTitle, versionMeta, comment, button); versions.append(versionItem);
       });
       history.append(summary, versions);
-      item.prepend(title, meta, currentComment);
+      item.prepend(...[select, title, meta, currentComment].filter(Boolean));
       if (asset.versions.length) item.append(history);
+      if (exportable) {
+        const discussion = document.createElement("details");
+        const discussionSummary = document.createElement("summary"); discussionSummary.textContent = "File details and discussion";
+        const thread = document.createElement("div"); thread.className = "asset-discussion";
+        discussion.addEventListener("toggle", async () => {
+          if (!discussion.open || discussion.dataset.loaded) return;
+          discussion.dataset.loaded = "true"; thread.textContent = "Loading discussion…";
+          try {
+            const detail = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}`);
+            thread.replaceChildren();
+            detail.comments.forEach((comment) => {
+              const note = document.createElement("article"); note.className = comment.parent_comment_id ? "asset-comment asset-comment--reply" : "asset-comment";
+              const heading = document.createElement("strong"); heading.textContent = comment.author_name;
+              const time = document.createElement("span"); time.className = "muted"; time.textContent = eventTime(comment.created_at_ms);
+              const audience = document.createElement("span");
+              audience.className = comment.visibility === "shared" ? "status-badge success" : "status-badge";
+              audience.textContent = comment.visibility === "shared" ? "Shared with speaker" : "Internal";
+              const copy = document.createElement("p"); copy.textContent = comment.body_text;
+              note.append(heading, time, audience, copy); thread.append(note);
+            });
+            const form = document.createElement("form");
+            const label = document.createElement("label"); label.textContent = "Add a comment or reply";
+            const textarea = document.createElement("textarea"); textarea.name = "body_text"; textarea.maxLength = 5000; textarea.required = true; label.append(textarea);
+            const versionSelect = document.createElement("select"); versionSelect.name = "version_id";
+            versionSelect.setAttribute("aria-label", "File version");
+            asset.versions.forEach((version) => { const option = document.createElement("option"); option.value = version.id; option.textContent = `Version ${version.generation}`; versionSelect.append(option); });
+            const parent = document.createElement("select"); parent.name = "parent_comment_id";
+            parent.setAttribute("aria-label", "Reply to comment");
+            const refreshParents = () => {
+              const selected = parent.value;
+              parent.replaceChildren();
+              const top = document.createElement("option"); top.value = ""; top.textContent = "New comment"; parent.append(top);
+              detail.comments
+                .filter((comment) => comment.version_id === versionSelect.value)
+                .filter((comment) => visibility.value !== "shared" || comment.visibility === "shared")
+                .forEach((comment) => {
+                  const option = document.createElement("option"); option.value = comment.id;
+                  option.textContent = `Reply to ${comment.author_name}: ${comment.body_text.slice(0, 50)}`;
+                  parent.append(option);
+                });
+              if ([...parent.options].some((option) => option.value === selected)) parent.value = selected;
+            };
+            const visibilityLabel = document.createElement("label");
+            visibilityLabel.textContent = "Audience";
+            const visibility = document.createElement("select"); visibility.name = "visibility";
+            [
+              ["internal", "Internal note (organizers only)"],
+              ["shared", "Shared with the speaker"]
+            ].forEach(([value, text]) => {
+              const option = document.createElement("option");
+              option.value = value; option.textContent = text; visibility.append(option);
+            });
+            visibilityLabel.append(visibility);
+            versionSelect.addEventListener("change", refreshParents);
+            visibility.addEventListener("change", refreshParents);
+            refreshParents();
+            const visibilityHelp = document.createElement("p");
+            visibilityHelp.className = "help";
+            visibilityHelp.textContent = "Internal notes stay with the organizing team. Shared comments appear in the speaker's portal and they can reply.";
+            const submit = document.createElement("button"); submit.textContent = "Post comment";
+            form.append(label, versionSelect, parent, visibilityLabel, visibilityHelp, submit);
+            form.addEventListener("submit", async (event) => {
+              event.preventDefault(); submit.disabled = true;
+              try {
+                await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(versionSelect.value)}/comments`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ body_text: textarea.value, parent_comment_id: parent.value || null, visibility: visibility.value }) });
+                discussion.dataset.loaded = ""; discussion.open = false; discussion.open = true; setStatus("Comment posted.");
+              } catch (error) { setStatus(window.SessionBuddyApi.message(error, "The comment could not be posted."), true); }
+              finally { submit.disabled = false; }
+            });
+            thread.append(form);
+          } catch (error) { thread.textContent = window.SessionBuddyApi.message(error, "File details could not be loaded."); }
+        });
+        discussion.append(discussionSummary, thread); item.append(discussion);
+      }
       return item;
     });
     if (!nodes.length) {
@@ -200,6 +288,22 @@
     }
     byId("file-list").replaceChildren(...nodes);
   }
+  byId("export-files").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const assetIds = [...document.querySelectorAll('input[name="export_asset"]:checked')].map((input) => input.value);
+    if (!assetIds.length) return;
+    button.disabled = true;
+    try {
+      let response;
+      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/deliverables/export`, {
+        method: "POST", headers: { "content-type": "application/json", "x-csrf-token": state.csrf }, body: JSON.stringify({ asset_ids: assetIds })
+      }, { expectJson: false, onResponse: (received) => { response = received; } });
+      const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a");
+      link.href = url; link.download = "speaker-deliverables.zip"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus(`${assetIds.length} deliverable${assetIds.length === 1 ? "" : "s"} exported.`);
+    } catch (error) { setStatus(window.SessionBuddyApi.message(error, "The ZIP export could not be created."), true); }
+    finally { button.disabled = !document.querySelector('input[name="export_asset"]:checked'); }
+  });
   async function loadTargets() {
     const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`);
     const available = body.data.filter((item) => ["invited", "submitted", "accepted"].includes(item.selection_status));
@@ -291,8 +395,17 @@
       ));
       form.reset();
       updateTaskType();
-      state.taskMutation = null;
-      setStatus(`Task assigned to ${speakerIds.length} speaker${speakerIds.length === 1 ? "" : "s"}.`);
+      // Keep this payload's idempotency keys. Clearing them meant an identical
+      // second submit minted fresh keys, and the server dedupes by key alone -
+      // so the same task was inserted again. Retaining them makes a repeat
+      // submit replay the original request, and lets us say so plainly instead
+      // of reporting a second assignment that did not happen.
+      const alreadyAssigned = state.taskMutation.submitted === true;
+      state.taskMutation.submitted = true;
+      const speakerCount = `${speakerIds.length} speaker${speakerIds.length === 1 ? "" : "s"}`;
+      setStatus(alreadyAssigned
+        ? `That task is already assigned to ${speakerCount}; no duplicate was created.`
+        : `Task assigned to ${speakerCount}.`);
     } catch (error) {
       setStatus(`${window.SessionBuddyApi.message(error)} Retry Assign task; the same request will not be duplicated.`, true);
     } finally { button.disabled = false; }

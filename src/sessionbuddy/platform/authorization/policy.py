@@ -19,6 +19,8 @@ ORGANIZER_PERMISSIONS = frozenset(
         Permission.EVALUATION_RESULTS_READ,
         Permission.SPEAKER_MANAGE,
         Permission.SPEAKER_ASSET_READ,
+        Permission.SPEAKER_ASSET_COMMENT,
+        Permission.SPEAKER_ASSET_EXPORT,
         Permission.AGENDA_MANAGE,
         Permission.LABEL_MANAGE,
         Permission.COMMUNICATION_SEND,
@@ -40,6 +42,7 @@ SPEAKER_PERMISSIONS = frozenset(
         Permission.SPEAKER_ASSET_READ_OWN,
         Permission.SPEAKER_ASSET_UPLOAD_OWN,
         Permission.SPEAKER_ASSET_REPLACE_OWN,
+        Permission.SPEAKER_ASSET_COMMENT_OWN,
         Permission.SPEAKER_TASK_READ_OWN,
     }
 )

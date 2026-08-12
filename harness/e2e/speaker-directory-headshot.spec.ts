@@ -19,7 +19,7 @@ for (const width of [1280, 390]) {
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ csrf_token: "csrf", organization_access: [{ permissions: ["manage"] }], event_access: [] }) }));
     await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "org-a", name: "Org A" }] }) }));
     await page.route("**/api/v1/admin/events/event-a", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "event-a", organization_id: "org-a", name: "DevFlow" }) }));
-    await page.route("**/api/v1/admin/events/event-a/speaker-targets", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ event_speaker_id: "es-a", person_id: null, user_id: "user-a", email: "speaker@example.test", display_name: "Priya Raman", job_title: "Engineer", company: "Example", biography: "Bio", location: "", links: [], version: 1, selection_status: "accepted", proposal_title: "A talk" }] }) }));
+    await page.route("**/api/v1/admin/events/event-a/speaker-targets", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ event_speaker_id: "es-a", person_id: null, user_id: "user-a", email: "speaker@example.test", display_name: "Priya Raman", job_title: "Engineer", company: "Example", biography: "Bio", location: "", links: [], version: 1, selection_status: "accepted", confirmation_status: "confirmed", proposal_title: "A talk", can_edit: true }] }) }));
     await page.route("**/api/v1/admin/events/event-a/speakers/es-a/headshot*", async (route) => {
       if (route.request().method() === "PUT") {
         uploaded = true;

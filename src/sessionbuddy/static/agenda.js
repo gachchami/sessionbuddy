@@ -585,8 +585,18 @@
         return;
       }
       content.history.forEach((entry) => {
-        const row = make("li");
-        row.append(make("span", `v${entry.version} · ${entry.content_status} · ${new Date(entry.created_at_ms).toLocaleString()} · ${entry.changed_by}`));
+        const row = make("li", undefined, "content-history-entry");
+        const copy = make("div", undefined, "content-history-entry__copy");
+        copy.append(
+          make("strong", `v${entry.version} · ${entry.title}`),
+          make(
+            "span",
+            `${entry.content_status} · ${format(entry.created_at_ms, { dateStyle: "medium", timeStyle: "short" })} · ${entry.changed_by}`,
+            "help",
+          ),
+          make("p", entry.abstract, "content-history-entry__abstract"),
+        );
+        row.append(copy);
         if (entry.version !== content.version) {
           const restore = make("button", "Restore", "secondary");
           restore.type = "button";
@@ -600,7 +610,9 @@
     }
   }
   async function restoreContent(item, historyVersion, button) {
+    const saveButton = byId("save-item");
     button.disabled = true;
+    saveButton.disabled = true;
     status("Restoring session content…");
     try {
       const content = await api(
@@ -615,6 +627,14 @@
         },
       );
       Object.assign(item, { title: content.title, abstract: content.abstract, content_status: content.content_status, content_version: content.version });
+      const form = byId("editor-form");
+      // Apply the authoritative response immediately. A refresh below replaces
+      // the agenda model, but the editor remains open and can otherwise submit
+      // its pre-restore version while that refresh is in flight.
+      form.elements.title.value = content.title;
+      form.elements.abstract.value = content.abstract;
+      form.elements.content_status.value = content.content_status;
+      form.elements.content_version.value = content.version;
       await load(false);
       state.selected = state.model.items.find((value) => value.session_id === item.session_id)
         || state.model.unscheduled_sessions.find((value) => value.session_id === item.session_id)
@@ -623,7 +643,9 @@
       status(`Content restored from version ${historyVersion}.`);
     } catch (error) {
       status(window.SessionBuddyApi.message(error), true);
+    } finally {
       button.disabled = false;
+      saveButton.disabled = false;
     }
   }
   function openEditor(item) {
@@ -1116,12 +1138,20 @@
   byId("publish").addEventListener("click", () => {
     const scheduled = state.model?.items.length || 0;
     const hiddenDrafts = state.model?.items.filter((item) => item.content_status !== "approved").length || 0;
+    const pendingSpeakerSessions = state.model?.items.filter((item) =>
+      (item.participants || []).some((participant) => participant.recipient_state === "invited")
+    ) || [];
     byId("publish-dialog-summary").textContent =
       `${scheduled} scheduled session${scheduled === 1 ? "" : "s"} will become publicly visible.`;
     byId("publish-dialog-draft-note").hidden = hiddenDrafts === 0;
     byId("publish-dialog-draft-note").textContent = hiddenDrafts
       ? `${hiddenDrafts} session${hiddenDrafts === 1 ? " has" : "s have"} draft content and will remain hidden.`
       : "";
+    const inviteWarning = byId("publish-dialog-invite-warning");
+    inviteWarning.hidden = pendingSpeakerSessions.length === 0;
+    inviteWarning.querySelector("ul").replaceChildren(
+      ...pendingSpeakerSessions.map((item) => make("li", item.title)),
+    );
     byId("publish-dialog").showModal();
   });
   byId("cancel-publish").addEventListener("click", () => byId("publish-dialog").close());

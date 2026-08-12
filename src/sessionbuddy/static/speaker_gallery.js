@@ -11,9 +11,13 @@
   function openProfile(speaker, role) {
     const dialog = byId("speaker-profile");
     const content = byId("speaker-profile-content");
-    content.replaceChildren(make("h2", speaker.display_name));
-    if (role) content.append(make("p", role, "muted"));
-    if (speaker.biography) content.append(make("p", speaker.biography));
+    const portrait = make("div", undefined, "speaker-profile__portrait");
+    if (speaker.headshot_url) { const image = document.createElement("img"); image.src = speaker.headshot_url; image.alt = ""; portrait.append(image); }
+    else portrait.append(make("span", speaker.display_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(), "speaker-initials"));
+    const story = make("div", undefined, "speaker-profile__story");
+    story.append(make("p", "Speaker profile", "eyebrow"), make("h2", speaker.display_name));
+    if (role) story.append(make("p", role, "speaker-profile__role"));
+    if (speaker.biography) story.append(make("p", speaker.biography, "speaker-profile__bio"));
     if (speaker.links?.length) {
       const links = make("p", undefined, "speaker-links");
       speaker.links.forEach((value, index) => {
@@ -22,13 +26,15 @@
         if (index) links.append(" · ");
         links.append(anchor);
       });
-      content.append(links);
+      story.append(links);
     }
     if (speaker.sessions.length) {
-      const list = document.createElement("ul");
+      story.append(make("h3", "On the program", "speaker-profile__sessions-title"));
+      const list = document.createElement("ul"); list.className = "speaker-profile__sessions";
       speaker.sessions.forEach((session) => {
         const item = document.createElement("li");
-        item.append(make("strong", session.title));
+        const sessionLink = make("a", session.title); sessionLink.href = `/events/${encodeURIComponent(eventId)}/schedule?search=${encodeURIComponent(session.title)}`;
+        item.append(sessionLink);
         if (session.starts_at_ms) {
           const when = new Intl.DateTimeFormat(undefined, {
             dateStyle: "medium", timeStyle: "short", timeZone: state.event?.time_zone,
@@ -37,8 +43,9 @@
         }
         list.append(item);
       });
-      content.append(list);
+      story.append(list);
     }
+    content.replaceChildren(portrait, story);
     dialog.showModal();
   }
   function speakerCard(speaker) {
@@ -49,8 +56,14 @@
     const body = document.createElement("div"); body.className = "speaker-card__body"; body.append(make("h2", speaker.display_name));
     const role = [speaker.job_title, speaker.company].filter(Boolean).join(" · "); if (role) body.append(make("p", role, "muted"));
     if (!galleryLayout && speaker.biography) body.append(make("p", speaker.biography, "speaker-bio"));
-    if (speaker.sessions.length) { const list = document.createElement("ul"); list.className = "session-chips"; speaker.sessions.forEach((session) => list.append(make("li", session.title))); body.append(list); }
-    const details = make("button", "View profile", "secondary");
+    if (speaker.sessions.length) {
+      const list = document.createElement("ul"); list.className = "speaker-program-list";
+      speaker.sessions.slice(0, galleryLayout ? 1 : 2).forEach((session) => {
+        const item = document.createElement("li"); item.append(make("span", session.track_name || "Program", "speaker-program-list__track"), make("strong", session.title)); list.append(item);
+      });
+      body.append(list);
+    }
+    const details = make("button", "Meet the speaker", "speaker-card__action secondary");
     details.type = "button";
     details.addEventListener("click", () => openProfile(speaker, role));
     body.append(details);
@@ -61,7 +74,9 @@
     const speakers = query ? state.speakers.filter((speaker) => [speaker.display_name, speaker.job_title, speaker.company, speaker.biography, ...speaker.sessions.map((session) => session.title)].join(" ").toLowerCase().includes(query)) : state.speakers;
     byId("speaker-grid").replaceChildren(...speakers.map(speakerCard));
     byId("empty").hidden = speakers.length !== 0;
-    byId("status").textContent = `${speakers.length} accepted speaker${speakers.length === 1 ? "" : "s"}${query ? " match your search" : ""}.`;
+    byId("status").textContent = query
+      ? `${speakers.length} of ${state.speakers.length} speaker${state.speakers.length === 1 ? "" : "s"} shown`
+      : `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} on the published program`;
   }
   async function load() {
     if (!eventId) throw new Error("Invalid speaker gallery link.");
@@ -73,7 +88,7 @@
     byId("directory-link").textContent = galleryLayout ? "Speaker directory" : "Speaker gallery";
     if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; }
     if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
-    state.speakers = body.data; render();
+    state.speakers = [...body.data].sort((left, right) => left.display_name.localeCompare(right.display_name)); render();
     const requested = new URLSearchParams(location.search).get("speaker");
     const selected = state.speakers.find((speaker) => speaker.id === requested);
     if (selected) {

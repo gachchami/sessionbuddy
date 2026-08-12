@@ -67,6 +67,10 @@ class CommunicationStatus(BaseModel):
     id: str
     recipient_email: str
     subject: str
+    body_preview: str
+    category: Literal[
+        "invitation", "proposal", "reminder", "decision", "schedule", "announcement", "update"
+    ]
     status: Literal["queued", "sending", "delivered", "failed", "cancelled"]
     attempt_count: int
     provider_message_id: str | None = None

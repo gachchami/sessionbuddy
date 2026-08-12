@@ -92,6 +92,173 @@ async def test_direct_rejection_needs_no_round(
     assert len(queue.messages) == queued_before_rejection + 1
 
 
+async def test_final_decision_corrections_are_append_only_and_manage_session_lifecycle(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO call_for_speaker_forms
+               (id,organization_id,event_id,version,slug,welcome_text,schema_json,status,
+                published_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('correction-form',?, ?,1,'correction','Welcome','{"fields":[]}',
+                       'published',1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO submissions
+               (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+                proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
+                submitted_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('corrected-submission',?,?,'correction-form','correction-public',
+                       'Recovered proposal','Abstract','Priya Raman','priya@example.test',
+                       ?,'submitted',1000,1000,1000)""",
+            (organization_id, event_id, user_id),
+        )
+        rejected = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/reject",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "correction-original",
+            },
+            json={
+                "decision": "rejected",
+                "internal_reason": "Original program decision",
+                "send_email": False,
+                "speaker_message": "",
+                "override_incomplete_reviews": False,
+            },
+        )
+        assert rejected.status_code == 200, rejected.text
+        accepted = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/decision-corrections",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "correction-accept",
+            },
+            json={
+                "corrected_decision": "accepted",
+                "reason": "The program committee resolved a classification error.",
+            },
+        )
+        assert accepted.status_code == 200, accepted.text
+        rejected_again = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/decision-corrections",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "correction-reject",
+            },
+            json={
+                "corrected_decision": "rejected",
+                "reason": "A later eligibility review reversed the correction.",
+            },
+        )
+
+    assert rejected_again.status_code == 200, rejected_again.text
+    original = connection.execute(
+        "SELECT decision,internal_reason FROM submission_decisions WHERE submission_id=?",
+        ("corrected-submission",),
+    ).fetchone()
+    assert tuple(original) == ("rejected", "Original program decision")
+    corrections = connection.execute(
+        """SELECT previous_decision,corrected_decision,reason
+           FROM submission_decision_corrections WHERE submission_id=?
+           ORDER BY corrected_at_ms,id""",
+        ("corrected-submission",),
+    ).fetchall()
+    assert [tuple(row) for row in corrections] == [
+        (
+            "rejected",
+            "accepted",
+            "The program committee resolved a classification error.",
+        ),
+        (
+            "accepted",
+            "rejected",
+            "A later eligibility review reversed the correction.",
+        ),
+    ]
+    session = connection.execute(
+        """SELECT lifecycle_status,withdrawn_at_ms,decision_correction_id
+           FROM accepted_sessions WHERE submission_id=?""",
+        ("corrected-submission",),
+    ).fetchone()
+    assert session[0] == "withdrawn"
+    assert session[1] is not None
+    assert session[2] == accepted.json()["id"]
+    audit_count = connection.execute(
+        """SELECT COUNT(*) FROM audit_events
+           WHERE action='submission.decision.correct' AND target_id='corrected-submission'"""
+    ).fetchone()[0]
+    assert audit_count == 2
+
+
+async def test_unreviewed_proposal_can_be_accepted_with_an_audited_reason(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO call_for_speaker_forms
+               (id,organization_id,event_id,version,slug,welcome_text,schema_json,status,
+                published_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('direct-accept-form',?, ?,1,'direct-accept','Welcome','{"fields":[]}',
+                       'published',1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO submissions
+               (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+                proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
+                submitted_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('direct-accept-submission',?,?,'direct-accept-form','direct-accept-public',
+                       'Invited program session','Abstract','Priya Raman','priya@example.test',
+                       ?,'submitted',1000,1000,1000)""",
+            (organization_id, event_id, user_id),
+        )
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/direct-accept-submission/accept",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "direct-acceptance-test",
+            },
+            json={
+                "decision": "accepted",
+                "internal_reason": "Invited program content does not require scoring.",
+                "send_email": False,
+                "speaker_message": "",
+                "override_incomplete_reviews": False,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["round_id"] is None
+    session = connection.execute(
+        """SELECT lifecycle_status FROM accepted_sessions
+           WHERE submission_id='direct-accept-submission'"""
+    ).fetchone()
+    assert tuple(session) == ("active",)
+    audit = connection.execute(
+        """SELECT metadata_json FROM audit_events
+           WHERE action='submission.decision.record'
+             AND target_id='direct-accept-submission'"""
+    ).fetchone()[0]
+    assert '"direct_decision":true' in audit
+    assert '"direct_rejection":false' in audit
+
+
 async def test_round_rejection_revokes_outstanding_assignment(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:

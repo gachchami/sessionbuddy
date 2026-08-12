@@ -141,6 +141,25 @@
 .resource-list button {
   padding: .4rem .6rem;
 }
+.resource-list .content-history-entry {
+  align-items: flex-start;
+  padding: .75rem 0;
+}
+.content-history-entry__copy {
+  min-width: 0;
+  display: grid;
+  gap: .2rem;
+}
+.content-history-entry__copy strong,
+.content-history-entry__abstract {
+  overflow-wrap: anywhere;
+}
+.content-history-entry__abstract {
+  max-width: 62ch;
+  margin: .2rem 0 0;
+  color: #475467;
+  white-space: pre-line;
+}
 .label-create-form {
   grid-template-columns: minmax(0,1fr) auto auto;
   align-items: end;

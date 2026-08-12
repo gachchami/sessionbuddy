@@ -20,12 +20,51 @@ Organize work by capability, not delivery waves:
 homepage. Do not add tenant, identity, submission, speaker, incident, or secret
 data to its public response models.
 
-SessionBuddy currently supports fresh installations only. The rebased
-`migrations_baseline/0001_baseline.sql` file is the complete canonical schema;
-do not add an incremental migration ledger or a compatibility upgrade path.
-After a baseline schema change, purge and recreate every development database
-before deployment, then prove a first apply and a repeat no-op apply. Do not
-run a changed baseline against a data-bearing database.
+SessionBuddy supports both fresh installations and upgrades of data-bearing
+installations.
+
+`migrations_baseline/0001_baseline.sql` is the canonical schema for a new
+database. Never apply a changed baseline directly to an existing populated
+database.
+
+Schema changes after the current baseline must be delivered as ordered,
+incremental migrations. Incremental migrations must:
+
+- preserve existing tenant and application data;
+- add nullable columns or safe defaults before enforcing stricter constraints;
+- backfill new required values deterministically;
+- resolve incompatible or duplicate historical rows before creating unique
+  indexes;
+- preserve foreign-key integrity throughout the transition;
+- be safe under migration-runner locking and transactions;
+- succeed on first application and report no migrations to apply on a repeat
+  run;
+- include tests covering both a fresh installation and an upgrade from the
+  preceding supported schema;
+- include backup, validation, rollback, and recovery instructions;
+- never log, expose, or copy secrets into migration artifacts.
+
+Do not edit an already released incremental migration. Add a new migration for
+subsequent corrections.
+
+The baseline may be periodically rebased to incorporate accumulated
+incremental migrations, but only during an explicitly planned maintenance
+window. A baseline rebase requires:
+
+1. a verified backup of every affected database;
+2. a successful restore rehearsal;
+3. a documented downtime and rollback plan;
+4. a fresh-install schema test;
+5. an upgrade equivalence test proving that:
+   `previous baseline + incremental migrations` produces the same schema and
+   data semantics as the new baseline;
+6. foreign-key, row-count, tenant-isolation, and critical-record validation;
+7. retention of the previous database or backup until post-release validation
+   is complete.
+
+After a baseline rebase, archive the incorporated migration history according
+to the migration runner’s documented procedure. Never delete migration
+bookkeeping from a live database merely to make it resemble a fresh install.
 
 ## Working model
 
@@ -122,3 +161,12 @@ Before handing off a change:
 5. Regenerate embedded assets and OpenAPI artifacts when their sources change.
 6. Run `git diff --check` and report any verification that could not be run.
 7. Update `docs/product-status.md` when capability or release status changes.
+
+After any schema change:
+
+1. validate a fresh database created from the canonical baseline;
+2. validate an upgrade from the immediately preceding supported schema;
+3. run the migration twice and prove the second run is a no-op;
+4. run `PRAGMA foreign_key_check`;
+5. compare expected table, index, trigger, and critical row counts;
+6. record backup and rollback evidence before deployment.

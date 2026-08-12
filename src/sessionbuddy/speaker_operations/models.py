@@ -126,6 +126,9 @@ class SpeakerNotificationView(BaseModel):
 
     id: str
     subject: str
+    category: Literal[
+        "invitation", "proposal", "reminder", "decision", "schedule", "announcement", "update"
+    ]
     delivered_at_ms: int
     body_text: str
     links: list[str] = Field(default_factory=list)
@@ -201,7 +204,7 @@ class UploadAuthorizationCreate(BaseModel):
     content_type: str = Field(min_length=1, max_length=100)
     byte_size: int = Field(gt=0, le=50 * 1024 * 1024)
     checksum_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    version_comment: str = Field(min_length=1, max_length=1000)
+    version_comment: str = Field(default="", max_length=1000)
 
     @field_validator("filename")
     @classmethod
@@ -290,6 +293,48 @@ class AdminSpeakerAssetList(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: list[AdminSpeakerAssetView]
+
+
+class AssetCommentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    body_text: str = Field(min_length=1, max_length=5000)
+    parent_comment_id: str | None = Field(default=None, max_length=100)
+    # Organizers choose; the speaker endpoint ignores this and always shares,
+    # since a speaker cannot usefully write a note they are not allowed to read.
+    visibility: Literal["internal", "shared"] = "internal"
+
+
+class AssetCommentView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    version_id: str
+    author_name: str
+    body_text: str
+    parent_comment_id: str | None = None
+    visibility: Literal["internal", "shared"] = "internal"
+    created_at_ms: int
+
+
+class AssetDetailView(AdminSpeakerAssetView):
+    comments: list[AssetCommentView] = Field(default_factory=list)
+
+
+class SpeakerAssetDetailView(SpeakerAssetView):
+    """A speaker's own asset plus the part of its discussion they may read."""
+
+    comments: list[AssetCommentView] = Field(default_factory=list)
+
+
+class AssetExportCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    asset_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("asset_ids")
+    @classmethod
+    def unique_asset_ids(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("asset_ids must be unique")
+        return value
 
 
 class AssetDownloadGrantView(BaseModel):

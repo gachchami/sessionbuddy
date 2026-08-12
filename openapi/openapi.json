@@ -1915,6 +1915,206 @@
         "title": "ApiHealthResponse",
         "type": "object"
       },
+      "AssetCommentCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "body_text": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Body Text",
+            "type": "string"
+          },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          }
+        },
+        "required": [
+          "body_text"
+        ],
+        "title": "AssetCommentCreate",
+        "type": "object"
+      },
+      "AssetCommentView": {
+        "additionalProperties": false,
+        "properties": {
+          "author_name": {
+            "title": "Author Name",
+            "type": "string"
+          },
+          "body_text": {
+            "title": "Body Text",
+            "type": "string"
+          },
+          "created_at_ms": {
+            "title": "Created At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version_id",
+          "author_name",
+          "body_text",
+          "created_at_ms"
+        ],
+        "title": "AssetCommentView",
+        "type": "object"
+      },
+      "AssetDetailView": {
+        "additionalProperties": false,
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/AssetCommentView"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "direct_download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direct Download Url"
+          },
+          "download_grant_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Grant Url"
+          },
+          "event_speaker_id": {
+            "title": "Event Speaker Id",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "scan_status": {
+            "const": "clean",
+            "default": "clean",
+            "title": "Scan Status",
+            "type": "string"
+          },
+          "speaker_name": {
+            "title": "Speaker Name",
+            "type": "string"
+          },
+          "uploaded_at_ms": {
+            "title": "Uploaded At Ms",
+            "type": "integer"
+          },
+          "uploaded_by": {
+            "title": "Uploaded By",
+            "type": "string"
+          },
+          "version_comment": {
+            "title": "Version Comment",
+            "type": "string"
+          },
+          "version_count": {
+            "title": "Version Count",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerAssetVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "event_speaker_id",
+          "speaker_name",
+          "kind",
+          "filename",
+          "content_type",
+          "byte_size",
+          "generation",
+          "version_count",
+          "uploaded_at_ms",
+          "uploaded_by",
+          "version_comment"
+        ],
+        "title": "AssetDetailView",
+        "type": "object"
+      },
       "AssetDownloadGrantView": {
         "additionalProperties": false,
         "properties": {
@@ -1948,6 +2148,25 @@
           "token"
         ],
         "title": "AssetDownloadToken",
+        "type": "object"
+      },
+      "AssetExportCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Asset Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset_ids"
+        ],
+        "title": "AssetExportCreate",
         "type": "object"
       },
       "AssignmentReassign": {
@@ -2640,6 +2859,23 @@
             "title": "Attempt Count",
             "type": "integer"
           },
+          "body_preview": {
+            "title": "Body Preview",
+            "type": "string"
+          },
+          "category": {
+            "enum": [
+              "invitation",
+              "proposal",
+              "reminder",
+              "decision",
+              "schedule",
+              "announcement",
+              "update"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2694,6 +2930,8 @@
           "id",
           "recipient_email",
           "subject",
+          "body_preview",
+          "category",
           "status",
           "attempt_count",
           "updated_at_ms"
@@ -7386,6 +7624,10 @@
             "title": "End At Ms",
             "type": "integer"
           },
+          "format_name": {
+            "title": "Format Name",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -7410,6 +7652,10 @@
           },
           "session_id": {
             "title": "Session Id",
+            "type": "string"
+          },
+          "speaker_details": {
+            "title": "Speaker Details",
             "type": "string"
           },
           "speaker_names": {
@@ -7448,7 +7694,9 @@
           "speaker_names",
           "labels",
           "label_ids",
-          "description"
+          "description",
+          "format_name",
+          "speaker_details"
         ],
         "title": "PublicScheduleItemView",
         "type": "object"
@@ -9193,6 +9441,19 @@
             "title": "Body Text",
             "type": "string"
           },
+          "category": {
+            "enum": [
+              "invitation",
+              "proposal",
+              "reminder",
+              "decision",
+              "schedule",
+              "announcement",
+              "update"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
           "delivered_at_ms": {
             "title": "Delivered At Ms",
             "type": "integer"
@@ -9216,6 +9477,7 @@
         "required": [
           "id",
           "subject",
+          "category",
           "delivered_at_ms",
           "body_text"
         ],
@@ -10272,6 +10534,96 @@
         "title": "SubmissionCreate",
         "type": "object"
       },
+      "SubmissionDecisionCorrectionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "corrected_decision": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Corrected Decision",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "corrected_decision",
+          "reason"
+        ],
+        "title": "SubmissionDecisionCorrectionCreate",
+        "type": "object"
+      },
+      "SubmissionDecisionCorrectionView": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Session Id"
+          },
+          "corrected_at_ms": {
+            "title": "Corrected At Ms",
+            "type": "integer"
+          },
+          "corrected_decision": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Corrected Decision",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "original_decision_id": {
+            "title": "Original Decision Id",
+            "type": "string"
+          },
+          "previous_decision": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Previous Decision",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "corrected_decision",
+          "reason",
+          "id",
+          "submission_id",
+          "original_decision_id",
+          "previous_decision",
+          "corrected_at_ms"
+        ],
+        "title": "SubmissionDecisionCorrectionView",
+        "type": "object"
+      },
       "SubmissionDecisionCreate": {
         "additionalProperties": false,
         "properties": {
@@ -11000,8 +11352,8 @@
             "title": "Task Id"
           },
           "version_comment": {
+            "default": "",
             "maxLength": 1000,
-            "minLength": 1,
             "title": "Version Comment",
             "type": "string"
           }
@@ -11011,8 +11363,7 @@
           "filename",
           "content_type",
           "byte_size",
-          "checksum_sha256",
-          "version_comment"
+          "checksum_sha256"
         ],
         "title": "UploadAuthorizationCreate",
         "type": "object"
@@ -12995,6 +13346,57 @@
         ]
       }
     },
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}": {
+      "get": {
+        "operationId": "getAdminSpeakerAssetDetail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Admin Asset Detail",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
     "/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants": {
       "post": {
         "operationId": "createAdminSpeakerAssetDownloadGrant",
@@ -13041,6 +13443,92 @@
           }
         },
         "summary": "Create Admin Asset Download Grant",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/comments": {
+      "post": {
+        "operationId": "commentOnAdminSpeakerAssetVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetCommentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCommentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Admin Asset Comment",
         "tags": [
           "speaker-assets"
         ]
@@ -13659,6 +14147,51 @@
         "summary": "Upload Event Cover",
         "tags": [
           "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/deliverables/export": {
+      "post": {
+        "operationId": "exportAdminSpeakerDeliverables",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetExportCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Admin Deliverables",
+        "tags": [
+          "speaker-assets"
         ]
       }
     },
@@ -15777,6 +16310,161 @@
         "summary": "List Submissions",
         "tags": [
           "submissions"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/submissions/{submission_id}/accept": {
+      "post": {
+        "operationId": "acceptUnreviewedSubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionDecisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDecisionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Unreviewed Submission",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/submissions/{submission_id}/decision-corrections": {
+      "post": {
+        "description": "Append an audited correction while preserving the original final decision.",
+        "operationId": "correctFinalSubmissionDecision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionDecisionCorrectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDecisionCorrectionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Correct Final Submission Decision",
+        "tags": [
+          "evaluations"
         ]
       }
     },

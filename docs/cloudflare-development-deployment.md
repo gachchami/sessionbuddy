@@ -184,11 +184,10 @@ docker compose run --rm --no-deps worker \
 
 These commands build deployment packages but do not deploy them.
 
-## 8. Apply the D1 baseline safely
+## 8. Apply D1 migrations safely
 
-SessionBuddy supports fresh installations only. The sole canonical schema is
-`migrations_baseline/0001_baseline.sql`; there is no incremental compatibility
-upgrade path.
+`migrations_baseline/0001_baseline.sql` is immutable. Later numbered migrations
+upgrade data-bearing databases in order and must preserve existing data.
 
 Before applying it, inspect the remote migration state:
 
@@ -197,10 +196,9 @@ docker compose run --rm --no-deps worker \
   npx wrangler d1 migrations list DB --remote --env dev
 ```
 
-If the baseline file changed and the remote database contains business data,
-stop. Do not run the changed baseline against that database. Provision a fresh
-development D1 database, update the same new database ID in both Wrangler
-files, review the replacement, and only then continue.
+If `0001_baseline.sql` changed, stop: do not run it against that database. For a
+new incremental migration, export and checksum a backup, rehearse restoration,
+then apply only after fresh-chain and preceding-schema upgrade tests pass.
 
 For a new database, or when the checked-in baseline is unchanged and Wrangler
 reports the expected migration state, apply it with:

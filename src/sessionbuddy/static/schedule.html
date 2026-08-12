@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Event schedule · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=67"><link rel="stylesheet" href="/schedule/assets/schedule.css?v=9">
+  <link rel="stylesheet" href="/product/assets/product.css?v=67"><link rel="stylesheet" href="/schedule/assets/schedule.css?v=10">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/schedule/assets/schedule.js?v=9" defer></script>
+  <script src="/schedule/assets/schedule.js?v=10" defer></script>
 </head>
 <body class="public-body schedule-page">
   <a class="skip-link" href="#main">Skip to schedule</a>
@@ -15,10 +15,19 @@
     <div class="page-heading public-event-hero schedule-hero"><div><p class="eyebrow">Published program</p><h1 id="title">Event schedule</h1><p id="timezone" class="lede">Loading…</p></div><img id="event-logo" class="event-logo" alt="" hidden></div>
     <section class="schedule-controls" aria-label="Find and filter sessions">
       <div id="status" class="status" role="status" aria-live="polite">Loading published sessions…</div><p id="results-summary" class="help"></p>
-      <label class="schedule-search" for="schedule-search">Find a session<input id="schedule-search" type="search" placeholder="Search title, speaker, track, or room"></label>
-      <nav class="schedule-filters" aria-label="Schedule views"><button data-view="list" aria-pressed="true">List</button><button data-view="day" class="secondary" aria-pressed="false">Day</button><button data-view="week" class="secondary" aria-pressed="false">Week</button><button data-view="track" class="secondary" aria-pressed="false">Track</button><button data-view="room" class="secondary" aria-pressed="false">Room</button><button data-view="mine" class="secondary" aria-pressed="false">My itinerary <span id="itinerary-count">0</span></button><button id="download-calendar" class="secondary" type="button" disabled>Download itinerary (.ics)</button></nav>
+      <div class="schedule-discovery">
+        <label class="schedule-search" for="schedule-search">Find a session<input id="schedule-search" type="search" placeholder="Title, speaker, company, or topic"></label>
+        <label>Track<select id="track-filter"><option value="">All tracks</option></select></label>
+        <label>Format<select id="format-filter"><option value="">All formats</option></select></label>
+        <label>Room<select id="room-filter"><option value="">All rooms</option></select></label>
+      </div>
+      <nav class="schedule-filters" aria-label="Schedule views"><button data-view="list" aria-pressed="true">Sessions</button><button data-view="day" class="secondary" aria-pressed="false">Day</button><button data-view="week" class="secondary" aria-pressed="false">Week</button><button data-view="track" class="secondary" aria-pressed="false">Track</button><button data-view="room" class="secondary" aria-pressed="false">Room</button><button data-view="grid" class="secondary" aria-pressed="false">Stage board</button><button data-view="mine" class="secondary" aria-pressed="false">My itinerary <span id="itinerary-count">0</span></button><button id="download-calendar" class="secondary" type="button" disabled>Download itinerary (.ics)</button></nav>
+      <nav id="day-tabs" class="day-tabs" aria-label="Schedule days" hidden></nav>
     </section>
     <div id="schedule" class="schedule"></div><div id="empty" class="empty-state" hidden><strong>No sessions are published yet.</strong></div>
+    <dialog id="session-detail" class="session-detail" aria-labelledby="session-detail-title">
+      <article><button id="close-session-detail" class="session-detail__close secondary" type="button" aria-label="Close session details">×</button><p id="session-detail-kicker" class="eyebrow"></p><h2 id="session-detail-title"></h2><p id="session-detail-speaker" class="session-detail__speaker"></p><p id="session-detail-meta" class="help"></p><div id="session-detail-labels" class="schedule-labels"></div><p id="session-detail-description"></p><div class="actions"><button id="session-detail-itinerary" type="button"></button></div></article>
+    </dialog>
   </main>
 </body>
 </html>

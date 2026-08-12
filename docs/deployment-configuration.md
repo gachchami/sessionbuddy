@@ -58,24 +58,28 @@ replace `RESEND_FROM_ADDRESS` with another address on a verified domain.
 
 ## Initial administrator bootstrap
 
-Fresh demo deployments use `migrations_baseline/0001_baseline.sql` as the
-canonical single-file schema.
-The baseline contains no organizations, users, events, submissions, evaluation
-data, or `d1_migrations` bookkeeping. Verify it inside Docker after every schema
-change:
+Fresh deployments start with the immutable
+`migrations_baseline/0001_baseline.sql`, then apply every later numbered SQL
+migration in order. The baseline contains no organizations, users, events,
+submissions, evaluation data, or `d1_migrations` bookkeeping. Verify the complete
+chain inside Docker after every schema change:
 
 ```sh
 docker compose run --rm --no-deps worker npm run worker:migrations:baseline:check
 ```
 
-`wrangler.jsonc` points every database at the single migration in
-`migrations_baseline/`. Historical migration files are not required by runtime,
-test fixtures, release scripts, or baseline validation.
+`wrangler.jsonc` points every database at the ordered ledger in
+`migrations_baseline/`. Released migration files are runtime inputs and must not
+be edited or removed. `migrations_baseline/checksums.sha256` pins every released
+migration and CI rejects changed, missing, or unrecorded files. Existing
+databases apply only migrations not already recorded by D1; fresh databases
+apply the whole chain.
 
-The active migration path intentionally has no compatibility or incremental
-upgrade path. After `0001_baseline.sql` changes, recreate every local,
-preview, development, or production D1 database before applying it. A database
-whose `d1_migrations` table contains an older baseline must not be reused.
+Before upgrading a data-bearing database, export a D1 backup and record its
+checksum. After migration, verify `PRAGMA foreign_key_check`, critical row
+counts, and the new schema objects. Rollback means restoring that verified
+backup to the previous application version; do not reverse a partially applied
+schema with ad-hoc SQL. Keep the backup until post-release validation completes.
 
 Applying the D1 baseline creates a random 256-bit, instance-specific
 setup key. Retrieve it in a private terminal without putting it in source or chat:

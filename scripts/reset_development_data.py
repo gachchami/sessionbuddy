@@ -21,6 +21,7 @@ except ModuleNotFoundError:  # Direct execution from scripts/.
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CANONICAL_BASELINE = PROJECT_ROOT / "migrations_baseline" / "0001_baseline.sql"
+MIGRATION_NAME = re.compile(r"^[0-9]{4}_[a-z0-9_]+\.sql$")
 NPX = shutil.which("npx") or "/usr/local/bin/npx"
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 REFERENCE = re.compile(r"\bREFERENCES\s+[\"`\[]?([A-Za-z_][A-Za-z0-9_]*)", re.I)
@@ -95,11 +96,19 @@ class ResetError(RuntimeError):
 
 def assert_canonical_baseline_layout(baseline: Path = CANONICAL_BASELINE) -> None:
     migration_files = sorted(path.name for path in baseline.parent.glob("*.sql"))
-    if migration_files != [baseline.name] or not baseline.is_file():
+    invalid = [name for name in migration_files if MIGRATION_NAME.fullmatch(name) is None]
+    prefixes = [name.split("_", 1)[0] for name in migration_files]
+    if (
+        not baseline.is_file()
+        or not migration_files
+        or migration_files[0] != baseline.name
+        or invalid
+        or len(prefixes) != len(set(prefixes))
+    ):
         found = ", ".join(migration_files) or "none"
         raise ResetError(
-            "refusing reset: migrations_baseline must contain only the canonical "
-            f"{baseline.name}; found: {found}"
+            "refusing reset: migrations must start with the canonical baseline and "
+            f"use unique ordered names; found: {found}"
         )
 
 
@@ -612,8 +621,8 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     try:
-        # Fail before reading or mutating D1: a fresh-install reset must never
-        # legitimize an incremental migration ledger as the canonical schema.
+        # Fail before reading or mutating D1 unless the immutable baseline is
+        # followed only by a well-formed ordered migration ledger.
         assert_canonical_baseline_layout()
         database_name = validate_configuration(
             PROJECT_ROOT / "wrangler.jsonc", arguments.env, local=arguments.local

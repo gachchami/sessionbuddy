@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speaker messages · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=68">
+  <link rel="stylesheet" href="/product/assets/product.css?v=69">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=22">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=23" defer></script>
-  <script src="/admin/speakers/assets/messages.js?v=5" defer></script>
+  <script src="/admin/speakers/assets/messages.js?v=6" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--messages">
   <a class="skip-link" href="#main">Skip to speaker messages</a>
@@ -36,7 +36,7 @@
       </section>
     </div>
     <section id="message-preview" class="card workflow-stage workflow-stage--preview" hidden aria-labelledby="preview-title"><h2 id="preview-title">Message preview</h2><div id="message-preview-content" class="public-link" aria-live="polite"></div></section>
-    <section class="directory-section workflow-stage workflow-stage--history" aria-labelledby="history-title"><div class="section-heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Recent delivery activity for this event. Times use the event time zone: <strong id="message-time-zone">Loading…</strong>.</p></div></div><div class="table-scroll"><table><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Updated (event time)</th></tr></thead><tbody id="message-history" aria-live="polite"><tr><td class="workflow-empty-state" colspan="4">Loading messages…</td></tr></tbody></table></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
+    <section class="directory-section workflow-stage workflow-stage--history message-history" aria-labelledby="history-title"><div class="section-heading message-history__heading"><div><h2 id="history-title">Message history</h2><p class="section-summary">Event communications only. Times use <strong id="message-time-zone">Loading…</strong>.</p></div><label class="message-history__filter">Show<select id="message-history-filter"><option value="all">All messages</option><option value="attention">Needs attention</option><option value="invitation">Invitations</option><option value="proposal">Proposals</option><option value="reminder">Reminders</option><option value="decision">Decisions</option><option value="schedule">Schedule</option><option value="announcement">Announcements</option><option value="update">Updates</option></select></label></div><div id="message-history" aria-live="polite" class="message-history__list"><p class="workflow-empty-state">Loading messages…</p></div><button id="load-older-messages" class="secondary" type="button" hidden>Load older messages</button></section>
   </main>
   <dialog id="confirm-message-send" class="form-dialog" aria-labelledby="confirm-message-title" aria-describedby="confirm-message-consequence">
     <div class="dialog-heading"><div><p class="eyebrow">Final check</p><h2 id="confirm-message-title">Send messages?</h2><p id="confirm-message-count" class="result"></p></div></div>

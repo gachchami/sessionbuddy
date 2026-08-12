@@ -1675,6 +1675,14 @@ async def upload_admin_speaker_headshot(
             now,
         )
     )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE speaker_tasks SET state='completed',completed_at_ms=?1,
+                      version=version+1,updated_at_ms=?1
+               WHERE organization_id=?2 AND event_id=?3 AND event_speaker_id=?4
+                 AND task_type='headshot' AND state='open'"""
+        ).bind(now, target["organization_id"], event_id, event_speaker_id)
+    )
     batch.audit(
         AuditEvent(
             organization_id=str(target["organization_id"]),

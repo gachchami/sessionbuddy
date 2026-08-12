@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SessionBuddy - The complete three-role field guide</title>
+  <meta name="description" content="A continuous organizer, speaker, and reviewer tutorial from CFP publication to a published program.">
+  <link rel="stylesheet" href="print.css">
+</head>
+<body>
+<main class="document">
+  <section class="page cover" aria-labelledby="guide-title">
+    <div class="draft-ribbon" role="status">Design draft · screenshot evidence pending</div>
+    <div>
+      <img class="brand" src="assets/sessionbuddy-lockup.png" alt="SessionBuddy">
+      <p class="eyebrow">Three-role field guide</p>
+      <h1 id="guide-title">From a blank event<br>&nbsp;to a published program</h1>
+      <p class="lede">Follow one conference through the hands of its organizer, speaker, and reviewer. Every task names the starting state, action, visible result, recovery path, and permission boundary.</p>
+      <div class="role-grid" aria-label="Guide audiences">
+        <article class="role-card organizer"><strong>Organizer</strong><p>Build the event, publish the CFP, operate evaluation, onboard speakers, and publish the agenda.</p></article>
+        <article class="role-card speaker"><strong>Speaker</strong><p>Submit and maintain a proposal, respond to acceptance, and complete event onboarding.</p></article>
+        <article class="role-card reviewer"><strong>Reviewer</strong><p>Accept an invitation, disclose conflicts, score assigned work, and finalize a recommendation.</p></article>
+      </div>
+    </div>
+    <div>
+      <p class="edition"><strong>Design review edition:</strong> 18 August 2026 · Target revision <code>859bfbc</code> · Not release evidence</p>
+      <div class="support" aria-label="Project and support links">
+        <a href="https://github.com/gachchami/sessionbuddy">GitHub</a>
+        <a href="https://x.com/imkin">X / @imkin</a>
+        <a href="mailto:me@dbhanushali.com">me@dbhanushali.com</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="page" aria-labelledby="start">
+    <p class="eyebrow">Start here</p>
+    <h2 id="start">One event. Three authenticated roles.</h2>
+    <p>This guide uses <strong>DevFlow Conf 2027</strong> as a continuous scenario. The organizer creates the call, Priya submits a proposal, Sam reviews it, and the organizer publishes the accepted session. Public pages appear only as proof that the authenticated work produced the intended result.</p>
+    <div class="flow" aria-label="Event lifecycle">
+      <span>Publish CFP</span><b>→</b><span>Submit proposal</span><b>→</b><span>Review</span><b>→</b><span>Decide</span><b>→</b><span>Onboard</span><b>→</b><span>Publish agenda</span>
+    </div>
+    <div class="callout recovery"><strong>Draft evidence boundary</strong>This edition demonstrates content structure and visual design only. Its retained screenshots are not a consistent frozen-fixture capture and must not be used as release evidence. The local Worker could not be restarted because Docker storage was full. A final PDF is intentionally withheld until every screenshot is recaptured against one verified revision and fixture.</div>
+
+    <h3>Choose a path</h3>
+    <ol class="toc">
+      <li><a href="#shared-foundations">Shared foundations</a></li>
+      <li><a href="#organizer-begins">Organizer creates the path</a></li>
+      <li><a href="#speaker-submits">Speaker submits</a></li>
+      <li><a href="#reviewer-evaluates">Reviewer evaluates</a></li>
+      <li><a href="#organizer-decides">Organizer decides</a></li>
+      <li><a href="#speaker-onboards">Speaker onboards</a></li>
+      <li><a href="#publish-the-program">Organizer publishes</a></li>
+      <li><a href="#validate-public-output">Validate public output</a></li>
+      <li><a href="#boundaries">Permission boundaries</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ol>
+
+    <h2 id="shared-foundations">Shared foundations</h2>
+    <div class="journey-grid">
+      <article class="journey-card"><strong>Sign in</strong><p>Use a password or a one-time email link. Invitation links establish the invited relationship; they are not ordinary share links.</p></article>
+      <article class="journey-card"><strong>Choose the active role</strong><p>A multi-role account sees one role-specific portal at a time. Changing navigation is not the same as receiving permission.</p></article>
+      <article class="journey-card"><strong>Keep profile consent explicit</strong><p>A public profile is opt-in. Without consent, the People directory must not link to an anonymous public profile.</p></article>
+    </div>
+    <div class="callout boundary"><strong>Server authority</strong>Visible controls are not authorization. Tenant scope and role permissions are enforced by the server. If a copied URL is outside the active role, return to the appropriate portal instead of trying to work around the restriction.</div>
+  </section>
+
+  <section class="page chapter print-break" aria-labelledby="organizer-begins">
+    <p class="role-label">Organizer · Part 1</p>
+    <h2 id="organizer-begins">Create the path speakers and reviewers<br>&nbsp;will follow</h2>
+
+    <article class="task">
+      <header class="task-header"><h3>Open the organization workspace</h3><span class="task-tag">Orient</span></header>
+      <div class="meta"><div><strong>Goal</strong>Choose the event you will operate.</div><div><strong>You need</strong>An authenticated Organizer account.</div><div><strong>Start</strong><code>/admin</code></div><div><strong>Finish</strong>The event overview is open.</div></div>
+      <ol class="steps"><li>Open <strong>Home</strong>. Confirm the organization name at the top.</li><li>Choose the current event from the event list. Archived events remain separated from active work.</li><li>Use <strong>Settings</strong> only for organization identity and organizer membership; use the event row for event operations.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The event workspace opens with event-level navigation and status.</div>
+      <div class="callout recovery"><strong>If it does not work</strong>If Home redirects to account onboarding, complete the required identity fields. If the event is absent, verify organization membership rather than searching another tenant.</div>
+      <figure class="evidence-figure" data-figure-id="organizer-home"><div class="annotated-shot"><img src="assets/organizer-home.jpg" alt="Organization Home with a compact list of current and archived events"><span class="marker" style="--x:12%;--y:13%">1</span><span class="marker" style="--x:35%;--y:55%">2</span><span class="marker" style="--x:84%;--y:14%">3</span></div><ol class="figure-callouts"><li>Organization identity</li><li>Current event list</li><li>Organization settings</li></ol><figcaption>Figure 1. Organization Home is the event launcher; organization settings are a separate action. Design-draft image: recapture required.</figcaption></figure>
+    </article>
+
+    <article class="task">
+      <header class="task-header"><h3>Create and inspect the event</h3><span class="task-tag">Organizer</span></header>
+      <div class="meta"><div><strong>Goal</strong>Establish event identity, dates, venue, and branding.</div><div><strong>You need</strong>Organizer permission to create events.</div><div><strong>Start</strong>Home → Create event.</div><div><strong>Finish</strong>Overview shows the correct event context.</div></div>
+      <ol class="steps"><li>Enter the event name, time zone, dates, attendance mode, and venue or virtual context.</li><li>Add a public description and optional logo/cover artwork.</li><li>Save, then inspect the Overview. Confirm the title, date, time zone, venue, and lifecycle state.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The Overview becomes the event’s launchpad for CFP, Proposals, Reviewers, Speakers, Agenda, and Share.</div>
+      <div class="callout boundary"><strong>Permission boundary</strong>Organization ownership and event operation are related but distinct. Only the organization owner may transfer ownership.</div>
+      <figure class="evidence-figure" data-figure-id="event-overview"><div class="annotated-shot"><img src="assets/event-overview.jpg" alt="Event overview with the event header, operational navigation, summary tiles, and primary actions"><span class="marker" style="--x:17%;--y:19%">1</span><span class="marker" style="--x:50%;--y:9%">2</span><span class="marker" style="--x:45%;--y:73%">3</span></div><ol class="figure-callouts"><li>Event identity</li><li>Lifecycle navigation</li><li>Program state</li></ol><figcaption>Figure 2. Confirm event context before changing program state. Design-draft image: recapture required.</figcaption></figure>
+    </article>
+
+    <article class="task" id="publish-the-cfp">
+      <header class="task-header"><h3>Build, preview, and publish the CFP</h3><span class="task-tag">Critical path</span></header>
+      <div class="meta"><div><strong>Goal</strong>Publish a form whose visible questions match server validation.</div><div><strong>You need</strong>A saved event and Organizer role.</div><div><strong>Start</strong>Event → CFP.</div><div><strong>Finish</strong>The public CFP URL is live.</div></div>
+      <ol class="steps"><li>Set call title, description, open/close times, limits, and confirmation copy.</li><li>Configure session formats and add custom questions. Use groups when a choice—such as Workshop or Presentation—reveals a different set of questions.</li><li>Mark only genuinely mandatory questions required. A hidden conditional question must not block submission while inactive.</li><li>Preview the public form. Test each choice branch, required field, upload, and confirmation state.</li><li>Publish and copy the stable public CFP URL.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The page reports that the call is live, and Preview shows the same conditional structure the speaker will receive.</div>
+      <div class="callout recovery"><strong>If it does not work</strong>If a hidden required field causes a 422 response, stop and report the form/server condition mismatch. Do not tell speakers to invent values for invisible controls.</div>
+      <figure class="evidence-figure" data-figure-id="cfp-builder"><div class="annotated-shot"><img src="assets/cfp-builder.jpg" alt="Organizer CFP builder showing the live public URL, preview action, and form sections"><span class="marker" style="--x:40%;--y:20%">1</span><span class="marker" style="--x:13%;--y:30%">2</span><span class="marker" style="--x:51%;--y:40%">3</span></div><ol class="figure-callouts"><li>Published URL</li><li>Preview action</li><li>Form sections</li></ol><figcaption>Figure 3. Preview every conditional branch before publishing the link. Design-draft image: recapture required.</figcaption></figure>
+    </article>
+  </section>
+
+  <section class="page chapter speaker print-break" aria-labelledby="speaker-submits">
+    <p class="role-label">Speaker · Part 1</p>
+    <h2 id="speaker-submits">Submit once, then manage the proposal<br>&nbsp;in its own workspace</h2>
+
+    <article class="task speaker">
+      <header class="task-header"><h3>Create the proposal from the public CFP</h3><span class="task-tag">Speaker</span></header>
+      <div class="meta"><div><strong>Goal</strong>Create a recoverable proposal and submit it.</div><div><strong>You need</strong>The public CFP link and the email that should own the proposal.</div><div><strong>Start</strong><code>/cfp/{event_ref}/{slug}</code></div><div><strong>Finish</strong>A receipt and Submitted status.</div></div>
+      <ol class="steps"><li>Read the call, dates, session formats, and submission window.</li><li>Sign in or register with the proposal-owner email.</li><li>Enter a title and save an early server draft. A title-only draft can be resumed.</li><li>Complete the visible questions. When a choice reveals a group, complete only the active branch.</li><li>Add permitted co-speakers and upload requested files. Wait for upload/scan completion.</li><li>Review the full proposal and submit. Retain the receipt identity.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The proposal is Submitted, appears as one compact row in the Speaker portal, and opens at its own proposal URL.</div>
+      <div class="callout recovery"><strong>If it does not work</strong>If the browser loses a response, reload the proposal workspace before retrying; unchanged idempotent retries should not create duplicates. If scanning is explicitly disabled locally, no scanner request should be attempted.</div>
+      <div class="callout boundary"><strong>Creation boundary</strong>The public CFP is the only speaker creation surface. The Speaker portal lists existing proposals; it is not a second “new proposal” form.</div>
+    </article>
+
+    <article class="task speaker">
+      <header class="task-header"><h3>Use the Speaker portal as a dashboard</h3><span class="task-tag">Read the hierarchy</span></header>
+      <div class="meta"><div><strong>Goal</strong>Separate the proposal, tasks, updates, resources, files, and activity.</div><div><strong>You need</strong>A signed-in Speaker with at least one proposal.</div><div><strong>Start</strong><code>/speaker</code></div><div><strong>Finish</strong>The correct proposal workspace is open.</div></div>
+      <ol class="steps"><li>Find the event card and its proposal row. The status belongs to the proposal, not the speaker’s participation.</li><li>Open the proposal row to view or edit the exact proposal when its state and the CFP allow editing.</li><li>Use <strong>Needs attention</strong> for assigned onboarding work, <strong>Event updates</strong> for delivered communications, and <strong>Resources/Files</strong> for event materials and uploads.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The portal remains compact; the full proposal form appears only in the dedicated proposal workspace.</div>
+      <p class="evidence-note"><strong>Screenshot intentionally withheld.</strong> The retained Speaker portal capture belonged to a different event and could not truthfully illustrate this DevFlow scenario. Recapture this state with the frozen fixture before final publication.</p>
+    </article>
+  </section>
+
+  <section class="page chapter reviewer print-break" aria-labelledby="reviewer-evaluates">
+    <p class="role-label">Reviewer</p>
+    <h2 id="reviewer-evaluates">Evaluate assigned proposals without taking<br>&nbsp;the organizer’s decision</h2>
+
+    <article class="task reviewer">
+      <header class="task-header"><h3>Accept the invitation and open Reviews</h3><span class="task-tag">Reviewer</span></header>
+      <div class="meta"><div><strong>Goal</strong>Establish reviewer eligibility and reach assignments.</div><div><strong>You need</strong>A one-time reviewer invitation.</div><div><strong>Start</strong>The invitation email.</div><div><strong>Finish</strong><code>/reviews</code> shows the assigned round.</div></div>
+      <ol class="steps"><li>Open the one-time invitation link and confirm the invitation.</li><li>Complete required identity fields and optional password setup.</li><li>If the account has several roles, activate <strong>Reviewer</strong>.</li><li>Open Reviews and choose an assignment in the active round.</li></ol>
+      <div class="callout recovery"><strong>If it does not work</strong>If the link has expired or was already used, ask the organizer to resend it. A resend rotates the one-time URL. If sign-in lands on <code>/admin</code>, switch to Reviewer or open <code>/reviews</code>; do not request organizer access.</div>
+      <div class="callout boundary"><strong>Blind-review boundary</strong>Protected speaker identity must remain hidden in a blind round. Do not infer identity or score reputation.</div>
+    </article>
+
+    <article class="task reviewer">
+      <header class="task-header"><h3>Save, check, and finalize the scorecard</h3><span class="task-tag">Immutable finish</span></header>
+      <div class="meta"><div><strong>Goal</strong>Submit a complete, evidence-based recommendation.</div><div><strong>You need</strong>An active assignment with no undeclared conflict.</div><div><strong>Start</strong>The proposal review screen.</div><div><strong>Finish</strong>Finalized and read-only.</div></div>
+      <ol class="steps"><li>Read the proposal and configured answers. If a real conflict exists, declare it instead of scoring.</li><li>Complete every required numeric, dropdown, and text criterion. Weights affect the numeric mean; narrative criteria support judgment.</li><li>Choose a recommendation and write a concise internal comment tied to the criteria.</li><li>Save a draft when incomplete. Return and verify restoration.</li><li>Choose <strong>Finalize</strong> only after the completeness check. Finalization is immutable.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The assignment displays Finalized, required inputs are no longer editable, and the organizer sees review progress.</div>
+      <div class="callout boundary"><strong>Permission boundary</strong>A reviewer recommends. A reviewer cannot accept/reject the proposal, edit it, browse unrelated proposals, or operate event administration.</div>
+      <p class="evidence-note"><strong>Screenshots intentionally withheld.</strong> The retained scorecard/finalized captures did not prove the named DevFlow assignment consistently. Capture the draft and finalized states from the same frozen reviewer fixture before final publication.</p>
+    </article>
+  </section>
+
+  <section class="page chapter print-break" aria-labelledby="organizer-decides">
+    <p class="role-label">Organizer · Part 2</p>
+    <h2 id="organizer-decides">Turn review evidence into a decision</h2>
+
+    <article class="task">
+      <header class="task-header"><h3>Monitor the round and decide</h3><span class="task-tag">Organizer only</span></header>
+      <div class="meta"><div><strong>Goal</strong>Make an audited proposal decision after review.</div><div><strong>You need</strong>An open/closed evaluation round and review progress.</div><div><strong>Start</strong>Event → Proposals / evaluation round.</div><div><strong>Finish</strong>Accepted or Rejected with recorded reason.</div></div>
+      <ol class="steps"><li>Inspect reviewer completion, conflicts, numeric summary, recommendations, and individual comments.</li><li>Send reminders or reassign declared conflicts while the round allows it.</li><li>Close the round after expected work is complete.</li><li>Enter the internal decision reason and choose Accept or Reject.</li><li>Verify the proposal decision and resulting accepted-session/onboarding state.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>Acceptance creates or restores the accepted session and only the onboarding work still needed. Rejection preserves completed review history.</div>
+      <div class="callout recovery"><strong>If reviews are incomplete</strong>The organizer may use the explicit override only with the required audited reason. Do not confuse the ability to override with a normal review workflow.</div>
+      <div class="callout boundary"><strong>Correction boundary</strong>Final decisions are not ordinary editable fields. A change requires the explicit audited correction workflow with original outcome, corrected outcome, reason, actor, and time.</div>
+      <p class="evidence-note"><strong>Screenshot intentionally withheld.</strong> The retained decision capture used proposals outside this scenario. Capture the DevFlow round, reviewer progress, and decision reveal from the frozen fixture before final publication.</p>
+    </article>
+  </section>
+
+  <section class="page chapter speaker print-break" aria-labelledby="speaker-onboards">
+    <p class="role-label">Speaker · Part 2</p>
+    <h2 id="speaker-onboards">Confirm participation and complete only<br>&nbsp;the work still needed</h2>
+
+    <article class="task speaker">
+      <header class="task-header"><h3>Respond to acceptance and onboarding</h3><span class="task-tag">Speaker</span></header>
+      <div class="meta"><div><strong>Goal</strong>Become program-ready without confusing proposal decision and participation.</div><div><strong>You need</strong>An accepted proposal and event access.</div><div><strong>Start</strong>Speaker portal.</div><div><strong>Finish</strong>Participation and required tasks are complete.</div></div>
+      <ol class="steps"><li>Open the accepted event in the Speaker portal.</li><li>Confirm or decline participation when that control is offered. This status is separate from Accepted/Rejected.</li><li>Complete outstanding profile or biography tasks. Existing valid data should not trigger a false onboarding gate.</li><li>Upload the headshot, presentation, or custom task attachment requested by the organizer.</li><li>Wait for a clean scan state and verify the completed task. Read event updates and resources separately.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The event roster shows the correct participation status, completed tasks leave Needs attention, and clean assets become available to authorized organizers.</div>
+      <div class="callout recovery"><strong>If an upload stalls</strong>Do not repeatedly re-upload a successfully staged file. Reload and verify its staged/scan state. Production stays fail-closed; a deliberately scanner-free local environment should skip the scanner call.</div>
+      <div class="callout boundary"><strong>Privacy boundary</strong>Headshots and files remain private until their validation/scan workflow succeeds. Public profile sharing remains a separate opt-in.</div>
+    </article>
+
+    <article class="task">
+      <header class="task-header"><h3>Operate the speaker roster</h3><span class="task-tag">Organizer counterpart</span></header>
+      <div class="meta"><div><strong>Goal</strong>Track invited and accepted people accurately.</div><div><strong>You need</strong>Organizer access to Event → Speakers.</div><div><strong>Start</strong>The event speaker roster.</div><div><strong>Finish</strong>Identity, participation, tasks, and assets agree.</div></div>
+      <ol class="steps"><li>Invite a speaker by normalized email or import CSV.</li><li>Review email matches and duplicate/same-name warnings before confirming an import.</li><li>Treat an unaccepted invitation as a pending event relationship, not a fully provisioned speaker permission.</li><li>Update event-scoped participation and inspect tasks, assets, versions, comments, messages, and reminders.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>Pending, Confirmed, and Declined participation is visible independently from proposal decisions.</div>
+    </article>
+  </section>
+
+  <section class="page chapter print-break" aria-labelledby="publish-the-program">
+    <p class="role-label">Organizer · Part 3</p>
+    <h2 id="publish-the-program">Schedule accepted work and publish a revision</h2>
+
+    <article class="task">
+      <header class="task-header"><h3>Build the draft agenda</h3><span class="task-tag">Organizer</span></header>
+      <div class="meta"><div><strong>Goal</strong>Place accepted sessions into valid times and rooms.</div><div><strong>You need</strong>Accepted sessions plus event rooms/tracks.</div><div><strong>Start</strong>Event → Agenda.</div><div><strong>Finish</strong>A conflict-free draft revision.</div></div>
+      <ol class="steps"><li>Define rooms, tracks, and the event’s scheduling grid.</li><li>Add accepted sessions or an authorized manual session to the draft.</li><li>Place each session in a time and room. Inspect speaker, room, and timing conflicts.</li><li>Save the draft and verify its revision/status before publishing.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The draft contains the intended session exactly once, with valid timing and no unresolved conflicts.</div>
+      <div class="callout recovery"><strong>If the public page is stale</strong>Confirm that a new revision was actually published, then reload with normal cache semantics. Editing the draft alone must not silently alter the published program.</div>
+      <figure class="evidence-figure" data-figure-id="agenda-editor"><div class="annotated-shot"><img src="assets/agenda-editor.jpg" alt="Organizer agenda editor showing scheduling controls and the draft program"><span class="marker" style="--x:65%;--y:18%">1</span><span class="marker" style="--x:20%;--y:30%">2</span><span class="marker" style="--x:83%;--y:30%">3</span></div><ol class="figure-callouts"><li>Draft and published revision</li><li>Schedule views</li><li>Publish action</li></ol><figcaption>Figure 4. Draft edits remain private until the chosen agenda revision is published. Design-draft image: recapture required.</figcaption></figure>
+    </article>
+
+    <article class="task" id="validate-public-output">
+      <header class="task-header"><h3>Publish and validate the attendee result</h3><span class="task-tag">Public proof</span></header>
+      <div class="meta"><div><strong>Goal</strong>Prove that authenticated work produced the expected public program.</div><div><strong>You need</strong>A conflict-reviewed draft agenda.</div><div><strong>Start</strong>Agenda → Publish.</div><div><strong>Finish</strong>Anonymous schedule reflects the published revision.</div></div>
+      <ol class="steps"><li>Publish the selected agenda revision.</li><li>Open the public schedule in an anonymous context.</li><li>Search for the accepted session; filter by track, format, room, and day.</li><li>Open session details, add it to the browser-local itinerary, reload, and verify retention.</li><li>Inspect the public speaker directory/profile only where profile sharing is enabled.</li></ol>
+      <div class="callout result"><strong>Expected result</strong>The public page identifies the published revision and shows the session, speaker, schedule, and permitted public profile data.</div>
+      <div class="callout boundary"><strong>Public boundary</strong>Public pages must never expose private profile data, invitation links, review content, internal decision reasons, private assets, or organizer-only controls.</div>
+      <figure class="evidence-figure" data-figure-id="public-schedule"><div class="annotated-shot"><img src="assets/public-schedule.jpg" alt="Published schedule with search, track, format, room, view, and itinerary controls"><span class="marker" style="--x:27%;--y:18%">1</span><span class="marker" style="--x:50%;--y:42%">2</span><span class="marker" style="--x:67%;--y:51%">3</span></div><ol class="figure-callouts"><li>Published revision</li><li>Search and filters</li><li>Itinerary controls</li></ol><figcaption>Figure 5. The public schedule is the final observable result of the three-role lifecycle. Design-draft image: recapture required.</figcaption></figure>
+    </article>
+  </section>
+
+  <section class="page print-break" aria-labelledby="boundaries">
+    <p class="eyebrow">Reference</p>
+    <h2 id="boundaries">Permission and status boundaries</h2>
+    <ul class="checklist">
+      <li><strong>Organizer:</strong> operates organizations/events, publishes CFPs, configures evaluation, makes decisions, manages speakers, and publishes schedules. The organizer may view—but not impersonate a speaker or reviewer’s editable work.</li>
+      <li><strong>Speaker:</strong> creates a proposal only from the public CFP, edits owned work while allowed, manages permitted participants, responds to participation, and completes onboarding. The speaker cannot review or decide.</li>
+      <li><strong>Reviewer:</strong> sees only authorized assignments, declares conflicts, saves review drafts, and finalizes recommendations. The reviewer cannot accept/reject proposals.</li>
+      <li><strong>Proposal decision:</strong> Draft, Submitted, Accepted, Rejected, or Withdrawn.</li>
+      <li><strong>Participation:</strong> Awaiting confirmation, Confirmed, or Declined. It does not rewrite proposal history.</li>
+      <li><strong>Review:</strong> Draft or Finalized. Finalized reviews are immutable.</li>
+      <li><strong>Agenda:</strong> draft revisions may change; only the published revision is publicly authoritative.</li>
+      <li><strong>Public profile:</strong> off by default and linkable only after explicit sharing consent.</li>
+    </ul>
+
+    <h2 id="troubleshooting">Troubleshooting by symptom</h2>
+    <h3>“This page is not available for your active role.”</h3>
+    <p>Return to the account role switcher and activate the role that legitimately owns the destination. If the relationship is missing, an organizer must invite/assign it; changing the URL is not a fix.</p>
+    <h3>A one-time email link reaches 403</h3>
+    <p>Request a new link and use the same origin that created the request. Links are single-use and time-bound; resending rotates the token. Never paste a live token into support logs.</p>
+    <h3>A hidden CFP question blocks submission</h3>
+    <p>Record the source question, selected value, and hidden target label. This is a form/server parity defect, not a speaker mistake. The organizer should unpublish or correct the condition before asking for another submission.</p>
+    <h3>An upload is staged but the next file fails</h3>
+    <p>Reload before retrying. Confirm the first file’s stored reference/scan state so it is not uploaded and scanned twice.</p>
+    <h3>The published schedule does not change</h3>
+    <p>Check the published revision, not only the current draft. Confirm publication succeeded, then verify the public page reports the expected revision.</p>
+
+    <section aria-labelledby="risky-workflows">
+      <p class="eyebrow">Historically risky workflows</p>
+      <h2 id="risky-workflows">Exact checks before calling the task complete</h2>
+      <p>These modules turn previously observed failure classes into explicit reader checks. They are requirements, not optional tips.</p>
+
+      <article class="risk-module" id="risky-role"><h3>Active role and post-login destination</h3><ol><li>Before sign-in, note the requested destination.</li><li>After authentication, confirm the active persona matches that destination: Organizer → <code>/admin</code>, Reviewer → <code>/reviews</code>, Speaker → <code>/speaker</code>.</li><li>If the server returns 403, switch only to a role the account truly holds; never infer authorization from a visible link.</li><li>For an event-scoped organizer, verify that only the granted event opens and organization-wide surfaces remain unavailable.</li></ol><p><strong>Evidence:</strong> the expected portal loads; a cross-persona route receives 403 before a portal shell is served.</p></article>
+
+      <article class="risk-module" id="risky-links"><h3>Magic links and invitations</h3><ol><li>Open the newest link on the same HTTPS origin that issued it.</li><li>Confirm the token fragment is removed from browser history before redemption.</li><li>Complete the explicit confirmation POST once.</li><li>On expiry/use, request resend; verify the older link no longer works and invitation-list APIs do not expose either bearer URL.</li></ol><p><strong>Evidence:</strong> one session is created, the intended role/relationship exists, and no token appears in logs, copied URLs, or API lists.</p></article>
+
+      <article class="risk-module" id="risky-profile"><h3>Profile onboarding and public consent</h3><ol><li>Confirm prefilled first/last name values are treated as real saved profile data.</li><li>Save profile and require visible success confirmation.</li><li>Enable public sharing explicitly; verify the People row becomes a link and the anonymous profile/headshot opens.</li><li>Disable sharing; verify both links fail immediately while private account data remains.</li></ol><p><strong>Evidence:</strong> onboarding does not loop, canonical profile data is saved once, and public access follows the consent bit.</p></article>
+
+      <article class="risk-module" id="risky-condition"><h3>Conditional CFP parity</h3><ol><li>For every choice, checkbox, and multiselect source, record the configured expected value.</li><li>Preview each equals/not-equals branch and list active target questions.</li><li>Submit the same branch and require server acceptance with exactly those targets.</li><li>Clear the source and confirm hidden file/image answers are neither required nor validated.</li></ol><p><strong>Evidence:</strong> client visibility and server <code>inactive_targets</code> agree for canonical and custom source fields.</p></article>
+
+      <article class="risk-module" id="risky-draft"><h3>Draft resume and retry identity</h3><ol><li>Create a title-only server draft; record its proposal ID.</li><li>Reload and confirm the title and conditional answers restore.</li><li>Simulate a lost response, then retry unchanged content; confirm the same idempotency key and one proposal.</li><li>Edit the payload, retry, and confirm the key rotates without duplicating the proposal.</li></ol><p><strong>Evidence:</strong> one proposal ID, versioned draft history, and stable retry behavior.</p></article>
+
+      <article class="risk-module" id="risky-upload"><h3>Partial upload and scanner behavior</h3><ol><li>Stage file one successfully, then force file two to fail.</li><li>Reload and confirm file one’s staged reference persists; it must not transfer or scan again.</li><li>Resume file two and wait for terminal scan state before submission/current-version use.</li><li>With scanner explicitly disabled locally, verify no scanner request occurs. In production/unknown environments, require fail-closed behavior.</li></ol><p><strong>Evidence:</strong> one object/version per successful upload, no public/private grant before clean state, and an actionable retry message.</p></article>
+
+      <article class="risk-module" id="risky-round"><h3>Round membership, blind fields, and conflicts</h3><ol><li>Add proposals and reviewers to a draft round and inspect balanced assignments.</li><li>Open as Reviewer and verify protected identity fields are absent—not merely CSS-hidden.</li><li>Declare a conflict; verify the assignment loses proposal access and the organizer can reassign.</li><li>Finalize a replacement review, then verify it is immutable.</li></ol><p><strong>Evidence:</strong> assignment is the sole authorization fact, conflict revokes visibility, and final review history remains.</p></article>
+
+      <article class="risk-module" id="risky-decision"><h3>Decision correction, not ordinary editing</h3><ol><li>Record the original final decision and accepted-session state.</li><li>Open the explicit correction workflow, provide corrected outcome and reason.</li><li>Confirm actor/time/original/corrected values in audit history.</li><li>Verify correction to acceptance restores the session; correction to rejection withdraws without deleting content or final reviews.</li></ol><p><strong>Evidence:</strong> immutable original history plus one explicit correction record.</p></article>
+
+      <article class="risk-module" id="risky-participation"><h3>Proposal decision versus participation</h3><ol><li>Accept a proposal and verify the proposal remains Accepted.</li><li>Set participation to Awaiting confirmation, Confirmed, then Declined.</li><li>Verify each change affects the event speaker record only and does not rewrite the proposal decision.</li></ol><p><strong>Evidence:</strong> two independently visible statuses with separate audit facts.</p></article>
+
+      <article class="risk-module" id="risky-csv"><h3>CSV identity reconciliation</h3><ol><li>Normalize email case and surrounding whitespace before matching.</li><li>Show exact-email matches as existing people.</li><li>Require review for same-name/different-email rows; do not silently merge or create.</li><li>Confirm only reviewed rows, up to the 500-row limit.</li></ol><p><strong>Evidence:</strong> import summary lists matched, new, warning, and rejected counts before mutation.</p></article>
+
+      <article class="risk-module" id="risky-pending"><h3>Pending invitees in roster and schedule</h3><ol><li>Invite a speaker and verify the roster shows Pending without granting Speaker permissions.</li><li>Add the pending invitee to an authorized manual session.</li><li>Before publish, require a confirmation naming sessions with pending invitees.</li><li>Verify public output says Speaker TBA until acceptance; after acceptance, verify transactional linkage to the real event speaker.</li></ol><p><strong>Evidence:</strong> no premature persona grant or public identity disclosure.</p></article>
+
+      <article class="risk-module" id="risky-messaging"><h3>Messages, reminders, and delivery history</h3><ol><li>Send to the visible intended recipient set and confirm invited recipients are explicitly labelled.</li><li>Verify message history excludes authentication mail and exposes category/status filters.</li><li>Expand delivery detail without exposing credentials or bearer links.</li><li>For transient failure, verify bounded retry/recovery; never requeue a permanent rejection through recovery.</li></ol><p><strong>Evidence:</strong> one domain message, bounded delivery attempts, and safe status history.</p></article>
+    </section>
+
+    <section class="print-break" aria-labelledby="capability-disposition">
+      <p class="eyebrow">Coverage contract</p>
+      <h2 id="capability-disposition">Disposition of the implemented<br>&nbsp;three-role surface</h2>
+      <p>The machine-readable source is <code>coverage.json</code>. No implemented capability in the canonical product-status categories is silently omitted:</p>
+      <div class="coverage-groups">
+        <article><h3>Platform and administration</h3><p><strong>Tutorial:</strong> authentication, persona-aware entry, organization/event workspace, event creation.</p><p><strong>Risk module:</strong> active-role redirects, invitations, profile consent.</p><p><strong>Reference/operator:</strong> People search, profile links/headshots, exact grants and ownership transfer, Engine Room, activity projections, OpenAPI reference.</p></article>
+        <article><h3>CFP and proposals</h3><p><strong>Tutorial:</strong> form builder, publication controls, public submission, dedicated proposal workspace.</p><p><strong>Risk module:</strong> conditional parity, server drafts, idempotent retries, staged uploads.</p><p><strong>Reference:</strong> participants, duplicate-title warning, receipt identity, withdrawal, limits, important dates, confirmation copy.</p></article>
+        <article><h3>Evaluation</h3><p><strong>Tutorial:</strong> rounds, scorecards, reviewer finalization, organizer decisions.</p><p><strong>Risk module:</strong> blind field removal, conflicts/reassignment, direct override, immutable corrections.</p><p><strong>Reference:</strong> draft reopen/edit, ordered round ledger, reminders, notification copy.</p></article>
+        <article><h3>Speaker operations</h3><p><strong>Tutorial:</strong> multi-event portal, participation, tasks, resources, assets, organizer roster.</p><p><strong>Risk module:</strong> CSV reconciliation, pending invitees, upload/scan/version behavior, messages/reminders.</p><p><strong>Reference:</strong> private notes, content history/restore, comments/replies, audited ZIP, gallery/profile publication.</p></article>
+        <article><h3>Scheduling</h3><p><strong>Tutorial:</strong> rooms/tracks, conflicts, atomic edits, revision publication, public views and itinerary.</p><p><strong>Risk module:</strong> pending invitees/TBA and publication revision checks.</p><p><strong>Reference:</strong> manual sessions, labels/ownership, embeds, calendar invitations, Sessionboard-compatible feed.</p></article>
+        <article><h3>Maintainer-only</h3><p>Fresh baseline recreation, development reset, release gate, Cloudflare packaging, observability budgets, queues/workflows, secrets, backups, benchmarks, and Lighthouse are release/operator documentation—not Organizer, Speaker, or Reviewer tutorial tasks.</p></article>
+      </div>
+    </section>
+
+    <div class="reference">
+      <h2>Keep this guide current</h2>
+      <p>Before updating screenshots or claims, freeze the Git revision, baseline schema, fixture/checkpoint, browser viewport, and capture date. Update <code>coverage.json</code> and <code>screenshots.json</code>, run structural verification, render every PDF page, and complete a fresh-reader test for all three roles.</p>
+      <p class="footer-note">The live interface and server authorization remain authoritative. Report guide defects through <a href="https://github.com/gachchami/sessionbuddy">GitHub</a> or <a href="mailto:me@dbhanushali.com">me@dbhanushali.com</a>.</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

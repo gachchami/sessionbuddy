@@ -103,8 +103,16 @@ def _seed_speaker_with_two_submissions(
                 proposal_title,proposal_abstract,speaker_name,status,
                 submitted_at_ms,created_at_ms,updated_at_ms)
                VALUES (?,?,?,'form-1',?,?,'Abstract','Priya Raman','submitted',?,?,?)""",
-            (sid, organization_id, event_id, f"public-{sid}", title,
-             submitted, submitted, submitted),
+            (
+                sid,
+                organization_id,
+                event_id,
+                f"public-{sid}",
+                title,
+                submitted,
+                submitted,
+                submitted,
+            ),
         )
     connection.execute(
         """INSERT INTO evaluation_rounds
@@ -198,18 +206,13 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
     connection, _queue, environment = production_environment
     async with _client(environment) as client:
         csrf, organization_id, event_id = await _admin(client, connection)
-        speaker_id = _seed_speaker_with_two_submissions(
-            connection, organization_id, event_id
-        )
+        speaker_id = _seed_speaker_with_two_submissions(connection, organization_id, event_id)
 
         # Speaker targets list: the roster card's proposal line.
-        targets = await client.get(
-            f"/api/v1/admin/events/{event_id}/speaker-targets"
-        )
+        targets = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
         assert targets.status_code == 200, targets.text
         target = next(
-            row for row in targets.json()["data"]
-            if row["event_speaker_id"] == speaker_id
+            row for row in targets.json()["data"] if row["event_speaker_id"] == speaker_id
         )
         assert target["selection_status"] == "accepted"
         assert target["proposal_title"] == "Accepted talk", (
@@ -235,39 +238,27 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
         assert record.status_code == 200, record.text
         assert record.json()["proposal_title"] == "Accepted talk"
         assert record.json()["confirmation_status"] == "confirmed"
-        refreshed_targets = await client.get(
-            f"/api/v1/admin/events/{event_id}/speaker-targets"
-        )
+        refreshed_targets = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
         assert refreshed_targets.status_code == 200, refreshed_targets.text
         refreshed = next(
-            row
-            for row in refreshed_targets.json()["data"]
-            if row["event_speaker_id"] == speaker_id
+            row for row in refreshed_targets.json()["data"] if row["event_speaker_id"] == speaker_id
         )
         assert refreshed["confirmation_status"] == "confirmed"
 
         # Onboarding dashboard rows: the SESSION column.
-        dashboard = await client.get(
-            f"/api/v1/admin/events/{event_id}/onboarding"
-        )
+        dashboard = await client.get(f"/api/v1/admin/events/{event_id}/onboarding")
         assert dashboard.status_code == 200, dashboard.text
-        rows = [
-            row for row in dashboard.json()["data"]
-            if row["event_speaker_id"] == speaker_id
-        ]
+        rows = [row for row in dashboard.json()["data"] if row["event_speaker_id"] == speaker_id]
         assert rows, dashboard.text
         assert all(row["proposal_title"] == "Accepted talk" for row in rows), (
             "onboarding tasks are attributed to the rejected submission"
         )
 
         # Home metrics recent-speakers cards.
-        metrics = await client.get(
-            f"/api/v1/admin/organizations/{organization_id}/metrics"
-        )
+        metrics = await client.get(f"/api/v1/admin/organizations/{organization_id}/metrics")
         assert metrics.status_code == 200, metrics.text
         recent = next(
-            row for row in metrics.json()["recent_speakers"]
-            if row["person_id"] == "person-1"
+            row for row in metrics.json()["recent_speakers"] if row["person_id"] == "person-1"
         )
         assert recent["proposal_title"] == "Accepted talk"
 
@@ -332,13 +323,10 @@ async def test_speaker_without_accepted_submission_falls_back_to_latest(
         connection.execute("DELETE FROM accepted_sessions WHERE id='accepted-1'")
         connection.commit()
 
-        targets = await client.get(
-            f"/api/v1/admin/events/{event_id}/speaker-targets"
-        )
+        targets = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
         assert targets.status_code == 200
         target = next(
-            row for row in targets.json()["data"]
-            if row["event_speaker_id"] == "speaker-1"
+            row for row in targets.json()["data"] if row["event_speaker_id"] == "speaker-1"
         )
         # With nothing accepted, the newest submission is the best signal.
         assert target["proposal_title"] == "Rejected talk"
@@ -350,9 +338,7 @@ async def test_registered_speaker_can_receive_custom_onboarding_tasks(
     connection, _queue, environment = production_environment
     async with _client(environment) as client:
         csrf, organization_id, event_id = await _admin(client, connection)
-        speaker_id = _seed_speaker_with_two_submissions(
-            connection, organization_id, event_id
-        )
+        speaker_id = _seed_speaker_with_two_submissions(connection, organization_id, event_id)
         connection.execute(
             "UPDATE event_speakers SET selection_status='submitted' WHERE id=?",
             (speaker_id,),
@@ -388,9 +374,7 @@ async def test_organizer_can_create_enforceable_file_request_task(
     connection, _queue, environment = production_environment
     async with _client(environment) as client:
         csrf, organization_id, event_id = await _admin(client, connection)
-        speaker_id = _seed_speaker_with_two_submissions(
-            connection, organization_id, event_id
-        )
+        speaker_id = _seed_speaker_with_two_submissions(connection, organization_id, event_id)
         created = await client.post(
             f"/api/v1/admin/events/{event_id}/speaker-tasks",
             headers={
@@ -425,6 +409,60 @@ async def test_organizer_can_create_enforceable_file_request_task(
         }
 
 
+async def test_organizer_task_with_submission_does_not_collide_with_system_task(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(connection, organization_id, event_id)
+        connection.execute(
+            """INSERT INTO speaker_tasks
+               (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
+                title,destination_type,state,created_at_ms,updated_at_ms)
+               VALUES('system-headshot',?,?,?,'submission-accepted','headshot',
+                      'Upload your headshot','headshot','open',1,1)""",
+            (organization_id, event_id, speaker_id),
+        )
+        connection.commit()
+
+        created = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "manual-headshot-with-submission",
+            },
+            json={
+                "event_speaker_id": speaker_id,
+                "submission_id": "submission-accepted",
+                "title": "Final headshot for print",
+                "help_text": "Upload the print-quality portrait.",
+                "task_type": "headshot",
+                "upload_enabled": True,
+                "allowed_content_types": ["image/jpeg"],
+                "max_file_bytes": 10 * 1024 * 1024,
+                "fields": [],
+            },
+        )
+        assert created.status_code == 201, created.text
+        assert (
+            connection.execute(
+                "SELECT submission_id FROM speaker_tasks WHERE id=?",
+                (created.json()["id"],),
+            ).fetchone()[0]
+            is None
+        )
+        assert (
+            connection.execute(
+                """SELECT COUNT(*) FROM speaker_tasks
+               WHERE event_speaker_id=? AND task_type='headshot' AND state='open'""",
+                (speaker_id,),
+            ).fetchone()[0]
+            == 2
+        )
+
+
 async def test_pending_invitation_can_receive_task_before_registration(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
@@ -440,8 +478,15 @@ async def test_pending_invitation_can_receive_task_before_registration(
                 invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,display_name)
                VALUES(?,?,?,?,?,'speaker','pending',?,?,?,?,?)""",
             (
-                invitation_id, organization_id, event_id, "marcus@example.test",
-                "marcus@example.test", inviter_id, now + 86_400_000, now, now,
+                invitation_id,
+                organization_id,
+                event_id,
+                "marcus@example.test",
+                "marcus@example.test",
+                inviter_id,
+                now + 86_400_000,
+                now,
+                now,
                 "Marcus Okafor",
             ),
         )
@@ -449,19 +494,22 @@ async def test_pending_invitation_can_receive_task_before_registration(
 
         targets = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
         assert any(
-            target["event_speaker_id"] == invitation_id
-            and target["selection_status"] == "invited"
+            target["event_speaker_id"] == invitation_id and target["selection_status"] == "invited"
             for target in targets.json()["data"]
         )
         created = await client.post(
             f"/api/v1/admin/events/{event_id}/speaker-tasks",
             headers={
-                "origin": "https://test", "x-csrf-token": csrf,
+                "origin": "https://test",
+                "x-csrf-token": csrf,
                 "idempotency-key": "pending-speaker-task",
             },
             json={
-                "event_speaker_id": invitation_id, "submission_id": None,
-                "title": "Confirm availability", "help_text": "", "fields": [],
+                "event_speaker_id": invitation_id,
+                "submission_id": None,
+                "title": "Confirm availability",
+                "help_text": "",
+                "fields": [],
             },
         )
         assert created.status_code == 201, created.text
@@ -531,17 +579,11 @@ async def test_email_directory_and_profile_attribute_the_accepted_submission(
         assert "Rejected talk" not in recipient["html_body"]
 
         # 2. Organization-wide speaker directory.
-        directory = await client.get(
-            f"/api/v1/admin/organizations/{organization_id}/people"
-        )
+        directory = await client.get(f"/api/v1/admin/organizations/{organization_id}/people")
         assert directory.status_code == 200, directory.text
-        person = next(
-            row for row in directory.json()["data"]
-            if row["person_id"] == "person-priya"
-        )
+        person = next(row for row in directory.json()["data"] if row["person_id"] == "person-priya")
         listed = next(
-            row for row in person["participations"]
-            if row["event_speaker_id"] == speaker_id
+            row for row in person["participations"] if row["event_speaker_id"] == speaker_id
         )
         assert listed["proposal_title"] == "Accepted talk"
 

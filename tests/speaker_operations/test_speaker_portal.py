@@ -116,7 +116,7 @@ def test_asset_history_maps_database_columns_to_public_contract() -> None:
     assert view.version_comment == "Corrected the final diagram"
 
 
-def test_upload_authorization_requires_nonblank_version_comment() -> None:
+def test_upload_authorization_allows_blank_note_for_initial_upload() -> None:
     values = {
         "kind": "slides",
         "filename": "slides.pdf",
@@ -124,10 +124,8 @@ def test_upload_authorization_requires_nonblank_version_comment() -> None:
         "byte_size": 1024,
         "checksum_sha256": "0" * 64,
     }
-    with pytest.raises(ValidationError):
-        UploadAuthorizationCreate(**values)
-    with pytest.raises(ValidationError):
-        UploadAuthorizationCreate(**values, version_comment="   ")
+    assert UploadAuthorizationCreate(**values).version_comment == ""
+    assert UploadAuthorizationCreate(**values, version_comment="   ").version_comment == ""
     request = UploadAuthorizationCreate(**values, version_comment="  Final diagrams  ")
     assert request.version_comment == "Final diagrams"
 
@@ -212,8 +210,13 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     message_page = (static / "speaker_messages.html").read_text()
 
     assert "Event time (${timezone})" in portal
+    assert 'make("h4", "Updates")' in portal
+    assert "Show older updates" in portal
+    assert "sessionbuddy:read-update" in portal
+    assert "notification-category" in portal
     assert "Event time (${state.timeZone})" in content
-    assert "Event time (${eventTimeZone})" in messages
+    assert "Event time (${eventTimeZone})" not in messages
+    assert "Times use <strong id=\"message-time-zone\"" in message_page
     assert "your local time: ${zone}" in invitation
     assert 'byId("confirm-message-send").showModal()' in messages
     assert "await sendPreviewedMessage()" in messages
@@ -375,6 +378,7 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
                     "results": [{
                         "id": "message-a",
                         "subject": "Speaker briefing",
+                        "deterministic_key": "speaker-bulk:briefing:speaker-a",
                         "html_body": '<p>Bring your badge.</p><a href="https://safe.example/brief">Brief</a>',
                         "delivered_at_ms": 1_700_000_000_000,
                     }]
@@ -435,5 +439,7 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
     assert database.notification_scope == ("organization-a", "event-a", "speaker-a")
     assert "recipient_user_id=?3" in database.notification_query
     assert "status='delivered'" in database.notification_query
+    assert "deterministic_key NOT LIKE 'auth:%'" in database.notification_query
+    assert result.notifications[0].category == "announcement"
     assert result.notifications[0].body_text == "Bring your badge.\nBrief"
     assert result.notifications[0].links == ["https://safe.example/brief"]

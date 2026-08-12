@@ -6,6 +6,126 @@ from tests.security.test_production_identity_flow import (
 )
 
 
+class _AssetBucket:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    async def put(self, key: str, body: bytes) -> None:
+        self.objects[key] = body
+
+
+async def test_organizer_session_provisions_active_speaker_onboarding_once(
+    production_environment,  # noqa: F811
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        headers = {"origin": "https://test", "x-csrf-token": csrf}
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,display_name,biography,created_at_ms,updated_at_ms)
+               VALUES ('manual-person',?,'Priya Raman','Profile already complete',1000,1000)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('manual-speaker',?,?,'manual-person','onboarding','accepted',
+                       1000,1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.commit()
+        setup = await client.post(
+            f"/api/v1/admin/events/{event_id}/agenda/setup",
+            headers={**headers, "idempotency-key": "active-onboarding-setup"},
+            json={"room_names": ["Main stage"], "track_names": []},
+        )
+        assert setup.status_code == 201, setup.text
+
+        for suffix in ("first", "second"):
+            created = await client.post(
+                f"/api/v1/admin/events/{event_id}/sessions",
+                headers={**headers, "idempotency-key": f"active-session-{suffix}"},
+                json={
+                    "title": f"Organizer session {suffix}",
+                    "abstract": "A session outside the CFP workflow.",
+                    "participant_ids": ["manual-speaker"],
+                },
+            )
+            assert created.status_code == 201, created.text
+
+        tasks = connection.execute(
+            """SELECT task_type,state,completed_at_ms
+                 FROM speaker_tasks
+                WHERE organization_id=? AND event_id=? AND event_speaker_id='manual-speaker'
+                ORDER BY task_type""",
+            (organization_id, event_id),
+        ).fetchall()
+        assert [(row[0], row[1]) for row in tasks] == [
+            ("headshot", "open"),
+            ("profile", "completed"),
+            ("slides", "open"),
+        ]
+        assert tasks[0][2] is None
+        assert tasks[1][2] is not None
+        assert tasks[2][2] is None
+
+
+async def test_organizer_headshot_completes_active_speaker_task(
+    production_environment,  # noqa: F811
+) -> None:
+    connection, _queue, environment = production_environment
+    environment.APP_ENV = "local"
+    environment.MALWARE_SCAN_MODE = "disabled"
+    environment.ASSETS = _AssetBucket()
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        organizer_user_id = connection.execute(
+            "SELECT user_id FROM user_roles WHERE role='organizer' LIMIT 1"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('headshot-person',?,?,'Priya Raman',1000,1000)""",
+            (organization_id, organizer_user_id),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('headshot-speaker',?,?,'headshot-person','onboarding','accepted',
+                       1000,1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO speaker_tasks
+               (id,organization_id,event_id,event_speaker_id,task_type,title,
+                destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
+               VALUES ('headshot-task',?,?,'headshot-speaker','headshot','Upload headshot',
+                       'headshot','open',1000,1000,'{}')""",
+            (organization_id, event_id),
+        )
+        connection.commit()
+
+        uploaded = await client.put(
+            f"/api/v1/admin/events/{event_id}/speakers/headshot-speaker/headshot",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "content-type": "image/png",
+            },
+            content=b"\x89PNG\r\n\x1a\norganizer-headshot",
+        )
+        assert uploaded.status_code == 204, uploaded.text
+
+    task = connection.execute(
+        "SELECT state,completed_at_ms FROM speaker_tasks WHERE id='headshot-task'"
+    ).fetchone()
+    assert task[0] == "completed"
+    assert task[1] is not None
+
+
 async def test_organizer_creates_session_for_pending_invitee_without_activating_them(
     production_environment,  # noqa: F811
 ) -> None:
@@ -198,9 +318,19 @@ async def test_organizer_creates_session_for_pending_invitee_without_activating_
         )
         assert published.status_code == 200, published.text
         public = await client.get(f"/api/v1/public/events/{event_id}/schedule")
+        assert public.headers["cache-control"] == "no-store"
         assert public.status_code == 200, public.text
         serialized = public.text
         assert "marcus@example.com" not in serialized
+        xml_feed = await client.get(f"/api/v1/public/events/{event_id}/schedule.xml")
+        assert xml_feed.status_code == 200
+        assert xml_feed.headers["cache-control"] == "no-store"
+        assert "<schedule" in xml_feed.text and "DevFlow live" in xml_feed.text
+        calendar_feed = await client.get(f"/api/v1/public/events/{event_id}/schedule.ics")
+        assert calendar_feed.status_code == 200
+        assert calendar_feed.headers["cache-control"] == "no-store"
+        assert "BEGIN:VCALENDAR" in calendar_feed.text
+        assert "SUMMARY:DevFlow live" in calendar_feed.text
 
         token = await client.post(
             f"/api/v1/admin/events/{event_id}/integrations/accelevents/tokens",

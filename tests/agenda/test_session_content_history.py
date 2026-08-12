@@ -201,6 +201,39 @@ async def test_history_never_contains_duplicate_versions(
         assert versions == [4, 3, 2, 1]
 
 
+async def test_history_rows_survive_an_unresolvable_actor(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        _csrf, organization_id, event_id = await _admin(client, connection)
+        session_id = _seed_accepted_session(connection, organization_id, event_id)
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute(
+            """INSERT INTO session_content_versions
+               (id,organization_id,event_id,accepted_session_id,version,title,abstract,
+                content_status,changed_by_user_id,created_at_ms)
+               VALUES ('orphan-history',?,?,?,1,'Saved title','Saved abstract',
+                       'draft','missing-user',1000)""",
+            (organization_id, event_id, session_id),
+        )
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys=ON")
+
+        response = await client.get(_content_url(event_id, session_id))
+        assert response.status_code == 200, response.text
+        assert response.json()["history"] == [
+            {
+                "version": 1,
+                "title": "Saved title",
+                "abstract": "Saved abstract",
+                "content_status": "draft",
+                "changed_by": "Organizer",
+                "created_at_ms": 1000,
+            }
+        ]
+
+
 async def test_saving_identical_content_does_not_mint_a_version(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:

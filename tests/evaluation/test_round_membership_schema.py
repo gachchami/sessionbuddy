@@ -129,7 +129,7 @@ def test_baseline_is_a_fresh_install_script_not_a_reentrant_one():
         "docs/activity-pipeline.md 10.4:\n"
         "    docker compose run --rm --no-deps worker npm run worker:migrate\n"
         "    docker compose run --rm --no-deps worker npm run worker:migrate\n"
-        "The first invocation must apply 0001_baseline.sql; the second must report no "
+        "The first invocation must apply the ordered chain; the second must report no "
         "migrations to apply."
     )
 )

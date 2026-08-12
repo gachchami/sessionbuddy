@@ -393,6 +393,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                              AND ac.event_id=s.event_id AND ac.submission_id=s.id
                             WHERE ss.organization_id=es.organization_id
                              AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
+                             AND ac.lifecycle_status='active'
                             ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
                           (SELECT s.proposal_title FROM submission_speakers ss
                             JOIN submissions s ON s.organization_id=ss.organization_id
@@ -853,18 +854,22 @@ async def update_admin_speaker(
             .first("found")
         )
         raise HTTPException(status_code=409 if exists is not None else 404)
-    await db.prepare(
-        """UPDATE event_speakers
+    await (
+        db.prepare(
+            """UPDATE event_speakers
            SET confirmation_status=COALESCE(?1,confirmation_status),updated_at_ms=?2,
                   version=version+1
            WHERE id=?3 AND organization_id=?4 AND event_id=?5"""
-    ).bind(
-        body.confirmation_status,
-        now,
-        event_speaker_id,
-        event["organization_id"],
-        event_id,
-    ).run()
+        )
+        .bind(
+            body.confirmation_status,
+            now,
+            event_speaker_id,
+            event["organization_id"],
+            event_id,
+        )
+        .run()
+    )
     audit = CommandBatch(db)
     audit.audit(
         AuditEvent(
@@ -1017,8 +1022,8 @@ async def _session_content_view(
         await db.prepare(
             """SELECT history.version,history.title,history.abstract,
                       history.content_status,history.created_at_ms,
-                      COALESCE(u.display_name,u.email) AS changed_by
-               FROM session_content_versions history JOIN users u
+                      COALESCE(u.display_name,u.email,'Organizer') AS changed_by
+               FROM session_content_versions history LEFT JOIN users u
                  ON u.id=history.changed_by_user_id
                WHERE history.organization_id=?1 AND history.event_id=?2
                  AND history.accepted_session_id=?3
@@ -1269,9 +1274,15 @@ async def create_speaker_task(
         raise HTTPException(status_code=400)
     event, auth = await _managed_event(request, event_id, mutation=True)
     db, now, task_id = _db(request), utc_now_ms(), new_id()
-    route = "POST /api/v1/admin/events/{event_id}/speaker-tasks"
+    route = f"POST /api/v1/admin/events/{event_id}/speaker-tasks"
+    task_payload = body.model_dump()
+    # A headshot belongs to the speaker's event profile, not to one proposal.
+    # Accept the public optional submission_id without letting it push an
+    # organizer-created identity task into the system-task uniqueness slot.
+    if body.task_type == "headshot":
+        task_payload["submission_id"] = None
     fingerprint = hashlib.sha256(
-        json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
+        json.dumps(task_payload, separators=(",", ":"), sort_keys=True).encode()
     ).digest()
     replay = row_mapping(
         await db.prepare(
@@ -1297,6 +1308,24 @@ async def create_speaker_task(
             .first()
         )
         return AdminSpeakerTaskView.model_validate(row)
+    # Idempotency keys only protect a retry that reuses the key. An organizer
+    # who submits the same task twice - or a client that mints a fresh key for
+    # an unchanged payload - would otherwise insert a second identical row, so
+    # match on the request content as well and return what already exists.
+    duplicate = row_mapping(
+        await db.prepare(
+            """SELECT id,event_speaker_id,pending_invitation_id AS invitation_id,
+                      CASE WHEN event_speaker_id IS NULL THEN 'invitation'
+                           ELSE 'event_speaker' END AS owner_type,
+                      task_type,title,state,due_at_ms FROM speaker_tasks
+               WHERE organization_id=?1 AND event_id=?2 AND state='open'
+                 AND content_fingerprint=?3 LIMIT 1"""
+        )
+        .bind(event["organization_id"], event_id, fingerprint)
+        .first()
+    )
+    if duplicate is not None:
+        return AdminSpeakerTaskView.model_validate(duplicate)
     owner = row_mapping(
         await db.prepare(
             """SELECT id FROM event_speakers WHERE id=?1 AND organization_id=?2 AND event_id=?3
@@ -1335,15 +1364,16 @@ async def create_speaker_task(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
                 submission_id,task_type,title,
-                help_text,destination_type,state,due_at_ms,form_schema_json,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?7,'open',?10,?11,?12,?12)"""
+                help_text,destination_type,state,due_at_ms,form_schema_json,created_at_ms,updated_at_ms,
+                content_fingerprint)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?7,'open',?10,?11,?12,?12,?13)"""
         ).bind(
             task_id,
             event["organization_id"],
             event_id,
             body.event_speaker_id if owner is not None else None,
             pending_invitation_id,
-            body.submission_id,
+            task_payload["submission_id"],
             body.task_type,
             body.title,
             body.help_text,
@@ -1360,6 +1390,7 @@ async def create_speaker_task(
                 separators=(",", ":"),
             ),
             now,
+            fingerprint,
         )
     )
     batch.audit(
@@ -1583,6 +1614,7 @@ async def sessionboard_compatible_sessions(
                LEFT JOIN event_rooms r ON r.id=ai.room_id
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2
+                 AND ac.lifecycle_status='active'
                ORDER BY ai.starts_at_ms,s.proposal_title"""
         )
         .bind(event["organization_id"], event_id)
@@ -1675,6 +1707,7 @@ async def sessionboard_compatible_speakers(
                    JOIN schedule_revisions revision ON revision.id=item.revision_id
                    WHERE participant.event_speaker_id=es.id
                      AND session.content_status='approved'
+                     AND session.lifecycle_status='active'
                      AND revision.status='published'))
                ORDER BY p.display_name,es.id"""
         )
@@ -1771,7 +1804,8 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                    JOIN schedule_revisions sr ON sr.id=ai.revision_id
                    JOIN event_rooms r ON r.id=ai.room_id
                    LEFT JOIN event_tracks t ON t.id=ai.track_id
-                   WHERE ac.content_status='approved' AND (
+                   WHERE ac.content_status='approved'
+                     AND ac.lifecycle_status='active' AND (
                      EXISTS(SELECT 1 FROM submission_speakers ss
                        WHERE ss.submission_id=ac.submission_id AND ss.event_speaker_id=?1)
                      OR EXISTS(SELECT 1 FROM accepted_session_participants participant

@@ -106,9 +106,9 @@ def test_changed_speaker_workflows_bust_cached_assets() -> None:
     messages = (STATIC / "speaker_messages.html").read_text()
     assert "/admin/people/assets/people.js?v=4" in directory
     assert "/admin/speaker-content/assets/speaker-content.js?v=3" in content
-    assert "/admin/speakers/assets/messages.js?v=5" in messages
-    pages = (directory, content, messages)
-    assert all("/product/assets/product.css?v=68" in page for page in pages)
+    assert "/admin/speakers/assets/messages.js?v=6" in messages
+    assert all("/product/assets/product.css?v=68" in page for page in (directory, content))
+    assert "/product/assets/product.css?v=69" in messages
 
 
 def test_speaker_message_retries_reuse_idempotency_key() -> None:
@@ -340,6 +340,22 @@ def test_public_event_pages_render_cover_images() -> None:
         assert "cover_image_url" in (STATIC / script_name).read_text()
 
 
+def test_share_tools_do_not_inherit_the_workflow_progress_rail() -> None:
+    page = (STATIC / "event_workspace.html").read_text()
+    assert 'class="grid workspace-grid"' in page
+    assert 'class="grid workspace-grid workflow-grid"' not in page
+
+
+def test_share_builder_initializes_before_account_access_finishes() -> None:
+    page = (STATIC / "event_workspace.html").read_text()
+    script = (STATIC / "event_workspace.js").read_text()
+    assert 'id="generate-token" disabled' in page
+    assert script.index("renderEmbed(); renderRegistry();") < script.index(
+        'await api("/api/v1/auth/session")'
+    )
+    assert 'byId("generate-token").disabled = false' in script
+
+
 def test_speaker_message_personalization_hides_template_syntax() -> None:
     page = (STATIC / "speaker_messages.html").read_text()
     assert "Merge fields:" not in page
@@ -348,6 +364,18 @@ def test_speaker_message_personalization_hides_template_syntax() -> None:
     assert ">Speaker name</button>" in page
     assert ">Portal link</button>" in page
     assert "Each selected speaker will see their own details" in page
+
+
+def test_organizer_message_history_is_filterable_compact_and_expandable() -> None:
+    page = (STATIC / "speaker_messages.html").read_text()
+    script = (STATIC / "speaker_messages.js").read_text()
+    assert 'id="message-history-filter"' in page
+    assert 'class="message-history__list"' in page
+    assert "Updated (event time)" not in page
+    assert 'document.createElement("details")' in script
+    assert "message.body_preview" in script
+    assert "message.body_html" not in script
+    assert "Event time (${eventTimeZone})" not in script
 
 
 def test_public_schedule_export_reports_success() -> None:

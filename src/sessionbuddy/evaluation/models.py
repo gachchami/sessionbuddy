@@ -375,6 +375,22 @@ class SubmissionDecisionView(SubmissionDecisionCreate):
     communication_queued: bool = False
 
 
+class SubmissionDecisionCorrectionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    corrected_decision: Literal["accepted", "rejected"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class SubmissionDecisionCorrectionView(SubmissionDecisionCorrectionCreate):
+    id: str
+    submission_id: str
+    original_decision_id: str
+    previous_decision: Literal["accepted", "rejected"]
+    corrected_at_ms: int
+    accepted_session_id: str | None = None
+
+
 class EvaluationDetail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

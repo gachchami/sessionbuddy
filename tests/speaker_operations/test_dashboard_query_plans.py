@@ -29,7 +29,7 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
             "org-a",
             "event-a",
             "speaker-a",
-            "submission-a",
+            None,
             "profile" if number % 2 else "slides",
             f"Task {number}",
             "profile" if number % 2 else "slides",
@@ -38,6 +38,7 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
             1_000 if number % 3 == 0 else None,
             1_000,
             1_000,
+            f"fingerprint-{number}".encode(),
         )
         for number in range(TASK_COUNT)
     )
@@ -45,17 +46,15 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
         """INSERT INTO speaker_tasks
            (id, organization_id, event_id, event_speaker_id, submission_id,
             task_type, title, destination_type, state, due_at_ms, completed_at_ms,
-            created_at_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            created_at_ms, updated_at_ms, content_fingerprint)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
 
 
 def explain(db: sqlite3.Connection, sql: str, values: tuple[object, ...]) -> str:
     return " ".join(
-        str(value)
-        for row in db.execute(f"EXPLAIN QUERY PLAN {sql}", values)
-        for value in row
+        str(value) for row in db.execute(f"EXPLAIN QUERY PLAN {sql}", values) for value in row
     )
 
 
@@ -90,9 +89,7 @@ def test_dashboard_filter_plans_at_50k_task_envelope() -> None:
            ORDER BY (due_at_ms IS NULL), due_at_ms, id LIMIT ?""",
         ("org-a", "event-a", "slides", "open", 100),
     )
-    assert_indexed_without_sort(
-        type_state_plan, "idx_speaker_tasks_dashboard_type_state_deadline"
-    )
+    assert_indexed_without_sort(type_state_plan, "idx_speaker_tasks_dashboard_type_state_deadline")
 
     type_plan = explain(
         db,

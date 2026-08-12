@@ -128,11 +128,18 @@ docker compose run --rm --no-deps worker \
 docker compose run --rm --no-deps worker npm run worker:migrate
 ```
 
-SessionBuddy supports fresh installations only. If
-`migrations_baseline/0001_baseline.sql` changes, do not apply it over a
-data-bearing development database. Recreate the local database first, then
-prove both the first application and a repeat no-op application through the
-release gate described below.
+`0001_baseline.sql` remains immutable. New schema work is added as the next
+ordered migration and may be applied to a data-bearing database only after a
+verified backup. Prove both paths: the complete chain on a fresh database and
+the new migration over the immediately preceding schema. Run migration a second
+time and require a no-op, then check foreign keys and critical row counts.
+Every released SQL file must retain the SHA-256 recorded in
+`migrations_baseline/checksums.sha256`; add a checksum entry for each new file
+without replacing hashes for already-applied migrations.
+
+If upgrade validation fails, stop the Worker, restore the pre-migration backup,
+and redeploy the previous application version. Do not edit a released migration
+or run a changed `0001` against the existing database.
 
 ### 3.5 Start the local stack
 

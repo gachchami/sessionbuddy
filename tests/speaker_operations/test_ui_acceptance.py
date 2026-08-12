@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 
@@ -120,7 +122,7 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'action.href = "/account"' in javascript
     assert 'id="speaker-profile-tools"' not in html
     assert 'id="speaker-headshot-form"' not in html
-    assert 'Completed (${completed.length})' in javascript
+    assert "Completed (${completed.length})" in javascript
     assert html.count('name="version_comment"') == 0
     assert (
         "`/speaker/proposals/${encodeURIComponent(submission.form_slug)}"
@@ -130,6 +132,11 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'createUploadForm("supporting_document", submission.id)' not in javascript
     assert "form.dataset.submissionId || null" in javascript
     assert "version_comment: versionComment" in javascript
+    assert 'form.dataset.replacement = isReplacement ? "true" : "false"' in javascript
+    assert "comment.required = isReplacement" in javascript
+    assert '"Optional for the first upload."' in javascript
+    assert 'const versionComment = enteredVersionComment || "Initial upload"' in javascript
+    assert 'form.dataset.replacement === "true" && !enteredVersionComment' in javascript
     assert "Upload received. Retrying safety checks" in javascript
     assert "pendingCompletion.intentId" in javascript
     assert "File received. Safety checks are temporarily unavailable" in javascript
@@ -145,8 +152,18 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert "renderProposalDrafts(drafts)" in javascript
     assert "connected events" not in html
     assert ': "No proposals yet.");' in javascript
-    assert 'error.status === 404 && state.csrf' in javascript
+    assert "error.status === 404 && state.csrf" in javascript
     assert 'byId("empty-state").hidden = false' in javascript
+
+
+def test_organizer_headshot_download_is_not_exposed_as_a_disabled_control() -> None:
+    javascript = source("speaker_content.js")
+    function = javascript.split("async function downloadProfileHeadshot", 1)[1].split(
+        "async function loadAssets", 1
+    )[0]
+    assert "button.disabled = true" not in function
+    assert 'button.dataset.busy = "true"' in function
+    assert 'button.textContent = "Downloading headshot…"' in function
 
 
 def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:
@@ -162,3 +179,303 @@ def test_dashboard_and_portal_preserve_accessible_responsive_patterns() -> None:
     assert "@media (max-width: 48rem)" in portal_css
     assert "prefers-reduced-motion" in dashboard_css
     assert "prefers-reduced-motion" in portal_css
+
+
+def test_bulk_reminders_require_confirmation_and_are_safe_to_retry() -> None:
+    html = source("admin_onboarding.html")
+    javascript = source("admin_onboarding.js")
+    assert 'id="confirm-bulk-reminders"' in html
+    assert "Remind loaded outstanding" in html
+    assert "at most one reminder per UTC day" in html
+    assert 'byId("confirm-bulk-reminders").showModal()' in javascript
+    assert "reminderKey(row.task_id)" in javascript
+    assert "Not queued:" in javascript
+    assert "crypto.randomUUID" not in javascript
+
+
+def test_replacement_upload_form_is_reachable_without_a_second_disclosure() -> None:
+    """The version-2 form must not be buried behind two collapsed disclosures.
+
+    It used to be a <details> nested inside the file-entry <details>, appended
+    after the whole version history, which put its submit button last on the
+    longest page in the portal.
+    """
+    javascript = source("speaker_portal.js")
+    assert '"summary", "Upload new version"' not in javascript
+    assert 'const replace = make("section", undefined, "asset-replace")' in javascript
+    assert (
+        'replace.setAttribute("aria-label", `Upload a new version of ${asset.filename}`)'
+        in javascript
+    )
+    # The form is appended to the card before the version history, never after.
+    replace_at = javascript.index("details.append(replace)")
+    versions_at = javascript.index("details.append(versions)", replace_at - 4000)
+    assert replace_at < versions_at
+
+
+def test_replacement_upload_form_carries_a_stable_asset_scoped_identity() -> None:
+    javascript = source("speaker_portal.js")
+    assert (
+        "function createUploadForm(kind, submissionId, task = null, "
+        "isReplacement = false, assetId = null, eventId = null)" in javascript
+    )
+    assert "form.id = `asset-upload-form-${assetId}`" in javascript
+    assert "form.dataset.assetId = assetId" in javascript
+    assert (
+        "createUploadForm(asset.kind, asset.submission_id, null, true, asset.id, eventId)"
+        in javascript
+    )
+
+
+def test_repeat_task_assignment_replays_instead_of_duplicating() -> None:
+    javascript = source("speaker_content.js")
+    # Clearing the mutation state on success minted fresh idempotency keys for
+    # an identical resubmit, and the server dedupes by key alone.
+    assert "state.taskMutation = null" not in javascript
+    assert "state.taskMutation.submitted = true" in javascript
+    assert "no duplicate was created" in javascript
+
+
+def test_motion_preference_is_respected_for_scrolling() -> None:
+    css = source("product.css")
+    assert "html { max-width: 100%; scroll-behavior: smooth; }" not in css
+    assert "@media (prefers-reduced-motion: no-preference)" in css
+
+
+def test_embedded_console_assets_match_their_static_sources() -> None:
+    """The Worker serves console/embedded_assets.py, not static/.
+
+    An edit to static/ that is not re-embedded ships nothing, so keep the two
+    in lockstep: run `python scripts/embed_console_assets.py` after editing.
+    """
+    import importlib.util
+
+    # Loaded by path: importing sessionbuddy.console pulls in the router (and
+    # FastAPI) for what is a pure-data module.
+    spec = importlib.util.spec_from_file_location(
+        "_embedded_assets_under_test",
+        ROOT / "src" / "sessionbuddy" / "console" / "embedded_assets.py",
+    )
+    assert spec and spec.loader
+    embedded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(embedded)
+    stale = [
+        name
+        for name, constant in embedded.ASSETS.items()
+        if getattr(embedded, constant) != source(name)
+    ]
+    assert not stale, f"re-run scripts/embed_console_assets.py for: {', '.join(stale)}"
+
+
+def _baseline_sql() -> str:
+    return "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "migrations_baseline").glob("*.sql"))
+    )
+
+
+def test_speaker_task_dedup_indexes_are_open_scoped_and_discriminated() -> None:
+    sql = _baseline_sql()
+    assert "content_fingerprint BLOB" in sql
+    for name in (
+        "uq_speaker_tasks_open_system_identity",
+        "uq_speaker_tasks_open_system_slides",
+        "uq_speaker_tasks_open_content",
+    ):
+        clause = sql[sql.index(f"CREATE UNIQUE INDEX {name}") :].split(";", 1)[0]
+        assert "state='open'" in clause
+        expected = "IS NOT NULL" if name.endswith("content") else "IS NULL"
+        assert f"content_fingerprint {expected}" in clause
+
+
+def test_speaker_task_dedup_indexes_enforce_system_and_organizer_identity() -> None:
+    """Exercise the real index definitions against SQLite.
+
+    Uses a replica of the columns they key on: the point under test is the
+    index semantics, not speaker_tasks' foreign keys.
+    """
+    import re
+    import sqlite3
+
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        """CREATE TABLE speaker_tasks(
+             id TEXT PRIMARY KEY, organization_id TEXT, event_id TEXT,
+             event_speaker_id TEXT, submission_id TEXT, task_type TEXT,
+             state TEXT, content_fingerprint BLOB)"""
+    )
+    statements = re.findall(
+        r"CREATE UNIQUE INDEX uq_speaker_tasks_open_\w+.*?;", _baseline_sql(), re.S
+    )
+    assert len(statements) == 3
+    for statement in statements:
+        connection.execute(statement)
+
+    def add(task_id, speaker, submission, task_type, state="open", fingerprint=None):
+        connection.execute(
+            "INSERT INTO speaker_tasks VALUES(?,'org','event',?,?,?,?,?)",
+            (task_id, speaker, submission, task_type, state, fingerprint),
+        )
+
+    add("profile-a", "sp1", "sub1", "profile")
+    with pytest.raises(sqlite3.IntegrityError):
+        add("profile-b", "sp1", "sub2", "profile")
+    add("slides-a", "sp1", "sub1", "slides")
+    add("slides-b", "sp1", "sub2", "slides")
+    with pytest.raises(sqlite3.IntegrityError):
+        add("slides-duplicate", "sp1", "sub1", "slides")
+
+    # Identical organizer submissions collide on their content fingerprint,
+    # while a manual headshot is outside the system-task index.
+    add("manual-headshot", "sp1", None, "headshot", fingerprint=b"headshot-request")
+    add("t9", "sp1", None, "custom", fingerprint=b"fingerprint-a")
+    with pytest.raises(sqlite3.IntegrityError):
+        add("t10", "sp1", None, "custom", fingerprint=b"fingerprint-a")
+    add("t11", "sp1", None, "custom", fingerprint=b"fingerprint-b")
+
+
+def test_organizer_task_creation_matches_on_request_content() -> None:
+    router = (ROOT / "src" / "sessionbuddy" / "competition" / "router.py").read_text(
+        encoding="utf-8"
+    )
+    assert "AND content_fingerprint=?3 LIMIT 1" in router
+    assert "return AdminSpeakerTaskView.model_validate(duplicate)" in router
+    assert "content_fingerprint)" in router
+
+
+def test_acceptance_slides_guard_is_scoped_to_the_submission() -> None:
+    router = (ROOT / "src" / "sessionbuddy" / "evaluation" / "router.py").read_text(
+        encoding="utf-8"
+    )
+    flags = router[router.index("_SPEAKER_TASK_FLAGS_SQL = ") :].split('"""')[1]
+    assert flags.count("has_profile_task") == 1
+    assert flags.count("has_headshot_task") == 1
+    assert flags.count("has_slides_task") == 1
+    assert "AND st.submission_id=s.id" in flags
+    # One definition, used by the decision path and the correction path alike.
+    assert router.count("_SPEAKER_TASK_FLAGS_SQL.join(") == 2
+
+
+def test_asset_comment_visibility_defaults_to_internal() -> None:
+    sql = _baseline_sql()
+    table = sql[sql.index("CREATE TABLE speaker_asset_comments") :].split(");", 1)[0]
+    assert "visibility TEXT NOT NULL DEFAULT 'internal'" in table
+    assert "CHECK (visibility IN ('internal', 'shared'))" in table
+
+
+def test_speaker_comment_permission_is_defined_and_granted() -> None:
+    types = (ROOT / "src" / "sessionbuddy" / "platform" / "authorization" / "types.py").read_text(
+        encoding="utf-8"
+    )
+    policy = (ROOT / "src" / "sessionbuddy" / "platform" / "authorization" / "policy.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'SPEAKER_ASSET_COMMENT_OWN = "speaker.asset.comment_own"' in types
+    speaker_block = policy[policy.index("SPEAKER_PERMISSIONS") :].split("}", 1)[0]
+    assert "Permission.SPEAKER_ASSET_COMMENT_OWN," in speaker_block
+    # The organizer-only comment permission must not leak into the speaker role.
+    assert "Permission.SPEAKER_ASSET_COMMENT," not in speaker_block
+
+
+def test_speaker_asset_endpoints_are_scoped_to_shared_comments() -> None:
+    router = (ROOT / "src" / "sessionbuddy" / "speaker_operations" / "router.py").read_text(
+        encoding="utf-8"
+    )
+    read = router[router.index("async def read_speaker_asset") :].split(
+        "@speaker_operations_router", 1
+    )[0]
+    # Reads: only shared comments, and only this speaker's asset.
+    assert "AND c.visibility='shared'" in read
+    assert "AND a.event_speaker_id = ?3" in read
+    write = router[router.index("async def create_speaker_asset_comment") :].split(
+        "@speaker_operations_router", 1
+    )[0]
+    # Writes: always shared, never the organizers' private channel.
+    assert "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'shared',?9)" in write
+    assert "Permission.SPEAKER_ASSET_COMMENT_OWN" in write
+    # Ownership is proven in the same statement that resolves the version.
+    assert "AND a.event_speaker_id=?5" in write
+    # A reply may only attach to a comment on the same version.
+    assert "AND version_id=?4 AND id=?5 AND visibility='shared'" in write
+
+
+def test_comment_parent_must_belong_to_the_same_version() -> None:
+    """The composite foreign key is what actually forbids cross-version replies.
+
+    Asserting it at the database means no endpoint can forget to check.
+    """
+    import sqlite3
+
+    sql = _baseline_sql()
+    table = sql[sql.index("CREATE TABLE speaker_asset_comments") :]
+    table = table[: table.index(");") + 2]
+    connection = sqlite3.connect(":memory:")
+    connection.execute("PRAGMA foreign_keys=ON")
+    # Drop the FKs that point outside this table; the self-reference is the
+    # constraint under test.
+    trimmed = "\n".join(
+        line
+        for line in table.splitlines()
+        if not line.strip().startswith(
+            (
+                "FOREIGN KEY (organization_id,event_id,asset_id)",
+                "REFERENCES speaker_assets",
+                "FOREIGN KEY (organization_id,event_id,asset_id,version_id)",
+                "REFERENCES speaker_asset_versions",
+                "FOREIGN KEY (author_user_id)",
+                "REFERENCES users",
+            )
+        )
+    )
+    connection.execute(trimmed)
+    # Immutability lives in a trigger, not a constraint, so bring it along.
+    trigger = sql[sql.index("CREATE TRIGGER trg_speaker_asset_comments_immutable") :]
+    connection.executescript(trigger[: trigger.index("END;") + 4])
+
+    def add(comment_id, version_id, parent=None):
+        connection.execute(
+            """INSERT INTO speaker_asset_comments
+               (id,organization_id,event_id,asset_id,version_id,author_user_id,
+                parent_comment_id,body_text,visibility,created_at_ms)
+               VALUES(?,'org','event','asset',?, 'user',?, 'text','shared',1)""",
+            (comment_id, version_id, parent),
+        )
+
+    add("c1", "v1")
+    add("c2", "v1", parent="c1")  # same version: allowed
+    with pytest.raises(sqlite3.IntegrityError):
+        add("c3", "v2", parent="c1")  # cross-version parent: rejected
+
+    # Comments are append-only.
+    with pytest.raises(sqlite3.DatabaseError):
+        connection.execute("UPDATE speaker_asset_comments SET body_text='edited' WHERE id='c1'")
+
+
+def test_speaker_portal_renders_a_shared_discussion_with_a_reply_form() -> None:
+    javascript = source("speaker_portal.js")
+    assert "async function assetDiscussion(asset, cache, eventId)" in javascript
+    assert (
+        "/assets/${encodeURIComponent(asset.id)}/versions/${encodeURIComponent(version.id)}/comments"
+        in javascript
+    )
+    assert 'const discussion = make("details", undefined, "asset-discussion")' in javascript
+    assert 'replyForm.setAttribute("aria-label"' in javascript
+    assert "comment.version_id === version.id" in javascript
+    assert 'parent.name = "parent_comment_id"' in javascript
+    assert "parent_comment_id: parent.value || null" in javascript
+
+
+def test_organizer_can_choose_a_comment_audience() -> None:
+    """Without this control the shared thread can never be started.
+
+    Every organizer comment defaults to 'internal', so the speaker-facing
+    discussion stays empty until an organizer explicitly shares one.
+    """
+    javascript = source("speaker_content.js")
+    assert '["internal", "Internal note (organizers only)"]' in javascript
+    assert '["shared", "Shared with the speaker"]' in javascript
+    assert "visibility: visibility.value" in javascript
+    assert "comment.version_id === versionSelect.value" in javascript
+    assert 'visibility.value !== "shared" || comment.visibility === "shared"' in javascript
+    # Existing comments must show which audience they reached.
+    assert 'comment.visibility === "shared" ? "Shared with speaker" : "Internal"' in javascript

@@ -235,6 +235,13 @@
         "p95_ms": 600
       }
     },
+    "GET /api/v1/admin/events/{event_id}/assets/{asset_id}": {
+      "benchmark": "admin-get-speaker-asset-detail",
+      "dashboards": ["release-health", "api-explorer"],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {"error_rate_max": 0.001, "p95_ms": 600}
+    },
     "GET /api/v1/admin/events/{event_id}/cfp": {
       "benchmark": "cfp-load-workspace",
       "dashboards": [
@@ -1320,6 +1327,13 @@
         "p95_ms": 500
       }
     },
+    "POST /api/v1/admin/events/{event_id}/assets/{asset_id}/versions/{version_id}/comments": {
+      "benchmark": "admin-comment-speaker-asset-version",
+      "dashboards": ["release-health", "api-explorer"],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {"error_rate_max": 0.001, "p95_ms": 600}
+    },
     "POST /api/v1/admin/events/{event_id}/cfp/publish": {
       "benchmark": "cfp-publish-form",
       "dashboards": [
@@ -1397,6 +1411,13 @@
         "error_rate_max": 0.001,
         "p95_ms": 800
       }
+    },
+    "POST /api/v1/admin/events/{event_id}/deliverables/export": {
+      "benchmark": "admin-export-speaker-deliverables",
+      "dashboards": ["release-health", "api-explorer"],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {"error_rate_max": 0.001, "p95_ms": 3000}
     },
     "POST /api/v1/admin/events/{event_id}/cover": {
       "benchmark": "admin-upload-event-cover",
@@ -1591,6 +1612,32 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 500
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/accept": {
+      "benchmark": "evaluation-direct-acceptance",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
+    "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/decision-corrections": {
+      "benchmark": "evaluation-decision-correction",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 400
       }
     },
     "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/reject": {

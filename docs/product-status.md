@@ -19,15 +19,16 @@ has an explicit, tested field contract for name, email, and company; organizatio
 and role remain categorical filters, while speaker and reviewer states stay in
 their event-specific workflows.
 
-Fresh D1 databases now install from one canonical `0001_baseline.sql`. Runtime,
-test fixtures, release scripts, and baseline validation do not depend on the
-historical migration directory; rebasing intentionally requires every existing
-database to be recreated and provides no incremental compatibility path.
+Fresh D1 databases install from immutable `0001_baseline.sql` followed by the
+ordered incremental migration ledger. Data-bearing installations upgrade in
+place only after backup and restore rehearsal; fresh-chain and preceding-schema
+upgrade tests, repeat no-op application, and foreign-key validation are release
+requirements.
 
-Development reset tooling follows that same fresh-install contract. It exports
+Development reset tooling exports
 a complete recovery backup plus a minimal explicit-column bootstrap identity
-bundle, recreates local or remote development D1 schema from the canonical
-baseline, restores only the organization owner and complete password credential,
+bundle, recreates local or remote development D1 schema from the ordered chain,
+restores only the organization owner and complete password credential,
 and verifies that operational tables are empty. Remote recreation also updates
 both Worker bindings and redeploys them; local recreation refuses to run while
 the local application or activity Worker is reachable.
@@ -102,9 +103,12 @@ provided one, a headshot task when no clean headshot exists, and the required
 presentation task. It does not generate a generic supporting-material task;
 additional documents must be requested later with explicit context. Rejection
 waives outstanding onboarding; either decision can queue a speaker email with
-organizer-controlled copy. Organizers can also reject an unreviewed proposal
-directly with a required audited reason, without creating a reviewer assignment;
-that confirmation defaults to notifying the speaker and supports custom copy.
+organizer-controlled copy. Organizers can also accept or reject an unreviewed
+proposal directly with a required audited reason, without manufacturing a reviewer
+assignment. Final decisions remain immutable. An explicit correction workflow
+appends the prior and corrected outcomes, reason, actor, and timestamp; acceptance
+creates or restores the accepted session, while a correction to rejection withdraws
+it without destroying its content or audit history.
 Once a proposal belongs to an active evaluation round, the proposal inbox removes
 the direct-rejection action and links organizers to that round's audited decision
 controls instead.
@@ -137,7 +141,16 @@ also maintain private, configurable
 label/value notes for event-specific travel, logistics, accessibility, and hospitality
 details. Speaker and welcome-message attribution prefers
 the accepted session over a newer unrelated proposal. Public profiles include
-each published session's time, room, and track. A scheduled communication dispatcher
+each published session's time, room, and track. The speaker portal presents
+event-scoped updates separately from account authentication history, with message
+categories, safe expandable content, browser-local read state, and bounded history
+expansion. Organizer message history excludes authentication mail and provides
+responsive category/status filtering with expandable delivery detail. Organizers
+can bulk-remind the currently visible active-speaker tasks, inspect clean file
+versions, record immutable version-scoped comments and replies, and export selected
+clean deliverables as a private audited ZIP. Session content history preserves
+versions whose original editor identity is no longer resolvable and exposes their
+saved title, abstract, status, event-local timestamp, and restore action. A scheduled communication dispatcher
 republishes stuck queued messages, retries transient provider failures, and
 recovers abandoned delivery claims with bounded attempts. Organization
 administrators can use an audited Engine Room recovery endpoint to extend the
@@ -162,6 +175,9 @@ manufacturing a proposal or acceptance decision. A session may name active
 speakers or pending speaker invitees; pending people remain invitations until
 acceptance, when their session participant and any scheduled agenda association
 are transactionally linked to the newly created event speaker.
+Before publication, the organizer confirmation lists scheduled session titles that
+still contain pending invitees. Public output remains privacy-safe and shows those
+participants as Speaker TBA until acceptance.
 
 The agenda editor's authenticated unschedule action includes the required JSON
 media type, and the public schedule identifies the published revision number
