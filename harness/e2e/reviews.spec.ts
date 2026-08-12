@@ -35,10 +35,10 @@ test.describe("reviewer workspace", () => {
 
     await page.goto("/reviews");
 
-    await expect(page.getByRole("heading", { name: "Reviews", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Assigned reviews", level: 1 })).toBeVisible();
     await expect(page.getByRole("heading", { name: "No reviews assigned" })).toBeVisible();
     await expect(page.getByText("New assignments will appear here, and we’ll notify you by email.")).toBeVisible();
-    await expect(page.getByText("Hide finalized")).toHaveCount(0);
+    await expect(page.getByText("Show finalized")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
 
     // Non-organizer portals do not render an empty Main navigation card.
@@ -106,5 +106,50 @@ test.describe("reviewer workspace", () => {
     await expect(page.getByText("Platform & Infra")).toBeVisible();
     await page.getByRole("button", { name: "Back to assigned proposals" }).click();
     await expect(page.getByRole("button", { name: "Open review" })).toBeVisible();
+  });
+
+  test("treats a fully completed docket as an archive, not active work", async ({ page }) => {
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: reviewerSession }));
+    await page.route("**/api/v1/evaluator/assignments**", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 1,
+          completed_count: 1,
+          next_cursor: null,
+          data: [{
+            id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            round_name: "Initial review",
+            proposal_title: "Taming 40-Minute CI",
+            proposal_abstract: "This abstract belongs in the full review, not the docket.",
+            speaker_name: "Hidden for blind review",
+            rating_min: 1,
+            rating_max: 5,
+            recommendations: ["accept", "reject"],
+            evaluator_guidance: "",
+            evaluation_state: "final",
+            comment_required: false,
+            rating: 4,
+            recommendation: "accept",
+            internal_comment: "Strong proposal.",
+            criteria: [],
+            criterion_scores: {},
+            blind_review: true,
+            review_closes_at_ms: null,
+            answers: [],
+            hidden_answer_count: 0,
+          }],
+        }),
+      }));
+
+    await page.goto("/reviews");
+
+    await expect(page.getByText("All reviews complete")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toHaveCount(0);
+    await page.getByLabel("Show finalized").check();
+    await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toBeVisible();
+    await expect(page.getByText("This abstract belongs in the full review, not the docket.")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "View", exact: true })).toHaveClass(/secondary/);
   });
 });

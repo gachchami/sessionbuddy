@@ -14,7 +14,7 @@
   const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
-  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null };
+  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null, draftOnly: false };
   function selectedSubmissionIds() {
     return [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
   }
@@ -131,10 +131,14 @@
     const missing = [];
     if (!state.submissions.some((submission) => submission.status === "submitted")) missing.push("receive at least one submitted proposal awaiting a decision");
     if (!state.evaluators.length) missing.push("invite at least one reviewer");
-    prerequisites.textContent = missing.length
-      ? `Before opening a round: ${missing.join("; ")}.`
-      : "Choose proposals and reviewers, then open the round.";
-    byId("open-round").disabled = missing.length > 0;
+    const draftOnly = state.draftOnly;
+    prerequisites.textContent = draftOnly
+      ? "A round is already open, so this one will be saved as a draft. You can add proposals and reviewers now or later."
+      : missing.length
+        ? `Before opening a round: ${missing.join("; ")}. You can still save a draft.`
+        : "Choose proposals and reviewers, then open the round.";
+    // Drafting is always available; only opening needs a proposal and a reviewer.
+    byId("open-round").disabled = missing.length > 0 && !draftOnly && !isDraftSubmission(byId("round-form"));
   }
   function addRemoveButton(row) {
     if (row.querySelector("button")) return;
@@ -172,7 +176,14 @@
       const actions = document.createElement("div"); actions.className = "actions";
       const monitor = document.createElement("a"); monitor.className = "button secondary"; monitor.href = link.href; monitor.textContent = "Open";
       const exportLink = document.createElement("a"); exportLink.className = "button secondary"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
-      actions.append(monitor, exportLink); card.append(heading, summary, actions); container.append(card);
+      actions.append(monitor, exportLink);
+      if (round.status === "draft") {
+        const openDraft = document.createElement("button");
+        openDraft.type = "button"; openDraft.textContent = "Open round";
+        openDraft.addEventListener("click", () => openDraftRound(round, openDraft));
+        actions.append(openDraft);
+      }
+      card.append(heading, summary, actions); container.append(card);
     }
   }
   function showRound(round) {
@@ -219,8 +230,41 @@
     actions.className = "actions";
     actions.append(link, add);
     byId("round-result").replaceChildren(actions);
-    byId("open-round").disabled = true;
-    byId("round-fields").disabled = true;
+    setDraftOnly(round.name);
+  }
+  function setDraftOnly(openRoundName) {
+    // A round is already open, so a new round can only be prepared as a draft. The form
+    // stays editable -- the organizer can still configure the next round's dates,
+    // scorecard and reviewer pool while the current one collects scores.
+    state.draftOnly = true;
+    const status = byId("round-form").elements.round_status;
+    if (!status) return;
+    status.value = "draft";
+    const openOption = status.querySelector('option[value="open"]');
+    if (openOption) openOption.disabled = true;
+    byId("round-status-help").textContent = openRoundName
+      ? `“${openRoundName}” is open, so this round will be saved as a draft. Close the open round to start this one.`
+      : "This round will be saved as a draft.";
+    byId("open-round").textContent = "Save draft round";
+  }
+  async function openDraftRound(round, button) {
+    button.disabled = true;
+    try {
+      const result = await api(`/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/open`, {
+        method: "POST",
+        headers: { "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }
+      });
+      byId("status").classList.remove("error");
+      byId("status").textContent = `${result.name} is now open with ${result.assignment_count} assignments across ${result.evaluator_count} reviewers.`;
+      const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
+      renderRoundHistory(history.data);
+      const current = history.data.find((item) => item.status === "open") || null;
+      if (current) showRound(current);
+    } catch (error) {
+      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").classList.add("error");
+      button.disabled = false;
+    }
   }
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
@@ -309,6 +353,26 @@
     const help = document.createElement("p");
     help.className = "help";
     help.textContent = "Recorded for organizers only, never shown to the speaker. This decision is permanent.";
+    const notifyLabel = document.createElement("label");
+    notifyLabel.className = "check-label";
+    const notify = document.createElement("input");
+    notify.type = "checkbox";
+    notify.checked = true;
+    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"}`));
+    const speakerMessageLabel = document.createElement("label");
+    speakerMessageLabel.append(document.createTextNode("Speaker message "));
+    const optional = document.createElement("span");
+    optional.className = "optional";
+    optional.textContent = "Optional";
+    speakerMessageLabel.append(optional);
+    const speakerMessage = document.createElement("textarea");
+    speakerMessage.rows = 3;
+    speakerMessage.maxLength = 4000;
+    speakerMessage.placeholder = "Leave blank to use the standard rejection message.";
+    speakerMessageLabel.append(speakerMessage);
+    notify.addEventListener("change", () => {
+      speakerMessageLabel.hidden = !notify.checked;
+    });
     const message = document.createElement("p");
     message.className = "status";
     message.setAttribute("role", "alert");
@@ -324,7 +388,7 @@
     const buttons = document.createElement("div");
     buttons.className = "actions";
     buttons.append(confirmButton, cancelButton);
-    panel.append(label, help, message, buttons);
+    panel.append(label, help, notifyLabel, speakerMessageLabel, message, buttons);
     trigger.addEventListener("click", () => {
       trigger.hidden = true;
       panel.hidden = false;
@@ -348,7 +412,7 @@
       confirmButton.disabled = true;
       cancelButton.disabled = true;
       try {
-        await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/reject`, {
+        const decision = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/reject`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -358,12 +422,12 @@
           body: JSON.stringify({
             decision: "rejected",
             internal_reason: internalReason,
-            send_email: false,
-            speaker_message: "",
+            send_email: notify.checked,
+            speaker_message: notify.checked ? speakerMessage.value.trim() : "",
             override_incomplete_reviews: false,
           }),
         });
-        byId("status").textContent = `“${item.proposal_title}” was rejected without review.`;
+        byId("status").textContent = `“${item.proposal_title}” was rejected without review.${decision.communication_queued ? " Speaker email queued." : " No email sent."}`;
         location.reload();
       } catch (error) {
         // Chief among these is the 409 the server returns once the proposal is
@@ -528,6 +592,10 @@
       button.textContent = "Load more";
     }
   }
+  function isDraftSubmission(form) {
+    if (state.draftOnly) return true;
+    return String(form.elements.round_status?.value || "open") === "draft";
+  }
   function validateRound(form) {
     const minimum = Number(form.elements.rating_min.value);
     const maximum = Number(form.elements.rating_max.value);
@@ -553,17 +621,23 @@
     const weights = [...form.querySelectorAll('input[name="criterion_weight"]')].map((input) => Number(input.value));
     const weightError = weights.reduce((total, value) => total + value, 0) === 100 ? "" : "Criterion weights must total 100.";
     form.querySelector('input[name="criterion_weight"]')?.setCustomValidity(weightError);
-    const submissions = [...document.querySelectorAll('input[name="submission_ids"]:checked')];
-    const evaluators = form.querySelectorAll('input[name="evaluator_user_ids"]:checked');
-    if (!submissions.length || !evaluators.length) {
-      showRoundError(!submissions.length
-        ? "Select at least one proposal."
-        : "Select at least one reviewer.");
-      return false;
+    // A draft is a work in progress: it may be saved with no proposals and no reviewers
+    // yet. The API applies the same rule, and refuses to OPEN a round with no
+    // assignments, so the constraint lives at the point where it actually matters.
+    if (!isDraftSubmission(form)) {
+      const submissions = [...document.querySelectorAll('input[name="submission_ids"]:checked')];
+      const evaluators = form.querySelectorAll('input[name="evaluator_user_ids"]:checked');
+      if (!submissions.length || !evaluators.length) {
+        showRoundError(!submissions.length
+          ? "Select at least one proposal."
+          : "Select at least one reviewer.");
+        return false;
+      }
     }
     return form.reportValidity();
   }
   byId("round-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("round-form").elements.round_status?.addEventListener("change", updatePrerequisites);
   byId("round-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = byId("open-round");
@@ -582,16 +656,21 @@
         usedKeys.add(key);
         return { key, label, weight: weights[index] };
       });
+      const roundStatus = isDraftSubmission(event.currentTarget) ? "draft" : "open";
       const reviewOpens = inputMillis(String(values.get("review_opens_at") || ""));
       const reviewCloses = inputMillis(String(values.get("review_closes_at") || ""));
       const round = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` },
-        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids") })
+        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), status: roundStatus, submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids") })
       });
-      byId("status").textContent = `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
+      byId("status").classList.remove("error");
+      byId("status").textContent = round.status === "draft"
+        ? `${round.name} saved as a draft with ${round.assignment_count} assignments across ${round.evaluator_count} reviewers. Open it when the current round closes.`
+        : `${round.name} opened with ${round.assignment_count} assignments across ${round.evaluator_count} evaluators.`;
       renderRoundHistory([round, ...state.rounds.filter((item) => item.id !== round.id)]);
-      showRound(round);
+      if (round.status === "open") showRound(round);
+      else byId("open-round").disabled = false;
     } catch (error) {
       showRoundError(window.SessionBuddyApi.message(error));
       button.disabled = false;

@@ -75,14 +75,19 @@ async function servePublicCfp(
   authenticated: boolean,
   submissions: unknown[] = [],
   serverDraft: unknown = null,
+  form: typeof publishedForm = publishedForm,
 ) {
   await page.route("**/cfp/mobile/responsive-conference*", (route) => route.fulfill({
     contentType: "text/html",
     body: publicCfpHtml,
   }));
+  await page.route("**/speaker/proposals/responsive-conference/*", (route) => route.fulfill({
+    contentType: "text/html",
+    body: publicCfpHtml,
+  }));
   await page.route("**/api/v1/forms/responsive-conference", (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify(publishedForm),
+    body: JSON.stringify(form),
   }));
   await page.route("**/api/v1/auth/session", (route) => route.fulfill(authenticated
     ? {
@@ -181,6 +186,35 @@ test.describe("public CFP responsive design", () => {
     await page.getByLabel(/Proposal abstract/).fill("Identity fields no longer block validation.");
     await page.getByRole("button", { name: "Review proposal" }).click();
     await expect(page.getByRole("heading", { name: "Review your proposal" })).toBeVisible();
+  });
+
+  test("a primary submitter sees the closed CFP as the real edit blocker", async ({ page }) => {
+    const submission = {
+      id: "99999999-9999-4999-8999-999999999999",
+      proposal_title: "Reliable systems",
+      proposal_abstract: "An existing submitted proposal.",
+      speaker_name: "Priya Raman",
+      speaker_email: "speaker@example.test",
+      status: "submitted",
+      editable: true,
+      answers: {},
+      co_speakers: [],
+    };
+    await servePublicCfp(page, true, [submission], null, {
+      ...publishedForm,
+      accepting_submissions: false,
+      availability_message: "This call is closed.",
+    });
+
+    await page.goto(`/speaker/proposals/responsive-conference/${submission.id}`);
+
+    await expect(page.locator("#status")).toContainText(
+      "The call for proposals is closed, so this proposal is read-only.",
+    );
+    await expect(page.locator("#status")).not.toContainText(
+      "Only the primary submitter can make changes.",
+    );
+    await expect(page.getByLabel("Proposal title")).toBeDisabled();
   });
 
   test("password sign-in and email signup send separate authentication payloads", async ({ page }) => {

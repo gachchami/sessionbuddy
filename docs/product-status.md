@@ -92,7 +92,8 @@ presentation task. It does not generate a generic supporting-material task;
 additional documents must be requested later with explicit context. Rejection
 waives outstanding onboarding; either decision can queue a speaker email with
 organizer-controlled copy. Organizers can also reject an unreviewed proposal
-directly with a required audited reason, without creating a reviewer assignment.
+directly with a required audited reason, without creating a reviewer assignment;
+that confirmation defaults to notifying the speaker and supports custom copy.
 A rejection immediately revokes unfinished assignments while preserving final
 reviews as immutable history.
 

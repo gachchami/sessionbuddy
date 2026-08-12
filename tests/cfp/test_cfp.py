@@ -431,6 +431,8 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     ).read_text()
     assert "const editable = submission.editable === true" in public_script
     assert "Only the primary submitter can make changes." in public_script
+    assert "The call for proposals is closed, so this proposal is read-only." in public_script
+    assert 'submission.status === "withdrawn"' in public_script
     assert "state.submissions.find((submission) => submission.id === selectedId)" in public_script
     assert 'make("h2", "Your proposals")' not in public_script
     assert 'make("a", "Open in My proposals", "button")' not in public_script

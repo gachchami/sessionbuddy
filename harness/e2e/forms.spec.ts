@@ -322,6 +322,14 @@ test.describe("form validation and workflow wiring", () => {
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) });
     });
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
+    let directRejection: Record<string, unknown> | null = null;
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions/${assignmentId}/reject`, async (route) => {
+      directRejection = route.request().postDataJSON();
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ communication_queued: true }),
+      });
+    });
     let roundWrites = 0;
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, async (route) => {
       if (route.request().method() === "GET") {
@@ -339,7 +347,17 @@ test.describe("form validation and workflow wiring", () => {
     await expect(detail).toContainText("Platform");
     await expect(detail).toContainText("Audience level");
     await expect(detail).toContainText("Intermediate");
-    await detail.getByRole("button", { name: "Close" }).click();
+    await detail.getByRole("button", { name: "Reject without review" }).click();
+    await expect(detail.getByLabel("Email Speaker")).toBeChecked();
+    await detail.getByLabel("Internal reason").fill("Outside the program scope");
+    await detail.getByLabel("Speaker message").fill("Thank you for submitting to our event.");
+    await detail.getByRole("button", { name: "Confirm rejection" }).click();
+    await expect.poll(() => directRejection).toMatchObject({
+      decision: "rejected",
+      send_email: true,
+      speaker_message: "Thank you for submitting to our event.",
+    });
+    await expect(page.getByRole("heading", { name: "Proposal inbox" })).toBeVisible();
     await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
     await expect(page.getByText("Already decided", { exact: true })).toBeVisible();
     await expect(page.locator('input[name="submission_ids"]')).toHaveCount(1);

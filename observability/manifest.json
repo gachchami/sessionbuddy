@@ -1047,6 +1047,19 @@
         "p95_ms": 300
       }
     },
+    "POST /api/v1/admin/evaluation-rounds/{round_id}/open": {
+      "benchmark": "evaluation-open-draft-round",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators": {
       "benchmark": "evaluation-add-round-reviewer",
       "dashboards": [

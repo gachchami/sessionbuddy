@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -150,7 +150,7 @@ function ReviewWorkspace() {
   const [cardStatus, setCardStatus] = useState<Record<string, string>>({});
   const [previews, setPreviews] = useState<Record<string, number | null>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
-  const [hideFinalized, setHideFinalized] = useState(false);
+  const [showFinalized, setShowFinalized] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
@@ -373,32 +373,23 @@ function ReviewWorkspace() {
     setSelectedAssignmentId(null);
   }
 
-  const visibleAssignments = hideFinalized
-    ? assignments.filter(
+  const visibleAssignments = showFinalized
+    ? assignments
+    : assignments.filter(
         (assignment) => assignment.evaluation_state !== "final",
-      )
-    : assignments;
+      );
   const finalizedCount = assignments.filter(
     (assignment) => assignment.evaluation_state === "final",
   ).length;
+  const remainingCount = assignments.length - finalizedCount;
 
   return (
     <main>
       <section className="hero review-hero">
         <div>
-          <p className="eyebrow">Reviewer workspace</p>
-          <h1>Reviews</h1>
-          <p>Read each proposal, record your assessment, and finalize when ready.</p>
+          <h1>Assigned reviews</h1>
+          <p>Open a proposal to record or revisit your assessment.</p>
         </div>
-        {assignments.length > 0 && (
-          <div className="review-progress" aria-label={`${finalizedCount} of ${assignments.length} reviews finalized`}>
-            <div>
-              <strong>{finalizedCount}/{assignments.length}</strong>
-              <span>finalized</span>
-            </div>
-            <progress value={finalizedCount} max={assignments.length} />
-          </div>
-        )}
       </section>
       {loadState === "loading" && assignments.length === 0 ? (
         <section className="review-state" aria-busy="true" aria-live="polite">
@@ -421,37 +412,32 @@ function ReviewWorkspace() {
           <button className="secondary" onClick={refreshAssignments}>Refresh</button>
         </section>
       ) : (
-        <div className="toolbar review-toolbar">
-          <p role="status">{status}</p>
-          <div className="actions">
+        <div className={`review-docket-status${remainingCount === 0 ? " review-docket-status--complete" : ""}`}>
+          <p role="status">
+            <strong>{remainingCount === 0 ? "All reviews complete" : `${remainingCount} remaining`}</strong>
+            <span>{remainingCount === 0 ? `${finalizedCount} finalized` : `${finalizedCount} of ${assignments.length} finalized`}</span>
+          </p>
+          {finalizedCount > 0 && (
             <label className="check">
               <input
                 type="checkbox"
-                checked={hideFinalized}
-                onChange={(event) => setHideFinalized(event.target.checked)}
+                checked={showFinalized}
+                onChange={(event) => setShowFinalized(event.target.checked)}
               />{" "}
-              Hide finalized
+              Show finalized
             </label>
-            <button
-              className="secondary"
-              disabled={loadState === "loading"}
-              onClick={refreshAssignments}
-            >
-              {loadState === "loading" ? "Refreshing…" : "Refresh"}
-            </button>
-          </div>
+          )}
         </div>
       )}
       {!selectedAssignmentId && (
         <section className="review-list" aria-label="Assigned proposals">
           {visibleAssignments.map((assignment) => (
-            <article className="review-summary" key={assignment.id}>
+            <article className={`review-summary${assignment.evaluation_state === "final" ? " review-summary--final" : ""}`} key={assignment.id}>
               <div className="meta">
                 <span>{assignment.round_name}</span>
-                <span>{assignment.evaluation_state.replace("_", " ")}</span>
+                <span>{assignment.evaluation_state === "final" ? "Finalized" : assignment.evaluation_state.replace("_", " ")}</span>
               </div>
               <h2>{assignment.proposal_title}</h2>
-              <p className="review-summary__abstract">{assignment.proposal_abstract}</p>
               {assignment.review_closes_at_ms && (
                 <p className="help">
                   Due {new Date(assignment.review_closes_at_ms).toLocaleString()} (your local time)
@@ -460,9 +446,10 @@ function ReviewWorkspace() {
               <div className="actions">
                 <button
                   type="button"
+                  className={assignment.evaluation_state === "final" ? "secondary" : ""}
                   onClick={() => setSelectedAssignmentId(assignment.id)}
                 >
-                  {assignment.evaluation_state === "final" ? "View review" : "Open review"}
+                  {assignment.evaluation_state === "final" ? "View" : "Open review"}
                 </button>
               </div>
             </article>
@@ -683,6 +670,8 @@ function ReviewWorkspace() {
   );
 }
 
+type ResultSort = "submitted" | "score_desc" | "score_asc";
+
 function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [csrf, setCsrf] = useState("");
   const [results, setResults] = useState<RoundResults | null>(null);
@@ -695,6 +684,25 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   } | null>(null);
   const [sendEmail, setSendEmail] = useState(true);
   const [speakerMessage, setSpeakerMessage] = useState("");
+  const [resultSort, setResultSort] = useState<ResultSort>("submitted");
+
+  // Chairs rank proposals by score; the API returns them newest-submitted first, so the
+  // ordering the committee actually works from is applied here over the loaded page(s).
+  const sortedSubmissions = useMemo(() => {
+    const rows = results ? [...results.submissions] : [];
+    if (resultSort === "submitted") return rows;
+    const direction = resultSort === "score_desc" ? -1 : 1;
+    return rows.sort((left, right) => {
+      // Unscored proposals sort last in both directions rather than clustering at zero.
+      if (left.average_rating === null && right.average_rating === null) return 0;
+      if (left.average_rating === null) return 1;
+      if (right.average_rating === null) return -1;
+      if (left.average_rating === right.average_rating) {
+        return left.proposal_title.localeCompare(right.proposal_title);
+      }
+      return (left.average_rating - right.average_rating) * direction;
+    });
+  }, [results, resultSort]);
 
   async function load(cursor: string | null = null) {
     const body = await api<RoundResults>(
@@ -1097,9 +1105,25 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               </section>
             </>
           )}
-          <h2>Proposal results</h2>
+          <div className="meta">
+            <h2>Proposal results</h2>
+            <label>
+              Sort by{" "}
+              <select
+                value={resultSort}
+                aria-label="Sort proposal results"
+                onChange={(event) =>
+                  setResultSort(event.target.value as ResultSort)
+                }
+              >
+                <option value="submitted">Submission date (newest first)</option>
+                <option value="score_desc">Score (highest first)</option>
+                <option value="score_asc">Score (lowest first)</option>
+              </select>
+            </label>
+          </div>
           <section className="grid" aria-label="Proposal results">
-            {results.submissions.map((submission) => {
+            {sortedSubmissions.map((submission) => {
               const complete =
                 submission.assigned_count > 0 &&
                 submission.completed_count === submission.assigned_count;

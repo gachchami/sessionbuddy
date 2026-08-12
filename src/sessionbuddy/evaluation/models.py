@@ -24,9 +24,10 @@ class EvaluationRoundCreate(BaseModel):
     blind_review: bool = True
     review_opens_at_ms: int | None = Field(default=None, ge=0)
     review_closes_at_ms: int | None = Field(default=None, ge=0)
-    submission_ids: list[str] = Field(min_length=1, max_length=100)
-    evaluator_user_ids: list[str] = Field(min_length=1, max_length=50)
+    submission_ids: list[str] = Field(default_factory=list, max_length=100)
+    evaluator_user_ids: list[str] = Field(default_factory=list, max_length=50)
     assignment_strategy: Literal["all", "balanced"]
+    status: Literal["draft", "open"] = "open"
 
     @model_validator(mode="after")
     def valid_rubric(self):
@@ -34,6 +35,10 @@ class EvaluationRoundCreate(BaseModel):
             raise ValueError("rating_max must be greater than rating_min")
         if any(not value or len(value) > 80 for value in self.recommendations):
             raise ValueError("recommendations must contain 1 to 80 characters")
+        if self.status == "open" and not self.submission_ids:
+            raise ValueError("an open round requires at least one submission")
+        if self.status == "open" and not self.evaluator_user_ids:
+            raise ValueError("an open round requires at least one evaluator")
         if len(set(self.recommendations)) != len(self.recommendations):
             raise ValueError("recommendations must be unique")
         if any(len(value) != 36 for value in self.submission_ids):

@@ -58,6 +58,10 @@ evaluation_router = APIRouter()
 
 EVALUATION_PAGE_LIMIT = 50
 
+# Upper bound on pages walked by the CSV export: 200 pages x 50 rows = 10,000 proposals,
+# far above any real round, but a hard stop against a cursor that never terminates.
+EXPORT_MAX_PAGES = 200
+
 
 def _acceptance_speaker_tasks(speaker: dict[str, object]) -> list[tuple[str, str, str, int]]:
     """Return only actionable work still missing when a proposal is accepted."""
@@ -200,6 +204,65 @@ def _assignment_pairs(
         (submission_id, evaluator_ids[index % len(evaluator_ids)])
         for index, submission_id in enumerate(submission_ids)
     ]
+
+
+def _round_criteria(rubric_json: object) -> list[dict]:
+    """Return the round's scorecard criteria, or an empty list for an unweighted round."""
+    if rubric_json is None:
+        return []
+    try:
+        rubric = json.loads(str(rubric_json))
+    except (TypeError, ValueError):
+        return []
+    criteria = rubric.get("criteria") or []
+    return [
+        criterion
+        for criterion in criteria
+        if isinstance(criterion, dict) and criterion.get("key") and criterion.get("weight")
+    ]
+
+
+def _weighted_review_score(
+    criteria: list[dict], criterion_scores_json: object, stored_rating: object
+) -> float | None:
+    """Weighted score for one finalized review, at full precision.
+
+    ``evaluations.rating`` stores the reviewer-facing overall rating as an integer, so
+    the criterion weighting is lost to rounding the moment it is saved. Recomputing here
+    from the raw per-criterion scores keeps the weighting intact in the aggregate: with
+    Originality 4 at weight 67 and Relevance 2 at weight 33 the mean is 3.34, not 3.
+    Rounds with no scorecard criteria fall back to the stored rating.
+    """
+    scores: dict = {}
+    if criterion_scores_json is not None:
+        try:
+            parsed = json.loads(str(criterion_scores_json))
+        except (TypeError, ValueError):
+            parsed = {}
+        if isinstance(parsed, dict):
+            scores = parsed
+    if criteria and scores:
+        total_weight = 0
+        total = 0.0
+        for criterion in criteria:
+            key = str(criterion["key"])
+            if key not in scores:
+                continue
+            try:
+                weight = int(criterion["weight"])
+                value = float(scores[key])
+            except (TypeError, ValueError):
+                continue
+            total += value * weight
+            total_weight += weight
+        if total_weight:
+            return total / total_weight
+    if stored_rating is None:
+        return None
+    try:
+        return float(stored_rating)
+    except (TypeError, ValueError):
+        return None
 
 
 def _weighted_mean(values: list[tuple[float, int]]) -> float | None:
@@ -370,17 +433,22 @@ async def create_evaluation_round(
             raise HTTPException(status_code=409)
         return await _round_view(db, str(replay["response_resource_id"]))
 
-    active_round = (
-        await db.prepare(
-            """SELECT 1 AS found FROM evaluation_rounds
+    if body.status == "open":
+        active_round = (
+            await db.prepare(
+                """SELECT 1 AS found FROM evaluation_rounds
            WHERE organization_id = ?1 AND event_id = ?2
              AND status = 'open' LIMIT 1"""
+            )
+            .bind(organization_id, event_id)
+            .first("found")
         )
-        .bind(organization_id, event_id)
-        .first("found")
-    )
-    if active_round is not None:
-        raise HTTPException(status_code=409)
+        if active_round is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An evaluation round is already open for this event. "
+                "Close it first, or save this round as a draft.",
+            )
 
     evaluator_placeholders = ",".join(
         f"?{index + 1}" for index in range(len(body.evaluator_user_ids))
@@ -442,7 +510,7 @@ async def create_evaluation_round(
             """INSERT INTO evaluation_rounds
                (id, organization_id, event_id, name, rubric_json, status,
                 review_opens_at_ms,review_closes_at_ms,created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?8)"""
+               VALUES (?1, ?2, ?3, ?4, ?5, ?9, ?6, ?7, ?8, ?8)"""
         ).bind(
             round_id,
             organization_id,
@@ -452,6 +520,7 @@ async def create_evaluation_round(
             body.review_opens_at_ms,
             body.review_closes_at_ms,
             now,
+            body.status,
         )
     )
     assignment_pairs = _assignment_pairs(
@@ -676,7 +745,7 @@ async def add_round_evaluator(
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=True,
     )
-    if round_row["status"] != "open":
+    if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
     reviewer = await db.prepare(
         """SELECT 1 AS found FROM users u JOIN user_roles ur ON ur.user_id=u.id
@@ -857,7 +926,7 @@ async def add_round_submissions(
         if result.round_id != round_id:
             raise HTTPException(status_code=409)
         return result
-    if round_row["status"] != "open":
+    if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
     placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
     submissions = result_rows(
@@ -1027,7 +1096,7 @@ async def remove_round_evaluator(
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=True,
     )
-    if round_row["status"] != "open":
+    if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
     saved = int(
         await db.prepare(
@@ -1819,7 +1888,7 @@ async def get_round_results(
         await _timed_first(
             request,
             db.prepare(
-            """SELECT id, organization_id, event_id, name, status
+            """SELECT id, organization_id, event_id, name, status, rubric_json
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
             ).bind(round_id),
         )
@@ -1865,6 +1934,7 @@ async def get_round_results(
         review_query = """SELECT a.submission_id,
                       COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS evaluator_name,
                       COALESCE(e.state,'not_started') AS state,e.rating,e.recommendation,
+                      COALESCE(e.criterion_scores_json,'{}') AS criterion_scores_json,
                       COALESCE(e.internal_comment,'') AS internal_comment
                FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
                LEFT JOIN evaluations e ON e.assignment_id=a.id
@@ -1877,8 +1947,18 @@ async def get_round_results(
                 db.prepare(review_query).bind(round_id, json.dumps(submission_ids)),
             )
         )
+    round_criteria = _round_criteria(round_row["rubric_json"])
     reviews_by_submission: dict[str, list[EvaluationDetail]] = {}
+    weighted_by_submission: dict[str, list[tuple[float, int]]] = {}
     for review in review_rows:
+        if str(review["state"]) == "final":
+            weighted = _weighted_review_score(
+                round_criteria, review["criterion_scores_json"], review["rating"]
+            )
+            if weighted is not None:
+                weighted_by_submission.setdefault(
+                    str(review["submission_id"]), []
+                ).append((weighted, 1))
         reviews_by_submission.setdefault(str(review["submission_id"]), []).append(
             EvaluationDetail(
                 evaluator_name=str(review["evaluator_name"]),
@@ -1900,9 +1980,13 @@ async def get_round_results(
             assigned_count=int(row["assigned_count"]),
             completed_count=int(row["completed_count"] or 0),
             average_rating=(
-                round(float(row["average_rating"]), 2)
-                if row["average_rating"] is not None
-                else None
+                _weighted_mean(weighted_by_submission[str(row["submission_id"])])
+                if weighted_by_submission.get(str(row["submission_id"]))
+                else (
+                    round(float(row["average_rating"]), 2)
+                    if row["average_rating"] is not None
+                    else None
+                )
             ),
             decision=(str(row["decision"]) if row["decision"] is not None else None),
             internal_reason=str(row["internal_reason"] or ""),
@@ -2007,6 +2091,27 @@ async def get_round_results(
             timestamp=int(last["submitted_at_ms"]),
             row_id=str(last["submission_id"]),
         )
+    round_scores = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(
+                """SELECT e.rating, e.criterion_scores_json
+                   FROM evaluations e
+                   JOIN evaluation_assignments a ON a.id = e.assignment_id
+                   WHERE a.round_id = ?1 AND a.status != 'revoked' AND e.state = 'final'"""
+            ).bind(round_id),
+        )
+    )
+    round_weighted = [
+        (score, 1)
+        for score in (
+            _weighted_review_score(
+                round_criteria, row["criterion_scores_json"], row["rating"]
+            )
+            for row in round_scores
+        )
+        if score is not None
+    ]
     return EvaluationRoundResults(
         round_id=round_id,
         event_id=str(round_row["event_id"]),
@@ -2015,9 +2120,13 @@ async def get_round_results(
         assigned_count=int(aggregate["assigned_count"] or 0),
         completed_count=int(aggregate["completed_count"] or 0),
         average_rating=(
-            round(float(aggregate["average_rating"]), 2)
-            if aggregate["average_rating"] is not None
-            else None
+            _weighted_mean(round_weighted)
+            if round_weighted
+            else (
+                round(float(aggregate["average_rating"]), 2)
+                if aggregate["average_rating"] is not None
+                else None
+            )
         ),
         submissions=submissions,
         submission_count=int(aggregate["submission_count"] or 0),
@@ -2036,6 +2145,16 @@ async def get_round_results(
 )
 async def export_round_results(round_id: str, request: Request) -> Response:
     results = await get_round_results(round_id, request)
+    exported = list(results.submissions)
+    # get_round_results is paginated at EVALUATION_PAGE_LIMIT; an export that only walked
+    # the first page would silently drop every proposal past row 50.
+    cursor = results.next_cursor
+    pages = 1
+    while cursor and pages < EXPORT_MAX_PAGES:
+        page = await get_round_results(round_id, request, cursor=cursor)
+        exported.extend(page.submissions)
+        cursor = page.next_cursor
+        pages += 1
     output = StringIO(newline="")
     csv = writer(output)
     csv.writerow(
@@ -2057,7 +2176,7 @@ async def export_round_results(round_id: str, request: Request) -> Response:
             return f"'{value}"
         return value
 
-    for submission in results.submissions:
+    for submission in exported:
         csv.writerow(
             [
                 submission.submission_id,
@@ -2077,6 +2196,129 @@ async def export_round_results(round_id: str, request: Request) -> Response:
             "Content-Disposition": f'attachment; filename="evaluation-round-{round_id}.csv"',
         },
     )
+
+
+@evaluation_router.post(
+    "/api/v1/admin/evaluation-rounds/{round_id}/open",
+    response_model=EvaluationRoundView,
+    operation_id="openEvaluationRound",
+    tags=["evaluations"],
+)
+async def open_evaluation_round(
+    round_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> EvaluationRoundView:
+    """Promote a draft evaluation round to open.
+
+    A draft round is fully configured -- name, review window, scorecard, reviewer pool
+    and proposal set -- but invisible to reviewers, so an organizer can plan the next
+    round while the current one is still collecting scores. Only one round per event may
+    be open at a time; opening a draft while another round is open returns 409.
+    """
+    db = _db(request)
+    round_row = row_mapping(
+        await db.prepare(
+            """SELECT id, organization_id, event_id, status
+           FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
+        )
+        .bind(round_id)
+        .first()
+    )
+    if round_row is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request,
+        Permission.SUBMISSION_MANAGE,
+        ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
+        mutation=True,
+    )
+    if round_row["status"] == "open":
+        return await _round_view(db, round_id)
+    if round_row["status"] != "draft":
+        raise HTTPException(
+            status_code=409, detail="Only a draft round can be opened."
+        )
+    key = _key(idempotency_key)
+    route = "POST /api/v1/admin/evaluation-rounds/{round_id}/open"
+    fingerprint = hashlib.sha256(f"open:{round_id}".encode()).digest()
+    replay = await _idempotency_replay(db, auth.actor.user_id, route, key, fingerprint)
+    if replay is not None:
+        return await _round_view(db, round_id)
+    active_round = (
+        await db.prepare(
+            """SELECT 1 AS found FROM evaluation_rounds
+           WHERE organization_id = ?1 AND event_id = ?2
+             AND status = 'open' AND id != ?3 LIMIT 1"""
+        )
+        .bind(str(round_row["organization_id"]), str(round_row["event_id"]), round_id)
+        .first("found")
+    )
+    if active_round is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Another evaluation round is already open for this event. "
+            "Close it before opening this one.",
+        )
+    coverage = row_mapping(
+        await db.prepare(
+            """SELECT COUNT(*) AS assignment_count,
+                      COUNT(DISTINCT evaluator_user_id) AS evaluator_count
+               FROM evaluation_assignments WHERE round_id = ?1 AND status != 'revoked'"""
+        )
+        .bind(round_id)
+        .first()
+    )
+    if coverage is None or int(coverage["assignment_count"] or 0) == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Add at least one proposal and one reviewer before opening this round.",
+        )
+    now = utc_now_ms()
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_rounds SET status = 'open', updated_at_ms = ?1
+             WHERE id = ?2 AND status = 'draft'"""
+        ).bind(now, round_id)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="evaluation_round.open",
+            target_type="evaluation_round",
+            target_id=round_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            metadata={
+                "assignment_count": int(coverage["assignment_count"] or 0),
+                "evaluator_count": int(coverage["evaluator_count"] or 0),
+            },
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_round",
+        resource_id=round_id,
+        completed_at_ms=now,
+    )
+    await _execute(request, batch)
+    return await _round_view(db, round_id)
 
 
 @evaluation_router.post(
@@ -2153,7 +2395,7 @@ async def close_evaluation_round(
     batch.add_statement(
         db.prepare(
             """UPDATE evaluation_rounds SET status = 'closed', closed_at_ms = ?1,
-             updated_at_ms = ?1 WHERE id = ?2 AND status = 'open'"""
+             updated_at_ms = ?1 WHERE id = ?2 AND status IN ('draft','open')"""
         ).bind(now, round_id)
     )
     batch.audit(
@@ -2211,7 +2453,9 @@ async def record_submission_decision(
                      AND NOT EXISTS (SELECT 1 FROM submission_decisions d
                                       WHERE d.submission_id=s.id)
                      AND NOT EXISTS (SELECT 1 FROM evaluation_assignments a
-                                      WHERE a.submission_id=s.id AND a.status!='revoked')"""
+                                      JOIN evaluation_rounds r ON r.id=a.round_id
+                                      WHERE a.submission_id=s.id AND a.status!='revoked'
+                                        AND r.status!='draft')"""
             ).bind(submission_id, direct_event_id).first()
         )
         if context is None:
@@ -2227,7 +2471,9 @@ async def record_submission_decision(
                           EXISTS(SELECT 1 FROM submission_decisions d
                                   WHERE d.submission_id=s.id) AS decided,
                           EXISTS(SELECT 1 FROM evaluation_assignments a
-                                  WHERE a.submission_id=s.id AND a.status!='revoked') AS assigned
+                                  JOIN evaluation_rounds r ON r.id=a.round_id
+                                  WHERE a.submission_id=s.id AND a.status!='revoked'
+                                    AND r.status!='draft') AS assigned
                        FROM submissions s
                        WHERE s.id=?1 AND s.event_id=?2 AND s.status='submitted'"""
                 ).bind(submission_id, direct_event_id).first()
@@ -2256,13 +2502,14 @@ async def record_submission_decision(
     else:
         context = row_mapping(
             await db.prepare(
-            """SELECT r.organization_id, r.event_id, COUNT(a.id) AS assigned_count,
+            """SELECT r.organization_id, r.event_id, r.status AS round_status,
+                  COUNT(a.id) AS assigned_count,
                   SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count
            FROM evaluation_rounds r
            JOIN evaluation_assignments a ON a.round_id = r.id AND a.status != 'revoked'
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            WHERE r.id = ?1 AND a.submission_id = ?2
-           GROUP BY r.organization_id, r.event_id"""
+           GROUP BY r.organization_id, r.event_id, r.status"""
         )
             .bind(round_id, submission_id)
             .first()
@@ -2275,6 +2522,17 @@ async def record_submission_decision(
         ResourceContext(str(context["organization_id"]), str(context["event_id"])),
         mutation=True,
     )
+    # A draft round has never been visible to a reviewer, so there is no review to
+    # decide on. Recording a decision here would let the organizer bypass review entirely
+    # while still appearing to have run a round.
+    if context.get("round_status") == "draft":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This evaluation round is still a draft. Open it before recording "
+                "decisions, or reject the proposal without review from the proposal inbox."
+            ),
+        )
     incomplete_reviews = int(context["completed_count"] or 0) < int(context["assigned_count"])
     if incomplete_reviews and not body.override_incomplete_reviews:
         raise HTTPException(status_code=409)

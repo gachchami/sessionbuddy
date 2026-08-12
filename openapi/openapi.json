@@ -3244,7 +3244,6 @@
               "type": "string"
             },
             "maxItems": 50,
-            "minItems": 1,
             "title": "Evaluator User Ids",
             "type": "array"
           },
@@ -3299,12 +3298,20 @@
             ],
             "title": "Review Opens At Ms"
           },
+          "status": {
+            "default": "open",
+            "enum": [
+              "draft",
+              "open"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
           "submission_ids": {
             "items": {
               "type": "string"
             },
             "maxItems": 100,
-            "minItems": 1,
             "title": "Submission Ids",
             "type": "array"
           }
@@ -3314,8 +3321,6 @@
           "rating_min",
           "rating_max",
           "recommendations",
-          "submission_ids",
-          "evaluator_user_ids",
           "assignment_strategy"
         ],
         "title": "EvaluationRoundCreate",
@@ -10822,6 +10827,65 @@
           }
         },
         "summary": "Export Round Results",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/open": {
+      "post": {
+        "description": "Promote a draft evaluation round to open.\n\nA draft round is fully configured -- name, review window, scorecard, reviewer pool\nand proposal set -- but invisible to reviewers, so an organizer can plan the next\nround while the current one is still collecting scores. Only one round per event may\nbe open at a time; opening a draft while another round is open returns 409.",
+        "operationId": "openEvaluationRound",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRoundView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Evaluation Round",
         "tags": [
           "evaluations"
         ]

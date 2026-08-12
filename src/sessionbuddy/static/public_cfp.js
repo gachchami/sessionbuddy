@@ -543,10 +543,18 @@
     if (editable) lockSignedInEmail();
     byId("withdraw-proposal").hidden = !editable || submission.status === "withdrawn";
     byId("submit-proposal").textContent = editable ? "Save changes" : "Confirm submission";
+    let viewingStatus = `Viewing “${submission.proposal_title}”. Only the primary submitter can make changes.`;
+    if (state.form.accepting_submissions === false) {
+      viewingStatus = `Viewing “${submission.proposal_title}”. The call for proposals is closed, so this proposal is read-only.`;
+    } else if (submission.status === "withdrawn") {
+      viewingStatus = `Viewing “${submission.proposal_title}”. This proposal was withdrawn and is read-only.`;
+    } else if (["accepted", "rejected"].includes(submission.status)) {
+      viewingStatus = `Viewing “${submission.proposal_title}”. A final decision has been recorded, so this proposal is read-only.`;
+    }
     setStatus(
       editable
         ? `Editing “${submission.proposal_title}”. Changes update this proposal; they do not create a duplicate.`
-        : `Viewing “${submission.proposal_title}”. Only the primary submitter can make changes.`,
+        : viewingStatus,
       "success"
     );
   }
