@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.observability import record_degradation
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import (
@@ -23,6 +24,7 @@ from sessionbuddy.platform.db.d1 import (
     PersistenceError,
     result_rows,
     row_mapping,
+    statement_changes,
     to_python,
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
@@ -1115,7 +1117,11 @@ async def update_account_profile(
     guard_mutation(request, authenticated.session_id)
     db, now = database(request), utc_now_ms()
     current = row_mapping(
-        await db.prepare("SELECT version FROM users WHERE id=?1 AND status='active' LIMIT 1")
+        await db.prepare(
+            """SELECT version,display_name,job_title,company,description,
+                      website_url,linkedin_url,x_url
+               FROM users WHERE id=?1 AND status='active' LIMIT 1"""
+        )
         .bind(authenticated.actor.user_id)
         .first()
     )
@@ -1156,27 +1162,107 @@ async def update_account_profile(
             body.version,
         )
     )
-    speaker_links = [value for value in (body.website_url, body.linkedin_url, body.x_url) if value]
-    batch.add_statement(
-        db.prepare(
-            """UPDATE people SET display_name=?1,job_title=?2,company=?3,
-                      biography=?4,links_json=?5,version=version+1,updated_at_ms=?6
-               WHERE user_id=?7 AND archived_at_ms IS NULL"""
-        ).bind(
-            display_name,
-            body.job_title or None,
-            body.company or None,
-            # NULL, not "": `users.description` above is bound the same way, and
-            # the public profile resolves `COALESCE(u.description,p.biography)`.
-            # Writing "" here made an empty account-page save overwrite a bio an
-            # organizer had set on the person record, and the COALESCE then
-            # returned the empty string instead of falling through to it.
-            body.description or None,
-            json.dumps(speaker_links, separators=(",", ":")),
-            now,
-            authenticated.actor.user_id,
+    account_links = [value for value in (body.website_url, body.linkedin_url, body.x_url) if value]
+    previous_account_links = [
+        str(value)
+        for value in (current["website_url"], current["linkedin_url"], current["x_url"])
+        if value
+    ]
+    # Positions of the mirror statements in the batch, checked after execution.
+    # The version predicate makes a stale mirror a zero-row no-op by design (and
+    # a row archived mid-request no-ops the same way), but a silent no-op is
+    # undiagnosable: the response is 200 and the person record simply never
+    # received a real edit. The zero-row case is therefore recorded as a
+    # degradation -- the same channel used when a queue publish is absorbed.
+    mirror_statement_indexes: list[int] = []
+    # Mirror an account field onto the person record only when this save actually
+    # changed it on the user record. The account page renders `users`, while the
+    # speaker profile form, the organizer roster, and invitation import write
+    # `people`; copying every field on every save therefore let an account save
+    # that never displayed those values erase them -- an organizer-entered job
+    # title, company, or link list vanished the next time the speaker saved their
+    # account page. Each `?new IS ?old` guard keeps the person's value when the
+    # account page left the field alone, and still propagates a real edit,
+    # including an intentional clear. `IS` rather than `=` so NULL compares.
+    for person in result_rows(
+        await db.prepare(
+            """SELECT id,links_json,version FROM people
+               WHERE user_id=?1 AND archived_at_ms IS NULL"""
         )
-    )
+        .bind(authenticated.actor.user_id)
+        .all()
+    ):
+        # Links are a set on the person record and three named slots on the
+        # account page, so replace only the slots this save touched and leave any
+        # other link the speaker or an organizer added in place.
+        person_links = [str(value) for value in json.loads(str(person["links_json"]))]
+        retained_links = [
+            value
+            for value in person_links
+            if value not in previous_account_links and value not in account_links
+        ]
+        new_account_links: list[str] = []
+        for value in account_links:
+            if value not in new_account_links:
+                new_account_links.append(value)
+        # The ten-link cap is an application rule; the schema only checks
+        # json_valid. When it bites, the links this save is actually carrying
+        # must survive, so the retained tail is trimmed instead -- a plain
+        # merged[:10] silently dropped the account link the user had just typed
+        # while the users row saved it and the page rendered it back as kept.
+        merged_links = (
+            retained_links[: max(0, 10 - len(new_account_links))] + new_account_links
+        )
+        # Asked of the batch, not assumed: a hardcoded offset would silently
+        # read the wrong statement's row count the day anything is added to the
+        # batch above this loop. establish_session records its index this way.
+        mirror_statement_indexes.append(batch.statement_count)
+        batch.add_statement(
+            db.prepare(
+                """UPDATE people SET
+                          display_name=CASE WHEN ?1 IS ?12 THEN display_name ELSE ?1 END,
+                          job_title=CASE WHEN ?2 IS ?3 THEN job_title ELSE ?2 END,
+                          company=CASE WHEN ?4 IS ?5 THEN company ELSE ?4 END,
+                          -- NULL, not "": `users.description` above is bound the
+                          -- same way, and the public profile resolves
+                          -- `COALESCE(u.description,p.biography)`. Writing "" here
+                          -- made an empty account-page save overwrite a bio an
+                          -- organizer had set on the person record, and the COALESCE
+                          -- then returned the empty string instead of falling
+                          -- through to it.
+                          biography=CASE WHEN ?6 IS ?7 THEN biography ELSE ?6 END,
+                          links_json=?8,version=version+1,updated_at_ms=?9
+                   WHERE id=?10 AND user_id=?11 AND archived_at_ms IS NULL
+                     -- The speaker profile form and the organizer roster update
+                     -- this row under optimistic concurrency; a mirror computed
+                     -- from a pre-batch read must not outrank them. If the row
+                     -- moved since the read above, this statement matches zero
+                     -- rows and the account save completes without the mirror,
+                     -- leaving the concurrent author's write -- and their
+                     -- version guard -- intact.
+                     AND version=?13"""
+            ).bind(
+                display_name,
+                body.job_title or None,
+                str(current["job_title"]) if current["job_title"] else None,
+                body.company or None,
+                str(current["company"]) if current["company"] else None,
+                body.description or None,
+                str(current["description"]) if current["description"] else None,
+                json.dumps(merged_links, separators=(",", ":")),
+                now,
+                str(person["id"]),
+                authenticated.actor.user_id,
+                # The previous DERIVED name, not the person's: the mirror should
+                # fire when the account holder actually renamed themselves and
+                # stay out of the way of a roster name an organizer curated --
+                # the same rule the three guarded fields above follow. This was
+                # the one field still copied unconditionally, which re-created
+                # the erasure bug this mirror was rebuilt to fix.
+                str(current["display_name"]) if current["display_name"] else None,
+                int(person["version"]),
+            )
+        )
     if body.description:
         batch.add_statement(
             db.prepare(
@@ -1219,7 +1305,20 @@ async def update_account_profile(
             occurred_at_ms=now,
         )
     )
-    await batch.execute()
+    results = await batch.execute()
+    for index in mirror_statement_indexes:
+        changes = statement_changes(results, index)
+        if changes == 0:
+            # Skipped: the person row's version moved (or the row was archived)
+            # between the read and the batch, so the mirror stood down.
+            record_degradation(request, "account_person_mirror_skipped")
+        elif changes is None:
+            # Unreadable result shape. Unlike a session insert, no follow-up
+            # read can settle whether the MIRROR landed -- a rival write leaves
+            # the same bumped version -- so this must not quietly pass for
+            # success: if the provider's shape ever drifts, every account save
+            # records this code and the drift is found the day it ships.
+            record_degradation(request, "account_person_mirror_unverified")
     return await account_profile(request)
 
 

@@ -11,6 +11,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SAFE_PHASES = ("authn", "authz", "validation", "db", "domain", "serialization")
 SAFE_DEGRADATIONS = (
+    "account_person_mirror_skipped",
+    "account_person_mirror_unverified",
     "asset_scan_queue_publish_failed",
     "communication_queue_publish_failed",
 )

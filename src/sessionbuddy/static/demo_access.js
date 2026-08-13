@@ -60,6 +60,15 @@
       button.type = "button";
       button.className = "demo-access__button secondary";
       button.dataset.demoRole = persona.role;
+      // The accessible name is the server's label ("Sign in as demo organizer"),
+      // the one contract the API, the e2e suite, and assistive tech share.
+      // Without it the name is the card fragments concatenated -- "Demo account
+      // Organizer Manage the event..." -- which reads the description twice and
+      // names no action. The visible "Organizer" stays a substring of the label,
+      // so voice-control users can still speak what they see.
+      if (typeof persona.label === "string" && persona.label.trim()) {
+        button.setAttribute("aria-label", persona.label);
+      }
 
       const marker = document.createElement("span");
       marker.className = "demo-access__marker";

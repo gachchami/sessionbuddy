@@ -64,7 +64,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 115, "table": 81, "trigger": 106}
+        assert object_counts == {"index": 116, "table": 81, "trigger": 106}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
@@ -74,6 +74,13 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
         assert connection.execute(
             "SELECT content_fingerprint FROM speaker_tasks LIMIT 0"
         ).description is not None
+        assert connection.execute(
+            "SELECT name_key FROM evaluation_rounds LIMIT 0"
+        ).description is not None
+        assert connection.execute(
+            """SELECT sql FROM sqlite_master
+               WHERE type='index' AND name='uq_evaluation_rounds_live_name'"""
+        ).fetchone() is not None
     finally:
         connection.close()
 
@@ -149,6 +156,108 @@ def test_incremental_chain_preserves_and_explicitly_backfills_existing_rows() ->
         ).fetchone() == ("session-a",)
         assert connection.execute("SELECT COUNT(*) FROM speaker_asset_comments").fetchone() == (0,)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()
+
+
+def _seed_round(connection, round_id, event_id, name, status, created_at_ms) -> None:
+    connection.execute(
+        """INSERT INTO evaluation_rounds
+           (id,organization_id,event_id,name,rubric_json,status,
+            created_at_ms,updated_at_ms,closed_at_ms)
+           VALUES(?,?,?,?,'{}',?,?,?,?)""",
+        (
+            round_id,
+            f"org-{event_id[-1]}",
+            event_id,
+            name,
+            status,
+            created_at_ms,
+            created_at_ms,
+            created_at_ms if status == "closed" else None,
+        ),
+    )
+
+
+def test_round_name_key_backfills_and_deduplicates_only_live_rounds() -> None:
+    """Upgrade from the preceding schema, with the duplicates the constraint has to survive.
+
+    A database that ran the buggy code already contains the rows the new unique index would
+    refuse, so the migration has to resolve them before it can create the index -- and it
+    has to resolve them the same way every time it runs, on every replica.
+    """
+    connection = apply_baseline()
+    try:
+        seed_platform(connection)
+        _seed_round(connection, "r-keep", "event-a", "Initial review", "draft", 1000)
+        _seed_round(connection, "r-dupe", "event-a", "Initial Review", "draft", 2000)
+        _seed_round(connection, "r-dupe-spaced", "event-a", "INITIAL  review", "draft", 3000)
+        _seed_round(connection, "r-closed", "event-a", "Initial review", "closed", 500)
+        _seed_round(connection, "r-tie-b", "event-a", "Tie", "draft", 4000)
+        _seed_round(connection, "r-tie-a", "event-a", "tie", "draft", 4000)
+        _seed_round(connection, "r-other-event", "event-b", "Initial review", "draft", 1000)
+        # A rank suffix would rename r-rank-b onto the name r-rank-c already holds. " (2)"
+        # is a name organizers type, so the collision the repair creates is not exotic.
+        _seed_round(connection, "r-rank-a", "event-a", "Round", "draft", 6000)
+        _seed_round(connection, "r-rank-b", "event-a", "round", "draft", 6001)
+        _seed_round(connection, "r-rank-c", "event-a", "Round (2)", "draft", 6002)
+        # And the same collision reached the other way: truncating to fit the name CHECK
+        # can push a renamed row exactly onto an existing name.
+        _seed_round(connection, "r-long-a", "event-a", "A" * 200, "draft", 7000)
+        _seed_round(connection, "r-long-b", "event-a", "a" * 200, "draft", 7001)
+        _seed_round(connection, "r-long-c", "event-a", "A" * 190 + " (2)", "draft", 7002)
+
+        for migration in sorted(BASELINE.parent.glob("*.sql"))[1:]:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+
+        stored = dict(
+            (row[0], (row[1], row[2]))
+            for row in connection.execute("SELECT id,name,name_key FROM evaluation_rounds")
+        )
+        # The oldest live round keeps the name the organizer gave it.
+        assert stored["r-keep"] == ("Initial review", "initial review")
+        # Later collisions are renamed, not deleted: a round owns assignments and decisions.
+        # The suffix is the row's own id, which cannot collide with another row's.
+        assert stored["r-dupe"] == ("Initial Review (r-dupe)", "initial review (r-dupe)")
+        assert stored["r-dupe-spaced"] == (
+            "INITIAL  review (r-dupe-spaced)",
+            "initial review (r-dupe-spaced)",
+        )
+        # An exact created_at_ms tie still has to resolve, so id breaks it.
+        assert stored["r-tie-a"] == ("tie", "tie")
+        assert stored["r-tie-b"] == ("Tie (r-tie-b)", "tie (r-tie-b)")
+        # The repair does not walk into the name it was avoiding.
+        assert stored["r-rank-a"] == ("Round", "round")
+        assert stored["r-rank-b"] == ("round (r-rank-b)", "round (r-rank-b)")
+        assert stored["r-rank-c"] == ("Round (2)", "round (2)")
+        assert stored["r-long-a"] == ("A" * 200, "a" * 200)
+        assert stored["r-long-b"] == ("a" * 160 + " (r-long-b)", "a" * 160 + " (r-long-b)")
+        assert stored["r-long-c"] == ("A" * 190 + " (2)", "a" * 190 + " (2)")
+        for name, _key in stored.values():
+            assert 1 <= len(name) <= 200, name
+        # The point of the whole step: nothing is left for the index to refuse.
+        assert connection.execute(
+            """SELECT COUNT(*) FROM (
+                 SELECT 1 FROM evaluation_rounds WHERE status IN ('draft','open')
+                  GROUP BY organization_id,event_id,name_key HAVING COUNT(*) > 1)"""
+        ).fetchone() == (0,)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+        # And the constraint is now doing the work the application guard used to do alone.
+        # This is the concurrent-insert case: two writers that both read "name is free".
+        def insert_live(round_id, name_key, status="draft"):
+            connection.execute(
+                """INSERT INTO evaluation_rounds
+                   (id,organization_id,event_id,name,name_key,rubric_json,status,
+                    created_at_ms,updated_at_ms,closed_at_ms)
+                   VALUES(?,'org-a','event-a','Initial review',?,'{}',?,5000,5000,?)""",
+                (round_id, name_key, status, 5000 if status == "closed" else None),
+            )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            insert_live("r-racing", "initial review")
+        insert_live("r-free", "initial review 2026")
+        insert_live("r-archived", "initial review", status="closed")
     finally:
         connection.close()
 

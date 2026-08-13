@@ -1627,7 +1627,7 @@ button.demo-access__button.secondary:active { transform: translateY(0); }
 .demo-access__button[data-demo-role="reviewer"] .demo-access__marker { background: #e8efff; color: #315ebc; }
 .demo-access__button[data-demo-role="speaker"] .demo-access__marker { background: #e6f6f0; color: #167354; }
 .demo-access__copy { min-width: 0; display: grid; gap: .1rem; }
-.demo-access__role { color: #7b718f; font-size: .75rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.demo-access__role { color: #746a87; font-size: .75rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .demo-access__label { color: #211832; font-size: 1rem; font-weight: 800; line-height: 1.25; }
 .demo-access__description { color: #697386; font-size: .75rem; font-weight: 500; line-height: 1.35; }
 .demo-access__arrow { color: #7957df; font-size: 1.125rem; transition: transform .15s ease; }

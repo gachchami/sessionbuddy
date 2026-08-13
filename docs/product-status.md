@@ -477,3 +477,27 @@ resolver table used by the distributor.
 - Demo identities are referenced by user id, never display name, and the
   synthetic organizer holds a `manage` grant rather than resource ownership.
 - See `docs/demo-accounts.md` for seeding, repair, and purge procedures.
+
+## Evaluation round names
+
+- A round name is unique among the draft and open rounds of one event. The
+  comparison folds case and collapses whitespace, so `Round 1`, `round 1`, and
+  `Round  1` are one name. The stored name keeps the organizer's own casing.
+- A closed round keeps its name in the history and releases it for reuse, and a
+  different event is a separate namespace.
+- The rule is enforced twice, deliberately. The application compares real names
+  with Python `casefold()` and returns the actionable 409; `0005` adds
+  `evaluation_rounds.name_key` plus the partial unique index
+  `uq_evaluation_rounds_live_name`, which makes the refusal atomic when two
+  organizers submit at the same instant and both reads report the name free.
+- The `0005` backfill uses SQLite `lower()`, which is ASCII-only, so a
+  pre-existing row with non-ASCII case carries an approximate key until its next
+  draft save rewrites it. The application guard covers that window.
+- Historical duplicates among live rounds are renamed rather than deleted or
+  left outside the index. The oldest row by `(created_at_ms, id)` keeps its
+  name; every other row is suffixed with its own id. A rank suffix such as
+  ` (2)` reads better and is unsafe: it can land on a name another live round
+  already holds, and the index would then abort the upgrade after the renames.
+- A round create or draft save the index refuses re-runs the name guard, so the
+  loser of a concurrent submit gets the same rename guidance a caller the guard
+  catches directly would get, not the generic conflict envelope.

@@ -67,3 +67,30 @@ async def execute_batch(db: D1Database, statements: Sequence[D1PreparedStatement
         return to_python(await db.batch(list(statements)))
     except Exception as exc:
         raise PersistenceError("database command failed") from exc
+
+
+def statement_changes(results: object, index: int) -> int | None:
+    """Rows changed by one statement of a batch result, or None when unknowable.
+
+    The one shared reading of a batch result's affected-row counts; callers that
+    need the count (session confirmation, the account/person mirror) must not
+    grow their own copies, because two readers that disagree about a shape turn
+    the same batch into two different stories. Real D1 nests the count under
+    each entry's ``meta``; the sqlite test double reports it at the top level,
+    which the ``get("meta", entry)`` fallback covers. An unrecognised shape
+    returns None rather than 0 -- a provider format change must read as "cannot
+    tell", never as "nothing was written" -- and every caller owes the None case
+    an explicit answer: a direct read where one query settles it, a recorded
+    degradation where it cannot.
+    """
+    if not isinstance(results, Sequence) or isinstance(results, str | bytes):
+        return None
+    try:
+        entry = results[index]
+    except (IndexError, KeyError, TypeError):
+        return None
+    if not isinstance(entry, Mapping):
+        return None
+    meta = entry.get("meta", entry)
+    changes = meta.get("changes") if isinstance(meta, Mapping) else None
+    return changes if isinstance(changes, int) else None

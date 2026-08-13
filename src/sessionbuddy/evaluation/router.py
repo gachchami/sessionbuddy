@@ -521,6 +521,90 @@ async def _event_organization_id(db, event_id: str) -> str:
     return str(event["organization_id"])
 
 
+def _round_name_key(name: str) -> str:
+    """The comparison key for "is this the same round name?".
+
+    A round name is a label, not an identifier, so it collides the way labels collide.
+    "Round 1", "round 1" and "Round  1" are one label to the organizer scanning the round
+    history and to the reviewer reading the assignment email, and comparing them raw let a
+    second round be created beside the first -- same proposals, same reviewers, and only one
+    of the two ever opened. Casefold rather than lower(): the key has to hold for non-ASCII
+    names too, which SQLite's ASCII-only lower() would not, and the split/join collapses the
+    stray double space that a paste leaves behind.
+    """
+    return " ".join(name.split()).casefold()
+
+
+async def _reject_duplicate_round_name(
+    db,
+    organization_id: str,
+    event_id: str,
+    name: str,
+    *,
+    exclude_round_id: str | None = None,
+) -> None:
+    """Refuse a name already carried by a draft or open round in the same event.
+
+    Scoped to rounds still in play. A closed round keeps its name in the history, but that
+    name is free again -- an event that ran "Screening" last cycle may run it again, and
+    blocking that would be a new bug rather than a fix for this one. `exclude_round_id`
+    keeps a draft from colliding with itself when a save leaves the name untouched.
+
+    Compared in Python, not in SQL: the key normalizes whitespace and casefolds, and the
+    row set here is bounded by the one-open-round rule plus the handful of drafts an event
+    accumulates, read through idx_evaluation_rounds_event.
+    """
+    key = _round_name_key(name)
+    for row in result_rows(
+        await db.prepare(
+            """SELECT id, name FROM evaluation_rounds
+               WHERE organization_id = ?1 AND event_id = ?2
+                 AND status IN ('draft', 'open')"""
+        )
+        .bind(organization_id, event_id)
+        .all()
+    ):
+        if str(row["id"]) == exclude_round_id or _round_name_key(str(row["name"])) != key:
+            continue
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"An evaluation round named {str(row['name'])!r} already exists for this "
+                "event. Rename this round, or edit the existing one."
+            ),
+        )
+
+
+async def _execute_round_write(
+    request: Request,
+    batch: CommandBatch,
+    db,
+    organization_id: str,
+    event_id: str,
+    name: str,
+    *,
+    exclude_round_id: str | None = None,
+) -> None:
+    """Run the batch, and let the name guard have the last word on a conflict.
+
+    uq_evaluation_rounds_live_name is what actually stops the concurrent case, but its
+    violation reaches _execute as an opaque PersistenceError -- execute_batch deliberately
+    hides provider strings, so there is nothing safe to match on, and the caller would see
+    only "the request conflicts with current state". Re-running the guard after a refusal
+    costs one indexed read on a request that has already failed, and hands the loser of the
+    race the same sentence the winner's rival would have got a millisecond earlier.
+    """
+    try:
+        await _execute(request, batch)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        await _reject_duplicate_round_name(
+            db, organization_id, event_id, name, exclude_round_id=exclude_round_id
+        )
+        raise
+
+
 @evaluation_router.post(
     "/api/v1/admin/events/{event_id}/submissions/{submission_id}/reject",
     response_model=SubmissionDecisionView,
@@ -923,6 +1007,12 @@ async def create_evaluation_round(
                 "Close it first, or save this round as a draft.",
             )
 
+    # After the replay check, never before it: a retry of this very request must return the
+    # round it already created rather than collide with it. After the open-round check too,
+    # because renaming does not clear that one -- being told to rename first would cost the
+    # organizer a round trip and still leave them blocked.
+    await _reject_duplicate_round_name(db, organization_id, event_id, body.name)
+
     evaluator_placeholders = ",".join(
         f"?{index + 1}" for index in range(len(body.evaluator_user_ids))
     )
@@ -981,9 +1071,9 @@ async def create_evaluation_round(
     batch.add_statement(
         db.prepare(
             """INSERT INTO evaluation_rounds
-               (id, organization_id, event_id, name, rubric_json, status,
+               (id, organization_id, event_id, name, name_key, rubric_json, status,
                 review_opens_at_ms,review_closes_at_ms,created_at_ms, updated_at_ms)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?9, ?6, ?7, ?8, ?8)"""
+               VALUES (?1, ?2, ?3, ?4, ?10, ?5, ?9, ?6, ?7, ?8, ?8)"""
         ).bind(
             round_id,
             organization_id,
@@ -994,6 +1084,10 @@ async def create_evaluation_round(
             body.review_closes_at_ms,
             now,
             body.status,
+            # uq_evaluation_rounds_live_name compares this, not name. The guard above
+            # reports the conflict in words; this is what makes the refusal atomic when
+            # two organizers submit at the same instant and both guards read "free".
+            _round_name_key(body.name),
         )
     )
     # assignment_strategy is a GENERATOR for the opening matrix. If the payload carries
@@ -1077,7 +1171,7 @@ async def create_evaluation_round(
         resource_id=round_id,
         completed_at_ms=now,
     )
-    await _execute(request, batch)
+    await _execute_round_write(request, batch, db, organization_id, event_id, body.name)
     await publish_committed_messages(request, notification_ids)
     return EvaluationRoundView(
         id=round_id,
@@ -1287,6 +1381,11 @@ async def update_draft_evaluation_round(
     )
     if found is None:
         raise HTTPException(status_code=404)
+    # A rename is a name write like any other. Excluding this round keeps a save that leaves
+    # the name alone -- the common case -- from colliding with itself.
+    await _reject_duplicate_round_name(
+        db, organization_id, event_id, body.name, exclude_round_id=round_id
+    )
     if body.submission_ids:
         placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
         submissions = result_rows(
@@ -1436,8 +1535,9 @@ async def update_draft_evaluation_round(
     if configuration_changed:
         batch.add_statement(
             db.prepare(
-                """UPDATE evaluation_rounds SET name=?1,rubric_json=?2,review_opens_at_ms=?3,
-               review_closes_at_ms=?4,updated_at_ms=?5 WHERE id=?6 AND status='draft'"""
+                """UPDATE evaluation_rounds SET name=?1,name_key=?7,rubric_json=?2,
+               review_opens_at_ms=?3,review_closes_at_ms=?4,updated_at_ms=?5
+               WHERE id=?6 AND status='draft'"""
             ).bind(
                 body.name,
                 rubric_json,
@@ -1445,6 +1545,9 @@ async def update_draft_evaluation_round(
                 body.review_closes_at_ms,
                 now,
                 round_id,
+                # Rewritten on every configuration save, so a row the migration backfilled
+                # with SQL's ASCII lower() picks up the exact key the moment it is edited.
+                _round_name_key(body.name),
             )
         )
     # Ordered. Membership must exist before an assignment references it, and must outlive
@@ -1531,7 +1634,9 @@ async def update_draft_evaluation_round(
             },
         )
     )
-    await _execute(request, batch)
+    await _execute_round_write(
+        request, batch, db, organization_id, event_id, body.name, exclude_round_id=round_id
+    )
     return await _round_view(db, round_id)
 
 

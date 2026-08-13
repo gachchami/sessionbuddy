@@ -8,12 +8,12 @@ here means a new entry point cannot accidentally receive weaker session
 security than the flows that already exist.
 """
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from fastapi import HTTPException, Request, Response
 
 from sessionbuddy.platform.db.commands import CommandBatch
+from sessionbuddy.platform.db.d1 import statement_changes
 from sessionbuddy.platform.db.types import new_id
 
 from .cookies import sign_session_cookie
@@ -144,19 +144,6 @@ def establish_session(
     return EstablishedSession(session_id, session_token, csrf_token, statement_index)
 
 
-def _changes_at(results: object, index: int) -> int | None:
-    """Read one statement's affected-row count from a D1 batch result."""
-    if not isinstance(results, Sequence) or isinstance(results, str | bytes):
-        return None
-    try:
-        entry = results[index]
-    except (IndexError, KeyError, TypeError):
-        return None
-    meta = entry.get("meta") if isinstance(entry, Mapping) else None
-    changes = meta.get("changes") if isinstance(meta, Mapping) else None
-    return changes if isinstance(changes, int) else None
-
-
 async def confirm_session_established(
     results: object, session: EstablishedSession, db
 ) -> None:
@@ -166,7 +153,7 @@ async def confirm_session_established(
     honest about it. Row counts are preferred because they cost nothing, with a
     direct read as a fallback if the provider's result shape ever changes.
     """
-    changes = _changes_at(results, session.statement_index)
+    changes = statement_changes(results, session.statement_index)
     if changes is None:
         row = await db.prepare("SELECT id FROM sessions WHERE id=?1 LIMIT 1").bind(
             session.session_id

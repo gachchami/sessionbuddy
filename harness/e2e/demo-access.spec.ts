@@ -96,7 +96,9 @@ test.describe("demo persona access", () => {
     const reviewer = page.locator('[data-demo-role="reviewer"]');
     await reviewer.click();
     await expect(reviewer).toHaveAttribute("data-loading", "true");
-    await expect(reviewer).toHaveText("Signing in…");
+    // The control keeps its card layout while loading; the label slot names
+    // the persona being opened rather than collapsing the whole card.
+    await expect(reviewer).toContainText("Opening reviewer…");
     await expect(page.getByRole("button", { name: "Sign in as demo organizer" }))
       .not.toHaveAttribute("data-loading", "true");
     release();

@@ -102,9 +102,9 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
         )
         db.execute(
             """INSERT INTO evaluation_rounds
-               (id,organization_id,event_id,name,rubric_json,status,
+               (id,organization_id,event_id,name,name_key,rubric_json,status,
                 created_at_ms,updated_at_ms)
-               VALUES('load-round','load-org','load-event','Load Round','{}',
+               VALUES('load-round','load-org','load-event','Load Round','load round','{}',
                       'open',?,?)""",
             (BASE_MS, BASE_MS),
         )
