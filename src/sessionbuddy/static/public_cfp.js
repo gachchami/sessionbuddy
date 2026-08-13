@@ -829,7 +829,18 @@
           email.removeAttribute("aria-describedby");
           byId("signed-in-email-help")?.remove();
         }
-        byId("proposal-card").hidden = true;
+        // A visitor who is not signed in still gets the real form. Every field,
+        // its conditional logic, and its validation already arrived in the public
+        // payload this page just loaded, and the anonymous branches of Save draft
+        // and Confirm submission below were written for exactly this state: the
+        // answers are held in this browser and replayed once the email is
+        // verified. Hiding the form was the only thing stopping a speaker from
+        // reading the questions before committing to an account, and it is the
+        // server -- never this page -- that refuses an unauthenticated write.
+        // A proposal workspace URL names one stored submission, so it has nothing
+        // to preview and stays behind the sign-in card.
+        byId("proposal-card").hidden = workspaceMode;
+        byId("preview-note").hidden = workspaceMode;
         byId("sign-in-card").hidden = false;
         const signInEmail = byId("sign-in-form").elements.email;
         if (saved?.ownerEmail) signInEmail.value = saved.ownerEmail;
@@ -837,7 +848,9 @@
           ? "A recent draft is waiting in this browser. Sign in with its proposal email to restore it."
           : signedInWithoutSpeakerAccess
             ? "This organizer account cannot submit proposals. Sign in with a speaker email to continue."
-            : "Sign in or register with your email to start a proposal.");
+            : workspaceMode
+              ? "Sign in to open this proposal."
+              : "Read every question and start your proposal below. You verify your email when you submit it.");
       }
     } catch (error) { setStatus(window.SessionBuddyApi.message(error), "error"); }
   }
@@ -1021,8 +1034,13 @@
         signIn.elements.email.value = email;
         byId("sign-in-card").hidden = false;
         byId("sign-in-card").scrollIntoView({ behavior: "smooth", block: "start" });
-        setStatus("Your completed proposal is saved. Verify the proposal email to submit it.");
-        signIn.requestSubmit();
+        setStatus("Your completed proposal is saved in this browser. Verify the proposal email to submit it.");
+        // Hand the next step to the visitor rather than submitting an
+        // authentication form on their behalf: it requires a password this
+        // speaker may never have set, so requestSubmit() would only raise a
+        // validation bubble on an empty field, and mailing a one-time link
+        // unprompted would send it to whatever address the proposal carries.
+        if (!byId("cfp-sign-in-entry").hidden) signIn.elements.password.focus();
         return;
       }
       await uploadFiles();

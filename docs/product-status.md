@@ -74,6 +74,20 @@ review assignment, and read-only in the speaker portal. CFP-scoped sign-in grant
 speaker role for that event even when the email already belongs to an administrator,
 and organizers can inspect the complete proposal, routing, and custom answers.
 
+The published CFP page shows the proposal form to a visitor who is not signed
+in. Every field, its conditional display, and its client validation already
+travel in the public `GET /api/v1/forms/{slug}` payload, so a speaker can read
+what the call actually asks for, try the conditional questions, and decide
+whether to apply before creating an account. Answers stay in that browser under
+the existing thirty-minute draft, which is only restored to a session whose
+email matches the one the draft was written under. Authentication is still
+required to submit: the anonymous path saves the completed proposal locally and
+asks for email verification, and the server refuses an unauthenticated write
+regardless of what the page displays. A `/speaker/proposals/...` workspace URL
+names one stored submission, so it continues to require a session. The page no
+longer submits the sign-in form on the visitor's behalf; a speaker who may have
+no password chooses between signing in and requesting a one-time link.
+
 ## Organization and event administration
 
 Implemented: organization rename, event create/edit/archive, an authenticated
@@ -452,6 +466,44 @@ resolver table used by the distributor.
 - Label edits and archival require exact label ownership or an explicit edit/manage grant.
 - Event managers can assign up to 20 active event labels to each accepted session.
 - Published schedules display and search label names without exposing ownership metadata.
+
+## Evaluation round assignment tooling
+
+- The proposal inbox filters by `routed_track`. Track is written by the form's
+  routing rules and already travelled on every row; only the control was
+  missing. An event whose form routes nothing shows no filter at all.
+- "Select submitted" means the proposals on screen, so a filtered table is how an
+  organizer selects one track. "Clear selection" stays absolute. A proposal
+  selected before the filter narrowed the table is still in the round, and the
+  filter says so rather than dropping it silently.
+- The round builder distributes assignments across reviewers: reviewers per
+  proposal, and an optional maximum per reviewer. It fills the checkbox matrix
+  and stops there. What is saved is still the explicit pair list, so a
+  hand-corrected cell survives every later save, and there is no second
+  generator on the server to keep in step.
+- A configuration the reviewer pool cannot satisfy is refused where it is
+  entered. Reviewers per proposal is clamped to the pool rather than promising
+  reviews the round cannot produce, and a cap too low to cover the selection is
+  reported with what to change instead of producing a proposal nobody reviews.
+- Open rounds carry a reminder action on the ledger, sending to every reviewer
+  with outstanding work. It reuses the existing per-reviewer endpoint, which
+  derives the outstanding count server-side and folds each send into an hourly
+  deterministic key, so a repeat click is not a repeat email. A reviewer who
+  finishes mid-send is counted, not treated as a failure.
+
+## Organizer proposal detail
+
+- The organizer proposal view shows the submitter's company, resolved at read
+  time from the speaker's account and falling back to the person record this
+  organization curates. A submission has never stored a company of its own and
+  still does not: no column, no backfill, and no second copy to drift.
+- Both sources are tenant-scoped. `people` is unique per
+  `(organization_id, user_id)`, so the join cannot multiply a submission into
+  several rows, and a person record owned by another organization is never read.
+- Speaker-facing responses build the same model without those joins, so the
+  field serializes as `null` there. It is optional in the schema and never in
+  `required`, so a client must treat `null` and a company it simply does not
+  know as the same answer.
 
 ## Reviewer assignment boundary
 

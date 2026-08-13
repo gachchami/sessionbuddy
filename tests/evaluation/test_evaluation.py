@@ -24,7 +24,75 @@ from sessionbuddy.evaluation.router import (
     _evaluation_cursor,
     _evaluation_next_cursor,
     _weighted_mean,
+    remind_round_evaluator,
 )
+
+
+class _ReminderStatement:
+    def __init__(self, database, sql: str) -> None:
+        self.database = database
+        self.sql = sql
+        self.values: tuple[object, ...] = ()
+
+    def bind(self, *values: object):
+        self.values = values
+        return self
+
+    async def first(self, column: str | None = None):
+        if "COUNT(a.id) AS assigned_count" in self.sql:
+            return {
+                "organization_id": "organization-1",
+                "event_id": "event-1",
+                "name": "Initial review",
+                "email": "reviewer@example.test",
+                "assigned_count": 2,
+                "completed_count": 0,
+            }
+        if "FROM communication_messages" in self.sql:
+            self.database.replay_lookup = self.values
+            return "message-already-queued" if column == "id" else {"id": "message-already-queued"}
+        raise AssertionError(f"unexpected read: {self.sql}")
+
+
+class _ReminderCollisionDatabase:
+    def __init__(self) -> None:
+        self.replay_lookup: tuple[object, ...] | None = None
+
+    def prepare(self, sql: str):
+        return _ReminderStatement(self, sql)
+
+    async def batch(self, _statements):
+        raise RuntimeError("UNIQUE constraint failed: communication_messages")
+
+
+async def test_repeated_reviewer_reminder_returns_the_existing_message(monkeypatch) -> None:
+    """Exercise the replay branch rather than merely asserting its source exists."""
+    database = _ReminderCollisionDatabase()
+    request = SimpleNamespace(
+        scope={"env": SimpleNamespace(DB=database)},
+        state=SimpleNamespace(request_id="request-1"),
+    )
+
+    async def allow(*_args, **_kwargs):
+        return SimpleNamespace(actor=SimpleNamespace(user_id="organizer-1"))
+
+    async def should_not_publish(*_args, **_kwargs):
+        raise AssertionError("an already queued message must not be republished")
+
+    monkeypatch.setattr("sessionbuddy.evaluation.router.require_permission", allow)
+    monkeypatch.setattr("sessionbuddy.evaluation.router.utc_now_ms", lambda: 7_200_001)
+    monkeypatch.setattr(
+        "sessionbuddy.evaluation.router.publish_committed_messages", should_not_publish
+    )
+
+    result = await remind_round_evaluator("round-1", "reviewer-1", request)
+
+    assert result.message_id == "message-already-queued"
+    assert database.replay_lookup == (
+        "organization-1",
+        "event-1",
+        "evaluation-reminder:round-1:reviewer-1:2",
+    )
 
 
 def test_acceptance_creates_only_missing_speaker_onboarding_tasks() -> None:

@@ -212,6 +212,71 @@
       }
     });
   }
+  function distributionRotation(position, rotation, size) {
+    return ((position - rotation) % size + size) % size;
+  }
+  function distributeAssignments() {
+    // Seeds the checkbox matrix; it never becomes the thing that is saved. The API stores
+    // the explicit pairs roundAssignments() reads back out, so an organizer can distribute
+    // and then hand-correct, and the correction survives every later save.
+    const summary = byId("distribution-summary");
+    summary.classList.remove("error");
+    const fail = (message) => { summary.textContent = message; summary.classList.add("error"); };
+    const submissions = selectedSubmissionIds();
+    const evaluators = state.evaluators.filter((item) => item.in_round !== false).map((item) => item.user_id);
+    if (!submissions.length || !evaluators.length) {
+      return fail("Select at least one proposal and one reviewer before distributing.");
+    }
+    const requested = Number(byId("reviewers-per-proposal").value || 1);
+    const capValue = String(byId("max-per-reviewer").value || "").trim();
+    const cap = capValue === "" ? null : Number(capValue);
+    if (!Number.isInteger(requested) || requested < 1) {
+      return fail("Reviewers per proposal must be a whole number of at least 1.");
+    }
+    if (cap !== null && (!Number.isInteger(cap) || cap < 1)) {
+      return fail("Maximum proposals per reviewer must be a whole number of at least 1, or blank for no limit.");
+    }
+    const strategy = document.querySelector('[name="assignment_strategy"]')?.value || "balanced";
+    const perProposal = strategy === "all" ? evaluators.length : Math.min(requested, evaluators.length);
+    const clamped = strategy !== "all" && requested > evaluators.length;
+    // Refuse rather than silently under-assign: a proposal nobody reviews cannot be
+    // decided, and the round would be refused at open time with less to go on.
+    if (cap !== null && cap * evaluators.length < perProposal * submissions.length) {
+      return fail(`${evaluators.length} reviewer${evaluators.length === 1 ? "" : "s"} capped at ${cap} cannot cover ${submissions.length} proposal${submissions.length === 1 ? "" : "s"} at ${perProposal} review${perProposal === 1 ? "" : "s"} each. Raise the cap, add reviewers, or lower reviewers per proposal.`);
+    }
+    const loads = new Map(evaluators.map((id) => [id, 0]));
+    const position = new Map(evaluators.map((id, index) => [id, index]));
+    const chosen = new Set();
+    submissions.forEach((submissionId, index) => {
+      // Rotating the tie-break stops an even split from always starting at the same
+      // reviewer; with one reviewer per proposal and no cap this is plain round-robin.
+      const rotation = (index * perProposal) % evaluators.length;
+      evaluators
+        .filter((id) => cap === null || loads.get(id) < cap)
+        .sort((left, right) => (loads.get(left) - loads.get(right))
+          || distributionRotation(position.get(left), rotation, evaluators.length)
+           - distributionRotation(position.get(right), rotation, evaluators.length))
+        .slice(0, perProposal)
+        .forEach((id) => {
+          chosen.add(`${submissionId}:${id}`);
+          loads.set(id, loads.get(id) + 1);
+        });
+    });
+    // Every cell this matrix can render is decided here. A key left unset falls back to
+    // the "reviews everything" default, which would quietly widen what was distributed.
+    state.pairs = {};
+    submissions.forEach((submissionId) => evaluators.forEach((id) => {
+      state.pairs[`${submissionId}:${id}`] = chosen.has(`${submissionId}:${id}`);
+    }));
+    markRoundFormDirty();
+    renderEvaluatorChoices();
+    const counts = [...loads.values()];
+    const low = Math.min(...counts);
+    const high = Math.max(...counts);
+    summary.textContent = `${chosen.size} review${chosen.size === 1 ? "" : "s"}: ${perProposal} reviewer${perProposal === 1 ? "" : "s"} per proposal, ${low === high ? `${low} each` : `${low} to ${high}`} per reviewer.`
+      + (clamped ? ` Only ${evaluators.length} reviewer${evaluators.length === 1 ? " is" : "s are"} in this round, so ${requested} per proposal was not possible.` : "");
+  }
+  byId("distribute-assignments").addEventListener("click", distributeAssignments);
   function markRoundFormDirty() {
     if (state.roundFormDirty) return;
     state.roundFormDirty = true;
@@ -266,12 +331,57 @@
   function setEligibleSelection(selected) {
     // Only ever reached from the Select/Clear buttons, so this is always a user action.
     document.querySelectorAll('input[name="submission_ids"]:not(:disabled)').forEach((input) => {
+      // Selecting means the proposals the organizer can actually see: with a track filter
+      // applied, "Select submitted" is how you say "this whole track". Clearing stays
+      // absolute -- it has always meant none, and a hidden row left checked would travel
+      // into the round without ever appearing on screen.
+      if (selected && input.closest("tr")?.hidden) return;
       input.checked = selected;
     });
     // "Clear selection" means none -- including the draft proposals this page cannot show.
     if (!selected) state.hiddenSubmissionIds = new Set();
     submissionSelectionChanged();
   }
+  function submissionTrack(item) {
+    return String(item.routed_track || "").trim();
+  }
+  const NO_TRACK = "\u0000none";
+  function renderTrackFilter() {
+    // Tracks come from the form's routing rules, so an event that routes nothing has
+    // nothing to filter by and the control stays out of the way entirely.
+    const select = byId("track-filter");
+    const tracks = [...new Set(state.submissions.map(submissionTrack).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
+    const untracked = state.submissions.some((item) => !submissionTrack(item));
+    const previous = select.value;
+    select.replaceChildren();
+    select.append(new Option("All tracks", ""));
+    tracks.forEach((track) => select.add(new Option(track, track)));
+    if (untracked && tracks.length) select.add(new Option("No track", NO_TRACK));
+    select.value = [...select.options].some((option) => option.value === previous) ? previous : "";
+    byId("track-filter-row").hidden = tracks.length === 0;
+    applyTrackFilter();
+  }
+  function applyTrackFilter() {
+    const wanted = byId("track-filter").value;
+    let visible = 0;
+    let hiddenSelected = 0;
+    for (const row of byId("submissions").querySelectorAll("tr[data-submission-id]")) {
+      const track = row.dataset.track || "";
+      const matches = !wanted || (wanted === NO_TRACK ? !track : track === wanted);
+      row.hidden = !matches;
+      if (matches) visible += 1;
+      else if (row.querySelector('input[name="submission_ids"]:checked')) hiddenSelected += 1;
+    }
+    // A selection made before the filter narrowed the table is still part of the round.
+    // Saying so is the difference between a filter and a trap.
+    byId("track-filter-summary").textContent = !wanted
+      ? ""
+      : hiddenSelected
+        ? `Showing ${visible} proposal${visible === 1 ? "" : "s"}. ${hiddenSelected} selected proposal${hiddenSelected === 1 ? " is" : "s are"} hidden by this filter and stay in the round.`
+        : `Showing ${visible} proposal${visible === 1 ? "" : "s"}.`;
+  }
+  byId("track-filter").addEventListener("change", applyTrackFilter);
   function showRoundError(message) {
     byId("round-disclosure").open = true;
     byId("round-status").textContent = message;
@@ -385,6 +495,12 @@
       const monitor = document.createElement("a"); monitor.className = round.status === "open" ? "button" : "button secondary"; monitor.href = link.href; monitor.textContent = round.status === "draft" ? "View draft" : round.status === "closed" ? "View results" : "Manage round";
       const exportLink = document.createElement("a"); exportLink.className = "round-ledger__export"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
       actions.append(monitor, exportLink);
+      if (round.status === "open") {
+        const remind = document.createElement("button");
+        remind.type = "button"; remind.className = "secondary"; remind.textContent = "Remind reviewers";
+        remind.addEventListener("click", () => remindOutstandingReviewers(round, remind));
+        actions.append(remind);
+      }
       if (round.status === "draft") {
         const editDraft = document.createElement("button");
         editDraft.type = "button"; editDraft.className = "secondary"; editDraft.textContent = "Edit draft";
@@ -396,6 +512,57 @@
         actions.append(openDraft);
       }
       card.append(stateMarker, content, actions); container.append(card);
+    }
+  }
+  async function remindOutstandingReviewers(round, button) {
+    // The per-reviewer endpoint already existed and is already surfaced on the round
+    // detail page. Organizers work the proposal inbox, so the nudge belongs here too.
+    // The server derives the outstanding count itself and folds each reminder into an
+    // hourly deterministic key, so a second click inside the hour re-sends nothing.
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = "Sending…";
+    try {
+      const results = await api(`/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/results`);
+      const outstanding = (results.evaluators || []).filter((item) => item.completed_count < item.assigned_count);
+      if (!outstanding.length) {
+        byId("status").classList.remove("error");
+        byId("status").textContent = `Every reviewer in ${round.name} has finished their assigned reviews.`;
+        return;
+      }
+      let sent = 0;
+      let finished = 0;
+      const failures = [];
+      for (const evaluator of outstanding) {
+        try {
+          await api(`/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/evaluators/${encodeURIComponent(evaluator.evaluator_user_id)}/reminder`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+            body: "{}",
+          });
+          sent += 1;
+        } catch (error) {
+          // One reviewer must never strand the rest of the list -- that is precisely how
+          // a bulk action turns into a partial send nobody can see. A 409 is this
+          // reviewer finishing between the progress read and the send, which is the
+          // reminder doing its job. Everything else is collected and reported once the
+          // loop has been all the way through.
+          if (error.status === 409) finished += 1;
+          else failures.push(window.SessionBuddyApi.message(error));
+        }
+      }
+      const parts = [];
+      if (sent) parts.push(`Reminder queued for ${sent} reviewer${sent === 1 ? "" : "s"} with outstanding reviews in ${round.name}.`);
+      if (finished) parts.push(`${finished} finished while sending.`);
+      if (failures.length) parts.push(`${failures.length} could not be reminded: ${failures[0]}`);
+      if (!parts.length) parts.push(`Every reviewer in ${round.name} finished before the reminders went out.`);
+      byId("status").classList.toggle("error", failures.length > 0);
+      byId("status").textContent = parts.join(" ");
+    } catch (error) {
+      showRoundError(window.SessionBuddyApi.message(error));
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
     }
   }
   async function editDraftRound(round) {
@@ -904,6 +1071,7 @@
     const details = byId("submission-detail-list");
     details.replaceChildren(
       detailRow("Speaker", item.speaker_name),
+      detailRow("Company", item.speaker_company),
       detailRow("Email", item.speaker_email),
       detailRow("Title", item.proposal_title),
       detailRow("Full abstract", item.proposal_abstract),
@@ -995,6 +1163,8 @@
     const body = byId("submissions");
     items.forEach((item) => {
         const row = document.createElement("tr");
+        row.dataset.submissionId = item.id;
+        row.dataset.track = String(item.routed_track || "").trim();
         const selectionCell = document.createElement("td");
         selectionCell.dataset.label = "Include";
         if (item.status === "submitted" && !item.evaluation_round_id) {
@@ -1042,6 +1212,7 @@
         row.append(detailCell);
         body.append(row);
       });
+    renderTrackFilter();
     updateSelectedCount();
   }
   function renderLoadMore(total) {

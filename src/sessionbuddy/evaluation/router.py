@@ -2408,7 +2408,31 @@ async def remind_round_evaluator(
             metadata={"outstanding_count": outstanding},
         )
     )
-    await batch.execute()
+    try:
+        await batch.execute()
+    except PersistenceError:
+        # The hourly deterministic key is what makes this endpoint safe to call twice; it
+        # must not also be what makes the second call fail. The unique constraint on
+        # (organization_id, event_id, deterministic_key) is the send already having
+        # happened, so the honest answer is that message, not a 5xx the caller reads as a
+        # reminder that never went out. A bulk nudge is the case that punished this: one
+        # collision partway down the reviewer list aborted the loop and silently stranded
+        # everyone after it.
+        existing = (
+            await db.prepare(
+                """SELECT id FROM communication_messages
+                   WHERE organization_id=?1 AND event_id=?2 AND deterministic_key=?3
+                   LIMIT 1"""
+            )
+            .bind(row["organization_id"], row["event_id"], deterministic)
+            .first("id")
+        )
+        # Anything else really did fail to write.
+        if existing is None:
+            raise
+        # No republish: that row is already queued, and the scheduled dispatcher
+        # republishes anything that stays queued.
+        return EvaluatorReminderQueued(message_id=str(existing))
     await publish_committed_messages(request, [message_id])
     return EvaluatorReminderQueued(message_id=message_id)
 

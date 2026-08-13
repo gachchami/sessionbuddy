@@ -2820,9 +2820,22 @@ async def list_submissions(
                     ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),
                     d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                   s.routed_category,s.routed_track,s.routed_review_queue,
-                  er.id AS evaluation_round_id,er.name AS evaluation_round_name
+                  er.id AS evaluation_round_id,er.name AS evaluation_round_name,
+                  -- Prefer what the speaker says about themselves on their account and
+                  -- fall back to the person record the organizer curates for this
+                  -- organization. Both are scoped to this submission's tenant: `people`
+                  -- is unique per (organization_id, user_id), so the join adds no rows,
+                  -- and a person record belonging to another organization is never read.
+                  COALESCE(
+                    NULLIF(TRIM(author.company),''),
+                    NULLIF(TRIM(person.company),'')
+                  ) AS speaker_company
                FROM submissions s
                JOIN call_for_speaker_forms f ON f.id=s.form_id
+               LEFT JOIN users author ON author.id=s.submitter_user_id
+               LEFT JOIN people person ON person.user_id=s.submitter_user_id
+                 AND person.organization_id=s.organization_id
+                 AND person.archived_at_ms IS NULL
                LEFT JOIN submission_decisions d ON d.submission_id=s.id
                LEFT JOIN evaluation_assignments ea ON ea.id=(
                  SELECT a.id FROM evaluation_assignments a

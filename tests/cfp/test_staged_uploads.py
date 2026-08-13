@@ -1436,7 +1436,7 @@ def test_public_cfp_uploads_through_the_staged_endpoint() -> None:
     assert "/api/v1/speaker/events/" not in script.split("function uploadAnswer", 1)[1].split(
         "async function uploadFiles", 1
     )[0]
-    assert "public-cfp.js?v=27" in page
+    assert "public-cfp.js?v=28" in page
 
 
 def test_sbek_helper_completes_the_confirmation_page() -> None:

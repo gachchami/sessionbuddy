@@ -407,6 +407,14 @@ class SubmissionView(SubmissionCreate):
     routed_review_queue: str | None = None
     evaluation_round_id: str | None = None
     evaluation_round_name: str | None = None
+    # The submitter's affiliation, resolved when the organizer lists proposals rather
+    # than stored on the submission. A proposal has never carried a company of its own,
+    # so an organizer reading a proposal had no way to see who the speaker works for
+    # unless the form happened to ask. Speaker-facing responses build this model
+    # without the organizer's joins, so it serializes as null there rather than being
+    # omitted -- optional in the schema, never in `required`, and null is not a claim
+    # that the speaker has no company.
+    speaker_company: str | None = Field(default=None, max_length=200)
 
 
 class PrivateSubmissionView(SubmissionView):

@@ -7483,6 +7483,18 @@
             ],
             "title": "Routed Track"
           },
+          "speaker_company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Company"
+          },
           "speaker_email": {
             "maxLength": 320,
             "minLength": 3,
@@ -11497,6 +11509,18 @@
               }
             ],
             "title": "Routed Track"
+          },
+          "speaker_company": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Company"
           },
           "speaker_email": {
             "maxLength": 320,

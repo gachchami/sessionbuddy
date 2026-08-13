@@ -122,7 +122,7 @@ test.describe("public CFP responsive design", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
   for (const width of [320, 390]) {
-    test(`registration gate and event header fit a ${width}px phone`, async ({ page }) => {
+    test(`signed-out proposal form and event header fit a ${width}px phone`, async ({ page }) => {
       const pageErrors: string[] = [];
       page.on("pageerror", (error) => pageErrors.push(error.message));
       await page.setViewportSize({ width, height: 844 });
@@ -135,13 +135,18 @@ test.describe("public CFP responsive design", () => {
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await expect(page.locator("#event-logo")).toBeVisible();
       await expect(page.locator("#event-cover")).toBeVisible();
-      await expect(page.locator("#proposal-card")).toBeHidden();
+      // Signed out is a preview, not a gate: the questions render so a speaker
+      // can read them before deciding to create an account.
+      await expect(page.locator("#proposal-card")).toBeVisible();
+      await expect(page.locator("#preview-note")).toBeVisible();
+      await expect(page.locator("#field-proposal_title")).toBeVisible();
       const signup = page.getByRole("button", { name: "Email me a signup link" });
       await expect(signup).toHaveAttribute("aria-describedby", "cfp-signup-help");
       await expect(page.locator("#cfp-signup-help")).toContainText("No password is needed");
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expectWithinViewport(page, "#event-public-header", width);
       await expectWithinViewport(page, "#sign-in-card", width);
+      await expectWithinViewport(page, "#proposal-card", width);
       const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
       expect(results.violations.filter(({ impact }) => impact === "critical" || impact === "serious")).toEqual([]);
     });

@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -598,6 +599,35 @@ def test_public_cfp_defers_authentication_until_final_submission() -> None:
     assert "Sign in to submit" not in page
 
 
+def test_public_cfp_shows_the_form_to_a_visitor_who_is_not_signed_in() -> None:
+    """A signed-out visitor reads the real questions, not only a sign-in card.
+
+    ``GET /api/v1/forms/{slug}`` is public and already returns every field, its
+    conditional logic, and its routing rules, so the page has nothing left to
+    fetch before it can render them. Deferring the account to the final step is
+    the documented intent of the test above; hiding the form on the 401 from the
+    session lookup was the one thing contradicting it, and it left a speaker
+    unable to judge what the call asks for before creating an account.
+
+    A proposal workspace URL is the exception. It names one stored submission,
+    so without a session there is nothing to show and the sign-in card stands
+    alone.
+    """
+    script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
+    page = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.html").read_text()
+
+    assert 'byId("proposal-card").hidden = workspaceMode' in script
+    assert 'byId("proposal-card").hidden = true' not in script
+    assert 'byId("preview-note").hidden = workspaceMode' in script
+    assert 'id="preview-note"' in page
+    # The sign-in card remains the other way in. It no longer replaces the form.
+    assert 'byId("sign-in-card").hidden = false' in script
+    # Never submit an authentication form for the visitor: the password field may
+    # be empty by right, and an unprompted one-time link would mail whichever
+    # address the proposal happens to carry.
+    assert "signIn.requestSubmit()" not in script
+
+
 def test_cfp_summary_excludes_conditional_questions_until_they_apply() -> None:
     script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
 
@@ -963,3 +993,146 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'location.pathname.startsWith("/admin") && !organizer' in app_shell_js.text
     assert 'location.replace("/speaker")' in app_shell_js.text
     assert "@media (max-width: 48rem)" in css.text
+
+
+def test_organizer_proposal_listing_resolves_the_speakers_company() -> None:
+    """A proposal has no company of its own, so the listing resolves one.
+
+    The organizer view could show everything the form asked for and still not answer
+    "who does this person work for", because company lives on the account and on the
+    organization's person record, never on the submission. Resolving it at read time
+    keeps that true: no new column, no backfill, and no second copy to drift.
+
+    Both sources are tenant-scoped. ``people`` is unique per ``(organization_id,
+    user_id)``, so the join cannot multiply a submission into several rows, and a
+    person record owned by another organization is never consulted. The account value
+    wins because the proposal is the speaker's own artifact and their account is where
+    they maintain their own affiliation; the curated person record is the fallback.
+    """
+    router = (Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py").read_text()
+    models = (Path(__file__).parents[2] / "src/sessionbuddy/cfp/models.py").read_text()
+
+    assert "speaker_company: str | None = Field(default=None, max_length=200)" in models
+    assert "LEFT JOIN users author ON author.id=s.submitter_user_id" in router
+    assert "LEFT JOIN people person ON person.user_id=s.submitter_user_id" in router
+    assert "AND person.organization_id=s.organization_id" in router
+    assert "AND person.archived_at_ms IS NULL" in router
+    assert "NULLIF(TRIM(author.company),'')" in router
+    assert "NULLIF(TRIM(person.company),'')" in router
+    assert "AS speaker_company" in router
+
+
+def test_speaker_company_sql_prefers_account_then_scoped_person_fallback() -> None:
+    """Prove precedence and tenant isolation using SQLite's production SQL semantics."""
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(
+        """CREATE TABLE users (id TEXT PRIMARY KEY, company TEXT);
+           CREATE TABLE submissions (
+             id TEXT PRIMARY KEY, submitter_user_id TEXT, organization_id TEXT
+           );
+           CREATE TABLE people (
+             user_id TEXT, organization_id TEXT, company TEXT, archived_at_ms INTEGER
+           );
+           INSERT INTO users VALUES ('account-wins', 'Account Co'), ('fallback', '');
+           INSERT INTO submissions VALUES
+             ('submission-1', 'account-wins', 'org-a'),
+             ('submission-2', 'fallback', 'org-a');
+           INSERT INTO people VALUES
+             ('account-wins', 'org-a', 'Person Co', NULL),
+             ('fallback', 'org-b', 'Wrong Tenant Co', NULL),
+             ('fallback', 'org-a', 'Archived Co', 123),
+             ('fallback', 'org-a', 'Scoped Fallback Co', NULL);"""
+    )
+
+    rows = connection.execute(
+        """SELECT s.id,
+                  COALESCE(
+                    NULLIF(TRIM(author.company),''),
+                    NULLIF(TRIM(person.company),'')
+                  ) AS speaker_company
+             FROM submissions s
+             LEFT JOIN users author ON author.id=s.submitter_user_id
+             LEFT JOIN people person ON person.user_id=s.submitter_user_id
+               AND person.organization_id=s.organization_id
+               AND person.archived_at_ms IS NULL
+             ORDER BY s.id"""
+    ).fetchall()
+
+    assert rows == [
+        ("submission-1", "Account Co"),
+        ("submission-2", "Scoped Fallback Co"),
+    ]
+
+
+def test_the_proposal_detail_shows_the_company_beside_the_speaker() -> None:
+    javascript = (
+        Path(__file__).parents[2] / "src/sessionbuddy/static/admin_submissions.js"
+    ).read_text()
+
+    assert 'detailRow("Company", item.speaker_company)' in javascript
+    # Directly under the speaker it belongs to, not appended after the routing fields.
+    assert (
+        'detailRow("Speaker", item.speaker_name),\n'
+        '      detailRow("Company", item.speaker_company),'
+    ) in javascript
+
+
+def test_speaker_company_reaches_the_published_contract() -> None:
+    """The field is only real once both generated artifacts carry it.
+
+    `openapi/openapi.json` is the published document and `api/openapi_contract.py`
+    is the bytes the running Worker serves. A response field added without
+    regenerating them leaves the app describing itself incorrectly, and the two
+    artifacts can disagree with each other as well as with the code.
+
+    Optional with a default, so it belongs in `properties` and never in `required`:
+    a speaker-facing response carries `speaker_company: null`, which is not a claim
+    that the speaker has no company.
+    """
+    import json
+
+    root = Path(__file__).parents[2]
+    document = json.loads((root / "openapi/openapi.json").read_text())
+    contract = json.loads(
+        __import__("sessionbuddy.api.openapi_contract", fromlist=["OPENAPI_JSON"]).OPENAPI_JSON
+    )
+
+    assert document == contract
+    for name in ("SubmissionView", "PrivateSubmissionView"):
+        schema = document["components"]["schemas"][name]
+        assert schema["properties"]["speaker_company"] == {
+            "anyOf": [{"maxLength": 200, "type": "string"}, {"type": "null"}],
+            "title": "Speaker Company",
+        }
+        assert "speaker_company" not in schema.get("required", [])
+
+
+def test_a_repeated_reviewer_reminder_replays_instead_of_failing() -> None:
+    """The hourly key makes the send idempotent; it must not make the call fail.
+
+    `deterministic_key` is unique per `(organization_id, event_id, ...)`, so a second
+    reminder inside the same hour hits the constraint. Left unhandled that surfaced as
+    a 5xx, which reads as a reminder that never went out -- and from the bulk nudge on
+    the round ledger it aborted the loop partway down the reviewer list, silently
+    skipping everyone after the collision.
+
+    The collision is the send having already happened, so the endpoint answers with
+    the message that already exists. It does not republish: that row is still queued
+    and the scheduled dispatcher republishes anything that stays queued.
+    """
+    router = (
+        Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"
+    ).read_text()
+    javascript = (
+        Path(__file__).parents[2] / "src/sessionbuddy/static/admin_submissions.js"
+    ).read_text()
+
+    assert "except PersistenceError:" in router
+    assert "AND event_id=?2 AND deterministic_key=?3" in router
+    assert "return EvaluatorReminderQueued(message_id=str(existing))" in router
+    # A write that failed for any other reason is still a failure.
+    assert "if existing is None:\n            raise" in router
+    # And the caller no longer lets one reviewer strand the rest of the list.
+    assert "const failures = [];" in javascript
+    assert "else failures.push(window.SessionBuddyApi.message(error));" in javascript
+    assert "could not be reminded" in javascript
