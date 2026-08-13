@@ -47,8 +47,8 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "sessionbuddy-development-cnt-reset-20260819",
-          "database_id": "411ef2c7-673c-4f71-9cda-bf29bf0fbfdf",
+          "database_name": "sessionbuddy-development-clean-20260819",
+          "database_id": "cb3282b4-ec9b-4ecd-b316-0c05e30091cb",
           "migrations_dir": "migrations_baseline"
         }
       ],

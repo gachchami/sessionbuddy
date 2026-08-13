@@ -141,8 +141,8 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "sessionbuddy-development-cnt-reset-20260819",
-          "database_id": "411ef2c7-673c-4f71-9cda-bf29bf0fbfdf",
+          "database_name": "sessionbuddy-development-clean-20260819",
+          "database_id": "cb3282b4-ec9b-4ecd-b316-0c05e30091cb",
           "migrations_dir": "migrations_baseline"
         }
       ],
@@ -236,10 +236,10 @@
         "APP_VERSION": "development",
         "ALLOWED_ORIGINS": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
         "CLOUDFLARE_ACCOUNT_ID": "11b5e48aa7648b805e4602b5e980beb2",
-        "DEMO_LOGIN_ENABLED": "false",
-        "DEMO_ORGANIZER_USER_ID": "",
-        "DEMO_REVIEWER_USER_ID": "",
-        "DEMO_SPEAKER_USER_ID": "",
+        "DEMO_LOGIN_ENABLED": "true",
+        "DEMO_ORGANIZER_USER_ID": "c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4",
+        "DEMO_REVIEWER_USER_ID": "f88610c7-3a09-5804-987d-6588993d2e78",
+        "DEMO_SPEAKER_USER_ID": "c05e0af4-f1ed-5cec-8540-426a38979046",
         "MALWARE_SCAN_MODE": "disabled",
         "PUBLIC_BASE_URL": "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev",
         "R2_BUCKET_NAME": "sessionbuddy-assets-development",
