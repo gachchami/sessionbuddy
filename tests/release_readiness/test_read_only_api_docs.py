@@ -30,9 +30,9 @@ def test_api_docs_are_self_contained_and_csp_compatible() -> None:
     ]
     assert all(value.startswith("/") or value.startswith("#") for value in urls)
     assert "/product/assets/product.css?v=67" in urls
-    assert "/docs/assets/api-docs.css?v=1" in urls
+    assert "/docs/assets/api-docs.css?v=2" in urls
     assert "/app-shell/assets/api-client.js?v=2" in urls
-    assert "/docs/assets/api-docs.js?v=1" in urls
+    assert "/docs/assets/api-docs.js?v=2" in urls
     assert "swagger" not in markup.lower()
     assert "redoc" not in markup.lower()
     assert "https://" not in markup and "http://" not in markup
@@ -53,7 +53,7 @@ def test_api_docs_have_accessible_read_only_structure() -> None:
     assert 'id="operation-search" type="search"' in markup
     assert 'role="status" aria-live="polite"' in markup
     assert 'aria-busy="true"' in markup
-    assert "No request runner. No credentials entered. No data changed." in markup
+    assert "This surface documents requests; it never sends them." in markup
     assert "Try it out" not in markup and "Execute" not in markup
     assert 'tabindex="1"' not in markup and 'tabindex="2"' not in markup
 
@@ -61,9 +61,7 @@ def test_api_docs_have_accessible_read_only_structure() -> None:
 def test_api_docs_client_can_only_read_the_checked_contract() -> None:
     javascript = source("api_docs.js")
 
-    assert 'const CONTRACT_PATH = "/api/v1/openapi.json"' in javascript
-    assert "window.SessionBuddyApi.request(" in javascript
-    assert "CONTRACT_PATH," in javascript
+    assert "window.SessionBuddyApi.request(\"/api/v1/openapi.json\"" in javascript
     assert '{ cache: "no-store" }' in javascript
     assert "fetch(" not in javascript
     assert "method:" not in javascript

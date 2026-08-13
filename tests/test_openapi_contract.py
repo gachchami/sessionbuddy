@@ -99,7 +99,7 @@ async def test_read_only_api_docs_are_available_in_approved_environments(
     assert javascript.status_code == 200
     assert javascript.headers["content-type"].startswith("text/javascript")
     assert javascript.headers["cache-control"] == "no-store"
-    assert 'const CONTRACT_PATH = "/api/v1/openapi.json"' in javascript.text
+    assert 'window.SessionBuddyApi.request("/api/v1/openapi.json"' in javascript.text
 
 
 @pytest.mark.parametrize("app_env", ["", "production", "staging", "unknown"])
