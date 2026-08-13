@@ -229,12 +229,14 @@ def organizer_statements(
     return [
         "INSERT INTO users"
         " (id,email,normalized_email,display_name,first_name,last_name,status,"
-        "  email_verified_at_ms,created_at_ms,updated_at_ms)"
+        "  email_verified_at_ms,profile_completed_at_ms,created_at_ms,updated_at_ms)"
         f" VALUES({literal(ORGANIZER_USER_ID)},{literal(DEMO_ORGANIZER_EMAIL)},"
         f" {literal(DEMO_ORGANIZER_EMAIL)},{literal(DEMO_ORGANIZER_NAME)},'Dana','Demo','active',"
-        f" {now_ms},{now_ms},{now_ms})"
+        f" {now_ms},{now_ms},{now_ms},{now_ms})"
         " ON CONFLICT(id) DO UPDATE SET status='active',deleted_at_ms=NULL,"
-        f" display_name={literal(DEMO_ORGANIZER_NAME)},updated_at_ms={now_ms}",
+        f" display_name={literal(DEMO_ORGANIZER_NAME)},"
+        f" profile_completed_at_ms=COALESCE(profile_completed_at_ms,{now_ms}),"
+        f" updated_at_ms={now_ms}",
         "INSERT INTO user_roles (user_id,role,status,created_at_ms,updated_at_ms,is_default)"
         f" VALUES({literal(ORGANIZER_USER_ID)},'organizer','active',{now_ms},{now_ms},1)"
         " ON CONFLICT(user_id,role) DO UPDATE SET status='active',revoked_at_ms=NULL,"
@@ -264,6 +266,21 @@ def organizer_statements(
         "UPDATE users SET authorization_version=authorization_version+1,"
         f" updated_at_ms={now_ms} WHERE id={literal(ORGANIZER_USER_ID)}",
     ]
+
+
+def complete_persona_profile_statement(user_id: str, now_ms: int) -> str:
+    """Keep a configured demo persona out of mandatory profile onboarding.
+
+    Demo personas are preconfigured accounts, so routing them through the
+    first-run account form defeats the one-click workspace entry point. The
+    update preserves an existing completion timestamp and only repairs older
+    demo seeds where it is absent.
+    """
+    return (
+        "UPDATE users SET "
+        f"profile_completed_at_ms=COALESCE(profile_completed_at_ms,{now_ms}),"
+        f"updated_at_ms={now_ms} WHERE id={literal(user_id)}"
+    )
 
 
 def reset_statements(now_ms: int) -> list[str]:
@@ -342,6 +359,18 @@ def main() -> int:
                 organization_id, owner_user_id, verifier, now_ms
             ):
                 execute_sql(environment_name, statement, local=args.local)
+            for variable, fallback in (
+                ("DEMO_ORGANIZER_USER_ID", ORGANIZER_USER_ID),
+                ("DEMO_REVIEWER_USER_ID", ""),
+                ("DEMO_SPEAKER_USER_ID", ""),
+            ):
+                user_id = os.environ.get(variable, "").strip() or fallback
+                if user_id:
+                    execute_sql(
+                        environment_name,
+                        complete_persona_profile_statement(user_id, now_ms),
+                        local=args.local,
+                    )
     except SeedError as error:
         print(f"demo seed failed: {error}", file=sys.stderr)
         return 1

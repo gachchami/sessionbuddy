@@ -5,6 +5,11 @@
   // so when demo mode is unavailable the markup is absent entirely and the
   // capability is not discoverable from the shipped HTML.
   const UNAVAILABLE = "Demo access is currently unavailable.";
+  const ROLE_NAMES = {
+    organizer: "Organizer",
+    reviewer: "Reviewer",
+    speaker: "Speaker"
+  };
 
   function safeRedirect(value) {
     return typeof value === "string"
@@ -56,9 +61,21 @@
       button.className = "demo-access__button secondary";
       button.dataset.demoRole = persona.role;
 
+      const marker = document.createElement("span");
+      marker.className = "demo-access__marker";
+      marker.setAttribute("aria-hidden", "true");
+      marker.textContent = ROLE_NAMES[persona.role]?.slice(0, 1) || "D";
+
+      const copy = document.createElement("span");
+      copy.className = "demo-access__copy";
+
+      const role = document.createElement("span");
+      role.className = "demo-access__role";
+      role.textContent = "Demo account";
+
       const label = document.createElement("span");
       label.className = "demo-access__label";
-      label.textContent = persona.label;
+      label.textContent = ROLE_NAMES[persona.role] || persona.label;
 
       // The destination is named in the accessible description, so the role and
       // where it lands are both explicit before the control is activated.
@@ -67,9 +84,15 @@
       description.id = `demo-access-description-${persona.role}`;
       description.textContent = persona.description;
 
-      button.append(label);
+      const arrow = document.createElement("span");
+      arrow.className = "demo-access__arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "→";
+
+      copy.append(role, label, description);
+      button.append(marker, copy, arrow);
       button.setAttribute("aria-describedby", description.id);
-      item.append(button, description);
+      item.append(button);
       list.append(item);
       buttons.push(button);
 
@@ -78,7 +101,7 @@
         status.classList.remove("error");
         for (const other of buttons) other.disabled = true;
         button.dataset.loading = "true";
-        label.textContent = "Signing in…";
+        label.textContent = `Opening ${ROLE_NAMES[persona.role]?.toLowerCase() || "demo"}…`;
         try {
           const session = await window.SessionBuddyApi.request("/api/v1/auth/demo-sign-in", {
             method: "POST",
@@ -100,7 +123,7 @@
           status.focus();
           for (const other of buttons) other.disabled = false;
           delete button.dataset.loading;
-          label.textContent = persona.label;
+          label.textContent = ROLE_NAMES[persona.role] || persona.label;
         }
       });
     }

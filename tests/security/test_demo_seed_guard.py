@@ -107,6 +107,17 @@ def test_seed_statements_are_idempotent_upserts() -> None:
         assert "ON CONFLICT" in statement, f"not idempotent: {statement[:60]}"
 
 
+def test_demo_seed_marks_new_and_existing_personas_profile_complete() -> None:
+    statements = seed.organizer_statements("org-1", "owner-1", "$pbkdf2-sha256$i=1$a$b", 1_700)
+    organizer_upsert = statements[0]
+    repair = seed.complete_persona_profile_statement("demo-user", 1_700)
+
+    assert "profile_completed_at_ms" in organizer_upsert
+    assert "profile_completed_at_ms=COALESCE(profile_completed_at_ms,1700)" in organizer_upsert
+    assert "profile_completed_at_ms=COALESCE(profile_completed_at_ms,1700)" in repair
+    assert "WHERE id='demo-user'" in repair
+
+
 def test_the_demo_organizer_is_granted_manage_and_never_ownership() -> None:
     statements = seed.organizer_statements("org-1", "owner-1", "$pbkdf2-sha256$i=1$a$b", 1_700)
     combined = " ".join(statements)
