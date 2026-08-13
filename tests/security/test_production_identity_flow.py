@@ -1573,19 +1573,19 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         # Exact-email lookup cannot enumerate or expose unrelated accounts.
         assert (
             await admin_again.get(f"/api/v1/admin/events/{event_id}/evaluators")
-        ).json() == {"data": []}
+        ).json() == {"data": [], "pending": []}
         assert (
             await admin_again.get(
                 f"/api/v1/admin/events/{event_id}/evaluators",
                 params={"email": "review"},
             )
-        ).json() == {"data": []}
+        ).json() == {"data": [], "pending": []}
         assert (
             await admin_again.get(
                 f"/api/v1/admin/events/{event_id}/evaluators",
                 params={"email": "speaker@example.com"},
             )
-        ).json() == {"data": []}
+        ).json() == {"data": [], "pending": []}
         # A seeded global reviewer has neither sign-in nor assignment authority
         # until this exact event's evaluator invitation has been accepted.
         assert (
@@ -1593,7 +1593,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 f"/api/v1/admin/events/{event_id}/evaluators",
                 params={"email": "REVIEWER@example.com"},
             )
-        ).json() == {"data": []}
+        ).json() == {"data": [], "pending": []}
         delivered_without_invitation = connection.execute(
             "SELECT COUNT(*) FROM communication_messages WHERE recipient_email=?",
             ("reviewer@example.com",),
@@ -1630,7 +1630,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             params={"email": "REVIEWER@example.com"},
         )
         assert reviewer_lookup.json() == {
-            "data": [{"user_id": reviewer_user_id, "display_name": "Review Person"}]
+            "data": [{"user_id": reviewer_user_id, "display_name": "Review Person"}],
+            "pending": [],
         }
         assert connection.execute(
             "SELECT COUNT(*) FROM event_memberships WHERE user_id=?",

@@ -174,6 +174,51 @@
         result.textContent = `${reviewers.data[0].display_name} is eligible for this event and can be assigned to a round.`;
         return;
       }
+      // An outstanding invitation is not "no reviewer found". Offering Invite here
+      // contradicted the roster below, which already showed this person as
+      // "Invitation pending", and re-inviting only reissues the same pending row.
+      const pending = (reviewers.pending || [])[0];
+      if (pending && pending.expired) {
+        // Resend only accepts an unexpired pending invitation -- see resend_invitation,
+        // which requires `expires_at_ms>?4` and 404s otherwise. An expired invitation
+        // needs a fresh one, which is what the roster below does too: invitationRow
+        // offers "Send again" only while status is still `pending`.
+        result.replaceChildren(document.createTextNode(`${pending.display_name} was invited, but the invitation expired before it was accepted, so they cannot be assigned to a round. Send a new invitation. `));
+        const reinvite = document.createElement("button");
+        reinvite.type = "button";
+        reinvite.className = "secondary";
+        reinvite.textContent = `Invite ${pending.email} again`;
+        reinvite.addEventListener("click", () => {
+          byId("invite-form").elements.email.value = pending.email;
+          byId("invite-dialog").showModal();
+          byId("invite-form").elements.email.focus();
+        });
+        result.append(reinvite);
+        return;
+      }
+      if (pending) {
+        result.replaceChildren(document.createTextNode(`${pending.display_name} was invited but has not accepted yet, so they cannot be assigned to a round. Acceptance happens when they open their invitation link and sign in. `));
+        const resend = document.createElement("button");
+        resend.type = "button";
+        resend.className = "secondary";
+        resend.textContent = "Send again";
+        resend.addEventListener("click", async () => {
+          resend.disabled = true;
+          try {
+            const issued = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(pending.invitation_id)}/resend`, {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-csrf-token": csrf },
+              body: "{}"
+            });
+            showAccessLink(issued.access_url, pending.email);
+            byId("status").textContent = `A new invitation was sent to ${pending.email}.`;
+          } catch (error) {
+            byId("status").textContent = window.SessionBuddyApi.message(error);
+          } finally { resend.disabled = false; }
+        });
+        result.append(resend);
+        return;
+      }
       result.replaceChildren(document.createTextNode("No eligible reviewer found. "));
       const invite = document.createElement("button");
       invite.type = "button";

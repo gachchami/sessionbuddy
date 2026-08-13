@@ -167,7 +167,15 @@
         const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluators?email=${encodeURIComponent(input.value.trim())}`);
         const reviewer = result.data[0];
         if (!reviewer) {
-          status.textContent = "No active Reviewer account matches that exact email. Invite them as a Reviewer first.";
+          // "Not eligible" has two causes needing opposite actions. Telling an organizer
+          // to invite someone they already invited sends them back to the invite form,
+          // which only reissues the pending invitation and leaves the round as blocked.
+          const pending = (result.pending || [])[0];
+          status.textContent = pending
+            ? (pending.expired
+              ? `${pending.display_name} was invited as a Reviewer, but the invitation expired before it was accepted, so they cannot be added to a round yet. Send a new invitation from the Reviewers page.`
+              : `${pending.display_name} was invited as a Reviewer but has not accepted yet, so they cannot be added to a round yet. They become available once they open their invitation link and sign in.`)
+            : "No active Reviewer account matches that exact email. Invite them as a Reviewer first \u2014 they become available to add once they accept.";
           return;
         }
         if (!state.evaluators.some((item) => item.user_id === reviewer.user_id)) state.evaluators.push(reviewer);
@@ -266,7 +274,7 @@
   function updatePrerequisites() {
     const missing = [];
     if (!state.submissions.some((submission) => submission.status === "submitted")) missing.push("receive at least one submitted proposal awaiting a decision");
-    if (!state.evaluators.length) missing.push("invite at least one reviewer");
+    if (!state.evaluators.length) missing.push("add at least one reviewer who has accepted their invitation to this event");
     const draftOnly = state.draftOnly;
     prerequisites.textContent = draftOnly
       ? "A round is already open, so this one will be saved as a draft. You can add proposals and reviewers now or later."

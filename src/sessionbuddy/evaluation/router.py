@@ -46,6 +46,7 @@ from .models import (
     EvaluatorProgress,
     EvaluatorReminderQueued,
     EvaluatorView,
+    PendingEvaluatorView,
     ReassignmentView,
     RoundAssignment,
     RoundEvaluatorAdd,
@@ -519,6 +520,68 @@ async def _event_organization_id(db, event_id: str) -> str:
     if event is None:
         raise HTTPException(status_code=404)
     return str(event["organization_id"])
+
+
+_REVIEWER_ELIGIBILITY_HELP = (
+    "A reviewer becomes assignable only after accepting their invitation to this event, "
+    "which happens when they open their invitation link and sign in."
+)
+
+
+async def _ineligible_evaluator_detail(
+    db,
+    organization_id: str,
+    event_id: str,
+    evaluator_user_ids: list[str],
+) -> str:
+    """Explain why a reviewer selection was rejected.
+
+    Every eligibility check in this module joins `identity_invitations` on
+    `status='accepted'`, so a reviewer who was invited but has not accepted yet fails
+    them in exactly the same way a stranger does. The two need different answers:
+    a stranger has to be invited, an unaccepted invitee only has to accept. Returning
+    the same bare 400 for both is what sent organizers back to the invite form to
+    re-invite someone who was already invited -- which reissues the pending row and
+    leaves them just as blocked.
+
+    Only the invited person can move an invitation to accepted, so the detail names who
+    is being waited on rather than offering the organizer an action they do not have.
+    """
+    if not evaluator_user_ids:
+        return f"Choose a reviewer for this round. {_REVIEWER_ELIGIBILITY_HELP}"
+    placeholders = ",".join(f"?{index + 3}" for index in range(len(evaluator_user_ids)))
+    names = [
+        str(row["display_name"])
+        for row in result_rows(
+            await db.prepare(
+                f"""SELECT DISTINCT
+                           COALESCE(NULLIF(TRIM(i.display_name),''),i.email) AS display_name
+                    FROM identity_invitations i
+                    JOIN users u ON u.normalized_email=i.normalized_email
+                    WHERE i.organization_id=?1 AND i.event_id=?2
+                      AND i.role='evaluator' AND i.status='pending'
+                      AND u.id IN ({placeholders})
+                    ORDER BY display_name"""  # noqa: S608
+            )
+            .bind(organization_id, event_id, *evaluator_user_ids)
+            .all()
+        )
+    ]
+    if not names:
+        return (
+            "That reviewer is not eligible for this event. Invite them as a reviewer from "
+            f"the Reviewers page. {_REVIEWER_ELIGIBILITY_HELP}"
+        )
+    waiting = (
+        f"{names[0]} has not accepted"
+        if len(names) == 1
+        else f"{', '.join(names[:-1])} and {names[-1]} have not accepted"
+    )
+    return (
+        f"{waiting} the reviewer invitation for this event yet, so they cannot be assigned. "
+        f"{_REVIEWER_ELIGIBILITY_HELP} Resend the invitation from the Reviewers page if it "
+        "has expired."
+    )
 
 
 def _round_name_key(name: str) -> str:
@@ -1032,7 +1095,12 @@ async def create_evaluation_round(
         .all()
     )
     if {str(row["user_id"]) for row in evaluators} != set(body.evaluator_user_ids):
-        raise HTTPException(status_code=400)
+        raise HTTPException(
+            status_code=400,
+            detail=await _ineligible_evaluator_detail(
+                db, organization_id, event_id, list(body.evaluator_user_ids)
+            ),
+        )
     placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
     submissions = result_rows(
         await db.prepare(
@@ -1413,7 +1481,12 @@ async def update_draft_evaluation_round(
             .all()
         )
         if {str(row["id"]) for row in evaluators} != set(body.evaluator_user_ids):
-            raise HTTPException(status_code=400)
+            raise HTTPException(
+                status_code=400,
+                detail=await _ineligible_evaluator_detail(
+                    db, organization_id, event_id, list(body.evaluator_user_ids)
+                ),
+            )
     now = utc_now_ms()
     rubric = {
         "rating": {"min": body.rating_min, "max": body.rating_max, "required": True},
@@ -1678,7 +1751,31 @@ async def list_event_evaluators(
         .bind(normalized, organization_id, event_id)
         .all()
     )
-    return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
+    if rows:
+        return EvaluatorList(data=[EvaluatorView.model_validate(row) for row in rows])
+    # No eligible reviewer. Before answering "nobody", say whether an invitation is
+    # already outstanding: an organizer told only "not found" re-invites, which merely
+    # reissues the same pending row and leaves them exactly as blocked.
+    pending_rows = result_rows(
+        await db.prepare(
+            """SELECT id AS invitation_id, email,
+                      COALESCE(NULLIF(TRIM(display_name),''),email) AS display_name,
+                      expires_at_ms<=?4 AS expired
+               FROM identity_invitations
+               WHERE organization_id=?2 AND event_id=?3 AND normalized_email=?1
+                 AND role='evaluator' AND status='pending'
+               ORDER BY created_at_ms DESC LIMIT 1"""
+        )
+        .bind(normalized, organization_id, event_id, utc_now_ms())
+        .all()
+    )
+    return EvaluatorList(
+        data=[],
+        pending=[
+            PendingEvaluatorView.model_validate({**row, "expired": bool(row["expired"])})
+            for row in pending_rows
+        ],
+    )
 
 
 @evaluation_router.post(
@@ -1725,7 +1822,15 @@ async def add_round_evaluator(
         .first("found")
     )
     if reviewer is None:
-        raise HTTPException(status_code=400)
+        raise HTTPException(
+            status_code=400,
+            detail=await _ineligible_evaluator_detail(
+                db,
+                str(round_row["organization_id"]),
+                str(round_row["event_id"]),
+                [body.evaluator_user_id],
+            ),
+        )
     # The proposals the organizer actually chose -- NOT every proposal in the round.
     # Fanning a new reviewer across the whole round is the behaviour this replaces: adding
     # Sam used to assign him all three proposals with no way to say "A and B, not C".
@@ -2864,7 +2969,15 @@ async def reassign_conflict(
         .first("found")
     )
     if evaluator is None:
-        raise HTTPException(status_code=400)
+        raise HTTPException(
+            status_code=400,
+            detail=await _ineligible_evaluator_detail(
+                db,
+                str(assignment["organization_id"]),
+                str(assignment["event_id"]),
+                [body.evaluator_user_id],
+            ),
+        )
     key = _key(idempotency_key)
     route = "POST /api/v1/admin/evaluation-assignments/{assignment_id}/reassign"
     fingerprint = _fingerprint(body)

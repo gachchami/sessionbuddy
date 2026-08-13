@@ -4359,6 +4359,13 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "pending": {
+            "items": {
+              "$ref": "#/components/schemas/PendingEvaluatorView"
+            },
+            "title": "Pending",
+            "type": "array"
           }
         },
         "required": [
@@ -7320,6 +7327,36 @@
           "password"
         ],
         "title": "PasswordSignIn",
+        "type": "object"
+      },
+      "PendingEvaluatorView": {
+        "additionalProperties": false,
+        "description": "A reviewer invitation that exists but has not been accepted yet.\n\nEligibility requires `identity_invitations.status='accepted'`, and only the\ninvited person can set it -- acceptance happens when they consume their own\naccess link. Reporting the pending invitation separately from `data` is what\nlets the organizer surfaces tell \"never invited\" apart from \"invited, still\nwaiting\"; without it both cases arrive as an empty list and the UI has to\nguess, which is how organizers ended up being told to re-invite someone they\nhad already invited.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "invitation_id": {
+            "title": "Invitation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invitation_id",
+          "email",
+          "display_name",
+          "expired"
+        ],
+        "title": "PendingEvaluatorView",
         "type": "object"
       },
       "PrivateSubmissionView": {

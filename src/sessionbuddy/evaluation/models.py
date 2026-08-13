@@ -157,10 +157,34 @@ class EvaluatorView(BaseModel):
     display_name: str
 
 
+class PendingEvaluatorView(BaseModel):
+    """A reviewer invitation that exists but has not been accepted yet.
+
+    Eligibility requires `identity_invitations.status='accepted'`, and only the
+    invited person can set it -- acceptance happens when they consume their own
+    access link. Reporting the pending invitation separately from `data` is what
+    lets the organizer surfaces tell "never invited" apart from "invited, still
+    waiting"; without it both cases arrive as an empty list and the UI has to
+    guess, which is how organizers ended up being told to re-invite someone they
+    had already invited.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    invitation_id: str
+    email: str
+    display_name: str
+    expired: bool
+
+
 class EvaluatorList(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     data: list[EvaluatorView]
+    # Populated only when `data` is empty: an eligible reviewer answers the
+    # question on its own, and a pending invitation is never the answer when one
+    # already exists.
+    pending: list[PendingEvaluatorView] = Field(default_factory=list)
 
 
 class SubmissionAnswerView(BaseModel):
