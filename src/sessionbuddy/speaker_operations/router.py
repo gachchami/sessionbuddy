@@ -880,7 +880,9 @@ async def _open_call_view(
     closes_at_ms = int(form["closes_at_ms"]) if form["closes_at_ms"] is not None else None
     limit = int(form["submission_limit"]) if form["submission_limit"] is not None else None
     remaining = max(0, limit - submitted_count) if limit is not None else None
-    accepting, message = form_availability(opens_at_ms, closes_at_ms, utc_now_ms())
+    availability = form_availability(opens_at_ms, closes_at_ms, utc_now_ms())
+    accepting = availability.accepting
+    message = availability.message
     if accepting and remaining == 0:
         accepting = False
         message = "You have reached the proposal limit for this Call for Proposals."

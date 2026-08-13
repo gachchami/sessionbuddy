@@ -14,7 +14,7 @@
   <a class="skip-link" href="#main">Skip to CFP setup</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
-    <div class="page-heading workflow-hero cfp-page-heading"><div class="cfp-page-heading__identity"><h1>Call for Proposals</h1><p id="cfp-page-meta" hidden>Loading form…</p><div id="cfp-live-bar" class="cfp-live-bar" hidden><div class="cfp-live-bar__address"><span class="cfp-live-bar__state"><span aria-hidden="true"></span>Live</span><a id="cfp-live-url" href="#" target="_blank" rel="noopener"></a><span id="cfp-live-url-editor" class="cfp-live-url-editor" hidden><span id="cfp-live-url-prefix"></span><input id="cfp-live-slug" aria-label="Edit public URL slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80"></span></div><div class="cfp-live-bar__actions"><button id="copy-cfp-header" type="button" class="secondary">Copy</button><span id="cfp-copy-feedback" class="sr-only" role="status" aria-live="polite"></span><button id="configure-url-header" type="button" class="secondary">Edit URL</button><button id="save-url-header" type="button" hidden>Save</button><button id="cancel-url-header" type="button" class="secondary" hidden>Cancel</button></div></div></div></div><button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button><button id="preview-cfp" type="button" class="secondary">Preview form</button></div>
+    <div class="page-heading workflow-hero cfp-page-heading"><div class="cfp-page-heading__identity"><h1>Call for Proposals</h1><p id="cfp-page-meta" hidden>Loading form…</p><div id="cfp-live-bar" class="cfp-live-bar" hidden><div class="cfp-live-bar__address"><span class="cfp-live-bar__state"><span aria-hidden="true"></span>Published</span><a id="cfp-live-url" href="#" target="_blank" rel="noopener"></a><span id="cfp-live-url-editor" class="cfp-live-url-editor" hidden><span id="cfp-live-url-prefix"></span><input id="cfp-live-slug" aria-label="Edit public URL slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80"></span></div><div class="cfp-live-bar__actions"><button id="copy-cfp-header" type="button" class="secondary">Copy</button><span id="cfp-copy-feedback" class="sr-only" role="status" aria-live="polite"></span><button id="configure-url-header" type="button" class="secondary">Edit URL</button><button id="save-url-header" type="button" hidden>Save</button><button id="cancel-url-header" type="button" class="secondary" hidden>Cancel</button></div></div></div></div><button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button><button id="preview-cfp" type="button" class="secondary">Preview form</button></div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
     <dialog id="cfp-share-dialog" class="submission-dialog" aria-labelledby="cfp-link-title">
     <section id="cfp-summary" class="cfp-link-card workflow-summary-card" aria-labelledby="cfp-link-title">
@@ -52,7 +52,7 @@
     <section id="publish-settings" class="cfp-builder workflow-stage" aria-labelledby="cfp-builder-title">
       <div class="cfp-builder__heading">
         <div><h2 id="cfp-builder-title" tabindex="-1">Form builder</h2><p>Select a screen or question to edit it.</p></div>
-        <div class="cfp-builder__state"><span id="cfp-autosave-state" class="draft-state" role="status" aria-live="polite"></span><span id="published-note" class="badge success" hidden>Live</span></div>
+        <div class="cfp-builder__state"><span id="cfp-autosave-state" class="draft-state" role="status" aria-live="polite"></span><span id="published-note" class="badge success" hidden>Published</span></div>
       </div>
       <div class="cfp-editor-layout">
         <nav id="cfp-form-outline" class="cfp-section-nav" aria-label="Form outline">
@@ -73,7 +73,7 @@
           <section id="cfp-availability" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Availability</h3><p>Choose when proposals can be submitted.</p></div></div>
             <p id="cfp-time-zone-context" class="time-zone-note">Time zone: <strong id="cfp-time-zone">Loading…</strong></p>
-            <div class="form-grid"><label>Opens<input name="opens_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional</small></label><label>Closes<input name="closes_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional</small></label></div>
+            <div class="form-grid"><div class="cfp-availability-field"><label>Opening time<input name="opens_at" type="datetime-local" aria-describedby="cfp-time-zone-context cfp-opens-help"><small id="cfp-opens-help">Leave blank to open immediately when you publish.</small></label><button id="open-cfp-immediately" type="button" class="tertiary">Open immediately</button></div><label>Closing time<input name="closes_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional — leave blank for no closing date.</small></label></div>
             <label class="cfp-short-field">Maximum proposals per speaker<input name="submission_limit" type="number" min="1" max="1000000" placeholder="No limit"><small>Optional</small></label>
           </section>
           <section id="cfp-questions" class="cfp-editor-section workflow-step">

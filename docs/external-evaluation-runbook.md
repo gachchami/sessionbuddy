@@ -3,6 +3,13 @@
 Use `scripts/run_sbek.sh` instead of rediscovering the evaluator checkout or
 reconstructing its Docker command.
 
+The script is an integration wrapper, not the evaluation launcher of record.
+It performs SessionBuddy-specific checkout discovery, dependency mounting, and
+preflight validation, then delegates execution to the eval repository's
+declared `sbek` package-script entry point. It must not invoke `src/cli.ts`
+directly or start, stop, reset, or deploy the target SessionBuddy environment;
+the repository runner and the operator retain those lifecycle authorities.
+
 The launcher remembers these non-secret integration facts:
 
 - deployed target: `https://sessionbuddy-development.shiny-cloud-dd47.workers.dev`

@@ -9,10 +9,24 @@ page already enforced.
 """
 
 import re
+from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import quote
 
 AvailabilityState = Literal["scheduled", "open", "closed"]
+AvailabilityBoundaryKind = Literal["opens", "closes"]
+
+
+@dataclass(frozen=True)
+class FormAvailability:
+    """Canonical availability decision plus the boundary that explains it."""
+
+    accepting: bool
+    state: AvailabilityState
+    message: str
+    boundary_at_ms: int | None
+    boundary_kind: AvailabilityBoundaryKind | None
+
 
 OPEN_MESSAGE = "Applications are open."
 NOT_YET_OPEN_MESSAGE = "Applications have not opened yet."
@@ -43,10 +57,24 @@ def availability_state(
 
 def form_availability(
     opens_at_ms: int | None, closes_at_ms: int | None, now_ms: int
-) -> tuple[bool, str]:
-    """Return whether the call accepts proposals now, plus a speaker-facing reason."""
+) -> FormAvailability:
+    """Return one decision and the relevant boundary for every rendering surface."""
     state = availability_state(opens_at_ms, closes_at_ms, now_ms)
-    return state == "open", STATE_MESSAGES[state]
+    if state == "scheduled":
+        boundary_at_ms, boundary_kind = opens_at_ms, "opens"
+    elif state == "closed":
+        boundary_at_ms, boundary_kind = closes_at_ms, "closes"
+    elif closes_at_ms is not None:
+        boundary_at_ms, boundary_kind = closes_at_ms, "closes"
+    else:
+        boundary_at_ms, boundary_kind = None, None
+    return FormAvailability(
+        accepting=state == "open",
+        state=state,
+        message=STATE_MESSAGES[state],
+        boundary_at_ms=boundary_at_ms,
+        boundary_kind=boundary_kind,
+    )
 
 
 def public_event_key(event_id: str) -> str:

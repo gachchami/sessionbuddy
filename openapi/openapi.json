@@ -696,6 +696,32 @@
             "title": "Accepting Submissions",
             "type": "boolean"
           },
+          "availability_boundary_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Boundary At Ms"
+          },
+          "availability_boundary_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opens",
+                  "closes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Boundary Kind"
+          },
           "availability_message": {
             "default": "Applications are open.",
             "title": "Availability Message",
@@ -8238,6 +8264,32 @@
             "default": true,
             "title": "Accepting Submissions",
             "type": "boolean"
+          },
+          "availability_boundary_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Boundary At Ms"
+          },
+          "availability_boundary_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opens",
+                  "closes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Boundary Kind"
           },
           "availability_message": {
             "default": "Applications are open.",

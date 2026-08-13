@@ -106,7 +106,7 @@ if [ "${1:-}" = "list" ]; then
     -v "$dependencies_volume:/eval/node_modules" \
     -w /eval \
     "$playwright_image" \
-    corepack pnpm exec tsx src/cli.ts list
+    corepack pnpm sbek list
 fi
 
 if [ "${1:-}" = "smoke" ]; then
@@ -182,7 +182,7 @@ if [ "$dry_run" = "1" ]; then
     -w /eval \
     -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     "$playwright_image" \
-    corepack pnpm exec tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+    corepack pnpm sbek "$command_name" --url "$target_url" "$@"
 fi
 
 # Claude Max authentication remains in the host keychain. Running the eval kit
@@ -210,7 +210,7 @@ if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     -e ANTHROPIC_API_KEY \
     -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     "$playwright_image" \
-    corepack pnpm exec tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+    corepack pnpm sbek "$command_name" --url "$target_url" "$@"
 fi
 
 if [ -f "$eval_root/.env" ] && grep -Eq '^ANTHROPIC_API_KEY=.+$' "$eval_root/.env"; then
@@ -220,7 +220,7 @@ if [ -f "$eval_root/.env" ] && grep -Eq '^ANTHROPIC_API_KEY=.+$' "$eval_root/.en
     -w /eval \
     -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     "$playwright_image" \
-    corepack pnpm exec tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+    corepack pnpm sbek "$command_name" --url "$target_url" "$@"
 fi
 
 if docker volume inspect "$auth_volume" >/dev/null 2>&1; then
@@ -232,7 +232,7 @@ if docker volume inspect "$auth_volume" >/dev/null 2>&1; then
     -e CLAUDE_CONFIG_DIR=/claude \
     -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     "$playwright_image" \
-    corepack pnpm exec tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+    corepack pnpm sbek "$command_name" --url "$target_url" "$@"
 fi
 
 echo "No Anthropic authentication is available to the eval container." >&2

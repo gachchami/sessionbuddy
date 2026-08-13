@@ -291,6 +291,21 @@
     return availabilityLabels[form.availability_state] || "Open";
   }
 
+  function cfpAvailabilityDetail(form) {
+    if (!form) return "";
+    const boundary = formatCfpDate(form.availability_boundary_at_ms, "");
+    if (form.availability_state === "scheduled" && boundary) {
+      return `Published, but not accepting proposals until ${boundary} (${state.eventTimeZone}).`;
+    }
+    if (form.availability_state === "closed" && boundary) {
+      return `Published, but no longer accepting proposals. The call closed ${boundary} (${state.eventTimeZone}).`;
+    }
+    if (form.availability_state === "open" && boundary) {
+      return `Published and accepting proposals until ${boundary} (${state.eventTimeZone}).`;
+    }
+    return form.availability_message || "";
+  }
+
   // A published state is a snapshot. Re-read the workspace once the next
   // boundary the server told us about has passed, so a page left open across
   // the deadline stops advertising an open call.
@@ -382,7 +397,7 @@
       : published && state.editing
       ? "Nothing changes publicly until you update the live CFP."
       : published
-      ? "Published. Use the CFP link above, then review proposals as they arrive."
+      ? cfpAvailabilityDetail(published)
       : "Complete the form settings below, then publish.";
 
     const live = byId("cfp-link-live");
@@ -1275,6 +1290,11 @@
       queueLocalDraft();
     });
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
+    byId("open-cfp-immediately").addEventListener("click", () => {
+      publish.elements.opens_at.value = "";
+      publish.elements.opens_at.dispatchEvent(new Event("input", { bubbles: true }));
+      publish.elements.opens_at.focus();
+    });
     const add = byId("add-field");
     add.addEventListener("click", () => {
       readFields();

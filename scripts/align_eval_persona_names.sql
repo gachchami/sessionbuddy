@@ -58,14 +58,14 @@ UPDATE users
        first_name = COALESCE(NULLIF(TRIM(first_name), ''), 'Jordan'),
        last_name = COALESCE(NULLIF(TRIM(last_name), ''), 'Alvarez'),
        updated_at_ms = CAST(strftime('%s', 'now') AS INTEGER) * 1000
- WHERE normalized_email = 'me@dbhanushali.com'
+ WHERE normalized_email = 'jordan.organizer@sbek-test.example.com'
    AND (display_name IS NULL OR TRIM(display_name) = '');
 
 -- Verify: every eval persona should now report a human name.
 SELECT normalized_email, display_name
   FROM users
  WHERE normalized_email IN (
-        'me@dbhanushali.com',
+        'jordan.organizer@sbek-test.example.com',
         'namohh.namaha+speaker1@gmail.com',
         'namohh.namaha+speaker2@gmail.com',
         'namohh.namaha+reviewer1@gmail.com'

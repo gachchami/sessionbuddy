@@ -65,6 +65,9 @@ const publishedForm = {
   submissions_received: 0,
   accepting_submissions: true,
   availability_message: "Applications are open.",
+  availability_state: "open",
+  availability_boundary_at_ms: null,
+  availability_boundary_kind: null,
   success_title: "Proposal received",
   success_message: "We sent a confirmation to your email address.",
   redirect_to_portal: true,
@@ -138,6 +141,7 @@ test.describe("public CFP responsive design", () => {
       // Signed out is a preview, not a gate: the questions render so a speaker
       // can read them before deciding to create an account.
       await expect(page.locator("#proposal-card")).toBeVisible();
+      await expect(page.locator("#call-opens")).toHaveText("Open now");
       await expect(page.locator("#preview-note")).toBeVisible();
       await expect(page.locator("#field-proposal_title")).toBeVisible();
       const signup = page.getByRole("button", { name: "Email me a signup link" });
@@ -220,6 +224,25 @@ test.describe("public CFP responsive design", () => {
       "Only the primary submitter can make changes.",
     );
     await expect(page.getByLabel("Proposal title")).toBeDisabled();
+  });
+
+  test("a scheduled call names its opening time in the event time zone", async ({ page }) => {
+    const opensAt = Date.UTC(2026, 7, 21, 13);
+    await servePublicCfp(page, false, [], null, {
+      ...publishedForm,
+      opens_at_ms: opensAt,
+      accepting_submissions: false,
+      availability_state: "scheduled",
+      availability_message: "Applications have not opened yet.",
+      availability_boundary_at_ms: opensAt,
+      availability_boundary_kind: "opens",
+    });
+
+    await page.goto("/cfp/mobile/responsive-conference");
+
+    await expect(page.locator("#availability")).toContainText("Applications open");
+    await expect(page.locator("#availability")).toContainText("EDT");
+    await expect(page.locator("#call-opens")).toContainText("EDT");
   });
 
   test("a decided proposal is read-only and discards stale browser-only co-speaker edits", async ({ page }) => {

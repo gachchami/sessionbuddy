@@ -129,15 +129,17 @@ test.describe("form validation and workflow wiring", () => {
     const form = page.locator("#publish-form");
     await form.locator("#cfp-description-editor").fill("Share your best conference proposal.");
     await page.getByRole("button", { name: "Availability" }).click();
-    await form.getByLabel(/Opens/).fill("2030-03-20T10:00");
-    await form.getByLabel(/Closes/).fill("2030-03-20T09:00");
+    await form.getByLabel("Opening time").fill("2030-03-20T10:00");
+    await form.getByLabel("Closing time").fill("2030-03-20T09:00");
     await form.getByRole("button", { name: "Publish CFP" }).click();
     expect(publishWrites).toBe(0);
-    await form.getByLabel(/Closes/).fill("2030-03-21T09:00");
+    await form.getByLabel("Closing time").fill("2030-03-21T09:00");
+    await form.getByRole("button", { name: "Open immediately" }).click();
+    await expect(form.getByLabel("Opening time")).toHaveValue("");
     await form.getByRole("button", { name: "Publish CFP" }).click();
     await expect(page.locator("#status")).toHaveText("Your CFP was published successfully.");
     expect(publishWrites).toBe(1);
-    expect(publishedBody).toMatchObject({ slug: "conference-2030" });
+    expect(publishedBody).toMatchObject({ slug: "conference-2030", opens_at_ms: null });
   });
 
   test("CFP builder keeps every section usable at narrow mobile widths", async ({ page }) => {

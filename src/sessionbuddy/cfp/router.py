@@ -46,7 +46,7 @@ from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
-from .availability import availability_state, form_availability, public_event_key
+from .availability import FormAvailability, form_availability, public_event_key
 from .models import (
     AdminPublishedFormView,
     CfpWorkspaceView,
@@ -2379,9 +2379,20 @@ async def create_submission(
         desired=body.co_speakers,
     )
     now = utc_now_ms()
-    accepting, _ = _form_availability(form, 0, now)
-    if not accepting:
-        raise HTTPException(status_code=409)
+    availability = _form_availability(form, 0, now)
+    if not availability.accepting:
+        headers = {"X-CFP-Availability-State": availability.state}
+        if availability.boundary_at_ms is not None:
+            headers["X-CFP-Availability-Boundary-At-Ms"] = str(
+                availability.boundary_at_ms
+            )
+        if availability.boundary_kind is not None:
+            headers["X-CFP-Availability-Boundary-Kind"] = availability.boundary_kind
+        raise HTTPException(
+            status_code=409,
+            detail=availability.message,
+            headers=headers,
+        )
     submitter_user_id = authenticated.actor.user_id
     submission_limit = (
         int(form["submission_limit"])
@@ -3037,7 +3048,9 @@ def _availability_boundaries(row) -> tuple[int | None, int | None]:
     return opens_at, closes_at
 
 
-def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[bool, str]:
+def _form_availability(
+    row, submissions_received: int, now_ms: int
+) -> FormAvailability:
     # Kept in the signature because callers also use the total as a public
     # activity metric. The configured limit is per authenticated speaker and
     # is therefore enforced by create_submission, not on this public view.
@@ -3048,7 +3061,7 @@ def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[boo
 def _published_form_view(row, now_ms: int) -> PublishedFormView:
     schema = json.loads(str(row.pop("schema_json")))
     submissions_received = int(row.get("submissions_received") or 0)
-    accepting, message = _form_availability(row, submissions_received, now_ms)
+    availability = _form_availability(row, submissions_received, now_ms)
     return PublishedFormView.model_validate(
         {
             **row,
@@ -3056,13 +3069,13 @@ def _published_form_view(row, now_ms: int) -> PublishedFormView:
             "accent_color": row.get("accent_color") or "#3159d9",
             "redirect_to_portal": bool(row["redirect_to_portal"]),
             "submissions_received": submissions_received,
-            "accepting_submissions": accepting,
+            "accepting_submissions": availability.accepting,
             # Organizer and public surfaces render this state directly, so the
             # deadline is decided once, here, from the stored boundaries.
-            "availability_state": availability_state(
-                *_availability_boundaries(row), now_ms
-            ),
-            "availability_message": message,
+            "availability_state": availability.state,
+            "availability_message": availability.message,
+            "availability_boundary_at_ms": availability.boundary_at_ms,
+            "availability_boundary_kind": availability.boundary_kind,
         }
     )
 

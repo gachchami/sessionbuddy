@@ -489,6 +489,32 @@ async def test_staged_file_cannot_appear_in_a_second_proposal(cfp_environment) -
     assert connection.execute("SELECT COUNT(*) FROM submissions").fetchone()[0] == 1
 
 
+async def test_scheduled_cfp_submission_conflict_carries_availability_boundary(
+    cfp_environment,
+) -> None:
+    connection, environment = cfp_environment
+    opens_at_ms = utc_now_ms() + 86_400_000
+    connection.execute(
+        "UPDATE call_for_speaker_forms SET opens_at_ms=? WHERE id='form'",
+        (opens_at_ms,),
+    )
+    connection.commit()
+
+    async with _client(environment) as client:
+        csrf = await _sign_in(client, connection, "speaker@example.test")
+        # Availability is checked before staged-asset consumption. The opaque
+        # placeholder keeps this test focused on the transport contract and
+        # proves the closed gate does not mutate submission state.
+        response = await _submit(client, csrf, "scheduled-boundary-placeholder")
+
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["message"] == "Applications have not opened yet."
+    assert response.headers["x-cfp-availability-state"] == "scheduled"
+    assert response.headers["x-cfp-availability-boundary-at-ms"] == str(opens_at_ms)
+    assert response.headers["x-cfp-availability-boundary-kind"] == "opens"
+    assert connection.execute("SELECT COUNT(*) FROM submissions").fetchone()[0] == 0
+
+
 async def test_revoked_user_cannot_regain_access_through_staged_uploads(cfp_environment) -> None:
     connection, environment = cfp_environment
     now = 2_000_000
@@ -1504,7 +1530,8 @@ def test_sbek_launcher_matches_the_current_persona_contract() -> None:
     assert "corepack pnpm install --frozen-lockfile --ignore-scripts" in installer
     assert "--store-dir=/pnpm-store" in installer
     assert '-v "$dependencies_volume:/eval/node_modules"' in launcher
-    assert "corepack pnpm exec tsx" in launcher
+    assert "corepack pnpm sbek" in launcher
+    assert "pnpm exec tsx" not in launcher
     assert '--paste-link "$@"' not in launcher
     assert 'if [ "${1:-}" = "--reuse" ]' not in launcher
     assert "body?.account_roles" in checker

@@ -720,11 +720,13 @@ def test_published_form_uses_default_accent_for_pre_branding_events() -> None:
     )
 
     assert form.accent_color == "#3159d9"
+    assert form.availability_boundary_at_ms is None
+    assert form.availability_boundary_kind is None
     assert "program_id" not in form.model_dump()
 
 
 def test_proposal_limit_is_per_speaker_not_a_global_cfp_cap() -> None:
-    accepting, message = _form_availability(
+    availability = _form_availability(
         {
             "opens_at_ms": None,
             "closes_at_ms": None,
@@ -734,8 +736,8 @@ def test_proposal_limit_is_per_speaker_not_a_global_cfp_cap() -> None:
         now_ms=1,
     )
 
-    assert accepting is True
-    assert message == "Applications are open."
+    assert availability.accepting is True
+    assert availability.message == "Applications are open."
 
     source = (
         Path(__file__).parents[2] / "src" / "sessionbuddy" / "cfp" / "router.py"

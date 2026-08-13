@@ -288,6 +288,8 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .cfp-live-bar__address { min-width: 0; display: flex; flex: 1; align-items: center; gap: .65rem; }
 .cfp-live-bar__state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .35rem; color: #17603f; font-size: .75rem; font-weight: 800; }
 .cfp-live-bar__state > span { width: .42rem; height: .42rem; border-radius: 50%; background: #24915f; }
+.cfp-availability-field { display: grid; align-content: start; gap: .45rem; }
+.cfp-availability-field > .tertiary { justify-self: start; min-height: 2.25rem; padding: .4rem .7rem; }
 .cfp-live-bar__address > a { min-width: 0; flex: 1; overflow: hidden; color: #3155a5; font: 600 .75rem ui-monospace, SFMono-Regular, Menlo, monospace; text-decoration: underline; text-decoration-color: #b7c4e2; text-underline-offset: .18em; text-overflow: ellipsis; white-space: nowrap; }
 .cfp-live-bar__address > a:hover { color: #173d91; text-decoration-color: currentColor; }
 .cfp-live-bar__actions { display: flex; flex: 0 0 auto; align-items: center; gap: .15rem; }

@@ -68,10 +68,25 @@ def test_form_availability_is_derived_from_the_same_state() -> None:
         (None, 10, 10),
         (1, 10, 5),
     ):
-        accepting, message = form_availability(opens, closes, now)
+        result = form_availability(opens, closes, now)
         state = availability_state(opens, closes, now)
-        assert accepting is (state == "open")
-        assert message.startswith("Applications")
+        assert result.accepting is (state == "open")
+        assert result.state == state
+        assert result.message.startswith("Applications")
+
+
+def test_form_availability_identifies_the_boundary_that_explains_the_state() -> None:
+    scheduled = form_availability(20_000, 40_000, 10_000)
+    assert (scheduled.boundary_kind, scheduled.boundary_at_ms) == ("opens", 20_000)
+
+    open_call = form_availability(None, 40_000, 10_000)
+    assert (open_call.boundary_kind, open_call.boundary_at_ms) == ("closes", 40_000)
+
+    closed = form_availability(None, 40_000, 40_000)
+    assert (closed.boundary_kind, closed.boundary_at_ms) == ("closes", 40_000)
+
+    always_open = form_availability(None, None, 10_000)
+    assert (always_open.boundary_kind, always_open.boundary_at_ms) == (None, None)
 
 
 def test_organizer_surfaces_render_the_api_availability_state() -> None:
@@ -86,7 +101,10 @@ def test_organizer_surfaces_render_the_api_availability_state() -> None:
     overview = (static / "event_overview.js").read_text()
     router = (ROOT / "src" / "sessionbuddy" / "cfp" / "router.py").read_text()
 
-    assert '"availability_state": availability_state(' in router
+    assert '"availability_state": availability.state' in router
+    assert "detail=availability.message" in router
+    assert '"X-CFP-Availability-Boundary-At-Ms"' in router
+    assert '"X-CFP-Availability-Boundary-Kind"' in router
     for script in (programs, overview):
         assert "availability_state" in script
         assert "now < form.opens_at_ms" not in script
@@ -102,3 +120,9 @@ def test_organizer_surfaces_render_the_api_availability_state() -> None:
     assert "scheduleAvailabilityRefresh(form);" in programs
     # A failed refresh retries instead of stranding the badge on the last answer.
     assert "window.setTimeout(refreshPublishedForm, REFRESH_RETRY_MS)" in programs
+    markup = (static / "admin_programs.html").read_text()
+    assert ">Published</span>" in markup
+    assert ">Live</span>" not in markup
+    assert "Leave blank to open immediately when you publish." in markup
+    assert 'id="open-cfp-immediately"' in markup
+    assert "cfpAvailabilityDetail(published)" in programs

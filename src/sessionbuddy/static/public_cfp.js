@@ -169,10 +169,34 @@
     section.hidden = sorted.length === 0;
   }
 
+  function formatEventDate(value, form) {
+    if (!value) return "";
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: form.event_time_zone || "UTC",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short"
+    }).format(new Date(value));
+  }
+
+  function availabilityMessage(form) {
+    const boundary = formatEventDate(form.availability_boundary_at_ms, form);
+    if (form.availability_state === "scheduled" && boundary) {
+      return `${form.availability_message} Applications open ${boundary}.`;
+    }
+    if (form.availability_state === "closed" && boundary) {
+      return `${form.availability_message} The call closed ${boundary}.`;
+    }
+    return form.availability_message;
+  }
+
   function renderCallDetails(form) {
-    const deadlineLabel = form.closes_at_ms
-      ? new Date(form.closes_at_ms).toLocaleString()
-      : "";
+    const openingLabel = formatEventDate(form.opens_at_ms, form);
+    const deadlineLabel = formatEventDate(form.closes_at_ms, form);
+    byId("call-opens").textContent = openingLabel || "Open now";
     byId("call-deadline").textContent = deadlineLabel || "No closing date set";
     // The close date is the single most decision-relevant fact for a submitter,
     // so it also belongs in the event header rather than only in the sidebar
@@ -767,8 +791,9 @@
       byId("co-speakers").hidden = (state.form.co_speaker_limit ?? 1) === 0;
       if (state.form.accepting_submissions === false) {
         byId("closed-card").hidden = false;
-        byId("availability").textContent = state.form.availability_message;
-        setStatus(state.form.availability_message);
+        const message = availabilityMessage(state.form);
+        byId("availability").textContent = message;
+        setStatus(message);
         if (!workspaceMode) return;
       }
       const saved = browserDraft();

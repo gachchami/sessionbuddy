@@ -313,6 +313,8 @@ class PublishedFormView(BaseModel):
     # to read "open" while the public form the same record drives was closed.
     availability_state: AvailabilityState = "open"
     availability_message: str = "Applications are open."
+    availability_boundary_at_ms: int | None = None
+    availability_boundary_kind: Literal["opens", "closes"] | None = None
     success_title: str = "Proposal received"
     success_message: str = "We sent a confirmation to your email address."
     redirect_to_portal: bool = True

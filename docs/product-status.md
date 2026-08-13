@@ -10,7 +10,9 @@ submission-context provisioning, opaque sessions, RBAC, CSRF/origin protection,
 rate limiting, structured API errors, safe shared browser error handling,
 branded browser 404/500 recovery pages, request IDs, observability, containerized
 development, registration-ready account profiles with private headshots and public links,
-account-level roles with one active session role, password changes that invalidate every
+account-level roles with one active session role, CFP publication controls that distinguish
+published state from current submission availability and make immediate opening explicit,
+password changes that invalidate every
 other session while atomically replacing the caller's cookie and CSRF token,
 browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
