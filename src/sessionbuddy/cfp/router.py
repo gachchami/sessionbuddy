@@ -11,8 +11,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
-from sessionbuddy.observability import record_timing
+from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth import (
     authenticate_request,
     generate_token,
@@ -362,10 +363,7 @@ async def _reconcile_co_speakers(
         )
         queued.append(message_id)
     await _execute(request, batch)
-    queue = getattr(_env(request), "COMMUNICATION_QUEUE", None)
-    if queue is not None:
-        for message_id in queued:
-            await queue.send({"schema_version": 1, "message_id": message_id})
+    await publish_committed_messages(request, queued)
 
 
 async def _timed_first(request: Request, statement, column: str | None = None):
@@ -1527,9 +1525,7 @@ async def resend_co_speaker_invitation(
         completed_at_ms=now,
     )
     await _execute(request, batch)
-    queue = getattr(_env(request), "COMMUNICATION_QUEUE", None)
-    if queue is not None:
-        await queue.send({"schema_version": 1, "message_id": message_id})
+    await publish_committed_messages(request, [message_id])
     view = CoSpeakerView(
         id=co_speaker_id,
         display_name=str(row["display_name"]),
@@ -1985,6 +1981,13 @@ async def _claim_and_enqueue_staged_scan(request: Request, row) -> None:
     The short-lived claim is cleared only when queue publication fails, making
     a later poll retryable while preventing concurrent polls from duplicating
     a successfully published job.
+
+    Completion is a ~1/s polling endpoint, so the poll loop itself is the
+    retry driver for a transient publish failure: release the claim, flag the
+    degradation, and answer with the true committed state ('uploaded') instead
+    of a 503 the browser would surface as a failed upload. A missing queue
+    binding is a deployment misconfiguration no amount of polling can heal, so
+    that still fails loudly.
     """
     queue = getattr(_env(request), "ASSET_SCAN_QUEUE", None)
     if queue is None:
@@ -2009,7 +2012,7 @@ async def _claim_and_enqueue_staged_scan(request: Request, row) -> None:
         return
     try:
         await queue.send(_staged_scan_job(row).to_message())
-    except Exception as exc:
+    except Exception:
         await (
             _db(request)
             .prepare(
@@ -2019,7 +2022,7 @@ async def _claim_and_enqueue_staged_scan(request: Request, row) -> None:
             .bind(row["id"], claim)
             .run()
         )
-        raise HTTPException(status_code=503) from exc
+        record_degradation(request, "asset_scan_queue_publish_failed")
 
 
 @cfp_router.patch(
@@ -2722,14 +2725,7 @@ async def create_submission(
         completed_at_ms=now,
     )
     await _execute(request, batch)
-    queue = getattr(_env(request), "COMMUNICATION_QUEUE", None)
-    if queue is not None:
-        try:
-            for queued_message_id in [message_id, *co_speaker_message_ids]:
-                await queue.send({"schema_version": 1, "message_id": queued_message_id})
-        except Exception:
-            # The durable queued row remains visible to operators for replay.
-            record_timing(request, "domain", 0)
+    await publish_committed_messages(request, [message_id, *co_speaker_message_ids])
     return await _editable_submission_by_id(db, submission_id)
 
 
@@ -3013,7 +3009,12 @@ async def _private_submission_by_id(
 ) -> PrivateSubmissionView:
     submission = await _submission_by_id(db, submission_id)
     return PrivateSubmissionView.model_validate(
-        {**submission.model_dump(), "editable": editable}
+        {
+            **submission.model_dump(
+                exclude={"co_speakers": {"__all__": {"role_label"}}}
+            ),
+            "editable": editable,
+        }
     )
 
 

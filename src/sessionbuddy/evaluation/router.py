@@ -11,6 +11,7 @@ from time import perf_counter
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
+from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.observability import record_timing
 from sessionbuddy.platform.auth.http import (
@@ -504,18 +505,6 @@ def _queue_assignment_notifications(
             )
         )
     return message_ids
-
-
-async def _publish_queued_messages(request: Request, message_ids: list[str]) -> None:
-    queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
-    if queue is None:
-        return
-    for message_id in message_ids:
-        try:
-            await queue.send({"schema_version": 1, "message_id": message_id})
-        except Exception:
-            # Durable rows stay 'queued'; the scheduled dispatcher republishes.
-            record_timing(request, "domain", 0)
 
 
 async def _event_organization_id(db, event_id: str) -> str:
@@ -1089,7 +1078,7 @@ async def create_evaluation_round(
         completed_at_ms=now,
     )
     await _execute(request, batch)
-    await _publish_queued_messages(request, notification_ids)
+    await publish_committed_messages(request, notification_ids)
     return EvaluationRoundView(
         id=round_id,
         event_id=event_id,
@@ -1768,7 +1757,7 @@ async def add_round_evaluator(
         dedup_suffix=str(now),
     )
     await batch.execute()
-    await _publish_queued_messages(request, notification_ids)
+    await publish_committed_messages(request, notification_ids)
     return RoundEvaluatorChange(
         round_id=round_id,
         evaluator_user_id=body.evaluator_user_id,
@@ -1994,7 +1983,7 @@ async def add_round_submissions(
         completed_at_ms=now,
     )
     await _execute(request, batch)
-    await _publish_queued_messages(request, notification_ids)
+    await publish_committed_messages(request, notification_ids)
     return result
 
 
@@ -2174,13 +2163,7 @@ async def remind_round_evaluator(
         )
     )
     await batch.execute()
-    queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
-    if queue is not None:
-        try:
-            await queue.send({"schema_version": 1, "message_id": message_id})
-        except Exception:
-            # The durable queued message remains visible for operator replay.
-            record_timing(request, "domain", 0)
+    await publish_committed_messages(request, [message_id])
     return EvaluatorReminderQueued(message_id=message_id)
 
 
@@ -3826,12 +3809,7 @@ async def record_submission_decision(
     )
     await _execute(request, batch)
     if communication_id is not None:
-        queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
-        if queue is not None:
-            try:
-                await queue.send({"schema_version": 1, "message_id": communication_id})
-            except Exception:
-                record_timing(request, "domain", 0)
+        await publish_committed_messages(request, [communication_id])
     return SubmissionDecisionView(
         id=decision_id,
         submission_id=submission_id,

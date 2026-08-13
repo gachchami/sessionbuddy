@@ -14,6 +14,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
@@ -3858,9 +3859,9 @@ async def _issue_invitation_link(
         )
     )
     await batch.execute()
-    queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
-    if queue is not None:
-        await queue.send({"schema_version": 1, "message_id": message_id})
+    # Post-commit wake-up only: a queue failure must not fail the invitation,
+    # whose retry would collide with the committed deterministic_key.
+    await publish_committed_messages(request, [message_id])
     return accept_url
 
 
@@ -5064,9 +5065,10 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
             )
             .run()
         )
-        queue = getattr(request.scope.get("env"), "COMMUNICATION_QUEUE", None)
-        if queue is not None:
-            await queue.send({"schema_version": 1, "message_id": message_id})
+        # Post-commit wake-up only: this endpoint answers GenericAccepted for
+        # every outcome, so a raised queue failure would both fail a committed
+        # sign-in link and become an account-enumeration oracle.
+        await publish_committed_messages(request, [message_id])
     return GenericAccepted()
 
 

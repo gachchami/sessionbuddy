@@ -14,10 +14,7 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert "Accepted and rejected proposals are already decided" in markup
     assert "selection.checked = false" in javascript
     assert 'selection.checked = item.status === "submitted"' not in javascript
-    assert (
-        'selection.addEventListener("change", () => { updateSelectedCount(); '
-        "markRoundFormDirty(); });"
-    ) in javascript
+    assert 'selection.addEventListener("change", submissionSelectionChanged);' in javascript
     assert "item.evaluation_round_name" in javascript
     assert "`In ${item.evaluation_round_name}`" in javascript
     assert ': "Already decided"' in javascript
@@ -64,3 +61,40 @@ def test_draft_round_configuration_has_read_and_update_contracts() -> None:
     assert 'AND event_id=?3 AND status="draft"' not in router
     assert "AND event_id=?3 AND status='draft'" in router
     assert 'action="evaluation_round.update"' in router
+
+
+def test_assignment_matrix_follows_the_proposal_selection() -> None:
+    """The per-reviewer proposal checkboxes ARE the payload's assignment list.
+
+    They are rendered from the current proposal selection, so every path that changes
+    that selection has to rebuild them. When it did not, a reviewer added before the
+    proposals were picked kept an empty matrix, roundAssignments() returned [], and the
+    API -- which treats a present list as authoritative -- created the round with its
+    proposals and its reviewers but no assignments at all.
+    """
+    javascript = (STATIC / "admin_submissions.js").read_text()
+
+    assert "function submissionSelectionChanged() {" in javascript
+    # Both selection paths -- one checkbox, and the Select/Clear all buttons -- rebuild it.
+    assert javascript.count("submissionSelectionChanged()") >= 1
+    assert 'selection.addEventListener("change", submissionSelectionChanged);' in javascript
+    matrix_rebuild = javascript.split("function submissionSelectionChanged() {", 1)[1]
+    assert "renderEvaluatorChoices();" in matrix_rebuild.split("}", 1)[0]
+
+    # A pair kept only in the DOM is lost on the next render, so the choice is stored.
+    assert "state.pairs[pairKey] = box.checked;" in javascript
+    assert "evaluator.in_round = input.checked;" in javascript
+    assert 'box.addEventListener("change", markRoundFormDirty);' not in javascript
+
+
+def test_round_payload_lists_cannot_contradict_each_other() -> None:
+    """assignments is filtered by the membership lists sent alongside it.
+
+    The API rejects an assignment naming a proposal or a reviewer that is not in the
+    round, so a stale matrix row -- a reviewer unchecked after their row was drawn --
+    would otherwise fail the entire save with a validation error.
+    """
+    javascript = (STATIC / "admin_submissions.js").read_text()
+
+    assert "evaluators.has(box.dataset.pairEvaluator)" in javascript
+    assert "submissions.has(box.dataset.pairSubmission)" in javascript

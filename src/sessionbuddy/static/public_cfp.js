@@ -368,6 +368,19 @@
     if (selected) chooseSubmission(selected);
   }
 
+  async function recoverOptimisticConflict(error) {
+    if (error.status !== 409 || !state.editingSubmission) return false;
+    const submissionId = state.editingSubmission.id;
+    clearBrowserDraft();
+    state.draftDirty = false;
+    await reloadSubmissions(submissionId);
+    setStatus(
+      "This proposal changed while you were editing. The latest saved version is loaded; review it before saving again.",
+      "error"
+    );
+    return true;
+  }
+
   function renderCoSpeakerInvitations(submission) {
     const section = byId("co-speaker-invitations");
     const list = byId("co-speaker-invitation-list");
@@ -951,6 +964,7 @@
         setStatus("A final decision was recorded while you were editing. Your unsaved changes were not saved, and this proposal is now read-only.", "error");
         return;
       }
+      if (await recoverOptimisticConflict(error)) return;
       setStatus(window.SessionBuddyApi.message(error), "error");
     }
   });
@@ -1069,6 +1083,7 @@
         setStatus("A final decision was recorded while you were editing. Your unsaved changes were not saved, and this proposal is now read-only.", "error");
         return;
       }
+      if (await recoverOptimisticConflict(error)) return;
       const clientMessage = error instanceof Error && !error.status ? error.message : "";
       setStatus(clientMessage || window.SessionBuddyApi.message(error, "Check the highlighted proposal fields and try again."), "error");
       byId("status").focus();

@@ -19,7 +19,10 @@ from sessionbuddy.communications.runtime import (
 from sessionbuddy.communications.runtime import ReminderWorkflow as _ReminderWorkflow
 from sessionbuddy.platform.db.d1 import to_python
 from sessionbuddy.platform.db.types import utc_now_ms
-from sessionbuddy.speaker_operations.asset_boundary import consume_scan_job
+from sessionbuddy.speaker_operations.asset_boundary import (
+    consume_scan_job,
+    dispatch_stuck_asset_scans,
+)
 from sessionbuddy.speaker_operations.purge import purge_expired_speaker_uploads
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
@@ -58,6 +61,22 @@ class Default(WorkerEntrypoint):
                 separators=(",", ":"),
             )
         )
+        scan_dispatch = await dispatch_stuck_asset_scans(
+            self.env.DB,
+            self.env.ASSET_SCAN_QUEUE,
+            utc_now_ms(),
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "asset_scan_dispatch",
+                    "level": "error" if scan_dispatch.publish_failures else "info",
+                    "published": scan_dispatch.published,
+                    "publish_failures": scan_dispatch.publish_failures,
+                },
+                separators=(",", ":"),
+            )
+        )
         speaker_purge = await purge_expired_speaker_uploads(
             self.env.DB, self.env.ASSETS, utc_now_ms()
         )
@@ -92,7 +111,10 @@ class Default(WorkerEntrypoint):
         # env and ctx arguments even though WorkerEntrypoint also exposes self.env.
         for message in batch.messages:
             body = to_python(message.body)
-            if str(batch.queue) == "sessionbuddy-asset-scans":
+            # Environment-suffixed queue names (e.g. "-development-2") must
+            # still route to the scan consumer; an exact match would silently
+            # ack scan jobs as malformed communication envelopes.
+            if str(batch.queue).startswith("sessionbuddy-asset-scans"):
                 disposition = await consume_scan_job(
                     self.env.DB,
                     self.env.ASSETS,

@@ -7,7 +7,13 @@ from hashlib import sha256
 from typing import Any, Literal, Protocol
 
 from sessionbuddy.platform.auth.tokens import generate_token
-from sessionbuddy.platform.db.d1 import D1Database, execute_batch, row_mapping
+from sessionbuddy.platform.db.d1 import (
+    D1Database,
+    execute_batch,
+    result_rows,
+    row_mapping,
+    to_python,
+)
 from sessionbuddy.platform.db.types import new_id
 
 
@@ -270,6 +276,12 @@ class ScanDisposition:
     reason: str
 
 
+# How long a 'scanning' claim confers exclusive ownership. A consumer that
+# crashed or hung past this window loses the row to a stale takeover (by a
+# redelivered message or the scheduled re-dispatcher).
+SCANNING_RECOVERY_AFTER_MS = 10 * 60 * 1000
+
+
 async def consume_scan_job(
     db: D1Database,
     bucket: PrivateBucket,
@@ -278,7 +290,16 @@ async def consume_scan_job(
     *,
     now_ms: int,
 ) -> ScanDisposition:
-    """Fail closed: malformed/stale jobs ack safely; infrastructure failures retry."""
+    """Fail closed: malformed/stale jobs ack safely; infrastructure failures retry.
+
+    Ownership is strict end to end: the claim is a compare-and-swap on the
+    state row, and every terminal write is additionally gated on the claim's
+    own timestamp token, so an owner that hung past the recovery window and
+    lost its claim to a takeover cannot land any terminal state transition --
+    including its scan event receipt, which shares the winner's single
+    per-version slot and would otherwise leave the stored verdict contradicting
+    the state it is supposed to explain.
+    """
     try:
         job = ScanJob.decode(payload)
     except (ValueError, TypeError, json.JSONDecodeError):
@@ -300,12 +321,46 @@ async def consume_scan_job(
     )
     if row is None:
         return await _consume_staged_scan_job(db, bucket, scanner, job, now_ms=now_ms)
-    try:
+
+    async def release_claim() -> None:
+        """Return the row to 'uploaded' so a queue redelivery retries at once.
+
+        The schema couples columns to states — 'uploaded' requires
+        scan_started_at_ms IS NULL — so the release clears the marker rather
+        than keeping it. Guarding on our own scan_started_at_ms token means a
+        takeover's fresher claim is never rolled back by a stale owner."""
         await (
             db.prepare(
+                """UPDATE speaker_asset_versions
+               SET scan_state='uploaded', scan_started_at_ms=NULL
+               WHERE organization_id=?1 AND event_id=?2 AND id=?3 AND generation=?4
+                 AND checksum_sha256=?5 AND scan_state='scanning'
+                 AND scan_started_at_ms=?6"""
+            )
+            .bind(
+                job.organization_id,
+                job.event_id,
+                job.asset_version_id,
+                job.generation,
+                job.checksum_sha256,
+                now_ms,
+            )
+            .run()
+        )
+
+    try:
+        # Atomic ownership: claim a fresh upload, or take over a claim whose
+        # owner went silent past the recovery window. A duplicate observing a
+        # fresh 'scanning' claim acks instead of scanning concurrently.
+        claimed = row_mapping(
+            await db.prepare(
                 """UPDATE speaker_asset_versions SET scan_state='scanning', scan_started_at_ms=?1
                WHERE organization_id=?2 AND event_id=?3 AND id=?4 AND generation=?5
-                 AND checksum_sha256=?6 AND scan_state='uploaded'"""
+                 AND checksum_sha256=?6 AND (
+                   scan_state='uploaded'
+                   OR (scan_state='scanning' AND scan_started_at_ms<=?7)
+                 )
+               RETURNING id"""
             )
             .bind(
                 now_ms,
@@ -314,20 +369,55 @@ async def consume_scan_job(
                 job.asset_version_id,
                 job.generation,
                 job.checksum_sha256,
+                now_ms - SCANNING_RECOVERY_AFTER_MS,
             )
-            .run()
+            .first()
         )
+        if claimed is None:
+            return ScanDisposition(ack=True, reason="already_claimed")
         stored = await bucket.get(str(row["object_key"]))
         if stored is None:
+            await release_claim()
             return ScanDisposition(ack=False, reason="object_unavailable")
         result = await scanner.scan(stored, job=job)
+        if result.verdict == "error":
+            # A scanner infrastructure failure is not a malware verdict; the
+            # rejection branch below must never quarantine-reject on it. The
+            # claim is deliberately HELD: 'scanning' with our
+            # scan_started_at_ms is the schema's own last-attempt marker, so
+            # the redelivered message acks as already_claimed and the
+            # scheduled re-dispatcher retries via stale takeover — spacing
+            # attempts at the recovery window instead of hammering a failing
+            # scanner on every redelivery.
+            return ScanDisposition(ack=False, reason="scanner_error")
         event_id = new_id()
         statements = [
+            # Gated on the claim token, exactly like the terminal state writes
+            # below. asset_scan_events is UNIQUE on
+            # (engine, job_id, asset_version_id, generation, checksum_sha256)
+            # and job_id is the asset version id, so an engine gets exactly one
+            # receipt slot per version: every attempt competes for the same row.
+            # Ungated, a hung owner whose state write no-ops could still take
+            # that slot first, and the takeover's receipt would then be
+            # swallowed by ON CONFLICT DO NOTHING while its terminal state
+            # landed -- persisted state 'clean' explained by a lone 'malicious'
+            # receipt, or the reverse. Gating makes the receipt and the state it
+            # explains stand or fall together, as one claim's atomic batch.
+            #
+            # The cost is deliberate: a losing attempt's provider verdict is not
+            # retained. Keeping every attempt needs an attempt-history table
+            # without this job-level uniqueness, not a second row here.
             db.prepare(
                 """INSERT INTO asset_scan_events
                    (id,organization_id,event_id,asset_version_id,generation,checksum_sha256,
                     provider_event_id,job_id,verdict,engine,signature_code,received_at_ms)
-                   VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+                   SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12
+                   WHERE EXISTS (
+                     SELECT 1 FROM speaker_asset_versions
+                     WHERE organization_id=?2 AND event_id=?3 AND id=?4 AND generation=?5
+                       AND checksum_sha256=?6 AND scan_state='scanning'
+                       AND scan_started_at_ms=?12
+                   )
                    ON CONFLICT DO NOTHING"""
             ).bind(
                 event_id,
@@ -349,10 +439,25 @@ async def consume_scan_job(
         else:
             statements.append(
                 db.prepare(
+                    # Requires the matching receipt for the same reason the clean path
+                    # does. A rejection written against a stored 'clean' receipt is the
+                    # same divergence as a promote against a stored 'malicious' one --
+                    # it just fails in the quiet direction, so nobody reports it. Without
+                    # the receipt the row stays 'scanning' and is re-dispatched, which
+                    # keeps a malicious upload quarantined either way.
                     """UPDATE speaker_asset_versions SET scan_state='rejected', is_current=0,
                           scanned_at_ms=?1, scan_result_code=?2
                    WHERE organization_id=?3 AND event_id=?4 AND id=?5 AND generation=?6
-                     AND checksum_sha256=?7 AND scan_state='scanning'"""
+                     AND checksum_sha256=?7 AND scan_state='scanning'
+                     AND scan_started_at_ms=?1 AND EXISTS (
+                       SELECT 1 FROM asset_scan_events receipt
+                       WHERE receipt.organization_id=speaker_asset_versions.organization_id
+                         AND receipt.event_id=speaker_asset_versions.event_id
+                         AND receipt.asset_version_id=speaker_asset_versions.id
+                         AND receipt.generation=speaker_asset_versions.generation
+                         AND receipt.checksum_sha256=speaker_asset_versions.checksum_sha256
+                         AND receipt.verdict='malicious'
+                     )"""
                 ).bind(
                     now_ms,
                     result.signature_code or result.verdict,
@@ -366,7 +471,125 @@ async def consume_scan_job(
         await execute_batch(db, statements)
         return ScanDisposition(ack=True, reason=result.verdict)
     except Exception:
+        # Claim (if committed) is held; the re-dispatcher retries after the
+        # recovery window. If the claim itself failed, the row is untouched
+        # and the queue redelivery retries in full.
         return ScanDisposition(ack=False, reason="infrastructure_failure")
+
+
+@dataclass(frozen=True, slots=True)
+class ScanDispatchResult:
+    published: int
+    publish_failures: int
+
+
+def _checksum_bytes(value: object) -> bytes:
+    converted = to_python(value)
+    return converted if isinstance(converted, bytes) else bytes(converted)
+
+
+async def dispatch_stuck_asset_scans(
+    db: D1Database,
+    queue,
+    now_ms: int,
+    *,
+    uploaded_after_ms: int = 2 * 60 * 1000,
+    scanning_after_ms: int = SCANNING_RECOVERY_AFTER_MS,
+    give_up_after_ms: int = 7 * 24 * 60 * 60 * 1000,
+    limit: int = 50,
+) -> ScanDispatchResult:
+    """Republish scan jobs for committed uploads whose envelope never arrived.
+
+    Queue publication after a commit is best-effort everywhere (a completion
+    request may swallow a transient send failure, a process can crash between
+    commit and publish, and a poisoned message can exhaust queue retries), so
+    this scheduled pass is the durable guarantee that a quarantined upload is
+    eventually scanned. Consumers take exclusive ownership via a compare-and-
+    swap claim, so a duplicate envelope for a fresh claim acks without a
+    second concurrent scan. Retry spacing lives in the state machine itself:
+    a failed scan attempt HOLDS its claim, so the row sits in 'scanning' with
+    scan_started_at_ms as the last-attempt marker and is republished only
+    after scanning_after_ms via stale takeover. A missing object releases
+    back to 'uploaded' (whose schema invariant clears the marker) for cheap
+    uploaded_after_ms-cadence retries that never reach the scanner. Rows
+    older than give_up_after_ms stop being retried so a persistently failing
+    scanner cannot burn budget forever (the row stays fail-closed in
+    quarantine for operators).
+    """
+    if not 1 <= limit <= 500:
+        raise ValueError("scan dispatch limit must be between 1 and 500")
+    if uploaded_after_ms < 60_000 or scanning_after_ms < 60_000:
+        raise ValueError("invalid scan dispatch retry policy")
+    if give_up_after_ms <= scanning_after_ms:
+        raise ValueError("invalid scan dispatch retry policy")
+    uploaded_before_ms = now_ms - uploaded_after_ms
+    scanning_before_ms = now_ms - scanning_after_ms
+    give_up_before_ms = now_ms - give_up_after_ms
+    jobs: list[ScanJob] = []
+    speaker_rows = result_rows(
+        await db.prepare(
+            """SELECT organization_id,event_id,id,generation,checksum_sha256
+               FROM speaker_asset_versions
+               WHERE checksum_sha256 IS NOT NULL AND uploaded_at_ms IS NOT NULL
+                 AND uploaded_at_ms>?4 AND (
+                 (scan_state='uploaded' AND uploaded_at_ms<=?1)
+                 OR (scan_state='scanning' AND scan_started_at_ms IS NOT NULL
+                    AND scan_started_at_ms<=?2)
+               )
+               ORDER BY COALESCE(scan_started_at_ms,uploaded_at_ms),id LIMIT ?3"""
+        )
+        .bind(uploaded_before_ms, scanning_before_ms, limit, give_up_before_ms)
+        .all()
+    )
+    for row in speaker_rows:
+        jobs.append(
+            ScanJob(
+                schema_version=1,
+                organization_id=str(row["organization_id"]),
+                event_id=str(row["event_id"]),
+                asset_version_id=str(row["id"]),
+                generation=int(row["generation"]),
+                checksum_sha256=_checksum_bytes(row["checksum_sha256"]),
+                job_id=str(row["id"]),
+            )
+        )
+    # A fresh CFP enqueue claim bumps updated_at_ms, so the staleness cut
+    # inherently skips rows the request path just published.
+    staged_rows = []
+    if len(jobs) < limit:
+        staged_rows = result_rows(
+            await db.prepare(
+                """SELECT id,organization_id,event_id,checksum_sha256
+                   FROM cfp_staged_assets
+                   WHERE expires_at_ms>?4 AND (
+                     (status='uploaded' AND updated_at_ms<=?1)
+                     OR (status='scanning' AND updated_at_ms<=?2)
+                   )
+                   ORDER BY updated_at_ms,id LIMIT ?3"""
+            )
+            .bind(uploaded_before_ms, scanning_before_ms, limit - len(jobs), now_ms)
+            .all()
+        )
+    for row in staged_rows:
+        jobs.append(
+            ScanJob(
+                schema_version=1,
+                organization_id=str(row["organization_id"]),
+                event_id=str(row["event_id"]),
+                asset_version_id=str(row["id"]),
+                generation=1,
+                checksum_sha256=_checksum_bytes(row["checksum_sha256"]),
+                job_id=str(row["id"]),
+            )
+        )
+    published = publish_failures = 0
+    for job in jobs:
+        try:
+            await queue.send(job.to_message())
+            published += 1
+        except Exception:
+            publish_failures += 1
+    return ScanDispatchResult(published=published, publish_failures=publish_failures)
 
 
 async def _consume_staged_scan_job(
@@ -389,20 +612,48 @@ async def _consume_staged_scan_job(
     )
     if staged is None:
         return ScanDisposition(ack=True, reason="stale_or_complete")
-    try:
+
+    async def release_claim() -> None:
+        """Return a failed attempt to 'uploaded' so a queue redelivery retries
+        immediately; the updated_at_ms token protects a fresher takeover."""
         await (
             db.prepare(
-                """UPDATE cfp_staged_assets SET status='scanning', updated_at_ms=?1
-               WHERE id=?2 AND checksum_sha256=?3 AND status='uploaded'"""
+                """UPDATE cfp_staged_assets SET status='uploaded'
+               WHERE id=?1 AND checksum_sha256=?2 AND status='scanning'
+                 AND updated_at_ms=?3"""
             )
-            .bind(now_ms, job.asset_version_id, job.checksum_sha256)
+            .bind(job.asset_version_id, job.checksum_sha256, now_ms)
             .run()
         )
+
+    try:
+        claimed = row_mapping(
+            await db.prepare(
+                """UPDATE cfp_staged_assets SET status='scanning', updated_at_ms=?1
+               WHERE id=?2 AND checksum_sha256=?3 AND (
+                 status='uploaded'
+                 OR (status='scanning' AND updated_at_ms<=?4)
+               )
+               RETURNING id"""
+            )
+            .bind(
+                now_ms,
+                job.asset_version_id,
+                job.checksum_sha256,
+                now_ms - SCANNING_RECOVERY_AFTER_MS,
+            )
+            .first()
+        )
+        if claimed is None:
+            return ScanDisposition(ack=True, reason="already_claimed")
         stored = await bucket.get(str(staged["object_key"]))
         if stored is None:
+            await release_claim()
             return ScanDisposition(ack=False, reason="object_unavailable")
         result = await scanner.scan(stored, job=job)
         if result.verdict == "error":
+            # Held claim: redelivery acks, the re-dispatcher retries after the
+            # recovery window (see the speaker path for the rationale).
             return ScanDisposition(ack=False, reason="scanner_error")
         if result.verdict == "clean":
             status, code = "staged", "clean"
@@ -411,7 +662,8 @@ async def _consume_staged_scan_job(
         await (
             db.prepare(
                 """UPDATE cfp_staged_assets SET status=?1, scan_result_code=?2, updated_at_ms=?3
-               WHERE id=?4 AND checksum_sha256=?5 AND status='scanning'"""
+               WHERE id=?4 AND checksum_sha256=?5 AND status='scanning'
+                 AND updated_at_ms=?3"""
             )
             .bind(status, code, now_ms, job.asset_version_id, job.checksum_sha256)
             .run()
@@ -422,24 +674,57 @@ async def _consume_staged_scan_job(
 
 
 def _clean_result_statements(db: D1Database, job: ScanJob, now_ms: int) -> list[Any]:
+    """Terminal statements for a clean verdict, all gated on the caller's
+    claim token (scan_started_at_ms == now_ms). A hung owner that outlives
+    its claim must not demote the asset's current version and then fail the
+    promote, stranding the asset with no current version until the takeover
+    finishes — so the supersede step checks the token too, making the whole
+    batch a no-op for anyone but the claim's owner.
+
+    Both steps additionally require this version's own 'clean' receipt, which
+    the caller inserts earlier in the same batch under the same token. That
+    makes 'clean' unwritable without a stored receipt saying so, matching the
+    guard the inline completion path in the router already carries. It has to
+    be on BOTH steps: a receipt guard on the promote alone would let a
+    supersede land and its promote no-op, which is the stranding this
+    docstring exists to describe."""
     return [
         db.prepare(
             """UPDATE speaker_asset_versions AS previous SET scan_state='superseded',
                       is_current=0
                  WHERE previous.asset_id=(SELECT candidate.asset_id
-                   FROM speaker_asset_versions candidate WHERE candidate.id=?1 AND NOT EXISTS (
+                   FROM speaker_asset_versions candidate WHERE candidate.id=?1
+                     AND candidate.scan_state='scanning'
+                     AND candidate.scan_started_at_ms=?2 AND EXISTS (
+                     SELECT 1 FROM asset_scan_events receipt
+                     WHERE receipt.organization_id=candidate.organization_id
+                       AND receipt.event_id=candidate.event_id
+                       AND receipt.asset_version_id=candidate.id
+                       AND receipt.generation=candidate.generation
+                       AND receipt.checksum_sha256=candidate.checksum_sha256
+                       AND receipt.verdict='clean'
+                   ) AND NOT EXISTS (
                      SELECT 1 FROM speaker_asset_versions newer
                      WHERE newer.asset_id=candidate.asset_id
                        AND newer.generation>candidate.generation
                    ))
                    AND previous.id<>?1 AND previous.is_current=1"""
-        ).bind(job.asset_version_id),
+        ).bind(job.asset_version_id, now_ms),
         db.prepare(
             """UPDATE speaker_asset_versions AS candidate
                  SET scan_state='clean', is_current=1, scanned_at_ms=?1,
                      scan_result_code='clean'
                  WHERE organization_id=?2 AND event_id=?3 AND id=?4 AND generation=?5
-                   AND checksum_sha256=?6 AND scan_state='scanning' AND NOT EXISTS (
+                   AND checksum_sha256=?6 AND scan_state='scanning'
+                   AND scan_started_at_ms=?1 AND EXISTS (
+                     SELECT 1 FROM asset_scan_events receipt
+                     WHERE receipt.organization_id=candidate.organization_id
+                       AND receipt.event_id=candidate.event_id
+                       AND receipt.asset_version_id=candidate.id
+                       AND receipt.generation=candidate.generation
+                       AND receipt.checksum_sha256=candidate.checksum_sha256
+                       AND receipt.verdict='clean'
+                   ) AND NOT EXISTS (
                      SELECT 1 FROM speaker_asset_versions newer
                      WHERE newer.asset_id=candidate.asset_id
                        AND newer.generation>candidate.generation

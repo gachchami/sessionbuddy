@@ -88,6 +88,8 @@ _to_delete
 *.secret
 secrets/
 credentials/
+.cloudflare-private/
+wrangler.*.private.jsonc
 
 # Python bytecode and caches
 __pycache__/

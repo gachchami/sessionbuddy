@@ -68,3 +68,80 @@ def test_one_time_secret_replay_never_persists_or_returns_plaintext() -> None:
         "now, token_id, token", 1
     )[0]
     assert "IntegrationTokenView(" not in replay_branch
+
+
+def test_inline_upload_completion_cannot_supersede_the_version_it_promotes() -> None:
+    """The completion route is replayable, and its inline branch is a state machine.
+
+    Two requests that both read scan_state='pending_upload' before either batch
+    commits serialise into the same statements twice. On the second pass the
+    version is already clean and current, so a supersede that does not exclude
+    it demotes the very row the promote below is about to claim -- the promote
+    then no-ops on scan_state and the asset is left with no current version.
+    The EXISTS receipt guard does not catch this: the first pass's receipt
+    satisfies it. Only the self-exclusion does, which is why the queue
+    consumer's _clean_result_statements carries the same 'previous.id<>' term.
+    """
+    router = (ROOT / "src/sessionbuddy/speaker_operations/router.py").read_text(
+        encoding="utf-8"
+    )
+    completion = _function(router, "complete_speaker_upload")
+
+    supersede = completion.split("scan_state = 'superseded'", 1)[1].split('"""', 1)[0]
+    assert "is_current = 1 AND scan_state = 'clean'" in supersede
+    assert "id <> ?3" in supersede
+    # Demoting is conditional on the promote below being certain to land, so the
+    # supersede repeats every condition the promote checks. A receipt insert that
+    # no-ops on an unrelated uniqueness conflict would otherwise retire the outgoing
+    # version for an incoming one that never leaves 'scanning'.
+    assert "receipt.verdict = 'clean'" in supersede
+    assert "newer.generation > candidate.generation" in supersede
+    # A spent intent is refused as well, so the two replay guards cannot drift.
+    assert 'row["consumed_at_ms"] is not None' in completion
+
+    boundary = (ROOT / "src/sessionbuddy/speaker_operations/asset_boundary.py").read_text(
+        encoding="utf-8"
+    )
+    assert "previous.id<>?1" in boundary
+
+
+def test_terminal_asset_verdicts_are_written_only_against_their_own_receipt() -> None:
+    """Both verdicts, on both paths, require the stored receipt to agree.
+
+    Four write sites reach a terminal scan_state -- promote and reject, queued and
+    inline -- and each can be reached with the receipt insert no-oped by the job's
+    UNIQUE key. Guarding only the promotes leaves 'rejected' writable against a
+    stored 'clean', which is the same divergence in the direction nobody reports.
+    The inline task completion carries the guard too, so a no-op promote cannot
+    tell a speaker their upload was accepted.
+    """
+    boundary = (ROOT / "src/sessionbuddy/speaker_operations/asset_boundary.py").read_text(
+        encoding="utf-8"
+    )
+    router = (ROOT / "src/sessionbuddy/speaker_operations/router.py").read_text(
+        encoding="utf-8"
+    )
+    consumer = _function(boundary, "consume_scan_job")
+    completion = _function(router, "complete_speaker_upload")
+
+    queued_reject = consumer.split("scan_state='rejected'", 1)[1].split('"""', 1)[0]
+    assert "receipt.verdict='malicious'" in queued_reject
+    inline_reject = completion.split("scan_state = 'rejected'", 1)[1].split('"""', 1)[0]
+    assert "receipt.verdict = 'malicious'" in inline_reject
+    # Scoped to the generation and checksum the request was completing, as the
+    # promote beside it already was.
+    assert "AND generation = ?7 AND checksum_sha256 = ?3" in inline_reject
+
+    clean_statements = boundary.split("def _clean_result_statements", 1)[1]
+    assert clean_statements.count("receipt.verdict='clean'") == 2, (
+        "the supersede and the promote must both require the receipt, or a "
+        "receipt-less promote no-ops behind a supersede that already landed"
+    )
+
+    task = completion.split("UPDATE speaker_tasks SET state = 'completed'", 1)[1]
+    assert "promoted.is_current = 1" in task
+    assert "promoted.scan_state = 'clean'" in task
+
+    # The response reports the row's real state, not the verdict it attempted.
+    assert "state = _completion_state(" in completion
+    assert "SELECT scan_state FROM speaker_asset_versions WHERE id = ?1" in completion

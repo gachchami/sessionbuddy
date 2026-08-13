@@ -10,6 +10,10 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SAFE_PHASES = ("authn", "authz", "validation", "db", "domain", "serialization")
+SAFE_DEGRADATIONS = (
+    "asset_scan_queue_publish_failed",
+    "communication_queue_publish_failed",
+)
 
 
 def record_timing(request: Request, phase: str, duration_ms: float) -> None:
@@ -18,6 +22,25 @@ def record_timing(request: Request, phase: str, duration_ms: float) -> None:
         raise ValueError(f"Unsupported timing phase: {phase}")
     timings: dict[str, float] = request.state.timings
     timings[phase] = timings.get(phase, 0.0) + max(0.0, duration_ms)
+
+
+def record_degradation(request: Request, code: str) -> None:
+    """Flag a deliberately absorbed failure on this request's completion record.
+
+    A handler that swallows an error to protect an already-committed mutation
+    still owes operators a signal; otherwise the only evidence is the delay
+    before a scheduled recovery pass picks the work up. Codes come from a fixed
+    allowlist so a degradation record can never carry a recipient address,
+    payload, or provider error string.
+    """
+    if code not in SAFE_DEGRADATIONS:
+        raise ValueError(f"Unsupported degradation code: {code}")
+    degradations: list[str] | None = getattr(request.state, "degradations", None)
+    if degradations is None:
+        degradations = []
+        request.state.degradations = degradations
+    if code not in degradations:
+        degradations.append(code)
 
 
 def _route_template(request: Request) -> str:
@@ -53,6 +76,7 @@ class RequestObservabilityMiddleware:
         request.state.request_id = request_id
         request.state.request_started_ns = started_ns
         request.state.timings = {}
+        request.state.degradations = []
         status_code = 500
 
         async def send_with_observability(message: Message) -> None:
@@ -73,9 +97,16 @@ class RequestObservabilityMiddleware:
         finally:
             total_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
             timings: dict[str, float] = request.state.timings
+            degradations: list[str] = request.state.degradations
+            if status_code >= 500:
+                level = "error"
+            elif degradations:
+                level = "warning"
+            else:
+                level = "info"
             event: dict[str, Any] = {
                 "event": "http.request.completed",
-                "level": "error" if status_code >= 500 else "info",
+                "level": level,
                 "request_id": request_id,
                 "method": request.method,
                 "route": _route_template(request),
@@ -83,6 +114,10 @@ class RequestObservabilityMiddleware:
                 "duration_ms": round(total_ms, 3),
                 "timings_ms": {key: round(value, 3) for key, value in timings.items()},
             }
+            # Only present when set, so successful requests keep their exact
+            # historical shape for log-based dashboards and tests.
+            if degradations:
+                event["degradations"] = sorted(degradations)
             # Python Workers reliably retain stdout/stderr in Workers Logs.
             # Logging's default warning threshold can otherwise suppress these
             # completion records and make a user-facing reference unsearchable.

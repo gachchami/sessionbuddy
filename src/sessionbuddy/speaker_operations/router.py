@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from sessionbuddy.cfp.availability import form_availability
 from sessionbuddy.communications.presentation import message_category
 from sessionbuddy.console import embedded_assets
-from sessionbuddy.observability import record_timing
+from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
@@ -913,6 +913,22 @@ def _blob(value: object) -> bytes:
     return converted if isinstance(converted, bytes) else bytes(converted)
 
 
+def _completion_state(observed: object, *, attempted: str) -> str:
+    """Report the version's real scan_state to an upload-completion caller.
+
+    UploadCompletionView.state is narrower than scan_state, so the two states a
+    completed version can hold that the caller has no word for are mapped here.
+    'superseded' means this upload was scanned and accepted and then outranked by
+    a newer generation, so 'clean' is the honest answer to "did my upload pass".
+    Anything unrecognised falls back to the verdict the request attempted rather
+    than failing the response, since by then the write has already committed.
+    """
+    state = str(observed) if observed is not None else ""
+    if state in {"uploaded", "scanning", "clean", "rejected"}:
+        return state
+    return "clean" if state == "superseded" else attempted
+
+
 def _validate_task_response(schema: object, answers: dict[str, object]) -> None:
     if not isinstance(schema, dict) or not isinstance(schema.get("fields", []), list):
         raise HTTPException(status_code=409)
@@ -1169,6 +1185,18 @@ def _bucket(request: Request):
 
 
 async def _enqueue_asset_scan(request: Request, row) -> None:
+    """Best-effort scan-job wake-up for a committed upload.
+
+    The version row is already durably 'uploaded', so the upload must not be
+    reported as failed over a transient queue outage — especially since the
+    portal's retry state lives only in page memory, and a user who reloads or
+    walks away can never re-drive this publish. The scheduled
+    dispatch_stuck_asset_scans pass is the recovery guarantee: it republishes
+    any version stuck in 'uploaded', and the asset stays quarantined (never
+    current, never downloadable) until its scan completes. A missing queue
+    binding is a deployment misconfiguration no retry can heal, so that still
+    fails loudly.
+    """
     queue = getattr(request.scope.get("env"), "ASSET_SCAN_QUEUE", None)
     if queue is None:
         raise HTTPException(status_code=503)
@@ -1183,8 +1211,8 @@ async def _enqueue_asset_scan(request: Request, row) -> None:
     )
     try:
         await queue.send(job.to_message())
-    except Exception as exc:
-        raise HTTPException(status_code=503) from exc
+    except Exception:
+        record_degradation(request, "asset_scan_queue_publish_failed")
 
 
 async def _speaker_for_event(request: Request, event_id: str):
@@ -2678,7 +2706,16 @@ async def complete_speaker_upload(
     )
     if row is None:
         raise HTTPException(status_code=404)
-    if str(row["scan_state"]) in {"uploaded", "scanning", "clean", "rejected"}:
+    # A spent intent is the same answer as an already-transitioned version, and both
+    # are checked: every branch below writes consumed_at_ms in the same batch as the
+    # state transition, so the two can only disagree if a future branch forgets one.
+    # Neither closes a genuine race -- two requests reading 'pending_upload' with
+    # consumed_at_ms still NULL both get past here -- which is why the write path is
+    # guarded on its own compare-and-swap rather than on this read.
+    if (
+        str(row["scan_state"]) in {"uploaded", "scanning", "clean", "rejected"}
+        or row["consumed_at_ms"] is not None
+    ):
         if (
             str(row["scan_state"]) == "uploaded"
             and getattr(request.scope.get("env"), "APP_ENV", "production") != "local"
@@ -2770,10 +2807,43 @@ async def complete_speaker_upload(
     if inline_completion and scan_result is not None and scan_result.verdict == "clean":
         batch.add_statement(
             db.prepare(
+                # Demote the outgoing version only when the promote below is certain to
+                # land, so the two can never disagree. Every condition the promote checks
+                # is therefore checked here too, against the same candidate: it is the
+                # version this request just claimed, its receipt is on file, and no newer
+                # generation outranks it. Anything less strands the asset with no current
+                # version -- the outgoing one demoted, the incoming one left in 'scanning'.
+                #
+                # id <> ?3 covers the case none of that would: two completions that both
+                # read 'pending_upload' before either batch commits serialise through here
+                # twice, and on the second pass the candidate IS the current clean version.
+                # The receipt guard cannot catch that one, because the first pass's receipt
+                # satisfies it. This mirrors _clean_result_statements, which excludes its
+                # own candidate and gates on the same three conditions.
                 """UPDATE speaker_asset_versions SET is_current = 0, scan_state = 'superseded',
                       scanned_at_ms = ?1
-               WHERE asset_id = ?2 AND is_current = 1 AND scan_state = 'clean'"""
-            ).bind(now, row["asset_id"])
+               WHERE asset_id = ?2 AND is_current = 1 AND scan_state = 'clean'
+                 AND id <> ?3
+                 AND EXISTS (
+                   SELECT 1 FROM speaker_asset_versions candidate
+                   WHERE candidate.id = ?3 AND candidate.scan_state = 'scanning'
+                     AND candidate.asset_id = speaker_asset_versions.asset_id
+                     AND EXISTS (
+                       SELECT 1 FROM asset_scan_events receipt
+                       WHERE receipt.organization_id = candidate.organization_id
+                         AND receipt.event_id = candidate.event_id
+                         AND receipt.asset_version_id = candidate.id
+                         AND receipt.generation = candidate.generation
+                         AND receipt.checksum_sha256 = candidate.checksum_sha256
+                         AND receipt.verdict = 'clean'
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM speaker_asset_versions newer
+                       WHERE newer.asset_id = candidate.asset_id
+                         AND newer.generation > candidate.generation
+                     )
+                 )"""
+            ).bind(now, row["asset_id"], row["version_id"])
         )
         batch.add_statement(
             db.prepare(
@@ -2809,11 +2879,21 @@ async def complete_speaker_upload(
         )
         batch.add_statement(
             db.prepare(
+                # Only a promote that actually landed completes the task, exactly as the
+                # queued path requires v.is_current=1 AND v.scan_state='clean'. Without
+                # this the task is marked done off the back of a no-op promote, telling
+                # the speaker their headshot is accepted while the version sits in
+                # 'scanning'.
                 """UPDATE speaker_tasks SET state = 'completed', completed_at_ms = ?1,
                       version = version + 1, updated_at_ms = ?1
                WHERE organization_id = ?2 AND event_id = ?3 AND event_speaker_id = ?4
                  AND task_type = ?5 AND state = 'open'
-                 AND COALESCE(submission_id, '') = COALESCE(?6, '')"""
+                 AND COALESCE(submission_id, '') = COALESCE(?6, '')
+                 AND EXISTS (
+                   SELECT 1 FROM speaker_asset_versions promoted
+                   WHERE promoted.id = ?7 AND promoted.is_current = 1
+                     AND promoted.scan_state = 'clean'
+                 )"""
             ).bind(
                 now,
                 speaker["organization_id"],
@@ -2821,17 +2901,33 @@ async def complete_speaker_upload(
                 speaker["event_speaker_id"],
                 row["kind"],
                 row["submission_id"],
+                row["version_id"],
             )
         )
         state = "clean"
     elif local and scan_result is not None:
         batch.add_statement(
             db.prepare(
+                # Symmetric with the promote above: a terminal verdict is only written
+                # when the stored receipt says the same thing. Rejecting off a receipt
+                # that says 'clean' is the same defect as promoting off one that says
+                # 'malicious', just in the direction nobody notices. Also scoped to this
+                # generation and checksum, which the promote already was.
                 """UPDATE speaker_asset_versions SET content_type = ?1, byte_size = ?2,
                       checksum_sha256 = ?3, scan_state = 'rejected', is_current = 0,
                       scanned_at_ms = ?4,
                       scan_result_code = ?5
-               WHERE id = ?6 AND scan_state = 'scanning'"""
+               WHERE id = ?6 AND scan_state = 'scanning'
+                 AND generation = ?7 AND checksum_sha256 = ?3
+                 AND EXISTS (
+                   SELECT 1 FROM asset_scan_events receipt
+                   WHERE receipt.organization_id = speaker_asset_versions.organization_id
+                     AND receipt.event_id = speaker_asset_versions.event_id
+                     AND receipt.asset_version_id = speaker_asset_versions.id
+                     AND receipt.generation = speaker_asset_versions.generation
+                     AND receipt.checksum_sha256 = speaker_asset_versions.checksum_sha256
+                     AND receipt.verdict = 'malicious'
+                 )"""
             ).bind(
                 row["expected_content_type"],
                 row["expected_byte_size"],
@@ -2839,6 +2935,7 @@ async def complete_speaker_upload(
                 now,
                 scan_result.signature or "malware_detected",
                 row["version_id"],
+                row["generation"],
             )
         )
         state = "rejected"
@@ -2885,6 +2982,21 @@ async def complete_speaker_upload(
         await batch.execute()
     except PersistenceError as exc:
         raise HTTPException(status_code=409) from exc
+    if inline_completion and scan_result is not None:
+        # Both inline terminal writes are conditional, so 'clean'/'rejected' above is
+        # the verdict this request INTENDED. Report what the row actually holds: a
+        # promote or rejection that no-oped leaves 'scanning', and answering 'clean' to
+        # a version still sitting in quarantine is the response half of the same bug the
+        # task guard closes. Only the inline branches need this -- the queued path
+        # answers 'uploaded' for work that has not happened yet by design.
+        state = _completion_state(
+            await db.prepare(
+                "SELECT scan_state FROM speaker_asset_versions WHERE id = ?1"
+            )
+            .bind(row["version_id"])
+            .first("scan_state"),
+            attempted=state,
+        )
     if state == "uploaded":
         await _enqueue_asset_scan(request, row)
     return UploadCompletionView(intent_id=intent_id, state=state)

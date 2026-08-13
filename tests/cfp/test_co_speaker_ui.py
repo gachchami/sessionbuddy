@@ -57,6 +57,16 @@ def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:
     assert "!submission.editable" in script
 
 
+def test_stale_co_speaker_save_reloads_the_authoritative_proposal() -> None:
+    script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
+
+    assert "async function recoverOptimisticConflict(error)" in script
+    assert "error.status !== 409" in script
+    assert "await reloadSubmissions(submissionId)" in script
+    assert "The latest saved version is loaded" in script
+    assert script.count("await recoverOptimisticConflict(error)") == 2
+
+
 def test_co_speaker_rows_and_statuses_have_scoped_layout_styles() -> None:
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
 

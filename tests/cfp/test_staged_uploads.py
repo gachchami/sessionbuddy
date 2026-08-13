@@ -1036,6 +1036,100 @@ async def test_malicious_staged_upload_is_rejected_by_the_async_scan(cfp_environ
         assert submitted.status_code == 422
 
 
+async def test_completion_polling_survives_a_scan_queue_outage(
+    cfp_environment, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A transient publish failure must not surface as a failed upload: the
+    committed row stays 'uploaded' with its claim released, completion answers
+    200, and the browser's ~1/s poll re-drives publication once the queue
+    recovers."""
+    connection, _local_environment = cfp_environment
+
+    class FailingQueue:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def send(self, _message: dict[str, object]) -> None:
+            self.attempts += 1
+            raise RuntimeError("synthetic queue outage")
+
+    failing_queue = FailingQueue()
+    bucket = FakeBucket()
+    environment, _queue = _environment(
+        connection,
+        APP_ENV="production",
+        MALWARE_SCAN_MODE="required",
+        ASSETS=bucket,
+        ASSET_SCAN_QUEUE=failing_queue,
+        CLOUDFLARE_ACCOUNT_ID="a" * 32,
+        R2_BUCKET_NAME="assets",
+        R2_ACCESS_KEY_ID="key",
+        R2_SECRET_ACCESS_KEY="secret-value",  # noqa: S106
+    )
+    body = b"%PDF-1.4 queued behind an outage"
+    async with _client(environment) as client:
+        csrf = await _sign_in(client, connection, "speaker@example.test")
+        authorized = await client.post(
+            "/api/v1/cfp/forms/form/upload-authorizations",
+            headers=_mutation_headers(csrf),
+            json={
+                "kind": "supporting_document",
+                "filename": "paper.pdf",
+                "content_type": "application/pdf",
+                "byte_size": len(body),
+                "checksum_sha256": hashlib.sha256(body).hexdigest(),
+            },
+        )
+        assert authorized.status_code == 201, authorized.text
+        staged_id = authorized.json()["staged_id"]
+        object_key = connection.execute(
+            "SELECT object_key FROM cfp_staged_assets WHERE id=?", (staged_id,)
+        ).fetchone()[0]
+        await bucket.put(object_key, body)
+
+        completed = await client.post(
+            f"/api/v1/cfp/forms/form/upload-authorizations/{staged_id}/complete",
+            headers=_mutation_headers(csrf),
+            json={},
+        )
+        assert completed.status_code == 200, completed.text
+        assert completed.json()["state"] == "uploaded"
+        assert failing_queue.attempts == 1
+        completion_events = [
+            json.loads(line)
+            for line in capsys.readouterr().out.splitlines()
+            if '"event":"http.request.completed"' in line
+        ]
+        assert completion_events[-1]["level"] == "warning"
+        assert completion_events[-1]["degradations"] == [
+            "asset_scan_queue_publish_failed"
+        ]
+        # The claim is released so the next poll may retry, and the committed
+        # upload is not misreported as failed.
+        row = connection.execute(
+            "SELECT status,scan_result_code FROM cfp_staged_assets WHERE id=?", (staged_id,)
+        ).fetchone()
+        assert tuple(row) == ("uploaded", None)
+
+        # The queue recovers; the browser's next poll republishes the job.
+        recovered_queue = CapturingQueue()
+        environment.ASSET_SCAN_QUEUE = recovered_queue
+        polled = await client.post(
+            f"/api/v1/cfp/forms/form/upload-authorizations/{staged_id}/complete",
+            headers={
+                **_mutation_headers(csrf),
+                "idempotency-key": "poll-after-outage-0123456789abcdef",
+            },
+            json={},
+        )
+        assert polled.status_code == 200
+        assert polled.json()["state"] == "uploaded"
+        assert len(recovered_queue.messages) == 1
+        assert connection.execute(
+            "SELECT scan_result_code FROM cfp_staged_assets WHERE id=?", (staged_id,)
+        ).fetchone()[0].startswith("enqueue:")
+
+
 async def test_expiry_purges_rows_and_r2_objects(cfp_environment) -> None:
     connection, environment = cfp_environment
     async with _client(environment) as client:

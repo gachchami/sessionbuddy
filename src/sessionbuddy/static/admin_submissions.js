@@ -50,6 +50,13 @@
       input.name = "evaluator_user_ids";
       input.value = evaluator.user_id;
       input.checked = evaluator.in_round !== false;
+      // The matrix is re-rendered whenever the proposal selection changes, so the
+      // reviewer's own checkbox has to survive a render too -- keeping it only in the DOM
+      // would resurrect a reviewer the organizer had just unchecked.
+      input.addEventListener("change", () => {
+        evaluator.in_round = input.checked;
+        markRoundFormDirty();
+      });
       label.append(input, evaluator.display_name);
       row.append(label);
       if (!selected.length) {
@@ -70,9 +77,17 @@
           box.dataset.pairSubmission = submissionId;
           // Default on: assigning a new reviewer to everything currently selected is the
           // behaviour organizers already expect, and unchecking is cheaper than picking.
-          const known = state.pairs && state.pairs[`${submissionId}:${evaluator.user_id}`];
+          const pairKey = `${submissionId}:${evaluator.user_id}`;
+          const known = state.pairs && state.pairs[pairKey];
           box.checked = known === undefined ? true : Boolean(known);
-          box.addEventListener("change", markRoundFormDirty);
+          // Write the choice back to state.pairs, which is what a re-render reads. A pair
+          // that lived only in the DOM was reset to the "reviews everything" default the
+          // next time the matrix was rebuilt, silently widening the round.
+          box.addEventListener("change", () => {
+            state.pairs = state.pairs || {};
+            state.pairs[pairKey] = box.checked;
+            markRoundFormDirty();
+          });
           pair.append(box, item ? item.proposal_title : submissionId);
           proposals.append(pair);
         });
@@ -180,12 +195,35 @@
     // The explicit pair list the API now stores verbatim. Returning it means
     // assignment_strategy is only ever used to seed a NEW round's matrix, never to
     // regenerate one the organizer has edited.
+    //
+    // Filtered against the two membership lists that travel in the same payload: the API
+    // rejects an assignment naming a proposal or a reviewer the round does not contain,
+    // so a stale row left over from an unchecked reviewer would fail the whole save.
+    const evaluators = new Set(
+      [...document.querySelectorAll('input[name="evaluator_user_ids"]:checked')]
+        .map((input) => input.value),
+    );
+    const submissions = new Set(selectedSubmissionIds());
     return [...document.querySelectorAll("[data-pair-evaluator]")]
-      .filter((box) => box.checked)
+      .filter((box) => box.checked
+        && evaluators.has(box.dataset.pairEvaluator)
+        && submissions.has(box.dataset.pairSubmission))
       .map((box) => ({
         submission_id: box.dataset.pairSubmission,
         evaluator_user_id: box.dataset.pairEvaluator,
       }));
+  }
+  // The per-reviewer proposal checkboxes ARE the assignment matrix, and they are built
+  // from the proposal selection, so every change to that selection has to rebuild them.
+  // Without this a reviewer added BEFORE the proposals were picked kept a matrix with no
+  // rows: roundAssignments() returned [], and the API treats a present list as
+  // authoritative, so the round was created with its proposals and its reviewers but zero
+  // assignments -- which the organizer then had to re-add through "Edit draft". A draft
+  // never trips the server-side coverage check, so nothing surfaced the loss.
+  function submissionSelectionChanged() {
+    updateSelectedCount();
+    renderEvaluatorChoices();
+    markRoundFormDirty();
   }
   function updateSelectedCount() {
     const count = selectedSubmissionIds().length;
@@ -204,8 +242,7 @@
     document.querySelectorAll('input[name="submission_ids"]:not(:disabled)').forEach((input) => {
       input.checked = selected;
     });
-    updateSelectedCount();
-    markRoundFormDirty();
+    submissionSelectionChanged();
   }
   function showRoundError(message) {
     byId("round-disclosure").open = true;
@@ -926,7 +963,7 @@
           selection.value = item.id;
           selection.checked = false;
           selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
-          selection.addEventListener("change", () => { updateSelectedCount(); markRoundFormDirty(); });
+          selection.addEventListener("change", submissionSelectionChanged);
           selectionCell.append(selection);
         } else {
           const decided = document.createElement("span");

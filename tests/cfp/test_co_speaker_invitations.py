@@ -5,13 +5,16 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, Request
 
-from sessionbuddy.cfp.models import CoSpeakerInput
+from sessionbuddy.cfp import router as cfp_routes
+from sessionbuddy.cfp.models import CoSpeakerInput, SubmissionUpdate
 from sessionbuddy.cfp.router import (
     _co_speaker_expiry,
+    _private_submission_by_id,
     _reconcile_co_speakers,
     accept_co_speaker_invitation,
     decline_co_speaker_invitation,
     get_co_speaker_invitation,
+    update_submission,
 )
 from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.db.types import utc_now_ms
@@ -317,6 +320,149 @@ async def test_removed_co_speaker_readd_uses_stable_identity_and_next_message_ve
     ).fetchone()
     assert message["deterministic_key"] == "co-speaker:co-speaker:v2"
     assert queued == [{"schema_version": 1, "message_id": message["id"]}]
+
+
+class _FirstSendFailsQueue:
+    """Fails the first publish only, so continuation past a failure is visible."""
+
+    def __init__(self) -> None:
+        self.attempts: list[str] = []
+
+    async def send(self, message: dict[str, object]) -> None:
+        self.attempts.append(str(message["message_id"]))
+        if len(self.attempts) == 1:
+            raise RuntimeError("synthetic queue outage")
+
+
+async def test_co_speaker_save_succeeds_when_queue_dispatch_fails_after_commit(
+    invitation_database,
+) -> None:
+    connection, database = invitation_database
+    queue = _FirstSendFailsQueue()
+    request = request_for(database)
+    request.scope["env"].COMMUNICATION_QUEUE = queue
+
+    await _reconcile_co_speakers(
+        request,
+        submission_id="submission",
+        organization_id="org",
+        event_id="event",
+        invitation_deadline_ms=utc_now_ms() + 3_600_000,
+        proposal_title="Proposal",
+        primary_name="Owner",
+        desired=[
+            CoSpeakerInput(display_name="First Co-author", email="first@example.test"),
+            CoSpeakerInput(display_name="Second Co-author", email="second@example.test"),
+        ],
+        actor_user_id="owner",
+    )
+
+    contributors = connection.execute(
+        """SELECT normalized_email,invitation_status FROM submission_contributors
+           ORDER BY normalized_email"""
+    ).fetchall()
+    assert [tuple(row) for row in contributors] == [
+        ("first@example.test", "pending"),
+        ("second@example.test", "pending"),
+    ]
+    messages = connection.execute(
+        "SELECT recipient_email,status FROM communication_messages ORDER BY recipient_email"
+    ).fetchall()
+    assert [tuple(row) for row in messages] == [
+        ("first@example.test", "queued"),
+        ("second@example.test", "queued"),
+    ]
+    # One failed publish must not strand the remaining committed envelopes.
+    assert len(queue.attempts) == 2
+    # The absorbed failure still surfaces on the request's completion telemetry.
+    assert request.state.degradations == ["communication_queue_publish_failed"]
+
+
+async def test_update_submission_stays_committed_when_queue_dispatch_fails(
+    invitation_database, monkeypatch
+) -> None:
+    """The full route regression: before the fix, a post-commit queue outage
+    turned the committed save into a 500 whose stale-version retry hit 409."""
+    connection, database = invitation_database
+    authenticated = SimpleNamespace(actor=SimpleNamespace(user_id="owner"))
+
+    async def authenticate(_request):
+        return authenticated
+
+    async def permit(_request, *_args, **_kwargs):
+        return authenticated
+
+    async def no_rate_limit(_request, **_kwargs):
+        return None
+
+    monkeypatch.setattr(cfp_routes, "authenticate_request", authenticate)
+    monkeypatch.setattr(cfp_routes, "require_permission", permit)
+    monkeypatch.setattr(cfp_routes, "enforce_rate_limit", no_rate_limit)
+
+    class AlwaysFailingQueue:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def send(self, _message: dict[str, object]) -> None:
+            self.attempts += 1
+            raise RuntimeError("synthetic queue outage")
+
+    queue = AlwaysFailingQueue()
+    body = SubmissionUpdate(
+        version=1,
+        speaker_name="Owner",
+        speaker_email="owner@example.test",
+        proposal_title="Proposal, revised",
+        proposal_abstract="Abstract, revised",
+        co_speakers=[
+            CoSpeakerInput(display_name="Queued Co-author", email="queued@example.test")
+        ],
+    )
+
+    request = request_for(database)
+    request.scope["env"].COMMUNICATION_QUEUE = queue
+    view = await update_submission("event-cfp", "submission", body, request)
+
+    assert view.editable is True
+    assert view.version == 2
+    assert view.proposal_title == "Proposal, revised"
+    assert [(item.email, item.invitation_status) for item in view.co_speakers] == [
+        ("queued@example.test", "pending")
+    ]
+    assert queue.attempts == 1
+    assert request.state.degradations == ["communication_queue_publish_failed"]
+    assert connection.execute(
+        "SELECT status FROM communication_messages WHERE recipient_email='queued@example.test'"
+    ).fetchone()[0] == "queued"
+
+    # A retry replaying the now-stale version is a real optimistic-lock
+    # conflict — the only way this route may answer 409 for a saved edit.
+    stale_retry = request_for(database)
+    stale_retry.scope["env"].COMMUNICATION_QUEUE = queue
+    with pytest.raises(HTTPException) as conflict:
+        await update_submission("event-cfp", "submission", body, stale_retry)
+    assert conflict.value.status_code == 409
+    assert queue.attempts == 1
+    assert connection.execute(
+        "SELECT version FROM submissions WHERE id='submission'"
+    ).fetchone()[0] == 2
+    assert connection.execute(
+        "SELECT COUNT(*) FROM communication_messages"
+    ).fetchone()[0] == 1
+
+
+async def test_editable_submission_response_accepts_computed_co_speaker_label(
+    invitation_database,
+) -> None:
+    connection, database = invitation_database
+    seed_invitation(connection, "response-token-with-at-least-thirty-two-characters")
+
+    submission = await _private_submission_by_id(
+        database, "submission", editable=True
+    )
+
+    assert submission.editable is True
+    assert submission.co_speakers[0].role_label == "Co-speaker"
 
 
 def test_owner_lifecycle_routes_preserve_contributors_and_never_target_primary() -> None:
