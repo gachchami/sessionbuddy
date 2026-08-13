@@ -40,16 +40,156 @@ def test_event_navigation_warms_documents_and_transitions_without_hijacking_link
     assert "function warmNavigation(node)" in javascript
     link_function = javascript.split("function link", 1)[1].split("function icon", 1)[0]
     assert "warmNavigation(node);" in link_function
+    # A prerender executes the destination's session check and API queries, so
+    # it is reserved for hover - the one signal that reliably precedes a click
+    # - and only one candidate is ever alive; hovering elsewhere cancels it.
+    # Keyboard traversal and touch get the cheap prefetch cache warmer, so
+    # tabbing across the event navigation never executes eight full pages.
+    assert 'HTMLScriptElement.supports("speculationrules")' in javascript
+    assert 'hint.type = "speculationrules";' in javascript
     assert 'hint.rel = "prefetch";' in javascript
-    assert 'node.addEventListener("pointerenter", prefetch' in javascript
-    assert 'node.addEventListener("focus", prefetch' in javascript
+    # A pointer crossing the bar is not intent: the prerender arms only after
+    # a dwell delay and pointerleave disarms it before any request starts.
+    assert "const PRERENDER_INTENT_DELAY_MS = 120;" in javascript
+    assert (
+        "intentTimer = setTimeout(() => prerenderDocument(node.href), PRERENDER_INTENT_DELAY_MS);"
+        in javascript
+    )
+    assert 'node.addEventListener("pointerleave", () => clearTimeout(intentTimer)' in javascript
+    assert 'node.addEventListener("focus", () => prefetchDocument(node.href)' in javascript
+    assert 'node.addEventListener("touchstart", () => prefetchDocument(node.href)' in javascript
+    prerender_function = javascript.split("function prerenderDocument(href)", 1)[1].split(
+        "function warmNavigation", 1
+    )[0]
+    assert "if (prerenderCandidate?.href === href) return;" in prerender_function
+    assert "cancelSpeculativeLoads();" in prerender_function
+    assert "prerenderCandidate = { href, hint };" in prerender_function
+    # Navigation stays the browser's: durable URLs, Back/Forward, bfcache.
+    # Nothing intercepts clicks or replays documents by hand.
     warm_function = javascript.split("function warmNavigation", 1)[1].split(
-        "function brandMark", 1
+        "const SESSION_CACHE_KEY", 1
     )[0]
     assert "preventDefault" not in warm_function
+    assert "document.write" not in javascript
+    intercepted_click = (
+        'document.addEventListener("click", (event) => {\n'
+        "    if (event.defaultPrevented"
+    )
+    assert intercepted_click not in javascript
     assert "@view-transition { navigation: auto; }" in stylesheet
     reduced_motion = stylesheet.split("@media (prefers-reduced-motion: reduce)", 1)[1]
     assert "::view-transition-old(root)" in reduced_motion
+    assert "::view-transition-group(*)" in reduced_motion
+
+
+def test_shell_chrome_is_pinned_across_document_navigations() -> None:
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    sidebar_rule = stylesheet.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
+    assert "view-transition-name: sessionbuddy-sidebar;" in sidebar_rule
+    topbar_rule = stylesheet.split(".sb-topbar {", 1)[1].split("}", 1)[0]
+    assert "view-transition-name: sessionbuddy-topbar;" in topbar_rule
+    event_nav_rule = stylesheet.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
+    assert "view-transition-name: sessionbuddy-event-navigation;" in event_nav_rule
+
+
+def test_shell_paints_from_the_cached_session_and_revalidates_in_the_background() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    # The per-tab cache lets the shell join the page's first frame instead of
+    # rebuilding over a network round-trip on every document.
+    assert 'const SESSION_CACHE_KEY = "sessionbuddy:shell-session";' in javascript
+    assert "sessionStorage.getItem(SESSION_CACHE_KEY)" in javascript
+    assert "sessionStorage.setItem(" in javascript
+    assert "stored_at: Date.now(), session: cacheableSession(session)" in javascript
+    assert "sessionStorage.removeItem(SESSION_CACHE_KEY)" in javascript
+
+    # Cached data must satisfy the same session contract as a fresh response,
+    # and both paths route through one function so they can never disagree.
+    assert "function usableCachedSession()" in javascript
+    usable = javascript.split("function usableCachedSession()", 1)[1].split(
+        "function brandMark", 1
+    )[0]
+    assert "activeRole(cached)" in usable
+    assert "dashboardDestination(cached)" in usable
+    assert "clearCachedSession();" in usable
+    assert "function applySession(session)" in javascript
+    assert "const cached = shell ? usableCachedSession() : null;" in javascript
+
+    # The fresh response reconciles: identical means done, different means
+    # re-render, 401 means the cache dies with the session.
+    assert "JSON.stringify(cacheableSession(session)) === JSON.stringify(cached)" in javascript
+    sign_out = javascript.split('signOut.addEventListener("click"', 1)[1].split(
+        "menu.append(signOut);", 1
+    )[0]
+    assert "clearCachedSession();" in sign_out
+    assert "broadcastSessionChange();" in sign_out
+    role_switch = javascript.split('"/api/v1/session/active-role"', 1)[1].split(
+        "switcher.append(button);", 1
+    )[0]
+    assert "clearCachedSession();" in role_switch
+    assert "cancelSpeculativeLoads();" in role_switch
+    assert "broadcastSessionChange();" in role_switch
+
+    # The landing page stays network-first so signed-out visitors are never
+    # bounced toward a dashboard by stale data.
+    assert "shell ? usableCachedSession() : null" in javascript
+
+
+def test_cached_session_never_stores_credentials_and_cannot_outlive_its_welcome() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    # Only an explicit allowlist of presentation fields is persisted. Tokens,
+    # ids, and configuration the shell never renders stay out of storage, and
+    # menu actions read the CSRF token from the live session at click time.
+    cacheable = javascript.split("function cacheableSession(session)", 1)[1].split(
+        "function readCachedSession", 1
+    )[0]
+    for field in (
+        "email:",
+        "display_name:",
+        "organization_name:",
+        "active_role:",
+        "account_roles:",
+        "profile_complete:",
+        "organization_access:",
+        "event_access:",
+    ):
+        assert field in cacheable
+    for excluded in ("csrf_token", "user_id", "...session", "Object.assign"):
+        assert excluded not in cacheable
+    assert "function sessionCsrfToken(renderedSession)" in javascript
+    assert "window.SessionBuddyShellSession?.csrf_token" in javascript
+    assert '"x-csrf-token": sessionCsrfToken(session)' in javascript
+
+    # Entries expire, so a stale identity is bounded by minutes even when
+    # revalidation keeps failing transiently.
+    assert "const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;" in javascript
+    reader = javascript.split("function readCachedSession()", 1)[1].split(
+        "function writeCachedSession", 1
+    )[0]
+    assert "Date.now() - record.stored_at < SESSION_CACHE_TTL_MS" in reader
+    assert "clearCachedSession();" in reader
+
+    # Sign-out or a role switch in one tab invalidates the cached presentation
+    # in the account's other tabs immediately.
+    assert 'new BroadcastChannel("sessionbuddy-auth")' in javascript
+    assert "function broadcastSessionChange()" in javascript
+    listener = javascript.split('authChannel?.addEventListener("message"', 1)[1].split(
+        "function broadcastSessionChange", 1
+    )[0]
+    assert "clearCachedSession();" in listener
+    assert "cancelSpeculativeLoads();" in listener
+
+
+def test_csp_permits_only_the_inline_speculation_rules_the_shell_emits() -> None:
+    security = (STATIC.parent / "security.py").read_text(encoding="utf-8")
+
+    # Without this source, script-src falls back to default-src 'self' and
+    # Chromium silently drops the inline rule: the shell would detect support,
+    # skip the prefetch fallback, and end up with neither.
+    assert "script-src 'self' 'inline-speculation-rules'; " in security
+    assert "'unsafe-inline'" not in security.split("style-src-attr", 1)[0]
 
 
 def test_global_pages_use_the_approved_horizontal_navigation() -> None:

@@ -62,21 +62,166 @@
     return node;
   }
 
+  // Chromium browsers can prerender a destination when intent appears: the
+  // next document runs its scripts and loads its data offscreen, so the
+  // eventual click swaps to a finished page instead of a visible reload.
+  // A prerender executes the whole destination - session check, API queries -
+  // so it is reserved for hover, the one signal that reliably precedes a
+  // click, and only one candidate is ever alive: hovering a different link
+  // cancels the previous rule. Keyboard traversal and touch get the cheap
+  // <link rel="prefetch"> cache warmer instead - tabbing across the event nav
+  // must not execute eight authenticated pages. The inline rule script is
+  // allowed by the CSP's 'inline-speculation-rules' script-src source.
+  const prerenderSupported = typeof HTMLScriptElement !== "undefined"
+    && typeof HTMLScriptElement.supports === "function"
+    && HTMLScriptElement.supports("speculationrules");
+  const prefetchedUrls = new Set();
+  let prerenderCandidate = null;
+
+  function cancelSpeculativeLoads() {
+    if (prerenderCandidate) prerenderCandidate.hint.remove();
+    prerenderCandidate = null;
+  }
+
+  function prefetchDocument(href) {
+    if (prefetchedUrls.has(href)) return;
+    prefetchedUrls.add(href);
+    const hint = document.createElement("link");
+    hint.rel = "prefetch";
+    hint.href = href;
+    hint.as = "document";
+    document.head.append(hint);
+  }
+
+  function prerenderDocument(href) {
+    if (!prerenderSupported || !shell) {
+      prefetchDocument(href);
+      return;
+    }
+    if (prerenderCandidate?.href === href) return;
+    cancelSpeculativeLoads();
+    const hint = document.createElement("script");
+    hint.type = "speculationrules";
+    hint.textContent = JSON.stringify({ prerender: [{ urls: [href] }] });
+    document.head.append(hint);
+    prerenderCandidate = { href, hint };
+  }
+
+  // A pointer merely crossing the navigation is not intent: the prerender
+  // arms only after the pointer has rested on a link, and leaving before the
+  // delay elapses disarms it. Removing a rule cannot recall requests that
+  // already started, so the guard has to sit in front of the rule, not
+  // behind it. The immediate prefetch keeps a fast click warm either way.
+  const PRERENDER_INTENT_DELAY_MS = 120;
+
   function warmNavigation(node) {
     if (!node || node.origin !== location.origin || node.getAttribute("aria-current") === "page") return;
-    let warmed = false;
-    const prefetch = () => {
-      if (warmed) return;
-      warmed = true;
-      const hint = document.createElement("link");
-      hint.rel = "prefetch";
-      hint.href = node.href;
-      hint.as = "document";
-      document.head.append(hint);
+    let intentTimer = 0;
+    node.addEventListener("pointerenter", () => {
+      prefetchDocument(node.href);
+      clearTimeout(intentTimer);
+      intentTimer = setTimeout(() => prerenderDocument(node.href), PRERENDER_INTENT_DELAY_MS);
+    }, { passive: true });
+    node.addEventListener("pointerleave", () => clearTimeout(intentTimer), { passive: true });
+    node.addEventListener("focus", () => prefetchDocument(node.href), { once: true, passive: true });
+    node.addEventListener("touchstart", () => prefetchDocument(node.href), { once: true, passive: true });
+  }
+
+  // The session is cached per tab so the shell can paint before the network
+  // answers. Chrome that vanished and rebuilt over a round-trip on every
+  // document was the whole page visibly "reloading"; painting from the cached
+  // session makes the shell part of the first frame, and initialize()
+  // revalidates in the background to reconcile or sign out. Boundaries on
+  // what is stored and for how long:
+  //   - csrf_token is never persisted; menu actions read it from the live
+  //     revalidated session at click time.
+  //   - Entries expire after SESSION_CACHE_TTL_MS, so a stale identity can
+  //     outlive its session by minutes, not days, even if revalidation keeps
+  //     failing transiently.
+  //   - Sign-out and role switches broadcast to the account's other tabs,
+  //     whose caches clear immediately instead of waiting for their own 401.
+  const SESSION_CACHE_KEY = "sessionbuddy:shell-session";
+  const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
+
+  // An explicit allowlist of the fields the shell reads to paint chrome and
+  // choose destinations - nothing else is persisted. No tokens, no user id,
+  // no sender configuration; access entries are reduced to the permission
+  // strings and event identity/name the navigation renders. The shapes
+  // mirror the live session so both paint paths share the routing helpers.
+  function cacheableSession(session) {
+    return {
+      email: String(session.email || ""),
+      display_name: String(session.display_name || ""),
+      organization_name: String(session.organization_name || ""),
+      active_role: String(session.active_role || ""),
+      account_roles: (session.account_roles || []).map(String),
+      profile_complete: Boolean(session.profile_complete),
+      organization_access: (session.organization_access || []).map((item) => ({
+        permissions: (item.permissions || []).map(String)
+      })),
+      event_access: (session.event_access || []).map((item) => ({
+        event_id: String(item.event_id || ""),
+        event_name: String(item.event_name || ""),
+        permissions: (item.permissions || []).map(String)
+      }))
     };
-    node.addEventListener("pointerenter", prefetch, { once: true, passive: true });
-    node.addEventListener("focus", prefetch, { once: true, passive: true });
-    node.addEventListener("touchstart", prefetch, { once: true, passive: true });
+  }
+
+  function readCachedSession() {
+    try {
+      const record = JSON.parse(sessionStorage.getItem(SESSION_CACHE_KEY) || "null");
+      const fresh = record && typeof record.stored_at === "number"
+        && Date.now() - record.stored_at < SESSION_CACHE_TTL_MS;
+      if (!fresh) {
+        clearCachedSession();
+        return null;
+      }
+      const session = record.session;
+      return session && typeof session === "object" && !Array.isArray(session) ? session : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeCachedSession(session) {
+    try {
+      sessionStorage.setItem(
+        SESSION_CACHE_KEY,
+        JSON.stringify({ stored_at: Date.now(), session: cacheableSession(session) })
+      );
+    } catch (_) {
+      // Storage may be unavailable (private mode, quota). The shell simply
+      // stays network-first on the next document.
+    }
+  }
+
+  function clearCachedSession() {
+    try { sessionStorage.removeItem(SESSION_CACHE_KEY); } catch (_) { /* see writeCachedSession */ }
+  }
+
+  const authChannel = typeof BroadcastChannel === "function"
+    ? new BroadcastChannel("sessionbuddy-auth")
+    : null;
+  authChannel?.addEventListener("message", (event) => {
+    if (event.data !== "session-changed") return;
+    clearCachedSession();
+    cancelSpeculativeLoads();
+  });
+
+  function broadcastSessionChange() {
+    try { authChannel?.postMessage("session-changed"); } catch (_) { /* best effort */ }
+  }
+
+  // Cached data is only trusted when it satisfies the same session contract
+  // the fresh response must meet; anything else is dropped, never rendered.
+  function usableCachedSession() {
+    const cached = readCachedSession();
+    if (!cached) return null;
+    if (!activeRole(cached) || !dashboardDestination(cached)) {
+      clearCachedSession();
+      return null;
+    }
+    return cached;
   }
 
   function brandMark() {
@@ -184,6 +329,14 @@
     return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : value.slice(0, 2)).toUpperCase();
   }
 
+  // The CSRF token is read at click time, never from the rendered session:
+  // a shell painted from the cache has no token (it is not persisted), but by
+  // the time a human reaches the menu, revalidation has published the fresh
+  // session on window.SessionBuddyShellSession.
+  function sessionCsrfToken(renderedSession) {
+    return window.SessionBuddyShellSession?.csrf_token || renderedSession.csrf_token || "";
+  }
+
   function accountMenu(session, roles) {
     const active = activeRole(session);
     const choices = roleChoices(session);
@@ -246,9 +399,15 @@
           try {
             await window.SessionBuddyApi.request("/api/v1/session/active-role", {
               method: "PUT",
-              headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+              headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
               body: JSON.stringify({ role: choice.role })
             });
+            // The cached session and any prerendered documents captured the
+            // previous role; both must go - here and in every other tab -
+            // before the workspace changes hands.
+            clearCachedSession();
+            cancelSpeculativeLoads();
+            broadcastSessionChange();
             const destination = roleDestination(choice, session);
             if (!destination) {
               renderSessionContractError();
@@ -271,10 +430,13 @@
     signOut.append(icon("logout"), make("span", "Sign out"));
     signOut.addEventListener("click", async () => {
       signOut.disabled = true;
+      clearCachedSession();
+      cancelSpeculativeLoads();
+      broadcastSessionChange();
       try {
         await window.SessionBuddyApi.request("/api/v1/session/logout", {
           method: "POST",
-          headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+          headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
           body: "{}"
         });
         location.assign("/");
@@ -715,8 +877,57 @@
     }
   }
 
+  // Routes and renders one validated session. Returns true when the shell is
+  // on screen, false when the session failed its contract or the page is
+  // navigating away. Shared by the instant cached paint and the fresh
+  // response, so the two can never route differently.
+  function applySession(session) {
+    if (!activeRole(session)) {
+      clearCachedSession();
+      renderSessionContractError();
+      renderLandingSessionContractError();
+      return false;
+    }
+    if (!dashboardDestination(session)) {
+      clearCachedSession();
+      renderSessionContractError("workspace");
+      renderLandingSessionContractError();
+      return false;
+    }
+    window.SessionBuddyShellSession = session;
+    // Redirect decisions run before first paint here, so onboarding and
+    // dashboard hops no longer flash an intermediate page on the way through.
+    writeCachedSession(session);
+    if (!session.profile_complete && location.pathname !== "/account") {
+      const next = `${location.pathname}${location.search}${location.hash}`;
+      location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);
+      return false;
+    }
+    if (landingAccount && location.pathname === "/") {
+      const destination = dashboardDestination(session);
+      location.replace(destination);
+      return false;
+    }
+    if (shell) renderShell(session);
+    if (landingAccount) renderLandingAccount(session);
+    return true;
+  }
+
+  let shellPaintedFromCache = false;
+
   async function initialize() {
     renderPublicEvents();
+    // The landing page stays network-first: painting it from a cached session
+    // would bounce a signed-out visitor toward a dashboard before the server
+    // had any say. Authenticated shell pages paint immediately from the cache
+    // and let the fetch below confirm or correct.
+    const cached = shell ? usableCachedSession() : null;
+    if (cached) {
+      shellPaintedFromCache = applySession(cached);
+      // A cached apply that navigates away hands the decision to the
+      // destination page, which revalidates on arrival.
+      if (!shellPaintedFromCache) return;
+    }
     let session;
     try {
       session = await window.SessionBuddyApi.request("/api/v1/auth/session");
@@ -733,9 +944,13 @@
         // so a single transient response must not remove navigation or sign-out.
       } else {
         if (error.status !== 401) {
-          if (shell) renderUnavailableShell();
+          // With a cached shell already on screen a transient failure changes
+          // nothing the user can act on; the page's own requests surface it.
+          if (shell && !shellPaintedFromCache) renderUnavailableShell();
           return;
         }
+        clearCachedSession();
+        cancelSpeculativeLoads();
         if (landingAccount) {
           try {
             const setupState = await window.SessionBuddyApi.request("/api/v1/setup/status");
@@ -745,40 +960,28 @@
             }
           } catch (_) { /* The public landing page remains available if setup status is unavailable. */ }
         }
-        if (shell?.hasAttribute("data-allow-guest")) renderGuestShell();
-        else if (shell) location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        if (shell?.hasAttribute("data-allow-guest")) {
+          if (shellPaintedFromCache) {
+            document.body.classList.remove("sb-shell-authenticated", "sb-shell-single", "sb-shell-global", "sb-shell-event");
+          }
+          renderGuestShell();
+        } else if (shell) {
+          location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
+        }
         return;
       }
     }
-    if (!activeRole(session)) {
-      renderSessionContractError();
-      renderLandingSessionContractError();
+    if (shellPaintedFromCache && JSON.stringify(cacheableSession(session)) === JSON.stringify(cached)) {
+      // The cached paint was exact; refresh the entry's clock, publish the
+      // confirmed session, and stop.
+      writeCachedSession(session);
+      window.SessionBuddyShellSession = session;
+      window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));
       return;
     }
-    if (!dashboardDestination(session)) {
-      renderSessionContractError("workspace");
-      renderLandingSessionContractError();
-      return;
-    }
-    window.SessionBuddyShellSession = session;
-    if (!session.profile_complete && location.pathname !== "/account") {
-      const next = `${location.pathname}${location.search}${location.hash}`;
-      location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);
-      return;
-    }
-    if (landingAccount && location.pathname === "/") {
-      const destination = dashboardDestination(session);
-      if (!destination) {
-        renderLandingSessionContractError();
-        return;
-      }
-      location.replace(destination);
-      return;
-    }
-    if (shell) renderShell(session);
-    if (landingAccount) renderLandingAccount(session);
+    if (!applySession(session)) return;
     window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));
   }
 
-  initialize().catch(() => { if (shell) renderUnavailableShell(); });
+  initialize().catch(() => { if (shell && !shellPaintedFromCache) renderUnavailableShell(); });
 })();

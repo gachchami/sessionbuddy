@@ -14,6 +14,10 @@ def content_security_policy(environment: object | None, path: str = "") -> str:
     frame_ancestors = "*" if path.startswith("/embeds/") else "'none'"
     return (
         "default-src 'self'; "
+        # 'inline-speculation-rules' permits only <script type=speculationrules>
+        # (the app shell's same-origin prerender hints); it does not loosen the
+        # policy for executable inline scripts, which stay blocked by 'self'.
+        "script-src 'self' 'inline-speculation-rules'; "
         f"connect-src {' '.join(connect_sources)}; "
         "img-src 'self' data: https:; "
         "style-src 'self'; style-src-attr 'unsafe-inline'; "

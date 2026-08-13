@@ -81,7 +81,18 @@ application shell with a profile/sign-out menu, organization and event hubs,
 safe duplicate-as-draft confirmation with event-owned branding copies,
 clickable event overviews and speaker directories, event-scoped navigation,
 organization-wide organizer management, event-specific reviewer and speaker
-invitations, invitation revocation, and verified invitation acceptance. Reviewer
+invitations, invitation revocation, and verified invitation acceptance. Every
+workspace page keeps its own durable URL and normal browser navigation; the
+shell paints in the page's first frame from a per-tab cached session that is
+revalidated in the background (and dropped on sign-out, role switch, or 401),
+named view transitions hold the sidebar, topbar, and event navigation visually
+still across documents, and supporting browsers prerender one hovered
+destination at a time (keyboard and touch intent warms the cache with a
+prefetch instead) so the click swaps to a finished page. The cached shell
+session never stores the CSRF token, expires after fifteen minutes, and is
+invalidated across the account's other tabs on sign-out or role switch; the
+content security policy admits inline speculation rules and nothing else
+inline. Reviewer
 invitations capture the person's display name, return the newly minted one-time
 access URL to the authorized organizer for copying, rotate that URL on resend,
 and take a first-time reviewer through profile and optional password setup before
