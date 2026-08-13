@@ -395,26 +395,26 @@
   font: 600 .75rem/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.operation-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem 1rem; margin-bottom: .75rem; color: #716a7e; font: 600 .72rem/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.operation-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem 1rem; margin-bottom: .75rem; color: #716a7e; font: 600 .75rem/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
 .contract-reference { display: grid; gap: .85rem; }
 .contract-section { min-width: 0; padding: .9rem; border: 1px solid #e5e2ef; border-radius: .65rem; background: #faf9fd; }
-.contract-section h4 { margin: 0 0 .65rem; color: #302a40; font-size: .8rem; letter-spacing: .07em; text-transform: uppercase; }
-.media-type { width: fit-content; margin: .55rem 0; padding: .2rem .45rem; border-radius: .35rem; background: #ece8f8; color: #534778; font: 700 .72rem/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
-.schema-summary { margin: .4rem 0; color: #5f586c; font-size: .82rem; }
+.contract-section h4 { margin: 0 0 .65rem; color: #302a40; font-size: .875rem; letter-spacing: .07em; text-transform: uppercase; }
+.media-type { width: fit-content; margin: .55rem 0; padding: .2rem .45rem; border-radius: .35rem; background: #ece8f8; color: #534778; font: 700 .75rem/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.schema-summary { margin: .4rem 0; color: #5f586c; font-size: .875rem; }
 .schema-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #e3dfeb; border-radius: .5rem; background: white; }
-.schema-table { min-width: 36rem; font-size: .78rem; }
+.schema-table { min-width: 36rem; font-size: .75rem; }
 .schema-table th,.schema-table td { padding: .55rem .65rem; }
-.schema-table th { background: #f2f0f8; font-size: .68rem; }
-.schema-table td:first-child,.schema-table td:nth-child(2) { color: #3c3254; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-weight: 650; }
+.schema-table th { background: #f2f0f8; font-size: .75rem; }
+.schema-table td:first-child,.schema-table td:nth-child(2) { color: #3c3254; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; font-weight: 600; }
 .example-block { margin-top: .65rem; }
-.example-block > strong { display: block; margin-bottom: .3rem; color: #665d73; font-size: .72rem; }
+.example-block > strong { display: block; margin-bottom: .3rem; color: #665d73; font-size: .75rem; }
 .example-block pre { max-height: 24rem; margin: 0; padding: .8rem; overflow: auto; border-radius: .5rem; background: #211d2c; color: #f3eefb; font: 500 .75rem/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .response-block + .response-block { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid #e4e0eb; }
 .response-block__heading { display: flex; align-items: baseline; gap: .65rem; }
 .response-block__heading code { min-width: 3rem; color: #30624e; font-weight: 800; }
-.response-block__heading strong { font-size: .82rem; }
+.response-block__heading strong { font-size: .875rem; }
 .security-list { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; list-style: none; }
-.security-list li { padding: .3rem .5rem; border: 1px solid #dcd6ea; border-radius: .4rem; background: white; color: #514765; font: 650 .75rem/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.security-list li { padding: .3rem .5rem; border: 1px solid #dcd6ea; border-radius: .4rem; background: white; color: #514765; font: 600 .75rem/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
 
 .docs-loading,
 .docs-empty,

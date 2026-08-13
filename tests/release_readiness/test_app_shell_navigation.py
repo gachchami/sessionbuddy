@@ -33,6 +33,25 @@ def test_event_navigation_is_centered_on_desktop_and_left_aligned_when_wrapped()
     assert "justify-content: flex-start;" in compact_event_nav
 
 
+def test_event_navigation_warms_documents_and_transitions_without_hijacking_links() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
+
+    assert "function warmNavigation(node)" in javascript
+    link_function = javascript.split("function link", 1)[1].split("function icon", 1)[0]
+    assert "warmNavigation(node);" in link_function
+    assert 'hint.rel = "prefetch";' in javascript
+    assert 'node.addEventListener("pointerenter", prefetch' in javascript
+    assert 'node.addEventListener("focus", prefetch' in javascript
+    warm_function = javascript.split("function warmNavigation", 1)[1].split(
+        "function brandMark", 1
+    )[0]
+    assert "preventDefault" not in warm_function
+    assert "@view-transition { navigation: auto; }" in stylesheet
+    reduced_motion = stylesheet.split("@media (prefers-reduced-motion: reduce)", 1)[1]
+    assert "::view-transition-old(root)" in reduced_motion
+
+
 def test_global_pages_use_the_approved_horizontal_navigation() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 

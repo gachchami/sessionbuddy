@@ -133,10 +133,11 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert "form.dataset.submissionId || null" in javascript
     assert "version_comment: versionComment" in javascript
     assert 'form.dataset.replacement = isReplacement ? "true" : "false"' in javascript
-    assert "comment.required = isReplacement" in javascript
+    assert "comment.required = isReplacement" not in javascript
+    assert 'make("span", " Optional", "optional")' in javascript
     assert '"Optional for the first upload."' in javascript
-    assert 'const versionComment = enteredVersionComment || "Initial upload"' in javascript
-    assert 'form.dataset.replacement === "true" && !enteredVersionComment' in javascript
+    assert 'const versionComment = form.elements.version_comment.value.trim()' in javascript
+    assert 'form.dataset.replacement === "true" && !enteredVersionComment' not in javascript
     assert "Upload received. Retrying safety checks" in javascript
     assert "pendingCompletion.intentId" in javascript
     assert "File received. Safety checks are temporarily unavailable" in javascript
@@ -236,10 +237,9 @@ def test_repeat_task_assignment_replays_instead_of_duplicating() -> None:
     assert "no duplicate was created" in javascript
 
 
-def test_motion_preference_is_respected_for_scrolling() -> None:
+def test_dynamic_workspaces_do_not_animate_programmatic_scrolling() -> None:
     css = source("product.css")
-    assert "html { max-width: 100%; scroll-behavior: smooth; }" not in css
-    assert "@media (prefers-reduced-motion: no-preference)" in css
+    assert "scroll-behavior: smooth" not in css
 
 
 def test_embedded_console_assets_match_their_static_sources() -> None:
@@ -473,9 +473,119 @@ def test_organizer_can_choose_a_comment_audience() -> None:
     """
     javascript = source("speaker_content.js")
     assert '["internal", "Internal note (organizers only)"]' in javascript
+    assert 'reply.textContent = "Reply"' in javascript
+    assert "parent.value = comment.id" in javascript
+    assert 'replyContext.textContent = parent.value ? `Replying to:' in javascript
     assert '["shared", "Shared with the speaker"]' in javascript
     assert "visibility: visibility.value" in javascript
     assert "comment.version_id === versionSelect.value" in javascript
     assert 'visibility.value !== "shared" || comment.visibility === "shared"' in javascript
     # Existing comments must show which audience they reached.
     assert 'comment.visibility === "shared" ? "Shared with speaker" : "Internal"' in javascript
+
+def test_files_and_activity_render_without_an_outer_disclosure() -> None:
+    """No hidden parent between the event section and a file card.
+
+    The file list used to sit inside a "Files and activity" <details>. Its
+    descendants stayed in the accessibility representation while it was closed,
+    so a reference to an inner control resolved but the control was not
+    actionable, and nothing named the parent that had to be opened first.
+    """
+    javascript = source("speaker_portal.js")
+    css = source("speaker.css")
+    assert "event-group__more" not in javascript
+    assert "event-group__more" not in css
+    assert '"span", "Files and activity"' not in javascript
+    assert 'make("section", undefined, "event-group__block event-group__files")' in javascript
+    assert 'make("section", undefined, "event-group__block event-group__activity")' in javascript
+    # Both blocks attach to the event section itself, not to a wrapper.
+    assert javascript.count("section.append(assetBlock)") == 1
+    assert javascript.count("section.append(activityBlock)") == 1
+
+
+def test_file_card_is_the_only_disclosure_before_its_discussion() -> None:
+    """File -> Discussion is two levels; anything deeper reintroduces the bug."""
+    javascript = source("speaker_portal.js")
+    table = javascript[javascript.index("function assetTable(assets, eventId, portal)") :]
+    table = table[: table.index("function activityTable")]
+    # Exactly two disclosures inside a file card: the card, and each version's
+    # discussion. The replacement upload form is a plain <section>.
+    assert table.count('make("details"') == 2
+    assert 'make("details", undefined, "asset-history-card")' in table
+    assert 'make("details", undefined, "asset-discussion")' in table
+    assert 'make("section", undefined, "asset-replace")' in table
+
+
+def test_each_portfolio_event_loads_and_labels_its_own_assets() -> None:
+    javascript = source("speaker_portal.js")
+    load_portfolio = javascript[javascript.index("async function loadPortfolio()") :]
+    load_portfolio = load_portfolio[: load_portfolio.index("async function selectEvent")]
+    # Assets are valid for organizer-created sessions with zero CFP submissions.
+    assert "await loadAssetsFor(eventId);" in load_portfolio
+    assert "portal.submissions?.length" not in load_portfolio
+    # Secondary-event metadata must not borrow the active event's identity or zone.
+    table = javascript[javascript.index("function assetTable(assets, eventId, portal)") :]
+    table = table[: table.index("function activityTable")]
+    assert "portal?.profile?.display_name" in table
+    assert "portal?.event?.time_zone" in table
+    assert "state.portal?.profile" not in table
+    assert "state.portal?.event" not in table
+
+
+def test_blocked_submits_are_explained_in_the_dom() -> None:
+    """A refused submit must say why, somewhere assistive tech can reach.
+
+    The browser's constraint-validation bubble is in neither the DOM nor the
+    accessibility tree, so a blocked submit used to look like a dead button -
+    and the retry that followed is how duplicate records got created.
+    """
+    javascript = source("api_client.js")
+    css = source("product.css")
+    # The message lands in a real node, associated with its control.
+    assert 'node.className = "field-error"' in javascript
+    assert 'control.setAttribute("aria-errormessage", node.id)' in javascript
+    assert "if (label) label.after(node);" in javascript
+    assert "control.validationMessage" in javascript
+    # One form-level announcement, and the first invalid control gets focus.
+    assert 'node.setAttribute("role", "alert")' in javascript
+    assert "announceFormErrors(event.target)" in javascript
+    # A message inside a collapsed disclosure is no message at all.
+    assert 'let box = control.closest("details");' in javascript
+    assert "box.open = true;" in javascript
+    # Cleared once the control becomes valid again.
+    assert "clearFieldError(control);" in javascript
+    assert ".field-error {" in css and ".form-error-summary {" in css
+
+
+def test_form_summary_is_built_from_the_invalid_handler() -> None:
+    """Native validation never dispatches `submit`.
+
+    The browser fires `invalid` per control and stops. A summary built only
+    inside a submit listener would never appear on the click that was actually
+    blocked - which is the click that made the button look dead.
+    """
+    javascript = source("api_client.js")
+    assert "scheduleSummary(control.form);" in javascript
+    # One announcement per form per frame, not one per invalid control.
+    assert "const summaryPending = new Set();" in javascript
+    assert "requestAnimationFrame(() => {" in javascript
+    # Reading the current errors must not call checkValidity(), which dispatches
+    # `invalid` again and would schedule an endless series of announcements.
+    invalid_controls = javascript[javascript.index("const invalidControls") :]
+    invalid_controls = invalid_controls[: invalid_controls.index(";")]
+    assert "validity.valid" in invalid_controls
+    assert "checkValidity" not in invalid_controls
+
+
+def test_validation_state_is_cleared_on_reset_and_on_correction() -> None:
+    javascript = source("api_client.js")
+    reset = javascript[javascript.index('document.addEventListener("reset"') :]
+    reset = reset[: reset.index("}, true);")]
+    # Reset must clear everything this module rendered, not just aria-invalid.
+    assert 'control.setCustomValidity?.("")' in reset
+    assert 'control.removeAttribute?.("aria-invalid")' in reset
+    assert "clearFieldError(control);" in reset
+    assert "summary.hidden = true;" in reset
+    assert 'form.classList.remove("validation-attempted")' in reset
+    # Correcting a field must not leave "this form was not submitted" on screen.
+    assert "refreshFormSummary(control.form);" in javascript

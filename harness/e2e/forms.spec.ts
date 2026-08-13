@@ -373,7 +373,7 @@ test.describe("form validation and workflow wiring", () => {
     await expect(detail).toContainText("Audience level");
     await expect(detail).toContainText("Intermediate");
     await detail.getByRole("button", { name: "Reject without review" }).click();
-    await expect(detail.getByLabel("Email Speaker")).toBeChecked();
+    await expect(detail.getByLabel("Email Speaker about rejection")).toBeChecked();
     await detail.getByLabel("Internal reason").fill("Outside the program scope");
     await detail.getByLabel("Speaker message").fill("Thank you for submitting to our event.");
     await detail.getByRole("button", { name: "Confirm rejection" }).click();
@@ -505,7 +505,8 @@ test.describe("form validation and workflow wiring", () => {
     const reachable = () => page.evaluate(() => {
       const dialog = document.querySelector("#submission-detail") as HTMLDialogElement;
       const box = dialog.getBoundingClientRect();
-      return Array.from(dialog.querySelectorAll(".reject-without-review__panel .actions button")).map((node) => {
+      const panel = dialog.querySelector(".reject-without-review__panel:not([hidden])");
+      return Array.from(panel?.querySelectorAll(":scope > .actions button") || []).map((node) => {
         const rect = node.getBoundingClientRect();
         const topmost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
         return {
@@ -694,7 +695,14 @@ test.describe("form validation and workflow wiring", () => {
     await resource.getByRole("button", { name: "Publish resource" }).click();
     expect(resourceWrites).toBe(0);
     await resource.getByLabel(/Approved embed URL/).fill("https://docs.google.com/document/d/example");
-    await resource.getByRole("button", { name: "Publish resource" }).click();
+    await expect.poll(() => resource.getByLabel(/Approved embed URL/).evaluate((node: HTMLInputElement) => ({
+      valid: node.validity.valid,
+      message: node.validationMessage,
+    }))).toEqual({ valid: true, message: "" });
+    // Retry through the form API after correcting the invalid URL. This pins
+    // the validation/mutation contract without depending on a second pointer
+    // click while Chromium is dismissing its first validation presentation.
+    await resource.evaluate((form: HTMLFormElement) => form.requestSubmit());
     await expect.poll(() => resourceWrites).toBe(1);
 
     await page.getByText("Choose speakers and task details", { exact: true }).click();
@@ -704,13 +712,18 @@ test.describe("form validation and workflow wiring", () => {
     await task.getByText("Required", { exact: true }).click();
     await task.getByRole("button", { name: "Assign task" }).click();
     expect(taskWrites).toBe(0);
+    await expect(task.locator(":scope > .form-error-summary")).toContainText("This form was not submitted");
+    await expect(task.getByRole("button", { name: "Assign task" })).toBeEnabled();
     await task.getByLabel("Question label").fill("Dietary requirements");
-    await task.getByRole("button", { name: "Assign task" }).click();
+    await task.evaluate((form: HTMLFormElement) => form.requestSubmit());
     await expect.poll(() => taskWrites).toBe(1);
     expect(taskPayloads[0]).toMatchObject({ task_type: "custom", upload_enabled: false });
 
     await task.locator(`input[name="event_speaker_id"][value="${assignmentId}"]`).check();
+    await task.getByLabel("Request type").selectOption("headshot");
+    await expect(task.locator("#task-purpose-note")).toContainText("one open headshot request at a time");
     await task.getByLabel("Request type").selectOption("slides");
+    await expect(task.locator("#task-purpose-note")).toBeHidden();
     await task.getByLabel("Task title").fill("Upload slides");
     await task.getByRole("button", { name: "Assign task" }).click();
     await expect.poll(() => taskWrites).toBe(2);
@@ -840,7 +853,7 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByLabel("Rooms").fill("Main stage");
     await page.getByLabel(/Tracks/).fill("General");
     await page.getByRole("button", { name: "Create agenda" }).click();
-    await expect(page.getByRole("button", { name: "Schedule A proposal", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Schedule session: A proposal", exact: true })).toBeVisible();
     expect(setupWrites).toBe(1);
     await page.getByText("Schedule tools", { exact: true }).click();
     const labelForm = page.locator("#label-form");
@@ -849,8 +862,8 @@ test.describe("form validation and workflow wiring", () => {
     await labelForm.getByRole("button", { name: "Add label" }).click();
     await expect(page.getByText("Beginner", { exact: true }).first()).toBeVisible();
     expect(labelWrites).toBe(1);
-    await page.getByRole("button", { name: "Schedule A proposal", exact: true }).click();
-    const editor = page.getByRole("dialog", { name: "Schedule A proposal" });
+    await page.getByRole("button", { name: "Schedule session: A proposal", exact: true }).click();
+    const editor = page.getByRole("dialog", { name: "Schedule session: A proposal" });
     await editor.getByLabel("Beginner").check();
     await editor.getByLabel("Starts").fill("2030-03-20T09:00");
     await editor.getByLabel("Ends").fill("2030-03-20T10:00");

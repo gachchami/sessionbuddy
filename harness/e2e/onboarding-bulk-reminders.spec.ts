@@ -42,11 +42,13 @@ test("bulk reminders confirm the loaded count and retry with stable task keys", 
   await page.getByRole("button", { name: "Remind loaded outstanding" }).click();
   await dialog.getByRole("button", { name: "Send reminders" }).click();
   await expect(page.locator("#status")).toContainText("Not queued: Sam Whitfield");
+  await expect(page.locator("#onboarding-action-toast")).toContainText("Not queued: Sam Whitfield");
 
   failTaskB = false;
   await page.getByRole("button", { name: "Remind loaded outstanding" }).click();
   await dialog.getByRole("button", { name: "Send reminders" }).click();
   await expect(page.locator("#status")).toHaveText("2 reminders queued.");
+  await expect(page.locator("#onboarding-action-toast")).toContainText("2 reminders queued.");
   expect(keys["task-a"][1]).toBe(keys["task-a"][0]);
   expect(keys["task-b"][1]).toBe(keys["task-b"][0]);
 });

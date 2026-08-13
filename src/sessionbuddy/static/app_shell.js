@@ -17,6 +17,7 @@
     const node = make("a", label);
     node.href = href;
     if (current) node.setAttribute("aria-current", "page");
+    warmNavigation(node);
     return node;
   }
 
@@ -59,6 +60,23 @@
     node.title = label;
     node.append(icon(iconName), make("span", label));
     return node;
+  }
+
+  function warmNavigation(node) {
+    if (!node || node.origin !== location.origin || node.getAttribute("aria-current") === "page") return;
+    let warmed = false;
+    const prefetch = () => {
+      if (warmed) return;
+      warmed = true;
+      const hint = document.createElement("link");
+      hint.rel = "prefetch";
+      hint.href = node.href;
+      hint.as = "document";
+      document.head.append(hint);
+    };
+    node.addEventListener("pointerenter", prefetch, { once: true, passive: true });
+    node.addEventListener("focus", prefetch, { once: true, passive: true });
+    node.addEventListener("touchstart", prefetch, { once: true, passive: true });
   }
 
   function brandMark() {

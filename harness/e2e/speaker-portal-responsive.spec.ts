@@ -299,10 +299,12 @@ test.describe("speaker portal responsive design", () => {
       }),
     }));
     let authorizations = 0;
+    let authorizationPayload: Record<string, unknown> | null = null;
     let uploads = 0;
     let completions = 0;
     await page.route("**/api/v1/speaker/events/event-responsive/upload-authorizations", async (route) => {
       authorizations += 1;
+      authorizationPayload = route.request().postDataJSON();
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -341,7 +343,6 @@ test.describe("speaker portal responsive design", () => {
       mimeType: "application/pdf",
       buffer: Buffer.from("fixture PDF"),
     });
-    await uploadForm.getByLabel(/What changed/).fill("Updated moderator briefing.");
     await uploadForm.getByRole("button", { name: "Upload document" }).click();
     const uploadStatus = uploadForm.locator(".upload-status");
     await expect.poll(() => completions).toBe(1);
@@ -354,7 +355,7 @@ test.describe("speaker portal responsive design", () => {
     await uploadForm.getByRole("button", { name: "Upload document" }).click();
     await expect.poll(() => completions).toBe(2);
     await expect(uploadForm.locator('input[type="file"]')).toHaveValue("");
-    await expect(uploadForm.getByLabel(/What changed/)).toHaveValue("");
+    expect(authorizationPayload).toMatchObject({ version_comment: "" });
     expect({ authorizations, uploads, completions }).toEqual({ authorizations: 1, uploads: 1, completions: 2 });
   });
 
@@ -398,7 +399,7 @@ test.describe("speaker portal responsive design", () => {
       mimeType: "application/pdf",
       buffer: Buffer.from("fixture PDF"),
     });
-    await uploadForm.getByLabel(/What changed/).fill("Updated moderator briefing.");
+    await uploadForm.getByLabel(/Upload note/).fill("Moderator briefing.");
     await uploadForm.getByRole("button", { name: "Upload document" }).click();
 
     await expect.poll(() => authorizations).toBe(1);

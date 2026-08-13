@@ -24,8 +24,8 @@ def test_admin_supports_all_views_drag_and_keyboard_editor() -> None:
     assert "Dragging is optional" in html
     assert "section.tabIndex = 0" not in javascript
     assert 'section.setAttribute("aria-label", `${name} drop target`)' not in javascript
-    assert '"Edit schedule for"' in javascript
-    assert 'form.elements.start_at.focus()' in javascript
+    assert '"Edit session"' in javascript
+    assert '(item.id ? form.elements.start_at : form.elements.title).focus()' in javascript
 
 
 def test_fresh_event_can_create_its_first_agenda_and_rooms() -> None:

@@ -381,7 +381,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                         COALESCE(u.email,'') AS email,
                         p.display_name,COALESCE(p.job_title,'') AS job_title,
                         COALESCE(p.company,'') AS company,
-                        COALESCE(p.biography,'') AS biography,
+                        COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
                         COALESCE(p.location,'') AS location,p.links_json,p.version,
                         es.selection_status,es.confirmation_status,
                         COALESCE(
@@ -413,6 +413,16 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                  FROM identity_invitations i
                  WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
                    AND i.status='pending' AND i.expires_at_ms>?3
+                   AND NOT EXISTS (
+                     SELECT 1 FROM event_speakers active_es
+                     JOIN people active_p ON active_p.organization_id=active_es.organization_id
+                      AND active_p.id=active_es.person_id
+                     JOIN users active_u ON active_u.id=active_p.user_id
+                     WHERE active_es.organization_id=i.organization_id
+                      AND active_es.event_id=i.event_id
+                      AND active_es.status!='withdrawn'
+                      AND active_u.normalized_email=i.normalized_email
+                   )
                )
                SELECT * FROM targets ORDER BY display_name,event_speaker_id LIMIT 500"""
         )
@@ -443,7 +453,7 @@ async def list_organization_speakers(
                       COALESCE(u.public_profile_enabled,0) AS public_profile_enabled,
                       p.display_name,COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,
-                      COALESCE(p.biography,'') AS biography,
+                      COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
                       es.id AS event_speaker_id,es.event_id,e.name AS event_name,
                       es.selection_status,es.confirmation_status,
@@ -650,7 +660,7 @@ async def _speaker_profile_page(
                       COALESCE(u.email,'') AS email,p.display_name,
                       COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,
-                      COALESCE(p.biography,'') AS biography,
+                      COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
                       COALESCE(p.location,'') AS location,p.links_json,p.version
                FROM people p LEFT JOIN users u ON u.id=p.user_id
                WHERE p.id=?1 AND p.archived_at_ms IS NULL"""
@@ -1281,9 +1291,72 @@ async def create_speaker_task(
     # organizer-created identity task into the system-task uniqueness slot.
     if body.task_type == "headshot":
         task_payload["submission_id"] = None
+    # File requests have a product identity independent of their presentation
+    # text: one open headshot request per event speaker, and one open deck or
+    # supporting-document request per speaker/submission. Retrying with a
+    # reworded title must not create duplicate work. Custom response forms keep
+    # their full normalized payload identity because their fields define the
+    # request itself.
+    identity_payload = task_payload
+    if body.task_type in {"headshot", "slides", "supporting_document"}:
+        identity_payload = {
+            "event_speaker_id": body.event_speaker_id,
+            "submission_id": task_payload["submission_id"],
+            "task_type": body.task_type,
+        }
     fingerprint = hashlib.sha256(
-        json.dumps(task_payload, separators=(",", ":"), sort_keys=True).encode()
+        json.dumps(identity_payload, separators=(",", ":"), sort_keys=True).encode()
     ).digest()
+    form_schema_json = json.dumps(
+        {
+            "fields": [field.model_dump() for field in body.fields],
+            "upload": {
+                "enabled": body.upload_enabled,
+                "allowed_content_types": list(body.allowed_content_types),
+                "max_file_bytes": body.max_file_bytes,
+            },
+        },
+        separators=(",", ":"),
+    )
+
+    async def matching_open_task() -> dict[str, object] | None:
+        if body.task_type in {"headshot", "slides", "supporting_document"}:
+            return row_mapping(
+                await db.prepare(
+                    """SELECT id,event_speaker_id,pending_invitation_id AS invitation_id,
+                              CASE WHEN event_speaker_id IS NULL THEN 'invitation'
+                                   ELSE 'event_speaker' END AS owner_type,
+                              task_type,title,state,due_at_ms,content_fingerprint
+                         FROM speaker_tasks
+                       WHERE organization_id=?1 AND event_id=?2 AND state='open'
+                         AND (event_speaker_id=?3 OR pending_invitation_id=?3)
+                         AND task_type=?4
+                         AND (?4='headshot' OR COALESCE(submission_id,'')=COALESCE(?5,''))
+                       ORDER BY content_fingerprint IS NULL,created_at_ms,id LIMIT 1"""
+                )
+                .bind(
+                    event["organization_id"],
+                    event_id,
+                    body.event_speaker_id,
+                    body.task_type,
+                    task_payload["submission_id"],
+                )
+                .first()
+            )
+        return row_mapping(
+            await db.prepare(
+                """SELECT id,event_speaker_id,pending_invitation_id AS invitation_id,
+                          CASE WHEN event_speaker_id IS NULL THEN 'invitation'
+                               ELSE 'event_speaker' END AS owner_type,
+                          task_type,title,state,due_at_ms,content_fingerprint
+                     FROM speaker_tasks
+                   WHERE organization_id=?1 AND event_id=?2 AND state='open'
+                     AND content_fingerprint=?3 LIMIT 1"""
+            )
+            .bind(event["organization_id"], event_id, fingerprint)
+            .first()
+        )
+
     replay = row_mapping(
         await db.prepare(
             """SELECT request_fingerprint,response_resource_id FROM idempotency_records
@@ -1308,24 +1381,6 @@ async def create_speaker_task(
             .first()
         )
         return AdminSpeakerTaskView.model_validate(row)
-    # Idempotency keys only protect a retry that reuses the key. An organizer
-    # who submits the same task twice - or a client that mints a fresh key for
-    # an unchanged payload - would otherwise insert a second identical row, so
-    # match on the request content as well and return what already exists.
-    duplicate = row_mapping(
-        await db.prepare(
-            """SELECT id,event_speaker_id,pending_invitation_id AS invitation_id,
-                      CASE WHEN event_speaker_id IS NULL THEN 'invitation'
-                           ELSE 'event_speaker' END AS owner_type,
-                      task_type,title,state,due_at_ms FROM speaker_tasks
-               WHERE organization_id=?1 AND event_id=?2 AND state='open'
-                 AND content_fingerprint=?3 LIMIT 1"""
-        )
-        .bind(event["organization_id"], event_id, fingerprint)
-        .first()
-    )
-    if duplicate is not None:
-        return AdminSpeakerTaskView.model_validate(duplicate)
     owner = row_mapping(
         await db.prepare(
             """SELECT id FROM event_speakers WHERE id=?1 AND organization_id=?2 AND event_id=?3
@@ -1357,6 +1412,68 @@ async def create_speaker_task(
         request_fingerprint=fingerprint,
         expires_at_ms=now + 86_400_000,
     )
+    # Idempotency keys protect transport retries. Purpose matching additionally
+    # prevents an organizer from receiving a second headshot/deck card merely
+    # because acceptance already created the generic task. If the match is a
+    # system task, adopt it by applying the organizer's concrete title, due
+    # date, instructions, and upload rules instead of silently discarding that
+    # configuration.
+    duplicate = await matching_open_task()
+    if duplicate is not None:
+        if duplicate.get("content_fingerprint") is None:
+            task_id = str(duplicate["id"])
+            batch = CommandBatch(db)
+            batch.begin_idempotency(record, now)
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE speaker_tasks SET title=?1,help_text=?2,due_at_ms=?3,
+                              form_schema_json=?4,content_fingerprint=?5,
+                              version=version+1,updated_at_ms=?6
+                       WHERE id=?7 AND organization_id=?8 AND event_id=?9
+                         AND state='open' AND content_fingerprint IS NULL"""
+                ).bind(
+                    body.title,
+                    body.help_text,
+                    body.due_at_ms,
+                    form_schema_json,
+                    fingerprint,
+                    now,
+                    task_id,
+                    event["organization_id"],
+                    event_id,
+                )
+            )
+            batch.audit(
+                AuditEvent(
+                    actor_type="user",
+                    actor_user_id=auth.actor.user_id,
+                    action="speaker.task.configure",
+                    target_type="speaker_task",
+                    target_id=task_id,
+                    result="succeeded",
+                    correlation_id=request.state.request_id,
+                    occurred_at_ms=now,
+                    organization_id=str(event["organization_id"]),
+                    event_id=event_id,
+                    metadata={"task_type": body.task_type},
+                )
+            )
+            batch.complete_idempotency(
+                record,
+                status=201,
+                resource_type="speaker_task",
+                resource_id=task_id,
+                completed_at_ms=now,
+            )
+            await batch.execute()
+            duplicate.update(
+                {
+                    "title": body.title,
+                    "due_at_ms": body.due_at_ms,
+                    "content_fingerprint": fingerprint,
+                }
+            )
+        return AdminSpeakerTaskView.model_validate(duplicate)
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
     batch.add_statement(
@@ -1378,17 +1495,7 @@ async def create_speaker_task(
             body.title,
             body.help_text,
             body.due_at_ms,
-            json.dumps(
-                {
-                    "fields": [field.model_dump() for field in body.fields],
-                    "upload": {
-                        "enabled": body.upload_enabled,
-                        "allowed_content_types": list(body.allowed_content_types),
-                        "max_file_bytes": body.max_file_bytes,
-                    },
-                },
-                separators=(",", ":"),
-            ),
+            form_schema_json,
             now,
             fingerprint,
         )
@@ -1418,6 +1525,13 @@ async def create_speaker_task(
     try:
         await batch.execute()
     except PersistenceError as exc:
+        # The semantic unique indexes are the durable race boundary. Two
+        # requests can both pass the advisory lookup above before either has
+        # inserted; in that case the loser should return the task that won,
+        # not turn a successfully deduplicated retry into a conflict banner.
+        duplicate = await matching_open_task()
+        if duplicate is not None:
+            return AdminSpeakerTaskView.model_validate(duplicate)
         raise HTTPException(status_code=409) from exc
     return AdminSpeakerTaskView(
         id=task_id,

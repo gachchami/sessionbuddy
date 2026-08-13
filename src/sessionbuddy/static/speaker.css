@@ -149,18 +149,15 @@ body.speaker-portal-page {
 }
 .event-group__messages { border-top-color: #d8d2ed !important; background: #fdfcff !important; }
 .event-group__resources { border-top: 3px solid #3f7fc9 !important; }
-.event-group__more { margin: 0 1.15rem 1.15rem; border-top: 1px solid var(--speaker-rule); }
-.event-group__more > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 2.8rem;
-  cursor: pointer;
-  color: #4d5870;
-  font-size: .875rem;
-  font-weight: 700;
+/* Files and Activity replaced the "Files and activity" disclosure; they keep
+   the separator it used to draw between them and the primary content. */
+.event-group__files,
+.event-group__activity {
+  margin-top: .9rem;
+  padding-top: .9rem;
+  border-top: 1px solid var(--speaker-rule);
 }
-.event-group__more > .event-group__block { padding-inline: 0; }
+.event-group__activity { padding-bottom: 1.15rem; }
 .event-group__submit { margin: .85rem 1.15rem .5rem; }
 .event-group > .empty { margin: .9rem 1.15rem; color: var(--speaker-muted); font-size: .875rem; }
 .event-group.is-empty-event { box-shadow: none; }
@@ -406,7 +403,6 @@ body.speaker-portal-page {
   .event-group__primary { padding: .85rem 1rem 1rem; }
   .event-group__attention { margin-inline: 1rem; }
   .event-group__support { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }
-  .event-group__more { margin-inline: 1rem; }
   .event-group__block { padding-inline: 1rem; }
   .event-group__submit { margin-inline: 1rem; }
   .session-fields { grid-template-columns: minmax(0, 1fr); }

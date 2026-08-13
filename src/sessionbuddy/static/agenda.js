@@ -153,8 +153,8 @@
       "aria-label",
       `${item.title}. ${
         scheduled
-          ? "Scheduled session; drag to move or use Edit schedule."
-          : "Unscheduled session; drag to schedule or use Schedule."
+          ? "Scheduled session; drag to move or use Edit session."
+          : "Unscheduled session; drag to schedule or use Schedule session."
       }`,
     );
     node.append(make("h3", item.title));
@@ -197,11 +197,11 @@
       });
       node.append(people);
     }
-    const edit = make("button", scheduled ? "Edit schedule" : "Schedule", "secondary");
+    const edit = make("button", scheduled ? "Edit session" : "Schedule session", "secondary");
     edit.type = "button";
     edit.setAttribute(
       "aria-label",
-      `${scheduled ? "Edit schedule for" : "Schedule"} ${item.title}`,
+      `${scheduled ? "Edit session" : "Schedule session"}: ${item.title}`,
     );
     edit.addEventListener("click", () => openEditor(item));
     node.append(edit);
@@ -683,12 +683,12 @@
     );
     byId("unschedule-item").hidden = !item.id;
     byId("editor-title").textContent = item.id
-      ? `Edit schedule for ${item.title}`
-      : `Schedule ${item.title}`;
+      ? `Edit session: ${item.title}`
+      : `Schedule session: ${item.title}`;
     clearConflicts();
     byId("preview-state").textContent = "Change a field to check conflicts.";
     byId("editor").showModal();
-    form.elements.start_at.focus();
+    (item.id ? form.elements.start_at : form.elements.title).focus();
     loadContentHistory(item);
   }
   async function saveContent(item) {

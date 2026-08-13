@@ -1005,8 +1005,15 @@
             "type": "string"
           },
           "version_comment": {
-            "title": "Version Comment",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Comment"
           },
           "version_count": {
             "title": "Version Count",
@@ -1031,8 +1038,7 @@
           "generation",
           "version_count",
           "uploaded_at_ms",
-          "uploaded_by",
-          "version_comment"
+          "uploaded_by"
         ],
         "title": "AdminSpeakerAssetView",
         "type": "object"
@@ -1935,6 +1941,15 @@
               }
             ],
             "title": "Parent Comment Id"
+          },
+          "visibility": {
+            "default": "internal",
+            "enum": [
+              "internal",
+              "shared"
+            ],
+            "title": "Visibility",
+            "type": "string"
           }
         },
         "required": [
@@ -1975,6 +1990,15 @@
           },
           "version_id": {
             "title": "Version Id",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "internal",
+            "enum": [
+              "internal",
+              "shared"
+            ],
+            "title": "Visibility",
             "type": "string"
           }
         },
@@ -2083,8 +2107,15 @@
             "type": "string"
           },
           "version_comment": {
-            "title": "Version Comment",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Comment"
           },
           "version_count": {
             "title": "Version Count",
@@ -2109,8 +2140,7 @@
           "generation",
           "version_count",
           "uploaded_at_ms",
-          "uploaded_by",
-          "version_comment"
+          "uploaded_by"
         ],
         "title": "AssetDetailView",
         "type": "object"
@@ -9175,6 +9205,103 @@
         "title": "SetupStatus",
         "type": "object"
       },
+      "SpeakerAssetDetailView": {
+        "additionalProperties": false,
+        "description": "A speaker's own asset plus the part of its discussion they may read.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/AssetCommentView"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "headshot",
+              "slides",
+              "supporting_document"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "state": {
+            "const": "clean",
+            "title": "State",
+            "type": "string"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "uploaded_at_ms": {
+            "title": "Uploaded At Ms",
+            "type": "integer"
+          },
+          "version_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Comment"
+          },
+          "version_count": {
+            "default": 1,
+            "title": "Version Count",
+            "type": "integer"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerAssetVersionView"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "filename",
+          "content_type",
+          "byte_size",
+          "state",
+          "generation",
+          "uploaded_at_ms"
+        ],
+        "title": "SpeakerAssetDetailView",
+        "type": "object"
+      },
       "SpeakerAssetList": {
         "additionalProperties": false,
         "properties": {
@@ -9228,8 +9355,15 @@
             "type": "integer"
           },
           "version_comment": {
-            "title": "Version Comment",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Comment"
           }
         },
         "required": [
@@ -9239,8 +9373,7 @@
           "content_type",
           "byte_size",
           "state",
-          "uploaded_at_ms",
-          "version_comment"
+          "uploaded_at_ms"
         ],
         "title": "SpeakerAssetVersionView",
         "type": "object"
@@ -9298,8 +9431,15 @@
             "type": "integer"
           },
           "version_comment": {
-            "title": "Version Comment",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Comment"
           },
           "version_count": {
             "default": 1,
@@ -9322,8 +9462,7 @@
           "byte_size",
           "state",
           "generation",
-          "uploaded_at_ms",
-          "version_comment"
+          "uploaded_at_ms"
         ],
         "title": "SpeakerAssetView",
         "type": "object"
@@ -19206,6 +19345,58 @@
         ]
       }
     },
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}": {
+      "get": {
+        "description": "One of the speaker's own assets, with the shared half of its discussion.\n\nOrganizer notes default to 'internal' and are filtered out here; only\ncomments explicitly marked 'shared' cross the boundary.",
+        "operationId": "readOwnSpeakerAsset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerAssetDetailView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Speaker Asset",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
     "/api/v1/speaker/events/{event_id}/assets/{asset_id}/download-grants": {
       "post": {
         "operationId": "createOwnSpeakerAssetDownloadGrant",
@@ -19252,6 +19443,93 @@
           }
         },
         "summary": "Create Speaker Asset Download Grant",
+        "tags": [
+          "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/comments": {
+      "post": {
+        "description": "A speaker replying on their own deliverable.\n\nAlways 'shared': a speaker cannot write into the organizers' private notes,\nand would not be able to read back anything they wrote as 'internal'.",
+        "operationId": "commentOnOwnSpeakerAssetVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetCommentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCommentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Speaker Asset Comment",
         "tags": [
           "speaker-assets"
         ]

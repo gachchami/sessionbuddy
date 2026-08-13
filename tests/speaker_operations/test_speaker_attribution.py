@@ -30,6 +30,25 @@ EVENT_PAYLOAD = {
     "email_reply_to": "program@example.com",
 }
 
+PNG = b"\x89PNG\r\n\x1a\n" + b"organizer-headshot"
+
+
+class _StoredObject:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+
+class _AssetBucket:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    async def put(self, key: str, body: bytes) -> None:
+        self.objects[key] = body
+
+    async def get(self, key: str) -> _StoredObject | None:
+        body = self.objects.get(key)
+        return None if body is None else _StoredObject(body)
+
 
 async def _admin(client, connection: sqlite3.Connection) -> tuple[str, str, str]:
     bootstrap = await client.post(
@@ -200,6 +219,67 @@ def _seed_speaker_with_two_submissions(
     return speaker_id
 
 
+async def test_organizer_headshot_upload_persists_preview_and_completes_task(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    environment.APP_ENV = "local"
+    environment.MALWARE_SCAN_MODE = "disabled"
+    environment.ASSETS = _AssetBucket()
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            link_user=True,
+        )
+        connection.execute(
+            """INSERT INTO speaker_tasks
+               (id,organization_id,event_id,event_speaker_id,task_type,title,
+                destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('headshot-task',?,?,?,'headshot','Upload your headshot',
+                       'headshot','open',1900000000000,3000,3000)""",
+            (organization_id, event_id, speaker_id),
+        )
+        connection.commit()
+
+        uploaded = await client.put(
+            f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}/headshot",
+            content=PNG,
+            headers={
+                "origin": "https://test",
+                "content-type": "image/png",
+                "x-csrf-token": csrf,
+            },
+        )
+        assert uploaded.status_code == 204, uploaded.text
+
+        preview = await client.get(
+            f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}/headshot"
+        )
+        assert preview.status_code == 200, preview.text
+        assert preview.content == PNG
+
+    headshot = connection.execute(
+        """SELECT h.speaker_asset_version_id,h.object_key,v.scan_state,v.is_current
+           FROM user_headshots h
+           JOIN people p ON p.user_id=h.user_id
+           JOIN event_speakers es ON es.person_id=p.id
+           JOIN speaker_asset_versions v ON v.id=h.speaker_asset_version_id
+           WHERE es.id=?""",
+        (speaker_id,),
+    ).fetchone()
+    assert headshot is not None
+    assert headshot[2:] == ("clean", 1)
+    task = connection.execute(
+        "SELECT state,completed_at_ms FROM speaker_tasks WHERE id='headshot-task'"
+    ).fetchone()
+    assert task is not None
+    assert task[0] == "completed"
+    assert task[1] is not None
+
+
 async def test_speaker_surfaces_attribute_the_accepted_submission(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
@@ -332,6 +412,36 @@ async def test_speaker_without_accepted_submission_falls_back_to_latest(
         assert target["proposal_title"] == "Rejected talk"
 
 
+async def test_pending_invitation_is_hidden_after_matching_speaker_is_active(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        _csrf, organization_id, event_id = await _admin(client, connection)
+        _seed_speaker_with_two_submissions(
+            connection, organization_id, event_id, link_user=True
+        )
+        inviter_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,display_name)
+               VALUES ('stale-priya-invite',?,?,
+                       'priya@example.com','priya@example.com','speaker','pending',
+                       ?,9999999999999,1000,1000,'Priya Raman')""",
+            (organization_id, event_id, inviter_id),
+        )
+        connection.commit()
+
+        response = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
+        assert response.status_code == 200, response.text
+        priya = [row for row in response.json()["data"] if row["email"] == "priya@example.com"]
+        assert len(priya) == 1
+        assert priya[0]["selection_status"] == "accepted"
+
+
 async def test_registered_speaker_can_receive_custom_onboarding_tasks(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
@@ -409,7 +519,58 @@ async def test_organizer_can_create_enforceable_file_request_task(
         }
 
 
-async def test_organizer_task_with_submission_does_not_collide_with_system_task(
+async def test_rewording_an_open_file_request_does_not_duplicate_its_purpose(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(connection, organization_id, event_id)
+        base = {
+            "event_speaker_id": speaker_id,
+            "submission_id": "submission-accepted",
+            "task_type": "slides",
+            "upload_enabled": True,
+            "allowed_content_types": ["application/pdf"],
+            "max_file_bytes": 50 * 1024 * 1024,
+            "fields": [],
+        }
+        first = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "slides-purpose-first",
+            },
+            json={**base, "title": "Upload final slides", "help_text": "PDF only."},
+        )
+        reworded = await client.post(
+            f"/api/v1/admin/events/{event_id}/speaker-tasks",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "slides-purpose-reworded",
+            },
+            json={
+                **base,
+                "title": "Send the final presentation deck",
+                "help_text": "Please provide the approved PDF.",
+            },
+        )
+
+        assert first.status_code == 201, first.text
+        assert reworded.status_code == 201, reworded.text
+        assert reworded.json()["id"] == first.json()["id"]
+        assert connection.execute(
+            """SELECT COUNT(*) FROM speaker_tasks
+               WHERE organization_id=? AND event_id=? AND event_speaker_id=?
+                 AND submission_id='submission-accepted' AND task_type='slides'
+                 AND state='open'""",
+            (organization_id, event_id, speaker_id),
+        ).fetchone()[0] == 1
+
+
+async def test_organizer_headshot_request_reuses_existing_system_task(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -438,6 +599,7 @@ async def test_organizer_task_with_submission_does_not_collide_with_system_task(
                 "submission_id": "submission-accepted",
                 "title": "Final headshot for print",
                 "help_text": "Upload the print-quality portrait.",
+                "due_at_ms": 1_900_000_000_000,
                 "task_type": "headshot",
                 "upload_enabled": True,
                 "allowed_content_types": ["image/jpeg"],
@@ -446,20 +608,29 @@ async def test_organizer_task_with_submission_does_not_collide_with_system_task(
             },
         )
         assert created.status_code == 201, created.text
-        assert (
-            connection.execute(
-                "SELECT submission_id FROM speaker_tasks WHERE id=?",
-                (created.json()["id"],),
-            ).fetchone()[0]
-            is None
+        assert created.json()["id"] == "system-headshot"
+        configured = connection.execute(
+            """SELECT title,help_text,due_at_ms,form_schema_json,content_fingerprint
+               FROM speaker_tasks WHERE id='system-headshot'"""
+        ).fetchone()
+        assert configured[:3] == (
+            "Final headshot for print",
+            "Upload the print-quality portrait.",
+            1_900_000_000_000,
         )
+        assert json.loads(configured[3])["upload"] == {
+            "enabled": True,
+            "allowed_content_types": ["image/jpeg"],
+            "max_file_bytes": 10 * 1024 * 1024,
+        }
+        assert configured[4] is not None
         assert (
             connection.execute(
                 """SELECT COUNT(*) FROM speaker_tasks
                WHERE event_speaker_id=? AND task_type='headshot' AND state='open'""",
                 (speaker_id,),
             ).fetchone()[0]
-            == 2
+            == 1
         )
 
 

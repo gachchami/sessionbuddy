@@ -325,6 +325,25 @@
     return null;
   }
 
+  function showHeadshotPreview(endpoint, cacheKey, successMessage = "", failureMessage = "") {
+    const preview = byId("speaker-headshot-preview");
+    const fallback = byId("speaker-headshot-fallback");
+    const headshotStatus = byId("speaker-headshot-status");
+    preview.hidden = true;
+    fallback.hidden = true;
+    preview.onload = () => {
+      preview.hidden = false;
+      fallback.hidden = true;
+      if (successMessage) headshotStatus.textContent = successMessage;
+    };
+    preview.onerror = () => {
+      preview.hidden = true;
+      fallback.hidden = false;
+      if (failureMessage) headshotStatus.textContent = failureMessage;
+    };
+    preview.src = `${endpoint}?v=${encodeURIComponent(cacheKey)}`;
+  }
+
   function showSpeakerDetail(person, participation) {
     selectedSpeaker = {
       ...person,
@@ -354,15 +373,10 @@
     byId("speaker-directory").href = `/admin/events/${encodeURIComponent(participation.event_id)}/speakers`;
     const headshotForm = byId("speaker-headshot-form");
     headshotForm.hidden = !person.user_id;
+    byId("speaker-headshot-status").textContent = "";
     if (person.user_id) {
-      const preview = byId("speaker-headshot-preview");
-      preview.src = `/api/v1/admin/events/${encodeURIComponent(participation.event_id)}/speakers/${encodeURIComponent(participation.event_speaker_id)}/headshot?v=${person.version}`;
-      preview.hidden = false;
-      preview.addEventListener("load", () => {
-        preview.hidden = false;
-        byId("speaker-headshot-fallback").hidden = true;
-      }, { once: true });
-      preview.addEventListener("error", () => { preview.hidden = true; byId("speaker-headshot-fallback").hidden = false; }, { once: true });
+      const endpoint = `/api/v1/admin/events/${encodeURIComponent(participation.event_id)}/speakers/${encodeURIComponent(participation.event_speaker_id)}/headshot`;
+      showHeadshotPreview(endpoint, person.version, "Current headshot is saved.");
     }
     if (participation.selection_status !== "invited") {
       loadSpeakerNotes(participation.event_id, participation.event_speaker_id).catch((error) => {
@@ -687,12 +701,14 @@
     const endpoint = `/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}/headshot`;
     try {
       await api(endpoint, { method: "PUT", headers: { "content-type": file.type, "x-csrf-token": csrf }, body: file });
-      const preview = byId("speaker-headshot-preview");
-      preview.src = `${endpoint}?v=${Date.now()}`;
-      preview.hidden = false;
-      byId("speaker-headshot-fallback").hidden = true;
       form.elements.headshot.value = "";
-      byId("speaker-headshot-status").textContent = "Headshot saved.";
+      byId("speaker-headshot-status").textContent = "Verifying saved headshot…";
+      showHeadshotPreview(
+        endpoint,
+        Date.now(),
+        "Headshot saved and verified.",
+        "The upload finished, but the saved headshot could not be verified. Refresh and try again.",
+      );
     } catch (error) {
       byId("speaker-headshot-status").textContent = window.SessionBuddyApi.message(error, "The headshot could not be saved.");
     }

@@ -561,7 +561,7 @@
     const notify = document.createElement("input");
     notify.type = "checkbox";
     notify.checked = true;
-    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"}`));
+    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"} about rejection`));
     const speakerMessageLabel = document.createElement("label");
     speakerMessageLabel.append(document.createTextNode("Speaker message "));
     const optional = document.createElement("span");
@@ -764,7 +764,7 @@
     const notify = document.createElement("input");
     notify.type = "checkbox";
     notify.checked = true;
-    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"}`));
+    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"} about acceptance`));
     const feedback = document.createElement("p");
     feedback.className = "status";
     feedback.setAttribute("role", "alert");

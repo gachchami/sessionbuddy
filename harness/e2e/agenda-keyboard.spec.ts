@@ -177,16 +177,16 @@ test.describe("agenda keyboard scheduling", () => {
     await page.goto(`/admin/events/${eventId}/agenda`);
 
     await expect(page.locator(".agenda-group[tabindex]")).toHaveCount(0);
-    const schedule = page.getByRole("button", { name: "Schedule Keyboard-first session" });
+    const schedule = page.getByRole("button", { name: "Schedule session: Keyboard-first session" });
     await schedule.focus();
     await expect(schedule).toBeFocused();
     await page.keyboard.press("Enter");
 
-    const scheduleDialog = page.getByRole("dialog", { name: "Schedule Keyboard-first session" });
+    const scheduleDialog = page.getByRole("dialog", { name: "Schedule session: Keyboard-first session" });
     await expect(scheduleDialog.getByText("Speaker: Priya Raman")).toBeVisible();
     await expect(scheduleDialog.getByLabel("Track")).toHaveValue(platformTrackId);
     await expect(scheduleDialog).toBeVisible();
-    await expect(scheduleDialog.getByLabel("Starts")).toBeFocused();
+    await expect(scheduleDialog.getByLabel("Session title")).toBeFocused();
     await scheduleDialog.getByLabel("Starts").fill("2030-03-20T09:00");
     await scheduleDialog.getByLabel("Ends").fill("2030-03-20T10:00");
     await scheduleDialog.getByLabel("Room").selectOption(mainRoomId);
@@ -197,10 +197,10 @@ test.describe("agenda keyboard scheduling", () => {
     await expect(page.locator("#status")).toHaveText("Session scheduled successfully.");
     expect(writes.createWrites()).toBe(1);
 
-    const edit = page.getByRole("button", { name: "Edit schedule for Keyboard-first session" });
+    const edit = page.getByRole("button", { name: "Edit session: Keyboard-first session" });
     await edit.focus();
     await page.keyboard.press("Enter");
-    const editDialog = page.getByRole("dialog", { name: "Edit schedule for Keyboard-first session" });
+    const editDialog = page.getByRole("dialog", { name: "Edit session: Keyboard-first session" });
     await expect(editDialog.getByLabel("Starts")).toBeFocused();
     const room = editDialog.getByLabel("Room");
     await room.focus();

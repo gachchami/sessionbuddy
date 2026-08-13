@@ -244,7 +244,7 @@ class SpeakerAssetView(BaseModel):
     generation: int
     uploaded_at_ms: int
     version_count: int = 1
-    version_comment: str
+    version_comment: str | None = None
     versions: list["SpeakerAssetVersionView"] = Field(default_factory=list)
 
 
@@ -258,7 +258,7 @@ class SpeakerAssetVersionView(BaseModel):
     byte_size: int
     state: Literal["current", "superseded"]
     uploaded_at_ms: int
-    version_comment: str
+    version_comment: str | None = None
 
 
 class SpeakerAssetList(BaseModel):
@@ -285,7 +285,7 @@ class AdminSpeakerAssetView(BaseModel):
     preview_url: str | None = None
     download_grant_url: str | None = None
     direct_download_url: str | None = None
-    version_comment: str
+    version_comment: str | None = None
     versions: list[SpeakerAssetVersionView] = Field(default_factory=list)
 
 

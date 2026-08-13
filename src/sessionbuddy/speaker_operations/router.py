@@ -185,8 +185,13 @@ def _speaker_asset_version_view(row: dict[str, object]) -> SpeakerAssetVersionVi
         byte_size=int(row["byte_size"]),
         state="current" if int(row["is_current"]) == 1 else "superseded",
         uploaded_at_ms=int(row["uploaded_at_ms"]),
-        version_comment=str(row["version_comment"]),
+        version_comment=_version_comment(row),
     )
+
+
+def _version_comment(row: dict[str, object]) -> str | None:
+    value = str(row["version_comment"])
+    return None if value == "Legacy upload" else value
 
 
 async def _asset_versions_by_asset(
@@ -1330,7 +1335,7 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
                 generation=int(row["generation"]),
                 uploaded_at_ms=int(row["uploaded_at_ms"]),
                 version_count=int(row["version_count"]),
-                version_comment=str(row["version_comment"]),
+                version_comment=_version_comment(row),
                 versions=versions_by_asset.get(str(row["id"]), []),
             )
         )
@@ -1429,7 +1434,7 @@ async def read_speaker_asset(
         generation=int(row["generation"]),
         uploaded_at_ms=int(row["uploaded_at_ms"]),
         version_count=int(row["version_count"]),
-        version_comment=str(row["version_comment"]),
+        version_comment=_version_comment(row),
         versions=versions_by_asset.get(str(row["id"]), []),
         comments=[AssetCommentView(**dict(comment)) for comment in comments],
     )
@@ -1719,7 +1724,7 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                     if row["profile_only"]
                     else None
                 ),
-                version_comment=str(row["version_comment"]),
+                version_comment=_version_comment(row),
                 versions=([] if row["profile_only"] else versions_by_asset.get(str(row["id"]), [])),
             )
         )
@@ -1795,7 +1800,7 @@ async def get_admin_asset_detail(event_id: str, asset_id: str, request: Request)
         ),
         download_grant_url=f"/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants",
         direct_download_url=None,
-        version_comment=str(asset_row["version_comment"]),
+        version_comment=_version_comment(asset_row),
         versions=versions,
     )
     rows = result_rows(
@@ -2443,12 +2448,7 @@ async def authorize_speaker_upload(
         )
         .first()
     )
-    if slot is not None and not body.version_comment:
-        raise HTTPException(
-            status_code=422,
-            detail="Describe what changed when uploading a new version.",
-        )
-    version_comment = body.version_comment or "Initial upload"
+    version_comment = body.version_comment or None
     asset_id = str(slot["id"]) if slot is not None else new_id()
     generation = int(
         await db.prepare(
@@ -2490,27 +2490,49 @@ async def authorize_speaker_upload(
                 now,
             )
         )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO speaker_asset_versions
-           (id, organization_id, event_id, event_speaker_id, asset_id, generation,
-            object_key, original_filename, scan_state, created_at_ms,version_comment,
-            uploaded_by_user_id)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_upload', ?9,?10,?11)"""
-        ).bind(
-            version_id,
-            speaker["organization_id"],
-            event_id,
-            speaker["event_speaker_id"],
-            asset_id,
-            generation,
-            f"private/{version_id}/{new_id()}",
-            body.filename,
-            now,
-            version_comment,
-            authenticated.actor.user_id,
+    version_object_key = f"private/{version_id}/{new_id()}"
+    if version_comment is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_asset_versions
+               (id,organization_id,event_id,event_speaker_id,asset_id,generation,
+                object_key,original_filename,scan_state,created_at_ms,uploaded_by_user_id)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'pending_upload',?9,?10)"""
+            ).bind(
+                version_id,
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                asset_id,
+                generation,
+                version_object_key,
+                body.filename,
+                now,
+                authenticated.actor.user_id,
+            )
         )
-    )
+    else:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_asset_versions
+               (id,organization_id,event_id,event_speaker_id,asset_id,generation,
+                object_key,original_filename,scan_state,created_at_ms,version_comment,
+                uploaded_by_user_id)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'pending_upload',?9,?10,?11)"""
+            ).bind(
+                version_id,
+                speaker["organization_id"],
+                event_id,
+                speaker["event_speaker_id"],
+                asset_id,
+                generation,
+                version_object_key,
+                body.filename,
+                now,
+                version_comment,
+                authenticated.actor.user_id,
+            )
+        )
     batch.add_statement(
         db.prepare(
             """INSERT INTO upload_intents

@@ -950,12 +950,11 @@
       : "application/pdf";
     fileLabel.append(file);
     const commentLabel = make("label", isReplacement ? "What changed?" : "Upload note");
-    if (!isReplacement) commentLabel.append(make("span", " Optional", "optional"));
+    commentLabel.append(make("span", " Optional", "optional"));
     const comment = document.createElement("textarea");
     comment.name = "version_comment"; comment.rows = 2; comment.maxLength = 1000;
-    comment.required = isReplacement;
     comment.placeholder = isReplacement
-      ? "Briefly describe what changed in this version."
+      ? "Optional. Briefly describe what changed in this version."
       : "Optional for the first upload.";
     commentLabel.append(comment);
     const button = make("button", `Upload ${headshot ? "headshot" : slides ? "slides" : "document"}`);
@@ -1112,25 +1111,23 @@
       section.append(support);
     }
 
-    if (assets.length || activities.length) {
-      const more = make("details", undefined, "event-group__more");
-      const moreSummary = make("summary");
-      moreSummary.append(
-        make("span", "Files and activity"),
-        make("span", String(assets.length + activities.length), "count-badge")
-      );
-      more.append(moreSummary);
-      if (assets.length) {
-        const assetBlock = make("section", undefined, "event-group__block");
-        assetBlock.append(subHeading("Files", assets.length), assetTable(assets, event.id));
-        more.append(assetBlock);
-      }
-      if (activities.length) {
-        const activityBlock = make("section", undefined, "event-group__block");
-        activityBlock.append(subHeading("Activity", activities.length), activityTable(activities, event.time_zone));
-        more.append(activityBlock);
-      }
-      section.append(more);
+    // Files and Activity render as plain visible sections. They used to sit
+    // inside a "Files and activity" <details>, which put every file card - and
+    // therefore every version list, replacement upload form and discussion
+    // thread - behind a disclosure whose descendants still appeared in the
+    // accessibility representation while it was closed. A reference to an
+    // inner control resolved, the control was not actionable, and the only
+    // route to it was a parent nobody had been told about. Each file card is
+    // now the sole disclosure on that path.
+    if (assets.length) {
+      const assetBlock = make("section", undefined, "event-group__block event-group__files");
+      assetBlock.append(subHeading("Files", assets.length), assetTable(assets, event.id, portal));
+      section.append(assetBlock);
+    }
+    if (activities.length) {
+      const activityBlock = make("section", undefined, "event-group__block event-group__activity");
+      activityBlock.append(subHeading("Activity", activities.length), activityTable(activities, event.time_zone));
+      section.append(activityBlock);
     }
 
     return section;
@@ -1198,7 +1195,7 @@
     return item;
   }
 
-  function assetTable(assets, eventId) {
+  function assetTable(assets, eventId, portal) {
     const list = make("div", undefined, "asset-history-list");
     assets.forEach((asset) => {
       const discussionCache = { loaded: false, comments: [] };
@@ -1220,11 +1217,13 @@
         );
         item.append(
           title,
-          make("p", version.version_comment, "asset-version__comment"),
-          make("p", `Uploaded by ${state.portal?.profile?.display_name || "speaker"} · ${eventTimeLabel(version.uploaded_at_ms, state.portal?.event?.time_zone)}`, "help")
+          ...(version.version_comment
+            ? [make("p", version.version_comment, "asset-version__comment")]
+            : []),
+          make("p", `Uploaded by ${portal?.profile?.display_name || "speaker"} · ${eventTimeLabel(version.uploaded_at_ms, portal?.event?.time_zone)}`, "help")
         );
 
-        const timezone = state.portal?.event?.time_zone;
+        const timezone = portal?.event?.time_zone;
         const discussion = make("details", undefined, "asset-discussion");
         discussion.append(make("summary", "Discussion"));
         const thread = make("ul", undefined, "asset-comment-list");
@@ -1561,7 +1560,10 @@
       try {
         const portal = await api(portalPath(eventId));
         rememberPortal(portal);
-        if (portal.submissions?.length) await loadAssetsFor(eventId);
+        // Organizer-created sessions and invitation-linked speakers can have
+        // files without ever having a CFP submission. Submission count is not
+        // an asset capability signal, so load every event the portal returned.
+        await loadAssetsFor(eventId);
       } catch (_) {
         // One unreachable event must not blank the events that did load.
       }
@@ -1685,19 +1687,12 @@
     const status = form.querySelector(".upload-status");
     const progress = form.querySelector("progress");
     const button = form.querySelector("button[type=submit]");
-    const enteredVersionComment = form.elements.version_comment.value.trim();
-    const versionComment = enteredVersionComment || "Initial upload";
+    const versionComment = form.elements.version_comment.value.trim();
     const taskLimit = Number(form.dataset.maxFileBytes || 0);
     const validation = validateFile(kind, file)
       || (taskLimit && file?.size > taskLimit
         ? `This request allows files up to ${Math.round(taskLimit / 1024 / 1024)} MB.` : null);
     if (validation) { status.textContent = validation; status.classList.add("error"); return; }
-    if (form.dataset.replacement === "true" && !enteredVersionComment) {
-      form.elements.version_comment.setCustomValidity("Describe what changed in this version.");
-      form.elements.version_comment.reportValidity();
-      return;
-    }
-    form.elements.version_comment.setCustomValidity("");
     button.disabled = true; progress.hidden = false; progress.value = 0;
     status.classList.remove("error"); status.textContent = "Checking file integrity…";
     try {

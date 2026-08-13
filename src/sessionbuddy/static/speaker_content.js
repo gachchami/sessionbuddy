@@ -19,6 +19,8 @@
     const uploadEnabled = byId("task-form").elements.upload_enabled;
     uploadEnabled.disabled = !rules;
     uploadEnabled.checked = Boolean(rules);
+    const purposeNote = byId("task-purpose-note");
+    purposeNote.hidden = type !== "headshot";
     if (rules) {
       const max = byId("task-form").elements.max_file_mb;
       max.max = String(rules.max);
@@ -164,35 +166,79 @@
   async function loadAssets() {
     const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/assets`);
     byId("file-count").textContent = body.data.length;
+    const updateExportState = () => {
+      const selected = document.querySelectorAll('input[name="export_asset"]:checked').length;
+      const button = byId("export-files");
+      button.disabled = selected === 0;
+      button.textContent = selected ? `Export ${selected} selected` : "Export selected ZIP";
+    };
     const nodes = body.data.map((asset) => {
       const item = document.createElement("li");
+      item.className = "speaker-file-card";
       const exportable = !asset.id.startsWith("profile-headshot:");
       const select = exportable ? document.createElement("input") : null;
       if (select) {
         select.type = "checkbox"; select.name = "export_asset"; select.value = asset.id;
         select.setAttribute("aria-label", `Select ${asset.filename} from ${asset.speaker_name} for export`);
-        select.addEventListener("change", () => { byId("export-files").disabled = !document.querySelector('input[name="export_asset"]:checked'); });
+        select.addEventListener("change", updateExportState);
       }
-      const title = document.createElement("strong"); title.textContent = asset.filename;
-      const meta = document.createElement("span"); meta.className = "muted";
-      meta.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")} · ${fileSize(asset.byte_size)} · uploaded ${eventTime(asset.uploaded_at_ms)} by ${asset.uploaded_by} · scan ${asset.scan_status} · ${asset.version_count} version${asset.version_count === 1 ? "" : "s"}`;
+      const header = document.createElement("div"); header.className = "speaker-file-card__header";
+      const selection = document.createElement("div"); selection.className = "speaker-file-card__selection";
+      if (select) selection.append(select);
+      else selection.setAttribute("aria-hidden", "true");
+      header.append(selection);
+      const visual = document.createElement("div"); visual.className = "speaker-file-card__visual";
       if (asset.preview_url) {
         const preview = document.createElement("img");
         preview.className = "speaker-file-preview";
         preview.src = asset.preview_url;
         preview.alt = `Headshot preview for ${asset.speaker_name}`;
         preview.loading = "lazy";
-        item.append(preview);
+        visual.append(preview);
+      } else {
+        const extension = asset.filename.includes(".") ? asset.filename.split(".").pop() : asset.kind;
+        visual.textContent = String(extension || "file").slice(0, 4).toUpperCase();
+        visual.setAttribute("aria-hidden", "true");
       }
-      const currentComment = document.createElement("p"); currentComment.className = "help"; currentComment.textContent = asset.version_comment;
+      header.append(visual);
+      const identity = document.createElement("div"); identity.className = "speaker-file-card__identity";
+      const titleRow = document.createElement("div"); titleRow.className = "speaker-file-card__title-row";
+      const title = document.createElement("strong"); title.className = "speaker-file-card__title"; title.textContent = asset.filename;
+      const scan = document.createElement("span"); scan.className = asset.scan_status === "clean" ? "status-badge success" : "status-badge";
+      scan.textContent = asset.scan_status === "clean" ? "Safety checked" : `Scan ${asset.scan_status}`;
+      titleRow.append(title, scan);
+      const owner = document.createElement("p"); owner.className = "speaker-file-card__owner";
+      owner.textContent = `${asset.speaker_name} · ${asset.kind.replaceAll("_", " ")}`;
+      const meta = document.createElement("dl"); meta.className = "speaker-file-card__meta";
+      [
+        ["Size", fileSize(asset.byte_size)],
+        ["Uploaded", eventTime(asset.uploaded_at_ms)],
+        ["Uploaded by", asset.uploaded_by],
+        ["Versions", String(asset.version_count)]
+      ].forEach(([label, value]) => {
+        const group = document.createElement("div");
+        const term = document.createElement("dt"); term.textContent = label;
+        const description = document.createElement("dd"); description.textContent = value;
+        group.append(term, description); meta.append(group);
+      });
+      identity.append(titleRow, owner, meta); header.append(identity); item.append(header);
+      if (asset.version_comment) {
+        const currentComment = document.createElement("p");
+        currentComment.className = "speaker-file-card__note";
+        currentComment.textContent = asset.version_comment;
+        item.append(currentComment);
+      }
+      const quickActions = document.createElement("div"); quickActions.className = "speaker-file-card__quick-actions";
       if (asset.direct_download_url) {
         const download = document.createElement("button");
         download.type = "button"; download.className = "secondary"; download.textContent = "Download headshot";
         download.addEventListener("click", () => downloadProfileHeadshot(asset, download));
-        item.append(download);
+        quickActions.append(download);
       }
+      if (quickActions.children.length) item.append(quickActions);
       const history = document.createElement("details");
-      const summary = document.createElement("summary"); summary.textContent = `${asset.versions.length} saved versions`;
+      history.className = "speaker-file-card__disclosure";
+      const summary = document.createElement("summary"); summary.textContent = `Version history (${asset.versions.length})`;
       const versions = document.createElement("ol");
       asset.versions.forEach((version) => {
         const versionItem = document.createElement("li");
@@ -204,11 +250,11 @@
         versionItem.append(versionTitle, versionMeta, comment, button); versions.append(versionItem);
       });
       history.append(summary, versions);
-      item.prepend(...[select, title, meta, currentComment].filter(Boolean));
       if (asset.versions.length) item.append(history);
       if (exportable) {
         const discussion = document.createElement("details");
-        const discussionSummary = document.createElement("summary"); discussionSummary.textContent = "File details and discussion";
+        discussion.className = "speaker-file-card__disclosure";
+        const discussionSummary = document.createElement("summary"); discussionSummary.textContent = "Details and discussion";
         const thread = document.createElement("div"); thread.className = "asset-discussion";
         discussion.addEventListener("toggle", async () => {
           if (!discussion.open || discussion.dataset.loaded) return;
@@ -224,16 +270,30 @@
               audience.className = comment.visibility === "shared" ? "status-badge success" : "status-badge";
               audience.textContent = comment.visibility === "shared" ? "Shared with speaker" : "Internal";
               const copy = document.createElement("p"); copy.textContent = comment.body_text;
-              note.append(heading, time, audience, copy); thread.append(note);
+              const reply = document.createElement("button"); reply.type = "button"; reply.className = "tertiary compact"; reply.textContent = "Reply";
+              reply.addEventListener("click", () => {
+                versionSelect.value = comment.version_id;
+                visibility.value = comment.visibility;
+                refreshParents();
+                parent.value = comment.id;
+                updateReplyContext();
+                textarea.focus();
+              });
+              note.append(heading, time, audience, copy, reply); thread.append(note);
             });
             const form = document.createElement("form");
             const label = document.createElement("label"); label.textContent = "Add a comment or reply";
             const textarea = document.createElement("textarea"); textarea.name = "body_text"; textarea.maxLength = 5000; textarea.required = true; label.append(textarea);
-            const versionSelect = document.createElement("select"); versionSelect.name = "version_id";
-            versionSelect.setAttribute("aria-label", "File version");
+            const versionLabel = document.createElement("label"); versionLabel.textContent = "File version";
+            const versionSelect = document.createElement("select"); versionSelect.name = "version_id"; versionLabel.append(versionSelect);
             asset.versions.forEach((version) => { const option = document.createElement("option"); option.value = version.id; option.textContent = `Version ${version.generation}`; versionSelect.append(option); });
-            const parent = document.createElement("select"); parent.name = "parent_comment_id";
-            parent.setAttribute("aria-label", "Reply to comment");
+            const parentLabel = document.createElement("label"); parentLabel.textContent = "Reply to";
+            const parent = document.createElement("select"); parent.name = "parent_comment_id"; parentLabel.append(parent);
+            const replyContext = document.createElement("p"); replyContext.className = "help"; replyContext.setAttribute("role", "status");
+            const updateReplyContext = () => {
+              const selected = parent.selectedOptions[0];
+              replyContext.textContent = parent.value ? `Replying to: ${selected.textContent}` : "Posting a new top-level comment.";
+            };
             const refreshParents = () => {
               const selected = parent.value;
               parent.replaceChildren();
@@ -247,6 +307,7 @@
                   parent.append(option);
                 });
               if ([...parent.options].some((option) => option.value === selected)) parent.value = selected;
+              updateReplyContext();
             };
             const visibilityLabel = document.createElement("label");
             visibilityLabel.textContent = "Audience";
@@ -261,12 +322,13 @@
             visibilityLabel.append(visibility);
             versionSelect.addEventListener("change", refreshParents);
             visibility.addEventListener("change", refreshParents);
+            parent.addEventListener("change", updateReplyContext);
             refreshParents();
             const visibilityHelp = document.createElement("p");
             visibilityHelp.className = "help";
             visibilityHelp.textContent = "Internal notes stay with the organizing team. Shared comments appear in the speaker's portal and they can reply.";
             const submit = document.createElement("button"); submit.textContent = "Post comment";
-            form.append(label, versionSelect, parent, visibilityLabel, visibilityHelp, submit);
+            form.append(label, versionLabel, visibilityLabel, parentLabel, replyContext, visibilityHelp, submit);
             form.addEventListener("submit", async (event) => {
               event.preventDefault(); submit.disabled = true;
               try {
@@ -287,6 +349,7 @@
       empty.textContent = "No safety-checked speaker files yet."; nodes.push(empty);
     }
     byId("file-list").replaceChildren(...nodes);
+    updateExportState();
   }
   byId("export-files").addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -328,14 +391,26 @@
     if (!slugInput.dataset.edited) slugInput.value = slug(event.currentTarget.value);
   });
   byId("resource-form").elements.slug.addEventListener("input", (event) => { event.currentTarget.dataset.edited = "true"; });
-  byId("resource-form").addEventListener("input", (event) => event.target.setCustomValidity?.(""));
+  byId("resource-form").addEventListener("input", (event) => {
+    event.target.setCustomValidity?.("");
+    if (event.target.name === "embed_url") {
+      event.target.setCustomValidity(
+        approvedEmbed(event.target.value)
+          ? ""
+          : "Use an approved HTTPS Google, YouTube, or Vimeo URL."
+      );
+    }
+  });
   byId("resource-form").addEventListener("submit", async (event) => {
     // event.currentTarget is null after any await; capture the form up front.
     event.preventDefault(); const form = event.currentTarget;
     const values = Object.fromEntries(new FormData(form));
     const embed = form.elements.embed_url;
     embed.setCustomValidity(approvedEmbed(values.embed_url) ? "" : "Use an approved HTTPS Google, YouTube, or Vimeo URL.");
-    if (!form.reportValidity()) return;
+    if (!form.checkValidity()) {
+      form.querySelector(":invalid")?.focus();
+      return;
+    }
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/resources`, { method: "POST", headers: mutationHeaders(), body: JSON.stringify({ title: values.title, slug: values.slug, summary: values.summary, body_text: values.body_text, embed_url: values.embed_url || null, status: values.status, sort_order: Number(values.sort_order) }) });
       form.reset(); delete form.elements.slug.dataset.edited; form.elements.sort_order.value = "0"; setStatus("Resource published to the speaker portal."); await loadResources();
@@ -360,7 +435,10 @@
     const dueInput = form.elements.due_at;
     const due = inputMillis(values.due_at);
     dueInput.setCustomValidity(Number.isNaN(due) ? `Choose a valid local time in ${state.timeZone}.` : "");
-    if (!form.reportValidity()) return;
+    if (!form.checkValidity()) {
+      form.querySelector(":invalid")?.focus();
+      return;
+    }
     const taskType = String(values.task_type || "custom");
     const rules = uploadRules[taskType];
     const uploadEnabled = Boolean(values.upload_enabled);

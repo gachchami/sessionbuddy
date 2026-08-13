@@ -115,6 +115,20 @@ def test_asset_history_maps_database_columns_to_public_contract() -> None:
     assert view.state == "current"
     assert view.version_comment == "Corrected the final diagram"
 
+    note_less = _speaker_asset_version_view(
+        {
+            "id": "version-3",
+            "generation": 3,
+            "original_filename": "slides-v3.pdf",
+            "content_type": "application/pdf",
+            "byte_size": 4096,
+            "is_current": 1,
+            "uploaded_at_ms": 1_700_000_000_001,
+            "version_comment": "Legacy upload",
+        }
+    )
+    assert note_less.version_comment is None
+
 
 def test_upload_authorization_allows_blank_note_for_initial_upload() -> None:
     values = {

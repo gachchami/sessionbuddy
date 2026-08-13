@@ -132,8 +132,8 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "sessionbuddy-development-clean",
-          "database_id": "0c6baeab-6556-48ec-ae3b-a024ee394a59",
+          "database_name": "sessionbuddy-development-cnt-reset-20260819",
+          "database_id": "411ef2c7-673c-4f71-9cda-bf29bf0fbfdf",
           "migrations_dir": "migrations_baseline"
         }
       ],

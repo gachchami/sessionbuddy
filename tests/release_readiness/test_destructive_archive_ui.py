@@ -34,15 +34,13 @@ def test_agenda_archive_actions_confirm_consequences_and_offer_restore() -> None
     assert "archived_labels" in script
 
 
-def test_embed_controls_are_honest_local_snippet_preferences() -> None:
+def test_embed_controls_are_honest_browser_local_preset_preferences() -> None:
     page = source("event_workspace.html")
     script = source("event_workspace.js")
 
-    assert 'id="embed-enabled"' not in page
-    assert "Embed snippet preferences" in page
-    assert "saved only in this browser" in page
-    assert "do not enable or disable public embeds" in page
-    assert "Schedule embed availability follows agenda publication" in page
-    assert "embed-enabled" not in script
-    assert "Embed disabled" not in script
-    assert "JSON.stringify({ type, title, height })" in script
+    assert 'id="embed-enabled"' in page
+    assert "Presets are stored in this browser" in page
+    assert "public agenda availability still follows publication" in page
+    assert "embed-enabled" in script
+    assert 'preset.enabled ? "enabled" : "disabled"' in script
+    assert "localStorage.setItem(`sessionbuddy:embeds:${eventId}`" in script

@@ -6,7 +6,10 @@ set -eu
 mkdir -p .local
 RELEASE_GATE_STATE=$(mktemp -d .local/release-gate.XXXXXX)
 export RELEASE_GATE_STATE
-PW_WORKERS=${PW_WORKERS:-4}
+# Local D1 is owned by one Workerd process. Parallel browser contexts can begin
+# overlapping local SQLite transactions and crash the release-rehearsal Worker;
+# keep the default bounded while allowing an explicit concurrency probe.
+PW_WORKERS=${PW_WORKERS:-2}
 export PW_WORKERS
 
 release_compose() {
@@ -52,7 +55,7 @@ release_compose run --rm -e PW_WORKERS e2e sh -lc '
   done
   [ "$ready" -ge 3 ]
   npm ci
-  npx playwright test --workers=${PW_WORKERS:-4}
+  npx playwright test --workers=${PW_WORKERS:-2}
 '
 
 release_compose run --rm --no-deps worker uv run python scripts/benchmark_api.py \

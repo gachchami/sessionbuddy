@@ -212,33 +212,153 @@
         validateRequiredText(form);
       }
     }, true);
+    // A blocked submit used to be invisible: the browser's own bubble is not in
+    // the DOM or the accessibility tree, so the only signals were a red border
+    // and a focus jump. A form that refuses to submit and says nothing reads as
+    // a dead button - and the retry that follows is how duplicate records get
+    // created.
+    let errorSeq = 0;
+    const errorNodeFor = (control) => {
+      if (!control.id) control.id = `sb-field-${++errorSeq}`;
+      const id = `${control.id}-error`;
+      let node = document.getElementById(id);
+      if (!node) {
+        node = document.createElement("p");
+        node.id = id;
+        node.className = "field-error";
+        node.setAttribute("role", "alert");
+        node.hidden = true;
+        // Keep the error associated through aria-errormessage, but outside the
+        // <label>. Text appended inside a label becomes part of the control's
+        // accessible name (for example "Maximum rating Maximum rating") and
+        // makes otherwise distinct controls ambiguous to assistive tools.
+        const label = control.closest("label");
+        if (label) label.after(node);
+        else control.parentElement?.append(node);
+      }
+      return node;
+    };
+    const showFieldError = (control) => {
+      if (!control.validationMessage && control.validity?.valid) return;
+      const node = errorNodeFor(control);
+      node.textContent = control.validationMessage || "This field is required.";
+      node.hidden = false;
+      control.setAttribute("aria-errormessage", node.id);
+      control.setAttribute("aria-invalid", "true");
+      // Reveal the control: a message inside a collapsed disclosure helps nobody.
+      let box = control.closest("details");
+      while (box) {
+        box.open = true;
+        box = box.parentElement?.closest("details") ?? null;
+      }
+    };
+    const clearFieldError = (control) => {
+      const node = control.id ? document.getElementById(`${control.id}-error`) : null;
+      if (node) { node.textContent = ""; node.hidden = true; }
+      control.removeAttribute?.("aria-errormessage");
+    };
+    const summaryFor = (form) => {
+      let node = form.querySelector(":scope > .form-error-summary");
+      if (!node) {
+        node = document.createElement("p");
+        node.className = "form-error-summary";
+        node.setAttribute("role", "alert");
+        node.hidden = true;
+        form.prepend(node);
+      }
+      return node;
+    };
+    // Read validity without calling checkValidity(): that method dispatches a
+    // fresh `invalid` event for every bad control. Calling it while building
+    // the summary would schedule another summary forever.
+    const invalidControls = (form) =>
+      [...form.elements].filter((el) => el.willValidate && !el.validity.valid);
+    // Recomputes the summary from the form's current state. Creates the node
+    // only when there is something to say, so ordinary typing does not litter
+    // every form with an empty alert.
+    const refreshFormSummary = (form, { create = false } = {}) => {
+      if (!form) return null;
+      const existing = form.querySelector(":scope > .form-error-summary");
+      const invalid = invalidControls(form);
+      if (!invalid.length) {
+        if (existing) { existing.textContent = ""; existing.hidden = true; }
+        return null;
+      }
+      if (!existing && !create) return invalid[0];
+      const node = summaryFor(form);
+      const first = invalid[0];
+      const name = first.labels?.[0]?.textContent?.replace(/\*$/, "").trim() || "a required field";
+      node.textContent = invalid.length === 1
+        ? `This form was not submitted: ${name} - ${first.validationMessage || "This field is required."}`
+        : `This form was not submitted: ${invalid.length} fields need attention, starting with ${name}.`;
+      node.hidden = false;
+      return first;
+    };
+    const announceFormErrors = (form) => {
+      const invalid = invalidControls(form);
+      invalid.forEach(showFieldError);
+      return refreshFormSummary(form, { create: true });
+    };
+    // Native validation fires `invalid` per control and never dispatches
+    // `submit`, so the summary has to be built from here. Batch one frame so a
+    // form with four empty fields produces one announcement, not four.
+    const summaryPending = new Set();
+    const scheduleSummary = (form) => {
+      if (!form || summaryPending.has(form)) return;
+      summaryPending.add(form);
+      requestAnimationFrame(() => {
+        summaryPending.delete(form);
+        const first = refreshFormSummary(form, { create: true });
+        if (first && form.contains(document.activeElement) === false) first.focus();
+      });
+    };
     document.addEventListener("submit", (event) => {
       validateRequiredText(event.target);
       if (!event.target.checkValidity()) {
         event.preventDefault();
-        event.target.querySelector(":invalid")?.focus();
+        (announceFormErrors(event.target) ?? event.target.querySelector(":invalid"))?.focus();
+      } else {
+        const summary = event.target.querySelector(":scope > .form-error-summary");
+        if (summary) summary.hidden = true;
       }
     }, true);
     document.addEventListener("invalid", (event) => {
       const control = event.target;
       control.form?.classList.add("validation-attempted");
       control.setAttribute?.("aria-invalid", "true");
+      showFieldError(control);
+      scheduleSummary(control.form);
     }, true);
     const clearValidState = (event) => {
       const control = event.target;
       if (control.matches?.('input:required:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea:required')) {
         control.setCustomValidity(String(control.value || "").trim() ? "" : "This field is required.");
       }
-      if (control.validity?.valid) control.removeAttribute?.("aria-invalid");
+      if (control.validity?.valid) {
+        control.removeAttribute?.("aria-invalid");
+        clearFieldError(control);
+        // The summary is stale the moment a field is corrected; recompute it
+        // rather than leaving "this form was not submitted" on screen.
+        refreshFormSummary(control.form);
+      }
     };
     document.addEventListener("input", clearValidState, true);
     document.addEventListener("change", clearValidState, true);
     document.addEventListener("reset", (event) => {
-      event.target.classList?.remove("validation-attempted");
-      for (const control of event.target.querySelectorAll?.('[aria-invalid="true"]') || []) {
-        control.removeAttribute("aria-invalid");
-      }
-      requestAnimationFrame(() => installCharacterCounters(event.target));
+      const form = event.target;
+      if (!form?.elements) return;
+      // Reset happens before the fields are cleared, so tidy up afterwards.
+      requestAnimationFrame(() => {
+        form.classList.remove("validation-attempted");
+        for (const control of form.elements) {
+          control.setCustomValidity?.("");
+          control.removeAttribute?.("aria-invalid");
+          clearFieldError(control);
+        }
+        const summary = form.querySelector(":scope > .form-error-summary");
+        if (summary) { summary.textContent = ""; summary.hidden = true; }
+        installCharacterCounters(form);
+      });
     }, true);
     document.addEventListener("focusin", (event) => {
       if (event.target.matches?.('textarea[maxlength]:not([readonly])')) updateCharacterCounter(event.target);

@@ -36,7 +36,7 @@ for (const width of [1280, 390]) {
     await form.locator('input[type="file"]').setInputFiles({ name: "speaker.png", mimeType: "image/png", buffer: Buffer.from("png") });
     await form.getByRole("button", { name: "Save headshot" }).click();
     await expect.poll(() => uploaded).toBe(true);
-    await expect(page.locator("#speaker-headshot-status")).toHaveText("Headshot saved.");
+    await expect(page.locator("#speaker-headshot-status")).toHaveText("Headshot saved and verified.");
     await expect(page.locator("#speaker-headshot-preview")).toBeVisible();
     await expect(page.locator("#speaker-headshot-fallback")).toBeHidden();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");

@@ -110,7 +110,11 @@ def allow_organization_admin(monkeypatch):
 async def test_organization_directory_deduplicates_people_and_nests_events(
     directory_database, allow_organization_admin
 ) -> None:
-    _connection, database = directory_database
+    connection, database = directory_database
+    connection.execute(
+        "UPDATE users SET description='Existing speaker biography' WHERE id='speaker-user'"
+    )
+    connection.commit()
 
     result = await router.list_organization_speakers("org", request_for(database))
 
@@ -119,6 +123,7 @@ async def test_organization_directory_deduplicates_people_and_nests_events(
     speaker = next(item for item in result.data if item.person_id == "person")
     assert speaker.person_id == "person"
     assert speaker.email == "speaker@example.test"
+    assert speaker.biography == "Existing speaker biography"
     assert speaker.links == ["https://example.test"]
     assert [item.event_id for item in speaker.participations] == ["event-b", "event-a"]
     assert [item.event_speaker_id for item in speaker.participations] == [

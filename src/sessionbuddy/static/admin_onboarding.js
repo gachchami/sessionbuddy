@@ -16,6 +16,19 @@
     byId("status").classList.toggle("error", error);
   }
 
+  function showActionToast(title, message, error = false) {
+    const toast = byId("onboarding-action-toast");
+    byId("onboarding-action-toast-title").textContent = title;
+    byId("onboarding-action-toast-message").textContent = message;
+    toast.classList.toggle("error", error);
+    toast.hidden = false;
+  }
+
+  byId("dismiss-onboarding-action-toast").addEventListener("click", () => {
+    byId("onboarding-action-toast").hidden = true;
+    byId("remind-visible").focus();
+  });
+
   function setConnection(kind, label) {
     byId("connection-dot").className = kind;
     byId("connection-state").textContent = label;
@@ -164,10 +177,12 @@
     )));
     const queued = results.filter((result) => result.status === "fulfilled").length;
     const failed = targets.filter((_, index) => results[index].status === "rejected");
-    setStatus(failed.length
+    const resultMessage = failed.length
       ? `${queued} of ${targets.length} reminders queued. Not queued: ${failed.map((row) => row.display_name).join(", ")}. You can retry safely today.`
-      : `${queued} reminders queued.`, Boolean(failed.length));
+      : `${queued} reminders queued.`;
+    setStatus(resultMessage, Boolean(failed.length));
     byId("confirm-bulk-reminders").close();
+    showActionToast(failed.length ? "Some reminders were not queued" : "Reminders queued", resultMessage, Boolean(failed.length));
     button.disabled = false;
   });
 

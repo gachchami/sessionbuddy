@@ -55,12 +55,16 @@
     checkbox.name = "speaker_recipient";
     checkbox.value = speaker.event_speaker_id;
     const identity = document.createElement("span");
+    identity.className = "recipient-row__identity";
+    const heading = document.createElement("span");
+    heading.className = "recipient-row__heading";
     const name = document.createElement("strong"); name.textContent = speaker.display_name;
     const recipientState = speaker.selection_status === "invited" ? "Invited — awaiting acceptance" : "Active speaker";
     const detail = document.createElement("small"); detail.textContent = `${speaker.email} · ${speaker.proposal_title || recipientState}`;
-    identity.append(name, detail);
     const status = document.createElement("span"); status.className = "badge"; status.textContent = recipientState;
-    label.append(checkbox, identity, status);
+    heading.append(name, status);
+    identity.append(heading, detail);
+    label.append(checkbox, identity);
     return label;
   }
 

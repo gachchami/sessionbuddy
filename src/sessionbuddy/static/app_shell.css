@@ -5,6 +5,11 @@
   --status-danger: #b42318;
 }
 
+/* Event sections are separate, durable URLs. Let supporting browsers carry the
+   shared shell across those document navigations instead of flashing a blank
+   page while the destination initializes. */
+@view-transition { navigation: auto; }
+
 .sb-app-shell {
   min-height: 0;
   padding: 0;
@@ -108,6 +113,7 @@
 
 
 .sb-topbar {
+  view-transition-name: sessionbuddy-topbar;
   position: fixed;
   inset: 0 0 auto var(--sb-sidebar-width);
   z-index: 90;
@@ -269,6 +275,7 @@
 .sb-sidebar__mobile-global { display: none; }
 
 .sb-event-nav {
+  view-transition-name: sessionbuddy-event-navigation;
   position: fixed;
   z-index: 89;
   top: 4.5rem;
@@ -395,6 +402,8 @@
   .sb-guest-header__inner { width: calc(100% - 1rem); }
 }
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: .001ms; }
   .sb-sidebar { transition: none; }
   .sb-global-nav a::after,
   .sb-account summary > .sb-nav-icon { transition: none; }

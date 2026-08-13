@@ -858,6 +858,19 @@
         "p95_ms": 500
       }
     },
+    "GET /api/v1/speaker/events/{event_id}/assets/{asset_id}": {
+      "benchmark": "speaker-operations-speaker-asset-detail",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "GET /api/v1/speaker/portal": {
       "benchmark": "speaker-operations-speaker-portal",
       "dashboards": [
@@ -1913,6 +1926,19 @@
         "p95_ms": 500
       }
     },
+    "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/comments": {
+      "benchmark": "speaker-operations-speaker-asset-comment",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "POST /api/v1/speaker/events/{event_id}/assets/{asset_id}/versions/{version_id}/download-grants": {
       "benchmark": "speaker-operations-speaker-version-download-grant",
       "dashboards": [
@@ -2215,6 +2241,9 @@
     },
     "/api/v1/uploads/{intent_id}/content": {
       "reason": "Local-development-only upload sink (APP_ENV=local); never deployed behind production traffic."
+    },
+    "/api/v1/public/events/{event_id}/schedule.ics": {
+      "reason": "Calendar feed document; observed through the public schedule API and calendar-delivery telemetry rather than browser web vitals."
     },
     "/auth/verify": {
       "reason": "Magic-link confirmation and consumption flow; observed through the identity API entries and auth structured logs, not page web-vitals."
@@ -2645,6 +2674,24 @@
         "embedded-speaker-gallery"
       ],
       "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/embeds/events/{event_id}/itinerary": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "embedded-attendee-itinerary"
+      ],
+      "owner": "agenda",
       "runbook": "docs/debugging-runbook.md#page-regression",
       "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
       "web_vitals": {

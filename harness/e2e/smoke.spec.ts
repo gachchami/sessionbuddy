@@ -207,8 +207,8 @@ test.describe("public smoke checks", () => {
       "href",
       `/admin/events/${eventId}/agenda`,
     );
-    await page.getByText("Embed snippet preferences").click();
-    await expect(page.getByText("saved only in this browser")).toBeVisible();
+    await expect(page.getByText("Embed and feed builder", { exact: true })).toBeVisible();
+    await expect(page.getByText("Presets are stored in this browser.", { exact: false })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Embed enabled" })).toHaveCount(0);
     await expect(page.locator("#embed-code")).toHaveValue(/<iframe/);
   });
