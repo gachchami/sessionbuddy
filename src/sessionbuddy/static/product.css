@@ -1617,20 +1617,20 @@ input[type="file"]::file-selector-button:hover { background: #f2f4f7; }
 /* Demo persona access. Rendered only when the server confirms demo mode. */
 .demo-access { margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid #e4e0ef; }
 .demo-access__title { margin: 0; color: #241b3e; font-size: 1rem; font-weight: 800; letter-spacing: -.015em; }
-.demo-access__intro { margin: .35rem 0 1rem; color: #697386; font-size: .8125rem; line-height: 1.5; }
+.demo-access__intro { margin: .35rem 0 1rem; color: #697386; font-size: .875rem; line-height: 1.5; }
 .demo-access__list { display: grid; gap: .65rem; margin: 0; padding: 0; list-style: none; }
 .demo-access__item { min-width: 0; }
 button.demo-access__button.secondary { width: 100%; min-height: 5rem; display: grid; grid-template-columns: 2.45rem minmax(0,1fr) auto; gap: .8rem; align-items: center; justify-content: stretch; padding: .8rem .9rem; border: 1px solid #dcd6ed; border-radius: .8rem; background: #fbfaff; color: #241b3e; box-shadow: 0 .2rem .65rem rgba(65,44,120,.05); text-align: left; }
 button.demo-access__button.secondary:hover { border-color: #bcaee5; background: #f6f3ff; box-shadow: 0 .45rem 1rem rgba(65,44,120,.09); transform: translateY(-1px); }
 button.demo-access__button.secondary:active { transform: translateY(0); }
-.demo-access__marker { width: 2.45rem; height: 2.45rem; display: grid; place-items: center; border-radius: .7rem; background: #ece6ff; color: #6540d7; font-size: .8rem; font-weight: 900; }
+.demo-access__marker { width: 2.45rem; height: 2.45rem; display: grid; place-items: center; border-radius: .7rem; background: #ece6ff; color: #6540d7; font-size: .875rem; font-weight: 800; }
 .demo-access__button[data-demo-role="reviewer"] .demo-access__marker { background: #e8efff; color: #315ebc; }
 .demo-access__button[data-demo-role="speaker"] .demo-access__marker { background: #e6f6f0; color: #167354; }
 .demo-access__copy { min-width: 0; display: grid; gap: .1rem; }
-.demo-access__role { color: #7b718f; font-size: .625rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.demo-access__label { color: #211832; font-size: .9375rem; font-weight: 800; line-height: 1.25; }
+.demo-access__role { color: #7b718f; font-size: .75rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.demo-access__label { color: #211832; font-size: 1rem; font-weight: 800; line-height: 1.25; }
 .demo-access__description { color: #697386; font-size: .75rem; font-weight: 500; line-height: 1.35; }
-.demo-access__arrow { color: #7957df; font-size: 1.2rem; transition: transform .15s ease; }
+.demo-access__arrow { color: #7957df; font-size: 1.125rem; transition: transform .15s ease; }
 .demo-access__button:hover .demo-access__arrow { transform: translateX(.15rem); }
 .demo-access__button[data-loading="true"] { cursor: progress; }
 .demo-access__button[data-loading="true"] .demo-access__arrow { animation: demo-arrow-pulse .8s ease-in-out infinite alternate; }
