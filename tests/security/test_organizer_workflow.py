@@ -800,6 +800,89 @@ async def test_accepted_reviewer_is_not_reinvited_and_can_be_revoked_safely(
         ).fetchone()[0] == 1
 
 
+async def test_active_event_speaker_cannot_be_reinvited_but_pending_and_other_events_can(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as root:
+        csrf, organization_id = await _bootstrap_admin(root, connection)
+        first_event = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=_mutation(csrf),
+            json=EVENT_PAYLOAD,
+        )
+        second_event = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=_mutation(csrf),
+            json={**EVENT_PAYLOAD, "name": "Another Speaker Summit"},
+        )
+        first_event_id = first_event.json()["id"]
+        second_event_id = second_event.json()["id"]
+
+        pending = await root.post(
+            f"/api/v1/admin/events/{first_event_id}/invitations",
+            headers=_mutation(csrf),
+            json={"email": "speaker@example.com", "role": "speaker"},
+        )
+        assert pending.status_code == 201, pending.text
+        pending_retry = await root.post(
+            f"/api/v1/admin/events/{first_event_id}/invitations",
+            headers=_mutation(csrf),
+            json={"email": "SPEAKER@example.com", "role": "speaker"},
+        )
+        assert pending_retry.status_code == 201, pending_retry.text
+        assert pending_retry.json()["id"] == pending.json()["id"]
+
+        now = int(time.time() * 1000)
+        connection.execute(
+            """INSERT INTO users
+               (id,email,normalized_email,status,email_verified_at_ms,
+                created_at_ms,updated_at_ms)
+               VALUES('active-speaker-user','speaker@example.com','speaker@example.com',
+                      'active',?,?,?)""",
+            (now, now, now),
+        )
+        connection.execute(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES('active-speaker-membership',?,'active-speaker-user','member',
+                      'active',?,?)""",
+            (organization_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+               VALUES('active-speaker-person',?,'active-speaker-user','Active Speaker',?,?)""",
+            (organization_id, now, now),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,accepted_at_ms,
+                last_activity_at_ms,created_at_ms,updated_at_ms,selection_status)
+               VALUES('active-event-speaker',?,?,'active-speaker-person','onboarding',
+                      ?,?,?,?,'accepted')""",
+            (organization_id, first_event_id, now, now, now, now),
+        )
+        connection.commit()
+
+        duplicate = await root.post(
+            f"/api/v1/admin/events/{first_event_id}/invitations",
+            headers=_mutation(csrf),
+            json={"email": "speaker@example.com", "role": "speaker"},
+        )
+        assert duplicate.status_code == 409, duplicate.text
+        assert duplicate.json()["error"]["message"] == (
+            "This person is already an active speaker for this event"
+        )
+
+        other_event = await root.post(
+            f"/api/v1/admin/events/{second_event_id}/invitations",
+            headers=_mutation(csrf),
+            json={"email": "speaker@example.com", "role": "speaker"},
+        )
+        assert other_event.status_code == 201, other_event.text
+
+
 def test_reviewer_eligibility_revoke_fails_closed_with_active_assignments() -> None:
     source = (PROJECT_ROOT / "src/sessionbuddy/platform/auth/access.py").read_text()
     assert "Remove this reviewer from active evaluation assignments first" in source

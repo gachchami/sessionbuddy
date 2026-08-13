@@ -3638,6 +3638,25 @@ async def create_invitation(
         )
     email, normalized = _email(body.email)
     now, invitation_id = utc_now_ms(), new_id()
+    if body.role == "speaker":
+        existing_event_speaker_id = await (
+            db.prepare(
+                """SELECT es.id FROM event_speakers es
+                   JOIN people p ON p.organization_id=es.organization_id
+                    AND p.id=es.person_id
+                   JOIN users u ON u.id=p.user_id AND u.status='active'
+                   WHERE es.organization_id=?1 AND es.event_id=?2
+                     AND u.normalized_email=?3 AND es.status!='withdrawn'
+                   LIMIT 1"""
+            )
+            .bind(event["organization_id"], event_id, normalized)
+            .first("id")
+        )
+        if existing_event_speaker_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This person is already an active speaker for this event",
+            )
     accepted_id = await (
         db.prepare(
             """SELECT id FROM identity_invitations
