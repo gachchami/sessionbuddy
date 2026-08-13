@@ -131,6 +131,16 @@ revealed only after the organizer selects Accept or Reject.
 The proposal inbox presents rounds as an ordered status ledger. Only an open
 round blocks a proposal from selection; closed-round proposals can enter a later
 round, and draft rounds may be saved before any reviewers are assigned.
+A round's assignments are the explicit reviewer/proposal pairs the organizer
+built; `assignment_strategy` only generates the opening matrix when the payload
+carries no list at all. An empty list alongside selected proposals and reviewers
+is refused rather than saved, because such a round can never be opened and shows
+nothing anywhere the organizer can see it. Rounds report the reviewers and
+proposals they hold from round membership rather than inferring them from
+assignments, so a proposal awaiting its first reviewer, or a reviewer awaiting
+their first proposal, still counts as part of the round; revoked assignments are
+excluded from the counts. Editing a draft preserves the proposals that the
+paginated proposal table cannot show.
 
 ## Speaker operations
 

@@ -12246,7 +12246,7 @@
     },
     "/api/v1/admin/evaluation-rounds/{round_id}/open": {
       "post": {
-        "description": "Promote a draft evaluation round to open.\n\nA draft round is fully configured -- name, review window, scorecard, reviewer pool\nand proposal set -- but invisible to reviewers, so an organizer can plan the next\nround while the current one is still collecting scores. Only one round per event may\nbe open at a time; opening a draft while another round is open returns 409.",
+        "description": "Promote a draft evaluation round to open.\n\nA draft round is fully configured -- name, review window, scorecard, reviewer pool\nand proposal set -- but invisible to reviewers, so an organizer can plan the next\nround while the current one is still collecting scores. Only one round per event may\nbe open at a time; opening a draft while another round is open returns 409.\n\nOpening is also when the round's reviewers are told about it. Assignments written\nwhile the round was a draft queue no mail (they would link to an empty /reviews), so\nthis is their one notification; assignments added to an already-open round were\nannounced when they were added and are not announced again here.",
         "operationId": "openEvaluationRound",
         "parameters": [
           {

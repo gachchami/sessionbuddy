@@ -1218,19 +1218,27 @@ async def create_evaluation_round(
     assignment_counts: dict[str, int] = {}
     for _, evaluator_id in assignment_pairs:
         assignment_counts[evaluator_id] = assignment_counts.get(evaluator_id, 0) + 1
-    notification_ids = _queue_assignment_notifications(
-        batch,
-        db,
-        emails_by_user=await _evaluator_emails(db, body.evaluator_user_ids),
-        assignment_counts=assignment_counts,
-        organization_id=organization_id,
-        event_id=event_id,
-        round_id=round_id,
-        round_name=body.name,
-        review_closes_at_ms=body.review_closes_at_ms,
-        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
-        now_ms=now,
-        dedup_suffix=str(now),
+    # A draft round is invisible to its reviewers, so it must also be silent. The email
+    # links to /reviews, where a draft assignment does not appear, so sending it here
+    # announces work nobody can see. open_evaluation_round sends it instead, once the
+    # assignments are actually reachable.
+    notification_ids = (
+        _queue_assignment_notifications(
+            batch,
+            db,
+            emails_by_user=await _evaluator_emails(db, body.evaluator_user_ids),
+            assignment_counts=assignment_counts,
+            organization_id=organization_id,
+            event_id=event_id,
+            round_id=round_id,
+            round_name=body.name,
+            review_closes_at_ms=body.review_closes_at_ms,
+            base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+            now_ms=now,
+            dedup_suffix=str(now),
+        )
+        if body.status == "open"
+        else []
     )
     batch.complete_idempotency(
         record,
@@ -1270,11 +1278,14 @@ async def get_current_evaluation_round(
     )
     row = row_mapping(
         await db.prepare(
-            """SELECT r.id, r.event_id, r.name, r.status, COUNT(a.id) AS assignment_count,
-                  COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
-           FROM evaluation_rounds r LEFT JOIN evaluation_assignments a ON a.round_id = r.id
+            """SELECT r.id, r.event_id, r.name, r.status,
+                  (SELECT COUNT(*) FROM evaluation_assignments a
+                    WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
+                  (SELECT COUNT(*) FROM evaluation_round_evaluators e
+                    WHERE e.round_id=r.id AND e.status='active') AS evaluator_count
+           FROM evaluation_rounds r
            WHERE r.organization_id = ?1 AND r.event_id = ?2 AND r.status = 'open'
-           GROUP BY r.id ORDER BY r.created_at_ms DESC LIMIT 1"""
+           ORDER BY r.created_at_ms DESC LIMIT 1"""
         )
         .bind(organization_id, event_id)
         .first()
@@ -1299,11 +1310,19 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
     )
     rows = result_rows(
         await db.prepare(
-            """SELECT r.id,r.event_id,r.name,r.status,COUNT(a.id) AS assignment_count,
-                      COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
+            # Reviewers are counted from their own membership table, not from the
+            # assignments. Deriving them from assignments made a round that has a reviewer
+            # pool but no pair yet report "0 reviewers" -- the same round the draft view
+            # then reopens with its reviewers intact, which reads as data that was saved
+            # and then lost. Revoked assignments are excluded so a removed reviewer stops
+            # inflating the count the organizer is shown.
+            """SELECT r.id,r.event_id,r.name,r.status,
+                      (SELECT COUNT(*) FROM evaluation_assignments a
+                        WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
+                      (SELECT COUNT(*) FROM evaluation_round_evaluators e
+                        WHERE e.round_id=r.id AND e.status='active') AS evaluator_count
                FROM evaluation_rounds r
-               LEFT JOIN evaluation_assignments a ON a.round_id=r.id
-               WHERE r.organization_id=?1 AND r.event_id=?2 GROUP BY r.id
+               WHERE r.organization_id=?1 AND r.event_id=?2
                ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 50"""
         )
         .bind(organization_id, event_id)
@@ -1315,11 +1334,14 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
         placeholders = ",".join(f"?{index + 1}" for index in range(len(round_ids)))
         proposal_rows = result_rows(
             await db.prepare(
-                f"""SELECT DISTINCT a.round_id,s.id AS submission_id,s.proposal_title
-                     FROM evaluation_assignments a
-                     JOIN submissions s ON s.id=a.submission_id
-                     WHERE a.round_id IN ({placeholders}) AND a.status!='revoked'
-                     ORDER BY a.round_id,s.proposal_title,s.id"""  # noqa: S608
+                # Membership, for the same reason as the counts above: a proposal that is
+                # in the round but not yet assigned to anyone is still in the round, and
+                # listing it is what tells the organizer their selection was saved.
+                f"""SELECT m.round_id,s.id AS submission_id,s.proposal_title
+                     FROM evaluation_round_submissions m
+                     JOIN submissions s ON s.id=m.submission_id
+                     WHERE m.round_id IN ({placeholders}) AND m.status='active'
+                     ORDER BY m.round_id,s.proposal_title,s.id"""  # noqa: S608
             )
             .bind(*round_ids)
             .all()
@@ -1951,23 +1973,29 @@ async def add_round_evaluator(
         .bind(round_id)
         .first()
     )
-    notification_ids = _queue_assignment_notifications(
-        batch,
-        db,
-        emails_by_user=await _evaluator_emails(db, [body.evaluator_user_id]),
-        assignment_counts={body.evaluator_user_id: len(missing_ids) + len(revive_ids)},
-        organization_id=str(round_row["organization_id"]),
-        event_id=str(round_row["event_id"]),
-        round_id=round_id,
-        round_name=str(round_detail["name"]) if round_detail else "",
-        review_closes_at_ms=(
-            int(round_detail["review_closes_at_ms"])
-            if round_detail and round_detail["review_closes_at_ms"] is not None
-            else None
-        ),
-        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
-        now_ms=now,
-        dedup_suffix=str(now),
+    # Silent while the round is a draft: these assignments are not on /reviews yet.
+    # Opening the round notifies everyone it holds, including this reviewer.
+    notification_ids = (
+        _queue_assignment_notifications(
+            batch,
+            db,
+            emails_by_user=await _evaluator_emails(db, [body.evaluator_user_id]),
+            assignment_counts={body.evaluator_user_id: len(missing_ids) + len(revive_ids)},
+            organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            round_id=round_id,
+            round_name=str(round_detail["name"]) if round_detail else "",
+            review_closes_at_ms=(
+                int(round_detail["review_closes_at_ms"])
+                if round_detail and round_detail["review_closes_at_ms"] is not None
+                else None
+            ),
+            base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+            now_ms=now,
+            dedup_suffix=str(now),
+        )
+        if round_row["status"] == "open"
+        else []
     )
     await batch.execute()
     await publish_committed_messages(request, notification_ids)
@@ -2165,23 +2193,28 @@ async def add_round_submissions(
     for _, evaluator_id in assignment_pairs:
         assignment_counts[evaluator_id] = assignment_counts.get(evaluator_id, 0) + 1
     added_digest = hashlib.sha256(":".join(sorted(new_submission_ids)).encode()).hexdigest()[:16]
-    notification_ids = _queue_assignment_notifications(
-        batch,
-        db,
-        emails_by_user=await _evaluator_emails(db, list(assignment_counts)),
-        assignment_counts=assignment_counts,
-        organization_id=str(round_row["organization_id"]),
-        event_id=str(round_row["event_id"]),
-        round_id=round_id,
-        round_name=str(round_row["name"]),
-        review_closes_at_ms=(
-            int(round_row["review_closes_at_ms"])
-            if round_row["review_closes_at_ms"] is not None
-            else None
-        ),
-        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
-        now_ms=now,
-        dedup_suffix=(f"{added_digest}:{hashlib.sha256(key.encode()).hexdigest()[:16]}"),
+    # Silent while the round is a draft, for the same reason: nothing reached /reviews.
+    notification_ids = (
+        _queue_assignment_notifications(
+            batch,
+            db,
+            emails_by_user=await _evaluator_emails(db, list(assignment_counts)),
+            assignment_counts=assignment_counts,
+            organization_id=str(round_row["organization_id"]),
+            event_id=str(round_row["event_id"]),
+            round_id=round_id,
+            round_name=str(round_row["name"]),
+            review_closes_at_ms=(
+                int(round_row["review_closes_at_ms"])
+                if round_row["review_closes_at_ms"] is not None
+                else None
+            ),
+            base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+            now_ms=now,
+            dedup_suffix=(f"{added_digest}:{hashlib.sha256(key.encode()).hexdigest()[:16]}"),
+        )
+        if round_row["status"] == "open"
+        else []
     )
     result = RoundSubmissionChange(
         round_id=round_id,
@@ -3401,11 +3434,16 @@ async def open_evaluation_round(
     and proposal set -- but invisible to reviewers, so an organizer can plan the next
     round while the current one is still collecting scores. Only one round per event may
     be open at a time; opening a draft while another round is open returns 409.
+
+    Opening is also when the round's reviewers are told about it. Assignments written
+    while the round was a draft queue no mail (they would link to an empty /reviews), so
+    this is their one notification; assignments added to an already-open round were
+    announced when they were added and are not announced again here.
     """
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT id, organization_id, event_id, status
+            """SELECT id, organization_id, event_id, status, name, review_closes_at_ms
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -3489,6 +3527,21 @@ async def open_evaluation_round(
                 f"Still unassigned: {titles}{more}."
             ),
         )
+    # Per-reviewer workload for the opening notification. Revoked assignments are left
+    # out for the same reason they never reach /reviews: nobody has to act on them.
+    assignment_counts = {
+        str(row["evaluator_user_id"]): int(row["assignment_count"] or 0)
+        for row in result_rows(
+            await db.prepare(
+                """SELECT evaluator_user_id, COUNT(*) AS assignment_count
+                     FROM evaluation_assignments
+                    WHERE round_id = ?1 AND status != 'revoked'
+                    GROUP BY evaluator_user_id"""
+            )
+            .bind(round_id)
+            .all()
+        )
+    }
     now = utc_now_ms()
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
@@ -3506,6 +3559,27 @@ async def open_evaluation_round(
             """UPDATE evaluation_rounds SET status = 'open', updated_at_ms = ?1
              WHERE id = ?2 AND status = 'draft'"""
         ).bind(now, round_id)
+    )
+    notification_ids = _queue_assignment_notifications(
+        batch,
+        db,
+        emails_by_user=await _evaluator_emails(db, list(assignment_counts)),
+        assignment_counts=assignment_counts,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        round_id=round_id,
+        round_name=str(round_row["name"]),
+        review_closes_at_ms=(
+            int(round_row["review_closes_at_ms"])
+            if round_row["review_closes_at_ms"] is not None
+            else None
+        ),
+        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+        now_ms=now,
+        # Keyed to the round rather than the clock. A round leaves draft exactly once, so
+        # this cannot collide with itself, and a retried open after the idempotency record
+        # has expired is refused by the UNIQUE deterministic key rather than mailed twice.
+        dedup_suffix="round-opened",
     )
     batch.audit(
         AuditEvent(
@@ -3533,6 +3607,7 @@ async def open_evaluation_round(
         completed_at_ms=now,
     )
     await _execute(request, batch)
+    await publish_committed_messages(request, notification_ids)
     return await _round_view(db, round_id)
 
 
@@ -4044,10 +4119,15 @@ async def record_submission_decision(
 async def _round_view(db, round_id: str) -> EvaluationRoundView:
     row = row_mapping(
         await db.prepare(
-            """SELECT r.id, r.event_id, r.name, r.status, COUNT(a.id) AS assignment_count,
-                  COUNT(DISTINCT a.evaluator_user_id) AS evaluator_count
-           FROM evaluation_rounds r LEFT JOIN evaluation_assignments a ON a.round_id = r.id
-           WHERE r.id = ?1 GROUP BY r.id"""
+            # Same rule as the round list: reviewers come from membership, assignments
+            # exclude revoked pairs. Kept identical on purpose -- a round must not report
+            # one set of numbers when it is created and another when it is listed.
+            """SELECT r.id, r.event_id, r.name, r.status,
+                  (SELECT COUNT(*) FROM evaluation_assignments a
+                    WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
+                  (SELECT COUNT(*) FROM evaluation_round_evaluators e
+                    WHERE e.round_id=r.id AND e.status='active') AS evaluator_count
+           FROM evaluation_rounds r WHERE r.id = ?1"""
         )
         .bind(round_id)
         .first()

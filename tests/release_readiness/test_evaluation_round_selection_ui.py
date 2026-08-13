@@ -21,6 +21,48 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert 'byId("configure-round").disabled = count === 0' in javascript
 
 
+def test_a_round_with_nothing_assigned_cannot_be_saved_from_the_form() -> None:
+    """The matrix is the payload, so an empty one has to be refused before the POST.
+
+    The API stores an explicit `assignments` list verbatim, so an empty list is saved as
+    "nobody reviews anything" -- legal for the schema, invisible in every count, and
+    impossible to open. The server refuses it now; this is the half that tells the
+    organizer which box to tick instead of returning a validation code.
+
+    String assertions can only prove the guard is still written. What it does is pinned
+    behaviourally in harness/e2e/evaluation-round-matrix.spec.ts.
+    """
+    javascript = (STATIC / "admin_submissions.js").read_text()
+
+    assert "!roundAssignments().length" in javascript
+    assert "Assign at least one proposal to a reviewer." in javascript
+    # The guard is not conditional on the round being opened now: saving a draft is the
+    # path where an empty matrix used to pass silently.
+    assert (
+        "if (submissions.length && evaluators.length && !roundAssignments().length) {"
+        in javascript
+    )
+
+
+def test_editing_a_draft_keeps_proposals_the_table_cannot_show() -> None:
+    """The proposal table pages at 100; a draft may hold proposals past the first page.
+
+    Rebuilding the selection from rendered checkboxes alone dropped them from the payload,
+    and the round diff then deactivated their membership and revoked their assignments.
+    """
+    javascript = (STATIC / "admin_submissions.js").read_text()
+
+    assert "hiddenSubmissionIds" in javascript
+    assert "state.hiddenSubmissionIds = new Set(draft.submission_ids.filter" in javascript
+    # Only while editing: "add selected to the open round" still means the on-screen boxes.
+    assert (
+        "if (!state.editingRoundId || !state.hiddenSubmissionIds.size) return rendered;"
+        in javascript
+    )
+    # Carried visibly, not silently.
+    assert "already in this draft, not on this page" in javascript
+
+
 def test_round_errors_open_the_disclosure_and_receive_focus() -> None:
     markup = (STATIC / "admin_submissions.html").read_text()
     javascript = (STATIC / "admin_submissions.js").read_text()

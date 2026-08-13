@@ -884,7 +884,7 @@ test.describe("administration empty states", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/cfp`);
-    await expect(page.locator("#cfp-state")).toHaveText("Live");
+    await expect(page.locator("#cfp-state")).toHaveText("Open");
     await expect(page.getByLabel("Public CFP URL")).toHaveValue(
       `${new URL(page.url()).origin}/cfp/cccccc/world-fair-2026`,
     );

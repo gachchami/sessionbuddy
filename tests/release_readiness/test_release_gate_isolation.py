@@ -8,7 +8,11 @@ def test_release_gate_uses_disposable_d1_state_and_isolated_compose_project() ->
     override = (ROOT / "compose.release.yaml").read_text()
 
     assert "mktemp -d .local/release-gate." in script
-    assert "-p sessionbuddy-release-gate" in script
+    assert "tr '[:upper:]' '[:lower:]'" in script
+    assert 'RELEASE_GATE_PROJECT="sessionbuddy-release-gate-$RELEASE_GATE_SUFFIX"' in script
+    assert '-p "$RELEASE_GATE_PROJECT"' in script
+    assert "PW_WORKERS=${PW_WORKERS:-2}" in script
+    assert "--max-failures=1" in script
     assert '--persist-to "/workspace/$RELEASE_GATE_STATE"' in script
     assert "trap cleanup EXIT INT TERM" in script
     assert script.index("npm run worker:migrate") < script.index("up --detach worker")

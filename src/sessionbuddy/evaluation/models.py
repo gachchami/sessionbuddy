@@ -107,6 +107,19 @@ class EvaluationRoundCreate(BaseModel):
             raise ValueError("review close must be after review open")
         if self.assignments is not None:
             pairs = [item.pair() for item in self.assignments]
+            # An empty list is a matrix, not a missing one: it is stored verbatim, and the
+            # strategy is deliberately not consulted to replace it. A round holding both
+            # proposals and reviewers with no pair between them is therefore a round nobody
+            # can review -- and, because the ledger and the draft view read membership and
+            # assignments from different tables, one that reads as if the selection had
+            # never been saved. Drafts do not reach the coverage rule below, so this is the
+            # only place the state is refused. `null` remains the way to ask for generation.
+            if not pairs and self.submission_ids and self.evaluator_user_ids:
+                raise ValueError(
+                    "assignments cannot be empty when the round has both proposals and "
+                    "reviewers; assign at least one reviewer to a proposal, or send null "
+                    "to generate the assignments from assignment_strategy"
+                )
             if len(set(pairs)) != len(pairs):
                 raise ValueError("assignments must be unique")
             submissions, evaluators = set(self.submission_ids), set(self.evaluator_user_ids)

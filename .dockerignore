@@ -2,6 +2,8 @@
 .DS_Store
 .dev.vars
 .local
+.tmp
+tmp
 .venv
 .venv-workers
 .cache

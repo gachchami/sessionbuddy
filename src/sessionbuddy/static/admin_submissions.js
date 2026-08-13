@@ -20,9 +20,25 @@
     // roundSaved/roundFormDirty gate the button after a save: resetting the form makes a
     // repeat click harmless-looking, but it still files a round nobody asked for, so the
     // next save must follow a deliberate edit.
-    roundSubmitInFlight: false, roundSaved: false, roundFormDirty: false };
+    roundSubmitInFlight: false, roundSaved: false, roundFormDirty: false,
+    // Proposals that belong to the draft being edited but have no checkbox on this page.
+    // The table pages at 100; a draft may hold proposals that sit past the first page.
+    hiddenSubmissionIds: new Set() };
   function selectedSubmissionIds() {
-    return [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
+    const rendered = [...document.querySelectorAll('input[name="submission_ids"]:checked')].map((input) => input.value);
+    // Rebuilding the selection from the DOM alone dropped every draft proposal the table
+    // had not rendered: the save then carried a shorter submission_ids, and the round diff
+    // deactivated that membership and revoked its assignments. Silent, and on a form the
+    // organizer never touched. Only while editing -- "add selected to the open round"
+    // must keep meaning the boxes that are actually on screen.
+    if (!state.editingRoundId || !state.hiddenSubmissionIds.size) return rendered;
+    const seen = new Set(rendered);
+    return rendered.concat([...state.hiddenSubmissionIds].filter((id) => !seen.has(id)));
+  }
+  function submissionLabel(submissionId) {
+    const item = state.submissions.find((entry) => entry.id === submissionId);
+    if (item) return item.proposal_title;
+    return `Proposal ${submissionId.slice(0, 8)} · already in this draft, not on this page`;
   }
   function renderEvaluatorChoices() {
     const evaluatorChoices = byId("evaluators");
@@ -68,7 +84,6 @@
         const proposals = document.createElement("div");
         proposals.className = "reviewer-row__proposals";
         selected.forEach((submissionId) => {
-          const item = state.submissions.find((entry) => entry.id === submissionId);
           const pair = document.createElement("label");
           pair.className = "check-label";
           const box = document.createElement("input");
@@ -88,7 +103,7 @@
             state.pairs[pairKey] = box.checked;
             markRoundFormDirty();
           });
-          pair.append(box, item ? item.proposal_title : submissionId);
+          pair.append(box, submissionLabel(submissionId));
           proposals.append(pair);
         });
         row.append(proposals);
@@ -253,6 +268,8 @@
     document.querySelectorAll('input[name="submission_ids"]:not(:disabled)').forEach((input) => {
       input.checked = selected;
     });
+    // "Clear selection" means none -- including the draft proposals this page cannot show.
+    if (!selected) state.hiddenSubmissionIds = new Set();
     submissionSelectionChanged();
   }
   function showRoundError(message) {
@@ -405,7 +422,15 @@
       row.querySelector('[name="criterion_required"]').checked = criterion.required;
       row.querySelector('[name="criterion_type"]').dispatchEvent(new Event("change"));
     }
-    document.querySelectorAll('input[name="submission_ids"]').forEach((input) => { input.checked = draft.submission_ids.includes(input.value); });
+    const rendered = new Set();
+    document.querySelectorAll('input[name="submission_ids"]').forEach((input) => {
+      rendered.add(input.value);
+      input.checked = draft.submission_ids.includes(input.value);
+    });
+    // Anything the draft holds that this page has no checkbox for -- a proposal past the
+    // first 100, or one the table hides because it is already decided -- is carried in
+    // state instead, so saving the draft cannot drop what the organizer never saw.
+    state.hiddenSubmissionIds = new Set(draft.submission_ids.filter((id) => !rendered.has(id)));
     // Restore the stored pairs. Without this the checkboxes would default every reviewer
     // back to "reviews everything" and the next save would quietly widen the round.
     state.pairs = {};
@@ -1087,15 +1112,26 @@
     // A draft is a work in progress: it may be saved with no proposals and no reviewers
     // yet. The API applies the same rule, and refuses to OPEN a round with no
     // assignments, so the constraint lives at the point where it actually matters.
-    if (!isDraftSubmission(form)) {
-      const submissions = [...document.querySelectorAll('input[name="submission_ids"]:checked')];
-      const evaluators = form.querySelectorAll('input[name="evaluator_user_ids"]:checked');
-      if (!submissions.length || !evaluators.length) {
-        showRoundError(!submissions.length
-          ? "Select at least one proposal."
-          : "Select at least one reviewer.");
-        return false;
-      }
+    const submissions = selectedSubmissionIds();
+    const evaluators = [...form.querySelectorAll('input[name="evaluator_user_ids"]:checked')];
+    if (!isDraftSubmission(form) && (!submissions.length || !evaluators.length)) {
+      showRoundError(!submissions.length
+        ? "Select at least one proposal."
+        : "Select at least one reviewer.");
+      return false;
+    }
+    // Drafts too, and this is the case that used to pass silently. The payload carries an
+    // explicit pair list, so an empty one is stored as "nobody reviews anything" rather
+    // than regenerated from the strategy: the round keeps its proposals and reviewers in
+    // their membership tables, reports zero assignments everywhere the organizer can see
+    // it, and cannot be opened. The API refuses this too; catching it here is what turns
+    // a 422 into a sentence that says which box to tick.
+    if (submissions.length && evaluators.length && !roundAssignments().length) {
+      showRoundError(
+        "Assign at least one proposal to a reviewer. Every proposal box under a reviewer "
+        + "is currently unticked, so this round would be saved with nothing to review.",
+      );
+      return false;
     }
     return form.reportValidity();
   }
@@ -1211,6 +1247,7 @@
     byId("criteria").replaceChildren();
     defaultCriteria.forEach((criterion) => appendCriterionRow(criterion));
     document.querySelectorAll('input[name="submission_ids"]').forEach((input) => { input.checked = false; });
+    state.hiddenSubmissionIds = new Set();
     // The reviewer pool is per round. Carrying it over silently gives the next round a
     // pool the organizer never chose -- which is exactly what happened in the eval run.
     state.evaluators = [];

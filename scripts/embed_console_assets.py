@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,7 +116,20 @@ def main() -> None:
         if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != expected:
             raise SystemExit("embedded console assets are stale; run this script without --check")
         return
-    OUTPUT.write_text(expected, encoding="utf-8")
+    # Workerd watches this module in local development. Replacing it atomically keeps a
+    # reload from importing the half-written Python string that write_text() can expose.
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=OUTPUT.parent, prefix=f".{OUTPUT.name}.", suffix=".tmp"
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(expected)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, OUTPUT)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
