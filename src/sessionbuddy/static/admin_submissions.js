@@ -170,11 +170,14 @@
           // "Not eligible" has two causes needing opposite actions. Telling an organizer
           // to invite someone they already invited sends them back to the invite form,
           // which only reissues the pending invitation and leaves the round as blocked.
+          // Named by the address the organizer just typed: the lookup deliberately
+          // returns no identity, because an event `edit` grant reaches it and the
+          // invitation roster is `manage`-only.
           const pending = (result.pending || [])[0];
           status.textContent = pending
             ? (pending.expired
-              ? `${pending.display_name} was invited as a Reviewer, but the invitation expired before it was accepted, so they cannot be added to a round yet. Send a new invitation from the Reviewers page.`
-              : `${pending.display_name} was invited as a Reviewer but has not accepted yet, so they cannot be added to a round yet. They become available once they open their invitation link and sign in.`)
+              ? `${email} was invited as a Reviewer, but the invitation expired before it was accepted, so they cannot be added to a round yet. Send a new invitation from the Reviewers page.`
+              : `${email} was invited as a Reviewer but has not accepted yet, so they cannot be added to a round yet. They become available once they open their invitation link and sign in.`)
             : "No active Reviewer account matches that exact email. Invite them as a Reviewer first \u2014 they become available to add once they accept.";
           return;
         }
@@ -687,7 +690,7 @@
             override_incomplete_reviews: false,
           }),
         });
-        byId("status").textContent = `“${item.proposal_title}” was rejected without review.${decision.communication_queued ? " Speaker email queued." : " No email sent."}`;
+        byId("status").textContent = `“${item.proposal_title}” was rejected without review.${decision.communication_queued ? " Speaker email queued — track delivery in the message log." : " No email sent."}`;
         location.reload();
       } catch (error) {
         // Chief among these is the 409 the server returns once the proposal is
@@ -860,7 +863,7 @@
             override_incomplete_reviews: false,
           }),
         });
-        byId("status").textContent = `“${item.proposal_title}” was accepted without review.`;
+        byId("status").textContent = `“${item.proposal_title}” was accepted without review.${notify.checked ? " Speaker email queued — track delivery in the message log." : " No email sent."}`;
         location.reload();
       } catch (error) {
         confirm.disabled = false;
@@ -924,6 +927,11 @@
       window.dispatchEvent(new Event("sessionbuddy:event-context"));
       byId("cfp-workspace-link").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
       byId("cfp-workspace-link").hidden = false;
+      // Decisions queue speaker email from this page; the delivery record for
+      // those emails lives on the messages page. Without this link an organizer
+      // has no way from here to confirm what was actually sent.
+      byId("message-log-link").href = `/admin/events/${encodeURIComponent(eventId)}/messages`;
+      byId("message-log-link").hidden = false;
       const cfp = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`);
       if (cfp.published_form?.accepting_submissions) {
         const eventKey = eventId.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 6);

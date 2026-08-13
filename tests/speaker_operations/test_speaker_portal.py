@@ -237,7 +237,13 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     assert "personalized emails will be queued immediately" in message_page
     assert 'selection_status !== "invited"' not in messages
     assert "Invited — awaiting acceptance" in messages
-    assert "Active speakers and invited people are included" in message_page
+    # Every event participant is a possible recipient, and each row must say
+    # where that person stands: an organizer sending straight after a decision
+    # round has to see "not selected" before the mail goes out.
+    assert "accepted speakers, people whose proposal is still undecided" in message_page
+    assert "Proposal not selected" in messages
+    assert "Accepted speaker" in messages
+    assert 'byId("recipient-status")' in messages
     assert "Choose the Invitation reminder template" in messages
     assert "cannot use ${missing.join" in messages
 

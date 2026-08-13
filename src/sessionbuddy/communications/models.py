@@ -21,7 +21,13 @@ class RecipientPreview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     recipient_user_id: str | None = None
     recipient_target_id: str
+    # What the recipient can be sent: an "active" identity resolves every merge
+    # field, an "invited" one has no submission or portal yet.
     recipient_state: Literal["active", "invited"] = "active"
+    # Where the recipient stands in the program. An organizer sending after a
+    # decision round needs to see that a recipient was rejected before the mail
+    # goes out; "active speaker" for everyone hid exactly that.
+    selection_status: Literal["invited", "submitted", "accepted", "rejected"] = "submitted"
     display_name: str
     email: str
     subject: str

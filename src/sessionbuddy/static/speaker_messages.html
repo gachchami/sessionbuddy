@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Speaker messages · SessionBuddy</title>
+  <title>Event messages · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=69">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=23">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
@@ -11,16 +11,15 @@
   <script src="/admin/speakers/assets/messages.js?v=6" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--messages">
-  <a class="skip-link" href="#main">Skip to speaker messages</a>
+  <a class="skip-link" href="#main">Skip to event messages</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
-    <div class="page-heading workflow-hero"><div><p class="eyebrow">Messages</p><h1>Speaker messages</h1><p class="lede">Choose recipients, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" hidden href="#">View speakers</a></div>
-    <div data-speaker-hub-tabs></div>
+    <div class="page-heading workflow-hero"><div><p class="eyebrow">Messages</p><h1>Event messages</h1><p class="lede">Choose recipients from everyone on this event, preview their personalized email, then send.</p></div><a id="speaker-directory" class="button secondary" hidden href="#">View speakers</a></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading speakers…</div>
     <div class="message-workspace">
       <section class="card workflow-stage workflow-stage--recipients" aria-labelledby="recipients-title">
-        <div class="section-heading"><div><h2 id="recipients-title">Recipients</h2><p class="section-summary">Active speakers and invited people are included. Invitation-only recipients are clearly labeled.</p></div><span id="recipient-count" class="badge">0 selected</span></div>
-        <div class="filter-bar"><label>Search recipients<input id="recipient-search" type="search" placeholder="Name, email, company, or session"></label><button id="select-visible" class="secondary" type="button">Select visible</button></div>
+        <div class="section-heading"><div><h2 id="recipients-title">Recipients</h2><p class="section-summary">Everyone on this event is included — accepted speakers, people whose proposal is still undecided or was not selected, and pending invitations. Each row states where that person stands before you send.</p></div><span id="recipient-count" class="badge">0 selected</span></div>
+        <div class="filter-bar"><label>Search recipients<input id="recipient-search" type="search" placeholder="Name, email, company, or session"></label><label>Status<select id="recipient-status"><option value="all">Everyone</option><option value="accepted">Accepted speakers</option><option value="submitted">Awaiting a decision</option><option value="rejected">Not selected</option><option value="invited">Invited</option></select></label><button id="select-visible" class="secondary" type="button">Select visible</button></div>
         <div id="recipient-list" class="recipient-list" aria-live="polite"><p class="empty workflow-empty-state">Loading recipients…</p></div>
       </section>
       <section class="card workflow-stage workflow-stage--compose" aria-labelledby="compose-title">

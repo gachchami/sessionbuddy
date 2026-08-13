@@ -178,12 +178,25 @@
       // contradicted the roster below, which already showed this person as
       // "Invitation pending", and re-inviting only reissues the same pending row.
       const pending = (reviewers.pending || [])[0];
+      // The lookup reports state only -- it is reachable with an event `edit` grant, so it
+      // must not hand out roster facts. This page holds `manage`, so it reads the name and
+      // the invitation id from the invitation list itself, freshly, rather than from the
+      // lookup response.
+      let invitation = null;
+      if (pending) {
+        try {
+          const invitations = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`);
+          invitation = invitations.data.find((item) => item.role === "evaluator"
+            && item.email.toLowerCase() === pending.email.toLowerCase()) || null;
+        } catch (error) { invitation = null; }
+      }
+      const who = (invitation && invitation.display_name) || pending?.email || email;
       if (pending && pending.expired) {
         // Resend only accepts an unexpired pending invitation -- see resend_invitation,
         // which requires `expires_at_ms>?4` and 404s otherwise. An expired invitation
         // needs a fresh one, which is what the roster below does too: invitationRow
         // offers "Send again" only while status is still `pending`.
-        result.replaceChildren(document.createTextNode(`${pending.display_name} was invited, but the invitation expired before it was accepted, so they cannot be assigned to a round. Send a new invitation. `));
+        result.replaceChildren(document.createTextNode(`${who} was invited, but the invitation expired before it was accepted, so they cannot be assigned to a round. Send a new invitation. `));
         const reinvite = document.createElement("button");
         reinvite.type = "button";
         reinvite.className = "secondary";
@@ -196,8 +209,8 @@
         result.append(reinvite);
         return;
       }
-      if (pending) {
-        result.replaceChildren(document.createTextNode(`${pending.display_name} was invited but has not accepted yet, so they cannot be assigned to a round. Acceptance happens when they open their invitation link and sign in. `));
+      if (pending && invitation) {
+        result.replaceChildren(document.createTextNode(`${who} was invited but has not accepted yet, so they cannot be assigned to a round. Acceptance happens when they open their invitation link and sign in. `));
         const resend = document.createElement("button");
         resend.type = "button";
         resend.className = "secondary";
@@ -205,7 +218,7 @@
         resend.addEventListener("click", async () => {
           resend.disabled = true;
           try {
-            const issued = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(pending.invitation_id)}/resend`, {
+            const issued = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations/${encodeURIComponent(invitation.id)}/resend`, {
               method: "POST",
               headers: { "content-type": "application/json", "x-csrf-token": csrf },
               body: "{}"
@@ -219,7 +232,13 @@
         result.append(resend);
         return;
       }
-      result.replaceChildren(document.createTextNode("No eligible reviewer found. "));
+      if (pending) {
+        // Outstanding, but the roster did not yield the invitation -- revoked or replaced
+        // between the two reads. Say the true thing and offer the flow that still works.
+        result.replaceChildren(document.createTextNode(`${who} has an invitation that has not been accepted, so they cannot be assigned to a round yet. `));
+      } else {
+        result.replaceChildren(document.createTextNode("No eligible reviewer found. "));
+      }
       const invite = document.createElement("button");
       invite.type = "button";
       invite.className = "secondary";

@@ -42,7 +42,18 @@
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda`))
     ]);
     const speakers = speakersResult.data;
-    const cfpLive = Boolean(cfp.published_form);
+    const cfpPublished = Boolean(cfp.published_form);
+    // Availability is decided by the API (sessionbuddy/cfp/availability.py) and
+    // arrives as availability_state. Publishing a form is not the same as an
+    // open call: this tile used to claim "Open · Accepting proposals" for the
+    // rest of the event's life, including after the public form had closed.
+    const cfpState = cfp.published_form?.availability_state || "";
+    const cfpStateLabel = { scheduled: "Scheduled", open: "Open", closed: "Closed" }[cfpState] || "Open";
+    const cfpStateNote = {
+      scheduled: "Opens on schedule",
+      open: "Accepting proposals",
+      closed: "Closed to new proposals"
+    }[cfpState] || "Accepting proposals";
     const bannerUrl = cfp.published_form?.cover_image_url || "";
     const logoUrl = cfp.published_form?.logo_url || "";
     const accentColor = cfp.published_form?.accent_color || "#3159d9";
@@ -81,7 +92,7 @@
     byId("agenda-link").href = `${prefix}/agenda`;
     byId("cfp-link").href = `${prefix}/cfp`;
     byId("event-actions").hidden = false;
-    byId("next-step").hidden = cfpLive;
+    byId("next-step").hidden = cfpPublished;
     byId("next-step-action").href = `${prefix}/cfp`;
     byId("proposal-count").textContent = submissionsState.ok ? `${submissionCount} submitted` : "Unavailable";
     byId("proposal-note").textContent = submissionsState.ok ? `${submissionCount} total proposal${submissionCount === 1 ? "" : "s"}` : "Refresh to try again";
@@ -89,8 +100,8 @@
     byId("speaker-note").textContent = `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} in this event`;
     byId("agenda-count").textContent = agendaFailed ? "Unavailable" : `${agendaItems} session${agendaItems === 1 ? "" : "s"}`;
     byId("agenda-note").textContent = agendaFailed ? "Unavailable" : agendaPublished ? "Published" : agendaMissing ? "Not started" : "Draft";
-    byId("cfp-state").textContent = cfpLive ? "Open" : "Draft";
-    byId("cfp-note").textContent = cfpLive ? "Accepting proposals" : "Publish before sharing";
+    byId("cfp-state").textContent = cfpPublished ? cfpStateLabel : "Draft";
+    byId("cfp-note").textContent = cfpPublished ? cfpStateNote : "Publish before sharing";
     document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
       ? "Some program information is unavailable. Refresh to try again."

@@ -36,6 +36,7 @@
       resource: ["M4 5h16v14H4z", "M8 9h8", "M8 13h5"],
       agenda: ["M6 3h12v18H6z", "M9 7h6", "M9 11h6", "M9 15h4"],
       external: ["M14 4h6v6", "M20 4 11 13", "M18 13v7H4V6h7"],
+      message: ["M4 5h16v11H9l-5 4V5Z", "M8 9h8", "M8 12h5"],
       account: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
       chevron: ["m9 18 6-6-6-6"],
       collapse: ["m14 18-6-6 6-6", "M20 4v16"],
@@ -490,7 +491,7 @@
     if (eventId) {
       if (location.pathname.includes("/speakers")) return "Speakers";
       if (location.pathname.includes("/speaker-content")) return "Speakers";
-      if (location.pathname.includes("/messages")) return "Speakers";
+      if (location.pathname.includes("/messages")) return "Messages";
       if (location.pathname.includes("/onboarding")) return "Speakers";
       if (location.pathname.includes("/reviewers") || location.pathname.includes("/access")) return "Reviewers";
       if (location.pathname.includes("/workspace")) return "Share & integrations";
@@ -517,9 +518,12 @@
       ["Speakers", `${prefix}/speakers`, "mic", [
         `${prefix}/speakers`,
         `${prefix}/onboarding`,
-        `${prefix}/speaker-content`,
-        `${prefix}/messages`
+        `${prefix}/speaker-content`
       ]],
+      // Messages is its own destination, not a speaker sub-page. Organizers
+      // reach it straight after recording decisions, from Proposals, and had no
+      // way to find the sent-mail log while it lived inside the Speakers hub.
+      ["Messages", `${prefix}/messages`, "message", [`${prefix}/messages`]],
       ["Agenda", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
       ["Share", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
     ];
@@ -545,11 +549,12 @@
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
     const nav = make("nav", undefined, "sb-hub-tabs");
     nav.setAttribute("aria-label", "Speaker areas");
+    // Messages is an event destination in the main nav, not a speaker area:
+    // listing it here too would give one page two homes.
     const tabs = [
       ["Directory", `${prefix}/speakers`],
       ["Onboarding", `${prefix}/onboarding`],
-      ["Tasks & files", `${prefix}/speaker-content`],
-      ["Messages", `${prefix}/messages`]
+      ["Tasks & files", `${prefix}/speaker-content`]
     ];
     for (const [label, href] of tabs) {
       const current = location.pathname === href || location.pathname.startsWith(`${href}/`);

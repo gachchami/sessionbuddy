@@ -47,6 +47,21 @@
     byId("recipient-count").textContent = `${selectedIds().length} selected`;
   }
 
+  // One vocabulary for where a recipient stands in the program, used by the
+  // list, the preview, and the confirmation. Everyone who is not invited used
+  // to read "Active speaker", which hid rejected submitters from an organizer
+  // sending mail straight after a decision round.
+  const selectionLabels = {
+    invited: "Invited — awaiting acceptance",
+    submitted: "Proposal submitted — no decision yet",
+    accepted: "Accepted speaker",
+    rejected: "Proposal not selected"
+  };
+
+  function selectionLabel(status) {
+    return selectionLabels[status] || "Speaker";
+  }
+
   function recipientRow(speaker) {
     const label = document.createElement("label");
     label.className = "recipient-row";
@@ -59,7 +74,7 @@
     const heading = document.createElement("span");
     heading.className = "recipient-row__heading";
     const name = document.createElement("strong"); name.textContent = speaker.display_name;
-    const recipientState = speaker.selection_status === "invited" ? "Invited — awaiting acceptance" : "Active speaker";
+    const recipientState = selectionLabel(speaker.selection_status);
     const detail = document.createElement("small"); detail.textContent = `${speaker.email} · ${speaker.proposal_title || recipientState}`;
     const status = document.createElement("span"); status.className = "badge"; status.textContent = recipientState;
     heading.append(name, status);
@@ -70,12 +85,16 @@
 
   function renderRecipients() {
     const query = byId("recipient-search").value.trim().toLowerCase();
-    visibleSpeakers = speakers.filter((speaker) => !query || [speaker.display_name, speaker.email, speaker.company, speaker.proposal_title].join(" ").toLowerCase().includes(query));
+    const status = byId("recipient-status").value;
+    visibleSpeakers = speakers.filter((speaker) => (
+      (status === "all" || speaker.selection_status === status)
+      && (!query || [speaker.display_name, speaker.email, speaker.company, speaker.proposal_title].join(" ").toLowerCase().includes(query))
+    ));
     const list = byId("recipient-list");
     const selected = new Set(selectedIds());
     list.replaceChildren();
     if (!visibleSpeakers.length) {
-      const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = speakers.length ? "No recipients match your search." : "No active or invited speakers are available yet."; list.append(empty);
+      const empty = document.createElement("p"); empty.className = "empty"; empty.textContent = speakers.length ? "No recipients match this search or status." : "No speakers, submitters, or invitations are available yet."; list.append(empty);
       return;
     }
     list.append(...visibleSpeakers.map((speaker) => {
@@ -147,6 +166,7 @@
   }
 
   byId("recipient-search").addEventListener("input", renderRecipients);
+  byId("recipient-status").addEventListener("change", renderRecipients);
   byId("recipient-list").addEventListener("change", invalidatePreview);
   byId("select-visible").addEventListener("click", () => {
     const visibleIds = new Set(visibleSpeakers.map((speaker) => speaker.event_speaker_id));
@@ -194,7 +214,7 @@
       const preview = byId("message-preview-content"); preview.replaceChildren();
       result.recipients.forEach((recipient) => {
         const card = document.createElement("article");
-        const state = recipient.recipient_state === "invited" ? "Invited — awaiting acceptance" : "Active speaker";
+        const state = selectionLabel(recipient.selection_status || recipient.recipient_state);
         const heading = document.createElement("strong"); heading.textContent = `${recipient.display_name} · ${recipient.email} · ${state}`;
         const subject = document.createElement("p"); subject.textContent = `Subject: ${recipient.subject}`;
         const message = document.createElement("p");

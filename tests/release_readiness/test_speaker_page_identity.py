@@ -8,7 +8,9 @@ def test_organizer_speaker_pages_have_distinct_titles_and_headings() -> None:
         "speaker_directory.html": ("People", "People"),
         "admin_onboarding.html": ("Speaker onboarding", "Speaker onboarding"),
         "speaker_content.html": ("Speaker tasks and files", "Speaker tasks and files"),
-        "speaker_messages.html": ("Speaker messages", "Speaker messages"),
+        # Messages is an event-wide organizer page reached from the main nav,
+        # not one of the speaker-hub areas above.
+        "speaker_messages.html": ("Event messages", "Event messages"),
     }
 
     for filename, (title, heading) in expected.items():
@@ -32,3 +34,20 @@ def test_onboarding_uses_product_tokens_and_complete_focus_selector() -> None:
     assert "button {" not in stylesheet
     assert "focus-visible" not in stylesheet
     assert ":where(a, button, input, textarea, select, summary):focus-visible" in product
+
+
+def test_event_messages_has_exactly_one_home_in_navigation() -> None:
+    """Messages is an event destination, not a speaker-hub area.
+
+    It was reachable only through the Speakers hub, which is why an organizer
+    finishing a decision round reported having no notification screen at all.
+    Promoting it to the main nav must not leave a second copy behind.
+    """
+    shell = (STATIC / "app_shell.js").read_text()
+    messages = (STATIC / "speaker_messages.html").read_text()
+
+    assert '["Messages", `${prefix}/messages`, "message", [`${prefix}/messages`]],' in shell
+    hub_tabs = shell.split("function speakerHubTabs(")[1].split("function ")[0]
+    assert "/messages" not in hub_tabs
+    assert "data-speaker-hub-tabs" not in messages
+    assert 'if (location.pathname.includes("/messages")) return "Messages";' in shell

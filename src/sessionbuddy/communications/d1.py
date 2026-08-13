@@ -286,7 +286,8 @@ class D1CommunicationsService:
             row = row_mapping(
                 await self.db.prepare(
                     """SELECT u.id AS recipient_user_id,es.id AS recipient_target_id,
-                              'active' AS recipient_state,u.email,p.display_name,
+                              'active' AS recipient_state,es.selection_status,
+                              u.email,p.display_name,
                               e.name AS event_name,
                               -- Prefer the ACCEPTED submission; fall back to newest.
                               -- queue_speaker_message renders what it sends from this same
@@ -338,7 +339,8 @@ class D1CommunicationsService:
                 row = row_mapping(
                     await self.db.prepare(
                         """SELECT NULL AS recipient_user_id,i.id AS recipient_target_id,
-                                  'invited' AS recipient_state,i.email AS email,
+                                  'invited' AS recipient_state,'invited' AS selection_status,
+                                  i.email AS email,
                                   i.display_name,e.name AS event_name,'' AS proposal_title
                            FROM identity_invitations i
                            JOIN events e ON e.organization_id=i.organization_id
@@ -356,7 +358,17 @@ class D1CommunicationsService:
                     .first()
                 )
             if row is None:
-                raise HTTPException(status_code=404)
+                # A selected recipient that no longer resolves is a problem with
+                # the submitted list, not a missing page: 422 keeps the detail,
+                # because the 404 handler replaces every message with "Resource
+                # not found" and the organizer cannot tell which row failed.
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Recipient {recipient_target_id} is no longer available for "
+                        "this event. Reload the recipient list and try again."
+                    ),
+                )
             display_name = str(row["display_name"])
             public_base = str(getattr(self.request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip(
                 "/"
@@ -403,6 +415,7 @@ class D1CommunicationsService:
                     ),
                     recipient_target_id=str(row["recipient_target_id"]),
                     recipient_state=str(row["recipient_state"]),
+                    selection_status=str(row["selection_status"]),
                     display_name=display_name,
                     email=str(row["email"]),
                     subject=rendered_subject,

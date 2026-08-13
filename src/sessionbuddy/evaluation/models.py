@@ -167,13 +167,20 @@ class PendingEvaluatorView(BaseModel):
     waiting"; without it both cases arrive as an empty list and the UI has to
     guess, which is how organizers ended up being told to re-invite someone they
     had already invited.
+
+    Deliberately thin. This rides on a lookup gated by SUBMISSION_MANAGE, which an
+    event grant of `edit` satisfies, while the invitation list at
+    GET /admin/events/{event_id}/invitations is gated by RESOURCE_ACCESS_MANAGE,
+    which needs `manage`. Since the lookup is keyed by a guessable email, anything
+    added here becomes probeable by a collaborator who is not allowed to read the
+    invitation roster -- so it carries only the state, plus the address the caller
+    already supplied. A surface holding `manage` (the Reviewers page) resolves the
+    invitee's name and invitation id from the roster it is entitled to read.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    invitation_id: str
     email: str
-    display_name: str
     expired: bool
 
 

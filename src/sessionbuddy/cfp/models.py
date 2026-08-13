@@ -12,6 +12,8 @@ from pydantic import (
     model_validator,
 )
 
+from .availability import AvailabilityState
+
 
 class _RichTextSanitizer(HTMLParser):
     allowed = {"p", "br", "strong", "em", "ul", "ol", "li", "a", "h2", "h3", "blockquote"}
@@ -306,6 +308,10 @@ class PublishedFormView(BaseModel):
     participant_roles: tuple[ContributorRoleOption, ...] = DEFAULT_CONTRIBUTOR_ROLE_OPTIONS
     submissions_received: int = 0
     accepting_submissions: bool = True
+    # The one availability answer every surface renders. Organizer badges must
+    # never re-derive this from the timestamps: that is how an admin badge came
+    # to read "open" while the public form the same record drives was closed.
+    availability_state: AvailabilityState = "open"
     availability_message: str = "Applications are open."
     success_title: str = "Proposal received"
     success_message: str = "We sent a confirmation to your email address."

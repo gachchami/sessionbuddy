@@ -46,7 +46,7 @@ from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
-from .availability import form_availability, public_event_key
+from .availability import availability_state, form_availability, public_event_key
 from .models import (
     AdminPublishedFormView,
     CfpWorkspaceView,
@@ -3018,14 +3018,18 @@ async def _private_submission_by_id(
     )
 
 
+def _availability_boundaries(row) -> tuple[int | None, int | None]:
+    opens_at = int(row["opens_at_ms"]) if row.get("opens_at_ms") is not None else None
+    closes_at = int(row["closes_at_ms"]) if row.get("closes_at_ms") is not None else None
+    return opens_at, closes_at
+
+
 def _form_availability(row, submissions_received: int, now_ms: int) -> tuple[bool, str]:
     # Kept in the signature because callers also use the total as a public
     # activity metric. The configured limit is per authenticated speaker and
     # is therefore enforced by create_submission, not on this public view.
     del submissions_received
-    opens_at = int(row["opens_at_ms"]) if row.get("opens_at_ms") is not None else None
-    closes_at = int(row["closes_at_ms"]) if row.get("closes_at_ms") is not None else None
-    return form_availability(opens_at, closes_at, now_ms)
+    return form_availability(*_availability_boundaries(row), now_ms)
 
 
 def _published_form_view(row, now_ms: int) -> PublishedFormView:
@@ -3040,6 +3044,11 @@ def _published_form_view(row, now_ms: int) -> PublishedFormView:
             "redirect_to_portal": bool(row["redirect_to_portal"]),
             "submissions_received": submissions_received,
             "accepting_submissions": accepting,
+            # Organizer and public surfaces render this state directly, so the
+            # deadline is decided once, here, from the stored boundaries.
+            "availability_state": availability_state(
+                *_availability_boundaries(row), now_ms
+            ),
             "availability_message": message,
         }
     )

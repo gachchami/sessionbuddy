@@ -1756,11 +1756,14 @@ async def list_event_evaluators(
     # No eligible reviewer. Before answering "nobody", say whether an invitation is
     # already outstanding: an organizer told only "not found" re-invites, which merely
     # reissues the same pending row and leaves them exactly as blocked.
+    #
+    # State only, no identity. SUBMISSION_MANAGE (satisfied by an event grant of `edit`)
+    # reaches this route; the invitation roster needs RESOURCE_ACCESS_MANAGE (`manage`).
+    # Returning a name or an invitation id here would let an `edit` collaborator probe by
+    # email for roster facts they are not entitled to read.
     pending_rows = result_rows(
         await db.prepare(
-            """SELECT id AS invitation_id, email,
-                      COALESCE(NULLIF(TRIM(display_name),''),email) AS display_name,
-                      expires_at_ms<=?4 AS expired
+            """SELECT email, expires_at_ms<=?4 AS expired
                FROM identity_invitations
                WHERE organization_id=?2 AND event_id=?3 AND normalized_email=?1
                  AND role='evaluator' AND status='pending'

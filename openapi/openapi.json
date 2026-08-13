@@ -523,6 +523,16 @@
             "title": "Availability Message",
             "type": "string"
           },
+          "availability_state": {
+            "default": "open",
+            "enum": [
+              "scheduled",
+              "open",
+              "closed"
+            ],
+            "title": "Availability State",
+            "type": "string"
+          },
           "closes_at_ms": {
             "anyOf": [
               {
@@ -7331,12 +7341,8 @@
       },
       "PendingEvaluatorView": {
         "additionalProperties": false,
-        "description": "A reviewer invitation that exists but has not been accepted yet.\n\nEligibility requires `identity_invitations.status='accepted'`, and only the\ninvited person can set it -- acceptance happens when they consume their own\naccess link. Reporting the pending invitation separately from `data` is what\nlets the organizer surfaces tell \"never invited\" apart from \"invited, still\nwaiting\"; without it both cases arrive as an empty list and the UI has to\nguess, which is how organizers ended up being told to re-invite someone they\nhad already invited.",
+        "description": "A reviewer invitation that exists but has not been accepted yet.\n\nEligibility requires `identity_invitations.status='accepted'`, and only the\ninvited person can set it -- acceptance happens when they consume their own\naccess link. Reporting the pending invitation separately from `data` is what\nlets the organizer surfaces tell \"never invited\" apart from \"invited, still\nwaiting\"; without it both cases arrive as an empty list and the UI has to\nguess, which is how organizers ended up being told to re-invite someone they\nhad already invited.\n\nDeliberately thin. This rides on a lookup gated by SUBMISSION_MANAGE, which an\nevent grant of `edit` satisfies, while the invitation list at\nGET /admin/events/{event_id}/invitations is gated by RESOURCE_ACCESS_MANAGE,\nwhich needs `manage`. Since the lookup is keyed by a guessable email, anything\nadded here becomes probeable by a collaborator who is not allowed to read the\ninvitation roster -- so it carries only the state, plus the address the caller\nalready supplied. A surface holding `manage` (the Reviewers page) resolves the\ninvitee's name and invitation id from the roster it is entitled to read.",
         "properties": {
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -7344,16 +7350,10 @@
           "expired": {
             "title": "Expired",
             "type": "boolean"
-          },
-          "invitation_id": {
-            "title": "Invitation Id",
-            "type": "string"
           }
         },
         "required": [
-          "invitation_id",
           "email",
-          "display_name",
           "expired"
         ],
         "title": "PendingEvaluatorView",
@@ -8054,6 +8054,16 @@
             "title": "Availability Message",
             "type": "string"
           },
+          "availability_state": {
+            "default": "open",
+            "enum": [
+              "scheduled",
+              "open",
+              "closed"
+            ],
+            "title": "Availability State",
+            "type": "string"
+          },
           "closes_at_ms": {
             "anyOf": [
               {
@@ -8414,6 +8424,17 @@
               }
             ],
             "title": "Recipient User Id"
+          },
+          "selection_status": {
+            "default": "submitted",
+            "enum": [
+              "invited",
+              "submitted",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Selection Status",
+            "type": "string"
           },
           "subject": {
             "title": "Subject",

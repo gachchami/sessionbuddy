@@ -12,7 +12,12 @@ What is pinned:
 
 * The evaluators lookup distinguishes the two cases: an outstanding invitation comes
   back under `pending`, a genuine stranger comes back with `pending` empty.
-* An expired invitation is reported as expired, because that one does need a resend.
+* An expired invitation is reported as expired, because that one needs a fresh
+  invitation rather than a resend.
+* The pending entry carries state only. This route is gated by SUBMISSION_MANAGE, which
+  an event grant of `edit` satisfies, while the invitation roster needs
+  RESOURCE_ACCESS_MANAGE; since the lookup is keyed by a guessable email, a name or an
+  invitation id here would be a probe-by-email around that stricter gate.
 * Creating a round with an unaccepted reviewer still fails -- the gate is intact -- but
   the 400 now names who is being waited on and says what makes them assignable.
 """
@@ -186,10 +191,8 @@ async def test_lookup_reports_an_outstanding_invitation_instead_of_nothing(
         # But no longer indistinguishable from a stranger.
         assert len(payload["pending"]) == 1
         pending = payload["pending"][0]
-        assert pending["display_name"] == "Nia Okafor"
         assert pending["email"] == REVIEWER_EMAIL
         assert pending["expired"] is False
-        assert pending["invitation_id"] == "inv-nia"
 
 
 async def test_lookup_leaves_pending_empty_for_someone_never_invited(
@@ -299,3 +302,31 @@ async def test_resend_refuses_an_expired_invitation(
             json={},
         )
         assert resent.status_code == 404, resent.text
+
+
+async def test_lookup_discloses_no_roster_identity_with_the_pending_state(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    """The lookup answers "is this address assignable", never "who is behind it".
+
+    SUBMISSION_MANAGE reaches this route and is satisfied by an event grant of `edit`;
+    GET /admin/events/{event_id}/invitations needs RESOURCE_ACCESS_MANAGE, which needs
+    `manage`. Because the key here is an email an `edit` collaborator can simply guess,
+    every field added to the pending entry is a roster fact leaking around that gate.
+    The Reviewers page, which does hold `manage`, reads the name and invitation id from
+    the roster instead.
+    """
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        _csrf, organization_id, event_id = await _organizer(client, connection)
+        _seed_unaccepted_reviewer(connection, organization_id, event_id, _admin_user_id(connection))
+
+        found = await client.get(
+            f"/api/v1/admin/events/{event_id}/evaluators?email={REVIEWER_EMAIL}"
+        )
+        assert found.status_code == 200, found.text
+        pending = found.json()["pending"][0]
+        assert set(pending) == {"email", "expired"}
+        # The invited person's name and the invitation id are roster facts, not lookup ones.
+        assert "Nia Okafor" not in found.text
+        assert "inv-nia" not in found.text

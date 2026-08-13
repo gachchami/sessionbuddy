@@ -22,7 +22,7 @@
   // reads this instead.
   const identityFieldKeys = ["speaker_name", "speaker_email"];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
-  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -279,11 +279,55 @@
     }).format(new Date(value));
   }
 
+  // The API decides availability once, in sessionbuddy/cfp/availability.py, and
+  // ships it as published_form.availability_state. This page renders that word
+  // and never recomputes it from the timestamps: a second local rule is what let
+  // this badge read "Live" while the public form was already closed.
+  const availabilityLabels = { scheduled: "Scheduled", open: "Open", closed: "Closed" };
+  const MAX_REFRESH_DELAY_MS = 86_400_000;
+  const REFRESH_RETRY_MS = 60_000;
+
   function cfpAvailability(form) {
+    return availabilityLabels[form.availability_state] || "Open";
+  }
+
+  // A published state is a snapshot. Re-read the workspace once the next
+  // boundary the server told us about has passed, so a page left open across
+  // the deadline stops advertising an open call.
+  function scheduleAvailabilityRefresh(form) {
+    window.clearTimeout(state.availabilityTimer);
+    state.availabilityTimer = null;
+    if (!form || !state.context) return;
     const now = Date.now();
-    if (form.opens_at_ms && now < form.opens_at_ms) return "Scheduled";
-    if (form.closes_at_ms && now > form.closes_at_ms) return "Closed";
-    return "Live";
+    const boundary = [form.opens_at_ms, form.closes_at_ms]
+      .filter((value) => typeof value === "number" && value > now)
+      .sort((first, second) => first - second)[0];
+    if (boundary === undefined) return;
+    // setTimeout saturates beyond ~24.8 days, so a distant boundary is walked
+    // toward in capped hops instead of being skipped: a page opened a week
+    // before the deadline still stops saying "Open" when the deadline lands.
+    const wait = Math.min(boundary - now + 1000, MAX_REFRESH_DELAY_MS);
+    state.availabilityTimer = window.setTimeout(() => {
+      if (Date.now() < boundary) {
+        scheduleAvailabilityRefresh(form);
+        return;
+      }
+      refreshPublishedForm();
+    }, wait);
+  }
+
+  // Re-read the server's answer after a boundary. A failure here must not leave
+  // a stale "Open" badge on screen forever, and by this point every boundary is
+  // in the past, so the retry is a plain interval rather than another hop.
+  async function refreshPublishedForm() {
+    try {
+      const workspace = await loadWorkspace(state.context.event_id);
+      state.publishedForm = workspace.published_form;
+      renderWorkspace();
+    } catch (_) {
+      window.clearTimeout(state.availabilityTimer);
+      state.availabilityTimer = window.setTimeout(refreshPublishedForm, REFRESH_RETRY_MS);
+    }
   }
 
   function syncAvailabilityLimits(form) {
@@ -346,8 +390,10 @@
     const badge = byId("cfp-state");
     live.hidden = !published || !eventIsActive;
     empty.hidden = Boolean(published) && eventIsActive;
-    badge.className = `badge${published ? " success" : ""}`;
-    badge.textContent = !eventIsActive ? "Event draft" : published ? cfpAvailability(published) : "Not published";
+    const availability = published ? cfpAvailability(published) : "";
+    badge.className = `badge${published && availability === "Open" ? " success" : ""}`;
+    badge.textContent = !eventIsActive ? "Event draft" : published ? availability : "Not published";
+    scheduleAvailabilityRefresh(eventIsActive ? published : null);
     byId("cfp-live-bar").hidden = !published || !eventIsActive;
     if (!eventIsActive) {
       empty.textContent = "Activate the event to make its CFP public.";

@@ -15,7 +15,7 @@ def test_overview_keeps_cfp_prominent_and_links_each_status_row() -> None:
     assert 'id="cfp-action" class="button event-command-header__primary"' in page
     assert 'id="cfp-link"' in page
     assert 'id="public-schedule" class="button secondary"' in page
-    assert 'byId("next-step").hidden = cfpLive' in script
+    assert 'byId("next-step").hidden = cfpPublished' in script
     assert 'byId("cfp-link").href' in script
     assert 'byId("cfp-action").href' in script
 
@@ -40,7 +40,7 @@ def test_live_cfp_does_not_present_reviewing_as_an_organizer_next_step() -> None
 
     assert '"Review incoming proposals"' not in script
     assert '"Open submissions"' not in script
-    assert 'byId("next-step").hidden = cfpLive' in script
+    assert 'byId("next-step").hidden = cfpPublished' in script
     assert '`${selected.name} is ready.`' not in script
 
 
