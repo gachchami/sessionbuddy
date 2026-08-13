@@ -394,6 +394,71 @@ test.describe("account profile responsive design", () => {
     });
   });
 
+  test("password rotation uses the replacement CSRF token for the queued headshot", async ({ page }) => {
+    await serveAccountPage(page);
+    const session = {
+      authenticated: true,
+      user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      email: "owner@example.test",
+      display_name: "Password Owner",
+      profile_complete: true,
+      csrf_token: "old-csrf",
+      account_roles: ["organizer"],
+      active_role: "organizer",
+      default_role: "organizer",
+      organization_access: [],
+      event_access: [],
+    };
+    const profile = {
+      email: session.email,
+      first_name: "Password",
+      last_name: "Owner",
+      display_name: session.display_name,
+      job_title: null,
+      company: null,
+      time_zone: "UTC",
+      description: null,
+      website_url: null,
+      linkedin_url: null,
+      x_url: null,
+      public_profile_enabled: false,
+      roles: ["organizer"],
+      headshot_url: null,
+      has_password: false,
+      profile_complete: true,
+      version: 1,
+    };
+    let headshotCsrf = "";
+    await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: session }));
+    await page.route("**/api/v1/account/profile", (route) => {
+      if (route.request().method() === "PATCH") {
+        return route.fulfill({
+          json: { ...profile, has_password: true, version: 2, csrf_token: "replacement-csrf" },
+        });
+      }
+      return route.fulfill({ json: { ...profile, has_password: true, version: 2 } });
+    });
+    await page.route("**/api/v1/account/headshot", (route) => {
+      headshotCsrf = route.request().headers()["x-csrf-token"] || "";
+      return route.fulfill({ json: { stored: true } });
+    });
+
+    await page.goto("/account");
+    await page.getByLabel("Choose image").setInputFiles({
+      name: "headshot.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("89504e470d0a1a0a", "hex"),
+    });
+    await page.getByLabel("New password", { exact: true }).fill("a strong private passphrase");
+    await page.getByLabel("Confirm new password").fill("a strong private passphrase");
+    await page.getByRole("button", { name: "Save profile" }).click();
+
+    await expect.poll(() => headshotCsrf).toBe("replacement-csrf");
+    await expect(page.getByRole("status")).toContainText(
+      "Profile and password saved. Your other sessions were signed out.",
+    );
+  });
+
   test("organization owner manages the owner and admin grid on its dedicated page", async ({ page }) => {
     await serveAccountPage(page);
     const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";

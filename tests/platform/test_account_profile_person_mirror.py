@@ -13,7 +13,7 @@ import sqlite3
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Request
+from fastapi import HTTPException, Request, Response
 
 from sessionbuddy.platform.auth import access
 from sessionbuddy.platform.auth.http import AuthenticatedContext
@@ -33,7 +33,12 @@ def request_for(database: AsyncSqlite) -> Request:
             "method": "PATCH",
             "path": "/api/v1/account/profile",
             "headers": [],
-            "env": SimpleNamespace(DB=database),
+            "env": SimpleNamespace(
+                DB=database,
+                CSRF_HMAC_KEY="c" * 32,
+                PASSWORD_PEPPER="p" * 32,
+                SESSION_HMAC_KEY="s" * 32,
+            ),
             "state": {"request_id": "request"},
         }
     )
@@ -62,6 +67,12 @@ def profile_database() -> tuple[sqlite3.Connection, AsyncSqlite]:
         """INSERT INTO organization_memberships
            (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
            VALUES('membership','org',?,'member','active',1,1)""",
+        (USER_ID,),
+    )
+    connection.execute(
+        """INSERT INTO user_roles
+           (user_id,role,status,is_default,created_at_ms,updated_at_ms)
+           VALUES(?,'speaker','active',1,1,1)""",
         (USER_ID,),
     )
     # The state an organizer (or the speaker's own profile page) leaves behind:
@@ -123,12 +134,16 @@ def account_update(**overrides) -> access.AccountProfileUpdate:
     return access.AccountProfileUpdate(**payload)
 
 
+async def _update_account_profile(body, request):
+    return await access.update_account_profile(body, request, Response())
+
+
 async def test_account_save_keeps_person_fields_the_account_page_never_showed(
     profile_database, signed_in_speaker
 ) -> None:
     connection, database = profile_database
 
-    await access.update_account_profile(account_update(), request_for(database))
+    await _update_account_profile(account_update(), request_for(database))
 
     assert person(connection) == {
         "job_title": "Principal Engineer",
@@ -144,7 +159,7 @@ async def test_account_save_adds_its_own_link_without_dropping_the_others(
 ) -> None:
     connection, database = profile_database
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(linkedin_url="https://www.linkedin.com/in/priya"),
         request_for(database),
     )
@@ -165,7 +180,7 @@ async def test_account_save_still_propagates_a_real_edit(
     )
     connection.commit()
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(job_title="Distinguished Engineer", company="Latticework Systems"),
         request_for(database),
     )
@@ -180,7 +195,7 @@ async def test_account_save_still_propagates_an_intentional_clear(
     connection.execute("UPDATE users SET job_title='Staff Engineer' WHERE id=?", (USER_ID,))
     connection.commit()
 
-    await access.update_account_profile(account_update(), request_for(database))
+    await _update_account_profile(account_update(), request_for(database))
 
     assert person(connection)["job_title"] is None
 
@@ -207,7 +222,7 @@ async def test_account_save_keeps_a_roster_name_the_organizer_curated(
     )
     connection.commit()
 
-    await access.update_account_profile(account_update(), request_for(database))
+    await _update_account_profile(account_update(), request_for(database))
 
     assert person_name_and_version(connection)[0] == "Dr. Priya Raman"
 
@@ -221,7 +236,7 @@ async def test_an_actual_rename_still_reaches_the_person_record(
     )
     connection.commit()
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(last_name="Raman-Iyer"), request_for(database)
     )
 
@@ -245,7 +260,7 @@ async def test_the_link_this_save_carries_survives_the_ten_link_cap(
     )
     connection.commit()
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(linkedin_url="https://www.linkedin.com/in/priya"),
         request_for(database),
     )
@@ -275,6 +290,81 @@ class InterleavingSqlite(AsyncSqlite):
         return await super().batch(statements)
 
 
+async def test_password_rotation_reads_the_authorization_version_inside_the_batch(
+    profile_database, signed_in_speaker
+) -> None:
+    """A rival authorization write before execution cannot stale the new session."""
+    connection, _plain = profile_database
+    starting_version = int(
+        connection.execute(
+            "SELECT authorization_version FROM users WHERE id=?", (USER_ID,)
+        ).fetchone()[0]
+    )
+    database = InterleavingSqlite(
+        connection,
+        "UPDATE users SET authorization_version=authorization_version+1 WHERE id=?",
+        (USER_ID,),
+    )
+    new_password = "a private local passphrase"  # noqa: S105 - synthetic test credential
+
+    updated = await _update_account_profile(
+        account_update(
+            password=new_password,
+            password_confirmation=new_password,
+        ),
+        request_for(database),
+    )
+
+    assert updated.csrf_token
+    row = connection.execute(
+        """SELECT s.authorization_version AS session_version,
+                  u.authorization_version AS user_version
+           FROM sessions s JOIN users u ON u.id=s.user_id
+           WHERE s.user_id=? AND s.revoked_at_ms IS NULL""",
+        (USER_ID,),
+    ).fetchone()
+    expected_version = starting_version + 2  # rival bump plus password rotation
+    assert (row["session_version"], row["user_version"]) == (
+        expected_version,
+        expected_version,
+    )
+
+
+async def test_failed_post_commit_session_confirmation_records_degradation(
+    profile_database, signed_in_speaker
+) -> None:
+    """A role revoked at execution time leaves an operator-visible signal."""
+    connection, _plain = profile_database
+    database = InterleavingSqlite(
+        connection,
+        """UPDATE user_roles
+           SET status='revoked',revoked_at_ms=2,updated_at_ms=2 WHERE user_id=?""",
+        (USER_ID,),
+    )
+    request = request_for(database)
+    new_password = "a private local passphrase"  # noqa: S105 - synthetic test credential
+
+    with pytest.raises(HTTPException) as failure:
+        await _update_account_profile(
+            account_update(
+                password=new_password,
+                password_confirmation=new_password,
+            ),
+            request,
+        )
+
+    assert failure.value.status_code == 409
+    assert request.state.degradations == ["account_session_rotation_unconfirmed"]
+    assert connection.execute(
+        "SELECT COUNT(*) FROM password_credentials WHERE user_id=? AND status='active'",
+        (USER_ID,),
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at_ms IS NULL",
+        (USER_ID,),
+    ).fetchone()[0] == 0
+
+
 async def test_a_concurrent_speaker_profile_save_is_not_clobbered_by_the_mirror(
     profile_database, signed_in_speaker
 ) -> None:
@@ -294,7 +384,7 @@ async def test_a_concurrent_speaker_profile_save_is_not_clobbered_by_the_mirror(
     )
     request = request_for(database)
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(linkedin_url="https://www.linkedin.com/in/priya"), request
     )
 
@@ -316,7 +406,7 @@ async def test_a_mirror_that_lands_records_no_degradation(
     connection, database = profile_database
     request = request_for(database)
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(linkedin_url="https://www.linkedin.com/in/priya"), request
     )
 
@@ -350,7 +440,7 @@ async def test_an_unreadable_batch_result_is_reported_not_presumed_successful(
     connection, plain = profile_database
     request = request_for(ShapeDriftingSqlite(plain.connection))
 
-    await access.update_account_profile(
+    await _update_account_profile(
         account_update(linkedin_url="https://www.linkedin.com/in/priya"), request
     )
 

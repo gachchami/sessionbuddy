@@ -47,7 +47,7 @@ from .http import (
 )
 from .passwords import PasswordPolicyError, hash_password, verify_password
 from .session_factory import confirm_session_established as _confirm_session_established
-from .session_factory import establish_session
+from .session_factory import establish_session, establish_session_with_current_authorization_version
 from .session_factory import role_compatible_redirect as _role_compatible_redirect
 from .session_factory import set_session_cookie as _set_session_cookie
 from .session_factory import valid_redirect as _valid_redirect
@@ -804,6 +804,12 @@ class AccountProfileView(BaseModel):
     version: int
 
 
+class AccountProfileUpdated(AccountProfileView):
+    """Profile mutation result, including a replacement CSRF token when rotated."""
+
+    csrf_token: str | None = None
+
+
 class PublicPersonProfileView(BaseModel):
     """Intentionally small profile safe for an unauthenticated response."""
 
@@ -1074,7 +1080,16 @@ async def bootstrap_tenant(
 )
 async def account_profile(request: Request) -> AccountProfileView:
     authenticated = await authenticate_request(request)
-    db = database(request)
+    return await _account_profile_for_user(database(request), authenticated.actor.user_id)
+
+
+async def _account_profile_for_user(db: D1Database, user_id: str) -> AccountProfileView:
+    """Read a profile for an already authenticated user identity.
+
+    Mutation handlers use this after rotating the caller's session; re-running
+    cookie authentication against the incoming request would necessarily see
+    the retired session rather than the replacement cookie on the response.
+    """
     row = row_mapping(
         await db.prepare(
             """SELECT u.email,u.first_name,u.last_name,u.display_name,u.job_title,u.company,
@@ -1088,7 +1103,7 @@ async def account_profile(request: Request) -> AccountProfileView:
                FROM users u LEFT JOIN user_headshots h ON h.user_id=u.id
                WHERE u.id=?1 AND u.status='active' LIMIT 1"""
         )
-        .bind(authenticated.actor.user_id)
+        .bind(user_id)
         .first()
     )
     if row is None:
@@ -1098,7 +1113,7 @@ async def account_profile(request: Request) -> AccountProfileView:
             """SELECT role FROM user_roles
                WHERE user_id=?1 AND status='active' ORDER BY role"""
         )
-        .bind(authenticated.actor.user_id)
+        .bind(user_id)
         .all()
     )
     return AccountProfileView(**row, roles=[str(item["role"]) for item in roles])
@@ -1106,13 +1121,13 @@ async def account_profile(request: Request) -> AccountProfileView:
 
 @access_router.patch(
     "/api/v1/account/profile",
-    response_model=AccountProfileView,
+    response_model=AccountProfileUpdated,
     operation_id="updateAccountProfile",
     tags=["authentication"],
 )
 async def update_account_profile(
-    body: AccountProfileUpdate, request: Request
-) -> AccountProfileView:
+    body: AccountProfileUpdate, request: Request, response: Response
+) -> AccountProfileUpdated:
     authenticated = await authenticate_request(request)
     guard_mutation(request, authenticated.session_id)
     db, now = database(request), utc_now_ms()
@@ -1133,6 +1148,11 @@ async def update_account_profile(
             verifier = hash_password(body.password, secret(request, "PASSWORD_PEPPER"))
         except PasswordPolicyError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if verifier is not None and authenticated.actor.active_persona is None:
+        # A replacement session cannot be scoped without an active role. Keep
+        # this precondition ahead of batch construction so no queued mutation
+        # obscures that password rotation is all-or-nothing at this boundary.
+        raise HTTPException(status_code=409)
     display_name = f"{body.first_name} {body.last_name}".strip()
     batch = CommandBatch(db)
     batch.add_statement(
@@ -1293,6 +1313,19 @@ async def update_account_profile(
                    WHERE user_id=?2 AND revoked_at_ms IS NULL"""
             ).bind(now, authenticated.actor.user_id)
         )
+        # Queue this after the blanket revoke above. D1 executes the batch in
+        # statement order, so the new row cannot be retired by the password
+        # change that it replaces.
+        replacement_session = establish_session_with_current_authorization_version(
+            batch=batch,
+            db=db,
+            request=request,
+            user_id=authenticated.actor.user_id,
+            role=authenticated.actor.active_persona,
+            now_ms=now,
+        )
+    else:
+        replacement_session = None
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -1303,6 +1336,10 @@ async def update_account_profile(
             result="succeeded",
             correlation_id=request.state.request_id,
             occurred_at_ms=now,
+            metadata={
+                "session_rotated": verifier is not None,
+                "other_sessions_revoked": verifier is not None,
+            },
         )
     )
     results = await batch.execute()
@@ -1319,7 +1356,21 @@ async def update_account_profile(
             # success: if the provider's shape ever drifts, every account save
             # records this code and the drift is found the day it ships.
             record_degradation(request, "account_person_mirror_unverified")
-    return await account_profile(request)
+    if replacement_session is not None:
+        try:
+            await _confirm_session_established(results, replacement_session, db)
+        except Exception:
+            # The batch is already committed: the password changed and old
+            # sessions were revoked. Preserve the truthful 409 while ensuring
+            # the post-commit failure is visible in completion telemetry.
+            record_degradation(request, "account_session_rotation_unconfirmed")
+            raise
+        _set_session_cookie(response, request, replacement_session.session_token)
+    profile = await _account_profile_for_user(db, authenticated.actor.user_id)
+    return AccountProfileUpdated(
+        **profile.model_dump(),
+        csrf_token=(replacement_session.csrf_token if replacement_session else None),
+    )
 
 
 async def _read_headshot(request: Request) -> tuple[bytes, str, str]:

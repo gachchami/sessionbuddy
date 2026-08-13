@@ -144,6 +144,56 @@ def establish_session(
     return EstablishedSession(session_id, session_token, csrf_token, statement_index)
 
 
+def establish_session_with_current_authorization_version(
+    *,
+    batch: CommandBatch,
+    db,
+    request: Request,
+    user_id: str,
+    role: str,
+    now_ms: int,
+) -> EstablishedSession:
+    """Queue a session whose authorization version is read inside the batch.
+
+    This is for a credential rotation that bumps ``users.authorization_version``
+    earlier in the same transaction. Reading the value in the INSERT avoids
+    creating an immediately stale replacement if another authorization write
+    landed after the caller's pre-mutation read.
+    """
+    session_id, session_token = new_id(), generate_token()
+    csrf_token = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
+    statement_index = batch.statement_count
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO sessions
+               (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,
+                last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms)
+               SELECT ?1,?2,?3,?4,
+                      (SELECT authorization_version FROM users WHERE id=?2),
+                      ?5,?5,?6,?7
+               FROM user_roles
+               WHERE user_id=?2 AND role=?8 AND status='active'"""
+        ).bind(
+            session_id,
+            user_id,
+            hash_token(session_token),
+            hash_token(csrf_token),
+            now_ms,
+            now_ms + IDLE_SESSION_MS,
+            now_ms + ABSOLUTE_SESSION_MS,
+            role,
+        )
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+               SELECT ?1,?2,?3,?4 FROM user_roles
+               WHERE user_id=?2 AND role=?3 AND status='active'"""
+        ).bind(session_id, user_id, role, now_ms)
+    )
+    return EstablishedSession(session_id, session_token, csrf_token, statement_index)
+
+
 async def confirm_session_established(
     results: object, session: EstablishedSession, db
 ) -> None:

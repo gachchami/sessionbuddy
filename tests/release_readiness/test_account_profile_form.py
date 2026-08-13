@@ -19,7 +19,7 @@ def test_profile_form_is_registration_ready_without_editable_roles() -> None:
     assert 'name="public_profile_enabled" type="checkbox"' in markup
     assert "Allow anyone with your profile link" in markup
     assert "Your email is verified and cannot be changed here.</small>" in markup
-    assert "Changing it signs you out on every device." in markup
+    assert "Creating it signs out your other sessions." in markup
     assert '<h2 id="access-title">Roles and Access</h2>' in markup
     assert 'account-profile-panel" aria-labelledby="profile-title" hidden' in markup
     assert 'organizer-section--account-access" aria-labelledby="access-title" hidden' in markup
@@ -35,6 +35,18 @@ def test_profile_password_is_optional_matched_and_never_repopulated() -> None:
     assert 'const form = event.currentTarget;' in javascript
     assert 'form.elements.password.value = ""' in javascript
     assert "profile.password" not in javascript
+
+
+def test_password_rotation_keeps_the_current_page_authenticated() -> None:
+    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+
+    token_update = javascript.index(
+        "if (profile.csrf_token) session.csrf_token = profile.csrf_token;"
+    )
+    headshot_upload = javascript.index('api("/api/v1/account/headshot"', token_update)
+    assert token_update < headshot_upload
+    assert "Profile and password saved. Your other sessions were signed out." in javascript
+    assert "Sign in again to continue." not in javascript
 
 
 def test_profile_password_configuration_failure_has_an_actionable_recovery() -> None:

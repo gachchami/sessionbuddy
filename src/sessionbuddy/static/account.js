@@ -101,8 +101,8 @@
     }
     byId("password-legend").childNodes[0].textContent = profile.has_password ? "Change password " : "Create a password ";
     byId("password-help").textContent = profile.has_password
-      ? "Leave both fields blank to keep your current password. Use at least 15 characters to change it. Changing it signs you out on every device."
-      : "Add a password to sign in without waiting for an email link. Use at least 15 characters. Changing it signs you out on every device.";
+      ? "Leave both fields blank to keep your current password. Use at least 15 characters to change it. Changing it signs out your other sessions."
+      : "Add a password to sign in without waiting for an email link. Use at least 15 characters. Creating it signs out your other sessions.";
     version = profile.version;
   }
 
@@ -830,6 +830,7 @@
           version
         })
       });
+      if (profile.csrf_token) session.csrf_token = profile.csrf_token;
       if (selectedHeadshot) {
         showStatus("Saving your headshot…");
         await api("/api/v1/account/headshot", {
@@ -843,7 +844,7 @@
       }
       setProfile(profile);
       showStatus(values.password
-        ? "Profile and password saved. Sign in again to continue."
+        ? "Profile and password saved. Your other sessions were signed out."
         : "Profile saved.", "success");
       saved = true;
       setProfileSaveState("saved");

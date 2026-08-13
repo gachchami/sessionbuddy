@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import sqlite3
 from types import SimpleNamespace
@@ -568,13 +569,15 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         assert updated.json()["display_name"] == "Asha R. Rao"
         assert updated.json()["profile_complete"] is True
         assert updated.json()["version"] == 2
+        assert updated.json()["csrf_token"] is None
+        assert "set-cookie" not in updated.headers
         assert (await client.get("/api/v1/auth/session")).json()["profile_complete"] is True
         assert connection.execute(
             "SELECT COUNT(*) FROM audit_events WHERE action='account.profile.update'"
         ).fetchone()[0] == 1
 
 
-async def test_profile_can_create_password_and_password_sign_in_keeps_magic_links(
+async def test_profile_password_change_rotates_the_caller_and_keeps_magic_links(
     production_environment,
 ) -> None:
     connection, _queue, environment = production_environment
@@ -602,24 +605,69 @@ async def test_profile_can_create_password_and_password_sign_in_keeps_magic_link
         ).status_code == 303
         session = (await client.get("/api/v1/auth/session")).json()
         profile = (await client.get("/api/v1/account/profile")).json()
-        updated = await client.patch(
-            "/api/v1/account/profile",
-            headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
-            json={
-                "first_name": "Password",
-                "last_name": "Owner",
-                "job_title": None,
-                "company": None,
-                "time_zone": "UTC",
-                "password": "a private local passphrase",
-                "password_confirmation": "a private local passphrase",
-                "version": profile["version"],
-            },
-        )
-        assert updated.status_code == 200
-        assert updated.json()["has_password"] is True
-        assert "password" not in updated.json()
-        assert (await client.get("/api/v1/auth/session")).status_code == 401
+        async with _client(environment) as old_session_client:
+            old_session_client.cookies.update(client.cookies)
+            updated = await client.patch(
+                "/api/v1/account/profile",
+                headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
+                json={
+                    "first_name": "Password",
+                    "last_name": "Owner",
+                    "job_title": None,
+                    "company": None,
+                    "time_zone": "UTC",
+                    "password": "a private local passphrase",
+                    "password_confirmation": "a private local passphrase",
+                    "version": profile["version"],
+                },
+            )
+            assert updated.status_code == 200
+            assert "set-cookie" in updated.headers
+            result = updated.json()
+            assert result["has_password"] is True
+            assert result["csrf_token"]
+            assert "password" not in result
+
+            # The caller continues with the replacement cookie and CSRF token;
+            # another browser holding the retired cookie cannot authenticate.
+            replacement = await client.get("/api/v1/auth/session")
+            assert replacement.status_code == 200
+            assert replacement.json()["csrf_token"] == result["csrf_token"]
+            assert (await old_session_client.get("/api/v1/auth/session")).status_code == 401
+            saved_again = await client.patch(
+                "/api/v1/account/profile",
+                headers={"origin": "https://test", "x-csrf-token": result["csrf_token"]},
+                json={
+                    "first_name": "Password",
+                    "last_name": "Owner",
+                    "job_title": None,
+                    "company": None,
+                    "time_zone": "UTC",
+                    "password": None,
+                    "password_confirmation": None,
+                    "version": result["version"],
+                },
+            )
+            assert saved_again.status_code == 200
+            assert saved_again.json()["csrf_token"] is None
+            assert "set-cookie" not in saved_again.headers
+
+        session_versions = connection.execute(
+            """SELECT s.authorization_version,u.authorization_version
+               FROM sessions s JOIN users u ON u.id=s.user_id
+               WHERE s.revoked_at_ms IS NULL AND s.user_id=?""",
+            (bootstrap.json()["admin_user_id"],),
+        ).fetchall()
+        assert len(session_versions) == 1
+        assert session_versions[0][0] == session_versions[0][1]
+        audit = connection.execute(
+            """SELECT metadata_json FROM audit_events
+               WHERE action='account.profile_and_password.update'"""
+        ).fetchone()
+        assert json.loads(audit[0]) == {
+            "other_sessions_revoked": True,
+            "session_rotated": True,
+        }
 
     async with _client(environment) as password_client:
         signed_in = await password_client.post(
