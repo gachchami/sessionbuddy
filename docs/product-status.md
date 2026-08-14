@@ -172,10 +172,15 @@ speaker permissions before acceptance and are available to invitation-safe
 bulk communications with an explicit invited-recipient label. Registered invited speakers can receive
 onboarding tasks before a proposal is accepted, organizers can edit their
 event-scoped speaker details, and event rosters accept validated CSV invitation
-imports of up to 500 speakers. A server-owned preview classifies every row;
+imports of up to 500 speakers. Message preview compatibility is server-owned:
+incompatible pending invitees are reported together in a focused Compose error,
+while invitation-safe templates remain previewable. A server-owned roster preview classifies every row;
 identical duplicates and existing recipients are skipped, conflicting identities
 require a row-level decision, invalid rows do not block clean rows, and a stable
 batch key makes execution retryable without rotating links or resending email.
+Known limitation: an active recipient without a proposal title can still preview
+a message containing `submission.title` with an empty merge value; this remains
+tracked as an expected-failure regression until empty values are treated as unavailable.
 Post-acceptance
 participation is tracked independently from proposal selection, and organizers
 can persist awaiting-confirmation, confirmed, or declined status. Organizers can

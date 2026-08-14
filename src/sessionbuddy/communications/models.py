@@ -2,11 +2,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+MAX_COMMUNICATION_RECIPIENTS = 100
+
 
 class RecipientPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     template_id: str = Field(min_length=1, max_length=100)
-    recipient_user_ids: list[str] = Field(min_length=1, max_length=100)
+    recipient_user_ids: list[str] = Field(min_length=1, max_length=MAX_COMMUNICATION_RECIPIENTS)
 
     @model_validator(mode="after")
     def validate_unique_recipients(self) -> "RecipientPreviewRequest":
@@ -51,7 +53,7 @@ class ManualSendResponse(BaseModel):
 
 class SpeakerMessagePreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    event_speaker_ids: list[str] = Field(min_length=1, max_length=100)
+    event_speaker_ids: list[str] = Field(min_length=1, max_length=MAX_COMMUNICATION_RECIPIENTS)
     subject: str = Field(min_length=1, max_length=200)
     body_text: str = Field(min_length=1, max_length=10_000)
 

@@ -26,6 +26,24 @@
     byId("status").classList.toggle("error", error);
   }
 
+  function clearComposeError() {
+    const error = byId("message-compose-error");
+    if (!error.textContent) return;
+    // Do not remove the focused node from the accessibility tree. User edits
+    // normally move focus first; synthetic changes get a stable fallback.
+    const restorePreviewFocus = document.activeElement === error;
+    error.textContent = "";
+    error.classList.remove("error");
+    if (restorePreviewFocus) byId("preview-message").focus();
+  }
+
+  function showComposeError(message) {
+    const error = byId("message-compose-error");
+    error.textContent = message;
+    error.classList.add("error");
+    error.focus();
+  }
+
   function eventTime(value) {
     try {
       const formatted = new Intl.DateTimeFormat(undefined, {
@@ -45,6 +63,7 @@
     byId("send-message").disabled = true;
     byId("message-preview").hidden = true;
     byId("recipient-count").textContent = `${selectedIds().length} selected`;
+    clearComposeError();
   }
 
   // One vocabulary for where a recipient stands in the program, used by the
@@ -150,18 +169,12 @@
   function payload() {
     const form = byId("message-form");
     const eventSpeakerIds = selectedIds();
-    if (!eventSpeakerIds.length) { setStatus("Select at least one recipient.", true); return null; }
-    if (!form.reportValidity()) return null;
-    const values = Object.fromEntries(new FormData(form));
-    const invited = speakers.filter((speaker) => eventSpeakerIds.includes(speaker.event_speaker_id) && speaker.selection_status === "invited");
-    const activeOnlyFields = ["submission.title", "portal.link"];
-    const text = `${values.subject}\n${values.body_text}`;
-    const missing = activeOnlyFields.filter((field) => new RegExp(`{{\\s*${field.replace(".", "\\.")}\\s*}}`).test(text));
-    if (invited.length && missing.length) {
-      const names = invited.map((speaker) => speaker.display_name).join(", ");
-      setStatus(`${names} ${invited.length === 1 ? "is" : "are"} awaiting acceptance and cannot use ${missing.join(" or ")}. Choose the Invitation reminder template or remove ${invited.length === 1 ? "this recipient" : "these recipients"}.`, true);
+    if (!eventSpeakerIds.length) {
+      showComposeError("Select at least one recipient.");
       return null;
     }
+    if (!form.reportValidity()) return null;
+    const values = Object.fromEntries(new FormData(form));
     return { event_speaker_ids: eventSpeakerIds, subject: values.subject, body_text: values.body_text };
   }
 
@@ -207,6 +220,7 @@
   byId("preview-message").addEventListener("click", async () => {
     const body = payload();
     if (!body) return;
+    clearComposeError();
     try {
       const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/communications/speakers/preview`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrf }, body: JSON.stringify(body) });
       previewedMessage = body;
@@ -224,7 +238,7 @@
       byId("message-preview").hidden = false;
       byId("send-message").disabled = false;
       setStatus(`Preview ready for ${result.recipients.length} recipient${result.recipients.length === 1 ? "" : "s"}.`);
-    } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
+    } catch (error) { showComposeError(window.SessionBuddyApi.message(error)); }
   });
   async function sendPreviewedMessage() {
     const form = byId("message-form");

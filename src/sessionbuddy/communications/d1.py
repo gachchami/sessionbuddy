@@ -32,6 +32,11 @@ from .models import (
 from .presentation import message_category, message_preview
 from .rendering import render_template, validate_template
 
+_INCOMPATIBLE_RECIPIENT_NAME_LIMIT = 10
+_SPEAKER_MESSAGE_VARIABLES = frozenset(
+    {"event.name", "speaker.name", "speaker.first_name", "submission.title", "portal.link"}
+)
+
 
 def _status_cursor(
     request: Request,
@@ -281,7 +286,21 @@ class D1CommunicationsService:
     ) -> RecipientPreviewResponse:
         if self.organization_id is None:
             raise HTTPException(status_code=404)
+        try:
+            required = validate_template(body.subject) | validate_template(body.body_text)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        unavailable = sorted(required - _SPEAKER_MESSAGE_VARIABLES)
+        if unavailable:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "This speaker message uses variables that are not available here: "
+                    f"{', '.join(unavailable)}. Remove those variables and preview again."
+                ),
+            )
         recipients: list[RecipientPreview] = []
+        incompatible_invitees: list[tuple[str, tuple[str, ...]]] = []
         for recipient_target_id in body.event_speaker_ids:
             row = row_mapping(
                 await self.db.prepare(
@@ -387,18 +406,21 @@ class D1CommunicationsService:
                         ),
                     }
                 )
-            try:
-                required = validate_template(body.subject) | validate_template(body.body_text)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
             missing = sorted(required - values.keys())
             if missing:
+                # recipient_state is the compatibility fact: "invited" is the
+                # pending-invitation query branch, while "active" only means an
+                # event_speakers identity exists (its selection_status may still
+                # be submitted or rejected). Collect every incompatible invitee
+                # so a batch never turns into one-error-per-preview whack-a-mole.
+                if row["recipient_state"] == "invited":
+                    incompatible_invitees.append((display_name, tuple(missing)))
+                    continue
                 raise HTTPException(
                     status_code=422,
                     detail=(
                         f"{display_name} cannot receive this template; missing "
-                        f"{', '.join(missing)}. Choose an invitation-safe template "
-                        "or remove this recipient."
+                        f"{', '.join(missing)}. Remove those variables or remove this recipient."
                     ),
                 )
             try:
@@ -421,6 +443,26 @@ class D1CommunicationsService:
                     subject=rendered_subject,
                     html_body=f"<p>{rendered_body.replace(chr(10), '<br>')}</p>",
                 )
+            )
+        if incompatible_invitees:
+            names = [name for name, _missing_fields in incompatible_invitees]
+            shown_names = ", ".join(names[:_INCOMPATIBLE_RECIPIENT_NAME_LIMIT])
+            remainder = len(names) - _INCOMPATIBLE_RECIPIENT_NAME_LIMIT
+            if remainder > 0:
+                remainder_noun = "other" if remainder == 1 else "others"
+                shown_names = f"{shown_names}, and {remainder} {remainder_noun}"
+            missing_fields = sorted(
+                {field for _name, fields in incompatible_invitees for field in fields}
+            )
+            count = len(incompatible_invitees)
+            noun = "recipient" if count == 1 else "recipients"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{count} invited {noun} cannot receive this template because it uses "
+                    f"{' and '.join(missing_fields)}: {shown_names}. Choose an invitation-safe "
+                    f"template or remove {'this recipient' if count == 1 else 'those recipients'}."
+                ),
             )
         return RecipientPreviewResponse(recipients=recipients)
 

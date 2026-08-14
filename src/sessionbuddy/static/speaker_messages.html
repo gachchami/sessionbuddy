@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=23">
   <script src="/app-shell/assets/api-client.js?v=3" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=26" defer></script>
-  <script src="/admin/speakers/assets/messages.js?v=6" defer></script>
+  <script src="/admin/speakers/assets/messages.js?v=7" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--messages">
   <a class="skip-link" href="#main">Skip to event messages</a>
@@ -30,7 +30,8 @@
           <div class="personalization-toolbar" aria-label="Personalize message"><span>Insert:</span><button class="secondary" type="button" data-merge-field="{{speaker.name}}">Speaker name</button><button class="secondary" type="button" data-merge-field="{{submission.title}}">Session title</button><button class="secondary" type="button" data-merge-field="{{event.name}}">Event name</button><button class="secondary" type="button" data-merge-field="{{portal.link}}">Portal link</button></div>
           <label>Subject<input name="subject" maxlength="200" required></label>
           <label>Message<textarea name="body_text" rows="8" maxlength="10000" required></textarea></label>
-          <div class="actions"><button id="preview-message" class="secondary" type="button">Preview message</button><button id="send-message" disabled>Send message</button></div>
+          <p id="message-compose-error" class="status" tabindex="-1"></p>
+          <div class="actions"><button id="preview-message" class="secondary" type="button" aria-describedby="message-compose-error">Preview message</button><button id="send-message" disabled>Send message</button></div>
         </form>
       </section>
     </div>

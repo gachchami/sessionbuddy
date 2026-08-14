@@ -7,6 +7,8 @@ rejected. The recipient list already includes both — the preview now says whic
 is which, and the send path renders from this same query.
 """
 
+import pytest
+
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
     _client,
@@ -100,3 +102,119 @@ async def test_unresolvable_recipient_is_named_in_the_error(
         assert response.status_code == 422, response.text
         # A stale recipient list must not fail the batch anonymously.
         assert missing in response.text
+
+
+async def test_preview_aggregates_only_pending_invitees_and_caps_names(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        active_speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        inviter_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        invitations = [
+            (
+                f"30000000-0000-4000-8000-{index:012d}",
+                organization_id,
+                event_id,
+                f"invitee-{index}@example.test",
+                f"Invitee {index}",
+                inviter_id,
+            )
+            for index in range(1, 12)
+        ]
+        connection.executemany(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,display_name)
+               VALUES(?,?,?, ?,?,'speaker','pending',?,9999999999999,1000,1000,?)""",
+            [
+                (invitation_id, org_id, current_event_id, email, email, inviter, name)
+                for invitation_id, org_id, current_event_id, email, name, inviter in invitations
+            ],
+        )
+        connection.commit()
+
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/preview",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={
+                "event_speaker_ids": [
+                    active_speaker_id,
+                    *(invitation[0] for invitation in invitations),
+                ],
+                "subject": "Welcome to {{event.name}}",
+                "body_text": "Present {{submission.title}} at {{portal.link}}.",
+            },
+        )
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["error"]["message"]
+        assert detail.startswith("11 invited recipients cannot receive this template")
+        assert "portal.link and submission.title" in detail
+        assert all(f"Invitee {index}" in detail for index in range(1, 11))
+        assert "Invitee 11" not in detail
+        assert "and 1 other" in detail
+        assert "Priya" not in detail
+
+
+async def test_preview_rejects_variables_unavailable_to_speaker_messages_before_recipients(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, _organization_id, event_id = await _admin(client, connection)
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/preview",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={
+                "event_speaker_ids": ["22222222-2222-4222-8222-222222222222"],
+                "subject": "Schedule for {{event.name}}",
+                "body_text": "Meet us in {{schedule.room}} at {{schedule.start}}.",
+            },
+        )
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["error"]["message"]
+        assert "variables that are not available here" in detail
+        assert "schedule.room, schedule.start" in detail
+        assert "22222222-2222-4222-8222-222222222222" not in detail
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="An active recipient without a proposal title currently renders a blank merge field.",
+)
+async def test_preview_rejects_an_empty_submission_title(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        connection.execute(
+            "UPDATE submissions SET proposal_title='' WHERE event_id=?",
+            (event_id,),
+        )
+        connection.commit()
+
+        response = await _preview(client, csrf, event_id, speaker_id)
+
+        assert response.status_code == 422, response.text
+        assert "submission.title" in response.json()["error"]["message"]

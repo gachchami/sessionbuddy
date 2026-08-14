@@ -246,8 +246,9 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     assert "Proposal not selected" in messages
     assert "Accepted speaker" in messages
     assert 'byId("recipient-status")' in messages
-    assert "Choose the Invitation reminder template" in messages
-    assert "cannot use ${missing.join" in messages
+    assert 'showComposeError("Select at least one recipient.")' in messages
+    assert 'showComposeError(window.SessionBuddyApi.message(error))' in messages
+    assert 'aria-describedby="message-compose-error"' in message_page
 
 
 async def test_open_call_is_absent_when_the_event_has_no_published_form() -> None:
