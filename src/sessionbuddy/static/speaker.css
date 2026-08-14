@@ -25,6 +25,7 @@ body.speaker-portal-page {
 }
 .speaker-portal-shell { width: min(68rem, calc(100% - 2rem)); }
 .speaker-portal-page #status:empty, .speaker-portal-page #status[hidden] { display: none; }
+.speaker-portal-page #status.warning { padding: .75rem .85rem; border: 1px solid var(--status-warning); border-radius: .5rem; background: #fff7ec; color: var(--status-warning); }
 .speaker-portal-page .sb-topbar { min-height: 3.25rem; }
 .speaker-portal-page .sb-account__trigger { min-height: 2.35rem; padding: .25rem .55rem; box-shadow: none; }
 .speaker-portal-page .sb-account__avatar { width: 1.75rem; height: 1.75rem; }

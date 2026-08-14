@@ -251,22 +251,54 @@
         const input = form.elements.namedItem(field.key);
         values[field.key] = field.type === "checkbox" ? Boolean(input.checked) : input.value;
       }
+      let completed;
       try {
-        await api(`/api/v1/speaker/tasks/${encodeURIComponent(task.id)}/response`, {
+        completed = await api(`/api/v1/speaker/tasks/${encodeURIComponent(task.id)}/response`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-csrf-token": state.csrf, "idempotency-key": idempotencyKey() },
           body: JSON.stringify({ answers: values, version: task.version })
         });
-        const portal = await api(portalPath(eventId || state.activeEventId));
-        renderPortal(portal);
-        announceOnboardingChange();
-        setStatus("Task completed.", "success");
       } catch (error) {
         setStatus(error.status === 409 ? "This task changed. Reload the portal and try again." : error.message, "error");
         submit.disabled = false;
+        return;
+      }
+      // The server has committed the completion. Reflect it locally right away so
+      // success never waits on the follow-up portal read; that read is reconciliation.
+      const targetEventId = eventId || state.activeEventId;
+      applyLocalTaskCompletion(targetEventId, task.id, completed?.version);
+      // Announce on the completed task's own event channel. state.portal still points
+      // at the active event until the reconciliation read below lands, so deriving the
+      // channel from it would notify the wrong organizer view when the refresh stalls.
+      announceOnboardingChange(targetEventId);
+      setStatus("Task completed.", "success");
+      try {
+        renderPortal(await api(portalPath(targetEventId)));
+      } catch (_) {
+        setStatus("Task completed. The portal could not refresh; reload to see the latest details.", "warning");
       }
     });
     return form;
+  }
+
+  // Marks one task completed in the cached portal for an event and rerenders.
+  // Mirrors only what the successful POST proved; the next portal read remains
+  // the source of truth for everything else.
+  function applyLocalTaskCompletion(eventId, taskId, version) {
+    const entry = state.portfolio.get(eventId);
+    const portal = entry?.portal;
+    if (!portal) return;
+    let changed = false;
+    const tasks = (portal.tasks || []).map((one) => {
+      if (one.id !== taskId || ["completed", "waived"].includes(one.state)) return one;
+      changed = true;
+      return { ...one, state: "completed", version: Number.isFinite(version) ? version : one.version };
+    });
+    if (!changed) return;
+    const updated = { ...portal, tasks };
+    state.portfolio.set(eventId, { ...entry, portal: updated });
+    if (state.portal === portal) state.portal = updated;
+    renderPortfolio();
   }
 
   function renderTasks(tasks, timezone, list, submissions = []) {
@@ -1489,8 +1521,7 @@
     draw();
   }
 
-  function announceOnboardingChange() {
-    const eventId = state.portal?.event?.id;
+  function announceOnboardingChange(eventId = state.portal?.event?.id) {
     if (!eventId || !("BroadcastChannel" in window)) return;
     const channel = new BroadcastChannel(`sessionbuddy:onboarding:${eventId}`);
     channel.postMessage({ type: "snapshot-invalidated" });
@@ -1801,7 +1832,7 @@
         state.assets = state.portfolio.get(eventId)?.assets || [];
       }
       renderPortfolio();
-      announceOnboardingChange();
+      announceOnboardingChange(eventId);
     } catch (error) {
       status.textContent = pendingCompletion
         ? `File received. Safety checks are temporarily unavailable, so this file is not public or current yet. Press “${button.textContent.trim()}” again to retry. You do not need to choose or upload the file again.`

@@ -425,4 +425,147 @@ test.describe("speaker portal responsive design", () => {
     await expect(page.getByRole("button", { name: "Upload headshot" })).toBeVisible();
     await expect(page.locator("#speaker-profile-tools")).toHaveCount(0);
   });
+
+  const customTask = { id: "task-custom", task_type: "custom", title: "Confirm travel details", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] };
+  const secondEventPortal = { ...portal, event: portal.events[1], event_speaker_id: "event-speaker-second", tasks: [], submissions: [], notifications: [] };
+  const isSecondEvent = (url: string) => url.includes("event_id=event-second");
+  const attention = (page: Page) => page.locator('[data-event-id="event-responsive"]').getByText("Needs attention");
+
+  test("Mark complete reflects the committed completion before the portal refresh finishes", async ({ page }) => {
+    await servePortal(page);
+    let portalReads = 0;
+    let releaseRefresh: () => void = () => {};
+    const refreshReleased = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    await page.route("**/api/v1/speaker/portal*", async (route) => {
+      if (isSecondEvent(route.request().url())) { await route.fulfill({ contentType: "application/json", body: JSON.stringify(secondEventPortal) }); return; }
+      portalReads += 1;
+      if (portalReads > 1) await refreshReleased;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ...portal, tasks: portalReads > 1 ? [{ ...customTask, state: "completed", version: 2 }] : [customTask] }),
+      });
+    });
+    await page.route("**/api/v1/speaker/tasks/task-custom/response", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-csrf-token"]).toBe("responsive-csrf");
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ id: "task-custom", response: {}, version: 2 }),
+      });
+    });
+    await page.goto("/speaker");
+    const markComplete = page.getByRole("button", { name: "Mark complete" });
+    await expect(markComplete).toBeEnabled();
+    await markComplete.click();
+
+    // The POST succeeded; the follow-up portal read is still stalled.
+    await expect(attention(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    await expect(page.locator("button:disabled", { hasText: "Mark complete" })).toHaveCount(0);
+    await expect(page.locator("#status")).toHaveText("Task completed.");
+    await expect.poll(() => portalReads).toBe(2);
+
+    releaseRefresh();
+    await expect.poll(() => portalReads).toBe(2);
+    await expect(attention(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+  });
+
+  test("completing a task in a non-active event invalidates that event's onboarding channel", async ({ page }) => {
+    await servePortal(page);
+    let secondReads = 0;
+    let releaseRefresh: () => void = () => {};
+    const refreshReleased = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    const secondTask = { ...customTask, id: "task-second", title: "Confirm hotel details" };
+    await page.route("**/api/v1/speaker/portal*", async (route) => {
+      if (!isSecondEvent(route.request().url())) {
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...portal, tasks: [] }) });
+        return;
+      }
+      secondReads += 1;
+      // The reconciliation read for the second event stalls, so state.portal keeps
+      // describing the active event while the broadcast must already have gone out.
+      if (secondReads > 1) await refreshReleased;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(secondReads > 1
+          ? { ...secondEventPortal, profile: { ...portal.profile, display_name: "Alex Reconciled" }, tasks: [{ ...secondTask, state: "completed", version: 2 }] }
+          : { ...secondEventPortal, tasks: [secondTask] }),
+      });
+    });
+    await page.route("**/api/v1/speaker/tasks/task-second/response", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "task-second", response: {}, version: 2 }) });
+    });
+    await page.addInitScript(() => {
+      const received: Record<string, number> = {};
+      (window as unknown as { __onboardingInvalidations: Record<string, number> }).__onboardingInvalidations = received;
+      for (const eventId of ["event-responsive", "event-second"]) {
+        const channel = new BroadcastChannel(`sessionbuddy:onboarding:${eventId}`);
+        channel.addEventListener("message", (message) => {
+          if (message.data?.type === "snapshot-invalidated") received[eventId] = (received[eventId] || 0) + 1;
+        });
+      }
+    });
+    await page.goto("/speaker");
+
+    const second = page.locator('.event-group[data-event-id="event-second"]');
+    const markComplete = second.getByRole("button", { name: "Mark complete" });
+    await expect(markComplete).toBeEnabled();
+    await markComplete.click();
+    await expect(page.locator("#status")).toHaveText("Task completed.");
+    await expect.poll(() => secondReads).toBe(2);
+
+    // Refresh is still stalled: the completed task's own event must have been notified,
+    // and the still-active first event must not have been.
+    const invalidations = () => page.evaluate(() => (window as unknown as { __onboardingInvalidations: Record<string, number> }).__onboardingInvalidations);
+    await expect.poll(async () => (await invalidations())["event-second"] || 0).toBeGreaterThanOrEqual(1);
+    expect((await invalidations())["event-responsive"] || 0).toBe(0);
+
+    releaseRefresh();
+    // The reconciled payload carries a distinctive name, proving the refresh rendered
+    // before the broadcast counts are checked; the button was already gone optimistically.
+    await expect(page.locator("#welcome-name")).toHaveText("Alex Reconciled");
+    await expect(second.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    // Reconciliation is a read, not a mutation: it must not broadcast again or cross channels.
+    expect((await invalidations())["event-second"] || 0).toBe(1);
+    expect((await invalidations())["event-responsive"] || 0).toBe(0);
+  });
+
+  test("a failed portal refresh after completion keeps the task completed with a warning", async ({ page }) => {
+    await servePortal(page);
+    let portalReads = 0;
+    await page.route("**/api/v1/speaker/portal*", async (route) => {
+      if (isSecondEvent(route.request().url())) { await route.fulfill({ contentType: "application/json", body: JSON.stringify(secondEventPortal) }); return; }
+      portalReads += 1;
+      if (portalReads > 1) { await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "unavailable" }) }); return; }
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ ...portal, tasks: [customTask] }) });
+    });
+    await page.route("**/api/v1/speaker/tasks/task-custom/response", (route) => route.fulfill({
+      contentType: "application/json", body: JSON.stringify({ id: "task-custom", response: {}, version: 2 }),
+    }));
+    await page.goto("/speaker");
+    await page.getByRole("button", { name: "Mark complete" }).click();
+    await expect.poll(() => portalReads).toBe(2);
+    await expect(attention(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    await expect(page.locator("#status")).toContainText("Task completed.");
+    await expect(page.locator("#status")).toContainText("could not refresh");
+  });
+
+  test("a failed completion POST leaves Mark complete enabled for retry", async ({ page }) => {
+    await servePortal(page);
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(isSecondEvent(route.request().url()) ? secondEventPortal : { ...portal, tasks: [customTask] }),
+    }));
+    await page.route("**/api/v1/speaker/tasks/task-custom/response", (route) => route.fulfill({
+      status: 500, contentType: "application/json", body: JSON.stringify({ detail: "boom" }),
+    }));
+    await page.goto("/speaker");
+    const markComplete = page.getByRole("button", { name: "Mark complete" });
+    await markComplete.click();
+    await expect(markComplete).toBeEnabled();
+    await expect(attention(page)).toHaveCount(1);
+    await expect(page.locator("#status")).toHaveClass(/error/);
+  });
 });
