@@ -157,8 +157,11 @@ nothing anywhere the organizer can see it. Rounds report the reviewers and
 proposals they hold from round membership rather than inferring them from
 assignments, so a proposal awaiting its first reviewer, or a reviewer awaiting
 their first proposal, still counts as part of the round; revoked assignments are
-excluded from the counts. Editing a draft preserves the proposals that the
-paginated proposal table cannot show.
+excluded from the counts. The results dashboard uses that same reviewer membership
+source, labels attached reviewers with no proposal pairs, and explains that a draft
+is invisible to reviewers until the organizer returns to the proposal inbox and
+opens it. Editing a draft preserves the proposals that the paginated proposal table
+cannot show.
 
 ## Speaker operations
 

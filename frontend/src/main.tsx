@@ -979,8 +979,16 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
           <section className="round-progress" aria-label="Round progress">
             <div className="round-progress__summary">
               <div>
-                <strong>{results.completed_count}/{results.assigned_count}</strong>
-                <span>reviews finalized</span>
+                <strong>
+                  {results.assigned_count === 0
+                    ? "0"
+                    : `${results.completed_count}/${results.assigned_count}`}
+                </strong>
+                <span>
+                  {results.assigned_count === 0
+                    ? "reviews assigned"
+                    : "reviews finalized"}
+                </span>
               </div>
               <div>
                 <strong>{results.average_rating ?? "—"}</strong>
@@ -998,21 +1006,38 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     : `${results.status.charAt(0).toUpperCase()}${results.status.slice(1)}`}
               </span>
             </div>
-            <div
-              className="round-progress__track"
-              role="progressbar"
-              aria-label="Finalized reviews"
-              aria-valuemin={0}
-              aria-valuemax={results.assigned_count}
-              aria-valuenow={results.completed_count}
-            >
-              <span
-                style={{
-                  width: `${results.assigned_count ? (results.completed_count / results.assigned_count) * 100 : 0}%`,
-                }}
-              />
-            </div>
+            {results.assigned_count === 0 ? (
+              <p className="help round-progress__empty">No reviews assigned yet.</p>
+            ) : (
+              <div
+                className="round-progress__track"
+                role="progressbar"
+                aria-label="Finalized reviews"
+                aria-valuemin={0}
+                aria-valuemax={results.assigned_count}
+                aria-valuenow={results.completed_count}
+                aria-valuetext={`${results.completed_count} of ${results.assigned_count} reviews finalized`}
+              >
+                <span
+                  style={{
+                    width: `${(results.completed_count / results.assigned_count) * 100}%`,
+                  }}
+                />
+              </div>
+            )}
           </section>
+          {results.status === "draft" && (
+            <p className="help round-draft-note" role="note">
+              This round is still a draft. Reviewers cannot see assignments or begin
+              reviewing until it is opened.{" "}
+              <a
+                href={`/admin/events/${encodeURIComponent(results.event_id)}/submissions`}
+              >
+                Return to the proposal inbox
+              </a>{" "}
+              to finish assignments and open the round.
+            </p>
+          )}
           <section className="round-section" aria-labelledby="reviewer-progress-title">
             <div className="round-section__heading">
               <div>
@@ -1034,8 +1059,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         (candidate) =>
                           !results.evaluators.some(
                             (current) =>
-                              current.evaluator_user_id === candidate.user_id &&
-                              current.assigned_count > 0,
+                              current.evaluator_user_id === candidate.user_id,
                           ),
                       )
                       .map((candidate) => (
@@ -1079,8 +1103,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                           (candidate) =>
                             !results.evaluators.some(
                               (current) =>
-                                current.evaluator_user_id === candidate.user_id &&
-                                current.assigned_count > 0,
+                                current.evaluator_user_id === candidate.user_id,
                             ),
                         )
                         .map((candidate) => (
@@ -1109,12 +1132,12 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             )}
             </div>
           <div className="reviewer-list" aria-label="Evaluator progress">
-            {results.evaluators
-              .filter(
-                (evaluator) =>
-                  evaluator.assigned_count > 0 || evaluator.completed_count > 0,
-              )
-              .map((evaluator) => (
+            {results.evaluators.length === 0 && (
+              <p className="help reviewer-list__empty">
+                No reviewers attached to this round yet.
+              </p>
+            )}
+            {results.evaluators.map((evaluator) => (
                 <article className="reviewer-row" key={evaluator.evaluator_user_id}>
                   <div className="reviewer-row__identity">
                     <span className="reviewer-row__avatar" aria-hidden="true">
@@ -1123,7 +1146,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     <div>
                       <strong>{evaluator.display_name}</strong>
                       <span>
-                        {evaluator.completed_count}/{evaluator.assigned_count} finalized
+                        {evaluator.assigned_count === 0
+                          ? "No proposals assigned"
+                          : `${evaluator.completed_count}/${evaluator.assigned_count} finalized`}
                         {evaluator.conflict_count > 0 && ` · ${evaluator.conflict_count} conflicts`}
                       </span>
                     </div>

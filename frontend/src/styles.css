@@ -112,6 +112,8 @@ button.danger-outline:hover { background: #fff5f4; }
 .round-status--ready { background: #eef1ff; color: #4938b7; }
 .round-progress__track { height: .35rem; overflow: hidden; background: #eeeafd; }
 .round-progress__track span { display: block; height: 100%; border-radius: 0 999px 999px 0; background: #6d4aff; transition: width .25s ease; }
+.round-progress__empty { margin: 0; padding: 0 1.15rem 1rem; }
+.round-draft-note { margin: -1rem 0 2rem; padding: .8rem 1rem; border: 1px solid #dcd7fe; border-radius: .65rem; background: #f8f7ff; }
 
 .round-section { margin-top: 2.25rem; }
 .round-section__heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
@@ -127,6 +129,7 @@ button.danger-outline:hover { background: #fff5f4; }
 .round-add-reviewer-disclosure[open] > summary { margin-bottom: .7rem; }
 .round-add-reviewer-disclosure .help { margin: .55rem 0 0; max-width: 26rem; }
 .reviewer-list { overflow: hidden; border: 1px solid var(--line); border-radius: .75rem; background: white; }
+.reviewer-list__empty { margin: 0; padding: 1rem; }
 .reviewer-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border: 0; border-radius: 0; box-shadow: none; }
 .reviewer-row + .reviewer-row { border-top: 1px solid var(--line); }
 .reviewer-row__identity { display: flex; align-items: center; gap: .75rem; min-width: 0; }

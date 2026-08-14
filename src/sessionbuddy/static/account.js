@@ -91,6 +91,8 @@
     byId("headshot-fallback").textContent = initials;
     if (profile.headshot_url) {
       byId("headshot-preview").src = `${profile.headshot_url}?v=${profile.version}`;
+      const headshotOwner = `${firstName} ${lastName}`.trim() || profile.display_name?.trim();
+      byId("headshot-preview").alt = headshotOwner ? `Current headshot for ${headshotOwner}` : "Current profile headshot";
       byId("headshot-preview").hidden = false;
       byId("headshot-fallback").hidden = true;
       byId("remove-headshot").hidden = false;
@@ -688,6 +690,7 @@
     if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
     previewObjectUrl = URL.createObjectURL(selectedHeadshot);
     byId("headshot-preview").src = previewObjectUrl;
+    byId("headshot-preview").alt = "Selected headshot preview (uploads when you save)";
     byId("headshot-preview").hidden = false;
     byId("headshot-fallback").hidden = true;
     setProfileSaveState("idle");

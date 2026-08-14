@@ -2310,6 +2310,15 @@ async def remove_round_evaluator(
                WHERE round_id=?1 AND evaluator_user_id=?2 AND status!='revoked'"""
         ).bind(round_id, evaluator_user_id, now)
     )
+    # Progress is membership-driven, so removal must update the membership in the same
+    # batch as its assignments. Leaving it active makes the reviewer reappear as an
+    # attached reviewer with no proposals immediately after a successful removal.
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_round_evaluators SET status='removed', updated_at_ms=?3
+               WHERE round_id=?1 AND evaluator_user_id=?2 AND status='active'"""
+        ).bind(round_id, evaluator_user_id, now)
+    )
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -3266,15 +3275,26 @@ async def get_round_results(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT a.evaluator_user_id,
+                # Keep this membership-driven for the same reason as the reviewer count in
+                # list_evaluation_rounds: a draft can hold a reviewer before it has any
+                # assignments, and that reviewer must still appear in the results read model.
+                """SELECT m.evaluator_user_id,
                   COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS display_name,
-                  SUM(CASE WHEN a.status != 'revoked' THEN 1 ELSE 0 END) AS assigned_count,
-                  SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
-                  COUNT(c.id) AS conflict_count
-           FROM evaluation_assignments a JOIN users u ON u.id = a.evaluator_user_id
+                  COUNT(DISTINCT CASE WHEN a.status != 'revoked' THEN a.id END)
+                    AS assigned_count,
+                  COUNT(DISTINCT CASE WHEN a.status != 'revoked' AND e.state = 'final'
+                                      THEN a.id END) AS completed_count,
+                  COUNT(DISTINCT CASE WHEN a.status != 'revoked' THEN c.id END)
+                    AS conflict_count
+           FROM evaluation_round_evaluators m
+           JOIN users u ON u.id = m.evaluator_user_id
+           LEFT JOIN evaluation_assignments a
+             ON a.round_id = m.round_id
+            AND a.evaluator_user_id = m.evaluator_user_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            LEFT JOIN evaluation_conflicts c ON c.assignment_id = a.id
-           WHERE a.round_id = ?1 GROUP BY a.evaluator_user_id, u.email, u.display_name
+           WHERE m.round_id = ?1 AND m.status = 'active'
+           GROUP BY m.evaluator_user_id, u.email, u.display_name
            ORDER BY u.normalized_email LIMIT 100"""
             ).bind(round_id),
         )

@@ -335,6 +335,8 @@
     const preview = byId("speaker-headshot-preview");
     const fallback = byId("speaker-headshot-fallback");
     const headshotStatus = byId("speaker-headshot-status");
+    const speakerName = selectedSpeaker?.display_name || `${selectedSpeaker?.first_name || ""} ${selectedSpeaker?.last_name || ""}`.trim();
+    preview.alt = speakerName ? `Headshot for ${speakerName}` : "Speaker headshot";
     preview.hidden = true;
     fallback.hidden = true;
     preview.onload = () => {

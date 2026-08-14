@@ -1,0 +1,134 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { expect, test } from "@playwright/test";
+
+const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
+const appRoot = resolve(staticRoot, "app");
+const pageHtml = readFileSync(resolve(appRoot, "index.html"), "utf8")
+  .replace(/<link[^>]+>/g, "")
+  .replace(/<script[^>]+><\/script>/g, "")
+  .replace(
+    "</head>",
+    `<style>${readFileSync(resolve(appRoot, "assets/reviews.css"), "utf8")}</style></head>`,
+  )
+  .replace(
+    "</body>",
+    `<script>${readFileSync(resolve(staticRoot, "api_client.js"), "utf8")}</script>`
+      + `<script>${readFileSync(resolve(staticRoot, "app_shell.js"), "utf8")}</script>`
+      + "</body>",
+  );
+
+const organizerSession = {
+  user_id: "organizer",
+  organization_id: "org-a",
+  event_id: "event-a",
+  csrf_token: "browser-test-csrf",
+  email: "organizer@example.com",
+  display_name: "Alex Organizer",
+  profile_complete: true,
+  account_roles: ["organizer"],
+  active_role: "organizer",
+  default_role: "organizer",
+  organization_access: [{
+    organization_id: "org-a",
+    organization_name: "Example Events",
+    permissions: ["owner"],
+  }],
+  event_access: [],
+};
+
+const reviewer = {
+  evaluator_user_id: "reviewer-a",
+  display_name: "Sam Whitfield",
+  assigned_count: 0,
+  completed_count: 0,
+  conflict_count: 0,
+};
+
+function results(overrides: Record<string, unknown> = {}) {
+  return {
+    round_id: "round-a",
+    event_id: "event-a",
+    round_name: "Initial review",
+    status: "draft",
+    assigned_count: 0,
+    completed_count: 0,
+    average_rating: null,
+    submissions: [],
+    submission_count: 0,
+    next_cursor: null,
+    evaluators: [reviewer],
+    available_evaluators: [],
+    conflicts: [],
+    ...overrides,
+  };
+}
+
+async function openDashboard(
+  page: import("@playwright/test").Page,
+  body: Record<string, unknown>,
+) {
+  // Registered first because Playwright gives the newest matching route precedence.
+  await page.route("**/admin/evaluation-rounds/round-a", (route) =>
+    route.fulfill({ contentType: "text/html", body: pageHtml }));
+  await page.route("**/api/v1/auth/session", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(organizerSession) }));
+  await page.route("**/api/v1/admin/evaluation-rounds/round-a/results**", (route) =>
+    route.fulfill({ contentType: "application/json", body: JSON.stringify(body) }));
+  await page.goto("/admin/evaluation-rounds/round-a");
+  await page.addScriptTag({
+    path: resolve(appRoot, "assets/reviews.js"),
+    type: "module",
+  });
+  await expect(page.getByRole("heading", { name: "Initial review" })).toBeVisible();
+}
+
+test.describe("evaluation round dashboard", () => {
+  test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+
+  test("explains an attached reviewer with no draft assignments", async ({ page }) => {
+    await openDashboard(page, results());
+
+    await expect(page.getByText("Sam Whitfield")).toBeVisible();
+    await expect(page.getByText("No proposals assigned")).toBeVisible();
+    await expect(page.getByText("No reviews assigned yet.")).toBeVisible();
+    await expect(page.getByRole("progressbar", { name: "Finalized reviews" })).toHaveCount(0);
+
+    const draftNote = page.getByRole("note");
+    await expect(draftNote).toContainText("Reviewers cannot see assignments");
+    await expect(draftNote.getByRole("link", { name: "Return to the proposal inbox" }))
+      .toHaveAttribute("href", "/admin/events/event-a/submissions");
+  });
+
+  test("renders a useful true empty state when no reviewers are attached", async ({ page }) => {
+    await openDashboard(page, results({ evaluators: [] }));
+
+    await expect(page.getByText("No reviewers attached to this round yet.")).toBeVisible();
+    await expect(page.getByText("No proposals assigned")).toHaveCount(0);
+  });
+
+  test("does not offer an attached unassigned reviewer in the add control", async ({ page }) => {
+    await openDashboard(page, results({
+      status: "open",
+      available_evaluators: [{ user_id: "reviewer-a", display_name: "Sam Whitfield" }],
+    }));
+
+    await expect(page.getByText("No proposals assigned")).toBeVisible();
+    await expect(page.locator("#round-add-evaluator option[value='reviewer-a']")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Remove" })).toBeVisible();
+  });
+
+  test("keeps open-round progress and reviewer actions", async ({ page }) => {
+    await openDashboard(page, results({
+      status: "open",
+      assigned_count: 2,
+      evaluators: [{ ...reviewer, assigned_count: 2 }],
+    }));
+
+    const progress = page.getByRole("progressbar", { name: "Finalized reviews" });
+    await expect(progress).toHaveAttribute("aria-valuetext", "0 of 2 reviews finalized");
+    await expect(page.getByRole("button", { name: "Send reminder" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove" })).toBeVisible();
+    await expect(page.getByRole("note")).toHaveCount(0);
+  });
+});
