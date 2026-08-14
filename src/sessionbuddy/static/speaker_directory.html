@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>People · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=70">
+  <link rel="stylesheet" href="/product/assets/product.css?v=71">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=23">
   <script src="/app-shell/assets/api-client.js?v=3" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=26" defer></script>
   <script src="/admin/people/assets/search.js?v=1" defer></script>
-  <script src="/admin/people/assets/people.js?v=5" defer></script>
+  <script src="/admin/people/assets/people.js?v=6" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
   <a class="skip-link" href="#main">Skip to people</a>
@@ -67,14 +67,14 @@
       <div class="dialog-heading"><div><h2 id="invite-speaker-title">Invite speaker</h2><p class="result">Invite someone to participate as a speaker in this event.</p></div><button id="close-speaker-invite" class="icon-button" type="button" aria-label="Close speaker invitation">×</button></div>
       <form id="invite-speaker-form"><label>Email address<input name="email" type="email" autocomplete="email" maxlength="320" required></label><label>Name<input name="display_name" maxlength="200" required></label><div class="form-grid"><label>Job title <span class="optional">Optional</span><input name="job_title" maxlength="200"></label><label>Company <span class="optional">Optional</span><input name="company" maxlength="200"></label></div><label>Biography <span class="optional">Optional</span><textarea name="biography" rows="5" maxlength="5000"></textarea></label><input name="role" type="hidden" value="speaker"><input name="expires_in_days" type="hidden" value="14"><div class="dialog-actions"><button id="cancel-speaker-invite" class="secondary" type="button">Cancel</button><button type="submit">Send invitation</button></div></form>
     </dialog>
-    <dialog id="import-speakers-dialog" class="form-dialog organizer-dialog" aria-labelledby="import-speakers-title">
+    <dialog id="import-speakers-dialog" class="form-dialog form-dialog--wide organizer-dialog" aria-labelledby="import-speakers-title">
       <div class="dialog-heading"><div><h2 id="import-speakers-title">Import speaker invitations</h2><p class="result">Upload a CSV with <strong>email</strong> and <strong>display_name</strong> (or <strong>name</strong>) columns. Job title and company are optional.</p></div><button id="close-speaker-import" class="icon-button" type="button" aria-label="Close speaker import">×</button></div>
       <form id="import-speakers-form">
         <label>CSV file<input name="speaker_csv" type="file" accept=".csv,text/csv" required></label>
-        <div id="speaker-import-duplicates" class="callout warning" hidden><strong>Possible duplicate identities</strong><p>Review these same-name records before importing:</p><ul id="speaker-import-duplicate-list"></ul><label><input name="confirm_name_duplicates" type="checkbox"> Import these rows as separate people</label></div>
-        <p class="help">Up to 500 invitations. Importing sends each speaker their access email.</p>
+        <div id="speaker-import-duplicates" class="speaker-import-review" hidden><div class="speaker-import-review__heading"><div><strong id="speaker-import-review-title">Review import rows</strong><p>Clean rows can continue. Choose what to do only for identity conflicts; invalid and duplicate rows will be skipped.</p></div><div id="speaker-import-summary" class="speaker-import-summary" aria-label="Import summary"></div></div><div id="speaker-import-duplicate-list" class="speaker-import-results" role="list"></div></div>
+        <p class="help">Up to 500 rows. Previewing sends nothing. Execution emails only newly created invitations; retrying the same batch does not resend them.</p>
         <p id="speaker-import-status" class="status status-compact" role="status" aria-live="polite"></p>
-        <div class="dialog-actions"><button id="cancel-speaker-import" class="secondary" type="button">Cancel</button><button type="submit">Import and send invitations</button></div>
+        <div class="dialog-actions"><button id="cancel-speaker-import" class="secondary" type="button">Cancel</button><button type="submit">Review import</button></div>
       </form>
     </dialog>
   </main>

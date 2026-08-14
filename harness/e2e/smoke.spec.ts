@@ -671,6 +671,7 @@ test.describe("administration empty states", () => {
       });
     });
     const invitationBodies: Array<Record<string, unknown>> = [];
+    const bulkImportBodies: Array<Record<string, unknown>> = [];
     await page.route(`**/api/v1/admin/events/${eventId}/invitations`, async (route) => {
       if (route.request().method() === "POST") {
         invitationBodies.push(route.request().postDataJSON());
@@ -678,6 +679,31 @@ test.describe("administration empty states", () => {
         return;
       }
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
+    });
+    await page.route(`**/api/v1/admin/events/${eventId}/speaker-invitations/import`, async (route) => {
+      const body = route.request().postDataJSON() as { mode: string; rows: Array<Record<string, unknown>> };
+      bulkImportBodies.push(body);
+      const executed = body.mode === "execute";
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          mode: body.mode,
+          data: body.rows.map((row) => ({
+            row_number: row.row_number,
+            email: row.email,
+            display_name: row.display_name,
+            outcome: executed ? "created" : "ready",
+            reason: executed ? "Invitation created and email queued." : "",
+            allowed_dispositions: [],
+            invitation_id: executed ? `invitation-${row.row_number}` : null,
+          })),
+          created_count: executed ? body.rows.length : 0,
+          skipped_count: 0,
+          needs_resolution_count: 0,
+          rejected_count: 0,
+          failed_count: 0,
+        }),
+      });
     });
     await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
       contentType: "application/json",
@@ -715,23 +741,24 @@ test.describe("administration empty states", () => {
       buffer: Buffer.from(
         "email,display_name,job_title,company\n" +
         "marcus@example.com,Marcus Okafor,Staff Engineer,Example Co\n" +
+        "\n" +
         'lee@example.com,"Lee, Morgan",Moderator,Community Guild\n',
       ),
     });
-    await importDialog.getByRole("button", { name: "Import and send invitations" }).click();
-    await expect.poll(() => invitationBodies.length).toBe(3);
-    await expect(page.locator("#import-speakers-dialog")).not.toHaveAttribute("open", "");
-    await expect(page.locator("#status")).toHaveText("2 speaker invitations sent.");
-    expect(invitationBodies.slice(-2)).toEqual([
+    await importDialog.getByRole("button", { name: "Review import" }).click();
+    await expect(importDialog.getByText("2 ready to import; 0 duplicate or existing; 0 invalid; 0 need a decision.")).toBeVisible();
+    await importDialog.getByRole("button", { name: "Import reviewed rows" }).click();
+    await expect(importDialog.getByText("2 imported; 0 skipped; 0 rejected; 0 failed; 0 still need a decision.")).toBeVisible();
+    await expect(importDialog.getByRole("button", { name: "Import complete" })).toBeDisabled();
+    expect(bulkImportBodies.map((body) => body.mode)).toEqual(["preview", "execute"]);
+    expect(bulkImportBodies[1].rows).toEqual([
       {
-        email: "marcus@example.com", display_name: "Marcus Okafor",
-        job_title: "Staff Engineer", company: "Example Co", role: "speaker",
-        expires_in_days: 14,
+        row_number: 2, email: "marcus@example.com", display_name: "Marcus Okafor",
+        job_title: "Staff Engineer", company: "Example Co", biography: "", disposition: "import",
       },
       {
-        email: "lee@example.com", display_name: "Lee, Morgan",
-        job_title: "Moderator", company: "Community Guild", role: "speaker",
-        expires_in_days: 14,
+        row_number: 4, email: "lee@example.com", display_name: "Lee, Morgan",
+        job_title: "Moderator", company: "Community Guild", biography: "", disposition: "import",
       },
     ]);
   });

@@ -62,8 +62,14 @@ def test_speaker_participation_status_and_csv_duplicate_review_are_exposed() -> 
     assert "Confirmed" in html
     assert "Declined" in html
     assert 'id="speaker-import-duplicates"' in html
-    assert "Review and confirm the possible duplicate identities" in javascript
-    assert "Object.fromEntries(new FormData(form))" in javascript
+    assert "speakerImportRows = rows;" in javascript
+    assert "import one row or skip the entire group" in javascript
+    assert "Review import rows" in html
+    assert 'JSON.stringify({ mode: "preview", rows: speakerImportRows })' in javascript
+    assert 'JSON.stringify({ mode: "execute", rows })' in javascript
+    assert '"idempotency-key": speakerImportBatchKey' in javascript
+    assert "Import this row" in javascript
+    assert "Import as a separate person" in javascript
 
 
 def test_dashboard_reconciles_within_five_seconds_and_after_reconnect() -> None:

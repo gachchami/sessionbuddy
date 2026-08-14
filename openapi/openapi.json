@@ -10247,6 +10247,201 @@
         "title": "SpeakerEventView",
         "type": "object"
       },
+      "SpeakerInvitationImportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "preview",
+              "execute"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerInvitationImportRow"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "rows"
+        ],
+        "title": "SpeakerInvitationImportRequest",
+        "type": "object"
+      },
+      "SpeakerInvitationImportResponse": {
+        "properties": {
+          "created_count": {
+            "default": 0,
+            "title": "Created Count",
+            "type": "integer"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerInvitationImportResult"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "failed_count": {
+            "default": 0,
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "preview",
+              "execute"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "needs_resolution_count": {
+            "default": 0,
+            "title": "Needs Resolution Count",
+            "type": "integer"
+          },
+          "rejected_count": {
+            "default": 0,
+            "title": "Rejected Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "default": 0,
+            "title": "Skipped Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "data"
+        ],
+        "title": "SpeakerInvitationImportResponse",
+        "type": "object"
+      },
+      "SpeakerInvitationImportResult": {
+        "properties": {
+          "allowed_dispositions": {
+            "items": {
+              "enum": [
+                "import",
+                "skip",
+                "separate_person"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Dispositions",
+            "type": "array"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "invitation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Id"
+          },
+          "outcome": {
+            "enum": [
+              "ready",
+              "created",
+              "skipped",
+              "skipped_duplicate",
+              "skipped_existing_speaker",
+              "skipped_existing_invitation",
+              "needs_resolution",
+              "rejected",
+              "failed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
+          },
+          "row_number": {
+            "title": "Row Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_number",
+          "email",
+          "display_name",
+          "outcome"
+        ],
+        "title": "SpeakerInvitationImportResult",
+        "type": "object"
+      },
+      "SpeakerInvitationImportRow": {
+        "additionalProperties": false,
+        "properties": {
+          "biography": {
+            "default": "",
+            "title": "Biography",
+            "type": "string"
+          },
+          "company": {
+            "default": "",
+            "title": "Company",
+            "type": "string"
+          },
+          "display_name": {
+            "default": "",
+            "title": "Display Name",
+            "type": "string"
+          },
+          "disposition": {
+            "default": "import",
+            "enum": [
+              "import",
+              "skip",
+              "separate_person"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
+          "job_title": {
+            "default": "",
+            "title": "Job Title",
+            "type": "string"
+          },
+          "row_number": {
+            "minimum": 2.0,
+            "title": "Row Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_number"
+        ],
+        "title": "SpeakerInvitationImportRow",
+        "type": "object"
+      },
       "SpeakerMessagePreviewRequest": {
         "additionalProperties": false,
         "properties": {
@@ -16750,6 +16945,75 @@
         "summary": "Remove Manual Session Participant",
         "tags": [
           "agenda"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speaker-invitations/import": {
+      "post": {
+        "description": "Preview or execute a bounded CSV import without fail-fast row semantics.",
+        "operationId": "import_speaker_invitations_api_v1_admin_events__event_id__speaker_invitations_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeakerInvitationImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerInvitationImportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Speaker Invitations",
+        "tags": [
+          "administration"
         ]
       }
     },

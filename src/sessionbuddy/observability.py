@@ -16,6 +16,7 @@ SAFE_DEGRADATIONS = (
     "account_session_rotation_unconfirmed",
     "asset_scan_queue_publish_failed",
     "communication_queue_publish_failed",
+    "speaker_import_row_failed",
 )
 
 

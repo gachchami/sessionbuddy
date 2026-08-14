@@ -56,6 +56,44 @@
   font-size: 1rem;
 }
 
+.speaker-import-review { margin-top: 1rem; border: 1px solid #ddd7f2; border-radius: .8rem; background: #fbfaff; overflow: hidden; }
+.speaker-import-review__heading { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 1rem; padding: 1rem; border-bottom: 1px solid #e8e3f7; background: #f7f4ff; }
+.speaker-import-review__heading p { margin: .25rem 0 0; color: var(--muted); }
+.speaker-import-summary { display: grid; grid-template-columns: repeat(4, minmax(4.25rem,1fr)); gap: .35rem; }
+.speaker-import-summary__item { min-width: 4.25rem; display: grid; justify-items: center; padding: .45rem .55rem; border: 1px solid #e1dbf6; border-radius: .55rem; background: #fff; }
+.speaker-import-summary__item strong { color: #4f35a6; font-size: 1rem; line-height: 1; }
+.speaker-import-summary__item small { margin-top: .2rem; color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+.speaker-import-results { max-height: min(48vh, 30rem); overflow-y: auto; overscroll-behavior: contain; }
+.speaker-import-result { display: grid; grid-template-columns: 2.25rem minmax(0,1fr) auto minmax(9rem,.34fr); align-items: center; gap: .75rem; padding: .8rem 1rem; border-bottom: 1px solid #ece9f3; background: var(--surface); }
+.speaker-import-result:last-child { border-bottom: 0; }
+.speaker-import-result__row { width: 2rem; height: 2rem; display: grid; place-items: center; border-radius: 50%; background: #f0ecfb; color: #6047ad; font-size: .75rem; font-weight: 800; }
+.speaker-import-result__identity { min-width: 0; }
+.speaker-import-result strong,
+.speaker-import-result span { display: block; overflow-wrap: anywhere; }
+.speaker-import-result__identity > span,
+.speaker-import-result__identity > p { color: var(--muted); }
+.speaker-import-result__identity > p { margin: .2rem 0 0; font-size: .75rem; }
+.speaker-import-result__outcome { width: fit-content; padding: .25rem .5rem; border-radius: 999px; background: #edf9f2; color: var(--status-success-text); font-size: .75rem; font-weight: 800; white-space: nowrap; }
+.speaker-import-result__outcome--needs_resolution { background: #fff4df; color: #8a4800; }
+.speaker-import-result__outcome--rejected { background: var(--status-danger-surface); color: var(--status-danger-text); }
+.speaker-import-result__outcome--failed { background: var(--status-danger-surface); color: var(--status-danger-text); }
+.speaker-import-result__outcome--skipped,
+.speaker-import-result__outcome--skipped_duplicate,
+.speaker-import-result__outcome--skipped_existing_speaker,
+.speaker-import-result__outcome--skipped_existing_invitation { background: #f2f4f7; color: #475467; }
+.speaker-import-result__action { min-width: 0; margin: 0; font-size: .75rem; }
+.speaker-import-result__action select { margin-top: .2rem; }
+.speaker-import-result--needs_resolution { box-shadow: inset .22rem 0 #d97706; }
+.speaker-import-result--rejected { box-shadow: inset .22rem 0 var(--status-danger); }
+.speaker-import-result--failed { box-shadow: inset .22rem 0 var(--status-danger); }
+
+@media (max-width: 640px) {
+  .speaker-import-review__heading { grid-template-columns: 1fr; }
+  .speaker-import-summary { grid-template-columns: repeat(2,1fr); }
+  .speaker-import-result { grid-template-columns: 2.25rem minmax(0,1fr) auto; align-items: start; padding-inline: .75rem; }
+  .speaker-import-result__action { grid-column: 2 / -1; }
+}
+
 .asset-history-list {
   display: grid;
   gap: .75rem;

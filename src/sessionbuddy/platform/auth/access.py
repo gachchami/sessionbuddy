@@ -459,6 +459,66 @@ class InvitationList(BaseModel):
     data: list[InvitationView]
 
 
+SpeakerImportDisposition = Literal["import", "skip", "separate_person"]
+SpeakerImportOutcome = Literal[
+    "ready",
+    "created",
+    "skipped",
+    "skipped_duplicate",
+    "skipped_existing_speaker",
+    "skipped_existing_invitation",
+    "needs_resolution",
+    "rejected",
+    "failed",
+]
+
+
+class SpeakerInvitationImportRow(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    row_number: int = Field(ge=2)
+    # Field limits are checked per row in the endpoint. Putting them on the
+    # transport model would make one oversized CSV cell reject the whole batch.
+    email: str = ""
+    display_name: str = ""
+    job_title: str = ""
+    company: str = ""
+    biography: str = ""
+    disposition: SpeakerImportDisposition = "import"
+
+
+class SpeakerInvitationImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["preview", "execute"]
+    rows: list[SpeakerInvitationImportRow] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_row_numbers(self) -> "SpeakerInvitationImportRequest":
+        numbers = [row.row_number for row in self.rows]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("row_number values must be unique")
+        return self
+
+
+class SpeakerInvitationImportResult(BaseModel):
+    row_number: int
+    email: str
+    display_name: str
+    outcome: SpeakerImportOutcome
+    reason: str = ""
+    allowed_dispositions: list[SpeakerImportDisposition] = Field(default_factory=list)
+    invitation_id: str | None = None
+
+
+class SpeakerInvitationImportResponse(BaseModel):
+    mode: Literal["preview", "execute"]
+    data: list[SpeakerInvitationImportResult]
+    created_count: int = 0
+    skipped_count: int = 0
+    needs_resolution_count: int = 0
+    rejected_count: int = 0
+    failed_count: int = 0
+
+
 class EventMemberView(BaseModel):
     user_id: str
     email: str
@@ -3919,7 +3979,450 @@ async def create_invitation(
     return InvitationIssued(**row, access_url=access_url)
 
 
-async def _issue_invitation_link(
+def _speaker_import_response(
+    mode: Literal["preview", "execute"],
+    results: list[SpeakerInvitationImportResult],
+) -> SpeakerInvitationImportResponse:
+    return SpeakerInvitationImportResponse(
+        mode=mode,
+        data=results,
+        created_count=sum(item.outcome == "created" for item in results),
+        skipped_count=sum(item.outcome.startswith("skipped") for item in results),
+        needs_resolution_count=sum(item.outcome == "needs_resolution" for item in results),
+        rejected_count=sum(item.outcome == "rejected" for item in results),
+        failed_count=sum(item.outcome == "failed" for item in results),
+    )
+
+
+def _speaker_import_result(
+    row: SpeakerInvitationImportRow,
+    outcome: SpeakerImportOutcome,
+    reason: str = "",
+    *,
+    allowed: list[SpeakerImportDisposition] | None = None,
+    invitation_id: str | None = None,
+) -> SpeakerInvitationImportResult:
+    return SpeakerInvitationImportResult(
+        row_number=row.row_number,
+        email=row.email,
+        display_name=row.display_name,
+        outcome=outcome,
+        reason=reason,
+        allowed_dispositions=allowed or [],
+        invitation_id=invitation_id,
+    )
+
+
+def _speaker_import_payload(row: SpeakerInvitationImportRow) -> tuple[str, ...]:
+    return (
+        row.email.strip().casefold(),
+        row.display_name,
+        row.job_title,
+        row.company,
+        row.biography,
+    )
+
+
+async def _create_bulk_speaker_invitation(
+    request: Request,
+    *,
+    event_id: str,
+    organization_id: str,
+    actor_user_id: str,
+    row: SpeakerInvitationImportRow,
+    batch_key: str,
+) -> SpeakerInvitationImportResult:
+    """Create exactly one invitation once; a replay never rotates its link."""
+    db, now = database(request), utc_now_ms()
+    email, normalized = _email(row.email)
+    route = "POST /api/v1/admin/events/{event_id}/speaker-invitations/import"
+    row_key = "speaker-import-row-" + hashlib.sha256(
+        f"{batch_key}:{row.row_number}".encode()
+    ).hexdigest()
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"event_id": event_id, **row.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id
+               FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND state='completed'"""
+        )
+        .bind(actor_user_id, route, hashlib.sha256(row_key.encode()).digest())
+        .first()
+    )
+    if replay is not None:
+        stored = to_python(replay["request_fingerprint"])
+        stored_bytes = stored if isinstance(stored, bytes) else bytes(stored)
+        if stored_bytes != fingerprint:
+            return _speaker_import_result(
+                row,
+                "rejected",
+                "This batch row was already used with different speaker data.",
+            )
+        return _speaker_import_result(
+            row,
+            "created",
+            "Already imported by this batch; no new email was sent.",
+            invitation_id=str(replay["response_resource_id"]),
+        )
+
+    invitation_id = new_id()
+    record = IdempotencyRecord(
+        principal_key=actor_user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=row_key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 7 * 86_400_000,
+    )
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,
+                display_name,job_title,company,biography)
+               VALUES(?1,?2,?3,?4,?5,'speaker','pending',?6,?7,?8,?8,?9,?10,?11,?12)"""
+        ).bind(
+            invitation_id,
+            organization_id,
+            event_id,
+            normalized,
+            email,
+            actor_user_id,
+            now + 14 * 86_400_000,
+            now,
+            row.display_name,
+            row.job_title,
+            row.company,
+            row.biography,
+        )
+    )
+    for task_type, title, destination_type in (
+        ("profile", "Complete your speaker profile", "profile"),
+        ("headshot", "Upload your headshot", "headshot"),
+        ("slides", "Upload your presentation slides", "slides"),
+    ):
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_tasks
+                   (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
+                    task_type,title,help_text,destination_type,state,
+                    form_schema_json,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,NULL,?4,?5,?6,'',?7,'open','{}',?8,?8)"""
+            ).bind(
+                new_id(),
+                organization_id,
+                event_id,
+                invitation_id,
+                task_type,
+                title,
+                destination_type,
+                now,
+            )
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=actor_user_id,
+            action="identity.invitation.bulk.create",
+            target_type="identity_invitation",
+            target_id=invitation_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=organization_id,
+            event_id=event_id,
+            metadata={"row_number": row.row_number},
+        )
+    )
+    _access_url, message_id = await _append_invitation_link(
+        batch,
+        request,
+        invitation_id=invitation_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        email=email,
+        normalized_email=normalized,
+        role="speaker",
+        now=now,
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="identity_invitation",
+        resource_id=invitation_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError:
+        # A concurrent import may have won the unique invitation key. Never
+        # reinterpret that as a resend: report it and leave its link untouched.
+        existing = await (
+            db.prepare(
+                """SELECT id,status FROM identity_invitations
+                   WHERE organization_id=?1 AND event_id=?2
+                     AND normalized_email=?3 AND role='speaker' LIMIT 1"""
+            )
+            .bind(organization_id, event_id, normalized)
+            .first()
+        )
+        if existing is not None:
+            status = str(existing["status"])
+            return _speaker_import_result(
+                row,
+                "skipped_existing_invitation",
+                f"A {status} invitation already exists; no new email was sent.",
+                invitation_id=str(existing["id"]),
+            )
+        raise
+    # The queue wake-up is deliberately post-commit. The invitation, task,
+    # challenge, message, audit, and idempotency record above are one atomic
+    # unit; a transient queue failure cannot leave an invitation without a
+    # durable delivery message or make a retry rotate its link.
+    await publish_committed_messages(request, [message_id])
+    return _speaker_import_result(
+        row,
+        "created",
+        "Invitation created and email queued.",
+        invitation_id=invitation_id,
+    )
+
+
+@access_router.post(
+    "/api/v1/admin/events/{event_id}/speaker-invitations/import",
+    response_model=SpeakerInvitationImportResponse,
+    tags=["administration"],
+)
+async def import_speaker_invitations(
+    event_id: str,
+    body: SpeakerInvitationImportRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> SpeakerInvitationImportResponse:
+    """Preview or execute a bounded CSV import without fail-fast row semantics."""
+    db, organization_id, authenticated = await _managed_event(
+        request, event_id, mutation=body.mode == "execute"
+    )
+    if body.mode == "execute" and (
+        not isinstance(idempotency_key, str) or not 16 <= len(idempotency_key) <= 255
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key must contain between 16 and 255 characters",
+        )
+    if body.mode == "execute":
+        await enforce_rate_limit(
+            request,
+            binding_name="AUTH_RATE_LIMITER",
+            policy=RateLimitPolicy(
+                "speaker.invitation.bulk_import", limit=5, window_seconds=60
+            ),
+            subject=f"{authenticated.actor.user_id}:{event_id}",
+        )
+
+    results_by_row: dict[int, SpeakerInvitationImportResult] = {}
+    normalized_by_row: dict[int, str] = {}
+    valid_rows: list[SpeakerInvitationImportRow] = []
+    for row in body.rows:
+        length_error = next(
+            (
+                message
+                for value, limit, message in (
+                    (row.email, 320, "Email must contain at most 320 characters."),
+                    (
+                        row.display_name,
+                        200,
+                        "Display name must contain at most 200 characters.",
+                    ),
+                    (
+                        row.job_title,
+                        200,
+                        "Job title must contain at most 200 characters.",
+                    ),
+                    (row.company, 200, "Company must contain at most 200 characters."),
+                    (
+                        row.biography,
+                        5000,
+                        "Biography must contain at most 5,000 characters.",
+                    ),
+                )
+                if len(value) > limit
+            ),
+            None,
+        )
+        if length_error is not None:
+            results_by_row[row.row_number] = _speaker_import_result(
+                row, "rejected", length_error
+            )
+            continue
+        if not row.display_name:
+            results_by_row[row.row_number] = _speaker_import_result(
+                row, "rejected", "A display name is required."
+            )
+            continue
+        try:
+            normalized_by_row[row.row_number] = _email(row.email)[1]
+        except (HTTPException, ValueError):
+            results_by_row[row.row_number] = _speaker_import_result(
+                row, "rejected", "Enter one valid email address."
+            )
+            continue
+        valid_rows.append(row)
+    if not valid_rows:
+        return _speaker_import_response(
+            body.mode, [results_by_row[row.row_number] for row in body.rows]
+        )
+    wanted_emails = sorted(set(normalized_by_row.values()))
+    active_rows = result_rows(
+        await db.prepare(
+            """SELECT es.id,u.normalized_email,p.display_name
+               FROM event_speakers es
+               JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id
+               JOIN users u ON u.id=p.user_id AND u.status='active'
+               WHERE es.organization_id=?1 AND es.event_id=?2 AND es.status!='withdrawn'
+                 AND (u.normalized_email IN (SELECT value FROM json_each(?3))
+                      OR trim(p.display_name)!='')"""
+        ).bind(organization_id, event_id, json.dumps(wanted_emails))
+        .all()
+    )
+    invitation_rows = result_rows(
+        await db.prepare(
+            """SELECT id,normalized_email,display_name,status
+               FROM identity_invitations
+               WHERE organization_id=?1 AND event_id=?2 AND role='speaker'
+                 AND (normalized_email IN (SELECT value FROM json_each(?3))
+                      OR trim(display_name)!='')"""
+        ).bind(organization_id, event_id, json.dumps(wanted_emails))
+        .all()
+    )
+    active_by_email = {str(item["normalized_email"]): item for item in active_rows}
+    invitation_by_email = {str(item["normalized_email"]): item for item in invitation_rows}
+    roster_by_name: dict[str, set[str]] = {}
+    for item in [*active_rows, *invitation_rows]:
+        name = str(item["display_name"] or "").strip().casefold()
+        email = str(item["normalized_email"])
+        if name:
+            roster_by_name.setdefault(name, set()).add(email)
+
+    groups: dict[str, list[SpeakerInvitationImportRow]] = {}
+    for row in valid_rows:
+        groups.setdefault(normalized_by_row[row.row_number], []).append(row)
+    candidates: list[SpeakerInvitationImportRow] = []
+    for _normalized, rows in groups.items():
+        payloads = {_speaker_import_payload(row) for row in rows}
+        if len(rows) > 1 and len(payloads) == 1:
+            winner = next(
+                (row for row in rows if row.disposition == "separate_person"),
+                next((row for row in rows if row.disposition == "import"), rows[0]),
+            )
+            candidates.append(winner)
+            for duplicate in rows:
+                if duplicate is winner:
+                    continue
+                results_by_row[duplicate.row_number] = _speaker_import_result(
+                    duplicate,
+                    "skipped_duplicate",
+                    f"Same data as row {winner.row_number}; imported only once.",
+                )
+            continue
+        if len(rows) > 1:
+            chosen = [row for row in rows if row.disposition == "import"]
+            if not chosen and all(row.disposition == "skip" for row in rows):
+                for skipped in rows:
+                    results_by_row[skipped.row_number] = _speaker_import_result(
+                        skipped, "skipped", "Skipped by the organizer."
+                    )
+                continue
+            if len(chosen) != 1:
+                for conflict in rows:
+                    results_by_row[conflict.row_number] = _speaker_import_result(
+                        conflict,
+                        "needs_resolution",
+                        "Rows with this email disagree. Choose one row to import "
+                        "and skip the others.",
+                        allowed=["import", "skip"],
+                    )
+                continue
+            candidates.append(chosen[0])
+            for skipped in rows:
+                if skipped is not chosen[0]:
+                    results_by_row[skipped.row_number] = _speaker_import_result(
+                        skipped, "skipped", "Skipped by the organizer."
+                    )
+            continue
+        candidates.append(rows[0])
+
+    for row in candidates:
+        normalized = normalized_by_row[row.row_number]
+        if row.disposition == "skip":
+            results_by_row[row.row_number] = _speaker_import_result(
+                row, "skipped", "Skipped by the organizer."
+            )
+            continue
+        if normalized in active_by_email:
+            results_by_row[row.row_number] = _speaker_import_result(
+                row,
+                "skipped_existing_speaker",
+                "Already an active speaker for this event; no invitation was sent.",
+            )
+            continue
+        existing_invitation = invitation_by_email.get(normalized)
+        if body.mode == "preview" and existing_invitation is not None:
+            status = str(existing_invitation["status"])
+            results_by_row[row.row_number] = _speaker_import_result(
+                row,
+                "skipped_existing_invitation",
+                f"A {status} invitation already exists; no new link or email was created.",
+                invitation_id=str(existing_invitation["id"]),
+            )
+            continue
+        name = row.display_name.strip().casefold()
+        different_emails = roster_by_name.get(name, set()) - {normalized}
+        if different_emails and row.disposition != "separate_person":
+            results_by_row[row.row_number] = _speaker_import_result(
+                row,
+                "needs_resolution",
+                "A different email already uses this name. Confirm a separate "
+                "person or skip the row.",
+                allowed=["separate_person", "skip"],
+            )
+            continue
+        if body.mode == "preview":
+            results_by_row[row.row_number] = _speaker_import_result(row, "ready")
+            continue
+        try:
+            results_by_row[row.row_number] = await _create_bulk_speaker_invitation(
+                request,
+                event_id=event_id,
+                organization_id=organization_id,
+                actor_user_id=authenticated.actor.user_id,
+                row=row,
+                batch_key=str(idempotency_key),
+            )
+        except PersistenceError:
+            record_degradation(request, "speaker_import_row_failed")
+            results_by_row[row.row_number] = _speaker_import_result(
+                row,
+                "failed",
+                "This row could not be imported. Retry the same batch; completed "
+                "rows will not be emailed again.",
+            )
+    ordered = [results_by_row[row.row_number] for row in body.rows]
+    return _speaker_import_response(body.mode, ordered)
+
+
+async def _append_invitation_link(
+    batch: CommandBatch,
     request: Request,
     *,
     invitation_id: str,
@@ -3929,12 +4432,13 @@ async def _issue_invitation_link(
     normalized_email: str,
     role: InvitationRole,
     now: int,
-) -> str:
-    """Create a short-lived, one-time acceptance link and queue its delivery.
+) -> tuple[str, str]:
+    """Append one short-lived acceptance link and message to ``batch``.
 
-    The link is emailed to the invitee and returned once to the authorized
-    invitation manager so it can be copied into an approved delivery channel.
-    It is a bearer credential and is never persisted in plaintext.
+    The caller owns execution so invitation creation and delivery persistence
+    can share one transaction. The bearer credential is never stored in
+    plaintext; the returned message id is used only for the post-commit queue
+    wake-up.
     """
     base = str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip("/")
     parsed = urlparse(base)
@@ -3966,7 +4470,6 @@ async def _issue_invitation_link(
     )
     raw_token, challenge_id, message_id = generate_token(), new_id(), new_id()
     accept_url = f"{base}/auth/verify#token={raw_token}"
-    batch = CommandBatch(db)
     batch.add_statement(
         db.prepare(
             """UPDATE authentication_challenges SET consumed_at_ms=?1
@@ -4007,6 +4510,33 @@ async def _issue_invitation_link(
             f"identity-invitation:{invitation_id}:{challenge_id}",
             now,
         )
+    )
+    return accept_url, message_id
+
+
+async def _issue_invitation_link(
+    request: Request,
+    *,
+    invitation_id: str,
+    organization_id: str,
+    event_id: str,
+    email: str,
+    normalized_email: str,
+    role: InvitationRole,
+    now: int,
+) -> str:
+    """Create, persist, and queue one invitation acceptance link."""
+    batch = CommandBatch(database(request))
+    accept_url, message_id = await _append_invitation_link(
+        batch,
+        request,
+        invitation_id=invitation_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        email=email,
+        normalized_email=normalized_email,
+        role=role,
+        now=now,
     )
     await batch.execute()
     # Post-commit wake-up only: a queue failure must not fail the invitation,

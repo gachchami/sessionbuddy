@@ -172,10 +172,17 @@ speaker permissions before acceptance and are available to invitation-safe
 bulk communications with an explicit invited-recipient label. Registered invited speakers can receive
 onboarding tasks before a proposal is accepted, organizers can edit their
 event-scoped speaker details, and event rosters accept validated CSV invitation
-imports of up to 500 speakers. CSV imports require an explicit identity review
-before creating a same-name person under a different email. Post-acceptance
+imports of up to 500 speakers. A server-owned preview classifies every row;
+identical duplicates and existing recipients are skipped, conflicting identities
+require a row-level decision, invalid rows do not block clean rows, and a stable
+batch key makes execution retryable without rotating links or resending email.
+Post-acceptance
 participation is tracked independently from proposal selection, and organizers
 can persist awaiting-confirmation, confirmed, or declined status. Organizers can
+edit participation and profile data atomically with independent optimistic
+versions; organization biographies explicitly inherit from or override the
+account biography, and malformed profile links are reported on the affected
+form row without mutating either record or its audit history. Organizers can
 also maintain private, configurable
 label/value notes for event-specific travel, logistics, accessibility, and hospitality
 details. Speaker and welcome-message attribution prefers

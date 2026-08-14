@@ -25,8 +25,15 @@
   let allSpeakers = [];
   let allEvents = [];
   let inviteEventId = "";
+  let speakerImportRows = null;
+  let speakerImportBatchKey = "";
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+  function idempotencyKey() {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
 
   function speakerNoteRow(note = { label: "", value: "" }) {
     const row = document.createElement("fieldset");
@@ -547,40 +554,134 @@
     }
     if (quoted) throw new Error("The CSV contains an unclosed quoted field.");
     if (field || row.length) { row.push(field); rows.push(row); }
-    return rows.filter((values) => values.some((value) => value.trim()));
+    return rows;
   }
 
   function speakerInvitationsFromCsv(text) {
-    const rows = parseCsv(text);
-    if (!rows.length) throw new Error("The CSV file is empty.");
-    const headers = rows.shift().map((value) => value.trim().toLowerCase());
+    const parsedRows = parseCsv(text);
+    const headerIndex = parsedRows.findIndex((values) => values.some((value) => value.trim()));
+    if (headerIndex < 0) throw new Error("The CSV file is empty.");
+    const headers = parsedRows[headerIndex].map((value) => value.trim().toLowerCase());
     const displayNameHeader = headers.includes("display_name") ? "display_name" : "name";
     if (!headers.includes("email") || !headers.includes(displayNameHeader)) {
       throw new Error("CSV headers must include email and display_name (or name).");
     }
+    const rows = parsedRows.slice(headerIndex + 1)
+      .map((values, index) => ({ values, row_number: headerIndex + index + 2 }))
+      .filter(({ values }) => values.some((value) => value.trim()));
     if (rows.length > 500) throw new Error("Import no more than 500 speakers at a time.");
-    const known = new Set();
-    return rows.map((values, index) => {
+    return rows.map(({ values, row_number }) => {
       const value = (name) => String(values[headers.indexOf(name)] || "").trim();
-      const email = value("email");
-      const displayName = value(displayNameHeader);
-      if (!email || !displayName) throw new Error(`Row ${index + 2} needs an email and display_name (or name).`);
-      const normalized = email.toLowerCase();
-      if (known.has(normalized)) throw new Error(`Row ${index + 2} repeats ${email}.`);
-      known.add(normalized);
-      return { email, display_name: displayName, job_title: value("job_title"), company: value("company"), role: "speaker", expires_in_days: 14 };
+      return {
+        row_number,
+        email: value("email"),
+        display_name: value(displayNameHeader),
+        job_title: value("job_title"),
+        company: value("company"),
+        biography: value("biography"),
+        disposition: "import",
+      };
     });
   }
 
+  function renderSpeakerImportResults(response) {
+    const panel = byId("speaker-import-duplicates");
+    const container = byId("speaker-import-duplicate-list");
+    const labels = {
+      ready: "Ready",
+      created: "Imported",
+      skipped: "Skipped",
+      skipped_duplicate: "Duplicate",
+      skipped_existing_speaker: "Already active",
+      skipped_existing_invitation: "Already invited",
+      needs_resolution: "Decision needed",
+      rejected: "Invalid",
+      failed: "Failed",
+    };
+    const readyCount = response.data.filter((result) => result.outcome === "ready").length;
+    const summary = [
+      [response.mode === "execute" ? "Imported" : "Ready", response.mode === "execute" ? response.created_count : readyCount],
+      ["Skipped", response.skipped_count],
+      ["Invalid", response.rejected_count],
+      ["Failed", response.failed_count || 0],
+      ["Decisions", response.needs_resolution_count],
+    ];
+    byId("speaker-import-summary").replaceChildren(...summary.map(([label, value]) => {
+      const item = document.createElement("span");
+      item.className = "speaker-import-summary__item";
+      const count = document.createElement("strong");
+      count.textContent = String(value);
+      const caption = document.createElement("small");
+      caption.textContent = String(label);
+      item.append(count, caption);
+      return item;
+    }));
+    container.replaceChildren(...response.data.map((result) => {
+      const row = document.createElement("div");
+      row.className = `speaker-import-result speaker-import-result--${result.outcome}`;
+      row.setAttribute("role", "listitem");
+      const marker = document.createElement("span");
+      marker.className = "speaker-import-result__row";
+      marker.textContent = String(result.row_number);
+      marker.setAttribute("aria-label", `CSV row ${result.row_number}`);
+      const identity = document.createElement("div");
+      identity.className = "speaker-import-result__identity";
+      const heading = document.createElement("strong");
+      heading.textContent = result.display_name || "Missing name";
+      const email = document.createElement("span");
+      email.textContent = result.email || "Missing email";
+      const reason = document.createElement("p");
+      reason.textContent = result.reason || (result.outcome === "ready" ? "Ready to import." : result.outcome);
+      identity.append(heading, email, reason);
+      const outcome = document.createElement("span");
+      outcome.className = `speaker-import-result__outcome speaker-import-result__outcome--${result.outcome}`;
+      outcome.textContent = labels[result.outcome] || result.outcome;
+      row.append(marker, identity, outcome);
+      if (result.allowed_dispositions?.length) {
+        const label = document.createElement("label");
+        label.className = "speaker-import-result__action";
+        label.textContent = "Action";
+        const select = document.createElement("select");
+        select.dataset.importDisposition = String(result.row_number);
+        select.required = true;
+        select.add(new Option("Choose…", ""));
+        result.allowed_dispositions.forEach((value) => {
+          const text = value === "separate_person" ? "Import as a separate person"
+            : value === "import" ? "Import this row" : "Skip this row";
+          select.add(new Option(text, value));
+        });
+        label.append(select);
+        row.append(label);
+      }
+      return row;
+    }));
+    panel.hidden = false;
+  }
+
   const importDialog = byId("import-speakers-dialog");
-  byId("import-speakers").addEventListener("click", () => importDialog.showModal());
+  byId("import-speakers").addEventListener("click", () => {
+    const form = byId("import-speakers-form");
+    form.reset();
+    speakerImportRows = null;
+    speakerImportBatchKey = "";
+    byId("speaker-import-duplicates").hidden = true;
+    byId("speaker-import-duplicate-list").replaceChildren();
+    byId("speaker-import-summary").replaceChildren();
+    byId("speaker-import-status").textContent = "Choose a CSV file to review before sending invitations.";
+    const button = form.querySelector('button[type="submit"]');
+    button.textContent = "Review import";
+    button.disabled = false;
+    importDialog.showModal();
+  });
   byId("close-speaker-import").addEventListener("click", () => importDialog.close());
   byId("cancel-speaker-import").addEventListener("click", () => importDialog.close());
   byId("import-speakers-form").elements.speaker_csv.addEventListener("change", (event) => {
     const form = event.currentTarget.form;
-    form.elements.confirm_name_duplicates.checked = false;
+    speakerImportRows = null;
+    speakerImportBatchKey = "";
     byId("speaker-import-duplicates").hidden = true;
     byId("speaker-import-duplicate-list").replaceChildren();
+    form.querySelector('button[type="submit"]').textContent = "Review import";
   });
   byId("import-speakers-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -592,50 +693,84 @@
     if (file.size > 1024 * 1024) { importStatus.textContent = "Choose a CSV file no larger than 1 MB."; return; }
     button.disabled = true;
     try {
-      const invitations = speakerInvitationsFromCsv(await file.text());
-      if (!invitations.length) throw new Error("The CSV has no speaker rows.");
-      const existingByName = new Map(allSpeakers.map((speaker) => [speaker.display_name.trim().toLowerCase(), speaker]));
-      const csvNameCounts = invitations.reduce((counts, invitation) => {
-        const name = invitation.display_name.trim().toLowerCase();
-        counts.set(name, (counts.get(name) || 0) + 1);
-        return counts;
-      }, new Map());
-      const duplicates = invitations.filter((invitation) => {
-        const existing = existingByName.get(invitation.display_name.trim().toLowerCase());
-        return csvNameCounts.get(invitation.display_name.trim().toLowerCase()) > 1
-          || (existing && existing.email.trim().toLowerCase() !== invitation.email.trim().toLowerCase());
-      });
-      const duplicatePanel = byId("speaker-import-duplicates");
-      if (duplicates.length && !form.elements.confirm_name_duplicates.checked) {
-        byId("speaker-import-duplicate-list").replaceChildren(...duplicates.map((invitation) => {
-          const item = document.createElement("li");
-          const existing = existingByName.get(invitation.display_name.trim().toLowerCase());
-          item.textContent = existing
-            ? `${invitation.display_name}: existing ${existing.email || "email unavailable"}; CSV ${invitation.email}`
-            : `${invitation.display_name}: this name occurs more than once in the CSV.`;
-          return item;
-        }));
-        duplicatePanel.hidden = false;
-        form.elements.confirm_name_duplicates.focus();
-        throw new Error("Review and confirm the possible duplicate identities before importing.");
-      }
-      for (let index = 0; index < invitations.length; index += 1) {
-        importStatus.textContent = `Sending invitation ${index + 1} of ${invitations.length}…`;
-        await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/invitations`, {
+      if (!speakerImportRows) {
+        speakerImportRows = speakerInvitationsFromCsv(await file.text());
+        if (!speakerImportRows.length) throw new Error("The CSV has no speaker rows.");
+        const preview = await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/speaker-invitations/import`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-csrf-token": csrf },
-          body: JSON.stringify(invitations[index]),
+          body: JSON.stringify({ mode: "preview", rows: speakerImportRows }),
         });
+        renderSpeakerImportResults(preview);
+        const ready = preview.data.filter((result) => result.outcome === "ready").length;
+        const conflicts = preview.needs_resolution_count;
+        importStatus.textContent = `${ready} ready to import; ${preview.skipped_count} duplicate or existing; ${preview.rejected_count} invalid; ${conflicts} need a decision.`;
+        button.textContent = ready || conflicts ? "Import reviewed rows" : "Nothing to import";
+        button.disabled = !(ready || conflicts);
+        if (conflicts) byId("speaker-import-duplicate-list").querySelector("[data-import-disposition]")?.focus();
+        return;
       }
-      form.reset();
-      importDialog.close();
+      const dispositions = new Map(
+        [...byId("speaker-import-duplicate-list").querySelectorAll("[data-import-disposition]")]
+          .map((select) => [Number(select.dataset.importDisposition), select.value])
+      );
+      const unresolved = [...dispositions.values()].some((value) => !value);
+      if (unresolved) {
+        const first = [...byId("speaker-import-duplicate-list").querySelectorAll("[data-import-disposition]")]
+          .find((select) => !select.value);
+        first?.focus();
+        importStatus.textContent = "Choose Import or Skip for every identity conflict.";
+        return;
+      }
+      const conflictsByEmail = new Map();
+      speakerImportRows.forEach((row) => {
+        const key = String(row.email || "").trim().toLowerCase();
+        if (!key) return;
+        const group = conflictsByEmail.get(key) || [];
+        group.push(row);
+        conflictsByEmail.set(key, group);
+      });
+      const invalidGroup = [...conflictsByEmail.values()].find((group) => {
+        if (group.length < 2) return false;
+        const selected = group.map((row) => dispositions.get(row.row_number) || row.disposition);
+        const importCount = selected.filter((value) => value === "import").length;
+        const hasVisibleDecision = group.some((row) => dispositions.has(row.row_number));
+        return hasVisibleDecision && (importCount > 1
+          || (importCount === 0 && selected.some((value) => value !== "skip")));
+      });
+      if (invalidGroup) {
+        importStatus.textContent = "For each repeated email, import one row or skip the entire group.";
+        byId("speaker-import-duplicate-list")
+          .querySelector(`[data-import-disposition="${invalidGroup[0].row_number}"]`)?.focus();
+        return;
+      }
+      const rows = speakerImportRows.map((row) => ({
+        ...row,
+        disposition: dispositions.get(row.row_number) || row.disposition,
+      }));
+      speakerImportRows = rows;
+      speakerImportBatchKey ||= `speaker-csv-${idempotencyKey()}`;
+      const result = await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/speaker-invitations/import`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": csrf,
+          "idempotency-key": speakerImportBatchKey,
+        },
+        body: JSON.stringify({ mode: "execute", rows }),
+      });
+      renderSpeakerImportResults(result);
       const organizations = await api("/api/v1/admin/organizations").then((response) => response.data);
       await loadEventScopedDirectory(Promise.resolve(organizations));
       renderDirectory();
-      byId("status").textContent = `${invitations.length} speaker invitation${invitations.length === 1 ? "" : "s"} sent.`;
+      importStatus.textContent = `${result.created_count} imported; ${result.skipped_count} skipped; ${result.rejected_count} rejected; ${result.failed_count || 0} failed; ${result.needs_resolution_count} still need a decision.`;
+      button.textContent = result.needs_resolution_count ? "Apply remaining decisions" : "Import complete";
+      button.disabled = !result.needs_resolution_count;
     } catch (error) {
       importStatus.textContent = error instanceof Error ? error.message : window.SessionBuddyApi.message(error);
-    } finally { button.disabled = false; }
+    } finally {
+      button.disabled = ["Nothing to import", "Import complete"].includes(button.textContent);
+    }
   });
 
   byId("speaker-form").addEventListener("submit", async (event) => {

@@ -115,8 +115,11 @@ def test_event_directory_offers_validated_csv_invitation_import() -> None:
     assert "display_name</strong> (or <strong>name</strong>)" in page
     assert "rows.length > 500" in script
     assert "file.size > 1024 * 1024" in script
-    assert "Import and send invitations" in page
-    assert "invitations.length" in script
+    assert "Review import" in page
+    assert "Previewing sends nothing" in page
+    assert "/speaker-invitations/import`" in script
+    assert '"idempotency-key": speakerImportBatchKey' in script
+    assert "speakerImportRows.map" in script
 
 
 def test_speaker_directory_reads_named_resource_permissions_not_deleted_roles() -> None:
