@@ -66,3 +66,18 @@ def test_cfp_save_and_public_submission_have_clear_progress_and_completion() -> 
     assert 'form.hidden = true;' in public_script
     assert 'byId("call-details").hidden = true;' in public_script
     assert '"Submission confirmed"' in public_script
+
+
+def test_published_cfp_does_not_report_phantom_unpublished_changes() -> None:
+    # CFP-S1 eval (2026-08-21, observation 4): a clean, freshly loaded
+    # published form said "Unpublished changes" and told the organizer nothing
+    # changes publicly until they update the live CFP. They obeyed, the
+    # editor collapsed to the summary on every save, and the outline tab they
+    # wanted next read as "unclickable". The clean state has to say it is clean.
+    script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
+
+    assert ': published ? "Unpublished changes" : "Draft";' not in script
+    assert 'published ? (state.dirty ? "Unpublished changes" : "Live") : "Draft"' in script
+    assert '"Your live form is up to date."' in script
+    assert '"Live form matches the editor"' in script
+    assert '"Unsaved live changes are backed up in this browser"' not in script

@@ -372,9 +372,16 @@
     const eventIsActive = state.eventStatus === "active";
     publishButton.disabled = !state.context || (!published && !eventIsActive);
     publishButton.textContent = published ? "Update live CFP" : "Publish CFP";
+    // A freshly loaded published form used to open saying "Unpublished
+    // changes" with "Nothing changes publicly until you update the live CFP",
+    // and the autosave line claimed unsaved live changes were backed up. All
+    // three were written for the dirty state but rendered for the clean one,
+    // so an organizer (CFP-S1 eval, 2026-08-21) kept pressing "Update live
+    // CFP" to clear a change that did not exist, the editor collapsed to the
+    // summary on every save, and the outline tab they wanted next was gone.
     byId("publish-action-label").textContent = !eventIsActive
       ? "Event draft"
-      : published ? "Unpublished changes" : "Draft";
+      : published ? (state.dirty ? "Unpublished changes" : "Live") : "Draft";
     byId("published-note").hidden = !published;
     byId("cfp-page-meta").textContent = `${Math.max(0, state.fields.length - 2)} proposal fields · ${!eventIsActive ? "Event draft" : published ? cfpAvailability(published) : "Draft"}`;
     const liveProposalCount = (published?.fields || []).filter((field) => proposalFieldKeys.has(field.key)).length;
@@ -382,7 +389,7 @@
       ? `${Math.max(0, state.fields.length - 2)} draft fields · ${liveProposalCount} live`
       : byId("cfp-page-meta").textContent;
     if (published && !state.dirty) {
-      byId("cfp-autosave-state").textContent = "Unsaved live changes are backed up in this browser";
+      byId("cfp-autosave-state").textContent = "Live form matches the editor";
     }
     byId("publish-settings").hidden = Boolean(published) && !state.editing;
     byId("cfp-notification-settings").hidden = Boolean(published) && !state.editing;
@@ -395,7 +402,7 @@
     byId("publish-result").textContent = !eventIsActive
       ? "Activate the event before publishing its CFP."
       : published && state.editing
-      ? "Nothing changes publicly until you update the live CFP."
+      ? (state.dirty ? "Nothing changes publicly until you update the live CFP." : "Your live form is up to date.")
       : published
       ? cfpAvailabilityDetail(published)
       : "Complete the form settings below, then publish.";
