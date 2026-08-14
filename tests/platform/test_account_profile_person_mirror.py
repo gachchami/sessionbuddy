@@ -400,6 +400,44 @@ async def test_a_concurrent_speaker_profile_save_is_not_clobbered_by_the_mirror(
     assert request.state.degradations == ["account_person_mirror_skipped"]
 
 
+async def test_a_concurrent_account_save_stands_down_dependents_and_returns_conflict(
+    profile_database, signed_in_speaker
+) -> None:
+    """A rival users write after the pre-read cannot authorize stale mirrors."""
+    connection, _plain = profile_database
+    database = InterleavingSqlite(
+        connection,
+        """UPDATE users SET first_name='Rival',display_name='Rival Speaker',
+                  version=version+1,updated_at_ms=2 WHERE id=?""",
+        (USER_ID,),
+    )
+    request = request_for(database)
+
+    with pytest.raises(HTTPException) as failure:
+        await _update_account_profile(
+            account_update(
+                last_name="Raman-Iyer",
+                linkedin_url="https://www.linkedin.com/in/priya",
+            ),
+            request,
+        )
+
+    assert failure.value.status_code == 409
+    user = connection.execute(
+        "SELECT first_name,display_name,linkedin_url,version FROM users WHERE id=?",
+        (USER_ID,),
+    ).fetchone()
+    assert tuple(user) == ("Rival", "Rival Speaker", None, 2)
+    assert person_name_and_version(connection) == ("Priya Raman", 1)
+    assert person(connection)["links_json"] == SPEAKER_LINKS
+    # Audit insertion is not yet conditional on the guarded users write.
+    assert connection.execute(
+        """SELECT COUNT(*) FROM audit_events
+           WHERE action='account.profile.update' AND target_id=?""",
+        (USER_ID,),
+    ).fetchone()[0] == 1
+
+
 async def test_a_mirror_that_lands_records_no_degradation(
     profile_database, signed_in_speaker
 ) -> None:
@@ -450,4 +488,7 @@ async def test_an_unreadable_batch_result_is_reported_not_presumed_successful(
         "https://www.linkedin.com/in/priya",
     ]
     assert person_name_and_version(connection)[1] == 2
-    assert request.state.degradations == ["account_person_mirror_unverified"]
+    assert request.state.degradations == [
+        "account_profile_update_unverified",
+        "account_person_mirror_unverified",
+    ]

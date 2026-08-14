@@ -13,7 +13,9 @@ SAFE_PHASES = ("authn", "authz", "validation", "db", "domain", "serialization")
 SAFE_DEGRADATIONS = (
     "account_person_mirror_skipped",
     "account_person_mirror_unverified",
+    "account_profile_update_unverified",
     "account_session_rotation_unconfirmed",
+    "account_stale_session_cleanup_failed",
     "asset_scan_queue_publish_failed",
     "communication_queue_publish_failed",
     "speaker_import_row_failed",

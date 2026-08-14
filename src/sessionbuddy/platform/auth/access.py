@@ -48,6 +48,7 @@ from .http import (
 from .passwords import PasswordPolicyError, hash_password, verify_password
 from .session_factory import confirm_session_established as _confirm_session_established
 from .session_factory import establish_session, establish_session_with_current_authorization_version
+from .session_factory import revoke_session as _revoke_session
 from .session_factory import role_compatible_redirect as _role_compatible_redirect
 from .session_factory import set_session_cookie as _set_session_cookie
 from .session_factory import valid_redirect as _valid_redirect
@@ -66,6 +67,14 @@ _EVENT_LOGO_RULES = {
 _EVENT_LOGO_MAX_BYTES = 2 * 1024 * 1024
 _EVENT_IMAGE_MEDIA_TYPES = frozenset(_EVENT_LOGO_RULES)
 _HEADSHOT_MAX_BYTES = 5 * 1024 * 1024
+_ACCOUNT_PROFILE_SOURCE_GUARD_SQL = """EXISTS (
+    SELECT 1 FROM users profile_source
+    WHERE profile_source.id=?1 AND profile_source.version=?2
+      AND profile_source.updated_at_ms=?3 AND profile_source.display_name IS ?4
+      AND profile_source.job_title IS ?5 AND profile_source.company IS ?6
+      AND profile_source.description IS ?7 AND profile_source.website_url IS ?8
+      AND profile_source.linkedin_url IS ?9 AND profile_source.x_url IS ?10
+)"""
 _IANA_TIME_ZONE = re.compile(r"^(?:UTC|[A-Za-z][A-Za-z0-9._+-]*(?:/[A-Za-z0-9][A-Za-z0-9._+-]*)+)$")
 
 
@@ -1215,6 +1224,7 @@ async def update_account_profile(
         raise HTTPException(status_code=409)
     display_name = f"{body.first_name} {body.last_name}".strip()
     batch = CommandBatch(db)
+    users_statement_index = batch.statement_count
     batch.add_statement(
         db.prepare(
             """UPDATE users SET first_name=?1,last_name=?2,display_name=?3,job_title=?4,
@@ -1248,6 +1258,18 @@ async def update_account_profile(
         for value in (current["website_url"], current["linkedin_url"], current["x_url"])
         if value
     ]
+    source_guard_values = (
+        authenticated.actor.user_id,
+        body.version + 1,
+        now,
+        display_name,
+        body.job_title or None,
+        body.company or None,
+        body.description or None,
+        body.website_url or None,
+        body.linkedin_url or None,
+        body.x_url or None,
+    )
     # Positions of the mirror statements in the batch, checked after execution.
     # The version predicate makes a stale mirror a zero-row no-op by design (and
     # a row archived mid-request no-ops the same way), but a silent no-op is
@@ -1299,10 +1321,10 @@ async def update_account_profile(
         mirror_statement_indexes.append(batch.statement_count)
         batch.add_statement(
             db.prepare(
-                """UPDATE people SET
-                          display_name=CASE WHEN ?1 IS ?12 THEN display_name ELSE ?1 END,
-                          job_title=CASE WHEN ?2 IS ?3 THEN job_title ELSE ?2 END,
-                          company=CASE WHEN ?4 IS ?5 THEN company ELSE ?4 END,
+                f"""UPDATE people SET
+                          display_name=CASE WHEN ?11 IS ?21 THEN display_name ELSE ?11 END,
+                          job_title=CASE WHEN ?12 IS ?13 THEN job_title ELSE ?12 END,
+                          company=CASE WHEN ?14 IS ?15 THEN company ELSE ?14 END,
                           -- NULL, not "": `users.description` above is bound the
                           -- same way, and the public profile resolves
                           -- `COALESCE(u.description,p.biography)`. Writing "" here
@@ -1310,9 +1332,9 @@ async def update_account_profile(
                           -- organizer had set on the person record, and the COALESCE
                           -- then returned the empty string instead of falling
                           -- through to it.
-                          biography=CASE WHEN ?6 IS ?7 THEN biography ELSE ?6 END,
-                          links_json=?8,version=version+1,updated_at_ms=?9
-                   WHERE id=?10 AND user_id=?11 AND archived_at_ms IS NULL
+                          biography=CASE WHEN ?16 IS ?17 THEN biography ELSE ?16 END,
+                          links_json=?18,version=version+1,updated_at_ms=?19
+                   WHERE id=?20 AND user_id=?1 AND archived_at_ms IS NULL
                      -- The speaker profile form and the organizer roster update
                      -- this row under optimistic concurrency; a mirror computed
                      -- from a pre-batch read must not outrank them. If the row
@@ -1320,8 +1342,10 @@ async def update_account_profile(
                      -- rows and the account save completes without the mirror,
                      -- leaving the concurrent author's write -- and their
                      -- version guard -- intact.
-                     AND version=?13"""
+                     AND version=?22
+                     AND {_ACCOUNT_PROFILE_SOURCE_GUARD_SQL}"""  # noqa: S608
             ).bind(
+                *source_guard_values,
                 display_name,
                 body.job_title or None,
                 str(current["job_title"]) if current["job_title"] else None,
@@ -1332,7 +1356,6 @@ async def update_account_profile(
                 json.dumps(merged_links, separators=(",", ":")),
                 now,
                 str(person["id"]),
-                authenticated.actor.user_id,
                 # The previous DERIVED name, not the person's: the mirror should
                 # fire when the account holder actually renamed themselves and
                 # stay out of the way of a roster name an organizer curated --
@@ -1346,16 +1369,17 @@ async def update_account_profile(
     if body.description:
         batch.add_statement(
             db.prepare(
-                """UPDATE speaker_tasks SET state='completed',completed_at_ms=?1,
-                          version=version+1,updated_at_ms=?1
+                f"""UPDATE speaker_tasks SET state='completed',completed_at_ms=?11,
+                          version=version+1,updated_at_ms=?11
                    WHERE task_type IN ('profile','biography') AND state='open'
                      AND EXISTS (
                        SELECT 1 FROM event_speakers es JOIN people p ON p.id=es.person_id
                        WHERE es.organization_id=speaker_tasks.organization_id
                          AND es.event_id=speaker_tasks.event_id
-                         AND es.id=speaker_tasks.event_speaker_id AND p.user_id=?2
-                     )"""
-            ).bind(now, authenticated.actor.user_id)
+                         AND es.id=speaker_tasks.event_speaker_id AND p.user_id=?1
+                     )
+                     AND {_ACCOUNT_PROFILE_SOURCE_GUARD_SQL}"""  # noqa: S608
+            ).bind(*source_guard_values, now)
         )
     if verifier is not None:
         batch.add_statement(
@@ -1403,6 +1427,28 @@ async def update_account_profile(
         )
     )
     results = await batch.execute()
+    users_changes = statement_changes(results, users_statement_index)
+    if users_changes == 0:
+        # The batch is committed. Dependent mirrors/tasks stood down because
+        # their source-state guard did not observe this request's users write;
+        # the unconditional success audit is the known exception. A rare
+        # password/revocation race may also have queued an unissued session.
+        if replacement_session is not None:
+            cleanup = CommandBatch(db)
+            _revoke_session(
+                cleanup,
+                db,
+                replacement_session.session_id,
+                "stale_profile_version",
+                now,
+            )
+            try:
+                await cleanup.execute()
+            except Exception:  # noqa: BLE001 - post-commit cleanup is best effort
+                record_degradation(request, "account_stale_session_cleanup_failed")
+        raise HTTPException(status_code=409)
+    if users_changes is None:
+        record_degradation(request, "account_profile_update_unverified")
     for index in mirror_statement_indexes:
         changes = statement_changes(results, index)
         if changes == 0:
