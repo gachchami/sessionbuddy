@@ -68,6 +68,10 @@ failed run because the evaluator reuses terminal `evidence.json` files.
   a speaker, plus rooms and tracks.
 - Public-widget scenarios require at least three approved, published sessions
   across two days and populated speaker profiles.
+- Agenda publication with scheduled draft content must exercise one explicit
+  choice: approve the scheduled drafts and publish for public-widget evaluation,
+  or publish only and verify those sessions remain hidden. Unscheduled drafts
+  are never approved by publication.
 
 ## Clean rerun gate
 

@@ -78,12 +78,18 @@ def test_publish_uses_an_accessible_in_page_confirmation() -> None:
     assert 'id="publish-dialog"' in html
     assert 'aria-labelledby="publish-dialog-title"' in html
     assert 'aria-describedby="publish-dialog-summary publish-dialog-notice"' in html
-    assert 'id="cancel-publish"' in html and 'id="confirm-publish"' in html
+    assert 'id="cancel-publish"' in html and 'id="publish-only"' in html
+    assert 'id="approve-and-publish"' in html
+    assert 'id="publish-dialog-draft-list"' in html
     assert 'byId("publish-dialog").showModal()' in javascript
     assert 'id="publish-dialog-invite-warning"' in html
     assert "Some scheduled sessions have invited speakers who have not accepted yet." in html
     assert 'participant.recipient_state === "invited"' in javascript
     assert 'make("li", item.title)' in javascript
+    assert 'event.submitter?.value === "approve-and-publish"' in javascript
+    assert "result.hidden_session_count" in javascript
+    assert 'publishOnly.classList.toggle("secondary", hiddenDrafts > 0)' in javascript
+    assert "result.newly_approved_session_ids?.length" in javascript
     assert "Publish this agenda? ${scheduled}" not in javascript
 
 

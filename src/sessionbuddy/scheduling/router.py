@@ -2219,22 +2219,19 @@ async def publish_agenda(
     if replay is not None:
         if _blob(replay["request_fingerprint"]) != fingerprint:
             raise HTTPException(status_code=409)
-        replayed_draft_id = str(replay["response_resource_id"])
-        replayed_draft = row_mapping(
-            await db.prepare(
-                """SELECT id FROM schedule_revisions
-                   WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
-            )
-            .bind(replayed_draft_id, organization_id, event_id)
-            .first()
-        )
-        if replayed_draft is None:
+        try:
+            replayed = AgendaPublishView.model_validate_json(str(replay["response_resource_id"]))
+        except ValueError as exc:
+            # A completed publish must replay the exact response, including
+            # which scheduled drafts this request approved. Reconstructing it
+            # from live rows would turn already-approved and newly-approved
+            # sessions into the same fact. Legacy records stored only a draft
+            # revision id; returning 409 for those expiring, client-discarded
+            # keys is deliberate because their new response cannot be recovered.
+            raise HTTPException(status_code=409) from exc
+        if replayed.published_revision_id != body.revision_id:
             raise HTTPException(status_code=409)
-        return AgendaPublishView(
-            published_revision_id=body.revision_id,
-            published_version=body.version + 1,
-            draft_revision_id=replayed_draft_id,
-        )
+        return replayed
     draft = await _revision(db, organization_id, event_id)
     if (
         draft is None
@@ -2244,7 +2241,8 @@ async def publish_agenda(
         raise HTTPException(status_code=409)
     item_rows = result_rows(
         await db.prepare(
-            """SELECT ai.*,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+            """SELECT ai.*,ac.content_status,ac.version AS content_version,
+                      COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
                       COALESCE(s.proposal_abstract,ac.organizer_abstract) AS proposal_abstract,
                       r.name AS room_name
                FROM agenda_items ai JOIN accepted_sessions ac ON ac.id=ai.accepted_session_id
@@ -2259,6 +2257,13 @@ async def publish_agenda(
     )
     if not item_rows:
         raise HTTPException(status_code=409)
+    draft_rows = [row for row in item_rows if str(row["content_status"]) == "draft"]
+    newly_approved_session_ids = (
+        [str(row["accepted_session_id"]) for row in draft_rows]
+        if body.approve_draft_sessions
+        else []
+    )
+    hidden_session_count = 0 if body.approve_draft_sessions else len(draft_rows)
     speaker_rows = result_rows(
         await db.prepare(
             """SELECT ais.agenda_item_id,ais.event_speaker_id
@@ -2291,6 +2296,67 @@ async def publish_agenda(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    for row in draft_rows if body.approve_draft_sessions else []:
+        session_id = str(row["accepted_session_id"])
+        next_content_version = int(row["content_version"]) + 1
+        batch.add_statement(
+            db.prepare(
+                """UPDATE accepted_sessions SET content_status='approved',version=version+1
+                   WHERE organization_id=?1 AND event_id=?2 AND id=?3
+                     AND content_status='draft' AND version=?4"""
+            ).bind(
+                organization_id,
+                event_id,
+                session_id,
+                row["content_version"],
+            )
+        )
+        # CHECK(applied_changes=1) converts a concurrent content edit into a
+        # failed atomic batch: publication and every other approval roll back.
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO session_content_write_guards
+                   (id,accepted_session_id,applied_changes,created_at_ms)
+                   VALUES (?1,?2,changes(),?3)"""
+            ).bind(new_id(), session_id, now)
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO session_content_versions
+                   (id,organization_id,event_id,accepted_session_id,version,title,abstract,
+                    content_status,changed_by_user_id,created_at_ms)
+                   VALUES (?1,?2,?3,?4,?5,?6,?7,'approved',?8,?9)"""
+            ).bind(
+                new_id(),
+                organization_id,
+                event_id,
+                session_id,
+                next_content_version,
+                row["proposal_title"],
+                row["proposal_abstract"],
+                auth.actor.user_id,
+                now,
+            )
+        )
+        batch.audit(
+            AuditEvent(
+                actor_type="user",
+                actor_user_id=auth.actor.user_id,
+                action="session.content.update",
+                target_type="accepted_session",
+                target_id=session_id,
+                result="succeeded",
+                correlation_id=request.state.request_id,
+                organization_id=organization_id,
+                event_id=event_id,
+                occurred_at_ms=now,
+                metadata={
+                    "version": next_content_version,
+                    "content_status": "approved",
+                    "source": "agenda_publish",
+                },
+            )
+        )
     for speaker_row in speaker_rows:
         batch.add_statement(
             db.prepare(
@@ -2398,11 +2464,18 @@ async def publish_agenda(
             metadata={"item_count": len(item_rows)},
         )
     )
+    response = AgendaPublishView(
+        published_revision_id=body.revision_id,
+        published_version=body.version + 1,
+        draft_revision_id=next_revision_id,
+        newly_approved_session_ids=newly_approved_session_ids,
+        hidden_session_count=hidden_session_count,
+    )
     batch.complete_idempotency(
         record,
         status=200,
-        resource_type="schedule_revision",
-        resource_id=next_revision_id,
+        resource_type="agenda_publish_result",
+        resource_id=response.model_dump_json(),
         completed_at_ms=now,
     )
     try:
@@ -2454,11 +2527,7 @@ async def publish_agenda(
             # Publication already committed durable sync intent. A consumer can
             # safely replay it using deterministic calendar keys.
             continue
-    return AgendaPublishView(
-        published_revision_id=body.revision_id,
-        published_version=body.version + 1,
-        draft_revision_id=next_revision_id,
-    )
+    return response
 
 
 def _schedule_label(row: dict) -> ScheduleLabelView:

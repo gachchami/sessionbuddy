@@ -43,6 +43,7 @@ class AgendaCandidate(StrictModel):
 class AgendaPublish(StrictModel):
     revision_id: str = Field(min_length=1, max_length=128)
     version: int = Field(ge=1)
+    approve_draft_sessions: bool = False
 
 
 class AgendaResourceCreate(StrictModel):
@@ -302,6 +303,8 @@ class AgendaPublishView(StrictModel):
     published_revision_id: str
     published_version: int = Field(ge=1)
     draft_revision_id: str
+    newly_approved_session_ids: list[str]
+    hidden_session_count: int = Field(ge=0)
 
 
 class ScheduleEventView(StrictModel):

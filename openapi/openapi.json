@@ -1720,6 +1720,11 @@
       "AgendaPublish": {
         "additionalProperties": false,
         "properties": {
+          "approve_draft_sessions": {
+            "default": false,
+            "title": "Approve Draft Sessions",
+            "type": "boolean"
+          },
           "revision_id": {
             "maxLength": 128,
             "minLength": 1,
@@ -1746,6 +1751,18 @@
             "title": "Draft Revision Id",
             "type": "string"
           },
+          "hidden_session_count": {
+            "minimum": 0.0,
+            "title": "Hidden Session Count",
+            "type": "integer"
+          },
+          "newly_approved_session_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Newly Approved Session Ids",
+            "type": "array"
+          },
           "published_revision_id": {
             "title": "Published Revision Id",
             "type": "string"
@@ -1759,7 +1776,9 @@
         "required": [
           "published_revision_id",
           "published_version",
-          "draft_revision_id"
+          "draft_revision_id",
+          "newly_approved_session_ids",
+          "hidden_session_count"
         ],
         "title": "AgendaPublishView",
         "type": "object"

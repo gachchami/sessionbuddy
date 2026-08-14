@@ -229,10 +229,19 @@ are transactionally linked to the newly created event speaker.
 Before publication, the organizer confirmation lists scheduled session titles that
 still contain pending invitees. Public output remains privacy-safe and shows those
 participants as Speaker TBA until acceptance.
+When scheduled sessions still have draft public content, that confirmation also
+lists their titles and makes the visibility decision explicit: organizers can
+publish while keeping them hidden or atomically approve those scheduled drafts
+and publish. Approval records normal content history and audit metadata and is
+optimistically guarded against concurrent editor saves.
 
 The agenda editor's authenticated unschedule action includes the required JSON
 media type, and the public schedule identifies the published revision number
 rather than exposing an internal optimistic-lock version.
+The published revision continues to resolve session content from live accepted-session
+rows rather than snapshotting it. Aligning every non-organizer schedule projection
+around the same draft-content rule remains a separate follow-up; calendar descriptions
+are unchanged by publication approval.
 
 ## Release readiness
 

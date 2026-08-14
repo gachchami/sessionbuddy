@@ -1135,30 +1135,44 @@
       button.disabled = false;
     }
   });
-  byId("publish").addEventListener("click", () => {
+  function openPublishDialog() {
     const scheduled = state.model?.items.length || 0;
-    const hiddenDrafts = state.model?.items.filter((item) => item.content_status !== "approved").length || 0;
+    const draftItems = state.model?.items.filter((item) => item.content_status !== "approved") || [];
+    const hiddenDrafts = draftItems.length;
+    const approved = scheduled - hiddenDrafts;
     const pendingSpeakerSessions = state.model?.items.filter((item) =>
       (item.participants || []).some((participant) => participant.recipient_state === "invited")
     ) || [];
     byId("publish-dialog-summary").textContent =
-      `${scheduled} scheduled session${scheduled === 1 ? "" : "s"} will become publicly visible.`;
+      hiddenDrafts
+        ? `${approved} of ${scheduled} scheduled ${scheduled === 1 ? "session is" : "sessions are"} approved and will become publicly visible.`
+        : `${scheduled} scheduled session${scheduled === 1 ? "" : "s"} will become publicly visible.`;
     byId("publish-dialog-draft-note").hidden = hiddenDrafts === 0;
     byId("publish-dialog-draft-note").textContent = hiddenDrafts
-      ? `${hiddenDrafts} session${hiddenDrafts === 1 ? " has" : "s have"} draft content and will remain hidden.`
+      ? `${hiddenDrafts} session${hiddenDrafts === 1 ? " has" : "s have"} draft content. Publish only keeps ${hiddenDrafts === 1 ? "it" : "them"} hidden.`
       : "";
+    const draftList = byId("publish-dialog-draft-list");
+    draftList.hidden = hiddenDrafts === 0;
+    draftList.replaceChildren(...draftItems.map((item) => make("li", item.title)));
+    byId("approve-and-publish").hidden = hiddenDrafts === 0;
+    const publishOnly = byId("publish-only");
+    publishOnly.textContent = hiddenDrafts ? "Publish only" : "Publish agenda";
+    publishOnly.classList.toggle("secondary", hiddenDrafts > 0);
+    // Publish only is first in form order, so Enter takes the privacy-safe
+    // path when drafts exist rather than approving content implicitly.
     const inviteWarning = byId("publish-dialog-invite-warning");
     inviteWarning.hidden = pendingSpeakerSessions.length === 0;
     inviteWarning.querySelector("ul").replaceChildren(
       ...pendingSpeakerSessions.map((item) => make("li", item.title)),
     );
     byId("publish-dialog").showModal();
-  });
+  }
+  byId("publish").addEventListener("click", openPublishDialog);
   byId("cancel-publish").addEventListener("click", () => byId("publish-dialog").close());
   byId("publish-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const button = byId("publish");
-    const hiddenDrafts = state.model.items.filter((item) => item.content_status !== "approved").length;
+    const approveDrafts = event.submitter?.value === "approve-and-publish";
     byId("publish-dialog").close();
     button.disabled = true;
     status("Publishing agenda…");
@@ -1166,11 +1180,12 @@
       const payload = JSON.stringify({
         revision_id: state.model.revision.id,
         version: state.model.revision.version,
+        approve_draft_sessions: approveDrafts,
       });
       if (!state.publishMutation || state.publishMutation.payload !== payload) {
         state.publishMutation = { payload, key: key() };
       }
-      await api(
+      const result = await api(
         `/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/publish`,
         {
           method: "POST",
@@ -1184,10 +1199,17 @@
       );
       state.publishMutation = null;
       await load(false);
-      status(hiddenDrafts
-        ? `Agenda published. ${hiddenDrafts} session${hiddenDrafts === 1 ? " remains" : "s remain"} hidden until content is approved.`
-        : "Agenda published. Calendar updates were queued for speakers.");
+      status(result.hidden_session_count
+        ? `Agenda published. ${result.hidden_session_count} session${result.hidden_session_count === 1 ? " remains" : "s remain"} hidden until content is approved.`
+        : result.newly_approved_session_ids?.length
+          ? "Agenda published. All scheduled sessions are publicly visible."
+          : "Agenda published. Calendar updates were queued for speakers.");
     } catch (error) {
+      if (error.status === 409) {
+        state.publishMutation = null;
+        await load(false);
+        openPublishDialog();
+      }
       status(
         error.status === 409
           ? "This draft changed before publication. Refresh and review it again."

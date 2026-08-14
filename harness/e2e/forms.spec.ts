@@ -834,7 +834,7 @@ test.describe("form validation and workflow wiring", () => {
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/setup`, async (route) => { setupWrites += 1; configured = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(model()) }); });
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/preview`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ valid: true, conflicts: [] }) }));
     await page.route(`**/api/v1/admin/events/${eventId}/agenda/items`, async (route) => { savedCandidate = route.request().postDataJSON(); scheduled = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "44444444-4444-4444-8444-444444444444", version: 1 }) }); });
-    await page.route(`**/api/v1/admin/events/${eventId}/agenda/publish`, async (route) => { publishWrites += 1; await route.fulfill({ contentType: "application/json", body: JSON.stringify({ state: "published" }) }); });
+    await page.route(`**/api/v1/admin/events/${eventId}/agenda/publish`, async (route) => { publishWrites += 1; await route.fulfill({ contentType: "application/json", body: JSON.stringify({ published_revision_id: "11111111-1111-4111-8111-111111111111", published_version: 2, draft_revision_id: "55555555-5555-4555-8555-555555555555", newly_approved_session_ids: [], hidden_session_count: 0 }) }); });
     await page.route(`**/api/v1/admin/events/${eventId}/labels`, async (route) => {
       labelWrites += 1;
       const body = route.request().postDataJSON();

@@ -12,7 +12,7 @@
 </script>
     <script src="/app-shell/assets/app-shell.js?v=26" defer type="text/javascript">
 </script>
-    <script src="/admin/agenda/assets/agenda.js?v=7" defer type="text/javascript">
+    <script src="/admin/agenda/assets/agenda.js?v=8" defer type="text/javascript">
 </script>
   </head>
   <body class="app-body workflow-page workflow-page--agenda">
@@ -235,13 +235,14 @@
             Calendar updates will be emailed to speakers. Sessions with draft content remain hidden until their content is approved.
           </p>
           <p id="publish-dialog-draft-note" class="preview-state" hidden></p>
+          <ul id="publish-dialog-draft-list" hidden></ul>
           <div id="publish-dialog-invite-warning" class="conflict" role="note" hidden>
             <strong>Some scheduled sessions have invited speakers who have not accepted yet.</strong>
             <p>They will appear publicly as Speaker TBA until they accept:</p>
             <ul></ul>
           </div>
           <div class="actions">
-            <button id="cancel-publish" class="secondary" type="button">Cancel</button><button id="confirm-publish" type="submit">Publish agenda</button>
+            <button id="cancel-publish" class="secondary" type="button">Cancel</button><button id="publish-only" class="secondary" type="submit" name="publish_action" value="publish-only">Publish agenda</button><button id="approve-and-publish" type="submit" name="publish_action" value="approve-and-publish" hidden>Approve scheduled drafts and publish</button>
           </div>
         </form>
       </dialog>
