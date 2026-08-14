@@ -53,22 +53,32 @@ async function mockAccount(
 test.describe("active role session contract", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
-  for (const activeRole of [null, "event_admin"]) {
-    test(`fails closed when active_role is ${activeRole ?? "null"}`, async ({ page }) => {
-      await mockAccount(page, activeRole);
+  test("keeps the account page usable while an active role is being restored", async ({ page }) => {
+    await mockAccount(page, null);
 
-      await page.goto("/account");
+    await page.goto("/account");
 
-      const shell = page.locator("header[data-auth-shell]");
-      await expect(page).toHaveURL(/\/account$/);
-      await expect(shell.getByRole("alert")).toContainText(
-        "this session has no valid active role",
-      );
-      await expect(shell.locator("a")).toHaveCount(0);
-      await expect(shell.locator(".sb-account")).toHaveCount(0);
-      await expect(shell.locator('[href="/admin"], [href="/reviews"], [href="/speaker"], [href="/account"]')).toHaveCount(0);
-    });
-  }
+    const shell = page.locator("header[data-auth-shell]");
+    await expect(page).toHaveURL(/\/account$/);
+    await expect(shell.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Roles and Access" })).toBeVisible();
+    await expect(page.getByRole("radio", { name: /Organizer/ })).toBeVisible();
+  });
+
+  test("fails closed when active_role is unsupported", async ({ page }) => {
+    await mockAccount(page, "event_admin");
+
+    await page.goto("/account");
+
+    const shell = page.locator("header[data-auth-shell]");
+    await expect(page).toHaveURL(/\/account$/);
+    await expect(shell.getByRole("alert")).toContainText(
+      "this session has no valid active role",
+    );
+    await expect(shell.locator("a")).toHaveCount(0);
+    await expect(shell.locator(".sb-account")).toHaveCount(0);
+    await expect(shell.locator('[href="/admin"], [href="/reviews"], [href="/speaker"], [href="/account"]')).toHaveCount(0);
+  });
 
   for (const [activeRole, destination] of [
     ["organizer", "/admin"],

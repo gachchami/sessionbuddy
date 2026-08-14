@@ -924,7 +924,14 @@
     linkButton.disabled = true;
     linkButton.textContent = "Sending signup link…";
     try {
-      saveBrowserDraft(false);
+      // Confirming an anonymous proposal records that it is ready for the
+      // review step. Requesting the verification link must preserve that
+      // state; otherwise the verified speaker is sent back to editing even
+      // though they already confirmed the complete proposal. A link requested
+      // before confirmation remains an ordinary in-progress draft.
+      const readyToSubmit = Boolean(browserDraft()?.readyToSubmit)
+        && byId("proposal-form").checkValidity();
+      saveBrowserDraft(readyToSubmit);
       await api("/api/v1/auth/magic-links", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, form_slug: slug, redirect_path: location.pathname }) });
       byId("cfp-sent-message").textContent = `We sent a sign-in link to ${email}.`;
       byId("cfp-sign-in-entry").hidden = true;
@@ -1054,6 +1061,11 @@
       }
       if (!state.authenticated) {
         const saved = saveBrowserDraft(true);
+        // This explicit checkpoint supersedes any queued field autosave. Mark
+        // it clean so the verification navigation cannot overwrite
+        // readyToSubmit with an ordinary in-progress browser draft.
+        clearTimeout(state.draftTimer);
+        state.draftDirty = false;
         const email = String(saved.answers.speaker_email || "").trim();
         const signIn = byId("sign-in-form");
         signIn.elements.email.value = email;

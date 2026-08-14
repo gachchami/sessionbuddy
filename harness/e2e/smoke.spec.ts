@@ -420,7 +420,7 @@ test.describe("public smoke checks", () => {
     await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeEnabled();
   });
 
-  test("the CFP requires speaker registration before proposal entry", async ({ page }) => {
+  test("the CFP defers speaker registration until proposal submission", async ({ page }) => {
     const slug = "speaker-login";
     await servePublicCfpPage(page, slug);
     let requestCount = 0;
@@ -448,10 +448,10 @@ test.describe("public smoke checks", () => {
 
     await page.goto(`/cfp/mobile/${slug}`);
     await expect(page.getByRole("status").first()).toHaveText(
-      "Sign in or register with your email to start a proposal.",
+      "Read every question and start your proposal below. You verify your email when you submit it.",
     );
-    await expect(page.getByRole("button", { name: "Email me a signup link" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Review proposal" })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Proposal details" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review proposal" })).toBeVisible();
     expect(requestCount).toBe(0);
   });
 
@@ -938,7 +938,7 @@ test.describe("administration empty states", () => {
 test.describe("dynamic form drafts", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
-  test("anonymous visitors see registration before the proposal form", async ({ page }) => {
+  test("anonymous visitors complete a proposal before email verification", async ({ page }) => {
     const slug = "deferred-verification";
     await servePublicCfpPage(page, slug);
     let signedIn = false;
@@ -984,6 +984,11 @@ test.describe("dynamic form drafts", () => {
     await page.route(`**/api/v1/forms/${slug}/submissions/mine`, (route) => route.fulfill({
       contentType: "application/json", body: JSON.stringify({ data: [] }),
     }));
+    await page.route(`**/api/v1/forms/${slug}/draft`, (route) => route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "not_found", message: "No server draft" } }),
+    }));
     await page.route(`**/api/v1/forms/${slug}/submissions`, async (route) => {
       submittedBody = route.request().postDataJSON();
       await route.fulfill({
@@ -994,19 +999,23 @@ test.describe("dynamic form drafts", () => {
     });
 
     await page.goto(`/cfp/mobile/${slug}`);
-    await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
-    await expect(page.getByRole("button", { name: "Email me a signup link" })).toBeVisible();
-    return;
+    await expect(page.getByRole("status").first()).toHaveText(
+      "Read every question and start your proposal below. You verify your email when you submit it.",
+    );
     await expect(page.getByRole("heading", { name: "Verify your email to submit" })).toBeHidden();
     await expect(page.getByText("Workshop equipment (required)")).toHaveCount(0);
     await expect(page.getByText("Additional questions may appear based on your answers.")).toBeVisible();
     await page.getByRole("textbox", { name: /Speaker name/ }).fill("Example Speaker");
-    await page.getByRole("textbox", { name: /Email/ }).first().fill("speaker@example.com");
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill("speaker@example.com");
     await page.getByRole("textbox", { name: /Proposal title/ }).fill("Deferred authentication");
     await page.getByRole("textbox", { name: /Proposal abstract/ }).fill("The entire form is complete before sign-in.");
     await page.getByRole("button", { name: "Review proposal" }).click();
     await page.getByRole("button", { name: "Confirm submission" }).click();
 
+    await expect(page.getByRole("status").first()).toHaveText(
+      "Your completed proposal is saved in this browser. Verify the proposal email to submit it.",
+    );
+    await page.getByRole("button", { name: "Email me a signup link" }).click();
     await expect.poll(() => magicLinkEmail).toBe("speaker@example.com");
     await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
     expect(submittedBody).toBeNull();
@@ -1028,7 +1037,7 @@ test.describe("dynamic form drafts", () => {
     });
   });
 
-  test("anonymous draft links preserve the registration boundary", async ({ page }) => {
+  test("anonymous browser drafts remain bound to email verification", async ({ page }) => {
     const slug = "conditional-rehearsal";
     await servePublicCfpPage(page, slug);
     const pageErrors: string[] = [];
@@ -1042,21 +1051,28 @@ test.describe("dynamic form drafts", () => {
         });
       }
     });
-    await page.route(`**/api/v1/forms/${slug}/draft`, async (route) => {
-      await route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          version: 1,
-          answers: {
-            speaker_name: "Example Speaker",
-            speaker_email: "speaker@example.com",
-            proposal_title: "Conditional forms",
-            proposal_abstract: "How conditional form submissions work.",
-            session_format: "Workshop",
-            workshop_requirements: "Bring a laptop",
-          },
-        }),
-      });
+    await page.addInitScript(({ key, savedAt }) => {
+      localStorage.setItem(key, JSON.stringify({
+        schemaVersion: 1,
+        formVersion: 1,
+        answers: {
+          speaker_name: "Example Speaker",
+          speaker_email: "speaker@example.com",
+          proposal_title: "Conditional forms",
+          proposal_abstract: "How conditional form submissions work.",
+          session_format: "Workshop",
+          workshop_requirements: "Bring a laptop",
+        },
+        coSpeakers: [],
+        submissionId: null,
+        fileNames: [],
+        readyToSubmit: false,
+        ownerEmail: "speaker@example.com",
+        savedAt,
+      }));
+    }, {
+      key: `sessionbuddy:cfp:${slug}:draft:new`,
+      savedAt: Date.now(),
     });
     await page.route(`**/api/v1/forms/${slug}/submissions`, async (route) => {
       submittedBody = route.request().postDataJSON();
@@ -1070,6 +1086,7 @@ test.describe("dynamic form drafts", () => {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify(publicForm({
+          version: 1,
           slug,
           welcome_text: "Test conditional restoration.",
           fields: [
@@ -1138,42 +1155,18 @@ test.describe("dynamic form drafts", () => {
 
     const response = await page.goto(`/cfp/mobile/${slug}`);
     expect(response?.ok()).toBeTruthy();
-    await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
-    return;
-    await page.waitForTimeout(500);
     expect(pageErrors).toEqual([]);
     await expect(page.getByRole("status").first()).toHaveText(
-      "Your saved draft has been restored.",
+      "A recent draft is waiting in this browser. Sign in with its proposal email to restore it.",
     );
-    await expect(page.getByRole("combobox", { name: "Session format" })).toHaveValue("Workshop");
-    const conditional = page.getByRole("textbox", { name: "Workshop requirements" });
-    await expect(conditional).toBeEnabled();
-    await expect(conditional).toHaveValue("Bring a laptop");
-    await expect(conditional).toHaveAttribute("required", "");
-
-    await page.getByRole("button", { name: "Review proposal" }).click();
-    await page.getByRole("button", { name: "Confirm submission" }).click();
-    await expect(page.getByRole("status").first()).toHaveText(
-      "Proposal submitted successfully.",
+    await expect(page.getByRole("textbox", { name: "Email address" })).toHaveValue(
+      "speaker@example.com",
     );
-    expect(submittedBody).toEqual({
-      speaker_name: "Example Speaker",
-      speaker_email: "speaker@example.com",
-      proposal_title: "Conditional forms",
-      proposal_abstract: "How conditional form submissions work.",
-      co_speakers: [],
-      answers: {
-        speaker_name: "Example Speaker",
-        speaker_email: "speaker@example.com",
-        proposal_title: "Conditional forms",
-        proposal_abstract: "How conditional form submissions work.",
-        session_format: "Workshop",
-        workshop_requirements: "Bring a laptop",
-      },
-    });
+    await expect(page.getByRole("textbox", { name: "Proposal title" })).toHaveValue("");
+    expect(submittedBody).toBeNull();
   });
 
-  test("required proposal fields remain behind registration", async ({ page }) => {
+  test("required proposal fields validate before deferred registration", async ({ page }) => {
     const slug = "required-fields";
     await servePublicCfpPage(page, slug);
     let submissionRequests = 0;
@@ -1226,8 +1219,10 @@ test.describe("dynamic form drafts", () => {
     });
 
     await page.goto(`/cfp/mobile/${slug}`);
-    await expect(page.getByRole("status").first()).toHaveText("Sign in or register with your email to start a proposal.");
-    await expect(page.getByRole("button", { name: "Review proposal" })).toBeHidden();
+    const title = page.getByRole("textbox", { name: /Proposal title/ });
+    await expect(title).toBeVisible();
+    await page.getByRole("button", { name: "Review proposal" }).click();
+    await expect(title).toHaveAttribute("required", "");
     expect(submissionRequests).toBe(0);
   });
 });

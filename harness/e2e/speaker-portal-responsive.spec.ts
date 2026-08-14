@@ -231,7 +231,7 @@ test.describe("speaker portal responsive design", () => {
     })).toBeVisible();
   });
 
-  test("the empty workspace shows saved drafts without advertising an open-calls directory", async ({ page }) => {
+  test("the empty workspace keeps saved drafts alongside open-call discovery", async ({ page }) => {
     await servePortal(page);
     await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
       contentType: "application/json",
@@ -254,12 +254,13 @@ test.describe("speaker portal responsive design", () => {
     await page.goto("/speaker");
 
     await expect(page.locator("#empty-state")).toBeVisible();
-    await expect(page.locator("#empty-state")).toContainText("Event organizers share each call for proposals directly");
+    await expect(page.locator("#empty-state")).toContainText(
+      "Browse calls below to find one that is open or opening soon.",
+    );
     const draft = page.getByRole("link", { name: "Continue editing A saved proposal draft for AI Engineering Summit 2026" });
     await expect(draft).toBeVisible();
     await expect(draft).toHaveAttribute("href", "/cfp/eventr/engineering-summit");
     await expect(page.locator("#status")).toHaveText("1 saved proposal draft.");
-    await expect(page.getByRole("link", { name: "Explore open calls" })).toHaveCount(0);
   });
 
   test("every event the speaker belongs to is grouped on one page", async ({ page }) => {

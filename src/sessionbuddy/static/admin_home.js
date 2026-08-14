@@ -119,12 +119,17 @@
 
   function renderEvents() {
     const list = document.querySelector(".organizer-home-event-list");
+    const archivedWasOpen = Boolean(list.querySelector(".organizer-home-event-group--archived[open]"));
     if (state.events.length) {
       const current = state.events.filter((event) => event.status !== "archived");
       const archived = state.events.filter((event) => event.status === "archived");
       const groups = [];
       if (current.length) groups.push(eventGroup("Current events", current));
-      if (archived.length) groups.push(eventGroup("Archived events", archived, true));
+      if (archived.length) {
+        const archivedGroup = eventGroup("Archived events", archived, true);
+        archivedGroup.open = archivedWasOpen;
+        groups.push(archivedGroup);
+      }
       list.replaceChildren(...groups);
     }
     else {

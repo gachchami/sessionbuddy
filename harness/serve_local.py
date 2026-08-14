@@ -126,13 +126,21 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=3000)
     parser.add_argument(
+        "--public-base-url",
+        help=(
+            "Browser-visible origin used for generated links and mutation origin checks. "
+            "Defaults to the bind host and port."
+        ),
+    )
+    parser.add_argument(
         "--no-bootstrap",
         action="store_true",
         help="Leave the instance unconfigured (serves /setup) for setup-flow tests.",
     )
     args = parser.parse_args()
 
-    environment = build_environment(f"http://{args.host}:{args.port}")
+    public_base_url = args.public_base_url or f"http://{args.host}:{args.port}"
+    environment = build_environment(public_base_url)
 
     async def application(scope, receive, send):
         scope["env"] = environment
