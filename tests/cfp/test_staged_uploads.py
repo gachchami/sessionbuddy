@@ -1255,6 +1255,9 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         )
         assert confirmed.status_code == 303
         assert confirmed.headers["location"] == "/cfp/event-cfp"
+        session = await client.get("/api/v1/auth/session")
+        assert session.status_code == 200
+        assert session.json()["active_role"] == "speaker"
         assert connection.execute(
             "SELECT consumed_at_ms FROM authentication_challenges"
         ).fetchone()[0] is not None

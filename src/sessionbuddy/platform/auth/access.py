@@ -5955,6 +5955,8 @@ async def _finish_magic_link_sign_in(
 ) -> SessionCreated:
     user_id = challenge["user_id"]
     invited_persona: str | None = None
+    provisioned_persona: str | None = None
+    session_batch: CommandBatch | None = None
     if challenge["invitation_id"] is not None:
         invitation = row_mapping(
             await db.prepare(
@@ -6227,7 +6229,7 @@ async def _finish_magic_link_sign_in(
                 metadata={"role": str(invitation["role"])},
             )
         )
-        await batch.execute()
+        session_batch = batch
     elif challenge["provisioning_context"] == "submission":
         existing_user = row_mapping(
             await db.prepare("SELECT id FROM users WHERE normalized_email=?1 LIMIT 1")
@@ -6310,6 +6312,11 @@ async def _finish_magic_link_sign_in(
                          revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
                 ).bind(user_id, now)
             )
+            # A CFP registration authenticates into the speaker persona that
+            # this same batch is provisioning. Looking up a default role here
+            # would run before the queued user_roles write; choosing another
+            # existing default would also send this CFP flow to the wrong UI.
+            provisioned_persona = "speaker"
             batch.audit(
                 AuditEvent(
                     actor_type="user",
@@ -6324,45 +6331,32 @@ async def _finish_magic_link_sign_in(
                     event_id=str(challenge["event_id"]),
                 )
             )
-            await batch.execute()
+        session_batch = batch
     if user_id is None:
         raise HTTPException(status_code=404)
-    default_role = await _default_account_role(db, str(user_id))
-    session_role = invited_persona or default_role
+    session_role = (
+        invited_persona
+        or provisioned_persona
+        or await _default_account_role(db, str(user_id))
+    )
     if session_role is None:
         raise HTTPException(status_code=403)
-    session_id, session_token = new_id(), generate_token()
-    csrf = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
-    await (
-        db.prepare(
-            """INSERT INTO sessions
-         (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,last_seen_at_ms,
-          idle_expires_at_ms,absolute_expires_at_ms)
-         SELECT ?1,id,?2,?3,authorization_version,?4,?4,?5,?6 FROM users WHERE id=?7"""
-        )
-        .bind(
-            session_id,
-            hash_token(session_token),
-            hash_token(csrf),
-            now,
-            now + 12 * 60 * 60 * 1000,
-            now + 30 * 24 * 60 * 60 * 1000,
-            user_id,
-        )
-        .run()
+    if session_batch is None:
+        session_batch = CommandBatch(db)
+    established = establish_session_with_current_authorization_version(
+        batch=session_batch,
+        db=db,
+        request=request,
+        user_id=str(user_id),
+        role=session_role,
+        now_ms=now,
     )
-    await (
-        db.prepare(
-            """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
-               VALUES(?1,?2,?3,?4)"""
-        )
-        .bind(session_id, user_id, session_role, now)
-        .run()
-    )
-    _set_session_cookie(response, request, session_token)
+    results = await session_batch.execute()
+    await _confirm_session_established(results, established, db)
+    _set_session_cookie(response, request, established.session_token)
     return SessionCreated(
         user_id=str(user_id),
-        csrf_token=csrf,
+        csrf_token=established.csrf_token,
         redirect_path=_role_compatible_redirect(str(challenge["redirect_path"]), session_role),
     )
 
