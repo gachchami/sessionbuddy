@@ -1238,6 +1238,11 @@ body.embedded .page { width: 100%; padding: .75rem; }
 .cfp-co-speakers #co-speaker-rows:not(:empty) { margin-top: .9rem; }
 .cfp-public-page #proposal-form > .actions { position: sticky; bottom: 0; z-index: 2; margin: 1.5rem -1.5rem -1.5rem; padding: 1rem 1.5rem; border-top: 1px solid #e3e6ed; background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
 .cfp-public-page #proposal-form > .actions button:not(.secondary) { background: var(--cfp-accent); box-shadow: none; }
+.cfp-public-page .public-events-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(16rem,1fr)); gap:1rem; }
+.cfp-public-page .public-event-card { display:flex; flex-direction:column; gap:.55rem; padding:1.25rem; border:1px solid var(--cfp-rule); border-radius:.75rem; background:#fff; }
+.cfp-public-page .public-event-card h3,.cfp-public-page .public-event-card p { margin:0; }
+.cfp-public-page .public-event-actions { display:flex; gap:.75rem; margin-top:auto; padding-top:.6rem; }
+.cfp-public-page .public-events-empty { grid-column:1/-1; padding:1rem; border:1px dashed var(--cfp-rule); border-radius:.75rem; text-align:center; }
 .cfp-public-page .existing-submission__title { min-width: 0; color: #253044; font-size: .875rem; font-weight: 700; line-height: 1.35; }
 .cfp-public-page .existing-submission__action { flex: 0 0 auto; color: var(--cfp-accent); font-size: .75rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .cfp-public-page .existing-submission-new { width: fit-content; color: var(--cfp-accent); }

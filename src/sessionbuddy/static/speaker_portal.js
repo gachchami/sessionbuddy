@@ -1497,6 +1497,55 @@
     channel.close();
   }
 
+  async function loadDiscoverableCalls() {
+    const section = byId("calls");
+    const list = byId("speaker-call-list");
+    try {
+      const response = await api("/api/v1/speaker/open-calls");
+      list.replaceChildren();
+      if (!response.data.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "No calls are open or scheduled right now.";
+        empty.setAttribute("role", "status");
+        list.append(empty);
+      }
+      for (const call of response.data) {
+        const card = document.createElement("article");
+        card.className = "speaker-call-card";
+        const stateCopy = document.createElement("p");
+        stateCopy.className = "speaker-call-card__state";
+        stateCopy.textContent = window.SessionBuddyCfpState.copy(call);
+        const title = document.createElement("h3");
+        title.textContent = call.event_name;
+        const details = document.createElement("p");
+        details.textContent = [call.location, call.delivery_mode.replaceAll("_", " ")].filter(Boolean).join(" · ");
+        const capacity = document.createElement("p");
+        capacity.className = "help";
+        capacity.textContent = call.remaining_submissions === null
+          ? (call.already_submitted ? `${call.submission_count} submitted` : "No proposal limit")
+          : `${call.remaining_submissions} proposal${call.remaining_submissions === 1 ? "" : "s"} remaining`;
+        const action = document.createElement("a");
+        action.className = "speaker-call-card__action";
+        const eventKey = call.event_id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
+        action.href = `/cfp/${eventKey}/${encodeURIComponent(call.slug)}`;
+        action.textContent = call.actionable ? "Submit a proposal →" : "View call →";
+        card.append(stateCopy, title, details, capacity, action);
+        list.append(card);
+      }
+      if (location.hash === "#calls") requestAnimationFrame(() => {
+        section.scrollIntoView({ block: "start" });
+        section.focus({ preventScroll: true });
+      });
+    } catch (error) {
+      const message = document.createElement("p");
+      message.textContent = error.status === 401 || error.status === 403
+        ? "Sign in with your speaker profile to browse calls here."
+        : "Calls could not be loaded. Try again later.";
+      message.setAttribute("role", error.status === 401 || error.status === 403 ? "status" : "alert");
+      list.replaceChildren(message);
+    } finally { section.setAttribute("aria-busy", "false"); }
+  }
+
   async function load() {
     setStatus("Checking your secure session…");
     try {
@@ -1513,6 +1562,7 @@
         state.sessionEmail = "";
         state.sessionName = "";
       }
+      void loadDiscoverableCalls();
       await loadProposalDrafts();
       await loadEvent();
       setStatus("Speaker details are ready.", "success");

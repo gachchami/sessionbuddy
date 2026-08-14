@@ -108,11 +108,14 @@ async def api_documentation_javascript(request: Request) -> Response:
 
 
 def _session_home_destination(session) -> str:
+    active_role = getattr(session, "active_role", None)
+    if active_role is None or active_role == "":
+        return "/calls"
     destination = {
         "organizer": "/admin",
         "speaker": "/speaker",
         "reviewer": "/reviews",
-    }.get(getattr(session, "active_role", None) or "")
+    }.get(active_role)
     if destination is None:
         raise HTTPException(status_code=403)
     return destination

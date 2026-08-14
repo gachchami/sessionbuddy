@@ -373,7 +373,10 @@ def test_missing_or_unknown_active_role_fails_closed_without_a_destination_guess
     assert 'return "/account"' not in destination
     assert "return null" in destination
 
-    assert "if (!activeRole(session)) {" in javascript
+    assert "const missingActiveRole = session.active_role === null" in javascript
+    assert 'return location.pathname === "/calls" || location.pathname === "/account"' in javascript
+    assert "const rolelessNeutral = missingActiveRole && isPersonaNeutralPath()" in javascript
+    assert "if (!activeRole(session) && !rolelessNeutral) {" in javascript
     assert "renderSessionContractError();" in javascript
     assert "renderLandingSessionContractError();" in javascript
     assert "this session has no valid active role" in javascript
@@ -397,7 +400,7 @@ def test_organizer_without_manageable_resources_has_no_account_fallback() -> Non
     assert "if (!activeDestination) {" in javascript
     assert 'renderSessionContractError("workspace")' in javascript
     assert "this session has no manageable organization or event" in javascript
-    assert "if (!dashboardDestination(session)) {" in javascript
+    assert "if (!dashboardDestination(session) && !rolelessNeutral) {" in javascript
 
 
 def test_exact_event_only_organizers_land_in_their_event_workspace() -> None:
@@ -414,7 +417,7 @@ def test_exact_event_only_organizers_land_in_their_event_workspace() -> None:
 def test_account_is_persona_neutral_and_same_destination_still_renders_shell() -> None:
     shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    assert '!["account", "speaker", "reviews"].includes(section)' in shell
+    assert '!["account", "speaker", "reviews", "calls"].includes(section)' in shell
     destination_guard = shell.split(
         "if (organizerWorkspace && !organizationWorkspace && !currentEventId)", 1
     )[1].split("const globalOrganizerWorkspace", 1)[0]

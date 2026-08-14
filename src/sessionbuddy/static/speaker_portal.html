@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=23">
   <link rel="stylesheet" href="/speaker/assets/speaker.css?v=24">
   <script src="/app-shell/assets/api-client.js?v=2" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=26" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=27" defer></script>
   <script src="/speaker/assets/speaker-portal.js?v=24" defer></script>
 </head>
 <body class="app-body speaker-portal-page">
@@ -28,7 +28,13 @@
 
     <section id="empty-state" class="state-panel" hidden aria-labelledby="empty-title">
       <h1 id="empty-title">Your speaker workspace is ready</h1>
-      <p>You do not have any proposals yet. Event organizers share each call for proposals directly; use the CFP link they sent you to submit.</p>
+      <p>You do not have any proposals yet. Browse calls below to find one that is open or opening soon.</p>
+    </section>
+
+    <section id="calls" class="state-panel speaker-calls" aria-labelledby="calls-title" aria-busy="true" tabindex="-1">
+      <div class="section-heading"><div><p class="portal-hero__eyebrow">Across SessionBuddy</p><h2 id="calls-title">Calls for proposals</h2></div></div>
+      <p class="help">Find calls beyond the events already in your workspace.</p>
+      <div id="speaker-call-list" class="speaker-call-list"><p role="status">Loading calls…</p></div>
     </section>
 
     <section id="saved-proposal-drafts" class="state-panel" hidden aria-labelledby="saved-proposal-drafts-title">

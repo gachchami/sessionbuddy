@@ -104,7 +104,7 @@ async def test_incomplete_profile_root_redirects_to_account_onboarding(
         ("unknown-role", False),
     ],
 )
-async def test_missing_or_unknown_active_role_fails_without_any_fallback(
+async def test_missing_role_has_discovery_fallback_but_unknown_role_fails_closed(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     active_role: str | None,
@@ -123,9 +123,14 @@ async def test_missing_or_unknown_active_role_fails_without_any_fallback(
     client.cookies.set("sessionbuddy-local", "test-session")
     response = await client.get("/", follow_redirects=False)
 
-    assert response.status_code == 403
-    assert "location" not in response.headers
-    assert response.headers["content-type"].startswith("application/json")
+    if active_role == "unknown-role":
+        assert response.status_code == 403
+        assert "location" not in response.headers
+    else:
+        assert response.status_code == 303
+        assert response.headers["location"] == (
+            "/calls" if profile_complete else "/account?onboarding=1&next=%2F"
+        )
 
 
 async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:

@@ -29,6 +29,27 @@ def test_public_event_directory_announces_empty_and_failure_states() -> None:
     assert 'publicEvents.setAttribute("aria-busy", "false")' in shell
 
 
+def test_calls_directory_and_portal_share_state_copy_without_sharing_layout() -> None:
+    shell = source("app_shell.js")
+    calls = source("open_calls.js")
+    portal = source("speaker_portal.js")
+    page = source("speaker_portal.html")
+
+    assert "window.SessionBuddyCfpState" in shell
+    assert 'request("/api/v1/public/calls")' in calls
+    assert 'api("/api/v1/speaker/open-calls")' in portal
+    assert "window.SessionBuddyCfpState.copy(call)" in calls
+    assert "window.SessionBuddyCfpState.copy(call)" in portal
+    assert '<section id="calls"' in page
+    assert 'tabindex="-1"' in page.split('<section id="calls"', 1)[1].split(">", 1)[0]
+    assert page.index('<section id="calls"') < page.index('<div id="portal"')
+    assert 'location.hash === "#calls"' in portal
+    assert "scrollIntoView" in portal
+    assert "section.focus({ preventScroll: true })" in portal
+    assert 'location.pathname === "/calls"' in shell
+    assert '"reviews", "calls"' in shell
+
+
 def test_share_page_points_publication_to_the_agenda_surface() -> None:
     page = source("event_workspace.html")
     script = source("event_workspace.js")

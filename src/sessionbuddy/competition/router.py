@@ -6,12 +6,19 @@ from urllib.parse import quote
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
+from sessionbuddy.cfp.availability import form_availability
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.auth import authenticate_request, generate_token, hash_token
 from sessionbuddy.platform.auth.http import require_document_persona, require_permission
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, ResourceGrant
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
-from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
+from sessionbuddy.platform.db.d1 import (
+    PersistenceError,
+    result_rows,
+    row_mapping,
+    statement_changes,
+    to_python,
+)
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 
 from .models import (
@@ -28,6 +35,8 @@ from .models import (
     OrganizationSpeakerList,
     OrganizationSpeakerParticipation,
     OrganizerSpeakerNotes,
+    PublicCallList,
+    PublicCallSummary,
     PublicEventList,
     PublicEventSummary,
     PublicSpeaker,
@@ -54,10 +63,8 @@ async def list_public_events(request: Request) -> PublicEventList:
         .prepare(
             """SELECT e.id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,
                       COALESCE(e.location,'') AS location,e.delivery_mode,
-                      (SELECT f.slug FROM call_for_speaker_forms f
-                       WHERE f.organization_id=e.organization_id AND f.event_id=e.id
-                         AND f.status='published'
-                       ORDER BY f.published_at_ms DESC,f.id DESC LIMIT 1) AS cfp_slug,
+                      f.slug AS cfp_slug,f.opens_at_ms AS cfp_opens_at_ms,
+                      f.closes_at_ms AS cfp_closes_at_ms,
                       EXISTS(SELECT 1 FROM schedule_revisions r
                        WHERE r.organization_id=e.organization_id AND r.event_id=e.id
                          AND r.status='published') AS schedule_published,
@@ -65,12 +72,83 @@ async def list_public_events(request: Request) -> PublicEventList:
                        WHERE es.organization_id=e.organization_id AND es.event_id=e.id
                          AND es.selection_status='accepted'
                          AND es.status!='withdrawn') AS speaker_count
-               FROM events e WHERE e.status='active'
+               FROM events e
+               LEFT JOIN call_for_speaker_forms f
+                 ON f.organization_id=e.organization_id AND f.event_id=e.id
+                AND f.status='published'
+                AND NOT EXISTS (
+                  SELECT 1 FROM call_for_speaker_forms newer
+                  WHERE newer.organization_id=f.organization_id
+                    AND newer.event_id=f.event_id AND newer.status='published'
+                    AND (newer.version>f.version OR
+                         (newer.version=f.version AND newer.published_at_ms>f.published_at_ms) OR
+                         (newer.version=f.version AND newer.published_at_ms=f.published_at_ms
+                          AND newer.id>f.id)))
+               WHERE e.status='active'
                ORDER BY e.starts_at_ms,e.id LIMIT 100"""
         )
         .all()
     )
-    return PublicEventList(data=[PublicEventSummary.model_validate(row) for row in rows])
+    now = utc_now_ms()
+    data = []
+    for row in rows:
+        values = dict(row)
+        if values.get("cfp_slug") is not None:
+            availability = form_availability(
+                values.pop("cfp_opens_at_ms", None),
+                values.pop("cfp_closes_at_ms", None),
+                now,
+            )
+            values.update(
+                cfp_state=availability.state,
+                cfp_boundary_at_ms=availability.boundary_at_ms,
+                cfp_boundary_kind=availability.boundary_kind,
+            )
+        else:
+            values.pop("cfp_opens_at_ms", None)
+            values.pop("cfp_closes_at_ms", None)
+        data.append(PublicEventSummary.model_validate(values))
+    return PublicEventList(data=data)
+
+
+@competition_router.get(
+    "/api/v1/public/calls", response_model=PublicCallList, tags=["public-program"]
+)
+async def list_public_calls(request: Request) -> PublicCallList:
+    """List canonical published CFPs independently of the event-directory limit."""
+    rows = result_rows(
+        await _db(request).prepare(
+            """SELECT e.id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,
+                      COALESCE(e.location,'') AS location,e.delivery_mode,
+                      f.id AS form_id,f.slug AS cfp_slug,f.opens_at_ms,f.closes_at_ms
+               FROM events e JOIN call_for_speaker_forms f
+                 ON f.organization_id=e.organization_id AND f.event_id=e.id
+               WHERE e.status='active' AND f.status='published'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM call_for_speaker_forms newer
+                   WHERE newer.organization_id=f.organization_id
+                     AND newer.event_id=f.event_id AND newer.status='published'
+                     AND (newer.version>f.version OR
+                          (newer.version=f.version AND newer.published_at_ms>f.published_at_ms) OR
+                          (newer.version=f.version AND newer.published_at_ms=f.published_at_ms
+                           AND newer.id>f.id)))
+               ORDER BY e.starts_at_ms,e.id LIMIT 100"""
+        ).all()
+    )
+    now = utc_now_ms()
+    data = []
+    for row in rows:
+        values = dict(row)
+        availability = form_availability(
+            values.pop("opens_at_ms", None), values.pop("closes_at_ms", None), now
+        )
+        values.update(
+            cfp_state=availability.state,
+            cfp_boundary_at_ms=availability.boundary_at_ms,
+            cfp_boundary_kind=availability.boundary_kind,
+        )
+        data.append(PublicCallSummary.model_validate(values))
+    return PublicCallList(data=data)
 
 
 def _blob(value: object) -> bytes:
@@ -382,7 +460,11 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                         p.display_name,COALESCE(p.job_title,'') AS job_title,
                         COALESCE(p.company,'') AS company,
                         COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
+                        CASE WHEN NULLIF(p.biography,'') IS NULL
+                          THEN 'account' ELSE 'organization' END AS biography_source,
+                        NULLIF(p.biography,'') AS biography_override,
                         COALESCE(p.location,'') AS location,p.links_json,p.version,
+                        es.version AS participation_version,
                         es.selection_status,es.confirmation_status,
                         COALESCE(
                           -- Prefer the ACCEPTED submission; fall back to newest.
@@ -409,7 +491,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                  UNION ALL
                  SELECT i.id,NULL,NULL,i.email,
                         COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
-                        '','','[]',1,'invited','invited','Invitation pending'
+                        '','account',NULL,'','[]',1,1,'invited','invited','Invitation pending'
                  FROM identity_invitations i
                  WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
                    AND i.status='pending' AND i.expires_at_ms>?3
@@ -454,6 +536,9 @@ async def list_organization_speakers(
                       p.display_name,COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,
                       COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
+                      CASE WHEN NULLIF(p.biography,'') IS NULL
+                        THEN 'account' ELSE 'organization' END AS biography_source,
+                      NULLIF(p.biography,'') AS biography_override,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
                       es.id AS event_speaker_id,es.event_id,e.name AS event_name,
                       es.selection_status,es.confirmation_status,
@@ -512,6 +597,12 @@ async def list_organization_speakers(
                 job_title=str(row["job_title"]),
                 company=str(row["company"]),
                 biography=str(row["biography"]),
+                biography_source=str(row["biography_source"]),
+                biography_override=(
+                    str(row["biography_override"])
+                    if row["biography_override"] is not None
+                    else None
+                ),
                 location=str(row["location"]),
                 links=json.loads(str(row["links_json"])),
                 version=int(row["version"]),
@@ -640,9 +731,14 @@ def _speaker_target(row) -> SpeakerTarget:
         job_title=str(row["job_title"]),
         company=str(row["company"]),
         biography=str(row["biography"]),
+        biography_source=str(row["biography_source"]),
+        biography_override=(
+            str(row["biography_override"]) if row["biography_override"] is not None else None
+        ),
         location=str(row["location"]),
         links=json.loads(str(row["links_json"])),
         version=int(row["version"]),
+        participation_version=int(row["participation_version"]),
         selection_status=str(row["selection_status"]),
         confirmation_status=str(row["confirmation_status"]),
         proposal_title=str(row["proposal_title"]),
@@ -661,6 +757,9 @@ async def _speaker_profile_page(
                       COALESCE(p.job_title,'') AS job_title,
                       COALESCE(p.company,'') AS company,
                       COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
+                      CASE WHEN NULLIF(p.biography,'') IS NULL
+                        THEN 'account' ELSE 'organization' END AS biography_source,
+                      NULLIF(p.biography,'') AS biography_override,
                       COALESCE(p.location,'') AS location,p.links_json,p.version
                FROM people p LEFT JOIN users u ON u.id=p.user_id
                WHERE p.id=?1 AND p.archived_at_ms IS NULL"""
@@ -765,6 +864,12 @@ async def _speaker_profile_page(
         job_title=str(person["job_title"]),
         company=str(person["company"]),
         biography=str(person["biography"]),
+        biography_source=str(person["biography_source"]),
+        biography_override=(
+            str(person["biography_override"])
+            if person["biography_override"] is not None
+            else None
+        ),
         location=str(person["location"]),
         links=json.loads(str(person["links_json"])),
         version=int(person["version"]),
@@ -804,7 +909,7 @@ async def update_own_speaker_profile_page(
             body.display_name,
             body.job_title or None,
             body.company or None,
-            body.biography or None,
+            body.biography_override,
             body.location or None,
             json.dumps(body.links, separators=(",", ":")),
             utc_now_ms(),
@@ -830,20 +935,21 @@ async def update_admin_speaker(
 ) -> SpeakerTarget:
     event, auth = await _managed_event(request, event_id, mutation=True)
     db, now = _db(request), utc_now_ms()
-    changed = row_mapping(
-        await db.prepare(
+    writes = CommandBatch(db)
+    person_write = writes.statement_count
+    writes.add_statement(
+        db.prepare(
             """UPDATE people SET display_name=?1,job_title=?2,company=?3,biography=?4,
                       location=?5,links_json=?6,version=version+1,updated_at_ms=?7
                WHERE organization_id=?8 AND version=?9 AND id=(
                  SELECT person_id FROM event_speakers
-                 WHERE id=?10 AND organization_id=?8 AND event_id=?11)
-               RETURNING id"""
-        )
-        .bind(
+                 WHERE id=?10 AND organization_id=?8 AND event_id=?11
+                   AND version=?12)"""
+        ).bind(
             body.display_name,
             body.job_title or None,
             body.company or None,
-            body.biography or None,
+            body.biography_override,
             body.location or None,
             json.dumps(body.links, separators=(",", ":")),
             now,
@@ -851,10 +957,34 @@ async def update_admin_speaker(
             body.version,
             event_speaker_id,
             event_id,
+            body.participation_version,
         )
-        .first()
     )
-    if changed is None:
+    participation_write = writes.statement_count
+    writes.add_statement(
+        db.prepare(
+            """UPDATE event_speakers
+               SET confirmation_status=COALESCE(?1,confirmation_status),updated_at_ms=?2,
+                   version=version+1
+               WHERE id=?3 AND organization_id=?4 AND event_id=?5 AND version=?6
+                 AND EXISTS (
+                   SELECT 1 FROM people p WHERE p.organization_id=?4
+                     AND p.id=event_speakers.person_id AND p.version=?7
+                     AND p.updated_at_ms=?2)"""
+        ).bind(
+            body.confirmation_status,
+            now,
+            event_speaker_id,
+            event["organization_id"],
+            event_id,
+            body.participation_version,
+            body.version + 1,
+        )
+    )
+    write_results = await writes.execute()
+    person_changed = statement_changes(write_results, person_write)
+    participation_changed = statement_changes(write_results, participation_write)
+    if person_changed != 1 or participation_changed != 1:
         exists = await (
             db.prepare(
                 """SELECT 1 AS found FROM event_speakers
@@ -864,22 +994,6 @@ async def update_admin_speaker(
             .first("found")
         )
         raise HTTPException(status_code=409 if exists is not None else 404)
-    await (
-        db.prepare(
-            """UPDATE event_speakers
-           SET confirmation_status=COALESCE(?1,confirmation_status),updated_at_ms=?2,
-                  version=version+1
-           WHERE id=?3 AND organization_id=?4 AND event_id=?5"""
-        )
-        .bind(
-            body.confirmation_status,
-            now,
-            event_speaker_id,
-            event["organization_id"],
-            event_id,
-        )
-        .run()
-    )
     audit = CommandBatch(db)
     audit.audit(
         AuditEvent(
@@ -901,8 +1015,13 @@ async def update_admin_speaker(
             """SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
                       COALESCE(u.email,'') AS email,
                       p.display_name,COALESCE(p.job_title,'') AS job_title,
-                      COALESCE(p.company,'') AS company,COALESCE(p.biography,'') AS biography,
+                      COALESCE(p.company,'') AS company,
+                      COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
+                      CASE WHEN NULLIF(p.biography,'') IS NULL
+                        THEN 'account' ELSE 'organization' END AS biography_source,
+                      NULLIF(p.biography,'') AS biography_override,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
+                      es.version AS participation_version,
                       es.selection_status,es.confirmation_status,
                       COALESCE(
                         -- Prefer the ACCEPTED submission; fall back to newest.

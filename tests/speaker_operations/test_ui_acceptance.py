@@ -146,7 +146,7 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'id="empty-state"' in html
     assert "Your speaker workspace is ready" in html
     assert "You do not have any proposals yet" in html
-    assert "Event organizers share each call for proposals directly" in html
+    assert "Browse calls below to find one that is open or opening soon" in html
     assert "Explore open calls" not in html
     assert 'id="saved-proposal-drafts"' in html
     assert 'api("/api/v1/speaker/proposal-drafts")' in javascript

@@ -56,6 +56,9 @@ failed run because the evaluator reuses terminal `evidence.json` files.
 
 - CFP-S1 must publish a discoverable public CFP and persist its event state.
 - CFP-S2 requires that open call plus a complete speaker profile/session.
+- CFP-S2 discovery must start from a populated Speaker portal: a speaker attached
+  to one event can browse the Calls for Proposals section and reach a published
+  call for another event without receiving its URL out of band.
 - CFP-S3 requires two submitted proposals and an active reviewer assignment.
 - CFP-S4 requires completed reviews and valid decision-notification delivery.
 - ABS-S2 requires three submitted proposals and two independent rounds.
@@ -88,11 +91,19 @@ failed run because the evaluator reuses terminal `evidence.json` files.
   switch or dropped session. Saved storage states are useful only for targeted
   session-restore diagnostics.
 - [ ] Confirm repeated authenticated `/admin`, `/speaker`, and `/reviews` navigation without 1101/500 responses.
+- [ ] From a populated `/speaker` portal, open Calls for Proposals, follow a call
+      for an event where the speaker has no membership, submit, and confirm the
+      new event and proposal appear in the portal.
 - [ ] Confirm two simultaneous evaluation rounds and typed scorecards.
 - [ ] Confirm organizer-created file requests authorize the expected uploads.
 - [ ] Confirm at least three sessions can be scheduled and published.
 - [ ] Run evaluator list, smoke, auth checks, and six-area dry-run.
 - [ ] Start a brand-new paid run without `--resume`.
+
+The public `/calls` directory intentionally lists scheduled and open calls but
+hides closed calls. A bookmarked directory entry therefore disappears after
+closure; the canonical `/cfp/{event_key}/{slug}` URL remains stable and is the
+authoritative surface for explaining that the call has closed.
 
 The current evaluator checkout is configured for password mode. Its four saved
 storage-state files were moved, recoverably, to the ignored

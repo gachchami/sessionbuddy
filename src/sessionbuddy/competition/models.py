@@ -1,7 +1,22 @@
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _absolute_web_link(value: str) -> str:
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("link must use an absolute HTTP or HTTPS URL")
+    return value
+
+
+AbsoluteWebLink = Annotated[str, Field(max_length=2000), AfterValidator(_absolute_web_link)]
 
 
 class ResourceCreate(BaseModel):
@@ -80,9 +95,12 @@ class SpeakerTarget(BaseModel):
     job_title: str
     company: str
     biography: str
+    biography_source: Literal["account", "organization"] = "account"
+    biography_override: str | None = None
     location: str
     links: list[str]
     version: int
+    participation_version: int = 1
     selection_status: Literal["invited", "submitted", "accepted", "rejected"]
     confirmation_status: Literal["invited", "pending", "confirmed", "declined"]
     proposal_title: str
@@ -129,6 +147,8 @@ class OrganizationSpeaker(BaseModel):
     job_title: str
     company: str
     biography: str
+    biography_source: Literal["account", "organization"] = "account"
+    biography_override: str | None = None
     location: str
     links: list[str]
     version: int
@@ -153,9 +173,12 @@ class AdminSpeakerUpdate(BaseModel):
     display_name: str = Field(min_length=1, max_length=200)
     job_title: str = Field(default="", max_length=200)
     company: str = Field(default="", max_length=200)
-    biography: str = Field(default="", max_length=5000)
+    biography_override: str | None = Field(
+        max_length=5000,
+        validation_alias=AliasChoices("biography_override", "biography"),
+    )
     location: str = Field(default="", max_length=300)
-    links: list[str] = Field(default_factory=list, max_length=10)
+    links: list[AbsoluteWebLink] = Field(default_factory=list, max_length=10)
     version: int = Field(ge=1)
 
     @field_validator("links")
@@ -163,20 +186,11 @@ class AdminSpeakerUpdate(BaseModel):
     def validate_links(cls, values: list[str]) -> list[str]:
         if len(values) != len(set(values)):
             raise ValueError("links must be unique")
-        for value in values:
-            parsed = urlparse(value)
-            if (
-                len(value) > 2000
-                or parsed.scheme not in {"http", "https"}
-                or not parsed.netloc
-                or parsed.username
-                or parsed.password
-            ):
-                raise ValueError("links must use an absolute HTTP or HTTPS URL")
         return values
 
 
 class AdminEventSpeakerUpdate(AdminSpeakerUpdate):
+    participation_version: int = Field(ge=1)
     confirmation_status: Literal["pending", "confirmed", "declined"] | None = None
 
 
@@ -300,9 +314,31 @@ class PublicEventSummary(BaseModel):
     location: str
     delivery_mode: Literal["in_person", "virtual", "hybrid"]
     cfp_slug: str | None
+    cfp_state: Literal["scheduled", "open", "closed"] | None = None
+    cfp_boundary_at_ms: int | None = None
+    cfp_boundary_kind: Literal["opens", "closes"] | None = None
     schedule_published: bool
     speaker_count: int
 
 
 class PublicEventList(BaseModel):
     data: list[PublicEventSummary]
+
+
+class PublicCallSummary(BaseModel):
+    id: str
+    name: str
+    starts_at_ms: int
+    ends_at_ms: int
+    time_zone: str
+    location: str
+    delivery_mode: Literal["in_person", "virtual", "hybrid"]
+    form_id: str
+    cfp_slug: str
+    cfp_state: Literal["scheduled", "open", "closed"]
+    cfp_boundary_at_ms: int | None = None
+    cfp_boundary_kind: Literal["opens", "closes"] | None = None
+
+
+class PublicCallList(BaseModel):
+    data: list[PublicCallSummary]

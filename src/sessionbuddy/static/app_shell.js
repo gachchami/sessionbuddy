@@ -1,6 +1,19 @@
 (() => {
   "use strict";
 
+  const cfpStateCopy = (call) => {
+    const labels = { scheduled: "Scheduled", open: "Open", closed: "Closed" };
+    const boundary = call.cfp_boundary_at_ms
+      ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(call.cfp_boundary_at_ms))
+      : "";
+    if (call.cfp_boundary_kind === "opens" && boundary) return `Opens ${boundary}`;
+    if (call.cfp_boundary_kind === "closes" && boundary) {
+      return call.cfp_state === "closed" ? `Closed ${boundary}` : `Closes ${boundary}`;
+    }
+    return labels[call.cfp_state] || "Call for proposals";
+  };
+  window.SessionBuddyCfpState = Object.freeze({ copy: cfpStateCopy });
+
   const shell = document.querySelector("[data-auth-shell]");
   const landingAccount = document.querySelector("[data-landing-account]");
   const publicEvents = document.querySelector("[data-public-events]");
@@ -478,6 +491,7 @@
   });
 
   function currentSection() {
+    if (location.pathname === "/calls") return "calls";
     if (location.pathname === "/admin") return "home";
     if (location.pathname.startsWith("/admin/people") || /\/speakers(?:\/|$)/.test(location.pathname)) return "speakers";
     if (location.pathname.startsWith("/reviews") || location.pathname.includes("evaluation-rounds")) return "reviews";
@@ -485,6 +499,10 @@
     if (location.pathname.startsWith("/admin")) return "events";
     if (location.pathname.startsWith("/account")) return "account";
     return "";
+  }
+
+  function isPersonaNeutralPath() {
+    return location.pathname === "/calls" || location.pathname === "/account";
   }
 
   function pageLabel(section, eventId) {
@@ -566,6 +584,15 @@
   function renderShell(session) {
     const active = activeRole(session);
     if (!active) {
+      if (isPersonaNeutralPath()) {
+        const inner = make("div", undefined, "sb-guest-header__inner");
+        const brand = link("", "/calls");
+        brand.className = "sb-app-brand";
+        brand.append(brandMark(), make("span", "SessionBuddy"));
+        inner.append(brand, accountMenu(session, new Set()));
+        shell.replaceChildren(inner);
+        return;
+      }
       renderSessionContractError();
       return;
     }
@@ -587,7 +614,7 @@
     // Account settings are persona-neutral. Treating /account as an organizer
     // workspace made an event-scoped organizer bounce account -> event ->
     // account forever while their required profile was still incomplete.
-    const organizerWorkspace = organizer && !["account", "speaker", "reviews"].includes(section);
+    const organizerWorkspace = organizer && !["account", "speaker", "reviews", "calls"].includes(section);
     const currentEventId = eventIdFromLocation();
     const organizationWorkspace = organizerWorkspace && canManageOrganization(session);
     if (organizerWorkspace && !organizationWorkspace && !currentEventId) {
@@ -666,7 +693,10 @@
       utilityGroup.append(make("p", "Your portals", "sb-sidebar__label"));
       const utilityNav = make("nav", undefined, "sb-sidebar__nav");
       utilityNav.setAttribute("aria-label", "Your portals");
-      if (accountRoles.has("speaker")) utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
+      if (accountRoles.has("speaker")) {
+        utilityNav.append(navLink("Speaker portal", "/speaker", "mic", section === "speaker"));
+        utilityNav.append(navLink("Calls for proposals", "/speaker#calls", "calendar", false));
+      }
       utilityGroup.append(utilityNav);
       if (utilityNav.children.length) sidebar.append(utilityGroup);
     }
@@ -805,6 +835,7 @@
         if (event.cfp_slug) {
           const eventKey = event.id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
           actions.append(link("Call for Proposals →", `/cfp/${eventKey}/${encodeURIComponent(event.cfp_slug)}`));
+          actions.prepend(make("span", cfpStateCopy(event), "role-label"));
         }
         if (event.schedule_published) actions.append(link("Schedule →", `/events/${encodeURIComponent(event.id)}/schedule`));
         if (event.speaker_count) actions.append(link("Speakers →", `/events/${encodeURIComponent(event.id)}/speakers`));
@@ -887,13 +918,16 @@
   // navigating away. Shared by the instant cached paint and the fresh
   // response, so the two can never route differently.
   function applySession(session) {
-    if (!activeRole(session)) {
+    const missingActiveRole = session.active_role === null
+      || session.active_role === undefined || session.active_role === "";
+    const rolelessNeutral = missingActiveRole && isPersonaNeutralPath();
+    if (!activeRole(session) && !rolelessNeutral) {
       clearCachedSession();
       renderSessionContractError();
       renderLandingSessionContractError();
       return false;
     }
-    if (!dashboardDestination(session)) {
+    if (!dashboardDestination(session) && !rolelessNeutral) {
       clearCachedSession();
       renderSessionContractError("workspace");
       renderLandingSessionContractError();
@@ -902,7 +936,7 @@
     window.SessionBuddyShellSession = session;
     // Redirect decisions run before first paint here, so onboarding and
     // dashboard hops no longer flash an intermediate page on the way through.
-    writeCachedSession(session);
+    if (!rolelessNeutral) writeCachedSession(session);
     if (!session.profile_complete && location.pathname !== "/account") {
       const next = `${location.pathname}${location.search}${location.hash}`;
       location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);

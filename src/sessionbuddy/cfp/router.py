@@ -423,6 +423,11 @@ def _public_event_key(event_id: str) -> str:
     return public_event_key(event_id)
 
 
+@cfp_router.get("/calls", response_class=HTMLResponse, include_in_schema=False)
+async def public_calls_page() -> HTMLResponse:
+    return HTMLResponse(_asset("open_calls.html"), headers={"Cache-Control": "no-store"})
+
+
 @cfp_router.get(
     "/cfp/{event_key}/{slug}", response_class=HTMLResponse, include_in_schema=False
 )
@@ -481,6 +486,11 @@ async def admin_programs_js() -> Response:
 @cfp_router.get("/product/assets/public-cfp.js", response_class=Response, include_in_schema=False)
 async def public_cfp_js() -> Response:
     return Response(_asset("public_cfp.js"), media_type="text/javascript")
+
+
+@cfp_router.get("/product/assets/open-calls.js", response_class=Response, include_in_schema=False)
+async def open_calls_js() -> Response:
+    return Response(_asset("open_calls.js"), media_type="text/javascript")
 
 
 @cfp_router.get(

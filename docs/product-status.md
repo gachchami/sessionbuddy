@@ -290,11 +290,10 @@ the inventory exposes uploader, upload time, scan state, preview, and download h
 Explicit development scanner-disable mode performs no scanner
 request, while production remains fail closed.
 
-The portal deliberately exposes only calls belonging to events the speaker
-already has an active speaker membership on. It is not a discovery surface and
-does not advertise other events' calls; organizers run events from the admin
-side, and public discovery stays on the public event pages. A speaker with no
-event membership therefore has no portal entry point by design.
+The membership-scoped event workspace exposes only events where the speaker has
+an active membership. A separate, always-mounted Calls for Proposals section
+lists public scheduled and open calls across events; it adds only the caller's
+own aggregate submission counts and does not grant destination-event access.
 
 Both proposal surfaces now hold their idempotency key steady across retries of
 an unchanged proposal, minting a new key only when the payload changes. A lost
@@ -329,9 +328,11 @@ Persona document boundaries now fail closed before a portal shell is served.
 An authenticated Organizer receives HTTP 403 from `/speaker` and `/reviews`,
 while matching Speaker/Reviewer sessions and anonymous sign-in shells retain
 their intended behavior. The SessionBuddy brand follows only the explicit
-active persona. Missing or unknown active-role state also returns 403; the
-server and browser no longer infer a destination from default roles, legacy
-memberships, or unrelated resource access.
+active persona. Unknown active-role state still returns 403; the server and
+browser no longer infer a destination from default roles, legacy memberships,
+or unrelated resource access. An authenticated account with no active role yet
+is the explicit exception: `/` redirects it to the persona-neutral `/calls`
+directory.
 
 First-run profile onboarding preserves the exact bootstrap first and last name,
 shows legacy display-name splitting as an editable unsaved draft, and provides
@@ -567,3 +568,16 @@ resolver table used by the distributor.
 - A round create or draft save the index refuses re-runs the name guard, so the
   loser of a concurrent submit gets the same rename guidance a caller the guard
   catches directly would get, not the generic conflict envelope.
+
+## Cross-event CFP discovery
+
+- The public `/calls` directory lists scheduled and open calls independently
+  of the general event directory. The landing page retains event-directory
+  semantics for schedules and announced speakers while sharing the canonical
+  CFP state and boundary copy.
+- The Speaker portal always mounts a cross-event Calls for Proposals section.
+  It combines public call facts with only the signed-in speaker's aggregate
+  submission counts, without requiring membership in the destination event.
+- A successful proposal continues to provision the destination membership and
+  speaker graph through the existing CFP transaction. Roleless authenticated
+  accounts now fall back from `/` to `/calls` instead of receiving a 403.

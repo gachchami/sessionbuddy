@@ -48,6 +48,8 @@ ASSETS = {
     "admin_programs.js": "ADMIN_PROGRAMS_JS",
     "public_cfp.html": "PUBLIC_CFP_HTML",
     "public_cfp.js": "PUBLIC_CFP_JS",
+    "open_calls.html": "OPEN_CALLS_HTML",
+    "open_calls.js": "OPEN_CALLS_JS",
     "co_speaker_invitation.html": "CO_SPEAKER_INVITATION_HTML",
     "co_speaker_invitation.js": "CO_SPEAKER_INVITATION_JS",
     "sign_in.html": "SIGN_IN_HTML",

@@ -64,6 +64,8 @@ from .models import (
     SpeakerAssetList,
     SpeakerAssetVersionView,
     SpeakerAssetView,
+    SpeakerDiscoverableCallList,
+    SpeakerDiscoverableCallView,
     SpeakerEventView,
     SpeakerNotificationView,
     SpeakerOpenCallView,
@@ -244,6 +246,76 @@ async def speaker_css(request: Request) -> Response:
 )
 async def speaker_js(request: Request) -> Response:
     return _product_asset(request, "speaker_portal.js", "text/javascript")
+
+
+@speaker_operations_router.get(
+    "/api/v1/speaker/open-calls",
+    response_model=SpeakerDiscoverableCallList,
+    tags=["speaker-portal"],
+)
+async def list_speaker_open_calls(request: Request) -> SpeakerDiscoverableCallList:
+    """Return cross-event public calls plus only the caller's submission totals.
+
+    This intentionally skips event/org permission checks: discovery must include
+    public calls for events where the speaker has no membership yet. The only
+    private facts added to public form data are rows owned by the caller.
+    """
+    await require_document_persona(request, Persona.SPEAKER)
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    now = utc_now_ms()
+    rows = result_rows(
+        await db.prepare(
+            """SELECT e.id AS event_id,e.name AS event_name,e.starts_at_ms,e.ends_at_ms,
+                      e.time_zone,COALESCE(e.location,'') AS location,e.delivery_mode,
+                      f.id AS form_id,f.slug,f.opens_at_ms,f.closes_at_ms,f.submission_limit
+               FROM events e JOIN call_for_speaker_forms f
+                 ON f.organization_id=e.organization_id AND f.event_id=e.id
+               WHERE e.status='active' AND f.status='published'
+                 -- Keep this inclusive close boundary aligned with
+                 -- availability_state and the defensive Python filter below.
+                 AND (f.closes_at_ms IS NULL OR f.closes_at_ms>?1)
+                 AND NOT EXISTS (
+                   SELECT 1 FROM call_for_speaker_forms newer
+                   WHERE newer.organization_id=f.organization_id
+                     AND newer.event_id=f.event_id AND newer.status='published'
+                     AND (newer.version>f.version OR
+                          (newer.version=f.version AND newer.published_at_ms>f.published_at_ms) OR
+                          (newer.version=f.version AND newer.published_at_ms=f.published_at_ms
+                           AND newer.id>f.id)))
+               ORDER BY e.starts_at_ms,e.id LIMIT 100"""
+        ).bind(now).all()
+    )
+    counts = result_rows(
+        await db.prepare(
+            """SELECT form_id,COUNT(*) AS submission_count FROM submissions
+               WHERE submitter_user_id=?1 AND status='submitted' GROUP BY form_id"""
+        ).bind(authenticated.actor.user_id).all()
+    )
+    counts_by_form = {str(row["form_id"]): int(row["submission_count"]) for row in counts}
+    data = []
+    for row in rows:
+        availability = form_availability(row["opens_at_ms"], row["closes_at_ms"], now)
+        # Defensive parity with the SQL pre-limit filter above. If the shared
+        # boundary changes, update both so closed calls cannot consume LIMIT 100.
+        if availability.state == "closed":
+            continue
+        form_id = str(row["form_id"])
+        count = counts_by_form.get(form_id, 0)
+        limit = int(row["submission_limit"]) if row["submission_limit"] is not None else None
+        remaining = max(0, limit - count) if limit is not None else None
+        data.append(SpeakerDiscoverableCallView(
+            event_id=str(row["event_id"]), event_name=str(row["event_name"]),
+            starts_at_ms=int(row["starts_at_ms"]), ends_at_ms=int(row["ends_at_ms"]),
+            time_zone=str(row["time_zone"]), location=str(row["location"]),
+            delivery_mode=str(row["delivery_mode"]), form_id=form_id, slug=str(row["slug"]),
+            cfp_state=availability.state, cfp_boundary_at_ms=availability.boundary_at_ms,
+            cfp_boundary_kind=availability.boundary_kind, submission_limit=limit,
+            submission_count=count, remaining_submissions=remaining,
+            already_submitted=count > 0,
+            actionable=availability.accepting and remaining != 0,
+        ))
+    return SpeakerDiscoverableCallList(data=data)
 
 
 @speaker_operations_router.get(
@@ -859,7 +931,7 @@ async def _open_call_view(
                      ON e.organization_id=f.organization_id AND e.id=f.event_id
                    WHERE f.organization_id=?1 AND f.event_id=?2
                      AND f.status='published' AND e.status='active'
-                   ORDER BY f.version DESC LIMIT 1"""
+                   ORDER BY f.version DESC,f.published_at_ms DESC,f.id DESC LIMIT 1"""
             ).bind(organization_id, event_id),
         )
     )

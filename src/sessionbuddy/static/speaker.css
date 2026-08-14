@@ -391,6 +391,12 @@ body.speaker-portal-page {
 .notification-list .notification-more { display: block; padding: .2rem 0 0; border: 0; }
 .notification-more button { width: 100%; min-height: 2.4rem; }
 .notification-list .empty { color: var(--speaker-muted); font-size: .875rem; }
+.speaker-calls { margin-block: 1rem; }
+.speaker-call-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(15rem,1fr)); gap: .75rem; }
+.speaker-call-card { display: grid; align-content: start; gap: .45rem; padding: 1rem; border: 1px solid var(--speaker-rule); border-radius: .75rem; background: #fff; }
+.speaker-call-card h3,.speaker-call-card p { margin: 0; }
+.speaker-call-card__state { color: #5e4a91; font-size: .75rem; font-weight: 800; text-transform: uppercase; }
+.speaker-call-card__action { width: fit-content; margin-top: .45rem; font-weight: 800; }
 
 @media (max-width: 48rem) {
   main { padding-top: .5rem; }

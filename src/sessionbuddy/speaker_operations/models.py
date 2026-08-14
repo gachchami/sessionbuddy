@@ -1,7 +1,5 @@
 from typing import Literal
-from urllib.parse import urlparse
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SpeakerProfileView(BaseModel):
@@ -14,35 +12,6 @@ class SpeakerProfileView(BaseModel):
     location: str
     links: list[str]
     version: int
-
-
-class SpeakerProfileUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    display_name: str = Field(min_length=1, max_length=200)
-    job_title: str = Field(default="", max_length=200)
-    company: str = Field(default="", max_length=200)
-    biography: str = Field(min_length=1, max_length=5000)
-    location: str = Field(default="", max_length=200)
-    links: list[str] = Field(default_factory=list, max_length=10)
-    version: int = Field(ge=1)
-
-    @field_validator("links")
-    @classmethod
-    def validate_links(cls, values: list[str]) -> list[str]:
-        if len(values) != len(set(values)):
-            raise ValueError("links must be unique")
-        for value in values:
-            parsed = urlparse(value)
-            if (
-                len(value) > 2000
-                or parsed.scheme not in {"http", "https"}
-                or not parsed.netloc
-                or parsed.username
-                or parsed.password
-            ):
-                raise ValueError("links must use an absolute HTTP or HTTPS URL")
-        return values
 
 
 class SpeakerTaskView(BaseModel):
@@ -119,6 +88,34 @@ class SpeakerOpenCallView(BaseModel):
     submission_limit: int | None = None
     submitted_count: int = 0
     remaining_submissions: int | None = None
+
+
+class SpeakerDiscoverableCallView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    event_name: str
+    starts_at_ms: int
+    ends_at_ms: int
+    time_zone: str
+    location: str
+    delivery_mode: Literal["in_person", "virtual", "hybrid"]
+    form_id: str
+    slug: str
+    cfp_state: Literal["scheduled", "open", "closed"]
+    cfp_boundary_at_ms: int | None = None
+    cfp_boundary_kind: Literal["opens", "closes"] | None = None
+    submission_limit: int | None = None
+    submission_count: int = 0
+    remaining_submissions: int | None = None
+    already_submitted: bool = False
+    actionable: bool = False
+
+
+class SpeakerDiscoverableCallList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data: list[SpeakerDiscoverableCallView]
 
 
 class SpeakerNotificationView(BaseModel):

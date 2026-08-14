@@ -715,6 +715,19 @@
         "p95_ms": 500
       }
     },
+    "GET /api/v1/public/calls": {
+      "benchmark": "public-cfp-directory",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "cfp",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "GET /api/v1/public/events": {
       "benchmark": "public-event-directory",
       "dashboards": [
@@ -882,6 +895,20 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 500
+      }
+    },
+    "GET /api/v1/speaker/open-calls": {
+      "benchmark": "speaker-cross-event-cfp-directory",
+      "dashboards": [
+        "release-health",
+        "api-explorer",
+        "page-performance"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 750
       }
     },
     "GET /api/v1/speaker/portal": {
@@ -2935,6 +2962,24 @@
         "sign-in"
       ],
       "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/calls": {
+      "classification": "public",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "speaker-cross-event-cfp-discovery"
+      ],
+      "owner": "cfp",
       "runbook": "docs/debugging-runbook.md#page-regression",
       "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
       "web_vitals": {

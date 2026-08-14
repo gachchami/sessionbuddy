@@ -107,8 +107,8 @@ def test_changed_speaker_workflows_bust_cached_assets() -> None:
     assert "/admin/people/assets/people.js?v=4" in directory
     assert "/admin/speaker-content/assets/speaker-content.js?v=3" in content
     assert "/admin/speakers/assets/messages.js?v=6" in messages
-    assert all("/product/assets/product.css?v=68" in page for page in (directory, content))
-    assert "/product/assets/product.css?v=69" in messages
+    assert all("/product/assets/product.css?v=70" in page for page in (directory, content))
+    assert "/product/assets/product.css?v=70" in messages
 
 
 def test_speaker_message_retries_reuse_idempotency_key() -> None:

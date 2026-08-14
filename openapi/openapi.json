@@ -7744,6 +7744,116 @@
         "title": "PrivateSubmissionView",
         "type": "object"
       },
+      "PublicCallList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PublicCallSummary"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "PublicCallList",
+        "type": "object"
+      },
+      "PublicCallSummary": {
+        "properties": {
+          "cfp_boundary_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Boundary At Ms"
+          },
+          "cfp_boundary_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opens",
+                  "closes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Boundary Kind"
+          },
+          "cfp_slug": {
+            "title": "Cfp Slug",
+            "type": "string"
+          },
+          "cfp_state": {
+            "enum": [
+              "scheduled",
+              "open",
+              "closed"
+            ],
+            "title": "Cfp State",
+            "type": "string"
+          },
+          "delivery_mode": {
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "form_id": {
+            "title": "Form Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone",
+          "location",
+          "delivery_mode",
+          "form_id",
+          "cfp_slug",
+          "cfp_state"
+        ],
+        "title": "PublicCallSummary",
+        "type": "object"
+      },
       "PublicEventList": {
         "properties": {
           "data": {
@@ -7762,6 +7872,32 @@
       },
       "PublicEventSummary": {
         "properties": {
+          "cfp_boundary_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Boundary At Ms"
+          },
+          "cfp_boundary_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opens",
+                  "closes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Boundary Kind"
+          },
           "cfp_slug": {
             "anyOf": [
               {
@@ -7772,6 +7908,22 @@
               }
             ],
             "title": "Cfp Slug"
+          },
+          "cfp_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "scheduled",
+                  "open",
+                  "closed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp State"
           },
           "delivery_mode": {
             "enum": [
@@ -9868,6 +10020,155 @@
           "uploaded_at_ms"
         ],
         "title": "SpeakerAssetView",
+        "type": "object"
+      },
+      "SpeakerDiscoverableCallList": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerDiscoverableCallView"
+            },
+            "title": "Data",
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SpeakerDiscoverableCallList",
+        "type": "object"
+      },
+      "SpeakerDiscoverableCallView": {
+        "additionalProperties": false,
+        "properties": {
+          "actionable": {
+            "default": false,
+            "title": "Actionable",
+            "type": "boolean"
+          },
+          "already_submitted": {
+            "default": false,
+            "title": "Already Submitted",
+            "type": "boolean"
+          },
+          "cfp_boundary_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Boundary At Ms"
+          },
+          "cfp_boundary_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "opens",
+                  "closes"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Boundary Kind"
+          },
+          "cfp_state": {
+            "enum": [
+              "scheduled",
+              "open",
+              "closed"
+            ],
+            "title": "Cfp State",
+            "type": "string"
+          },
+          "delivery_mode": {
+            "enum": [
+              "in_person",
+              "virtual",
+              "hybrid"
+            ],
+            "title": "Delivery Mode",
+            "type": "string"
+          },
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "form_id": {
+            "title": "Form Id",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "remaining_submissions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Submissions"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "submission_count": {
+            "default": 0,
+            "title": "Submission Count",
+            "type": "integer"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_name",
+          "starts_at_ms",
+          "ends_at_ms",
+          "time_zone",
+          "location",
+          "delivery_mode",
+          "form_id",
+          "slug",
+          "cfp_state"
+        ],
+        "title": "SpeakerDiscoverableCallView",
         "type": "object"
       },
       "SpeakerEventView": {
@@ -19221,6 +19522,28 @@
         ]
       }
     },
+    "/api/v1/public/calls": {
+      "get": {
+        "description": "List canonical published CFPs independently of the event-directory limit.",
+        "operationId": "list_public_calls_api_v1_public_calls_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicCallList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Public Calls",
+        "tags": [
+          "public-program"
+        ]
+      }
+    },
     "/api/v1/public/event-assets/{asset_name}": {
       "get": {
         "operationId": "public_event_branding_asset_api_v1_public_event_assets__asset_name__get",
@@ -20204,6 +20527,28 @@
         "summary": "Complete Speaker Upload",
         "tags": [
           "speaker-assets"
+        ]
+      }
+    },
+    "/api/v1/speaker/open-calls": {
+      "get": {
+        "description": "Return cross-event public calls plus only the caller's submission totals.\n\nThis intentionally skips event/org permission checks: discovery must include\npublic calls for events where the speaker has no membership yet. The only\nprivate facts added to public form data are rows owned by the caller.",
+        "operationId": "list_speaker_open_calls_api_v1_speaker_open_calls_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerDiscoverableCallList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Speaker Open Calls",
+        "tags": [
+          "speaker-portal"
         ]
       }
     },
