@@ -1369,6 +1369,172 @@ async def test_passwordless_speaker_must_finish_registration(cfp_environment) ->
     ).fetchone()[0] == 1
 
 
+def _seed_inactive_password_speaker(
+    connection: sqlite3.Connection, *, user_id: str, email: str, status: str
+) -> str:
+    now = utc_now_ms()
+    original_verifier = (
+        "$pbkdf2-sha256$i=600000$MDAwMDAwMDAwMDAwMDAwMA$"
+        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA"
+    )
+    connection.execute(
+        """INSERT INTO users
+           (id,email,normalized_email,status,email_verified_at_ms,first_name,last_name,
+            display_name,profile_completed_at_ms,created_at_ms,updated_at_ms)
+           VALUES(?,?,?,'active',?,'Original','Speaker','Original Speaker',?,?,?)""",
+        (user_id, email, email, now, now, now, now),
+    )
+    connection.execute(
+        """INSERT INTO user_roles(user_id,role,status,created_at_ms,updated_at_ms,is_default)
+           VALUES(?,'speaker','active',?,?,1)""",
+        (user_id, now, now),
+    )
+    connection.execute(
+        """INSERT INTO password_credentials
+           (user_id,verifier_phc,pepper_version,status,created_at_ms,updated_at_ms)
+           VALUES(?,?,1,?,?,?)""",
+        (user_id, original_verifier, status, now, now),
+    )
+    connection.execute(
+        """INSERT INTO password_authentication_state
+           (user_id,consecutive_failures,first_failure_at_ms,last_failure_at_ms,
+            blocked_until_ms,last_success_at_ms,updated_at_ms)
+           VALUES(?,5,?,?,?,?,?)""",
+        (user_id, now - 30, now - 20, now + 60_000, now - 100, now),
+    )
+    connection.execute(
+        """INSERT INTO sessions
+           (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,
+            last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms)
+           VALUES(?,?,?, ?,1,?,?,?,?)""",
+        (
+            f"old-{user_id}",
+            user_id,
+            hashlib.sha256(f"token-{user_id}".encode()).digest(),
+            hashlib.sha256(f"csrf-{user_id}".encode()).digest(),
+            now,
+            now,
+            now + 60_000,
+            now + 120_000,
+        ),
+    )
+    connection.execute(
+        """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)
+           VALUES(?,?,'speaker',?)""",
+        (f"old-{user_id}", user_id, now),
+    )
+    connection.commit()
+    return original_verifier
+
+
+async def test_reset_required_speaker_can_finish_cfp_registration(cfp_environment) -> None:
+    connection, environment = cfp_environment
+    user_id = "reset-required-speaker"
+    email = "reset-required@example.test"
+    original_verifier = _seed_inactive_password_speaker(
+        connection, user_id=user_id, email=email, status="reset_required"
+    )
+
+    async with _client(environment) as client:
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": email, "form_slug": "event-cfp", "redirect_path": "/cfp/event-cfp"},
+        )
+        assert requested.status_code == 202
+        completed = await client.post(
+            "/auth/verify",
+            data={
+                "token": _magic_token(connection, email),
+                "first_name": "Recovered",
+                "last_name": "Speaker",
+                "password": "a replacement private speaker passphrase",
+                "password_confirmation": "a replacement private speaker passphrase",
+            },
+            follow_redirects=False,
+        )
+        assert completed.status_code == 303
+        assert (await client.get("/api/v1/auth/session")).json()["active_role"] == "speaker"
+
+    credential = connection.execute(
+        "SELECT verifier_phc,status FROM password_credentials WHERE user_id=?", (user_id,)
+    ).fetchone()
+    assert credential["status"] == "active"
+    assert credential["verifier_phc"] != original_verifier
+    assert connection.execute(
+        "SELECT authorization_version FROM users WHERE id=?", (user_id,)
+    ).fetchone()[0] == 2
+    old_session = connection.execute(
+        "SELECT revoked_at_ms,revoke_reason FROM sessions WHERE id=?", (f"old-{user_id}",)
+    ).fetchone()
+    assert old_session["revoked_at_ms"] is not None
+    assert old_session["revoke_reason"] == "password_changed"
+    current_sessions = connection.execute(
+        """SELECT s.authorization_version,u.authorization_version
+           FROM sessions s JOIN users u ON u.id=s.user_id
+           WHERE s.user_id=? AND s.revoked_at_ms IS NULL""",
+        (user_id,),
+    ).fetchall()
+    assert [(row[0], row[1]) for row in current_sessions] == [(2, 2)]
+    state = connection.execute(
+        """SELECT consecutive_failures,first_failure_at_ms,last_failure_at_ms,
+                  blocked_until_ms,last_success_at_ms
+           FROM password_authentication_state WHERE user_id=?""",
+        (user_id,),
+    ).fetchone()
+    assert tuple(state)[:4] == (0, None, None, None)
+    assert state["last_success_at_ms"] is not None
+
+
+async def test_disabled_password_cannot_be_reactivated_by_cfp_registration(
+    cfp_environment,
+) -> None:
+    """A denied link is restored so retries fail closed until the link expires."""
+    connection, environment = cfp_environment
+    user_id = "disabled-password-speaker"
+    email = "disabled-password@example.test"
+    original_verifier = _seed_inactive_password_speaker(
+        connection, user_id=user_id, email=email, status="disabled"
+    )
+
+    async with _client(environment) as client:
+        requested = await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": email, "form_slug": "event-cfp", "redirect_path": "/cfp/event-cfp"},
+        )
+        assert requested.status_code == 202
+        denied = await client.post(
+            "/auth/verify",
+            data={
+                "token": _magic_token(connection, email),
+                "first_name": "Rewritten",
+                "last_name": "Identity",
+                "password": "a replacement private speaker passphrase",
+                "password_confirmation": "a replacement private speaker passphrase",
+            },
+            follow_redirects=False,
+        )
+        assert denied.status_code == 403
+
+    credential = connection.execute(
+        "SELECT verifier_phc,status FROM password_credentials WHERE user_id=?", (user_id,)
+    ).fetchone()
+    assert tuple(credential) == (original_verifier, "disabled")
+    user = connection.execute(
+        """SELECT first_name,last_name,display_name,authorization_version
+           FROM users WHERE id=?""",
+        (user_id,),
+    ).fetchone()
+    assert tuple(user) == ("Original", "Speaker", "Original Speaker", 1)
+    assert connection.execute(
+        "SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at_ms IS NULL", (user_id,)
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        """SELECT consumed_at_ms FROM authentication_challenges
+           WHERE normalized_email=? ORDER BY created_at_ms DESC LIMIT 1""",
+        (email,),
+    ).fetchone()[0] is None
+
+
 async def test_local_https_magic_link_is_queued_for_local_mail_inbox(cfp_environment) -> None:
     connection, environment = cfp_environment
     environment.PUBLIC_BASE_URL = "https://localhost:8443"

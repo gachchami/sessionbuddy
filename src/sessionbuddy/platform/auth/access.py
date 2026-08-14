@@ -6237,18 +6237,25 @@ async def _finish_magic_link_sign_in(
             .first()
         )
         user_id = str(existing_user["id"]) if existing_user is not None else new_id()
-        existing_credential = None
+        credential_status: str | None = None
         if existing_user is not None:
             existing_credential = row_mapping(
                 await db.prepare(
-                    "SELECT user_id FROM password_credentials "
-                    "WHERE user_id=?1 AND status='active' LIMIT 1"
+                    "SELECT status FROM password_credentials WHERE user_id=?1 LIMIT 1"
                 )
                 .bind(user_id)
                 .first()
             )
+            credential_status = (
+                str(existing_credential["status"]) if existing_credential is not None else None
+            )
+            if credential_status == "disabled":
+                # A disabled credential is a lock, not an invitation to replace
+                # it. Decide before constructing a mutation batch so a denied
+                # redemption cannot rewrite profile or account-completion data.
+                raise HTTPException(status_code=403, detail="Password access is disabled")
         batch = CommandBatch(db)
-        if existing_user is None or existing_credential is None:
+        if existing_user is None or credential_status != "active":
             if registration is None:
                 raise HTTPException(
                     status_code=422,
@@ -6282,7 +6289,8 @@ async def _finish_magic_link_sign_in(
                     db.prepare(
                         """UPDATE users SET first_name=?1,last_name=?2,display_name=?3,
                            job_title=?4,company=?5,profile_completed_at_ms=?6,
-                           email_verified_at_ms=COALESCE(email_verified_at_ms,?6),updated_at_ms=?6
+                           email_verified_at_ms=COALESCE(email_verified_at_ms,?6),
+                           authorization_version=authorization_version+1,updated_at_ms=?6
                            WHERE id=?7"""
                     ).bind(
                         registration.first_name,
@@ -6296,10 +6304,34 @@ async def _finish_magic_link_sign_in(
                 )
             batch.add_statement(
                 db.prepare(
+                    """UPDATE sessions SET revoked_at_ms=?1,revoke_reason='password_changed'
+                       WHERE user_id=?2 AND revoked_at_ms IS NULL"""
+                ).bind(now, user_id)
+            )
+            batch.add_statement(
+                db.prepare(
                     """INSERT INTO password_credentials
                        (user_id,verifier_phc,pepper_version,status,created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,1,'active',?3,?3)"""
+                       VALUES(?1,?2,1,'active',?3,?3)
+                       ON CONFLICT(user_id) DO UPDATE SET verifier_phc=excluded.verifier_phc,
+                         pepper_version=1,
+                         -- ELSE NULL intentionally aborts the batch if any status
+                         -- other than reset_required reaches this conflict branch.
+                         status=CASE WHEN password_credentials.status='reset_required'
+                                     THEN 'active' ELSE NULL END,
+                         updated_at_ms=excluded.updated_at_ms"""
                 ).bind(user_id, verifier, now)
+            )
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO password_authentication_state
+                       (user_id,consecutive_failures,first_failure_at_ms,last_failure_at_ms,
+                        blocked_until_ms,updated_at_ms)
+                       VALUES(?1,0,NULL,NULL,NULL,?2)
+                       ON CONFLICT(user_id) DO UPDATE SET consecutive_failures=0,
+                         first_failure_at_ms=NULL,last_failure_at_ms=NULL,
+                         blocked_until_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+                ).bind(user_id, now)
             )
             batch.add_statement(
                 db.prepare(
