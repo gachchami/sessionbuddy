@@ -308,10 +308,11 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
                 "display_name": "Priya Raman",
                 "job_title": "Principal Engineer",
                 "company": "Latticework Systems",
-                "biography": "",
+                "biography_override": None,
                 "location": "",
                 "links": [],
                 "version": 1,
+                "participation_version": 1,
                 "confirmation_status": "confirmed",
             },
         )
@@ -341,6 +342,7 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
             row for row in metrics.json()["recent_speakers"] if row["person_id"] == "person-1"
         )
         assert recent["proposal_title"] == "Accepted talk"
+
 
         # SessionBoard consumers historically receive the primary speaker
         # first. Pin that contract with a co-speaker whose name would otherwise
@@ -390,6 +392,124 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
             "Priya Raman",
             "Aaron Co-speaker",
         ]
+
+
+async def test_rejected_profile_links_do_not_mutate_speaker_or_audit(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(connection, organization_id, event_id)
+        person_id = connection.execute(
+            "SELECT person_id FROM event_speakers WHERE id=?", (speaker_id,)
+        ).fetchone()[0]
+
+        def state() -> tuple[object, object, int]:
+            person = connection.execute(
+                "SELECT version,updated_at_ms FROM people WHERE id=?", (person_id,)
+            ).fetchone()
+            participation = connection.execute(
+                "SELECT version,updated_at_ms FROM event_speakers WHERE id=?", (speaker_id,)
+            ).fetchone()
+            audits = connection.execute(
+                """SELECT COUNT(*) FROM audit_events
+                   WHERE action='speaker.profile.admin_update' AND target_id=?""",
+                (speaker_id,),
+            ).fetchone()[0]
+            return person, participation, audits
+
+        before = state()
+        base = {
+            "display_name": "Priya Raman",
+            "job_title": "Principal Engineer",
+            "company": "Latticework Systems",
+            "biography_override": None,
+            "location": "Pune",
+            "version": int(before[0][0]),
+            "participation_version": int(before[1][0]),
+            "confirmation_status": "confirmed",
+        }
+        cases = (
+            (["@priyabuilds"], "links.0"),
+            (["https://example.com", "https://example.com"], "links"),
+            ([f"https://example.com/{index}" for index in range(11)], "links"),
+        )
+        for links, expected_field in cases:
+            response = await client.patch(
+                f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}",
+                headers={"origin": "https://test", "x-csrf-token": csrf},
+                json={**base, "links": links},
+            )
+            assert response.status_code == 422, response.text
+            assert response.json()["error"]["field"] == expected_field
+            assert state() == before
+
+
+async def test_biography_override_round_trips_without_laundering_account_bio(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection, organization_id, event_id, link_user=True
+        )
+        connection.execute(
+            "UPDATE users SET description='Account biography' WHERE email='priya@example.com'"
+        )
+        connection.commit()
+
+        async def target() -> dict[str, object]:
+            response = await client.get(f"/api/v1/admin/events/{event_id}/speaker-targets")
+            assert response.status_code == 200, response.text
+            return next(
+                row for row in response.json()["data"] if row["event_speaker_id"] == speaker_id
+            )
+
+        inherited = await target()
+        assert inherited["biography"] == "Account biography"
+        assert inherited["biography_source"] == "account"
+        assert inherited["biography_override"] is None
+
+        payload = {
+            "display_name": "Priya Raman",
+            "job_title": "Principal Engineer",
+            "company": "Latticework Systems",
+            "location": "Pune",
+            "links": ["https://x.com/priyabuilds"],
+            "confirmation_status": "confirmed",
+        }
+        override = await client.patch(
+            f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={
+                **payload,
+                "biography_override": "Organization biography",
+                "version": inherited["version"],
+                "participation_version": inherited["participation_version"],
+            },
+        )
+        assert override.status_code == 200, override.text
+        assert override.json()["biography_source"] == "organization"
+        assert override.json()["biography"] == "Organization biography"
+        assert override.json()["biography_override"] == "Organization biography"
+
+        cleared = await client.patch(
+            f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={
+                **payload,
+                "biography_override": None,
+                "version": override.json()["version"],
+                "participation_version": override.json()["participation_version"],
+            },
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["biography_source"] == "account"
+        assert cleared.json()["biography"] == "Account biography"
+        assert cleared.json()["biography_override"] is None
+        assert (await target())["biography"] == "Account biography"
 
 
 async def test_speaker_without_accepted_submission_falls_back_to_latest(

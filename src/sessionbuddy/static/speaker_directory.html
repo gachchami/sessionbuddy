@@ -6,10 +6,10 @@
   <title>People · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=70">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=23">
-  <script src="/app-shell/assets/api-client.js?v=2" defer></script>
+  <script src="/app-shell/assets/api-client.js?v=3" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=26" defer></script>
   <script src="/admin/people/assets/search.js?v=1" defer></script>
-  <script src="/admin/people/assets/people.js?v=4" defer></script>
+  <script src="/admin/people/assets/people.js?v=5" defer></script>
 </head>
 <body class="app-body speaker-directory-page">
   <a class="skip-link" href="#main">Skip to people</a>
@@ -36,7 +36,7 @@
         <div><h3>Links</h3><div id="speaker-links" class="actions"></div></div>
         <div><h3>Events and proposals</h3><ul id="speaker-events" class="speaker-participations"></ul></div>
       </div>
-      <form id="speaker-form"><input name="version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label id="speaker-confirmation-field">Participation status<select name="confirmation_status"><option value="pending">Awaiting confirmation</option><option value="confirmed">Confirmed</option><option value="declined">Declined</option></select></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">One per line</span><textarea name="links" rows="3"></textarea></label></div><label>Biography<textarea name="biography" rows="6" maxlength="5000"></textarea></label><button>Save speaker details</button></form>
+      <form id="speaker-form"><input name="version" type="hidden"><input name="participation_version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label id="speaker-confirmation-field">Participation status<select name="confirmation_status"><option value="pending">Awaiting confirmation</option><option value="confirmed">Confirmed</option><option value="declined">Declined</option></select></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">Full http:// or https:// URLs, one per line</span><textarea name="links" rows="3" maxlength="20009" placeholder="https://example.com"></textarea></label></div><label>Organization biography <span class="optional">Leave blank to inherit the account biography</span><textarea name="biography_override" rows="6" maxlength="5000"></textarea></label><p id="speaker-biography-source" class="help"></p><button>Save speaker details</button></form>
       <form id="speaker-headshot-form" class="account-headshot" hidden>
         <div class="account-headshot__preview"><img id="speaker-headshot-preview" alt="" hidden><span id="speaker-headshot-fallback" aria-hidden="true">SP</span></div>
         <div><h3>Headshot</h3><p class="help">Upload a JPG, PNG, or WebP for this speaker. Maximum 5 MB; it is scanned before use.</p><div class="actions"><label class="button secondary account-headshot__choose">Choose image<input name="headshot" type="file" accept="image/jpeg,image/png,image/webp" required></label><button type="submit">Save headshot</button></div><p id="speaker-headshot-status" class="status status-compact" role="status"></p></div>

@@ -616,11 +616,17 @@
       "AdminEventSpeakerUpdate": {
         "additionalProperties": false,
         "properties": {
-          "biography": {
-            "default": "",
-            "maxLength": 5000,
-            "title": "Biography",
-            "type": "string"
+          "biography_override": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography Override"
           },
           "company": {
             "default": "",
@@ -658,6 +664,7 @@
           },
           "links": {
             "items": {
+              "maxLength": 2000,
               "type": "string"
             },
             "maxItems": 10,
@@ -670,6 +677,11 @@
             "title": "Location",
             "type": "string"
           },
+          "participation_version": {
+            "minimum": 1.0,
+            "title": "Participation Version",
+            "type": "integer"
+          },
           "version": {
             "minimum": 1.0,
             "title": "Version",
@@ -678,7 +690,9 @@
         },
         "required": [
           "display_name",
-          "version"
+          "biography_override",
+          "version",
+          "participation_version"
         ],
         "title": "AdminEventSpeakerUpdate",
         "type": "object"
@@ -1342,11 +1356,17 @@
       "AdminSpeakerUpdate": {
         "additionalProperties": false,
         "properties": {
-          "biography": {
-            "default": "",
-            "maxLength": 5000,
-            "title": "Biography",
-            "type": "string"
+          "biography_override": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography Override"
           },
           "company": {
             "default": "",
@@ -1368,6 +1388,7 @@
           },
           "links": {
             "items": {
+              "maxLength": 2000,
               "type": "string"
             },
             "maxItems": 10,
@@ -1388,6 +1409,7 @@
         },
         "required": [
           "display_name",
+          "biography_override",
           "version"
         ],
         "title": "AdminSpeakerUpdate",
@@ -7169,6 +7191,26 @@
             "title": "Biography",
             "type": "string"
           },
+          "biography_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography Override"
+          },
+          "biography_source": {
+            "default": "account",
+            "enum": [
+              "account",
+              "organization"
+            ],
+            "title": "Biography Source",
+            "type": "string"
+          },
           "company": {
             "title": "Company",
             "type": "string"
@@ -10522,6 +10564,26 @@
             "title": "Biography",
             "type": "string"
           },
+          "biography_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography Override"
+          },
+          "biography_source": {
+            "default": "account",
+            "enum": [
+              "account",
+              "organization"
+            ],
+            "title": "Biography Source",
+            "type": "string"
+          },
           "can_edit": {
             "title": "Can Edit",
             "type": "boolean"
@@ -10799,6 +10861,26 @@
             "title": "Biography",
             "type": "string"
           },
+          "biography_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography Override"
+          },
+          "biography_source": {
+            "default": "account",
+            "enum": [
+              "account",
+              "organization"
+            ],
+            "title": "Biography Source",
+            "type": "string"
+          },
           "company": {
             "title": "Company",
             "type": "string"
@@ -10839,6 +10921,11 @@
           "location": {
             "title": "Location",
             "type": "string"
+          },
+          "participation_version": {
+            "default": 1,
+            "title": "Participation Version",
+            "type": "integer"
           },
           "person_id": {
             "anyOf": [

@@ -421,6 +421,49 @@
     }
     byId("open-round").disabled = blockedByPrerequisites || awaitingIntent;
   }
+  // Custom validity outlives the edit that fixed it: the message is cleared only by an
+  // explicit setCustomValidity(""), and while one is set the browser refuses to fire the
+  // form's submit event -- so validateRound(), the only code that recomputes these
+  // messages, never runs again. The form-level input listener clears just event.target,
+  // which is enough when the invalid control is the one the organizer edits to fix it.
+  // Neither scorecard message is that kind: a weight total is anchored to one row but
+  // corrected on any row, and a choice-list message stays behind on an input that
+  // switching the row to Score or Free text has just hidden. Both are therefore cleared
+  // for the whole scorecard whenever anything in it changes.
+  //
+  // The weight half is currently also masked by api_client.js's validateRequiredText(),
+  // which runs on a capture-phase click on any submit button and rewrites the validity of
+  // every non-empty required input -- the weight inputs included. That is an accident of
+  // another module's required-field handling, not a guarantee this form should lean on:
+  // it does not cover the choice list (which drops `required` the moment the row stops
+  // being a Dropdown), and it would replace the total message with "This field is
+  // required." on an empty weight. Clearing here keeps the recovery local and intentional.
+  function clearCriterionValidity() {
+    byId("criteria")
+      .querySelectorAll('input[name="criterion_weight"], input[name="criterion_options"]')
+      .forEach((input) => input.setCustomValidity(""));
+  }
+  function scoredWeightTotal() {
+    const rows = [...byId("criteria").querySelectorAll(".criterion-row")]
+      .filter((row) => (row.querySelector('[name="criterion_type"]')?.value ?? "score") === "score");
+    return {
+      count: rows.length,
+      total: rows.reduce((sum, row) => sum + (Number(row.querySelector('[name="criterion_weight"]')?.value) || 0), 0),
+      rows,
+    };
+  }
+  // The running total is the piece the bubble alone could never carry: "must total 100"
+  // is only actionable next to what the Score weights currently add up to, recomputed
+  // the moment a weight or a criterion type changes.
+  function updateScorecardTotal() {
+    const summary = byId("scorecard-total");
+    if (!summary) return;
+    const { count, total } = scoredWeightTotal();
+    summary.textContent = count
+      ? `Score weights total ${total} of 100.`
+      : "No Score criteria — keep at least one so reviews produce a rating.";
+    summary.classList.toggle("error", !count || total !== 100);
+  }
   function addRemoveButton(row) {
     if (!row.querySelector('[name="criterion_type"]')) {
       const typeLabel = document.createElement("label");
@@ -448,6 +491,15 @@
         weightLabel.querySelector("input").required = scored;
         optionsLabel.hidden = type.value !== "select";
         options.required = type.value === "select";
+        // Before the input goes out of sight, and unconditionally: a choice-list message
+        // left on a hidden input blocks every later submit with nothing on screen to fix,
+        // and dropping `required` here is what removes this input from the only other
+        // thing that would have cleared it.
+        options.setCustomValidity("");
+        // Covers the synthetic change events too (draft loading, row restore), which are
+        // dispatched without bubbles and so never reach the container's listeners.
+        clearCriterionValidity();
+        updateScorecardTotal();
       };
       type.addEventListener("change", updateType);
       row.append(typeLabel, optionsLabel, requiredLabel);
@@ -462,10 +514,31 @@
         return;
       }
       row.remove();
+      // Deleting a row is the third way to correct a weight total without touching the
+      // row the message is anchored to, and the only one with no path through
+      // updateType() -- a click on this button reaches neither the scorecard's
+      // input/change listeners nor api_client's submit-button handler. Adding a row is
+      // already covered: appendCriterionRow() ends in updateType().
+      clearCriterionValidity();
+      updateScorecardTotal();
     });
     row.append(remove);
   }
   byId("criteria").querySelectorAll(".criterion-row").forEach(addRemoveButton);
+  // Keep the visual total current while typing without announcing every
+  // keystroke. The live region is temporarily muted until the committed change.
+  byId("criteria").addEventListener("input", () => {
+    const summary = byId("scorecard-total");
+    summary?.setAttribute("aria-live", "off");
+    clearCriterionValidity();
+    updateScorecardTotal();
+  });
+  byId("criteria").addEventListener("change", () => {
+    byId("scorecard-total")?.setAttribute("aria-live", "polite");
+    clearCriterionValidity();
+    updateScorecardTotal();
+  });
+  updateScorecardTotal();
   const guidance = byId("round-form").elements.evaluator_guidance.closest("label");
   const commentRequired = document.createElement("label");
   commentRequired.className = "check-label";
@@ -1275,11 +1348,49 @@
       : opens !== null && closes !== null && closes <= opens
         ? "Review close must be after review open."
         : "");
-    const weights = [...form.querySelectorAll('.criterion-row')]
-      .filter((row) => row.querySelector('[name="criterion_type"]').value === "score")
-      .map((row) => Number(row.querySelector('[name="criterion_weight"]').value));
-    const weightError = weights.reduce((total, value) => total + value, 0) === 100 ? "" : "Criterion weights must total 100.";
-    form.querySelector('input[name="criterion_weight"]')?.setCustomValidity(weightError);
+    // Weight-total invalidity must sit on a control the organizer can see. The first
+    // weight input in the form is not that control when its row was switched to Dropdown
+    // or Free text: updateType() hides it, reportValidity() then returns false on an
+    // unfocusable input, and the submit dies with no bubble, no status text, and only a
+    // "not focusable" warning in the console. Clear every weight input first, so a row
+    // switched away from Score can never hold the form invalid from behind a hidden
+    // label, then anchor the error to the first weight input that is still visible.
+    form.querySelectorAll('input[name="criterion_weight"]').forEach((input) => input.setCustomValidity(""));
+    const scorecard = scoredWeightTotal();
+    if (!scorecard.count) {
+      // Every weight input is hidden, so there is nothing to anchor to: this is a
+      // scorecard-level problem and gets the scorecard-level error the server would
+      // also raise ("a scorecard requires at least one scored criterion").
+      showRoundError(
+        "Keep at least one Score criterion. Dropdown and Free text collect answers, "
+        + "but only Score criteria produce the round's weighted rating.",
+      );
+      return false;
+    }
+    if (scorecard.total !== 100) {
+      scorecard.rows[0].querySelector('input[name="criterion_weight"]')
+        .setCustomValidity(`Score criterion weights must total 100. They currently total ${scorecard.total}.`);
+    }
+    // Dropdown choices are checked before the payload leaves the browser: the server's
+    // 422 for this names criteria[n].options, which no organizer can map back to a row.
+    form.querySelectorAll(".criterion-row").forEach((row) => {
+      const optionsInput = row.querySelector('[name="criterion_options"]');
+      if (!optionsInput) return;
+      if (row.querySelector('[name="criterion_type"]')?.value !== "select") {
+        optionsInput.setCustomValidity("");
+        return;
+      }
+      const options = optionsInput.value.split(",").map((option) => option.trim()).filter(Boolean);
+      optionsInput.setCustomValidity(
+        options.length < 2 || options.length > 20
+          ? "Enter 2–20 comma-separated choices."
+          : options.some((option) => option.length > 120)
+            ? "Each choice must be at most 120 characters."
+            : new Set(options).size !== options.length
+              ? "Choices must be unique."
+              : "",
+      );
+    });
     // A draft is a work in progress: it may be saved with no proposals and no reviewers
     // yet. The API applies the same rule, and refuses to OPEN a round with no
     // assignments, so the constraint lives at the point where it actually matters.
@@ -1387,6 +1498,9 @@
       row.querySelector('[name="criterion_required"]').checked = values.required !== false;
       row.querySelector('[name="criterion_type"]').dispatchEvent(new Event("change"));
     }
+    // The restored weight lands after addRemoveButton() already ran updateType(), so the
+    // total shown would otherwise trail the row by one edit.
+    updateScorecardTotal();
     return { row, name };
   }
   byId("add-criterion").addEventListener("click", () => {

@@ -180,8 +180,6 @@
     }
     byId("speaker-count").textContent = String(speakers.length);
     byId("speaker-count").setAttribute("aria-label", `${speakers.length} of ${allSpeakers.length} people shown`);
-    byId("status").classList.remove("error");
-    byId("status").textContent = "";
   }
 
   function uniquePeople(items) {
@@ -256,6 +254,7 @@
         event_speaker_id: target.event_speaker_id,
         selection_status: target.selection_status,
         confirmation_status: target.confirmation_status,
+        participation_version: target.participation_version,
         proposal_title: target.proposal_title,
       }],
     };
@@ -355,6 +354,7 @@
       event_speaker_id: participation.event_speaker_id,
       selection_status: participation.selection_status,
       confirmation_status: participation.confirmation_status,
+      participation_version: participation.participation_version,
       proposal_title: participation.proposal_title,
     };
     byId("speaker-detail").hidden = false;
@@ -362,9 +362,13 @@
     byId("speaker-name").textContent = person.display_name;
     byId("speaker-proposal").textContent = participation.proposal_title;
     const form = byId("speaker-form");
-    ["display_name", "email", "job_title", "company", "location", "biography", "version"].forEach((name) => {
+    ["display_name", "email", "job_title", "company", "location", "version", "participation_version"].forEach((name) => {
       form.elements[name].value = person[name] ?? "";
     });
+    form.elements.biography_override.value = person.biography_override ?? "";
+    byId("speaker-biography-source").textContent = person.biography_source === "account"
+      ? `Currently inherited from the account: ${person.biography || "No account biography."}`
+      : "This event uses the organization biography below.";
     form.elements.confirmation_status.value = participation.confirmation_status;
     byId("speaker-confirmation-field").hidden = false;
     window.SessionBuddyApi.refreshCharacterCounters(form);
@@ -430,9 +434,14 @@
     byId("speaker-onboarding").hidden = true;
     byId("speaker-directory").hidden = !sessionHasOrganizerAccess;
     if (profile.can_edit) {
-      ["display_name", "email", "job_title", "company", "location", "biography", "version"].forEach((name) => {
+      ["display_name", "email", "job_title", "company", "location", "version"].forEach((name) => {
         form.elements[name].value = profile[name] ?? "";
       });
+      form.elements.participation_version.value = "";
+      form.elements.biography_override.value = profile.biography_override ?? "";
+      byId("speaker-biography-source").textContent = profile.biography_source === "account"
+        ? `Currently inherited from your account: ${profile.biography || "No account biography."}`
+        : "This organization biography overrides your account biography.";
       form.elements.links.value = (profile.links || []).join("\n");
       window.SessionBuddyApi.refreshCharacterCounters(form);
     }
@@ -487,6 +496,8 @@
       if (!selection) throw new Error("This speaker is not available in the selected event.");
       showSpeakerDetail(selection.person, selection.participation);
     }
+    byId("status").classList.remove("error");
+    byId("status").textContent = "";
     renderDirectory();
   }
 
@@ -634,6 +645,35 @@
     if (!form.reportValidity()) return;
     const values = Object.fromEntries(new FormData(form));
     const links = String(values.links || "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    const linkControl = form.elements.links;
+    linkControl.setCustomValidity("");
+    let linkError = "";
+    if (links.length > 10) linkError = "Enter no more than 10 links.";
+    else if (new Set(links).size !== links.length) linkError = "Each link must be unique.";
+    else {
+      const invalidIndex = links.findIndex((value) => {
+        if (value.length > 2000) return true;
+        try {
+          const parsed = new URL(value);
+          return !["http:", "https:"].includes(parsed.protocol) || !parsed.host
+            || Boolean(parsed.username) || Boolean(parsed.password);
+        } catch (_) { return true; }
+      });
+      if (invalidIndex >= 0) {
+        linkError = `Link ${invalidIndex + 1} must be a full http:// or https:// URL without credentials.`;
+      }
+    }
+    if (linkError) {
+      linkControl.setCustomValidity(linkError);
+      form.reportValidity();
+      linkControl.focus();
+      // The shared invalid handler has already rendered the durable inline
+      // message. Do not leave a custom-validity latch behind: some touch
+      // browsers run native constraint validation before dispatching the next
+      // submit event, which otherwise makes a corrected form look inert.
+      linkControl.setCustomValidity("");
+      return;
+    }
     try {
       const profileEndpoint = profileScoped
         ? `/api/v1/speaker-profiles/${encodeURIComponent(selectedSpeaker.person_id)}`
@@ -645,23 +685,48 @@
           display_name: values.display_name,
           job_title: values.job_title,
           company: values.company,
-          biography: values.biography,
+          biography_override: values.biography_override || null,
           location: values.location,
           links,
           version: Number(values.version),
-          ...(profileScoped ? {} : { confirmation_status: values.confirmation_status }),
+          ...(profileScoped ? {} : {
+            participation_version: Number(values.participation_version),
+            confirmation_status: values.confirmation_status,
+          }),
         }),
       });
       selectedSpeaker = { ...selectedSpeaker, ...updated };
       form.elements.version.value = updated.version;
+      if (!profileScoped) form.elements.participation_version.value = updated.participation_version;
       byId("speaker-name").textContent = updated.display_name;
       if (profileScoped) showProfile(selectedSpeaker);
+      else {
+        const current = findEventSpeaker(selectedSpeaker.event_speaker_id);
+        if (current) {
+          Object.assign(current.person, updated);
+          Object.assign(current.participation, {
+            confirmation_status: updated.confirmation_status,
+            participation_version: updated.participation_version,
+          });
+          showSpeakerDetail(current.person, current.participation);
+          renderDirectory();
+        }
+      }
       byId("status").textContent = "Speaker details saved.";
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
+      const validationShown = window.SessionBuddyApi.showValidationErrors?.(form, error) ?? false;
+      if (!validationShown) byId("status").focus();
     }
   });
+
+  const clearLinkValidation = (event) => event.currentTarget.setCustomValidity("");
+  // Clear the previous list-level error before native submit validation runs.
+  // Capture makes this reliable on touch browsers, where the browser can test
+  // the stale custom validity before a later bubble listener is observed.
+  byId("speaker-form").elements.links.addEventListener("input", clearLinkValidation, true);
+  byId("speaker-form").elements.links.addEventListener("change", clearLinkValidation, true);
 
   byId("add-speaker-note").addEventListener("click", () => {
     byId("speaker-note-fields").append(speakerNoteRow());

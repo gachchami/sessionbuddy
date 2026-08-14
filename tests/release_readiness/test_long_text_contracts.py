@@ -26,10 +26,7 @@ from sessionbuddy.platform.auth.access import (
     BootstrapCreate,
     EventCreate,
 )
-from sessionbuddy.speaker_operations.models import (
-    SpeakerProfileUpdate,
-    UploadAuthorizationCreate,
-)
+from sessionbuddy.speaker_operations.models import UploadAuthorizationCreate
 
 ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
@@ -56,6 +53,7 @@ STATIC_LONG_TEXT_LIMITS = {
     ("speaker_content.html", "help_text"): 2000,
     ("events_admin.html", "description"): 2000,
     ("event_workspace.html", "embed-css"): 2000,
+    ("speaker_directory.html", "biography_override"): 5000,
     ("speaker_directory.html", "biography"): 5000,
     ("speaker_messages.html", "body_text"): 10000,
 }
@@ -150,8 +148,7 @@ def test_api_long_text_limits_match_the_user_interface_contract() -> None:
         (SubmissionDecisionCreate, "internal_reason"): 2000,
         (SubmissionDecisionCreate, "speaker_message"): 4000,
         (EvaluationRoundCloseRequest, "reason"): 2000,
-        (SpeakerProfileUpdate, "biography"): 5000,
-        (AdminSpeakerUpdate, "biography"): 5000,
+        (AdminSpeakerUpdate, "biography_override"): 5000,
         (AdminSessionContentUpdate, "abstract"): 5000,
         (SpeakerTaskCreate, "help_text"): 2000,
         (UploadAuthorizationCreate, "version_comment"): 1000,

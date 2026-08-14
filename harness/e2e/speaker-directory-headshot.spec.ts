@@ -19,7 +19,7 @@ for (const width of [1280, 390]) {
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ csrf_token: "csrf", organization_access: [{ permissions: ["manage"] }], event_access: [] }) }));
     await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "org-a", name: "Org A" }] }) }));
     await page.route("**/api/v1/admin/events/event-a", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "event-a", organization_id: "org-a", name: "DevFlow" }) }));
-    await page.route("**/api/v1/admin/events/event-a/speaker-targets", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ event_speaker_id: "es-a", person_id: null, user_id: "user-a", email: "speaker@example.test", display_name: "Priya Raman", job_title: "Engineer", company: "Example", biography: "Bio", location: "", links: [], version: 1, selection_status: "accepted", confirmation_status: "confirmed", proposal_title: "A talk", can_edit: true }] }) }));
+    await page.route("**/api/v1/admin/events/event-a/speaker-targets", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ event_speaker_id: "es-a", person_id: null, user_id: "user-a", email: "speaker@example.test", display_name: "Priya Raman", job_title: "Engineer", company: "Example", biography: "Bio", biography_source: "account", biography_override: null, location: "", links: [], version: 1, participation_version: 1, selection_status: "accepted", confirmation_status: "confirmed", proposal_title: "A talk", can_edit: true }] }) }));
     await page.route("**/api/v1/admin/events/event-a/speakers/es-a/headshot*", async (route) => {
       if (route.request().method() === "PUT") {
         uploaded = true;
@@ -44,3 +44,46 @@ for (const width of [1280, 390]) {
     expect(results.violations.filter((item) => ["serious", "critical"].includes(item.impact || ""))).toEqual([]);
   });
 }
+
+test("speaker profile validation is form-scoped and identifies the invalid link", async ({ page }) => {
+  let patches = 0;
+  await page.route("**/admin/events/event-a/speakers/es-a", (route) => route.fulfill({ contentType: "text/html", body: pageHtml }));
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ csrf_token: "csrf", organization_access: [{ permissions: ["manage"] }], event_access: [] }) }));
+  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "org-a", name: "Org A" }] }) }));
+  await page.route("**/api/v1/admin/events/event-a", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "event-a", organization_id: "org-a", name: "DevFlow" }) }));
+  await page.route("**/api/v1/admin/events/event-a/speaker-targets", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ event_speaker_id: "es-a", person_id: "person-a", user_id: "user-a", email: "speaker@example.test", display_name: "Priya Raman", job_title: "Engineer", company: "Example", biography: "Account bio", biography_source: "account", biography_override: null, location: "", links: [], version: 1, participation_version: 1, selection_status: "accepted", confirmation_status: "pending", proposal_title: "A talk" }] }) }));
+  await page.route("**/api/v1/admin/events/event-a/speakers/es-a/organizer-notes", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [], version: 1 }) }));
+  await page.route("**/api/v1/admin/events/event-a/speakers/es-a", async (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    patches += 1;
+    await route.fulfill({
+      status: 422,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: {
+          code: "validation_failed",
+          message: "Value error, link must use an absolute HTTP or HTTPS URL",
+          field: "links.0",
+          metadata: { details: [{ field: "links.0", message: "Value error, link must use an absolute HTTP or HTTPS URL", type: "value_error" }] },
+        },
+        request_id: "request-a",
+      }),
+    });
+  });
+
+  await page.goto("/admin/events/event-a/speakers/es-a");
+  const form = page.locator("#speaker-form");
+  const links = form.locator('[name="links"]');
+  await links.fill("@priyabuilds");
+  await form.getByRole("button", { name: "Save speaker details" }).click();
+  await expect(links).toBeFocused();
+  await expect(page.locator(`#${await links.getAttribute("aria-errormessage")}`)).toContainText("full http:// or https:// URL");
+  expect(patches).toBe(0);
+
+  await links.fill("https://x.com/priyabuilds");
+  await form.getByRole("button", { name: "Save speaker details" }).click();
+  await expect.poll(() => patches).toBe(1);
+  await expect(links).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator(`#${await links.getAttribute("aria-errormessage")}`)).toContainText("absolute HTTP or HTTPS URL");
+  await expect(page.locator("#invite-speaker-dialog")).not.toHaveAttribute("open", "");
+});

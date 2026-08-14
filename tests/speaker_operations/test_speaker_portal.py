@@ -7,11 +7,12 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 from sessionbuddy.api.app import app
+from sessionbuddy.competition.models import AdminEventSpeakerUpdate
 from sessionbuddy.platform.auth.http import AuthenticatedContext
 from sessionbuddy.platform.authorization import Actor, Persona
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.speaker_operations import router as speaker_router
-from sessionbuddy.speaker_operations.models import SpeakerProfileUpdate, UploadAuthorizationCreate
+from sessionbuddy.speaker_operations.models import UploadAuthorizationCreate
 from sessionbuddy.speaker_operations.router import (
     _cursor,
     _next_cursor,
@@ -146,11 +147,12 @@ def test_upload_authorization_allows_blank_note_for_initial_upload() -> None:
 
 def test_profile_update_allows_only_absolute_web_links() -> None:
     with pytest.raises(ValidationError):
-        SpeakerProfileUpdate(
+        AdminEventSpeakerUpdate(
             display_name="Speaker",
-            biography="Biography",
+            biography_override="Biography",
             links=["javascript:alert(1)"],
             version=1,
+            participation_version=1,
         )
 
 

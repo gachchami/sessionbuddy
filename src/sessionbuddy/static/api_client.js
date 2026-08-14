@@ -15,13 +15,14 @@
   };
 
   class ApiError extends Error {
-    constructor(message, { status = 0, code = "request_failed", requestId = "", retryable = false, details = [], cause } = {}) {
+    constructor(message, { status = 0, code = "request_failed", requestId = "", retryable = false, field = "", details = [], cause } = {}) {
       super(message, cause ? { cause } : undefined);
       this.name = "ApiError";
       this.status = status;
       this.code = code;
       this.requestId = requestId;
       this.retryable = retryable;
+      this.field = field;
       this.details = details;
     }
   }
@@ -72,7 +73,8 @@
           : typeof body?.error?.code === "string" ? body.error.code : "request_failed",
         requestId: bodyRequestId,
         retryable: response.status === 408 || response.status === 429 || response.status >= 500,
-        details: Array.isArray(body?.error?.details) ? body.error.details : []
+        field: typeof body?.error?.field === "string" ? body.error.field : "",
+        details: Array.isArray(body?.error?.metadata?.details) ? body.error.metadata.details : []
       });
     }
     return body;
@@ -299,6 +301,35 @@
       invalid.forEach(showFieldError);
       return refreshFormSummary(form, { create: true });
     };
+    const showServerValidationErrors = (form, error) => {
+      if (!form || !(error instanceof ApiError)) return false;
+      const details = error.details.length
+        ? error.details
+        : error.field ? [{ field: error.field, message: error.message }] : [];
+      let first = null;
+      for (const detail of details) {
+        const path = String(detail.field || "");
+        const rootName = path.split(".")[0];
+        const escapedPath = window.CSS?.escape ? CSS.escape(path) : path;
+        const escapedName = window.CSS?.escape ? CSS.escape(rootName) : rootName;
+        const control = form.querySelector(`[data-field-path="${escapedPath}"]`)
+          || form.querySelector(`[name="${escapedName}"]`);
+        if (!control) continue;
+        const node = errorNodeFor(control);
+        node.textContent = String(detail.message || error.message);
+        node.hidden = false;
+        control.setAttribute("aria-errormessage", node.id);
+        control.setAttribute("aria-invalid", "true");
+        let box = control.closest("details");
+        while (box) {
+          box.open = true;
+          box = box.parentElement?.closest("details") ?? null;
+        }
+        first ||= control;
+      }
+      first?.focus();
+      return Boolean(first);
+    };
     // Native validation fires `invalid` per control and never dispatches
     // `submit`, so the summary has to be built from here. Batch one frame so a
     // form with four empty fields produces one announcement, not four.
@@ -365,7 +396,7 @@
     }, true);
     window.addEventListener("pageshow", () => installCharacterCounters());
 
-    return { installCharacterCounters };
+    return { installCharacterCounters, showServerValidationErrors };
   }
 
   const formValidation = installFormValidation();
@@ -375,6 +406,7 @@
     message,
     parseResponse,
     refreshCharacterCounters: formValidation.installCharacterCounters,
+    showValidationErrors: formValidation.showServerValidationErrors,
     redirectIfSignedOut,
     request,
     signInPath
