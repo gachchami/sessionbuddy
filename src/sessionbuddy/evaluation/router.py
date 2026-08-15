@@ -17,6 +17,7 @@ from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     require_document_persona,
+    require_document_round,
     require_permission,
 )
 from sessionbuddy.platform.auth.tokens import normalize_email
@@ -25,6 +26,10 @@ from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, Idempote
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.speaker_operations.acceptance_tasks import (
+    SPEAKER_TASK_FLAGS_SQL,
+    acceptance_speaker_tasks,
+)
 
 from .models import (
     AssignmentReassign,
@@ -85,80 +90,6 @@ def _correction_speaker_message(html_body: object) -> str:
     return unescape(value[3:].split("</p>", 1)[0])
 
 
-# Both acceptance paths (the decision endpoint and the correction endpoint)
-# build their own speaker row. They previously carried near-identical copies of
-# these EXISTS clauses, which is how has_slides_task reached one query and not
-# the other - leaving the guard in _acceptance_speaker_tasks silently inert on
-# the correction path. Keep exactly one definition and concatenate it in.
-_SPEAKER_TASK_FLAGS_SQL = """
-                      EXISTS(
-                        SELECT 1 FROM speaker_tasks st
-                         WHERE st.organization_id=s.organization_id
-                           AND st.event_id=s.event_id
-                           AND st.event_speaker_id=ss.event_speaker_id
-                           AND st.task_type='profile' AND st.state='open'
-                      ) AS has_profile_task,
-                      EXISTS(
-                        SELECT 1 FROM speaker_tasks st
-                         WHERE st.organization_id=s.organization_id
-                           AND st.event_id=s.event_id
-                           AND st.event_speaker_id=ss.event_speaker_id
-                           AND st.task_type='headshot' AND st.state='open'
-                      ) AS has_headshot_task,
-                      EXISTS(
-                        SELECT 1 FROM speaker_tasks st
-                         WHERE st.organization_id=s.organization_id
-                           AND st.event_id=s.event_id
-                           AND st.event_speaker_id=ss.event_speaker_id
-                           AND st.submission_id=s.id
-                           AND st.task_type='slides' AND st.state='open'
-                      ) AS has_slides_task
-"""
-
-
-def _acceptance_speaker_tasks(speaker: dict[str, object]) -> list[tuple[str, str, str, int]]:
-    """Return only actionable work still missing when a proposal is accepted."""
-    tasks: list[tuple[str, str, str, int]] = []
-    if not str(speaker.get("biography") or "").strip() and not bool(
-        speaker.get("has_profile_task")
-    ):
-        tasks.append(
-            (
-                "profile",
-                "Add your speaker biography",
-                "Your registration is complete; add the missing biography for the program.",
-                7,
-            )
-        )
-    if (
-        not bool(speaker.get("has_account_headshot"))
-        and not bool(speaker.get("has_event_headshot"))
-        and not bool(speaker.get("has_headshot_task"))
-    ):
-        tasks.append(
-            (
-                "headshot",
-                "Upload your headshot",
-                "Add a program-ready profile photo.",
-                10,
-            )
-        )
-    # Guarded like its siblings above. Without this, every acceptance decision
-    # for the same speaker appended another identical "Upload your presentation"
-    # row, so a speaker with several accepted proposals - or one whose decision
-    # was re-issued - collected duplicates they could not clear.
-    if not bool(speaker.get("has_slides_task")):
-        tasks.append(
-            (
-                "slides",
-                "Upload your presentation",
-                "Share the final slide deck with the event team.",
-                21,
-            )
-        )
-    return tasks
-
-
 def _evaluation_cursor(
     request: Request,
     value: str | None,
@@ -213,6 +144,7 @@ async def reviews_page(request: Request) -> HTMLResponse:
 )
 async def admin_round_page(round_id: str, request: Request) -> HTMLResponse:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_round(request, round_id)
     return HTMLResponse(_asset("app/index.html"), headers={"Cache-Control": "no-store"})
 
 
@@ -765,7 +697,7 @@ async def correct_final_submission_decision(
 ) -> SubmissionDecisionCorrectionView:
     """Append an audited correction while preserving the original final decision."""
     db = _db(request)
-    context_query = _SPEAKER_TASK_FLAGS_SQL.join(
+    context_query = SPEAKER_TASK_FLAGS_SQL.join(
         (
             """SELECT s.organization_id,s.event_id,s.speaker_email,s.submitter_user_id,
                       s.proposal_title,e.name AS event_name,
@@ -973,7 +905,7 @@ async def correct_final_submission_decision(
                 )
             )
             tasks = (
-                [] if speaker_withdrawn else _acceptance_speaker_tasks(context)
+                [] if speaker_withdrawn else acceptance_speaker_tasks(context)
             )
             for task_type, title, help_text, days in tasks:
                 batch.add_statement(
@@ -4014,7 +3946,7 @@ async def record_submission_decision(
     incomplete_reviews = int(context["completed_count"] or 0) < int(context["assigned_count"])
     if incomplete_reviews and not body.override_incomplete_reviews:
         raise HTTPException(status_code=409)
-    speaker_query = _SPEAKER_TASK_FLAGS_SQL.join(
+    speaker_query = SPEAKER_TASK_FLAGS_SQL.join(
         (
             """SELECT s.speaker_email,s.submitter_user_id,s.proposal_title,e.name AS event_name,
                       ss.event_speaker_id,p.biography,
@@ -4160,7 +4092,7 @@ async def record_submission_decision(
             # therefore creates work only for information or assets that are actually
             # missing; a generic supporting-document request has no actionable meaning
             # and must be created later as an explicit, contextual request if needed.
-            tasks = _acceptance_speaker_tasks(speaker)
+            tasks = acceptance_speaker_tasks(speaker)
             for task_type, title, help_text, days in tasks:
                 batch.add_statement(
                     db.prepare(

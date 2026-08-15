@@ -41,6 +41,7 @@ from .http import (
     database,
     environment,
     guard_mutation,
+    require_document_event,
     require_document_persona,
     require_permission,
     secret,
@@ -212,6 +213,7 @@ async def admin_home_javascript() -> Response:
 @access_router.get("/admin/events/{event_id}", include_in_schema=False)
 async def event_overview_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return Response(
         _asset("event_overview.html"),
         media_type="text/html",
@@ -231,6 +233,7 @@ async def speaker_directory_page(
     request: Request, event_id: str | None = None, event_speaker_id: str | None = None
 ) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return Response(
         _asset("speaker_directory.html"),
         media_type="text/html",
@@ -268,6 +271,7 @@ async def public_person_profile_javascript() -> Response:
 @access_router.get("/admin/events/{event_id}/messages", include_in_schema=False)
 async def speaker_messages_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return Response(
         _asset("speaker_messages.html"),
         media_type="text/html",
@@ -323,6 +327,7 @@ async def organization_admin_javascript() -> Response:
 @access_router.get("/admin/events/{event_id}/reviewers", include_in_schema=False)
 async def event_access_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return Response(
         _asset("access_admin.html"),
         media_type="text/html",

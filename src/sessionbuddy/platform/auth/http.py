@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, authorize
 from sessionbuddy.platform.authorization.types import Actor
+from sessionbuddy.platform.db.d1 import row_mapping
 from sessionbuddy.platform.db.types import utc_now_ms
 
 from .d1 import D1AuthorizationFacts, D1SessionStore
@@ -158,6 +159,68 @@ async def require_document_persona(request: Request, persona: Persona) -> None:
         raise
     if authenticated.actor.active_persona is not persona:
         raise HTTPException(status_code=403)
+
+
+async def _require_document_scope(
+    request: Request, resource_id: str | None, query: str
+) -> None:
+    """Resolve a document's event scope and apply its non-disclosing access gate."""
+    if resource_id is None or not session_cookie_value(request):
+        return
+    try:
+        authenticated = await authenticate_request(request)
+    except HTTPException as exc:
+        if exc.status_code == 401:
+            return
+        raise
+    row = row_mapping(
+        await database(request).prepare(query).bind(resource_id).first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    # EVENT_MANAGE is the console's "can open this event at all" gate: owner,
+    # manage or edit authority on the event itself, or ownership/manage of its
+    # organization.  It is the same permission the overview API reads with, so
+    # a page can never render for an event whose data will be refused.  A
+    # denial here is record-scope, so it is always 404 rather than depending on
+    # the policy engine's internal reason vocabulary.
+    decision = authorize(
+        authenticated.actor,
+        Permission.EVENT_MANAGE,
+        ResourceContext(str(row["organization_id"]), str(row["event_id"])),
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=404)
+
+
+async def require_document_event(request: Request, event_id: str | None) -> None:
+    """Refuse an event-scoped page whose event the caller cannot open.
+
+    Document routes are served before the page makes a single API call, and
+    the app shell derives the event frame from the URL alone. Anonymous
+    visitors retain the sign-in shell; authenticated denials are deliberately
+    indistinguishable from an unknown event.
+    """
+    await _require_document_scope(
+        request,
+        event_id,
+        "SELECT organization_id,id AS event_id FROM events WHERE id=?1 LIMIT 1",
+    )
+
+
+async def require_document_round(request: Request, round_id: str | None) -> None:
+    """Refuse an evaluation-round page whose parent event cannot be opened.
+
+    Round document URLs do not carry an event id, so resolve the round's tenant
+    and event before rendering the application shell. As with event documents,
+    anonymous requests retain the sign-in shell and authenticated denials are
+    deliberately indistinguishable from an unknown round.
+    """
+    await _require_document_scope(
+        request,
+        round_id,
+        "SELECT organization_id,event_id FROM evaluation_rounds WHERE id=?1 LIMIT 1",
+    )
 
 
 def guard_mutation(

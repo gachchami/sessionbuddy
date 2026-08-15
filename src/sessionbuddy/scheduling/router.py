@@ -17,6 +17,7 @@ from sessionbuddy.agenda import (
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
+    require_document_event,
     require_document_persona,
     require_permission,
 )
@@ -128,6 +129,7 @@ def _product_asset(request: Request, name: str, media_type: str) -> Response:
 @scheduling_router.get("/admin/events/{event_id}/agenda", include_in_schema=False)
 async def agenda_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return _product_asset(request, "agenda_admin.html", "text/html")
 
 

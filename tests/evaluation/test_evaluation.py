@@ -19,13 +19,13 @@ from sessionbuddy.evaluation.models import (
 )
 from sessionbuddy.evaluation.router import (
     EVALUATION_PAGE_LIMIT,
-    _acceptance_speaker_tasks,
     _assignment_pairs,
     _evaluation_cursor,
     _evaluation_next_cursor,
     _weighted_mean,
     remind_round_evaluator,
 )
+from sessionbuddy.speaker_operations.acceptance_tasks import acceptance_speaker_tasks
 
 
 class _ReminderStatement:
@@ -96,7 +96,7 @@ async def test_repeated_reviewer_reminder_returns_the_existing_message(monkeypat
 
 
 def test_acceptance_creates_only_missing_speaker_onboarding_tasks() -> None:
-    missing = _acceptance_speaker_tasks(
+    missing = acceptance_speaker_tasks(
         {
             "biography": "",
             "has_account_headshot": 0,
@@ -109,7 +109,7 @@ def test_acceptance_creates_only_missing_speaker_onboarding_tasks() -> None:
     assert missing[0][1] == "Add your speaker biography"
     assert all(task[0] != "supporting_document" for task in missing)
 
-    complete_registration = _acceptance_speaker_tasks(
+    complete_registration = acceptance_speaker_tasks(
         {
             "biography": "Already supplied",
             "has_account_headshot": 1,
@@ -122,7 +122,7 @@ def test_acceptance_creates_only_missing_speaker_onboarding_tasks() -> None:
 
 
 def test_acceptance_does_not_duplicate_existing_profile_or_headshot_tasks() -> None:
-    tasks = _acceptance_speaker_tasks(
+    tasks = acceptance_speaker_tasks(
         {
             "biography": "",
             "has_account_headshot": 0,
@@ -132,6 +132,18 @@ def test_acceptance_does_not_duplicate_existing_profile_or_headshot_tasks() -> N
         }
     )
     assert [task[0] for task in tasks] == ["slides"]
+
+    participant_tasks = acceptance_speaker_tasks(
+        {
+            "biography": "",
+            "has_account_headshot": 0,
+            "has_event_headshot": 0,
+            "has_profile_task": 0,
+            "has_headshot_task": 0,
+        },
+        include_slides=False,
+    )
+    assert [task[0] for task in participant_tasks] == ["profile", "headshot"]
 
 
 def test_evaluation_contracts_are_strict_and_bounded() -> None:

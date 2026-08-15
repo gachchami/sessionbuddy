@@ -22,6 +22,7 @@ from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     guard_mutation,
+    require_document_event,
     require_document_persona,
     require_permission,
     secret,
@@ -325,6 +326,7 @@ async def list_speaker_open_calls(request: Request) -> SpeakerDiscoverableCallLi
 )
 async def admin_onboarding_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return _product_asset(request, "admin_onboarding.html", "text/html")
 
 

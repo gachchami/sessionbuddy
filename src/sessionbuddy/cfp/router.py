@@ -22,6 +22,7 @@ from sessionbuddy.platform.auth import (
 )
 from sessionbuddy.platform.auth.http import (
     guard_mutation,
+    require_document_event,
     require_document_persona,
     require_permission,
     secret,
@@ -406,6 +407,7 @@ def _product_page(request: Request, asset: str) -> HTMLResponse:
 )
 async def admin_event_cfp_page(event_id: str, request: Request) -> HTMLResponse:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return _product_page(request, "admin_programs.html")
 
 
@@ -416,6 +418,7 @@ async def admin_event_cfp_page(event_id: str, request: Request) -> HTMLResponse:
 )
 async def admin_submissions_page(event_id: str, request: Request) -> HTMLResponse:
     await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id)
     return _product_page(request, "admin_submissions.html")
 
 

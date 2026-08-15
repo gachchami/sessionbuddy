@@ -350,16 +350,23 @@ def test_organizer_task_creation_matches_on_request_content() -> None:
 
 
 def test_acceptance_slides_guard_is_scoped_to_the_submission() -> None:
+    helper = (
+        ROOT / "src" / "sessionbuddy" / "speaker_operations" / "acceptance_tasks.py"
+    ).read_text(encoding="utf-8")
     router = (ROOT / "src" / "sessionbuddy" / "evaluation" / "router.py").read_text(
         encoding="utf-8"
     )
-    flags = router[router.index("_SPEAKER_TASK_FLAGS_SQL = ") :].split('"""')[1]
+    competition = (ROOT / "src" / "sessionbuddy" / "competition" / "router.py").read_text(
+        encoding="utf-8"
+    )
+    flags = helper[helper.index("SPEAKER_TASK_FLAGS_SQL = ") :].split('"""')[1]
     assert flags.count("has_profile_task") == 1
     assert flags.count("has_headshot_task") == 1
     assert flags.count("has_slides_task") == 1
     assert "AND st.submission_id=s.id" in flags
-    # One definition, used by the decision path and the correction path alike.
-    assert router.count("_SPEAKER_TASK_FLAGS_SQL.join(") == 2
+    # One definition serves both decision paths and participation restoration.
+    assert router.count("SPEAKER_TASK_FLAGS_SQL.join(") == 2
+    assert competition.count("SPEAKER_TASK_FLAGS_SQL.join(") == 1
 
 
 def test_asset_comment_visibility_defaults_to_internal() -> None:
