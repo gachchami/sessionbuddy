@@ -336,6 +336,10 @@
       // absolute -- it has always meant none, and a hidden row left checked would travel
       // into the round without ever appearing on screen.
       if (selected && input.closest("tr")?.hidden) return;
+      // Decided proposals remain individually eligible for an intentional advisory
+      // reassessment, but the bulk action must not sweep the finalized program back into
+      // review. The organizer opts those rows in one at a time.
+      if (selected && input.dataset.finalDecision === "true") return;
       input.checked = selected;
     });
     // "Clear selection" means none -- including the draft proposals this page cannot show.
@@ -1245,6 +1249,9 @@
           selection.type = "checkbox";
           selection.name = "submission_ids";
           selection.value = item.id;
+          selection.dataset.finalDecision = String(
+            item.status === "accepted" || item.status === "rejected",
+          );
           selection.checked = false;
           selection.setAttribute("aria-label", `Include ${item.proposal_title}`);
           selection.addEventListener("change", submissionSelectionChanged);
@@ -1273,7 +1280,7 @@
           if (label === "Status") {
             cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
             cell.append(document.createTextNode(value));
-            if (item.evaluation_state === "under_review") {
+            if (item.reassessment_state === "under_review") {
               const reviewState = document.createElement("small");
               reviewState.textContent = `Under review in ${item.evaluation_round_name}`;
               cell.append(reviewState);

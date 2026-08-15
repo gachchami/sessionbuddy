@@ -424,6 +424,8 @@ class SubmissionDecisionCorrectionCreate(BaseModel):
 
     corrected_decision: Literal["accepted", "rejected"]
     reason: str = Field(min_length=1, max_length=2000)
+    send_email: bool = True
+    speaker_message: str = Field(default="", max_length=4000)
 
 
 class SubmissionDecisionCorrectionView(SubmissionDecisionCorrectionCreate):
@@ -433,6 +435,7 @@ class SubmissionDecisionCorrectionView(SubmissionDecisionCorrectionCreate):
     previous_decision: Literal["accepted", "rejected"]
     corrected_at_ms: int
     accepted_session_id: str | None = None
+    communication_queued: bool = False
 
 
 class EvaluationDetail(BaseModel):
@@ -461,6 +464,7 @@ class SubmissionEvaluationResult(BaseModel):
     decision: Literal["accepted", "rejected"] | None
     decision_round_id: str | None = None
     internal_reason: str = ""
+    correction_reason: str = ""
     reviews: list[EvaluationDetail] = Field(default_factory=list)
 
 

@@ -3,6 +3,7 @@
 from tests.evaluation.test_round_selection_persistence import (
     SAM_USER_ID,
     A,
+    _admin_user_id,
     _client,
     _create_round,
     _round_body,
@@ -129,3 +130,58 @@ async def test_remove_hides_membership_and_add_reactivates_it(
         after_add = await client.get(f"/api/v1/admin/evaluation-rounds/{round_id}/results")
         (reviewer,) = after_add.json()["evaluators"]
         assert reviewer["assigned_count"] == 1
+
+
+async def test_decided_member_remains_in_open_round_without_a_live_assignment(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _setup(client, connection)
+        created = await _create_round(
+            client,
+            csrf,
+            event_id,
+            _round_body(status="open", assignments=[A], submission_ids=[A]),
+            label="decided-open-membership",
+        )
+        assert created.status_code == 201, created.text
+        round_id = created.json()["id"]
+        user_id = _admin_user_id(connection)
+        connection.execute(
+            """INSERT INTO submission_decisions
+               (id,organization_id,event_id,round_id,submission_id,decision,internal_reason,
+                version,decided_by_user_id,decided_at_ms,updated_at_ms)
+               VALUES ('membership-decision',?,?,?,?,'accepted','Original reason',
+                       1,?,1000,1000)""",
+            (organization_id, event_id, round_id, A, user_id),
+        )
+        connection.execute(
+            """INSERT INTO submission_decision_corrections
+               (id,organization_id,event_id,submission_id,original_decision_id,
+                previous_decision,corrected_decision,reason,corrected_by_user_id,corrected_at_ms)
+               VALUES ('membership-correction',?,?,?,'membership-decision','accepted','rejected',
+                       'Latest correction reason',?,1100)""",
+            (organization_id, event_id, A, user_id),
+        )
+        connection.execute(
+            """UPDATE evaluation_assignments SET status='revoked'
+               WHERE round_id=? AND submission_id=?""",
+            (round_id, A),
+        )
+        connection.commit()
+
+        inbox = await client.get(f"/api/v1/admin/events/{event_id}/submissions")
+        assert inbox.status_code == 200, inbox.text
+        proposal = next(item for item in inbox.json()["data"] if item["id"] == A)
+        assert proposal["status"] == "rejected"
+        assert proposal["evaluation_round_id"] == round_id
+        assert proposal["reassessment_state"] == "under_review"
+
+        results = await client.get(f"/api/v1/admin/evaluation-rounds/{round_id}/results")
+        assert results.status_code == 200, results.text
+        (proposal_result,) = results.json()["submissions"]
+        assert proposal_result["decision"] == "rejected"
+        assert proposal_result["decision_round_id"] == round_id
+        assert proposal_result["internal_reason"] == "Original reason"
+        assert proposal_result["correction_reason"] == "Latest correction reason"

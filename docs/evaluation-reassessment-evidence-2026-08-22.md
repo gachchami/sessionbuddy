@@ -65,21 +65,22 @@ state, task counts, audit event, and idempotent retry. The task inserts contain
 `WHERE NOT EXISTS` predicates aligned with the partial unique indexes, so task
 uniqueness is a correctness assertion rather than the presumed root cause.
 
-The fixture should also cover a withdrawn event speaker. The
-rejected-to-accepted correction sets `status='onboarding'`; it must clear
-`withdrawn_at_ms` in the same statement to satisfy the event-speaker lifecycle
-check and genuinely restore the speaker.
+The fixture should also cover a withdrawn event speaker. A program-decision
+correction must not silently reverse a person's independent withdrawal from the
+event. It may update selection status, but it preserves the `withdrawn` /
+`withdrawn_at_ms` lifecycle pair and does not create new onboarding work until
+the speaker is explicitly restored through the speaker workflow.
 
 ## Agreed implementation scope
 
 1. Add the production-shaped correction regression and identify the exact
    correction-dialog batch failure.
-2. Fix correction side effects, including coherent restoration of withdrawn
-   speaker state, without duplicating system tasks.
+2. Fix correction side effects without duplicating system tasks or implicitly
+   reversing an unrelated speaker withdrawal.
 3. Permit explicitly decided proposals to join a different draft or open round,
    while continuing to explain and prevent duplicate membership in the same
    round.
-4. Expose later-round activity as a separate `evaluation_state`; preserve the
+4. Expose later-round activity as a separate `reassessment_state`; preserve the
    effective accepted/rejected status.
 5. Keep reviewer queues assignment-driven and add an assertion that a decided
    proposal assigned to a later open round appears exactly where assigned.

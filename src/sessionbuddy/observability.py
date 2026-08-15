@@ -18,6 +18,7 @@ SAFE_DEGRADATIONS = (
     "account_stale_session_cleanup_failed",
     "asset_scan_queue_publish_failed",
     "communication_queue_publish_failed",
+    "decision_correction_conflict",
     "speaker_import_row_failed",
 )
 

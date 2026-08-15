@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
-from sessionbuddy.observability import record_timing
+from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     require_document_persona,
@@ -668,6 +668,61 @@ async def _execute_round_write(
         raise
 
 
+async def _execute_decision_correction(
+    request: Request,
+    batch: CommandBatch,
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    submission_id: str,
+) -> None:
+    """Execute a correction batch and turn an opaque D1 refusal into safe guidance.
+
+    D1 provider messages are deliberately hidden at the persistence boundary. A failed
+    correction therefore gets a scoped, post-failure integrity read and a degradation
+    marker rather than the bare ``Conflict Reference`` that trapped the organizer.
+    """
+    try:
+        await _execute(request, batch)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        record_degradation(request, "decision_correction_conflict")
+        lifecycle = row_mapping(
+            await db.prepare(
+                """SELECT es.status,es.withdrawn_at_ms
+                     FROM submission_speakers ss
+                     JOIN event_speakers es ON es.organization_id=ss.organization_id
+                       AND es.event_id=ss.event_id AND es.id=ss.event_speaker_id
+                    WHERE ss.organization_id=?1 AND ss.event_id=?2
+                      AND ss.submission_id=?3 AND ss.role='primary' LIMIT 1"""
+            )
+            .bind(organization_id, event_id, submission_id)
+            .first()
+        )
+        if lifecycle is not None and (
+            (lifecycle["status"] == "withdrawn")
+            != (lifecycle["withdrawn_at_ms"] is not None)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The speaker lifecycle is inconsistent, so the correction was not "
+                    "recorded. Repair the speaker record before retrying."
+                ),
+                headers={"X-Conflict-Type": "speaker-lifecycle"},
+            ) from exc
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The proposal, speaker, or session changed while this correction was "
+                "being recorded. Reload the proposal and try again; no correction was saved."
+            ),
+            headers={"X-Conflict-Type": "decision-correction"},
+        ) from exc
+
+
 @evaluation_router.post(
     "/api/v1/admin/events/{event_id}/submissions/{submission_id}/reject",
     response_model=SubmissionDecisionView,
@@ -729,14 +784,16 @@ async def correct_final_submission_decision(
     db = _db(request)
     context_query = _SPEAKER_TASK_FLAGS_SQL.join(
         (
-            """SELECT s.organization_id,s.event_id,d.id AS original_decision_id,
+            """SELECT s.organization_id,s.event_id,s.speaker_email,s.submitter_user_id,
+                      s.proposal_title,e.name AS event_name,
+                      d.id AS original_decision_id,
                       COALESCE((SELECT c.corrected_decision
                         FROM submission_decision_corrections c
                         WHERE c.organization_id=s.organization_id AND c.event_id=s.event_id
                           AND c.submission_id=s.id
                         ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),d.decision)
                         AS effective_decision,
-                      ss.event_speaker_id,p.biography,
+                      ss.event_speaker_id,es.status AS event_speaker_status,p.biography,
                       EXISTS(SELECT 1 FROM user_headshots uh WHERE uh.user_id=p.user_id)
                         AS has_account_headshot,
                       EXISTS(SELECT 1 FROM speaker_assets sa
@@ -748,7 +805,9 @@ async def correct_final_submission_decision(
 """,
             """
                FROM submissions s
-               JOIN submission_decisions d ON d.submission_id=s.id
+               JOIN submission_decisions d ON d.organization_id=s.organization_id
+                 AND d.event_id=s.event_id AND d.submission_id=s.id
+               JOIN events e ON e.organization_id=s.organization_id AND e.id=s.event_id
                LEFT JOIN submission_speakers ss ON ss.organization_id=s.organization_id
                  AND ss.event_id=s.event_id AND ss.submission_id=s.id AND ss.role='primary'
                LEFT JOIN event_speakers es ON es.organization_id=s.organization_id
@@ -775,6 +834,11 @@ async def correct_final_submission_decision(
             status_code=409,
             detail=f"The effective decision is already {previous}.",
         )
+    if body.send_email and not str(context["speaker_email"] or "").strip():
+        raise HTTPException(
+            status_code=409,
+            detail="This correction cannot be emailed because the proposal has no speaker email.",
+        )
     key = _key(idempotency_key)
     route = "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/decision-corrections"
     fingerprint = _fingerprint(body)
@@ -794,7 +858,14 @@ async def correct_final_submission_decision(
             await db.prepare(
                 """SELECT c.id,c.submission_id,c.original_decision_id,c.previous_decision,
                           c.corrected_decision,c.reason,c.corrected_at_ms,
-                          ac.id AS accepted_session_id
+                          ac.id AS accepted_session_id,
+                          EXISTS(SELECT 1 FROM communication_messages message
+                            WHERE message.deterministic_key='submission-decision-correction:'
+                              || c.id || ':v1') AS communication_queued,
+                          EXISTS(SELECT 1 FROM communication_messages message
+                            WHERE message.deterministic_key='submission-decision-correction:'
+                              || c.id || ':v1') AS send_email,
+                          '' AS speaker_message
                    FROM submission_decision_corrections c
                    LEFT JOIN accepted_sessions ac ON ac.decision_correction_id=c.id
                    WHERE c.id=?1 LIMIT 1"""
@@ -808,6 +879,7 @@ async def correct_final_submission_decision(
 
     now = utc_now_ms()
     correction_id = new_id()
+    communication_id = new_id() if body.send_email else None
     existing_session = row_mapping(
         await db.prepare(
             """SELECT id FROM accepted_sessions
@@ -883,9 +955,10 @@ async def correct_final_submission_decision(
         if context["event_speaker_id"] is not None:
             batch.add_statement(
                 db.prepare(
-                    """UPDATE event_speakers SET selection_status='accepted',status='onboarding',
+                    """UPDATE event_speakers SET selection_status='accepted',
+                              status=CASE WHEN status='withdrawn' THEN status ELSE 'onboarding' END,
                               accepted_at_ms=COALESCE(accepted_at_ms,?1),
-                              withdrawn_at_ms=NULL,last_activity_at_ms=?1,updated_at_ms=?1
+                              last_activity_at_ms=?1,updated_at_ms=?1
                        WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
                 ).bind(
                     now,
@@ -894,7 +967,12 @@ async def correct_final_submission_decision(
                     context["event_speaker_id"],
                 )
             )
-            for task_type, title, help_text, days in _acceptance_speaker_tasks(context):
+            tasks = (
+                []
+                if context["event_speaker_status"] == "withdrawn"
+                else _acceptance_speaker_tasks(context)
+            )
+            for task_type, title, help_text, days in tasks:
                 batch.add_statement(
                     db.prepare(
                         """INSERT INTO speaker_tasks
@@ -974,6 +1052,32 @@ async def correct_final_submission_decision(
                     context["event_speaker_id"],
                 )
             )
+    if communication_id is not None:
+        outcome = "accepted" if body.corrected_decision == "accepted" else "not selected"
+        message = body.speaker_message or (
+            "Congratulations — an audited correction has accepted your session. "
+            "Open your speaker portal for next steps."
+            if body.corrected_decision == "accepted"
+            else "An audited program correction means your proposal is no longer selected."
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO communication_messages
+                   (id,organization_id,event_id,recipient_user_id,recipient_email,subject,
+                    html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)"""
+            ).bind(
+                communication_id,
+                context["organization_id"],
+                event_id,
+                context["submitter_user_id"],
+                context["speaker_email"],
+                f"{context['event_name']}: corrected proposal result — {outcome}",
+                f"<p>{escape(message)}</p><p><strong>{escape(str(context['proposal_title']))}</strong></p>",
+                f"submission-decision-correction:{correction_id}:v1",
+                now,
+            )
+        )
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -992,6 +1096,7 @@ async def correct_final_submission_decision(
                 "corrected_decision": body.corrected_decision,
                 "accepted_session_id": session_id,
                 "reason_recorded": True,
+                "communication_queued": bool(communication_id),
             },
         )
     )
@@ -1002,7 +1107,16 @@ async def correct_final_submission_decision(
         resource_id=correction_id,
         completed_at_ms=now,
     )
-    await _execute(request, batch)
+    await _execute_decision_correction(
+        request,
+        batch,
+        db,
+        organization_id=str(context["organization_id"]),
+        event_id=event_id,
+        submission_id=submission_id,
+    )
+    if communication_id is not None:
+        await publish_committed_messages(request, [communication_id])
     return SubmissionDecisionCorrectionView(
         id=correction_id,
         submission_id=submission_id,
@@ -1012,6 +1126,9 @@ async def correct_final_submission_decision(
         reason=body.reason,
         corrected_at_ms=now,
         accepted_session_id=session_id,
+        communication_queued=communication_id is not None,
+        send_email=body.send_email,
+        speaker_message=body.speaker_message,
     )
 
 
@@ -3170,12 +3287,13 @@ async def get_round_results(
                 WHERE c.organization_id=m.organization_id AND c.event_id=m.event_id
                   AND c.submission_id=m.submission_id
                 ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),d.decision) AS decision,
+              COALESCE(d.internal_reason,'') AS internal_reason,
               COALESCE((SELECT c.reason
                 FROM submission_decision_corrections c
                 WHERE c.organization_id=m.organization_id AND c.event_id=m.event_id
                   AND c.submission_id=m.submission_id
-                ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),d.internal_reason,'')
-                AS internal_reason,
+                ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),'')
+                AS correction_reason,
               d.round_id AS decision_round_id
        FROM evaluation_round_submissions m
        JOIN submissions s ON s.id = m.submission_id
@@ -3183,11 +3301,12 @@ async def get_round_results(
          ON a.round_id = m.round_id AND a.submission_id = m.submission_id
         AND a.status != 'revoked'
        LEFT JOIN evaluations e ON e.assignment_id = a.id
-       LEFT JOIN submission_decisions d ON d.submission_id = m.submission_id
+       LEFT JOIN submission_decisions d
+         ON d.organization_id=m.organization_id AND d.event_id=m.event_id
+        AND d.submission_id=m.submission_id
        WHERE m.round_id = ?1 AND m.status = 'active'
          AND (?2 IS NULL OR s.submitted_at_ms<?2 OR (s.submitted_at_ms=?2 AND s.id<?3))
-       GROUP BY s.id, s.speaker_name, s.proposal_title, d.id,d.round_id,
-                d.decision,d.internal_reason
+       GROUP BY s.id, s.speaker_name, s.proposal_title, d.id,d.round_id,d.internal_reason
        ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT ?4"""
     fetched_rows = result_rows(
         await _timed_all(
@@ -3264,6 +3383,7 @@ async def get_round_results(
                 else None
             ),
             internal_reason=str(row["internal_reason"] or ""),
+            correction_reason=str(row["correction_reason"] or ""),
             reviews=reviews_by_submission.get(str(row["submission_id"]), []),
         )
         for row in rows

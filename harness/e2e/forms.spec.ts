@@ -386,10 +386,12 @@ test.describe("form validation and workflow wiring", () => {
     });
     await expect(page.getByRole("heading", { name: "Proposal inbox" })).toBeVisible();
     await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
-    await expect(page.getByText("Already decided", { exact: true })).toBeVisible();
-    await expect(page.getByText("In Initial review", { exact: true })).toBeVisible();
-    await expect(page.locator('input[name="submission_ids"]')).toHaveCount(1);
-    await page.getByRole("button", { name: "Select submitted" }).click();
+    await expect(page.getByText("Already in Initial review", { exact: true })).toBeVisible();
+    await expect(page.locator('input[name="submission_ids"]')).toHaveCount(2);
+    const decidedProposal = page.getByLabel("Include An accepted proposal");
+    await expect(decidedProposal).not.toBeChecked();
+    await page.getByRole("button", { name: "Select eligible" }).click();
+    await expect(decidedProposal).not.toBeChecked();
     await expect(page.getByText("1 selected", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Configure evaluation round" }).click();
     await expect(page.locator("#round-disclosure")).toHaveAttribute("open", "");

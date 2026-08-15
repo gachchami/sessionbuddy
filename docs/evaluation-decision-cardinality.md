@@ -47,7 +47,7 @@ represent later-round activity separately, for example:
 ```json
 {
   "status": "accepted",
-  "evaluation_state": "under_review",
+  "reassessment_state": "under_review",
   "evaluation_round_id": "round-id",
   "evaluation_round_name": "Final Review"
 }

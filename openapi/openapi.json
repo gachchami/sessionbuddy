@@ -7715,6 +7715,18 @@
             "title": "Proposal Title",
             "type": "string"
           },
+          "reassessment_state": {
+            "anyOf": [
+              {
+                "const": "under_review",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reassessment State"
+          },
           "routed_category": {
             "anyOf": [
               {
@@ -11694,6 +11706,17 @@
             "minLength": 1,
             "title": "Reason",
             "type": "string"
+          },
+          "send_email": {
+            "default": true,
+            "title": "Send Email",
+            "type": "boolean"
+          },
+          "speaker_message": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Speaker Message",
+            "type": "string"
           }
         },
         "required": [
@@ -11716,6 +11739,11 @@
               }
             ],
             "title": "Accepted Session Id"
+          },
+          "communication_queued": {
+            "default": false,
+            "title": "Communication Queued",
+            "type": "boolean"
           },
           "corrected_at_ms": {
             "title": "Corrected At Ms",
@@ -11749,6 +11777,17 @@
             "maxLength": 2000,
             "minLength": 1,
             "title": "Reason",
+            "type": "string"
+          },
+          "send_email": {
+            "default": true,
+            "title": "Send Email",
+            "type": "boolean"
+          },
+          "speaker_message": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Speaker Message",
             "type": "string"
           },
           "submission_id": {
@@ -12006,6 +12045,11 @@
             "title": "Completed Count",
             "type": "integer"
           },
+          "correction_reason": {
+            "default": "",
+            "title": "Correction Reason",
+            "type": "string"
+          },
           "decision": {
             "anyOf": [
               {
@@ -12020,6 +12064,17 @@
               }
             ],
             "title": "Decision"
+          },
+          "decision_round_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Round Id"
           },
           "internal_reason": {
             "default": "",
@@ -12308,6 +12363,18 @@
             "minLength": 1,
             "title": "Proposal Title",
             "type": "string"
+          },
+          "reassessment_state": {
+            "anyOf": [
+              {
+                "const": "under_review",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reassessment State"
           },
           "routed_category": {
             "anyOf": [

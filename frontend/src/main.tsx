@@ -34,6 +34,7 @@ type SubmissionResult = {
   decision: "accepted" | "rejected" | null;
   decision_round_id: string | null;
   internal_reason: string;
+  correction_reason: string;
   reviews: {
     evaluator_name: string;
     state: "not_started" | "draft" | "final";
@@ -755,12 +756,18 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     submission: SubmissionResult,
     decision: "accepted" | "rejected",
   ) {
+    const unchanged = submission.decision === decision;
+    if (unchanged) {
+      setPendingDecision(null);
+      setSpeakerMessage("");
+      setStatus(`The final decision remains ${decision}; no correction was needed.`);
+      return;
+    }
     const reasonInput = document.getElementById(
       `reason-${submission.submission_id}`,
     ) as HTMLTextAreaElement;
     const reason = reasonInput.value.trim();
-    const correction = submission.decision !== null && submission.decision !== decision;
-    const unchanged = submission.decision === decision;
+    const correction = submission.decision !== null;
     const override = submission.completed_count < submission.assigned_count;
     reasonInput.setCustomValidity(
       (override || correction) && !reason
@@ -770,26 +777,25 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
         : "",
     );
     if (!reasonInput.reportValidity()) return;
-    if (unchanged) {
-      setPendingDecision(null);
-      setSpeakerMessage("");
-      setStatus(`The final decision remains ${decision}; no correction was needed.`);
-      return;
-    }
     if (correction) {
-      await api(
+      const body = await api<{ communication_queued: boolean }>(
         `/api/v1/admin/events/${encodeURIComponent(results!.event_id)}/submissions/${encodeURIComponent(submission.submission_id)}/decision-corrections`,
         {
           method: "POST",
           headers: mutationHeaders(csrf),
-          body: JSON.stringify({ corrected_decision: decision, reason }),
+          body: JSON.stringify({
+            corrected_decision: decision,
+            reason,
+            send_email: sendEmail,
+            speaker_message: speakerMessage,
+          }),
         },
       );
       setPendingDecision(null);
       setSpeakerMessage("");
       await load();
       setStatus(
-        `Decision corrected to ${decision}. The original decision remains in the audit history.`,
+        `Decision corrected to ${decision}. The original decision remains in the audit history.${body.communication_queued ? " Speaker email queued." : " No email sent."}`,
       );
       return;
     }
@@ -1295,6 +1301,8 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 submission.assigned_count > 0 &&
                 submission.completed_count === submission.assigned_count;
               const decided = submission.decision !== null;
+              const advisory =
+                decided && submission.decision_round_id !== roundId;
               const pending =
                 pendingDecision?.submission.submission_id ===
                 submission.submission_id;
@@ -1336,14 +1344,24 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     ))}
                   </details>
                   {decided ? (
-                    <p>
-                      <strong>Internal decision reason:</strong>{" "}
-                      {submission.internal_reason || "No reason recorded."}
-                    </p>
+                    <>
+                      <p>
+                        <strong>Original decision reason:</strong>{" "}
+                        {submission.internal_reason || "No reason recorded."}
+                      </p>
+                      {submission.correction_reason && (
+                        <p>
+                          <strong>Latest correction reason:</strong>{" "}
+                          {submission.correction_reason}
+                        </p>
+                      )}
+                    </>
                   ) : null}
                   <p className="help">
                     {decided
-                      ? "This later round is advisory. Keep the current result or record an audited correction."
+                      ? advisory
+                        ? "This later round is advisory. Its reviews do not replace the final result; changing that result requires an audited correction."
+                        : "This round recorded the final result. Any later change requires an audited correction."
                       : complete
                         ? "Accepting creates onboarding tasks; rejecting closes outstanding tasks."
                         : "Reviews are incomplete. An organizer may override with a required internal reason; the override is audited."}
@@ -1376,7 +1394,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                               : "Explain why you are overriding incomplete reviews."}
                         />
                       </label>
-                      {!decided && <label className="check">
+                      <label className="check">
                         <input
                           type="checkbox"
                           checked={sendEmail}
@@ -1384,9 +1402,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                             setSendEmail(event.target.checked)
                           }
                         />{" "}
-                        Email the speaker
-                      </label>}
-                      {!decided && sendEmail && (
+                        {decided ? "Email the speaker about this correction" : "Email the speaker"}
+                      </label>
+                      {sendEmail && (
                         <label>
                           Message <span className="optional">Optional</span>
                           <textarea
@@ -1424,6 +1442,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       <button
                         className="secondary"
                         onClick={() => {
+                          if (submission.decision === "rejected") {
+                            setStatus("The final decision remains rejected; no correction was needed.");
+                            return;
+                          }
                           setPendingDecision({
                             submission,
                             decision: "rejected",
@@ -1435,6 +1457,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       </button>
                       <button
                         onClick={() => {
+                          if (submission.decision === "accepted") {
+                            setStatus("The final decision remains accepted; no correction was needed.");
+                            return;
+                          }
                           setPendingDecision({
                             submission,
                             decision: "accepted",

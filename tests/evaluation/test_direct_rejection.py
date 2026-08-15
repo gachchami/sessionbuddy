@@ -52,83 +52,6 @@ async def test_direct_rejection_needs_no_round(
                        1000,1000,1000)""",
             (organization_id, event_id, user_id),
         )
-        connection.execute(
-            """INSERT INTO submissions
-               (id,organization_id,event_id,form_id,public_session_id,proposal_title,
-                proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
-                submitted_at_ms,created_at_ms,updated_at_ms)
-               VALUES ('already-accepted-submission',?,?,'correction-form','accepted-public',
-                       'Existing accepted proposal','Abstract','Priya Raman',
-                       'priya@example.test',?,'submitted',900,900,900)""",
-            (organization_id, event_id, user_id),
-        )
-        connection.execute(
-            """INSERT INTO people
-               (id,organization_id,display_name,created_at_ms,updated_at_ms)
-               VALUES ('correction-person',?,'Priya Raman',800,800)""",
-            (organization_id,),
-        )
-        connection.execute(
-            """INSERT INTO event_speakers
-               (id,organization_id,event_id,person_id,status,selection_status,
-                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms,withdrawn_at_ms)
-               VALUES ('correction-speaker',?,?,'correction-person','withdrawn','accepted',
-                       800,800,800,800,850)""",
-            (organization_id, event_id),
-        )
-        for link_id, linked_submission in (
-            ("correction-primary", "corrected-submission"),
-            ("accepted-primary", "already-accepted-submission"),
-        ):
-            connection.execute(
-                """INSERT INTO submission_speakers
-                   (id,organization_id,event_id,submission_id,event_speaker_id,role,
-                    snapshot_name,created_at_ms)
-                   VALUES (?,?,?,?,?,'primary','Priya Raman',800)""",
-                (
-                    link_id,
-                    organization_id,
-                    event_id,
-                    linked_submission,
-                    "correction-speaker",
-                ),
-            )
-        connection.execute(
-            """INSERT INTO submission_decisions
-               (id,organization_id,event_id,round_id,submission_id,decision,internal_reason,
-                version,decided_by_user_id,decided_at_ms,updated_at_ms)
-               VALUES ('existing-acceptance',?,?,NULL,'already-accepted-submission','accepted',
-                       'Existing program decision',1,?,900,900)""",
-            (organization_id, event_id, user_id),
-        )
-        connection.execute(
-            """INSERT INTO accepted_sessions
-               (id,organization_id,event_id,submission_id,decision_id,lifecycle_status,
-                created_at_ms)
-               VALUES ('existing-session',?,?,'already-accepted-submission',
-                       'existing-acceptance','active',900)""",
-            (organization_id, event_id),
-        )
-        for task_id, task_type in (
-            ("existing-profile-task", "profile"),
-            ("existing-headshot-task", "headshot"),
-        ):
-            connection.execute(
-                """INSERT INTO speaker_tasks
-                   (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                    title,destination_type,state,created_at_ms,updated_at_ms)
-                   VALUES (?,?,?,?,?,?,?,?, 'open',900,900)""",
-                (
-                    task_id,
-                    organization_id,
-                    event_id,
-                    "correction-speaker",
-                    "already-accepted-submission",
-                    task_type,
-                    f"Existing {task_type} task",
-                    task_type,
-                ),
-            )
         queued_before_rejection = len(queue.messages)
         response = await client.post(
             f"/api/v1/admin/events/{event_id}/submissions/direct-submission/reject",
@@ -196,6 +119,83 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                        ?,'submitted',1000,1000,1000)""",
             (organization_id, event_id, user_id),
         )
+        connection.execute(
+            """INSERT INTO submissions
+               (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+                proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
+                submitted_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('already-accepted-submission',?,?,'correction-form','accepted-public',
+                       'Existing accepted proposal','Abstract','Priya Raman',
+                       'priya@example.test',?,'submitted',900,900,900)""",
+            (organization_id, event_id, user_id),
+        )
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('correction-person',?,'Priya Raman',800,800)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('correction-speaker',?,?,'correction-person','complete','accepted',
+                       800,800,800,800)""",
+            (organization_id, event_id),
+        )
+        for link_id, linked_submission in (
+            ("correction-primary", "corrected-submission"),
+            ("accepted-primary", "already-accepted-submission"),
+        ):
+            connection.execute(
+                """INSERT INTO submission_speakers
+                   (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                    snapshot_name,created_at_ms)
+                   VALUES (?,?,?,?,?,'primary','Priya Raman',800)""",
+                (
+                    link_id,
+                    organization_id,
+                    event_id,
+                    linked_submission,
+                    "correction-speaker",
+                ),
+            )
+        connection.execute(
+            """INSERT INTO submission_decisions
+               (id,organization_id,event_id,round_id,submission_id,decision,internal_reason,
+                version,decided_by_user_id,decided_at_ms,updated_at_ms)
+               VALUES ('existing-acceptance',?,?,NULL,'already-accepted-submission','accepted',
+                       'Existing program decision',1,?,900,900)""",
+            (organization_id, event_id, user_id),
+        )
+        connection.execute(
+            """INSERT INTO accepted_sessions
+               (id,organization_id,event_id,submission_id,decision_id,lifecycle_status,
+                created_at_ms)
+               VALUES ('existing-session',?,?,'already-accepted-submission',
+                       'existing-acceptance','active',900)""",
+            (organization_id, event_id),
+        )
+        for task_id, task_type in (
+            ("existing-profile-task", "profile"),
+            ("existing-headshot-task", "headshot"),
+        ):
+            connection.execute(
+                """INSERT INTO speaker_tasks
+                   (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
+                    title,destination_type,state,created_at_ms,updated_at_ms)
+                   VALUES (?,?,?,?,?,?,?,?, 'open',900,900)""",
+                (
+                    task_id,
+                    organization_id,
+                    event_id,
+                    "correction-speaker",
+                    "already-accepted-submission",
+                    task_type,
+                    f"Existing {task_type} task",
+                    task_type,
+                ),
+            )
         rejected = await client.post(
             f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/reject",
             headers={
@@ -237,8 +237,34 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                 "reason": "A later eligibility review reversed the correction.",
             },
         )
+        assert rejected_again.status_code == 200, rejected_again.text
+        rejected_session = connection.execute(
+            """SELECT lifecycle_status,withdrawn_at_ms
+               FROM accepted_sessions WHERE submission_id=?""",
+            ("corrected-submission",),
+        ).fetchone()
+        assert rejected_session[0] == "withdrawn"
+        assert rejected_session[1] is not None
+        connection.execute(
+            """UPDATE event_speakers SET status='withdrawn',withdrawn_at_ms=1200
+               WHERE id='correction-speaker'"""
+        )
+        connection.commit()
+        accepted_after_withdrawal = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/decision-corrections",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "correction-accept-withdrawn",
+            },
+            json={
+                "corrected_decision": "accepted",
+                "reason": "The program result changed, but the speaker withdrawal remains.",
+                "send_email": False,
+            },
+        )
 
-    assert rejected_again.status_code == 200, rejected_again.text
+    assert accepted_after_withdrawal.status_code == 200, accepted_after_withdrawal.text
     original = connection.execute(
         "SELECT decision,internal_reason FROM submission_decisions WHERE submission_id=?",
         ("corrected-submission",),
@@ -261,25 +287,30 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
             "rejected",
             "A later eligibility review reversed the correction.",
         ),
+        (
+            "rejected",
+            "accepted",
+            "The program result changed, but the speaker withdrawal remains.",
+        ),
     ]
     session = connection.execute(
         """SELECT lifecycle_status,withdrawn_at_ms,decision_correction_id
            FROM accepted_sessions WHERE submission_id=?""",
         ("corrected-submission",),
     ).fetchone()
-    assert session[0] == "withdrawn"
-    assert session[1] is not None
-    assert session[2] == accepted.json()["id"]
+    assert session[0] == "active"
+    assert session[1] is None
+    assert session[2] == accepted_after_withdrawal.json()["id"]
     audit_count = connection.execute(
         """SELECT COUNT(*) FROM audit_events
            WHERE action='submission.decision.correct' AND target_id='corrected-submission'"""
     ).fetchone()[0]
-    assert audit_count == 2
+    assert audit_count == 3
     speaker = connection.execute(
         """SELECT status,selection_status,withdrawn_at_ms
            FROM event_speakers WHERE id='correction-speaker'"""
     ).fetchone()
-    assert tuple(speaker) == ("onboarding", "accepted", None)
+    assert tuple(speaker) == ("withdrawn", "accepted", 1200)
     task_counts = dict(
         connection.execute(
             """SELECT task_type,COUNT(*) FROM speaker_tasks

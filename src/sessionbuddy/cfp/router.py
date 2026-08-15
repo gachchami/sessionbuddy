@@ -2843,7 +2843,7 @@ async def list_submissions(
                   s.routed_category,s.routed_track,s.routed_review_queue,
                   er.id AS evaluation_round_id,er.name AS evaluation_round_name,
                   CASE WHEN d.id IS NOT NULL AND er.status='open'
-                       THEN 'under_review' END AS evaluation_state,
+                       THEN 'under_review' END AS reassessment_state,
                   -- Prefer what the speaker says about themselves on their account and
                   -- fall back to the person record the organizer curates for this
                   -- organization. Both are scoped to this submission's tenant: `people`
@@ -2859,15 +2859,18 @@ async def list_submissions(
                LEFT JOIN people person ON person.user_id=s.submitter_user_id
                  AND person.organization_id=s.organization_id
                  AND person.archived_at_ms IS NULL
-               LEFT JOIN submission_decisions d ON d.submission_id=s.id
-               LEFT JOIN evaluation_assignments ea ON ea.id=(
-                 SELECT a.id FROM evaluation_assignments a
-                 JOIN evaluation_rounds candidate ON candidate.id=a.round_id
-                 WHERE a.submission_id=s.id AND a.status!='revoked'
+               LEFT JOIN submission_decisions d
+                 ON d.organization_id=s.organization_id AND d.event_id=s.event_id
+                AND d.submission_id=s.id
+               LEFT JOIN evaluation_rounds er ON er.id=(
+                 SELECT candidate.id FROM evaluation_round_submissions membership
+                 JOIN evaluation_rounds candidate ON candidate.id=membership.round_id
+                 WHERE membership.organization_id=s.organization_id
+                   AND membership.event_id=s.event_id
+                   AND membership.submission_id=s.id AND membership.status='active'
                    AND candidate.status='open'
-                 ORDER BY candidate.updated_at_ms DESC,a.id DESC LIMIT 1
+                 ORDER BY candidate.updated_at_ms DESC,candidate.id DESC LIMIT 1
                )
-               LEFT JOIN evaluation_rounds er ON er.id=ea.round_id
                WHERE s.organization_id=?1 AND s.event_id=?2"""
     if window is None:
         statement = (

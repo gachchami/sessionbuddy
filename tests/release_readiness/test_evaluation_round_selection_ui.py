@@ -11,13 +11,14 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert 'id="clear-selection"' in markup
     assert 'id="selected-count" role="status"' in markup
     assert 'id="configure-round" type="button" disabled' in markup
-    assert "Accepted and rejected proposals are already decided" in markup
+    assert "A final decision remains in effect during any later advisory review" in markup
     assert "selection.checked = false" in javascript
     assert 'selection.checked = item.status === "submitted"' not in javascript
     assert 'selection.addEventListener("change", submissionSelectionChanged);' in javascript
     assert "item.evaluation_round_name" in javascript
-    assert "`In ${item.evaluation_round_name}`" in javascript
-    assert ': "Already decided"' in javascript
+    assert "`Already in ${item.evaluation_round_name}`" in javascript
+    assert 'selection.dataset.finalDecision = String(' in javascript
+    assert 'input.dataset.finalDecision === "true"' in javascript
     assert 'byId("configure-round").disabled = count === 0' in javascript
 
 
