@@ -143,6 +143,21 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                        800,800,800,800)""",
             (organization_id, event_id),
         )
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('correction-co-person',?,'Co Speaker',800,800)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms,
+                withdrawn_at_ms)
+               VALUES ('correction-co-speaker',?,?,'correction-co-person','withdrawn',
+                       'accepted',800,800,800,800,1200)""",
+            (organization_id, event_id),
+        )
         for link_id, linked_submission in (
             ("correction-primary", "corrected-submission"),
             ("accepted-primary", "already-accepted-submission"),
@@ -160,6 +175,14 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                     "correction-speaker",
                 ),
             )
+        connection.execute(
+            """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                snapshot_name,created_at_ms)
+               VALUES ('correction-co-link',?,?,'corrected-submission',
+                       'correction-co-speaker','co_speaker','Co Speaker',800)""",
+            (organization_id, event_id),
+        )
         connection.execute(
             """INSERT INTO submission_decisions
                (id,organization_id,event_id,round_id,submission_id,decision,internal_reason,
@@ -411,6 +434,21 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
         )
         assert verified.status_code == 303
         restore_session = (await restore_client.get("/api/v1/auth/session")).json()
+        restored_co_speaker = await restore_client.post(
+            f"/api/v1/admin/events/{event_id}/speakers/correction-co-speaker/restore",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": restore_session["csrf_token"],
+            },
+            json={"participation_version": 1},
+        )
+        assert restored_co_speaker.status_code == 200, restored_co_speaker.text
+        assert restored_co_speaker.json()["reactivated_session_count"] == 0
+        session_after_co_restore = connection.execute(
+            """SELECT lifecycle_status FROM accepted_sessions
+               WHERE submission_id='corrected-submission'"""
+        ).fetchone()[0]
+        assert session_after_co_restore == "withdrawn"
         restored_response = await restore_client.post(
             f"/api/v1/admin/events/{event_id}/speakers/correction-speaker/restore",
             headers={
@@ -448,6 +486,22 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
         ("corrected-submission", "active", None),
         ("withdrawn-new-submission", "active", None),
     ]
+    resumed_tasks = dict(
+        connection.execute(
+            """SELECT task_type,COUNT(*) FROM speaker_tasks
+               WHERE event_speaker_id='correction-speaker' AND state='open'
+               GROUP BY task_type"""
+        ).fetchall()
+    )
+    assert resumed_tasks == {"headshot": 1, "profile": 1, "slides": 2}
+    co_speaker_tasks = {
+        row[0]
+        for row in connection.execute(
+            """SELECT task_type FROM speaker_tasks
+               WHERE event_speaker_id='correction-co-speaker'"""
+        ).fetchall()
+    }
+    assert co_speaker_tasks == {"profile", "headshot"}
     restore_audits = connection.execute(
         """SELECT COUNT(*) FROM audit_events
            WHERE action='speaker.participation.restore' AND target_id='correction-speaker'"""

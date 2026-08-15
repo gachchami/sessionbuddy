@@ -20,6 +20,7 @@ SAFE_DEGRADATIONS = (
     "communication_queue_publish_failed",
     "decision_correction_conflict",
     "speaker_import_row_failed",
+    "speaker_restore_audit_failed",
 )
 
 

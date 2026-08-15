@@ -842,6 +842,8 @@ async def correct_final_submission_decision(
                           EXISTS(SELECT 1 FROM communication_messages message
                             WHERE message.deterministic_key='submission-decision-correction:'
                               || c.id || ':v1') AS send_email,
+                          -- Requested delivery and current queue state are distinct:
+                          -- cancelled or failed messages still prove send_email was true.
                           COALESCE((SELECT message.html_body
                             FROM communication_messages message
                             WHERE message.deterministic_key='submission-decision-correction:'

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from sessionbuddy.cfp.availability import form_availability
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.observability import record_degradation
 from sessionbuddy.platform.auth import authenticate_request, generate_token, hash_token
 from sessionbuddy.platform.auth.http import require_document_persona, require_permission
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, ResourceGrant
@@ -1015,7 +1016,13 @@ async def update_admin_speaker(
             event_id=event_id,
         )
     )
-    await audit.execute()
+    try:
+        await audit.execute()
+    except PersistenceError:
+        # The participation and session lifecycle writes are already committed.
+        # Preserve the truthful success response but make the missing audit
+        # durable in request telemetry for operator follow-up.
+        record_degradation(request, "speaker_restore_audit_failed")
     row = row_mapping(
         await db.prepare(
             """SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
@@ -1069,6 +1076,30 @@ async def restore_admin_speaker(
     """Restore a withdrawn speaker and accepted sessions whose decision remains accepted."""
     event, auth = await _managed_event(request, event_id, mutation=True)
     db, now = _db(request), utc_now_ms()
+    restore_candidates = result_rows(
+        await db.prepare(
+            """SELECT session.submission_id FROM accepted_sessions session
+               WHERE session.organization_id=?1 AND session.event_id=?2
+                 AND session.lifecycle_status='withdrawn'
+                 AND session.submission_id IN (
+                   SELECT link.submission_id FROM submission_speakers link
+                   WHERE link.organization_id=?1 AND link.event_id=?2
+                     AND link.event_speaker_id=?3 AND link.role='primary')
+                 AND EXISTS (
+                   SELECT 1 FROM submission_decisions decision
+                   WHERE decision.organization_id=?1 AND decision.event_id=?2
+                     AND decision.submission_id=session.submission_id
+                     AND COALESCE((SELECT correction.corrected_decision
+                       FROM submission_decision_corrections correction
+                       WHERE correction.organization_id=?1 AND correction.event_id=?2
+                         AND correction.submission_id=decision.submission_id
+                       ORDER BY correction.corrected_at_ms DESC,correction.id DESC LIMIT 1),
+                       decision.decision)='accepted')"""
+        )
+        .bind(event["organization_id"], event_id, event_speaker_id)
+        .all()
+    )
+    expected_reactivated_count = len(restore_candidates)
     batch = CommandBatch(db)
     speaker_write = batch.statement_count
     batch.add_statement(
@@ -1106,7 +1137,7 @@ async def restore_admin_speaker(
                  AND submission_id IN (
                    SELECT link.submission_id FROM submission_speakers link
                    WHERE link.organization_id=?1 AND link.event_id=?2
-                     AND link.event_speaker_id=?3)
+                     AND link.event_speaker_id=?3 AND link.role='primary')
                  AND EXISTS (
                    SELECT 1 FROM submission_decisions decision
                    WHERE decision.organization_id=?1 AND decision.event_id=?2
@@ -1124,7 +1155,116 @@ async def restore_admin_speaker(
             body.participation_version,
         )
     )
-    results = await batch.execute()
+    for task_type, title, help_text, days in (
+        (
+            "profile",
+            "Add your speaker biography",
+            "Your registration is complete; add the missing biography for the program.",
+            7,
+        ),
+        ("headshot", "Upload your headshot", "Add a program-ready profile photo.", 10),
+    ):
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_tasks
+                   (id,organization_id,event_id,event_speaker_id,task_type,title,help_text,
+                    destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
+                   SELECT ?1,speaker.organization_id,speaker.event_id,speaker.id,?2,?3,?4,
+                          ?2,'open',?5,?6,?6
+                   FROM event_speakers speaker
+                   JOIN people person ON person.organization_id=speaker.organization_id
+                    AND person.id=speaker.person_id
+                   LEFT JOIN users account ON account.id=person.user_id
+                   WHERE speaker.id=?7 AND speaker.organization_id=?8
+                    AND speaker.event_id=?9 AND speaker.status!='withdrawn'
+                    AND speaker.version=?10 + 1
+                    AND ((?2='profile'
+                          AND COALESCE(NULLIF(person.biography,''),account.description,'')='')
+                      OR (?2='headshot'
+                          AND NOT EXISTS (SELECT 1 FROM user_headshots headshot
+                            WHERE headshot.user_id=person.user_id)
+                          AND NOT EXISTS (SELECT 1 FROM speaker_assets asset
+                            JOIN speaker_asset_versions version ON version.asset_id=asset.id
+                             AND version.is_current=1 AND version.scan_state='clean'
+                            WHERE asset.organization_id=speaker.organization_id
+                             AND asset.event_id=speaker.event_id
+                             AND asset.event_speaker_id=speaker.id
+                             AND asset.kind='headshot')))
+                    AND NOT EXISTS (SELECT 1 FROM speaker_tasks existing
+                      WHERE existing.organization_id=speaker.organization_id
+                       AND existing.event_id=speaker.event_id
+                       AND existing.event_speaker_id=speaker.id
+                       AND existing.task_type=?2 AND existing.state='open')"""
+            ).bind(
+                new_id(),
+                task_type,
+                title,
+                help_text,
+                now + days * 86_400_000,
+                now,
+                event_speaker_id,
+                event["organization_id"],
+                event_id,
+                body.participation_version,
+            )
+        )
+    for candidate in restore_candidates:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO speaker_tasks
+                   (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
+                    title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
+                   SELECT ?1,session.organization_id,session.event_id,?2,session.submission_id,
+                          'slides','Upload your presentation',
+                          'Share the final slide deck with the event team.','slides','open',
+                          ?3,?4,?4
+                   FROM accepted_sessions session
+                   WHERE session.organization_id=?5 AND session.event_id=?6
+                     AND session.submission_id=?7 AND session.lifecycle_status='active'
+                     AND NOT EXISTS (SELECT 1 FROM speaker_tasks existing
+                       WHERE existing.organization_id=session.organization_id
+                        AND existing.event_id=session.event_id
+                        AND existing.event_speaker_id=?2
+                        AND existing.submission_id=session.submission_id
+                        AND existing.task_type='slides' AND existing.state='open')"""
+            ).bind(
+                new_id(),
+                event_speaker_id,
+                now + 21 * 86_400_000,
+                now,
+                event["organization_id"],
+                event_id,
+                candidate["submission_id"],
+            )
+        )
+    # Deferred work created above means the restored speaker is onboarding,
+    # even when there were no open tasks at the start of the batch.
+    batch.add_statement(
+        db.prepare(
+            """UPDATE event_speakers SET status='onboarding'
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3
+                 AND version=?4 + 1 AND status='complete'
+                 AND EXISTS (SELECT 1 FROM speaker_tasks task
+                   WHERE task.organization_id=?2 AND task.event_id=?3
+                     AND task.event_speaker_id=?1 AND task.state='open')"""
+        ).bind(
+            event_speaker_id,
+            event["organization_id"],
+            event_id,
+            body.participation_version,
+        )
+    )
+    try:
+        results = await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The speaker or session changed while participation was being restored. "
+                "Reload the speaker record and try again."
+            ),
+            headers={"X-Conflict-Type": "speaker-participation-restore"},
+        ) from exc
     if statement_changes(results, speaker_write) != 1:
         status = await (
             db.prepare(
@@ -1150,6 +1290,12 @@ async def restore_admin_speaker(
     )
     if restored is None:
         raise HTTPException(status_code=409)
+    reactivated_session_count = statement_changes(results, session_write)
+    if reactivated_session_count is None:
+        # The candidate count was read with the exact same predicates immediately
+        # before the optimistic batch, so it is the direct answer when a D1 result
+        # implementation cannot expose per-statement change counts.
+        reactivated_session_count = expected_reactivated_count
     audit = CommandBatch(db)
     audit.audit(
         AuditEvent(
@@ -1165,7 +1311,7 @@ async def restore_admin_speaker(
             event_id=event_id,
             metadata={
                 "previous_status": "withdrawn",
-                "reactivated_session_count": statement_changes(results, session_write),
+                "reactivated_session_count": reactivated_session_count,
             },
         )
     )
@@ -1173,7 +1319,7 @@ async def restore_admin_speaker(
     return EventSpeakerRestoreView(
         status=str(restored["status"]),
         participation_version=int(restored["version"]),
-        reactivated_session_count=statement_changes(results, session_write),
+        reactivated_session_count=reactivated_session_count,
     )
 
 

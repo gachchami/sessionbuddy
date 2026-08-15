@@ -918,9 +918,11 @@
         current.participation.participation_version = restored.participation_version;
       }
       button.hidden = true;
-      const sessionText = restored.reactivated_session_count === 1
-        ? " One accepted session was restored."
-        : ` ${restored.reactivated_session_count} accepted sessions were restored.`;
+      const sessionText = restored.reactivated_session_count === 0
+        ? ""
+        : restored.reactivated_session_count === 1
+          ? " One accepted session was restored."
+          : ` ${restored.reactivated_session_count} accepted sessions were restored.`;
       byId("status").textContent = `Speaker participation restored.${sessionText}`;
       byId("status").classList.remove("error");
     } catch (error) {
