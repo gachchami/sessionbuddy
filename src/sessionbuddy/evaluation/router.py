@@ -885,7 +885,7 @@ async def correct_final_submission_decision(
                 db.prepare(
                     """UPDATE event_speakers SET selection_status='accepted',status='onboarding',
                               accepted_at_ms=COALESCE(accepted_at_ms,?1),
-                              last_activity_at_ms=?1,updated_at_ms=?1
+                              withdrawn_at_ms=NULL,last_activity_at_ms=?1,updated_at_ms=?1
                        WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
                 ).bind(
                     now,
@@ -3165,18 +3165,29 @@ async def get_round_results(
               CASE WHEN COUNT(a.id) = 0 THEN 1 ELSE 0 END AS needs_reassignment,
               SUM(CASE WHEN e.state = 'final' THEN 1 ELSE 0 END) AS completed_count,
               AVG(CASE WHEN e.state = 'final' THEN e.rating END) AS average_rating,
-              d.decision,d.internal_reason
+              COALESCE((SELECT c.corrected_decision
+                FROM submission_decision_corrections c
+                WHERE c.organization_id=m.organization_id AND c.event_id=m.event_id
+                  AND c.submission_id=m.submission_id
+                ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),d.decision) AS decision,
+              COALESCE((SELECT c.reason
+                FROM submission_decision_corrections c
+                WHERE c.organization_id=m.organization_id AND c.event_id=m.event_id
+                  AND c.submission_id=m.submission_id
+                ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),d.internal_reason,'')
+                AS internal_reason,
+              d.round_id AS decision_round_id
        FROM evaluation_round_submissions m
        JOIN submissions s ON s.id = m.submission_id
        LEFT JOIN evaluation_assignments a
          ON a.round_id = m.round_id AND a.submission_id = m.submission_id
         AND a.status != 'revoked'
        LEFT JOIN evaluations e ON e.assignment_id = a.id
-       LEFT JOIN submission_decisions d
-         ON d.round_id = m.round_id AND d.submission_id = m.submission_id
+       LEFT JOIN submission_decisions d ON d.submission_id = m.submission_id
        WHERE m.round_id = ?1 AND m.status = 'active'
          AND (?2 IS NULL OR s.submitted_at_ms<?2 OR (s.submitted_at_ms=?2 AND s.id<?3))
-       GROUP BY s.id, s.speaker_name, s.proposal_title, d.decision,d.internal_reason
+       GROUP BY s.id, s.speaker_name, s.proposal_title, d.id,d.round_id,
+                d.decision,d.internal_reason
        ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT ?4"""
     fetched_rows = result_rows(
         await _timed_all(
@@ -3247,6 +3258,11 @@ async def get_round_results(
                 )
             ),
             decision=(str(row["decision"]) if row["decision"] is not None else None),
+            decision_round_id=(
+                str(row["decision_round_id"])
+                if row["decision_round_id"] is not None
+                else None
+            ),
             internal_reason=str(row["internal_reason"] or ""),
             reviews=reviews_by_submission.get(str(row["submission_id"]), []),
         )
@@ -3946,7 +3962,14 @@ async def record_submission_decision(
         .first()
     )
     if existing is not None:
-        raise HTTPException(status_code=409)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This proposal already has a final decision. Preserve it, or use the "
+                "audited decision-correction workflow to change the effective result."
+            ),
+            headers={"X-Conflict-Type": "final-decision"},
+        )
     decision_id = new_id()
     communication_id = new_id() if body.send_email else None
     version = 1

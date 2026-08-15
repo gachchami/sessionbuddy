@@ -2842,6 +2842,8 @@ async def list_submissions(
                     d.decision,s.status) AS status,s.submitted_at_ms,s.version,
                   s.routed_category,s.routed_track,s.routed_review_queue,
                   er.id AS evaluation_round_id,er.name AS evaluation_round_name,
+                  CASE WHEN d.id IS NOT NULL AND er.status='open'
+                       THEN 'under_review' END AS evaluation_state,
                   -- Prefer what the speaker says about themselves on their account and
                   -- fall back to the person record the organizer curates for this
                   -- organization. Both are scoped to this submission's tenant: `people`
@@ -2862,7 +2864,7 @@ async def list_submissions(
                  SELECT a.id FROM evaluation_assignments a
                  JOIN evaluation_rounds candidate ON candidate.id=a.round_id
                  WHERE a.submission_id=s.id AND a.status!='revoked'
-                   AND candidate.status!='draft'
+                   AND candidate.status='open'
                  ORDER BY candidate.updated_at_ms DESC,a.id DESC LIMIT 1
                )
                LEFT JOIN evaluation_rounds er ON er.id=ea.round_id

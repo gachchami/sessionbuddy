@@ -1240,7 +1240,7 @@
         row.dataset.track = String(item.routed_track || "").trim();
         const selectionCell = document.createElement("td");
         selectionCell.dataset.label = "Include";
-        if (item.status === "submitted" && !item.evaluation_round_id) {
+        if (!item.evaluation_round_id && item.status !== "withdrawn") {
           const selection = document.createElement("input");
           selection.type = "checkbox";
           selection.name = "submission_ids";
@@ -1253,8 +1253,8 @@
           const decided = document.createElement("span");
           decided.className = "proposal-selection-unavailable";
           decided.textContent = item.evaluation_round_name
-            ? `In ${item.evaluation_round_name}`
-            : "Already decided";
+            ? `Already in ${item.evaluation_round_name}`
+            : "Unavailable";
           selectionCell.append(decided);
         }
         row.append(selectionCell);
@@ -1270,8 +1270,15 @@
             metadata.textContent = `Submitted ${new Date(item.submitted_at_ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · Receipt ${item.id.slice(0, 8)}`;
             cell.append(identity, metadata);
           }
-          if (label === "Status") cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
-          if (label !== "Proposal") cell.textContent = value;
+          if (label === "Status") {
+            cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
+            cell.append(document.createTextNode(value));
+            if (item.evaluation_state === "under_review") {
+              const reviewState = document.createElement("small");
+              reviewState.textContent = `Under review in ${item.evaluation_round_name}`;
+              cell.append(reviewState);
+            }
+          } else if (label !== "Proposal") cell.textContent = value;
           row.append(cell);
         });
         const detailCell = document.createElement("td");

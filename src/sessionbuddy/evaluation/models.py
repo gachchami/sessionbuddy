@@ -459,6 +459,7 @@ class SubmissionEvaluationResult(BaseModel):
     completed_count: int
     average_rating: float | None
     decision: Literal["accepted", "rejected"] | None
+    decision_round_id: str | None = None
     internal_reason: str = ""
     reviews: list[EvaluationDetail] = Field(default_factory=list)
 

@@ -409,6 +409,7 @@ class SubmissionView(SubmissionCreate):
     routed_review_queue: str | None = None
     evaluation_round_id: str | None = None
     evaluation_round_name: str | None = None
+    evaluation_state: Literal["under_review"] | None = None
     # The submitter's affiliation, resolved when the organizer lists proposals rather
     # than stored on the submission. A proposal has never carried a company of its own,
     # so an organizer reading a proposal had no way to see who the speaker works for
