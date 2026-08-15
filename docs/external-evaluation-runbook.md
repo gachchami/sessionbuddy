@@ -220,6 +220,26 @@ SBEK_TARGET_URL=https://example.workers.dev \
 scripts/run_sbek.sh where
 ```
 
+To run both the browser agent and judge through OpenRouter using Ox Alpha at
+maximum reasoning, save the API key in the ignored file
+`.local/openrouter_api_key`, then run:
+
+```sh
+SBEK_PROVIDER=openrouter \
+SBEK_REASONING_EFFORT=max \
+scripts/run_sbek.sh \
+  --areas call-for-papers,abstract-management,speaker-management,content-management,ai-agenda,public-widgets \
+  --agent-model stealth/ox-alpha \
+  --judge-model stealth/ox-alpha
+```
+
+The launcher passes the key into the eval container without copying it into the
+eval checkout or command line. Override its location with
+`SBEK_OPENROUTER_KEY_FILE` when necessary. Before starting a paid-length run,
+the launcher verifies that `stealth/ox-alpha` still advertises zero input and
+output pricing plus tools, response formatting, and maximum reasoning. It
+refuses to start if any of those assumptions changes.
+
 The launcher defaults to the Codex binary bundled with the macOS ChatGPT app.
 If Codex is installed somewhere else, provide its absolute executable path:
 

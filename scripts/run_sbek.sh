@@ -12,6 +12,7 @@ dependencies_volume="${SBEK_NODE_MODULES_VOLUME:-sessionbuddy-sbek-node-modules-
 store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"
 playwright_image="${SBEK_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.62.1-noble}"
 provider="${SBEK_PROVIDER:-anthropic-api}"
+openrouter_key_file="${SBEK_OPENROUTER_KEY_FILE:-$(pwd)/.local/openrouter_api_key}"
 
 if [ -z "$eval_root" ]; then
   for candidate in /private/tmp/sessionbuddy-evals.*/repo; do
@@ -200,6 +201,34 @@ if [ "$provider" = "claude-cli" ]; then
   cd "$eval_root"
   export SBEK_PROVIDER=claude-cli
   exec node --import tsx src/cli.ts "$command_name" --url "$target_url" "$@"
+fi
+
+if [ "$provider" = "openrouter" ]; then
+  if [ -z "${OPENROUTER_API_KEY:-}" ]; then
+    if [ ! -s "$openrouter_key_file" ]; then
+      echo "OpenRouter authentication is unavailable." >&2
+      echo "Set OPENROUTER_API_KEY or save the key in the ignored file: $openrouter_key_file" >&2
+      exit 2
+    fi
+    OPENROUTER_API_KEY=$(tr -d '\r\n' < "$openrouter_key_file")
+    export OPENROUTER_API_KEY
+  fi
+  openrouter_model="${SBEK_OPENROUTER_MODEL:-stealth/ox-alpha}"
+  docker run --rm \
+    -v "$(pwd)/scripts/check_openrouter_model.mjs:/check-openrouter-model.mjs:ro" \
+    -e OPENROUTER_API_KEY \
+    "$playwright_image" \
+    node /check-openrouter-model.mjs "$openrouter_model"
+  exec docker run --rm \
+    -v "$eval_root:/eval" \
+    -v "$dependencies_volume:/eval/node_modules" \
+    -w /eval \
+    -e OPENROUTER_API_KEY \
+    -e SBEK_PROVIDER=openrouter \
+    -e SBEK_REASONING_EFFORT="${SBEK_REASONING_EFFORT:-max}" \
+    -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    "$playwright_image" \
+    corepack pnpm sbek "$command_name" --url "$target_url" "$@"
 fi
 
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
