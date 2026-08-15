@@ -39,6 +39,7 @@ type SubmissionResult = {
     evaluator_name: string;
     state: "not_started" | "draft" | "final";
     rating: number | null;
+    weighted_score?: number | null;
     recommendation: string | null;
     internal_comment: string;
   }[];
@@ -129,6 +130,37 @@ function mutationHeaders(csrf: string) {
   };
 }
 
+function weightedScore(
+  criteria: Assignment["criteria"],
+  responses: Record<string, number | string>,
+): number | null {
+  let total = 0;
+  let answered = 0;
+  const scored = criteria.filter((criterion) => criterion.response_type === "score");
+  if (!scored.length) return null;
+  for (const criterion of scored) {
+    const raw = String(responses[criterion.key] ?? "").trim();
+    if (raw === "") continue;
+    total += Number(raw) * (criterion.weight ?? 0);
+    answered += criterion.weight ?? 0;
+  }
+  if (!answered) return null;
+  return Math.round((total / answered) * 100) / 100;
+}
+
+function scorecardComplete(
+  criteria: Assignment["criteria"],
+  responses: Record<string, number | string>,
+): boolean {
+  const scored = criteria.filter((criterion) => criterion.response_type === "score");
+  return (
+    scored.length > 0 &&
+    scored.every(
+      (criterion) => String(responses[criterion.key] ?? "").trim() !== "",
+    )
+  );
+}
+
 function computePreview(
   form: HTMLFormElement,
   assignment: Assignment,
@@ -138,15 +170,19 @@ function computePreview(
     const raw = String(values.rating ?? "").trim();
     return raw === "" ? null : Number(raw);
   }
-  let total = 0;
-  const scored = assignment.criteria.filter((criterion) => criterion.response_type === "score");
-  if (!scored.length) return null;
-  for (const criterion of scored) {
-    const raw = String(values[`criterion_${criterion.key}`] ?? "").trim();
-    if (raw === "") return null;
-    if (criterion.response_type === "score") total += Number(raw) * (criterion.weight ?? 0);
-  }
-  return Math.round(total / scored.reduce((sum, criterion) => sum + (criterion.weight ?? 0), 0));
+  return weightedScore(
+    assignment.criteria,
+    Object.fromEntries(
+      assignment.criteria.map((criterion) => [
+        criterion.key,
+        String(values[`criterion_${criterion.key}`] ?? ""),
+      ]),
+    ),
+  );
+}
+
+function formatScore(value: number | null | undefined): string {
+  return value == null ? "—" : value.toFixed(2);
 }
 
 function ReviewWorkspace() {
@@ -155,6 +191,7 @@ function ReviewWorkspace() {
   const [status, setStatus] = useState("Loading your assigned reviews…");
   const [cardStatus, setCardStatus] = useState<Record<string, string>>({});
   const [previews, setPreviews] = useState<Record<string, number | null>>({});
+  const [previewComplete, setPreviewComplete] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [showFinalized, setShowFinalized] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
@@ -294,19 +331,9 @@ function ReviewWorkspace() {
             : String(values[`criterion_${criterion.key}`]),
         ]),
     );
-    const scoredCriteria = assignment.criteria.filter((criterion) => criterion.response_type === "score");
-    const allScored = scoredCriteria.length > 0 && scoredCriteria.every((criterion) => criterion.key in criterionResponses);
     const directRating = String(values.rating ?? "").trim();
     const rating = assignment.criteria.length
-      ? allScored
-        ? Math.round(
-            scoredCriteria.reduce(
-              (total, criterion) =>
-                total + Number(criterionResponses[criterion.key]) * (criterion.weight ?? 0),
-              0,
-            ) / 100,
-          )
-        : null
+      ? null
       : directRating === ""
         ? null
         : Number(directRating);
@@ -384,6 +411,19 @@ function ReviewWorkspace() {
     setPreviews((current) => ({
       ...current,
       [assignment.id]: computePreview(form, assignment),
+    }));
+    const values = Object.fromEntries(new FormData(form));
+    setPreviewComplete((current) => ({
+      ...current,
+      [assignment.id]: scorecardComplete(
+        assignment.criteria,
+        Object.fromEntries(
+          assignment.criteria.map((criterion) => [
+            criterion.key,
+            String(values[`criterion_${criterion.key}`] ?? ""),
+          ]),
+        ),
+      ),
     }));
   }
 
@@ -609,11 +649,32 @@ function ReviewWorkspace() {
               {assignment.criteria.length > 0 &&
                 assignment.evaluation_state !== "final" && (
                   <p className="help">
-                    Overall rating preview:{" "}
+                    {(Object.prototype.hasOwnProperty.call(
+                      previewComplete,
+                      assignment.id,
+                    )
+                      ? previewComplete[assignment.id]
+                      : scorecardComplete(
+                          assignment.criteria,
+                          assignment.criterion_responses,
+                        ))
+                      ? "Weighted score preview"
+                      : "Partial weighted score preview"}
+                    :{" "}
                     <strong>
-                      {(previews[assignment.id] ?? assignment.rating) ?? "—"}
+                      {formatScore(
+                        Object.prototype.hasOwnProperty.call(
+                          previews,
+                          assignment.id,
+                        )
+                          ? previews[assignment.id]
+                          : weightedScore(
+                              assignment.criteria,
+                              assignment.criterion_responses,
+                            ),
+                      )}
                     </strong>{" "}
-                    (weighted mean, submitted on finalize)
+                    (calculated from the scorecard)
                   </p>
                 )}
               {cardStatus[assignment.id] && (
@@ -1033,7 +1094,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 </span>
               </div>
               <div>
-                <strong>{results.average_rating ?? "—"}</strong>
+                <strong>{formatScore(results.average_rating)}</strong>
                 <span>round average</span>
               </div>
               <span
@@ -1333,7 +1394,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                   <h3>{submission.proposal_title}</h3>
                   <p className="speaker">{submission.speaker_name}</p>
                   <p className="proposal-result__score">
-                    <strong>{submission.average_rating ?? "—"}</strong> mean ·{" "}
+                    <strong>{formatScore(submission.average_rating)}</strong> mean ·{" "}
                     {submission.completed_count}/{submission.assigned_count}{" "}
                     complete
                   </p>
@@ -1346,7 +1407,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         <strong>{review.evaluator_name}</strong>
                         <p>
                           {review.state === "final"
-                            ? `${review.rating ?? "—"} · ${review.recommendation || "No recommendation"}`
+                            ? `${review.weighted_score != null ? formatScore(review.weighted_score) : review.rating ?? "—"} · ${review.recommendation || "No recommendation"}`
                             : review.state.replace("_", " ")}
                         </p>
                         {review.internal_comment && (

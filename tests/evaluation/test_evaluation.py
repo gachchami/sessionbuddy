@@ -23,6 +23,7 @@ from sessionbuddy.evaluation.router import (
     _evaluation_cursor,
     _evaluation_next_cursor,
     _weighted_mean,
+    _weighted_review_score,
     remind_round_evaluator,
 )
 from sessionbuddy.speaker_operations.acceptance_tasks import acceptance_speaker_tasks
@@ -335,6 +336,32 @@ def test_acceptance_headshot_readiness_query_uses_the_canonical_asset_table() ->
 def test_aggregate_is_weighted_across_individual_final_evaluations() -> None:
     assert _weighted_mean([(4.0, 1), (2.0, 3)]) == 2.5
     assert _weighted_mean([]) is None
+
+
+@pytest.mark.parametrize(
+    ("criteria", "responses", "expected"),
+    [
+        (
+            [{"key": "originality", "weight": 67}, {"key": "relevance", "weight": 33}],
+            '{"originality":4,"relevance":2}',
+            3.34,
+        ),
+        (
+            [{"key": "originality", "weight": 67}, {"key": "relevance", "weight": 33}],
+            '{"originality":5,"relevance":1}',
+            3.68,
+        ),
+        (
+            [{"key": "originality", "weight": 50}, {"key": "relevance", "weight": 50}],
+            '{"originality":3,"relevance":2}',
+            2.5,
+        ),
+    ],
+)
+def test_final_review_score_keeps_weighted_precision(
+    criteria: list[dict], responses: str, expected: float
+) -> None:
+    assert _weighted_review_score(criteria, responses, stored_rating=3) == expected
 
 
 def test_evaluation_lists_use_scoped_signed_pagination() -> None:

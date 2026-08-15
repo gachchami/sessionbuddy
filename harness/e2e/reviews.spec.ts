@@ -123,6 +123,90 @@ test.describe("reviewer workspace", () => {
     await expect(page.getByRole("button", { name: "Open review" })).toBeVisible();
   });
 
+  test("keeps weighted scorecard precision in the preview and save payload", async ({ page }) => {
+    const assignmentId = "abababab-abab-4bab-8bab-abababababab";
+    let savedPayload: Record<string, unknown> | null = null;
+    let evaluationState = "not_started";
+    let savedResponses: Record<string, number> = {};
+    let criteria = [
+      { key: "originality", label: "Originality", response_type: "score", required: true, weight: 67, options: [] },
+      { key: "relevance", label: "Relevance", response_type: "score", required: true, weight: 33, options: [] },
+    ];
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: reviewerSession }));
+    await page.route("**/api/v1/evaluator/assignments**", (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith(`/${assignmentId}/evaluation`)) {
+        savedPayload = route.request().postDataJSON();
+        evaluationState = String(savedPayload?.state);
+        savedResponses = savedPayload?.criterion_responses as Record<string, number>;
+        return route.fulfill({ contentType: "application/json", body: "{}" });
+      }
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 1,
+          completed_count: evaluationState === "final" ? 1 : 0,
+          next_cursor: null,
+          data: [{
+            id: assignmentId,
+            round_name: "Weighted review",
+            proposal_title: "Precision without contradiction",
+            proposal_abstract: "A scorecard should show the score it actually computes.",
+            speaker_name: "Hidden for blind review",
+            rating_min: 1,
+            rating_max: 5,
+            recommendations: ["accept", "reject"],
+            evaluator_guidance: "",
+            evaluation_state: evaluationState,
+            comment_required: false,
+            // The stored integer is deliberately lossy. The UI must derive its preview
+            // from the criterion responses instead of falling back to this value.
+            rating: evaluationState === "final" ? 3 : null,
+            recommendation: evaluationState === "final" ? "accept" : null,
+            internal_comment: "",
+            criteria,
+            criterion_responses: savedResponses,
+            blind_review: true,
+            review_closes_at_ms: null,
+            answers: [],
+            hidden_answer_count: 0,
+          }],
+        }),
+      });
+    });
+
+    await page.goto("/reviews");
+    await page.getByRole("button", { name: "Open review" }).click();
+    await page.getByLabel("Originality", { exact: false }).fill("4");
+    await expect(page.getByText("Partial weighted score preview:").locator("strong")).toHaveText("4.00");
+    await page.getByLabel("Relevance", { exact: false }).fill("2");
+    await expect(page.getByText("Weighted score preview:").locator("strong")).toHaveText("3.34");
+
+    await page.getByLabel("Originality", { exact: false }).fill("5");
+    await page.getByLabel("Relevance", { exact: false }).fill("1");
+    await expect(page.getByText("Weighted score preview:").locator("strong")).toHaveText("3.68");
+
+    // Python rounds 2.5 to the even integer 2 while JavaScript Math.round returns 3.
+    // The preview must keep the exact weighted value instead of choosing either integer.
+    criteria = criteria.map((criterion) => ({ ...criterion, weight: 50 }));
+    await page.reload();
+    await page.getByRole("button", { name: "Open review" }).click();
+    await page.getByLabel("Originality", { exact: false }).fill("3");
+    await expect(page.getByText("Partial weighted score preview:").locator("strong")).toHaveText("3.00");
+    await page.getByLabel("Relevance", { exact: false }).fill("2");
+    await expect(page.getByText("Weighted score preview:").locator("strong")).toHaveText("2.50");
+
+    await page.getByLabel("Recommendation", { exact: false }).selectOption("accept");
+    await page.getByRole("button", { name: "Finalize" }).click();
+    await expect.poll(() => savedPayload).not.toBeNull();
+    expect(savedPayload).toMatchObject({
+      rating: null,
+      criterion_responses: { originality: 3, relevance: 2 },
+      state: "final",
+    });
+  });
+
   test("treats a fully completed docket as an archive, not active work", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));

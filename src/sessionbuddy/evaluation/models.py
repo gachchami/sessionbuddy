@@ -445,6 +445,7 @@ class EvaluationDetail(BaseModel):
     evaluator_name: str
     state: Literal["not_started", "draft", "final"]
     rating: int | None = None
+    weighted_score: float | None = None
     recommendation: str | None = None
     internal_comment: str = ""
 

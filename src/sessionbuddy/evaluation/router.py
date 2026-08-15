@@ -3275,19 +3275,23 @@ async def get_round_results(
     reviews_by_submission: dict[str, list[EvaluationDetail]] = {}
     weighted_by_submission: dict[str, list[tuple[float, int]]] = {}
     for review in review_rows:
+        weighted_score = None
         if str(review["state"]) == "final":
-            weighted = _weighted_review_score(
+            weighted_score = _weighted_review_score(
                 round_criteria, review["criterion_responses_json"], review["rating"]
             )
-            if weighted is not None:
+            if weighted_score is not None:
                 weighted_by_submission.setdefault(str(review["submission_id"]), []).append(
-                    (weighted, 1)
+                    (weighted_score, 1)
                 )
         reviews_by_submission.setdefault(str(review["submission_id"]), []).append(
             EvaluationDetail(
                 evaluator_name=str(review["evaluator_name"]),
                 state=str(review["state"]),
                 rating=int(review["rating"]) if review["rating"] is not None else None,
+                weighted_score=(
+                    round(weighted_score, 2) if weighted_score is not None else None
+                ),
                 recommendation=(
                     str(review["recommendation"]) if review["recommendation"] is not None else None
                 ),

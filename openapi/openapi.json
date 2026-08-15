@@ -4105,6 +4105,17 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "weighted_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weighted Score"
           }
         },
         "required": [
