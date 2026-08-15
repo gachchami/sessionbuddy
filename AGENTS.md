@@ -110,6 +110,11 @@ After changing API routes or response models, regenerate `openapi/openapi.json`.
 ## Cloudflare compatibility
 
 - The deployed application is a Python Worker running through Workerd/Pyodide.
+- For any D1 task, check transaction support first. D1's Wrangler/SQL execution
+  path does not accept raw SQL `BEGIN TRANSACTION`, `COMMIT`, or `SAVEPOINT`;
+  use the runtime storage transaction APIs when atomic transactions are needed,
+  or design Wrangler-operated maintenance as dependency-ordered, restartable
+  statements with backup and post-operation verification.
 - Treat `wrangler.jsonc`, `pylock.toml`, and the pinned compatibility date as
   reviewed release inputs.
 - Verify packaging with a Wrangler/pywrangler dry run before deployment.
