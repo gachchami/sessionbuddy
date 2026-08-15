@@ -73,6 +73,12 @@ the speaker is explicitly restored through the speaker workflow. Its accepted
 session remains withdrawn as well, preventing a session with no participating
 speaker from silently becoming schedulable.
 
+The explicit restore action is optimistic and audited. It clears the speaker's
+withdrawal, then reactivates only that speaker's withdrawn sessions whose
+effective global decision is still accepted. Sessions rejected by a later
+correction remain withdrawn. Correction responses also expose session lifecycle
+so an accepted-but-withdrawn result is visible instead of looking schedulable.
+
 ## Agreed implementation scope
 
 1. Add the production-shaped correction regression and identify the exact

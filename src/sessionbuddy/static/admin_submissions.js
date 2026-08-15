@@ -1036,7 +1036,7 @@
       confirm.disabled = true;
       cancel.disabled = true;
       try {
-        await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/decision-corrections`, {
+        const corrected = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/decision-corrections`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -1050,7 +1050,10 @@
             speaker_message: "",
           }),
         });
-        byId("status").textContent = `Decision corrected to ${target}. The original decision remains in the audit history.`;
+        const lifecycleNotice = corrected.accepted_session_lifecycle_status === "withdrawn" && target === "accepted"
+          ? " The session remains withdrawn until speaker participation is restored."
+          : "";
+        byId("status").textContent = `Decision corrected to ${target}. The original decision remains in the audit history.${lifecycleNotice}`;
         location.reload();
       } catch (error) {
         confirm.disabled = false;

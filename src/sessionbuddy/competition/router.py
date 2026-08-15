@@ -28,6 +28,8 @@ from .models import (
     AdminSessionContentView,
     AdminSpeakerTaskView,
     AdminSpeakerUpdate,
+    EventSpeakerRestore,
+    EventSpeakerRestoreView,
     IntegrationTokenCreate,
     IntegrationTokenView,
     OrganizationPersonEventAssociation,
@@ -464,7 +466,7 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                           THEN 'account' ELSE 'organization' END AS biography_source,
                         NULLIF(p.biography,'') AS biography_override,
                         COALESCE(p.location,'') AS location,p.links_json,p.version,
-                        es.version AS participation_version,
+                        es.version AS participation_version,es.status AS lifecycle_status,
                         es.selection_status,es.confirmation_status,
                         COALESCE(
                           -- Prefer the ACCEPTED submission; fall back to newest.
@@ -491,7 +493,8 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
                  UNION ALL
                  SELECT i.id,NULL,NULL,i.email,
                         COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
-                        '','account',NULL,'','[]',1,1,'invited','invited','Invitation pending'
+                        '','account',NULL,'','[]',1,1,NULL,'invited','invited',
+                        'Invitation pending'
                  FROM identity_invitations i
                  WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
                    AND i.status='pending' AND i.expires_at_ms>?3
@@ -739,6 +742,9 @@ def _speaker_target(row) -> SpeakerTarget:
         links=json.loads(str(row["links_json"])),
         version=int(row["version"]),
         participation_version=int(row["participation_version"]),
+        lifecycle_status=(
+            str(row["lifecycle_status"]) if row["lifecycle_status"] is not None else None
+        ),
         selection_status=str(row["selection_status"]),
         confirmation_status=str(row["confirmation_status"]),
         proposal_title=str(row["proposal_title"]),
@@ -1021,7 +1027,7 @@ async def update_admin_speaker(
                         THEN 'account' ELSE 'organization' END AS biography_source,
                       NULLIF(p.biography,'') AS biography_override,
                       COALESCE(p.location,'') AS location,p.links_json,p.version,
-                      es.version AS participation_version,
+                      es.version AS participation_version,es.status AS lifecycle_status,
                       es.selection_status,es.confirmation_status,
                       COALESCE(
                         -- Prefer the ACCEPTED submission; fall back to newest.
@@ -1050,6 +1056,125 @@ async def update_admin_speaker(
     if row is None:
         raise HTTPException(status_code=404)
     return _speaker_target(row)
+
+
+@competition_router.post(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/restore",
+    response_model=EventSpeakerRestoreView,
+    tags=["speaker-onboarding"],
+)
+async def restore_admin_speaker(
+    event_id: str, event_speaker_id: str, body: EventSpeakerRestore, request: Request
+) -> EventSpeakerRestoreView:
+    """Restore a withdrawn speaker and accepted sessions whose decision remains accepted."""
+    event, auth = await _managed_event(request, event_id, mutation=True)
+    db, now = _db(request), utc_now_ms()
+    batch = CommandBatch(db)
+    speaker_write = batch.statement_count
+    batch.add_statement(
+        db.prepare(
+            """UPDATE event_speakers
+               SET status=CASE WHEN EXISTS (
+                     SELECT 1 FROM speaker_tasks task
+                     WHERE task.organization_id=event_speakers.organization_id
+                       AND task.event_id=event_speakers.event_id
+                       AND task.event_speaker_id=event_speakers.id AND task.state='open'
+                   ) THEN 'onboarding' ELSE 'complete' END,
+                   withdrawn_at_ms=NULL,last_activity_at_ms=?1,updated_at_ms=?1,
+                   version=version+1
+               WHERE id=?2 AND organization_id=?3 AND event_id=?4 AND version=?5
+                 AND status='withdrawn'"""
+        ).bind(
+            now,
+            event_speaker_id,
+            event["organization_id"],
+            event_id,
+            body.participation_version,
+        )
+    )
+    session_write = batch.statement_count
+    batch.add_statement(
+        db.prepare(
+            """UPDATE accepted_sessions
+               SET lifecycle_status='active',withdrawn_at_ms=NULL,version=version+1
+               WHERE organization_id=?1 AND event_id=?2 AND lifecycle_status='withdrawn'
+                 AND EXISTS (
+                   SELECT 1 FROM event_speakers restored
+                   WHERE restored.id=?3 AND restored.organization_id=?1
+                     AND restored.event_id=?2 AND restored.status!='withdrawn'
+                     AND restored.version=?4 + 1)
+                 AND submission_id IN (
+                   SELECT link.submission_id FROM submission_speakers link
+                   WHERE link.organization_id=?1 AND link.event_id=?2
+                     AND link.event_speaker_id=?3)
+                 AND EXISTS (
+                   SELECT 1 FROM submission_decisions decision
+                   WHERE decision.organization_id=?1 AND decision.event_id=?2
+                     AND decision.submission_id=accepted_sessions.submission_id
+                     AND COALESCE((SELECT correction.corrected_decision
+                       FROM submission_decision_corrections correction
+                       WHERE correction.organization_id=?1 AND correction.event_id=?2
+                         AND correction.submission_id=decision.submission_id
+                       ORDER BY correction.corrected_at_ms DESC,correction.id DESC LIMIT 1),
+                       decision.decision)='accepted')"""
+        ).bind(
+            event["organization_id"],
+            event_id,
+            event_speaker_id,
+            body.participation_version,
+        )
+    )
+    results = await batch.execute()
+    if statement_changes(results, speaker_write) != 1:
+        status = await (
+            db.prepare(
+                """SELECT status FROM event_speakers
+                   WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
+            )
+            .bind(event_speaker_id, event["organization_id"], event_id)
+            .first("status")
+        )
+        if status is None:
+            raise HTTPException(status_code=404)
+        raise HTTPException(
+            status_code=409,
+            detail="This speaker is no longer withdrawn. Reload their record and try again.",
+        )
+    restored = row_mapping(
+        await db.prepare(
+            """SELECT status,version FROM event_speakers
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3"""
+        )
+        .bind(event_speaker_id, event["organization_id"], event_id)
+        .first()
+    )
+    if restored is None:
+        raise HTTPException(status_code=409)
+    audit = CommandBatch(db)
+    audit.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=auth.actor.user_id,
+            action="speaker.participation.restore",
+            target_type="event_speaker",
+            target_id=event_speaker_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(event["organization_id"]),
+            event_id=event_id,
+            metadata={
+                "previous_status": "withdrawn",
+                "reactivated_session_count": statement_changes(results, session_write),
+            },
+        )
+    )
+    await audit.execute()
+    return EventSpeakerRestoreView(
+        status=str(restored["status"]),
+        participation_version=int(restored["version"]),
+        reactivated_session_count=statement_changes(results, session_write),
+    )
 
 
 @competition_router.get(

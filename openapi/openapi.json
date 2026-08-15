@@ -5341,6 +5341,48 @@
         "title": "EventOwnershipTransferView",
         "type": "object"
       },
+      "EventSpeakerRestore": {
+        "additionalProperties": false,
+        "properties": {
+          "participation_version": {
+            "minimum": 1.0,
+            "title": "Participation Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "participation_version"
+        ],
+        "title": "EventSpeakerRestore",
+        "type": "object"
+      },
+      "EventSpeakerRestoreView": {
+        "properties": {
+          "participation_version": {
+            "title": "Participation Version",
+            "type": "integer"
+          },
+          "reactivated_session_count": {
+            "title": "Reactivated Session Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "onboarding",
+              "complete"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "participation_version",
+          "reactivated_session_count"
+        ],
+        "title": "EventSpeakerRestoreView",
+        "type": "object"
+      },
       "EventTrackList": {
         "additionalProperties": false,
         "properties": {
@@ -11137,6 +11179,22 @@
             "title": "Job Title",
             "type": "string"
           },
+          "lifecycle_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "onboarding",
+                  "complete",
+                  "withdrawn"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifecycle Status"
+          },
           "links": {
             "items": {
               "type": "string"
@@ -11739,6 +11797,21 @@
               }
             ],
             "title": "Accepted Session Id"
+          },
+          "accepted_session_lifecycle_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "active",
+                  "withdrawn"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Session Lifecycle Status"
           },
           "communication_queued": {
             "default": false,
@@ -17532,6 +17605,68 @@
           }
         },
         "summary": "Update Admin Speaker Notes",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/restore": {
+      "post": {
+        "description": "Restore a withdrawn speaker and accepted sessions whose decision remains accepted.",
+        "operationId": "restore_admin_speaker_api_v1_admin_events__event_id__speakers__event_speaker_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventSpeakerRestore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventSpeakerRestoreView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Restore Admin Speaker",
         "tags": [
           "speaker-onboarding"
         ]

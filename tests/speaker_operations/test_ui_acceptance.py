@@ -595,3 +595,12 @@ def test_validation_state_is_cleared_on_reset_and_on_correction() -> None:
     assert 'form.classList.remove("validation-attempted")' in reset
     # Correcting a field must not leave "this form was not submitted" on screen.
     assert "refreshFormSummary(control.form);" in javascript
+
+
+def test_withdrawn_speaker_restore_is_explicit_and_auditable() -> None:
+    html = source("speaker_directory.html")
+    javascript = source("speaker_directory.js")
+    assert 'id="restore-speaker"' in html
+    assert "participation.lifecycle_status !== \"withdrawn\"" in javascript
+    assert "/restore`" in javascript
+    assert "reactivated_session_count" in javascript

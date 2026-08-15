@@ -280,6 +280,7 @@
         event_speaker_id: target.event_speaker_id,
         selection_status: target.selection_status,
         confirmation_status: target.confirmation_status,
+        lifecycle_status: target.lifecycle_status,
         participation_version: target.participation_version,
         proposal_title: target.proposal_title,
       }],
@@ -389,6 +390,7 @@
       event_speaker_id: participation.event_speaker_id,
       selection_status: participation.selection_status,
       confirmation_status: participation.confirmation_status,
+      lifecycle_status: participation.lifecycle_status,
       participation_version: participation.participation_version,
       proposal_title: participation.proposal_title,
     };
@@ -406,6 +408,7 @@
       : "This event uses the organization biography below.";
     form.elements.confirmation_status.value = participation.confirmation_status;
     byId("speaker-confirmation-field").hidden = false;
+    byId("restore-speaker").hidden = participation.lifecycle_status !== "withdrawn";
     window.SessionBuddyApi.refreshCharacterCounters(form);
     form.elements.links.value = (person.links || []).join("\n");
     byId("speaker-onboarding").href = `/admin/events/${encodeURIComponent(participation.event_id)}/onboarding`;
@@ -467,6 +470,7 @@
     form.hidden = !profile.can_edit;
     byId("speaker-confirmation-field").hidden = true;
     byId("speaker-onboarding").hidden = true;
+    byId("restore-speaker").hidden = true;
     byId("speaker-directory").hidden = !sessionHasOrganizerAccess;
     if (profile.can_edit) {
       ["display_name", "email", "job_title", "company", "location", "version"].forEach((name) => {
@@ -870,6 +874,7 @@
           Object.assign(current.person, updated);
           Object.assign(current.participation, {
             confirmation_status: updated.confirmation_status,
+            lifecycle_status: updated.lifecycle_status,
             participation_version: updated.participation_version,
           });
           showSpeakerDetail(current.person, current.participation);
@@ -891,6 +896,41 @@
   // the stale custom validity before a later bubble listener is observed.
   byId("speaker-form").elements.links.addEventListener("input", clearLinkValidation, true);
   byId("speaker-form").elements.links.addEventListener("change", clearLinkValidation, true);
+
+  byId("restore-speaker").addEventListener("click", async (event) => {
+    if (!selectedSpeaker?.event_speaker_id || selectedSpeaker.lifecycle_status !== "withdrawn") return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const restored = await api(
+        `/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/${encodeURIComponent(selectedSpeaker.event_speaker_id)}/restore`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": csrf },
+          body: JSON.stringify({ participation_version: selectedSpeaker.participation_version }),
+        },
+      );
+      selectedSpeaker.lifecycle_status = restored.status;
+      selectedSpeaker.participation_version = restored.participation_version;
+      const current = findEventSpeaker(selectedSpeaker.event_speaker_id);
+      if (current) {
+        current.participation.lifecycle_status = restored.status;
+        current.participation.participation_version = restored.participation_version;
+      }
+      button.hidden = true;
+      const sessionText = restored.reactivated_session_count === 1
+        ? " One accepted session was restored."
+        : ` ${restored.reactivated_session_count} accepted sessions were restored.`;
+      byId("status").textContent = `Speaker participation restored.${sessionText}`;
+      byId("status").classList.remove("error");
+    } catch (error) {
+      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").classList.add("error");
+      byId("status").focus();
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   byId("add-speaker-note").addEventListener("click", () => {
     byId("speaker-note-fields").append(speakerNoteRow());

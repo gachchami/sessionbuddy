@@ -104,7 +104,7 @@ def test_changed_speaker_workflows_bust_cached_assets() -> None:
     directory = (STATIC / "speaker_directory.html").read_text()
     content = (STATIC / "speaker_content.html").read_text()
     messages = (STATIC / "speaker_messages.html").read_text()
-    assert "/admin/people/assets/people.js?v=7" in directory
+    assert "/admin/people/assets/people.js?v=8" in directory
     assert "/admin/speaker-content/assets/speaker-content.js?v=3" in content
     assert "/admin/speakers/assets/messages.js?v=7" in messages
     assert all("/product/assets/product.css?v=71" in page for page in (directory, content))

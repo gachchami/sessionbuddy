@@ -109,6 +109,7 @@ class SpeakerTarget(BaseModel):
     links: list[str]
     version: int
     participation_version: int = 1
+    lifecycle_status: Literal["onboarding", "complete", "withdrawn"] | None = None
     selection_status: Literal["invited", "submitted", "accepted", "rejected"]
     confirmation_status: Literal["invited", "pending", "confirmed", "declined"]
     proposal_title: str
@@ -200,6 +201,17 @@ class AdminSpeakerUpdate(BaseModel):
 class AdminEventSpeakerUpdate(AdminSpeakerUpdate):
     participation_version: int = Field(ge=1)
     confirmation_status: Literal["pending", "confirmed", "declined"] | None = None
+
+
+class EventSpeakerRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    participation_version: int = Field(ge=1)
+
+
+class EventSpeakerRestoreView(BaseModel):
+    status: Literal["onboarding", "complete"]
+    participation_version: int
+    reactivated_session_count: int
 
 
 class SessionContentVersionView(BaseModel):

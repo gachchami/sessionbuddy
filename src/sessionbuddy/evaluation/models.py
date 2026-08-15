@@ -435,6 +435,7 @@ class SubmissionDecisionCorrectionView(SubmissionDecisionCorrectionCreate):
     previous_decision: Literal["accepted", "rejected"]
     corrected_at_ms: int
     accepted_session_id: str | None = None
+    accepted_session_lifecycle_status: Literal["active", "withdrawn"] | None = None
     communication_queued: bool = False
 
 

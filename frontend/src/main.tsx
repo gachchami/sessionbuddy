@@ -778,7 +778,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     );
     if (!reasonInput.reportValidity()) return;
     if (correction) {
-      const body = await api<{ communication_queued: boolean }>(
+      const body = await api<{
+        communication_queued: boolean;
+        accepted_session_lifecycle_status: "active" | "withdrawn" | null;
+      }>(
         `/api/v1/admin/events/${encodeURIComponent(results!.event_id)}/submissions/${encodeURIComponent(submission.submission_id)}/decision-corrections`,
         {
           method: "POST",
@@ -795,7 +798,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       setSpeakerMessage("");
       await load();
       setStatus(
-        `Decision corrected to ${decision}. The original decision remains in the audit history.${body.communication_queued ? " Speaker email queued." : " No email sent."}`,
+        `Decision corrected to ${decision}. The original decision remains in the audit history.${body.accepted_session_lifecycle_status === "withdrawn" && decision === "accepted" ? " The session remains withdrawn until speaker participation is restored." : ""}${body.communication_queued ? " Speaker email queued." : " No email sent."}`,
       );
       return;
     }

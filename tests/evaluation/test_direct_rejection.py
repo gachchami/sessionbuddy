@@ -283,12 +283,67 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                 ),
             },
         )
+        connection.execute(
+            """INSERT INTO submissions
+               (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+                proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
+                submitted_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('withdrawn-new-submission',?,?,'correction-form','withdrawn-new-public',
+                       'Accepted after withdrawal','Abstract','Priya Raman',
+                       'priya@example.test',?,'submitted',1300,1300,1300)""",
+            (organization_id, event_id, user_id),
+        )
+        connection.execute(
+            """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                snapshot_name,created_at_ms)
+               VALUES ('withdrawn-new-primary',?,?,'withdrawn-new-submission',
+                       'correction-speaker','primary','Priya Raman',1300)""",
+            (organization_id, event_id),
+        )
+        connection.commit()
+        rejected_without_session = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/withdrawn-new-submission/reject",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "withdrawn-new-reject",
+            },
+            json={
+                "decision": "rejected",
+                "internal_reason": "Original decision before speaker returned",
+                "send_email": False,
+                "speaker_message": "",
+                "override_incomplete_reviews": False,
+            },
+        )
+        assert rejected_without_session.status_code == 200
+        accepted_without_existing_session = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/withdrawn-new-submission/decision-corrections",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "withdrawn-new-accept",
+            },
+            json={
+                "corrected_decision": "accepted",
+                "reason": "The proposal qualifies, while the speaker remains withdrawn.",
+            },
+        )
 
     assert accepted_after_withdrawal.status_code == 200, accepted_after_withdrawal.text
     assert accepted_after_withdrawal_replay.status_code == 200
     assert accepted_after_withdrawal_replay.json()["speaker_message"] == (
         "Your proposal result changed; your withdrawal remains in effect."
     )
+    assert accepted_without_existing_session.status_code == 200, (
+        accepted_without_existing_session.text
+    )
+    withdrawn_new_session = connection.execute(
+        """SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions
+           WHERE submission_id='withdrawn-new-submission'"""
+    ).fetchone()
+    assert tuple(withdrawn_new_session) == ("withdrawn", 1200)
     original = connection.execute(
         "SELECT decision,internal_reason FROM submission_decisions WHERE submission_id=?",
         ("corrected-submission",),
@@ -342,6 +397,62 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
         ).fetchall()
     )
     assert task_counts == {"headshot": 1, "profile": 1, "slides": 1}
+
+    async with _client(environment) as restore_client:
+        requested = await restore_client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin"},
+        )
+        assert requested.status_code == 202
+        verified = await restore_client.post(
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
+            follow_redirects=False,
+        )
+        assert verified.status_code == 303
+        restore_session = (await restore_client.get("/api/v1/auth/session")).json()
+        restored_response = await restore_client.post(
+            f"/api/v1/admin/events/{event_id}/speakers/correction-speaker/restore",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": restore_session["csrf_token"],
+            },
+            json={"participation_version": 1},
+        )
+        repeated_restore = await restore_client.post(
+            f"/api/v1/admin/events/{event_id}/speakers/correction-speaker/restore",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": restore_session["csrf_token"],
+            },
+            json={"participation_version": 1},
+        )
+
+    assert restored_response.status_code == 200, restored_response.text
+    assert restored_response.json() == {
+        "status": "onboarding",
+        "participation_version": 2,
+        "reactivated_session_count": 2,
+    }
+    assert repeated_restore.status_code == 409
+    restored_speaker = connection.execute(
+        "SELECT status,withdrawn_at_ms FROM event_speakers WHERE id='correction-speaker'"
+    ).fetchone()
+    assert tuple(restored_speaker) == ("onboarding", None)
+    restored_sessions = connection.execute(
+        """SELECT submission_id,lifecycle_status,withdrawn_at_ms FROM accepted_sessions
+           WHERE submission_id IN ('corrected-submission','withdrawn-new-submission')
+           ORDER BY submission_id"""
+    ).fetchall()
+    assert [tuple(row) for row in restored_sessions] == [
+        ("corrected-submission", "active", None),
+        ("withdrawn-new-submission", "active", None),
+    ]
+    restore_audits = connection.execute(
+        """SELECT COUNT(*) FROM audit_events
+           WHERE action='speaker.participation.restore' AND target_id='correction-speaker'"""
+    ).fetchone()[0]
+    assert restore_audits == 1
 
 
 async def test_unreviewed_proposal_can_be_accepted_with_an_audited_reason(
