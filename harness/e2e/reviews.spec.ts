@@ -207,6 +207,115 @@ test.describe("reviewer workspace", () => {
     });
   });
 
+  test("purpose-designated fields render once and mirror canonical responses", async ({ page }) => {
+    const assignmentId = "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd";
+    let savedPayload: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: reviewerSession }));
+    await page.route("**/api/v1/evaluator/assignments**", (route) => {
+      if (new URL(route.request().url()).pathname.endsWith(`/${assignmentId}/evaluation`)) {
+        savedPayload = route.request().postDataJSON();
+        return route.fulfill({ contentType: "application/json", body: "{}" });
+      }
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          total: 1,
+          completed_count: 0,
+          next_cursor: null,
+          data: [{
+            id: assignmentId,
+            round_name: "Purpose review",
+            proposal_title: "One recommendation",
+            proposal_abstract: "Canonical typed criteria replace legacy controls.",
+            speaker_name: "Hidden for blind review",
+            rating_min: 1,
+            rating_max: 5,
+            recommendations: ["Accept", "Maybe", "Reject"],
+            evaluator_guidance: "",
+            evaluation_state: "not_started",
+            comment_required: true,
+            rating: null,
+            recommendation: null,
+            internal_comment: "",
+            criteria: [
+              { key: "quality", label: "Quality", response_type: "score", required: true, weight: 100, options: [], purpose: null },
+              { key: "recommendation", label: "Recommendation", response_type: "select", required: true, weight: null, options: ["Accept", "Maybe", "Reject"], purpose: "recommendation" },
+              { key: "comments", label: "Comments", response_type: "text", required: true, weight: null, options: [], purpose: "comment" },
+            ],
+            criterion_responses: {},
+            blind_review: true,
+            review_closes_at_ms: null,
+            answers: [],
+            hidden_answer_count: 0,
+          }],
+        }),
+      });
+    });
+
+    await page.goto("/reviews");
+    await page.getByRole("button", { name: "Open review" }).click();
+    const recommendation = page.locator('select[name="criterion_recommendation"]');
+    const comments = page.locator('textarea[name="criterion_comments"]');
+    await expect(recommendation).toHaveCount(1);
+    await expect(comments).toHaveCount(1);
+    await expect(page.locator('textarea[name="internal_comment"]')).toHaveCount(0);
+    await page.getByLabel("Quality", { exact: false }).fill("4");
+    await recommendation.selectOption("Maybe");
+    await comments.fill("Useful but intentionally tentative.");
+    await page.getByRole("button", { name: "Finalize" }).click();
+    await expect.poll(() => savedPayload).not.toBeNull();
+    expect(savedPayload).toMatchObject({
+      recommendation: "Maybe",
+      internal_comment: "Useful but intentionally tentative.",
+      criterion_responses: {
+        quality: 4,
+        recommendation: "Maybe",
+        comments: "Useful but intentionally tentative.",
+      },
+      state: "final",
+    });
+  });
+
+  test("legacy recommendations are humanized without changing submitted values", async ({ page }) => {
+    const assignmentId = "dededede-dede-4ede-8ede-dededededede";
+    let savedPayload: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: reviewerSession }));
+    await page.route("**/api/v1/evaluator/assignments**", (route) => {
+      if (new URL(route.request().url()).pathname.endsWith(`/${assignmentId}/evaluation`)) {
+        savedPayload = route.request().postDataJSON();
+        return route.fulfill({ contentType: "application/json", body: "{}" });
+      }
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        total: 1, completed_count: 0, next_cursor: null, data: [{
+          id: assignmentId, round_name: "Legacy review", proposal_title: "Stable values",
+          proposal_abstract: "Presentation must not rewrite stored values.",
+          speaker_name: "Hidden", rating_min: 1, rating_max: 5,
+          recommendations: ["strong_accept", "accept", "reject", "strong_reject"],
+          evaluator_guidance: "", evaluation_state: "not_started", comment_required: false,
+          rating: null, recommendation: null, internal_comment: "",
+          criteria: [{ key: "fit", label: "Track fit", response_type: "select", required: false, weight: null, options: ["Platform", "AI"], purpose: null }],
+          criterion_responses: {}, blind_review: true, review_closes_at_ms: null,
+          answers: [], hidden_answer_count: 0,
+        }],
+      }) });
+    });
+
+    await page.goto("/reviews");
+    await page.getByRole("button", { name: "Open review" }).click();
+    const recommendation = page.locator('select[name="recommendation"]');
+    await expect(recommendation).toHaveCount(1);
+    await expect(recommendation.locator('option[value="strong_accept"]')).toHaveText("Strong accept");
+    const trackFit = page.locator('select[name="criterion_fit"]');
+    await expect(trackFit).toBeVisible();
+    await recommendation.selectOption("strong_accept");
+    await trackFit.selectOption("Platform");
+    await page.getByRole("button", { name: "Save draft" }).click();
+    await expect.poll(() => savedPayload).not.toBeNull();
+    expect(savedPayload).toMatchObject({ recommendation: "strong_accept" });
+  });
+
   test("treats a fully completed docket as an archive, not active work", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));
@@ -285,14 +394,22 @@ test.describe("reviewer workspace", () => {
     });
     const firstId = "11111111-1111-4111-8111-111111111111";
     const secondId = "22222222-2222-4222-8222-222222222222";
+    let releaseFinalize!: () => void;
+    let releaseRefresh!: () => void;
+    const finalizeGate = new Promise<void>((resolve) => { releaseFinalize = resolve; });
+    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    let committed = false;
 
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));
-    await page.route("**/api/v1/evaluator/assignments**", (route) => {
+    await page.route("**/api/v1/evaluator/assignments**", async (route) => {
       if (new URL(route.request().url()).pathname.endsWith(`/${firstId}/evaluation`)) {
+        await finalizeGate;
         states.one = String(route.request().postDataJSON().state);
+        committed = true;
         return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
       }
+      if (committed) await refreshGate;
       return route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -315,9 +432,15 @@ test.describe("reviewer workspace", () => {
     await page.getByLabel("Recommendation", { exact: false }).selectOption("accept");
     await page.getByRole("button", { name: "Finalize" }).click();
 
-    // The review the evaluator just committed stays open, and says so.
+    // Feedback starts with the mutation, not after the queue refresh.
+    await expect(page.getByRole("button", { name: "Finalizing…" })).toBeDisabled();
+    await expect(page.getByText("Finalizing review…")).toBeVisible();
+    releaseFinalize();
+
+    // The committed state is visible while the deliberately slow refresh is still blocked.
     await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toBeVisible();
     await expect(page.getByText("Review finalized")).toBeVisible();
+    releaseRefresh();
     await expect(page.getByText("1 remaining")).toBeVisible();
 
     // And the rest of the queue is one click away, without a reload.

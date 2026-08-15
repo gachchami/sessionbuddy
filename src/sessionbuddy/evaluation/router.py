@@ -38,6 +38,7 @@ from .models import (
     ConflictView,
     EvaluationAssignmentList,
     EvaluationAssignmentView,
+    EvaluationCriterion,
     EvaluationDetail,
     EvaluationRoundClosed,
     EvaluationRoundCloseRequest,
@@ -314,8 +315,13 @@ def plan_round_diff(
     return diff
 
 
-def _round_criteria(rubric_json: object) -> list[dict]:
-    """Return the round's scorecard criteria, or an empty list for an unweighted round."""
+def _round_criteria_for_historical_scores(rubric_json: object) -> list[dict]:
+    """Read the stored scoring inputs without applying today's authoring validators.
+
+    Historical averages are recomputed from the rubric stored on the round. Tightening
+    EvaluationCriterion later must not retroactively remove an old weighted criterion and
+    change those averages; organizer-facing metadata is validated separately.
+    """
     if rubric_json is None:
         return []
     try:
@@ -328,6 +334,99 @@ def _round_criteria(rubric_json: object) -> list[dict]:
         for criterion in criteria
         if isinstance(criterion, dict) and criterion.get("key") and criterion.get("weight")
     ]
+
+
+def _full_round_criteria(rubric_json: object) -> list[dict]:
+    """Return every model-valid criterion in rubric order, including non-scored responses."""
+    if rubric_json is None:
+        return []
+    try:
+        rubric = json.loads(str(rubric_json))
+    except (TypeError, ValueError):
+        return []
+    criteria = rubric.get("criteria") or []
+    valid: list[dict] = []
+    for criterion in criteria:
+        if not isinstance(criterion, dict):
+            continue
+        try:
+            normalized = EvaluationCriterion.model_validate(criterion)
+        except ValueError:
+            # A malformed historical criterion must not take down the results dashboard
+            # or either export. Valid siblings remain visible in stored order.
+            continue
+        valid.append(normalized.model_dump(exclude_none=True))
+    return valid
+
+
+def _criterion_response_mapping(value: object) -> dict[str, int | str]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {
+        str(key): response
+        for key, response in parsed.items()
+        if isinstance(response, (int, str)) and not isinstance(response, bool)
+    }
+
+
+def _build_round_rubric(body: EvaluationRoundCreate) -> dict:
+    """Build the stored rubric identically for create and draft-update paths.
+
+    A purpose-designated criterion is canonical. The legacy fields remain populated during
+    compatibility because existing consumers and finalized-evaluation validation still read
+    them, but their configuration is derived here rather than trusted as a second source.
+    """
+    criteria = [criterion.model_dump(exclude_none=True) for criterion in body.criteria]
+    recommendation = next(
+        (criterion for criterion in body.criteria if criterion.purpose == "recommendation"),
+        None,
+    )
+    comment = next(
+        (criterion for criterion in body.criteria if criterion.purpose == "comment"),
+        None,
+    )
+    recommendation_choices = (
+        list(recommendation.options) if recommendation is not None else body.recommendations
+    )
+    return {
+        "rating": {"min": body.rating_min, "max": body.rating_max, "required": True},
+        "recommendation": {"choices": recommendation_choices, "required": True},
+        "internal_comment": {
+            "required": comment.required if comment is not None else body.comment_required
+        },
+        "guidance": body.evaluator_guidance,
+        "criteria": criteria,
+        "blind_review": body.blind_review,
+        "assignment_strategy": body.assignment_strategy,
+    }
+
+
+def _canonical_evaluation_fields(
+    rubric: dict, body: EvaluationSave
+) -> tuple[str | None, str]:
+    """Resolve purpose-designated criterion responses and their legacy mirrors."""
+    criteria = list(rubric.get("criteria", []))
+    recommendation_criterion = next(
+        (criterion for criterion in criteria if criterion.get("purpose") == "recommendation"),
+        None,
+    )
+    comment_criterion = next(
+        (criterion for criterion in criteria if criterion.get("purpose") == "comment"),
+        None,
+    )
+    recommendation = body.recommendation
+    if recommendation_criterion is not None:
+        canonical = body.criterion_responses.get(str(recommendation_criterion["key"]))
+        recommendation = str(canonical) if canonical is not None else None
+    internal_comment = body.internal_comment
+    if comment_criterion is not None:
+        canonical = body.criterion_responses.get(str(comment_criterion["key"]))
+        internal_comment = str(canonical) if canonical is not None else ""
+    return recommendation, internal_comment
 
 
 def _weighted_review_score(
@@ -1168,15 +1267,7 @@ async def create_evaluation_round(
 
     now = utc_now_ms()
     round_id = new_id()
-    rubric = {
-        "rating": {"min": body.rating_min, "max": body.rating_max, "required": True},
-        "recommendation": {"choices": body.recommendations, "required": True},
-        "internal_comment": {"required": body.comment_required},
-        "guidance": body.evaluator_guidance,
-        "criteria": [criterion.model_dump() for criterion in body.criteria],
-        "blind_review": body.blind_review,
-        "assignment_strategy": body.assignment_strategy,
-    }
+    rubric = _build_round_rubric(body)
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
         organization_id=organization_id,
@@ -1562,15 +1653,7 @@ async def update_draft_evaluation_round(
                 ),
             )
     now = utc_now_ms()
-    rubric = {
-        "rating": {"min": body.rating_min, "max": body.rating_max, "required": True},
-        "recommendation": {"choices": body.recommendations, "required": True},
-        "internal_comment": {"required": body.comment_required},
-        "guidance": body.evaluator_guidance,
-        "criteria": [criterion.model_dump() for criterion in body.criteria],
-        "blind_review": body.blind_review,
-        "assignment_strategy": body.assignment_strategy,
-    }
+    rubric = _build_round_rubric(body)
     # assignment_strategy only GENERATES a starting matrix. Once the organizer has edited
     # the pairs the payload carries them, and the strategy must not overwrite that -- which
     # is exactly what delete-and-regenerate used to do on every save.
@@ -2773,7 +2856,11 @@ async def save_evaluation(
         key for key, criterion in criteria_by_key.items() if criterion.get("required", True)
     }
     if body.state == "final" and not required_keys <= set(body.criterion_responses):
-        raise HTTPException(status_code=422)
+        missing = sorted(required_keys - set(body.criterion_responses))
+        raise HTTPException(
+            status_code=422,
+            detail=f"Complete every required scorecard response: {', '.join(missing)}.",
+        )
     for key, response in body.criterion_responses.items():
         criterion = criteria_by_key[key]
         response_type = criterion.get("response_type", "score")
@@ -2787,6 +2874,7 @@ async def save_evaluation(
             raise HTTPException(status_code=422)
         elif body.state == "final" and key in required_keys and not response.strip():
             raise HTTPException(status_code=422)
+    recommendation, internal_comment = _canonical_evaluation_fields(rubric, body)
     rating = body.rating
     scored = [
         criterion for criterion in criteria if criterion.get("response_type", "score") == "score"
@@ -2814,18 +2902,24 @@ async def save_evaluation(
     if rating is not None and not rating_min <= rating <= rating_max:
         raise HTTPException(status_code=422)
     if (
-        body.recommendation is not None
-        and body.recommendation not in rubric["recommendation"]["choices"]
+        recommendation is not None
+        and recommendation not in rubric["recommendation"]["choices"]
     ):
         raise HTTPException(status_code=422)
-    if body.state == "final" and body.recommendation is None:
-        raise HTTPException(status_code=422)
+    if body.state == "final" and recommendation is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Choose a recommendation before finalizing this review.",
+        )
     if (
         body.state == "final"
         and rubric.get("internal_comment", {}).get("required")
-        and not body.internal_comment
+        and not internal_comment
     ):
-        raise HTTPException(status_code=422)
+        raise HTTPException(
+            status_code=422,
+            detail="Add the required reviewer comment before finalizing this review.",
+        )
 
     key = _key(idempotency_key)
     route = "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation"
@@ -2882,8 +2976,8 @@ async def save_evaluation(
             assignment_id,
             authenticated.actor.user_id,
             rating,
-            body.recommendation,
-            body.internal_comment,
+            recommendation,
+            internal_comment,
             json.dumps(body.criterion_responses, separators=(",", ":"), sort_keys=True),
             body.state,
             version,
@@ -3271,7 +3365,8 @@ async def get_round_results(
                 db.prepare(review_query).bind(round_id, json.dumps(submission_ids)),
             )
         )
-    round_criteria = _round_criteria(round_row["rubric_json"])
+    all_round_criteria = _full_round_criteria(round_row["rubric_json"])
+    round_criteria = _round_criteria_for_historical_scores(round_row["rubric_json"])
     reviews_by_submission: dict[str, list[EvaluationDetail]] = {}
     weighted_by_submission: dict[str, list[tuple[float, int]]] = {}
     for review in review_rows:
@@ -3296,6 +3391,11 @@ async def get_round_results(
                     str(review["recommendation"]) if review["recommendation"] is not None else None
                 ),
                 internal_comment=str(review["internal_comment"]),
+                criterion_responses=(
+                    _criterion_response_mapping(review["criterion_responses_json"])
+                    if str(review["state"]) == "final"
+                    else {}
+                ),
             )
         )
     submissions = [
@@ -3468,6 +3568,7 @@ async def get_round_results(
                 else None
             )
         ),
+        criteria=all_round_criteria,
         submissions=submissions,
         submission_count=int(aggregate["submission_count"] or 0),
         next_cursor=next_cursor,
@@ -3532,6 +3633,79 @@ async def export_round_results(round_id: str, request: Request) -> Response:
         headers={
             "Cache-Control": "no-store",
             "Content-Disposition": f'attachment; filename="evaluation-round-{round_id}.csv"',
+        },
+    )
+
+
+@evaluation_router.get(
+    "/api/v1/admin/evaluation-rounds/{round_id}/reviews.csv",
+    response_class=Response,
+    operation_id="exportEvaluationRoundReviews",
+    tags=["evaluations"],
+)
+async def export_round_reviews(round_id: str, request: Request) -> Response:
+    """Export one row per evaluation with rubric-ordered criterion responses."""
+    results = await get_round_results(round_id, request)
+    exported = list(results.submissions)
+    cursor = results.next_cursor
+    pages = 1
+    while cursor and pages < EXPORT_MAX_PAGES:
+        page = await get_round_results(round_id, request, cursor=cursor)
+        exported.extend(page.submissions)
+        cursor = page.next_cursor
+        pages += 1
+
+    def safe(value: object) -> object:
+        if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+            return f"'{value}"
+        return value
+
+    output = StringIO(newline="")
+    csv = writer(output)
+    csv.writerow(
+        [
+            "submission_id",
+            "proposal_title",
+            "speaker_name",
+            "evaluator_name",
+            "review_state",
+            "rating",
+            "weighted_score",
+            "legacy_recommendation",
+            "legacy_internal_comment",
+            *[
+                f"{criterion.label} [{criterion.key}]"
+                for criterion in results.criteria
+            ],
+        ]
+    )
+    for submission in exported:
+        for review in submission.reviews:
+            csv.writerow(
+                [
+                    submission.submission_id,
+                    safe(submission.proposal_title),
+                    safe(submission.speaker_name),
+                    safe(review.evaluator_name),
+                    review.state,
+                    review.rating if review.rating is not None else "",
+                    review.weighted_score if review.weighted_score is not None else "",
+                    safe(review.recommendation or ""),
+                    safe(review.internal_comment),
+                    *[
+                        safe(review.criterion_responses.get(criterion.key, ""))
+                        for criterion in results.criteria
+                    ],
+                ]
+            )
+    return Response(
+        output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": (
+                f'attachment; filename="evaluation-round-{round_id}-reviews.csv"'
+            ),
         },
     )
 

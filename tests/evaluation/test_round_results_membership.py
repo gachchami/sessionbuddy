@@ -38,8 +38,26 @@ async def test_results_keep_active_unassigned_reviewers_and_count_each_assignmen
                (id,organization_id,event_id,round_id,assignment_id,evaluator_user_id,
                 rating,recommendation,internal_comment,state,created_at_ms,updated_at_ms,
                 finalized_at_ms,criterion_responses_json)
-               VALUES ('evaluation-1',?,?,?,?,?,4,'accept','Done','final',1000,1000,1000,'{}')""",
+               VALUES ('evaluation-1',?,?,?,?,?,4,'accept','Draft note','draft',1000,1000,NULL,
+                       '{"notes":"Private until final"}')""",
             (organization_id, event_id, round_id, assignment_id, SAM_USER_ID),
+        )
+        connection.commit()
+        draft_results = await client.get(
+            f"/api/v1/admin/evaluation-rounds/{round_id}/results"
+        )
+        assert draft_results.status_code == 200, draft_results.text
+        reviewed_submission = next(
+            submission
+            for submission in draft_results.json()["submissions"]
+            if submission["submission_id"] == A
+        )
+        assert reviewed_submission["reviews"][0]["criterion_responses"] == {}
+
+        connection.execute(
+            """UPDATE evaluations
+               SET state='final', internal_comment='Done', finalized_at_ms=1000
+               WHERE id='evaluation-1'"""
         )
         connection.execute(
             """INSERT INTO evaluation_conflicts

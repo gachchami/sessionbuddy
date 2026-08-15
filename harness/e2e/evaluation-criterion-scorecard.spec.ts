@@ -201,6 +201,51 @@ test.describe("scorecard criterion types", () => {
     ]);
   });
 
+  test("warns on semantic duplication without rejecting the criterion", async ({ page }) => {
+    await organizerPage(page);
+    await page.locator("#round-disclosure > summary").click();
+    const row = criterionRow(page, 0);
+    await row.locator('input[name="criterion_label"]').fill("Recommendation");
+    await expect(row.locator(".criterion-duplicate-warning")).toHaveText(
+      "This criterion may duplicate the built-in Recommendation field. Reviewers will see both controls. Use the built-in field or designate this criterion after purpose-based fields are available.",
+    );
+    await expect(row.locator('select[name="criterion_purpose"]')).toHaveValue("");
+  });
+
+  test("a designated recommendation derives the legacy choices and hides legacy authoring", async ({ page }) => {
+    const saves = await roundReadyToOpen(page);
+    const row = criterionRow(page, 0);
+    await row.locator('select[name="criterion_purpose"]').selectOption("recommendation");
+    const hiddenRecommendations = page.getByLabel("Recommendations");
+    await expect(hiddenRecommendations).toBeHidden();
+    await expect(hiddenRecommendations).not.toHaveAttribute("required", "");
+    await expect(row.locator('input[name="criterion_required"]')).toBeChecked();
+    await expect(row.locator('input[name="criterion_required"]')).toBeDisabled();
+    await expect(row.locator('input[name="criterion_options"]')).toBeVisible();
+    expect(
+      await row.locator('input[name="criterion_options"]').evaluate(
+        (input: HTMLInputElement) => input.checkValidity(),
+      ),
+    ).toBe(false);
+    await row.locator('input[name="criterion_options"]').fill("Accept, Maybe, Reject");
+    await criterionRow(page, 1).locator('input[name="criterion_weight"]').fill("75");
+    await criterionRow(page, 2).locator('input[name="criterion_weight"]').fill("25");
+
+    await expect(hiddenRecommendations).toBeHidden();
+    await expect(row.locator('select[name="criterion_type"]')).toBeDisabled();
+    await page.getByRole("button", { name: "Open evaluation round" }).click();
+
+    await expect(page.locator("#status")).toContainText("opened with");
+    expect(saves).toHaveLength(1);
+    expect(saves[0].body.recommendations).toEqual(["Accept", "Maybe", "Reject"]);
+    expect((saves[0].body.criteria as Record<string, unknown>[])[0]).toMatchObject({
+      key: "relevance",
+      response_type: "select",
+      purpose: "recommendation",
+      options: ["Accept", "Maybe", "Reject"],
+    });
+  });
+
   // Native constraint validation gates the submit EVENT, not just the submission: once a
   // control carries a custom validity message the browser refuses to fire submit, so
   // validateRound() -- the only code that recomputes those messages -- never runs again.

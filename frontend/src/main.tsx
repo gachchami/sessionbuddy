@@ -1,6 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { formatRecommendationChoice } from "./presentation";
+
+type Criterion = {
+  key: string;
+  label: string;
+  response_type: "score" | "select" | "text";
+  required: boolean;
+  weight: number | null;
+  options: string[];
+  purpose?: "recommendation" | "comment" | null;
+};
 
 type Assignment = {
   id: string;
@@ -17,7 +28,7 @@ type Assignment = {
   rating: number | null;
   recommendation: string | null;
   internal_comment: string;
-  criteria: { key: string; label: string; response_type: "score" | "select" | "text"; required: boolean; weight: number | null; options: string[] }[];
+  criteria: Criterion[];
   criterion_responses: Record<string, number | string>;
   blind_review: boolean;
   review_closes_at_ms: number | null;
@@ -42,6 +53,7 @@ type SubmissionResult = {
     weighted_score?: number | null;
     recommendation: string | null;
     internal_comment: string;
+    criterion_responses: Record<string, number | string>;
   }[];
 };
 type EvaluatorProgress = {
@@ -68,6 +80,7 @@ type RoundResults = {
   assigned_count: number;
   completed_count: number;
   average_rating: number | null;
+  criteria: Criterion[];
   submissions: SubmissionResult[];
   submission_count: number;
   next_cursor: string | null;
@@ -190,6 +203,7 @@ function ReviewWorkspace() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [status, setStatus] = useState("Loading your assigned reviews…");
   const [cardStatus, setCardStatus] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<Record<string, "draft" | "final">>({});
   const [previews, setPreviews] = useState<Record<string, number | null>>({});
   const [previewComplete, setPreviewComplete] = useState<Record<string, boolean>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
@@ -310,14 +324,6 @@ function ReviewWorkspace() {
       }
     }
     const values = Object.fromEntries(new FormData(form));
-    if (
-      state === "final" &&
-      assignment.comment_required &&
-      !String(values.internal_comment || "").trim()
-    ) {
-      setCard(assignment.id, "Add the required reviewer comment before finalizing.");
-      return;
-    }
     const criterionResponses = Object.fromEntries(
       assignment.criteria
         .filter(
@@ -337,24 +343,75 @@ function ReviewWorkspace() {
       : directRating === ""
         ? null
         : Number(directRating);
-    const recommendation = String(values.recommendation ?? "").trim() || null;
-    await api(`/api/v1/evaluator/assignments/${assignment.id}/evaluation`, {
-      method: "PUT",
-      headers: mutationHeaders(csrf),
-      body: JSON.stringify({
-        rating,
-        criterion_responses: criterionResponses,
-        recommendation,
-        internal_comment: values.internal_comment,
-        state,
-      }),
-    });
-    setDirty((current) => ({ ...current, [assignment.id]: false }));
-    await loadAssignments();
+    const recommendationCriterion = assignment.criteria.find(
+      (criterion) => criterion.purpose === "recommendation",
+    );
+    const commentCriterion = assignment.criteria.find(
+      (criterion) => criterion.purpose === "comment",
+    );
+    const recommendation = recommendationCriterion
+      ? String(criterionResponses[recommendationCriterion.key] ?? "").trim() || null
+      : String(values.recommendation ?? "").trim() || null;
+    const internalComment = commentCriterion
+      ? String(criterionResponses[commentCriterion.key] ?? "")
+      : String(values.internal_comment ?? "");
+    if (state === "final" && assignment.comment_required && !internalComment.trim()) {
+      setCard(assignment.id, "Add the required reviewer comment before finalizing.");
+      return;
+    }
+    setSaving((current) => ({ ...current, [assignment.id]: state }));
     setCard(
       assignment.id,
-      state === "final" ? "Evaluation finalized." : "Draft saved.",
+      state === "final" ? "Finalizing review…" : "Saving draft…",
     );
+    try {
+      await api(`/api/v1/evaluator/assignments/${assignment.id}/evaluation`, {
+        method: "PUT",
+        headers: mutationHeaders(csrf),
+        body: JSON.stringify({
+          rating,
+          criterion_responses: criterionResponses,
+          recommendation,
+          internal_comment: internalComment,
+          state,
+        }),
+      });
+      setDirty((current) => ({ ...current, [assignment.id]: false }));
+      setAssignments((current) =>
+        current.map((item) =>
+          item.id === assignment.id
+            ? {
+                ...item,
+                evaluation_state: state,
+                rating,
+                criterion_responses: criterionResponses,
+                recommendation,
+                internal_comment: internalComment,
+              }
+            : item,
+        ),
+      );
+      setCard(
+        assignment.id,
+        state === "final" ? "" : "Draft saved.",
+      );
+      try {
+        await loadAssignments();
+      } catch {
+        setCard(
+          assignment.id,
+          state === "final"
+            ? "Evaluation finalized. Reload to refresh the remaining review count."
+            : "Draft saved. Reload to refresh this review.",
+        );
+      }
+    } finally {
+      setSaving((current) => {
+        const next = { ...current };
+        delete next[assignment.id];
+        return next;
+      });
+    }
   }
   async function declareConflict(assignment: Assignment) {
     const conflictType = (
@@ -527,8 +584,14 @@ function ReviewWorkspace() {
             the reviewer commits, with no confirmation that the write landed. */}
         {assignments
           .filter((assignment) => assignment.id === selectedAssignmentId)
-          .map((assignment) => (
-          <article key={assignment.id}>
+          .map((assignment) => {
+          const recommendationCriterion = assignment.criteria.find(
+            (criterion) => criterion.purpose === "recommendation",
+          );
+          const commentCriterion = assignment.criteria.find(
+            (criterion) => criterion.purpose === "comment",
+          );
+          return <article key={assignment.id}>
             <button
               type="button"
               className="secondary review-back"
@@ -621,7 +684,7 @@ function ReviewWorkspace() {
                 </label>
               )}
               <div className="review-fields">
-                <label>
+                {!recommendationCriterion && <label>
                   Recommendation
                   <select
                     name="recommendation"
@@ -631,11 +694,13 @@ function ReviewWorkspace() {
                   >
                     <option value="">Choose…</option>
                     {assignment.recommendations.map((choice) => (
-                      <option key={choice}>{choice}</option>
+                      <option key={choice} value={choice}>
+                        {formatRecommendationChoice(choice)}
+                      </option>
                     ))}
                   </select>
-                </label>
-                <label>
+                </label>}
+                {!commentCriterion && <label>
                   Internal comment
                   <textarea
                     name="internal_comment"
@@ -644,7 +709,7 @@ function ReviewWorkspace() {
                     defaultValue={assignment.internal_comment}
                     disabled={assignment.evaluation_state === "final"}
                   />
-                </label>
+                </label>}
               </div>
               {assignment.criteria.length > 0 &&
                 assignment.evaluation_state !== "final" && (
@@ -692,15 +757,18 @@ function ReviewWorkspace() {
                   <button
                     type="button"
                     className="secondary"
+                    disabled={Boolean(saving[assignment.id])}
                     onClick={(event) =>
                       save(event.currentTarget.form!, assignment, "draft").catch(
                         (error) => setCard(assignment.id, errorMessage(error)),
                       )
                     }
                   >
-                    Save draft
+                    {saving[assignment.id] === "draft" ? "Saving…" : "Save draft"}
                   </button>
-                  <button type="submit">Finalize</button>
+                  <button type="submit" disabled={Boolean(saving[assignment.id])}>
+                    {saving[assignment.id] === "final" ? "Finalizing…" : "Finalize"}
+                  </button>
                 </div>
               )}
             </form>
@@ -739,8 +807,8 @@ function ReviewWorkspace() {
                 </button>
               </details>
             )}
-          </article>
-        ))}
+          </article>;
+        })}
       </section>
       {nextCursor && (
         <div className="actions">
@@ -1407,11 +1475,42 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         <strong>{review.evaluator_name}</strong>
                         <p>
                           {review.state === "final"
-                            ? `${review.weighted_score != null ? formatScore(review.weighted_score) : review.rating ?? "—"} · ${review.recommendation || "No recommendation"}`
+                            ? `${review.weighted_score != null ? formatScore(review.weighted_score) : review.rating ?? "—"} · ${review.recommendation ? formatRecommendationChoice(review.recommendation) : "No recommendation"}`
                             : review.state.replace("_", " ")}
                         </p>
+                        {(results.criteria || []).some((criterion) =>
+                          Object.prototype.hasOwnProperty.call(
+                            review.criterion_responses || {},
+                            criterion.key,
+                          ),
+                        ) && (
+                          <dl className="review-responses">
+                            {(results.criteria || [])
+                              .filter((criterion) =>
+                                Object.prototype.hasOwnProperty.call(
+                                  review.criterion_responses || {},
+                                  criterion.key,
+                                ),
+                              )
+                              .map((criterion) => (
+                                <div key={criterion.key}>
+                                  <dt>{criterion.label}</dt>
+                                  <dd>
+                                    {String(
+                                      (review.criterion_responses || {})[criterion.key],
+                                    )}
+                                  </dd>
+                                </div>
+                              ))}
+                          </dl>
+                        )}
                         {review.internal_comment && (
-                          <p>{review.internal_comment}</p>
+                          <p>
+                            {(results.criteria || []).some(
+                              (criterion) => criterion.purpose === "comment",
+                            ) && <strong>Legacy internal comment: </strong>}
+                            {review.internal_comment}
+                          </p>
                         )}
                       </article>
                     ))}

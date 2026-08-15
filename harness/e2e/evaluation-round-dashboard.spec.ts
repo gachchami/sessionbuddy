@@ -54,6 +54,7 @@ function results(overrides: Record<string, unknown> = {}) {
     assigned_count: 0,
     completed_count: 0,
     average_rating: null,
+    criteria: [],
     submissions: [],
     submission_count: 0,
     next_cursor: null,
@@ -130,5 +131,49 @@ test.describe("evaluation round dashboard", () => {
     await expect(page.getByRole("button", { name: "Send reminder" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Remove" })).toBeVisible();
     await expect(page.getByRole("note")).toHaveCount(0);
+  });
+
+  test("shows every typed criterion response in rubric order", async ({ page }) => {
+    await openDashboard(page, results({
+      status: "closed",
+      assigned_count: 1,
+      completed_count: 1,
+      criteria: [
+        { key: "quality", label: "Quality", response_type: "score", required: true, weight: 100, options: [], purpose: null },
+        { key: "recommendation", label: "Recommendation", response_type: "select", required: true, weight: null, options: ["Accept", "Maybe", "Reject"], purpose: "recommendation" },
+        { key: "comments", label: "Comments", response_type: "text", required: true, weight: null, options: [], purpose: "comment" },
+      ],
+      submissions: [{
+        submission_id: "submission-a",
+        speaker_name: "Taylor Speaker",
+        proposal_title: "Readable review content",
+        assigned_count: 1,
+        completed_count: 1,
+        average_rating: 4,
+        decision: null,
+        decision_round_id: null,
+        internal_reason: "",
+        correction_reason: "",
+        reviews: [{
+          evaluator_name: "Sam Whitfield",
+          state: "final",
+          rating: 4,
+          weighted_score: 4,
+          recommendation: "Maybe",
+          internal_comment: "",
+          criterion_responses: {
+            quality: 4,
+            recommendation: "Maybe",
+            comments: "The full reviewer assessment remains visible.",
+          },
+        }],
+      }],
+      submission_count: 1,
+    }));
+
+    await page.getByText("Individual reviews (1)").click();
+    const responses = page.locator(".review-responses");
+    await expect(responses.locator("dt")).toHaveText(["Quality", "Recommendation", "Comments"]);
+    await expect(responses).toContainText("The full reviewer assessment remains visible.");
   });
 });

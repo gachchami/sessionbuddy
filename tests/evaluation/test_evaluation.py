@@ -20,8 +20,12 @@ from sessionbuddy.evaluation.models import (
 from sessionbuddy.evaluation.router import (
     EVALUATION_PAGE_LIMIT,
     _assignment_pairs,
+    _build_round_rubric,
+    _canonical_evaluation_fields,
     _evaluation_cursor,
     _evaluation_next_cursor,
+    _full_round_criteria,
+    _round_criteria_for_historical_scores,
     _weighted_mean,
     _weighted_review_score,
     remind_round_evaluator,
@@ -201,6 +205,124 @@ def test_evaluation_contracts_are_strict_and_bounded() -> None:
     ).conflict_type == "same_company"
     with pytest.raises(ValidationError):
         ConflictDeclaration(conflict_type="other", explanation="")
+
+
+def test_criterion_purposes_are_typed_unique_and_drive_legacy_compatibility() -> None:
+    recommendation = EvaluationCriterion(
+        key="recommendation",
+        label="Recommendation",
+        response_type="select",
+        options=["Accept", "Maybe", "Reject"],
+        purpose="recommendation",
+    )
+    comment = EvaluationCriterion(
+        key="comments",
+        label="Comments",
+        response_type="text",
+        purpose="comment",
+    )
+    body = EvaluationRoundCreate(
+        name="Purpose review",
+        rating_min=1,
+        rating_max=5,
+        recommendations=["legacy_accept", "legacy_reject"],
+        criteria=[
+            EvaluationCriterion(key="quality", label="Quality", weight=100),
+            recommendation,
+            comment,
+        ],
+        assignment_strategy="balanced",
+        status="draft",
+    )
+    rubric = _build_round_rubric(body)
+    assert rubric["recommendation"]["choices"] == ["Accept", "Maybe", "Reject"]
+    assert rubric["internal_comment"]["required"] is True
+    assert rubric["criteria"][1]["purpose"] == "recommendation"
+
+    saved = EvaluationSave(
+        state="final",
+        rating=4,
+        criterion_responses={
+            "quality": 4,
+            "recommendation": "Maybe",
+            "comments": "Useful evidence.",
+        },
+    )
+    assert _canonical_evaluation_fields(rubric, saved) == ("Maybe", "Useful evidence.")
+
+    with pytest.raises(ValidationError, match="criterion purposes must be unique"):
+        EvaluationRoundCreate(
+            name="Duplicate purpose",
+            rating_min=1,
+            rating_max=5,
+            recommendations=["Accept", "Reject"],
+            criteria=[
+                EvaluationCriterion(key="quality", label="Quality", weight=100),
+                recommendation,
+                recommendation.model_copy(update={"key": "second_recommendation"}),
+            ],
+            assignment_strategy="balanced",
+            status="draft",
+        )
+
+    with pytest.raises(ValidationError, match="recommendation-purpose"):
+        EvaluationCriterion(
+            key="wrong",
+            label="Wrong",
+            response_type="text",
+            purpose="recommendation",
+        )
+    with pytest.raises(ValidationError, match="must be required"):
+        EvaluationCriterion(
+            key="optional_recommendation",
+            label="Optional recommendation",
+            response_type="select",
+            required=False,
+            options=["Accept", "Reject"],
+            purpose="recommendation",
+        )
+
+    assert _full_round_criteria(
+        '{"criteria":['
+        '{"key":"valid","label":"Valid","weight":100},'
+        '{"key":"malformed","label":"Malformed","weight":null}'
+        "]}"
+    ) == [
+        {
+            "key": "valid",
+            "label": "Valid",
+            "response_type": "score",
+            "required": True,
+            "weight": 100,
+            "options": [],
+        }
+    ]
+    assert _round_criteria_for_historical_scores(
+        '{"criteria":['
+        '{"key":"historical","label":"Historical","weight":150}'
+        "]}"
+    )[0]["weight"] == 150
+
+    optional_comment = EvaluationCriterion(
+        key="optional_comment",
+        label="Optional comment",
+        response_type="text",
+        required=False,
+        purpose="comment",
+    )
+    optional_body = body.model_copy(
+        update={"criteria": [body.criteria[0], recommendation, optional_comment]}
+    )
+    optional_rubric = _build_round_rubric(optional_body)
+    assert optional_rubric["internal_comment"]["required"] is False
+    assert _canonical_evaluation_fields(
+        optional_rubric,
+        EvaluationSave(
+            state="final",
+            rating=4,
+            criterion_responses={"quality": 4, "recommendation": "Accept"},
+        ),
+    ) == ("Accept", "")
 
 
 def test_assignment_strategies_are_deterministic() -> None:
@@ -513,8 +635,9 @@ def test_draft_evaluations_permit_partial_input() -> None:
 
     with pytest.raises(ValidationError):
         EvaluationSave(state="final")
-    with pytest.raises(ValidationError):
-        EvaluationSave(state="final", rating=5)
+    # Recommendation completeness depends on the round: a purpose-designated criterion
+    # may provide and mirror it, so the request model cannot decide this in isolation.
+    assert EvaluationSave(state="final", rating=5).recommendation is None
     with pytest.raises(ValidationError):
         EvaluationSave(
             state="final", rating=5, recommendation="accept",

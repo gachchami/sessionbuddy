@@ -468,6 +468,45 @@
       : "No Score criteria — keep at least one so reviews produce a rating.";
     summary.classList.toggle("error", !count || total !== 100);
   }
+  const duplicateRecommendationWarning =
+    "This criterion may duplicate the built-in Recommendation field. Reviewers will see both "
+    + "controls. Use the built-in field or designate this criterion after purpose-based fields "
+    + "are available.";
+  function updateCriterionWarning(row) {
+    const warning = row.querySelector(".criterion-duplicate-warning");
+    if (!warning) return;
+    const label = String(row.querySelector('[name="criterion_label"]')?.value || "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const purpose = row.querySelector('[name="criterion_purpose"]')?.value || "";
+    const duplicateRecommendation = !purpose && label === "recommendation";
+    const duplicateComment = !purpose && ["comment", "comments", "internal_comment"].includes(label);
+    warning.hidden = !duplicateRecommendation && !duplicateComment;
+    warning.textContent = duplicateRecommendation
+      ? duplicateRecommendationWarning
+      : "This criterion may duplicate the built-in Internal comment field. Reviewers will see "
+        + "both controls. Use the built-in field or designate this criterion as the reviewer comment.";
+  }
+  function syncPurposeControls() {
+    const form = byId("round-form");
+    const rows = [...byId("criteria").querySelectorAll(".criterion-row")];
+    const recommendationRow = rows.find((row) => row.querySelector('[name="criterion_purpose"]')?.value === "recommendation");
+    const commentRow = rows.find((row) => row.querySelector('[name="criterion_purpose"]')?.value === "comment");
+    const recommendationInput = form.elements.recommendations;
+    const recommendationLabel = recommendationInput.closest("label");
+    recommendationLabel.hidden = Boolean(recommendationRow);
+    recommendationInput.required = !recommendationRow;
+    if (recommendationRow) {
+      recommendationInput.value = recommendationRow.querySelector('[name="criterion_options"]').value;
+      recommendationInput.setCustomValidity("");
+    }
+    const commentRequiredInput = form.elements.comment_required;
+    if (commentRequiredInput) {
+      commentRequiredInput.closest("label").hidden = Boolean(commentRow);
+      if (commentRow) {
+        commentRequiredInput.checked = commentRow.querySelector('[name="criterion_required"]').checked;
+      }
+    }
+  }
   function addRemoveButton(row) {
     if (!row.querySelector('[name="criterion_type"]')) {
       const typeLabel = document.createElement("label");
@@ -488,6 +527,16 @@
       const required = document.createElement("input");
       required.type = "checkbox"; required.name = "criterion_required"; required.checked = true;
       requiredLabel.append(required, " Required");
+      const purposeLabel = document.createElement("label");
+      purposeLabel.textContent = "Use as";
+      const purpose = document.createElement("select");
+      purpose.name = "criterion_purpose";
+      [["", "Additional scorecard field"], ["recommendation", "Recommendation"], ["comment", "Reviewer comment"]]
+        .forEach(([value, label]) => purpose.add(new Option(label, value)));
+      purposeLabel.append(purpose);
+      const duplicateWarning = document.createElement("p");
+      duplicateWarning.className = "help warning criterion-duplicate-warning";
+      duplicateWarning.hidden = true;
       const weightLabel = row.querySelector('input[name="criterion_weight"]')?.closest("label");
       const updateType = () => {
         const scored = type.value === "score";
@@ -504,10 +553,24 @@
         // dispatched without bubbles and so never reach the container's listeners.
         clearCriterionValidity();
         updateScorecardTotal();
+        updateCriterionWarning(row);
+        syncPurposeControls();
+      };
+      const updatePurpose = () => {
+        if (purpose.value === "recommendation") type.value = "select";
+        if (purpose.value === "comment") type.value = "text";
+        type.disabled = Boolean(purpose.value);
+        if (purpose.value === "recommendation") required.checked = true;
+        required.disabled = purpose.value === "recommendation";
+        updateType();
       };
       type.addEventListener("change", updateType);
-      row.append(typeLabel, optionsLabel, requiredLabel);
-      updateType();
+      purpose.addEventListener("change", updatePurpose);
+      options.addEventListener("input", syncPurposeControls);
+      required.addEventListener("change", syncPurposeControls);
+      row.querySelector('[name="criterion_label"]')?.addEventListener("input", () => updateCriterionWarning(row));
+      row.append(typeLabel, optionsLabel, requiredLabel, purposeLabel, duplicateWarning);
+      updatePurpose();
     }
     if (row.querySelector("button")) return;
     const remove = document.createElement("button");
@@ -525,6 +588,7 @@
       // already covered: appendCriterionRow() ends in updateType().
       clearCriterionValidity();
       updateScorecardTotal();
+      syncPurposeControls();
     });
     row.append(remove);
   }
@@ -551,6 +615,7 @@
   commentRequiredInput.name = "comment_required";
   commentRequired.append(commentRequiredInput, " Require a written reviewer comment");
   guidance.after(commentRequired);
+  syncPurposeControls();
   function renderRoundHistory(rounds) {
     state.rounds = rounds;
     const container = byId("round-history");
@@ -571,7 +636,8 @@
       const actions = document.createElement("div"); actions.className = "round-ledger__actions";
       const monitor = document.createElement("a"); monitor.className = round.status === "open" ? "button" : "button secondary"; monitor.href = link.href; monitor.textContent = round.status === "draft" ? "View draft" : round.status === "closed" ? "View results" : "Manage round";
       const exportLink = document.createElement("a"); exportLink.className = "round-ledger__export"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
-      actions.append(monitor, exportLink);
+      const reviewExportLink = document.createElement("a"); reviewExportLink.className = "round-ledger__export"; reviewExportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/reviews.csv`; reviewExportLink.textContent = "Export review details";
+      actions.append(monitor, exportLink, reviewExportLink);
       if (round.status === "open") {
         const remind = document.createElement("button");
         remind.type = "button"; remind.className = "secondary"; remind.textContent = "Remind reviewers";
@@ -664,6 +730,8 @@
       row.querySelector('[name="criterion_type"]').value = criterion.response_type;
       row.querySelector('[name="criterion_options"]').value = (criterion.options || []).join(", ");
       row.querySelector('[name="criterion_required"]').checked = criterion.required;
+      row.querySelector('[name="criterion_purpose"]').value = criterion.purpose || "";
+      row.querySelector('[name="criterion_purpose"]').dispatchEvent(new Event("change"));
       row.querySelector('[name="criterion_type"]').dispatchEvent(new Event("change"));
     }
     const rendered = new Set();
@@ -1353,6 +1421,8 @@
     const minimum = Number(form.elements.rating_min.value);
     const maximum = Number(form.elements.rating_max.value);
     const recommendationInput = form.elements.recommendations;
+    const recommendationPurposeRow = [...form.querySelectorAll(".criterion-row")]
+      .find((row) => row.querySelector('[name="criterion_purpose"]')?.value === "recommendation");
     const recommendations = String(recommendationInput.value || "").split(",").map((choice) => choice.trim()).filter(Boolean);
     form.elements.rating_max.setCustomValidity(maximum > minimum ? "" : "Maximum rating must be greater than minimum rating.");
     const recommendationError = recommendations.length < 2 || recommendations.length > 8
@@ -1362,7 +1432,7 @@
         : new Set(recommendations).size !== recommendations.length
           ? "Recommendations must be unique."
           : "";
-    recommendationInput.setCustomValidity(recommendationError);
+    recommendationInput.setCustomValidity(recommendationPurposeRow ? "" : recommendationError);
     const opens = inputMillis(form.elements.review_opens_at.value);
     const closes = inputMillis(form.elements.review_closes_at.value);
     form.elements.review_opens_at.setCustomValidity(Number.isNaN(opens) ? `Choose a valid local time in ${state.timeZone}.` : "");
@@ -1404,16 +1474,29 @@
         return;
       }
       const options = optionsInput.value.split(",").map((option) => option.trim()).filter(Boolean);
+      const isRecommendation = row.querySelector('[name="criterion_purpose"]')?.value === "recommendation";
       optionsInput.setCustomValidity(
-        options.length < 2 || options.length > 20
-          ? "Enter 2–20 comma-separated choices."
-          : options.some((option) => option.length > 120)
-            ? "Each choice must be at most 120 characters."
+        options.length < 2 || options.length > (isRecommendation ? 8 : 20)
+          ? `Enter 2–${isRecommendation ? 8 : 20} comma-separated choices.`
+          : options.some((option) => option.length > (isRecommendation ? 80 : 120))
+            ? `Each choice must be at most ${isRecommendation ? 80 : 120} characters.`
             : new Set(options).size !== options.length
               ? "Choices must be unique."
               : "",
       );
     });
+    const usedPurposes = new Set();
+    for (const row of form.querySelectorAll(".criterion-row")) {
+      const purpose = row.querySelector('[name="criterion_purpose"]');
+      purpose.setCustomValidity("");
+      if (!purpose.value) continue;
+      if (usedPurposes.has(purpose.value)) {
+        purpose.setCustomValidity(
+          `Only one criterion can be the ${purpose.selectedOptions[0].text.toLowerCase()}.`,
+        );
+      }
+      usedPurposes.add(purpose.value);
+    }
     // A draft is a work in progress: it may be saved with no proposals and no reviewers
     // yet. The API applies the same rule, and refuses to OPEN a round with no
     // assignments, so the constraint lives at the point where it actually matters.
@@ -1471,7 +1554,10 @@
         while (usedKeys.has(key)) key = `${key.slice(0, 36)}_${index + 1}`;
         usedKeys.add(key);
         const options = row.querySelector('[name="criterion_options"]').value.split(",").map((option) => option.trim()).filter(Boolean);
-        return { key, label, response_type: responseType, required: row.querySelector('[name="criterion_required"]').checked, weight: responseType === "score" ? Number(row.querySelector('[name="criterion_weight"]').value) : null, options: responseType === "select" ? options : [] };
+        const criterion = { key, label, response_type: responseType, required: row.querySelector('[name="criterion_required"]').checked, weight: responseType === "score" ? Number(row.querySelector('[name="criterion_weight"]').value) : null, options: responseType === "select" ? options : [] };
+        const purpose = row.querySelector('[name="criterion_purpose"]').value;
+        if (purpose) criterion.purpose = purpose;
+        return criterion;
       });
       const roundStatus = isDraftSubmission(event.currentTarget) ? "draft" : "open";
       const reviewOpens = inputMillis(String(values.get("review_opens_at") || ""));
@@ -1519,6 +1605,8 @@
       row.querySelector('[name="criterion_type"]').value = values.type;
       row.querySelector('[name="criterion_options"]').value = values.options ?? "";
       row.querySelector('[name="criterion_required"]').checked = values.required !== false;
+      row.querySelector('[name="criterion_purpose"]').value = values.purpose ?? "";
+      row.querySelector('[name="criterion_purpose"]').dispatchEvent(new Event("change"));
       row.querySelector('[name="criterion_type"]').dispatchEvent(new Event("change"));
     }
     // The restored weight lands after addRemoveButton() already ran updateType(), so the
@@ -1540,6 +1628,7 @@
     type: row.querySelector('[name="criterion_type"]')?.value,
     options: row.querySelector('[name="criterion_options"]')?.value,
     required: row.querySelector('[name="criterion_required"]')?.checked,
+    purpose: row.querySelector('[name="criterion_purpose"]')?.value,
   }));
   // A saved round must leave the form visibly spent. Without this the create form sits
   // there still holding the round it just created -- same name, same everything, button

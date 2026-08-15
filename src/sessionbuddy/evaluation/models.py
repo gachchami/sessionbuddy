@@ -12,6 +12,7 @@ class EvaluationCriterion(BaseModel):
     required: bool = True
     weight: int | None = Field(default=None, ge=1, le=100)
     options: list[str] = Field(default_factory=list, max_length=20)
+    purpose: Literal["recommendation", "comment"] | None = None
 
     @model_validator(mode="after")
     def valid_type_configuration(self):
@@ -31,6 +32,18 @@ class EvaluationCriterion(BaseModel):
                 raise ValueError("criterion options must be unique")
         elif self.weight is not None or self.options:
             raise ValueError("text criteria cannot define weights or options")
+        if self.purpose == "recommendation":
+            if self.response_type != "select":
+                raise ValueError("recommendation-purpose criteria must be choice criteria")
+            if not self.required:
+                raise ValueError("recommendation-purpose criteria must be required")
+            if len(self.options) > 8 or any(len(option) > 80 for option in self.options):
+                raise ValueError(
+                    "recommendation-purpose criteria require 2 to 8 choices of at most "
+                    "80 characters during compatibility"
+                )
+        if self.purpose == "comment" and self.response_type != "text":
+            raise ValueError("comment-purpose criteria must be text criteria")
         return self
 
 
@@ -94,6 +107,9 @@ class EvaluationRoundCreate(BaseModel):
             raise ValueError("evaluator_user_ids must be unique")
         if len({criterion.key for criterion in self.criteria}) != len(self.criteria):
             raise ValueError("criteria keys must be unique")
+        purposes = [criterion.purpose for criterion in self.criteria if criterion.purpose]
+        if len(set(purposes)) != len(purposes):
+            raise ValueError("criterion purposes must be unique")
         scored = [criterion for criterion in self.criteria if criterion.response_type == "score"]
         if self.criteria and not scored:
             raise ValueError("a scorecard requires at least one scored criterion")
@@ -376,11 +392,12 @@ class EvaluationSave(BaseModel):
 
     @model_validator(mode="after")
     def validate_final_completeness(self) -> "EvaluationSave":
+        # The canonical recommendation can live in a rubric-designated criterion. This
+        # payload does not contain enough rubric metadata to identify that key; the save
+        # route enforces final completeness after loading the round's rubric.
         if self.state == "final":
             if self.rating is None and not self.criterion_responses:
                 raise ValueError("final evaluations require a rating")
-            if self.recommendation is None:
-                raise ValueError("final evaluations require a recommendation")
             if any(
                 isinstance(response, str) and not response.strip()
                 for response in self.criterion_responses.values()
@@ -448,6 +465,7 @@ class EvaluationDetail(BaseModel):
     weighted_score: float | None = None
     recommendation: str | None = None
     internal_comment: str = ""
+    criterion_responses: dict[str, int | str] = Field(default_factory=dict)
 
 
 class SubmissionEvaluationResult(BaseModel):
@@ -480,6 +498,7 @@ class EvaluationRoundResults(BaseModel):
     assigned_count: int
     completed_count: int
     average_rating: float | None
+    criteria: list[EvaluationCriterion] = Field(default_factory=list)
     submissions: list[SubmissionEvaluationResult]
     submission_count: int = Field(ge=0)
     next_cursor: str | None = None

@@ -4027,6 +4027,21 @@
             "title": "Options",
             "type": "array"
           },
+          "purpose": {
+            "anyOf": [
+              {
+                "enum": [
+                  "recommendation",
+                  "comment"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
+          },
           "required": {
             "default": true,
             "title": "Required",
@@ -4066,6 +4081,20 @@
       "EvaluationDetail": {
         "additionalProperties": false,
         "properties": {
+          "criterion_responses": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "title": "Criterion Responses",
+            "type": "object"
+          },
           "evaluator_name": {
             "title": "Evaluator Name",
             "type": "string"
@@ -4350,6 +4379,13 @@
               "$ref": "#/components/schemas/ConflictProgress"
             },
             "title": "Conflicts",
+            "type": "array"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationCriterion"
+            },
+            "title": "Criteria",
             "type": "array"
           },
           "evaluators": {
@@ -13373,6 +13409,42 @@
           }
         },
         "summary": "Get Round Results",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/evaluation-rounds/{round_id}/reviews.csv": {
+      "get": {
+        "description": "Export one row per evaluation with rubric-ordered criterion responses.",
+        "operationId": "exportEvaluationRoundReviews",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "title": "Round Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Round Reviews",
         "tags": [
           "evaluations"
         ]
