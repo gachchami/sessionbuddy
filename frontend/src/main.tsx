@@ -1302,7 +1302,11 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 submission.completed_count === submission.assigned_count;
               const decided = submission.decision !== null;
               const advisory =
-                decided && submission.decision_round_id !== roundId;
+                decided &&
+                submission.decision_round_id !== null &&
+                submission.decision_round_id !== roundId;
+              const decidedOutsideRound =
+                decided && submission.decision_round_id === null;
               const pending =
                 pendingDecision?.submission.submission_id ===
                 submission.submission_id;
@@ -1361,6 +1365,8 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     {decided
                       ? advisory
                         ? "This later round is advisory. Its reviews do not replace the final result; changing that result requires an audited correction."
+                        : decidedOutsideRound
+                          ? "This final result was recorded without an evaluation round. Reviews here are advisory; changing the result requires an audited correction."
                         : "This round recorded the final result. Any later change requires an audited correction."
                       : complete
                         ? "Accepting creates onboarding tasks; rejecting closes outstanding tasks."

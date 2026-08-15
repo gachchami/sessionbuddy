@@ -424,7 +424,7 @@ class SubmissionDecisionCorrectionCreate(BaseModel):
 
     corrected_decision: Literal["accepted", "rejected"]
     reason: str = Field(min_length=1, max_length=2000)
-    send_email: bool = True
+    send_email: bool = False
     speaker_message: str = Field(default="", max_length=4000)
 
 

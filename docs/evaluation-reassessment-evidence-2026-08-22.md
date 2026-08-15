@@ -60,8 +60,8 @@ A production-shaped regression fixture must use one primary event speaker with:
 3. proposal B rejected;
 4. a correction of proposal B to accepted.
 
-The test must assert the correction record, active accepted session, speaker
-state, task counts, audit event, and idempotent retry. The task inserts contain
+The test must assert the correction record, accepted-session lifecycle, speaker
+state, task counts, audit event, notification replay, and idempotent retry. The task inserts contain
 `WHERE NOT EXISTS` predicates aligned with the partial unique indexes, so task
 uniqueness is a correctness assertion rather than the presumed root cause.
 
@@ -69,7 +69,9 @@ The fixture should also cover a withdrawn event speaker. A program-decision
 correction must not silently reverse a person's independent withdrawal from the
 event. It may update selection status, but it preserves the `withdrawn` /
 `withdrawn_at_ms` lifecycle pair and does not create new onboarding work until
-the speaker is explicitly restored through the speaker workflow.
+the speaker is explicitly restored through the speaker workflow. Its accepted
+session remains withdrawn as well, preventing a session with no participating
+speaker from silently becoming schedulable.
 
 ## Agreed implementation scope
 

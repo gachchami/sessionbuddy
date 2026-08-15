@@ -11708,7 +11708,7 @@
             "type": "string"
           },
           "send_email": {
-            "default": true,
+            "default": false,
             "title": "Send Email",
             "type": "boolean"
           },
@@ -11780,7 +11780,7 @@
             "type": "string"
           },
           "send_email": {
-            "default": true,
+            "default": false,
             "title": "Send Email",
             "type": "boolean"
           },

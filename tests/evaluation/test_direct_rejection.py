@@ -225,6 +225,7 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
             },
         )
         assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["communication_queued"] is False
         rejected_again = await client.post(
             f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/decision-corrections",
             headers={
@@ -260,11 +261,34 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
             json={
                 "corrected_decision": "accepted",
                 "reason": "The program result changed, but the speaker withdrawal remains.",
-                "send_email": False,
+                "send_email": True,
+                "speaker_message": (
+                    "Your proposal result changed; your withdrawal remains in effect."
+                ),
+            },
+        )
+        accepted_after_withdrawal_replay = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/decision-corrections",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "correction-accept-withdrawn",
+            },
+            json={
+                "corrected_decision": "accepted",
+                "reason": "The program result changed, but the speaker withdrawal remains.",
+                "send_email": True,
+                "speaker_message": (
+                    "Your proposal result changed; your withdrawal remains in effect."
+                ),
             },
         )
 
     assert accepted_after_withdrawal.status_code == 200, accepted_after_withdrawal.text
+    assert accepted_after_withdrawal_replay.status_code == 200
+    assert accepted_after_withdrawal_replay.json()["speaker_message"] == (
+        "Your proposal result changed; your withdrawal remains in effect."
+    )
     original = connection.execute(
         "SELECT decision,internal_reason FROM submission_decisions WHERE submission_id=?",
         ("corrected-submission",),
@@ -298,8 +322,8 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
            FROM accepted_sessions WHERE submission_id=?""",
         ("corrected-submission",),
     ).fetchone()
-    assert session[0] == "active"
-    assert session[1] is None
+    assert session[0] == "withdrawn"
+    assert session[1] == 1200
     assert session[2] == accepted_after_withdrawal.json()["id"]
     audit_count = connection.execute(
         """SELECT COUNT(*) FROM audit_events

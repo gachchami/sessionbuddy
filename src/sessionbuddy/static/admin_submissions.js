@@ -1043,7 +1043,12 @@
             "x-csrf-token": state.csrf,
             "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
           },
-          body: JSON.stringify({ corrected_decision: target, reason: reason.value.trim() }),
+          body: JSON.stringify({
+            corrected_decision: target,
+            reason: reason.value.trim(),
+            send_email: false,
+            speaker_message: "",
+          }),
         });
         byId("status").textContent = `Decision corrected to ${target}. The original decision remains in the audit history.`;
         location.reload();
