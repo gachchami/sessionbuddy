@@ -7,7 +7,7 @@
   let eventId = "";
   try { eventId = routeMatch ? decodeURIComponent(routeMatch[1]) : ""; } catch (_) { eventId = ""; }
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(eventId)) eventId = "";
-  const state = { timer: null, loading: false, cursor: null, rows: [], reminderTargets: [], lastSuccess: null, timeZone: "UTC", csrf: "", channel: null };
+  const state = { timer: null, loading: false, terminal: false, cursor: null, rows: [], reminderTargets: [], lastSuccess: null, timeZone: "UTC", csrf: "", channel: null };
   const byId = (id) => document.getElementById(id);
   const make = (tag, value, className) => { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; };
 
@@ -34,6 +34,25 @@
     byId("connection-state").textContent = label;
     byId("last-refreshed").textContent = state.lastSuccess
       ? `Last refreshed ${state.lastSuccess.toLocaleTimeString()}` : "Not refreshed yet";
+  }
+
+  function showEventUnavailable() {
+    state.terminal = true;
+    document.body.classList.add("event-resource-unavailable");
+    const hideEventNavigation = () => document.querySelector(".sb-event-nav")?.setAttribute("hidden", "");
+    hideEventNavigation();
+    new MutationObserver(hideEventNavigation).observe(document.querySelector("[data-auth-shell]"), { childList: true, subtree: true });
+    clearInterval(state.timer);
+    const main = byId("main");
+    const status = byId("status");
+    for (const child of main.children) child.hidden = child !== status;
+    status.hidden = false;
+    status.classList.add("error");
+    const message = make("strong", "This event does not exist or is unavailable to your account.");
+    const back = make("a", "Back to events", "button secondary");
+    back.href = "/admin";
+    status.replaceChildren(message, document.createTextNode(" "), back);
+    document.title = "Event unavailable · SessionBuddy";
   }
 
   function recordTelemetry(started, response) {
@@ -212,7 +231,7 @@
   }
 
   async function refresh({ append = false, announce = false } = {}) {
-    if (state.loading || document.hidden) return;
+    if (state.loading || state.terminal || document.hidden) return;
     state.loading = true;
     byId("results-panel").setAttribute("aria-busy", "true");
     setConnection("", state.lastSuccess ? "Refreshing" : "Connecting");
@@ -225,6 +244,10 @@
       setConnection("live", "Live snapshot");
       setStatus(announce ? "Onboarding snapshot refreshed." : `${state.rows.length} speaker record${state.rows.length === 1 ? "" : "s"} shown.`);
     } catch (error) {
+      if ([403, 404, 422].includes(error.status)) {
+        showEventUnavailable();
+        return;
+      }
       const authMessage = error.status === 401 || error.status === 403
         ? "Your account cannot access this event."
         : "Live refresh failed. Showing the last successful snapshot while reconnecting.";
@@ -238,7 +261,7 @@
 
   function startPolling() {
     clearInterval(state.timer);
-    if (!document.hidden) state.timer = setInterval(() => refresh(), REFRESH_MS);
+    if (!state.terminal && !document.hidden) state.timer = setInterval(() => refresh(), REFRESH_MS);
   }
 
   function connectInvalidations() {
@@ -273,8 +296,7 @@
 
   async function initialize() {
     if (!eventId) {
-      setStatus("This onboarding link is invalid. Return to Programs and choose an event.", true);
-      setConnection("stale", "Invalid event link");
+      showEventUnavailable();
       return;
     }
     initializeFilters();

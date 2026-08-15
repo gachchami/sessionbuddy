@@ -7,6 +7,26 @@
 
   const api = (path) => window.SessionBuddyApi.request(path);
 
+  function showEventUnavailable() {
+    document.body.classList.add("event-resource-unavailable");
+    const hideEventNavigation = () => document.querySelector(".sb-event-nav")?.setAttribute("hidden", "");
+    hideEventNavigation();
+    new MutationObserver(hideEventNavigation).observe(document.querySelector("[data-auth-shell]"), { childList: true, subtree: true });
+    document.body.classList.remove("is-loading");
+    byId("event-public-header").hidden = true;
+    document.querySelector(".event-overview-now").hidden = true;
+    const status = byId("status");
+    status.classList.add("error");
+    const message = document.createElement("strong");
+    message.textContent = "This event does not exist or is unavailable to your account.";
+    const back = document.createElement("a");
+    back.className = "button secondary";
+    back.href = "/admin";
+    back.textContent = "Back to events";
+    status.replaceChildren(message, document.createTextNode(" "), back);
+    document.title = "Event unavailable · SessionBuddy";
+  }
+
   function formatRange(event) {
     try {
       const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: event.time_zone });
@@ -22,15 +42,22 @@
   }
 
   async function initialize() {
-    if (!eventId) throw new Error("This event link is invalid.");
+    if (!eventId) {
+      showEventUnavailable();
+      return;
+    }
     await api("/api/v1/auth/session");
     let selected;
     try {
       selected = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
     } catch (error) {
-      if (error.status === 404) throw new Error("This event is not available to your account.");
+      if ([403, 404, 422].includes(error.status)) {
+        showEventUnavailable();
+        return;
+      }
       throw error;
     }
+    if (!selected) return;
     const settle = (promise) => promise
       .then((value) => ({ ok: true, value }))
       .catch((error) => ({ ok: false, status: Number(error && error.status) || 0 }));

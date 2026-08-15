@@ -29,6 +29,25 @@
   let speakerImportBatchKey = "";
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+  function showEventUnavailable() {
+    document.body.classList.add("event-resource-unavailable");
+    const hideEventNavigation = () => document.querySelector(".sb-event-nav")?.setAttribute("hidden", "");
+    hideEventNavigation();
+    new MutationObserver(hideEventNavigation).observe(document.querySelector("[data-auth-shell]"), { childList: true, subtree: true });
+    const main = byId("main");
+    const status = byId("status");
+    for (const child of main.children) child.hidden = child !== status;
+    status.hidden = false;
+    status.classList.add("error");
+    const message = document.createElement("strong");
+    message.textContent = "This event does not exist or is unavailable to your account.";
+    const back = document.createElement("a");
+    back.className = "button secondary";
+    back.href = "/admin";
+    back.textContent = "Back to events";
+    status.replaceChildren(message, document.createTextNode(" "), back);
+    document.title = "Event unavailable · SessionBuddy";
+  }
   function idempotencyKey() {
     if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
     const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -268,6 +287,10 @@
   }
 
   async function loadEventScopedDirectory(organizationsPromise) {
+    if (!selectedEventId) {
+      showEventUnavailable();
+      return null;
+    }
     let event, organizations, targetsResponse;
     try {
       [organizations, event, targetsResponse] = await Promise.all([
@@ -276,7 +299,10 @@
         api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speaker-targets`),
       ]);
     } catch (error) {
-      if (error.status === 404) throw new Error("This event is not available to your account.");
+      if ([403, 404, 422].includes(error.status)) {
+        showEventUnavailable();
+        return null;
+      }
       throw error;
     }
     const organization = organizations.find((item) => item.id === event.organization_id);
@@ -476,6 +502,7 @@
     let activeEvent = null;
     if (eventScoped) {
       activeEvent = await loadEventScopedDirectory(organizationsPromise);
+      if (!activeEvent) return;
     } else {
       const organizations = await organizationsPromise;
       populateOrganizationFilter(organizations);
