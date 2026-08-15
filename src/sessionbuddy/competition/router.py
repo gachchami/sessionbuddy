@@ -14,6 +14,7 @@ from sessionbuddy.platform.auth.http import (
     require_document_event,
     require_document_persona,
     require_permission,
+    require_public_document_event,
 )
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, ResourceGrant
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
@@ -248,7 +249,8 @@ async def speaker_content_js() -> Response:
 @competition_router.get(
     "/embeds/events/{event_id}/gallery", response_class=HTMLResponse, include_in_schema=False
 )
-async def public_speaker_gallery_page(event_id: str) -> HTMLResponse:
+async def public_speaker_gallery_page(event_id: str, request: Request) -> HTMLResponse:
+    await require_public_document_event(request, event_id)
     return HTMLResponse(
         _asset("speaker_gallery.html"), headers={"Cache-Control": "public, max-age=60"}
     )

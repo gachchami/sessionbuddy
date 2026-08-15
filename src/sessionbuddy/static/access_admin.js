@@ -5,6 +5,7 @@
   const byId = (id) => document.getElementById(id);
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
   let csrf = "";
+  let eventArchived = false;
 
   function showAccessLink(accessUrl, email) {
     byId("invitation-access-url").value = accessUrl;
@@ -108,7 +109,7 @@
           reset();
         }
       });
-      actions.append(resend, revoke);
+      actions.append(...(eventArchived ? [revoke] : [resend, revoke]));
     } else {
       const revoke = document.createElement("button");
       revoke.type = "button";
@@ -150,7 +151,10 @@
       api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`)
     ]);
     csrf = session.csrf_token;
+    eventArchived = selectedEvent.status === "archived";
     byId("access-event-name").textContent = selectedEvent.name;
+    byId("open-invite").hidden = eventArchived;
+    byId("reviewer-search-form").hidden = eventArchived;
     const reviewerInvitations = invitations.data.filter((invitation) => invitation.role === "evaluator");
     const visible = reviewerInvitations.filter((invitation) => ["accepted", "pending"].includes(invitation.status));
     visible.sort((left, right) => Number(right.status === "accepted") - Number(left.status === "accepted") || left.email.localeCompare(right.email));
@@ -158,7 +162,9 @@
       ? visible.map(invitationRow)
       : [emptyRow("No reviewers yet. Invite someone to review proposals for this event.")]));
     byId("reviewer-count").textContent = String(visible.length);
-    byId("status").textContent = "Reviewer eligibility is up to date.";
+    byId("status").textContent = eventArchived
+      ? "This event is archived. Existing reviewer access can be revoked, but new invitations cannot be sent."
+      : "Reviewer eligibility is up to date.";
   }
 
   byId("reviewer-search-form").addEventListener("submit", async (event) => {
@@ -297,8 +303,8 @@
     return;
   }
   load().catch((error) => {
-    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) {
-      byId("status").textContent = window.SessionBuddyApi.message(error);
-    }
+    if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+    byId("status").textContent = window.SessionBuddyApi.message(error);
   });
 })();

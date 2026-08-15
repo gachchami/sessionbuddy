@@ -7,26 +7,6 @@
 
   const api = (path) => window.SessionBuddyApi.request(path);
 
-  function showEventUnavailable() {
-    document.body.classList.add("event-resource-unavailable");
-    const hideEventNavigation = () => document.querySelector(".sb-event-nav")?.setAttribute("hidden", "");
-    hideEventNavigation();
-    new MutationObserver(hideEventNavigation).observe(document.querySelector("[data-auth-shell]"), { childList: true, subtree: true });
-    document.body.classList.remove("is-loading");
-    byId("event-public-header").hidden = true;
-    document.querySelector(".event-overview-now").hidden = true;
-    const status = byId("status");
-    status.classList.add("error");
-    const message = document.createElement("strong");
-    message.textContent = "This event does not exist or is unavailable to your account.";
-    const back = document.createElement("a");
-    back.className = "button secondary";
-    back.href = "/admin";
-    back.textContent = "Back to events";
-    status.replaceChildren(message, document.createTextNode(" "), back);
-    document.title = "Event unavailable · SessionBuddy";
-  }
-
   function formatRange(event) {
     try {
       const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: event.time_zone });
@@ -43,7 +23,9 @@
 
   async function initialize() {
     if (!eventId) {
-      showEventUnavailable();
+      document.body.classList.remove("is-loading");
+      byId("status").textContent = "This event link is invalid. Open your active workspace and select an event.";
+      byId("status").classList.add("error");
       return;
     }
     await api("/api/v1/auth/session");
@@ -51,24 +33,21 @@
     try {
       selected = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
     } catch (error) {
-      if ([403, 404, 422].includes(error.status)) {
-        showEventUnavailable();
-        return;
-      }
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
       throw error;
     }
-    if (!selected) return;
     const settle = (promise) => promise
       .then((value) => ({ ok: true, value }))
       .catch((error) => ({ ok: false, status: Number(error && error.status) || 0 }));
-    const [speakersResult, cfp, submissionsState, roundState, agendaState] = await Promise.all([
-      api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`),
-      api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`),
+    const [speakersState, cfpStateResult, submissionsState, roundState, agendaState] = await Promise.all([
+      settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)),
+      settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)),
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`)),
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds/current`)),
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda`))
     ]);
-    const speakers = speakersResult.data;
+    const speakers = speakersState.ok ? speakersState.value.data : [];
+    const cfp = cfpStateResult.ok ? cfpStateResult.value : {};
     const cfpPublished = Boolean(cfp.published_form);
     // Availability is decided by the API (sessionbuddy/cfp/availability.py) and
     // arrives as availability_state. Publishing a form is not the same as an
@@ -93,7 +72,7 @@
     const agenda = agendaState.ok ? agendaState.value : null;
     const agendaItems = agenda && Array.isArray(agenda.items) ? agenda.items.length : 0;
     const agendaPublished = Boolean(agenda && agenda.revision && agenda.revision.status === "published");
-    const degraded = !submissionsState.ok || !roundState.ok || agendaFailed;
+    const degraded = !speakersState.ok || !cfpStateResult.ok || !submissionsState.ok || !roundState.ok || agendaFailed;
     document.title = `${selected.name} · SessionBuddy`;
     byId("event-name").textContent = selected.name;
     byId("event-monogram").textContent = selected.name.slice(0, 2).toUpperCase();
@@ -123,12 +102,12 @@
     byId("next-step-action").href = `${prefix}/cfp`;
     byId("proposal-count").textContent = submissionsState.ok ? `${submissionCount} submitted` : "Unavailable";
     byId("proposal-note").textContent = submissionsState.ok ? `${submissionCount} total proposal${submissionCount === 1 ? "" : "s"}` : "Refresh to try again";
-    byId("speaker-count").textContent = `${speakers.length} confirmed`;
-    byId("speaker-note").textContent = `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} in this event`;
+    byId("speaker-count").textContent = speakersState.ok ? `${speakers.length} confirmed` : "Unavailable";
+    byId("speaker-note").textContent = speakersState.ok ? `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} in this event` : "Refresh to try again";
     byId("agenda-count").textContent = agendaFailed ? "Unavailable" : `${agendaItems} session${agendaItems === 1 ? "" : "s"}`;
     byId("agenda-note").textContent = agendaFailed ? "Unavailable" : agendaPublished ? "Published" : agendaMissing ? "Not started" : "Draft";
-    byId("cfp-state").textContent = cfpPublished ? cfpStateLabel : "Draft";
-    byId("cfp-note").textContent = cfpPublished ? cfpStateNote : "Publish before sharing";
+    byId("cfp-state").textContent = cfpStateResult.ok ? (cfpPublished ? cfpStateLabel : "Draft") : "Unavailable";
+    byId("cfp-note").textContent = cfpStateResult.ok ? (cfpPublished ? cfpStateNote : "Publish before sharing") : "Refresh to try again";
     document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
       ? "Some program information is unavailable. Refresh to try again."

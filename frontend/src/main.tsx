@@ -78,6 +78,8 @@ type RoundResults = {
 type ApiClient = {
   message(error: unknown, fallback?: string): string;
   redirectIfSignedOut(error: unknown): boolean;
+  redirectIfDocumentAccessChanged(error: unknown): boolean;
+  redirectIfWorkspaceUnavailable(error: unknown): boolean;
   request<T>(
     path: string,
     options?: RequestInit,
@@ -749,7 +751,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       setCsrf(body.csrf_token);
       await load();
     } catch (error) {
-      if (!window.SessionBuddyApi.redirectIfSignedOut(error)) throw error;
+      if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error)) return;
+      if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      throw error;
     }
   }
   async function decide(

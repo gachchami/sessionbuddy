@@ -30,7 +30,9 @@
       const body = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/integrations/accelevents/tokens`, { method: "POST", headers: mutationHeaders(state.tokenMutation.key), body: payload });
       state.tokenMutation = null;
       byId("token-value").textContent = body.token; byId("token-result").hidden = false; form.reset(); setStatus("Read-only integration token generated.");
-    } catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
+    } catch (error) {
+      setStatus(window.SessionBuddyApi.message(error), true);
+    }
   });
   function renderEmbed() {
     const type = byId("embed-type").value;
@@ -93,5 +95,9 @@
     byId("generate-token").disabled = false;
     setStatus("Sharing and integration tools ready.");
   }
-  initialize().catch((error) => { if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true); });
+  initialize().catch((error) => {
+    if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+    setStatus(window.SessionBuddyApi.message(error), true);
+  });
 })();

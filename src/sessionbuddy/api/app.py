@@ -269,6 +269,7 @@ def _browser_error_response(
     *,
     status: int,
     title: str,
+    eyebrow: str,
     heading: str,
     message: str,
     primary_label: str,
@@ -280,6 +281,7 @@ def _browser_error_response(
     )
     page = (
         embedded_assets.ERROR_PAGE_HTML.replace("{{TITLE}}", escape(title))
+        .replace("{{EYEBROW}}", escape(eyebrow))
         .replace("{{STATUS}}", str(status))
         .replace("{{HEADING}}", escape(heading))
         .replace("{{MESSAGE}}", escape(message))
@@ -297,10 +299,45 @@ def _browser_error_response(
 @app.exception_handler(404)
 async def not_found(request: Request, _exception: Exception) -> Response:
     if _expects_browser_page(request):
+        path = request.url.path
+        if path.startswith("/admin/events/"):
+            return _browser_error_response(
+                request,
+                status=404,
+                title="Event unavailable",
+                eyebrow="Event unavailable",
+                heading="This event isn’t available.",
+                message="The link may be outdated, or your account may no longer have access.",
+                primary_label="Open active workspace",
+                primary_href="/",
+            )
+        if path.startswith("/admin/evaluation-rounds/"):
+            return _browser_error_response(
+                request,
+                status=404,
+                title="Review round unavailable",
+                eyebrow="Review round unavailable",
+                heading="This review round isn’t available.",
+                message="The link may be outdated, or your account may no longer have access.",
+                primary_label="Open active workspace",
+                primary_href="/",
+            )
+        if path.startswith(("/events/", "/embeds/events/")):
+            return _browser_error_response(
+                request,
+                status=404,
+                title="Event unavailable",
+                eyebrow="Event unavailable",
+                heading="This event isn’t available.",
+                message="The link may be outdated, or the event may not be public.",
+                primary_label="Open SessionBuddy",
+                primary_href="/",
+            )
         return _browser_error_response(
             request,
             status=404,
             title="Page not found",
+            eyebrow="This route stops here",
             heading="We could not find that page.",
             message="The link may be outdated, or the page may have moved.",
             primary_label="Open SessionBuddy",
@@ -316,6 +353,7 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
             request,
             status=403,
             title="Access denied",
+            eyebrow="Access denied",
             heading="This page is not available for your active role.",
             message=(
                 "Open your active workspace. If another role has access, "
@@ -392,6 +430,7 @@ async def unhandled_error(request: Request, exception: Exception) -> Response:
             request,
             status=500,
             title="Something went wrong",
+            eyebrow="Something went wrong",
             heading="We could not load this page.",
             message="Try again. If the problem continues, share the reference below with support.",
             primary_label="Try again",

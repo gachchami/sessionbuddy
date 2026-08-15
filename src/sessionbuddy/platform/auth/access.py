@@ -213,7 +213,9 @@ async def admin_home_javascript() -> Response:
 @access_router.get("/admin/events/{event_id}", include_in_schema=False)
 async def event_overview_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
-    await require_document_event(request, event_id)
+    # get_event deliberately keeps archived events readable so organizers can
+    # retain context and navigate to the archived-safe administration tools.
+    await require_document_event(request, event_id, include_archived=True)
     return Response(
         _asset("event_overview.html"),
         media_type="text/html",
@@ -327,7 +329,14 @@ async def organization_admin_javascript() -> Response:
 @access_router.get("/admin/events/{event_id}/reviewers", include_in_schema=False)
 async def event_access_page(event_id: str, request: Request) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
-    await require_document_event(request, event_id)
+    # Grant APIs opt into archived events so access can still be reviewed and
+    # revoked after an event is archived.
+    await require_document_event(
+        request,
+        event_id,
+        Permission.RESOURCE_ACCESS_MANAGE,
+        include_archived=True,
+    )
     return Response(
         _asset("access_admin.html"),
         media_type="text/html",
@@ -4629,7 +4638,11 @@ async def _managed_event(
     tags=["administration"],
 )
 async def list_invitations(event_id: str, request: Request) -> InvitationList:
-    db, organization_id, _ = await _managed_event(request, event_id, mutation=False)
+    # Access administration remains available after archival so outstanding
+    # invitations and grants can still be reviewed or revoked.
+    db, organization_id, _ = await _managed_event(
+        request, event_id, mutation=False, include_archived=True
+    )
     result = await (
         db.prepare(
             """SELECT id,event_id,email,role,display_name,job_title,company,
@@ -4652,7 +4665,11 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
 async def resend_invitation(
     event_id: str, invitation_id: str, request: Request
 ) -> InvitationIssued:
-    db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
+    # Archival is maintenance-only: existing access may be revoked, but a new
+    # invitation link must not be issued for an event people can no longer join.
+    db, organization_id, authenticated = await _managed_event(
+        request, event_id, mutation=True
+    )
     now = utc_now_ms()
     row = row_mapping(
         await db.prepare(
@@ -4711,7 +4728,9 @@ async def resend_invitation(
     tags=["administration"],
 )
 async def revoke_invitation(event_id: str, invitation_id: str, request: Request) -> Response:
-    db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
+    db, organization_id, authenticated = await _managed_event(
+        request, event_id, mutation=True, include_archived=True
+    )
     now = utc_now_ms()
     invitation = row_mapping(
         await db.prepare(

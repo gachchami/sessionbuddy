@@ -92,7 +92,7 @@ body {
 
 .error-layout {
   display: grid;
-  grid-template-columns: minmax(10.5rem, .36fr) minmax(0, 1fr);
+  grid-template-columns: minmax(9rem, .25fr) minmax(0, 1fr);
 }
 
 .status-panel {
@@ -123,7 +123,7 @@ body {
   z-index: 1;
   margin: 0;
   color: #293879;
-  font: 700 clamp(4.3rem, 10vw, 7rem)/.88 Georgia, "Times New Roman", serif;
+  font: 700 clamp(3.5rem, 7vw, 5.25rem)/.9 Georgia, "Times New Roman", serif;
   letter-spacing: -.07em;
 }
 

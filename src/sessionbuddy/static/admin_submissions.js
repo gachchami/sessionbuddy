@@ -1240,6 +1240,7 @@
     } catch (error) {
       document.body.classList.remove("is-loading");
       byId("submissions").closest("section").setAttribute("aria-busy", "false");
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
       byId("status").textContent = window.SessionBuddyApi.message(error, "Proposals could not be loaded. Return to the event and try again.");
       byId("status").classList.add("error");
     }

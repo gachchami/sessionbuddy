@@ -1376,6 +1376,7 @@
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         return;
       }
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
       setStatus(window.SessionBuddyApi.message(error), true);
     }
   }

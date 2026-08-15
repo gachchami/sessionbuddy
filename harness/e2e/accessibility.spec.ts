@@ -10,6 +10,8 @@ const setupCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/
 const setupJs = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.js"), "utf8");
 const errorHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/error_page.html"), "utf8");
 const errorCss = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/error_page.css"), "utf8");
+const scheduleHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/schedule.html"), "utf8");
+const speakerGalleryHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/speaker_gallery.html"), "utf8");
 const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 test.describe("MVP experience accessibility", () => {
@@ -75,6 +77,7 @@ test.describe("MVP experience accessibility", () => {
   test("access-denied page has no automatically detectable serious violations", async ({ page }) => {
     const body = errorHtml
       .replace("{{TITLE}}", "Access denied")
+      .replace("{{EYEBROW}}", "Access denied")
       .replace("{{STATUS}}", "403")
       .replace("{{HEADING}}", "This page is not available for your active role.")
       .replace("{{MESSAGE}}", "Open your active workspace. If another role has access, switch roles from the account menu.")
@@ -140,6 +143,15 @@ test.describe("MVP experience accessibility", () => {
 
   routes.forEach((route) => {
     test(`${route.path} has no automatically detectable serious violations`, async ({ page }) => {
+      if (route.path.startsWith("/events/") || route.path.startsWith("/embeds/events/")) {
+        await page.route(
+          (url) => url.pathname === route.path,
+          (documentRoute) => documentRoute.fulfill({
+            contentType: "text/html",
+            body: route.path.endsWith("/speakers") ? speakerGalleryHtml : scheduleHtml,
+          }),
+        );
+      }
       if (route.sessionRole) {
         const speaker = route.sessionRole === "speaker";
         const session = {

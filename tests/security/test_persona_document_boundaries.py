@@ -2,11 +2,18 @@ from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from route_inventory import document_routes
 
 from sessionbuddy.api.app import app
+from sessionbuddy.platform.auth import access as auth_access
 from sessionbuddy.platform.auth import http as auth_http
 from sessionbuddy.platform.auth.http import AuthenticatedContext
-from sessionbuddy.platform.authorization import Actor, AuthorizationDecision, Persona
+from sessionbuddy.platform.authorization import (
+    Actor,
+    AuthorizationDecision,
+    Persona,
+    ResourceGrant,
+)
 
 
 class DocumentLookup:
@@ -27,6 +34,8 @@ class DocumentLookup:
         if self.error is not None:
             raise self.error
         return self.row
+
+
 existing_event = DocumentLookup(
     {"organization_id": "organization-1", "event_id": "event-1"}
 )
@@ -280,7 +289,8 @@ async def test_unknown_event_document_returns_plain_non_cacheable_404(
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("text/html")
     assert response.headers["cache-control"] == "no-store"
-    assert "<title>Page not found" in response.text
+    assert "<title>Event unavailable" in response.text
+    assert "This event isn’t available." in response.text
     assert "data-auth-shell" not in response.text
     assert "event-1" not in response.text
 
@@ -309,7 +319,9 @@ async def test_unavailable_event_document_does_not_disclose_authorization_reason
         )
 
     assert response.status_code == 404
-    assert "<title>Page not found" in response.text
+    assert "<title>Event unavailable" in response.text
+    assert "This event isn’t available." in response.text
+    assert 'href="/">Open active workspace' in response.text
     assert "Access denied" not in response.text
     assert "data-auth-shell" not in response.text
 
@@ -421,7 +433,9 @@ async def test_unavailable_round_document_returns_non_disclosing_404(
         )
 
     assert response.status_code == 404
-    assert "<title>Page not found" in response.text
+    assert "<title>Review round unavailable" in response.text
+    assert "This review round isn’t available." in response.text
+    assert 'href="/">Open active workspace' in response.text
     assert "Access denied" not in response.text
     assert "data-auth-shell" not in response.text
 
@@ -469,3 +483,267 @@ async def test_round_lookup_failure_is_not_misreported_as_not_found(monkeypatch)
     assert response.status_code == 500
     assert "<title>Something went wrong" in response.text
     assert "Page not found" not in response.text
+
+
+@pytest.mark.parametrize(
+    ("grants", "expected_status"),
+    (
+        ({"event-1": frozenset({ResourceGrant.MANAGE})}, 200),
+        ({}, 404),
+    ),
+)
+async def test_event_document_uses_real_event_manage_policy(
+    monkeypatch, grants, expected_status: int
+) -> None:
+    async def organizer_context(_request):
+        return AuthenticatedContext(
+            actor=Actor(
+                "organizer-user",
+                active_persona=Persona.ORGANIZER,
+                resource_grants=grants,
+            ),
+            session_id="organizer-session",
+        )
+
+    monkeypatch.setattr(auth_http, "authenticate_request", organizer_context)
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
+        response = await client.get(
+            "/admin/events/event-1", headers={"accept": "text/html"}
+        )
+
+    assert response.status_code == expected_status
+
+
+async def test_reviewer_access_document_matches_resource_access_manage_policy(
+    monkeypatch,
+) -> None:
+    async def edit_only_context(_request):
+        return AuthenticatedContext(
+            actor=Actor(
+                "organizer-user",
+                active_persona=Persona.ORGANIZER,
+                resource_grants={"event-1": frozenset({ResourceGrant.EDIT})},
+            ),
+            session_id="organizer-session",
+        )
+
+    monkeypatch.setattr(auth_http, "authenticate_request", edit_only_context)
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
+        overview = await client.get(
+            "/admin/events/event-1", headers={"accept": "text/html"}
+        )
+        reviewers = await client.get(
+            "/admin/events/event-1/reviewers", headers={"accept": "text/html"}
+        )
+
+    assert overview.status_code == 200
+    assert reviewers.status_code == 404
+
+
+async def test_reviewer_invitation_read_matches_archived_document_policy(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class EmptyInvitationDB:
+        def prepare(self, _query: str):
+            return self
+
+        def bind(self, *_values):
+            return self
+
+        async def all(self):
+            return {"results": []}
+
+    async def managed_event(_request, event_id, **options):
+        calls.append({"event_id": event_id, **options})
+        return EmptyInvitationDB(), "organization-1", object()
+
+    monkeypatch.setattr(auth_access, "_managed_event", managed_event)
+    result = await auth_access.list_invitations("event-1", SimpleNamespace())
+
+    assert result.data == []
+    assert calls == [
+        {"event_id": "event-1", "mutation": False, "include_archived": True}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("operation", "include_archived"),
+    (
+        (auth_access.resend_invitation, False),
+        (auth_access.revoke_invitation, True),
+    ),
+)
+async def test_reviewer_invitation_mutations_match_archived_document_policy(
+    monkeypatch, operation, include_archived: bool
+) -> None:
+    class ManagedEventReached(Exception):
+        pass
+
+    calls: list[dict[str, object]] = []
+
+    async def managed_event(_request, event_id, **options):
+        calls.append({"event_id": event_id, **options})
+        raise ManagedEventReached
+
+    monkeypatch.setattr(auth_access, "_managed_event", managed_event)
+    with pytest.raises(ManagedEventReached):
+        await operation("event-1", "invitation-1", SimpleNamespace())
+
+    expected = {"event_id": "event-1", "mutation": True}
+    if include_archived:
+        expected["include_archived"] = True
+    assert calls == [expected]
+
+
+@pytest.mark.parametrize(
+    ("path", "allows_archived"),
+    (
+        ("/admin/events/event-1", True),
+        ("/admin/events/event-1/access", True),
+        ("/admin/events/event-1/reviewers", True),
+        ("/admin/events/event-1/cfp", False),
+        ("/admin/events/event-1/submissions", False),
+        ("/admin/events/event-1/agenda", False),
+        ("/admin/events/event-1/workspace", False),
+        ("/admin/events/event-1/speaker-content", False),
+        ("/admin/events/event-1/onboarding", False),
+        ("/admin/events/event-1/speakers", False),
+        ("/admin/events/event-1/speakers/speaker-1", False),
+        ("/admin/events/event-1/messages", False),
+    ),
+)
+async def test_event_documents_declare_their_archived_event_policy(
+    monkeypatch, path: str, allows_archived: bool
+) -> None:
+    async def organizer_context(_request):
+        return AuthenticatedContext(
+            actor=Actor("organizer-user", active_persona=Persona.ORGANIZER),
+            session_id="organizer-session",
+        )
+
+    lookup = DocumentLookup(
+        {"organization_id": "organization-1", "event_id": "event-1"}
+    )
+    monkeypatch.setattr(auth_http, "authenticate_request", organizer_context)
+    monkeypatch.setattr(auth_http, "database", lambda _request: lookup)
+    monkeypatch.setattr(
+        auth_http,
+        "authorize",
+        lambda *_args: AuthorizationDecision(True, "allowed"),
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
+        response = await client.get(path, headers={"accept": "text/html"})
+
+    assert response.status_code == 200
+    assert ("status!='archived'" not in lookup.query) is allows_archived
+
+
+PUBLIC_EVENT_DOCUMENT_PATHS = (
+    "/events/missing-event/schedule",
+    "/events/missing-event/sessions",
+    "/events/missing-event/speakers",
+    "/events/missing-event/gallery",
+    "/embeds/events/missing-event/schedule",
+    "/embeds/events/missing-event/sessions",
+    "/embeds/events/missing-event/itinerary",
+    "/embeds/events/missing-event/speakers",
+    "/embeds/events/missing-event/gallery",
+)
+
+
+@pytest.mark.parametrize("path", PUBLIC_EVENT_DOCUMENT_PATHS)
+async def test_unknown_public_event_document_returns_contextual_404(
+    monkeypatch, path: str
+) -> None:
+    monkeypatch.setattr(auth_http, "database", lambda _request: DocumentLookup())
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        response = await client.get(path, headers={"accept": "text/html"})
+
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "no-store"
+    assert "<title>Event unavailable" in response.text
+    assert "This event isn’t available." in response.text
+    assert "data-auth-shell" not in response.text
+
+
+def test_scoped_document_route_inventory_is_complete() -> None:
+    actual = {
+        path
+        for path in document_routes(app)
+        if not path.startswith("/api/")
+        and ("{event_id}" in path or "{round_id}" in path)
+    }
+    assert actual == {
+        "/admin/events/{event_id}",
+        "/admin/events/{event_id}/cfp",
+        "/admin/events/{event_id}/submissions",
+        "/admin/events/{event_id}/agenda",
+        "/admin/events/{event_id}/workspace",
+        "/admin/events/{event_id}/speaker-content",
+        "/admin/events/{event_id}/onboarding",
+        "/admin/events/{event_id}/access",
+        "/admin/events/{event_id}/reviewers",
+        "/admin/events/{event_id}/speakers",
+        "/admin/events/{event_id}/speakers/{event_speaker_id}",
+        "/admin/events/{event_id}/messages",
+        "/admin/evaluation-rounds/{round_id}",
+        "/events/{event_id}/schedule",
+        "/events/{event_id}/sessions",
+        "/events/{event_id}/speakers",
+        "/events/{event_id}/gallery",
+        "/embeds/events/{event_id}/schedule",
+        "/embeds/events/{event_id}/sessions",
+        "/embeds/events/{event_id}/itinerary",
+        "/embeds/events/{event_id}/speakers",
+        "/embeds/events/{event_id}/gallery",
+    }
+
+
+SCOPED_DOCUMENT_TEMPLATES = sorted(
+    path
+    for path in document_routes(app)
+    if not path.startswith("/api/")
+    and ("{event_id}" in path or "{round_id}" in path)
+)
+
+
+@pytest.mark.parametrize("template", SCOPED_DOCUMENT_TEMPLATES)
+async def test_every_discovered_scoped_document_earns_its_missing_resource_404(
+    monkeypatch, template: str
+) -> None:
+    path = (
+        template.replace("{event_id}", "missing-event")
+        .replace("{round_id}", "missing-round")
+        .replace("{event_speaker_id}", "missing-speaker")
+    )
+    monkeypatch.setattr(auth_http, "database", lambda _request: DocumentLookup())
+
+    async def organizer_context(_request):
+        return AuthenticatedContext(
+            actor=Actor("organizer-user", active_persona=Persona.ORGANIZER),
+            session_id="organizer-session",
+        )
+
+    monkeypatch.setattr(auth_http, "authenticate_request", organizer_context)
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        if path.startswith("/admin/"):
+            client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
+        response = await client.get(path, headers={"accept": "text/html"})
+
+    assert response.status_code == 404
+    assert "data-auth-shell" not in response.text

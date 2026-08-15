@@ -36,25 +36,6 @@
       ? `Last refreshed ${state.lastSuccess.toLocaleTimeString()}` : "Not refreshed yet";
   }
 
-  function showEventUnavailable() {
-    state.terminal = true;
-    document.body.classList.add("event-resource-unavailable");
-    const hideEventNavigation = () => document.querySelector(".sb-event-nav")?.setAttribute("hidden", "");
-    hideEventNavigation();
-    new MutationObserver(hideEventNavigation).observe(document.querySelector("[data-auth-shell]"), { childList: true, subtree: true });
-    clearInterval(state.timer);
-    const main = byId("main");
-    const status = byId("status");
-    for (const child of main.children) child.hidden = child !== status;
-    status.hidden = false;
-    status.classList.add("error");
-    const message = make("strong", "This event does not exist or is unavailable to your account.");
-    const back = make("a", "Back to events", "button secondary");
-    back.href = "/admin";
-    status.replaceChildren(message, document.createTextNode(" "), back);
-    document.title = "Event unavailable · SessionBuddy";
-  }
-
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
     const width = innerWidth;
@@ -244,8 +225,12 @@
       setConnection("live", "Live snapshot");
       setStatus(announce ? "Onboarding snapshot refreshed." : `${state.rows.length} speaker record${state.rows.length === 1 ? "" : "s"} shown.`);
     } catch (error) {
-      if ([403, 404, 422].includes(error.status)) {
-        showEventUnavailable();
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      if ([403, 404].includes(Number(error.status))) {
+        state.terminal = true;
+        clearInterval(state.timer);
+        setStatus("This event is no longer available to your account.", true);
+        setConnection("stale", "Access unavailable");
         return;
       }
       const authMessage = error.status === 401 || error.status === 403
@@ -296,7 +281,9 @@
 
   async function initialize() {
     if (!eventId) {
-      showEventUnavailable();
+      state.terminal = true;
+      setStatus("This event link is invalid. Open your active workspace and select an event.", true);
+      setConnection("stale", "Access unavailable");
       return;
     }
     initializeFilters();

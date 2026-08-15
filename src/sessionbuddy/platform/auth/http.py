@@ -162,7 +162,10 @@ async def require_document_persona(request: Request, persona: Persona) -> None:
 
 
 async def _require_document_scope(
-    request: Request, resource_id: str | None, query: str
+    request: Request,
+    resource_id: str | None,
+    query: str,
+    permission: Permission = Permission.EVENT_MANAGE,
 ) -> None:
     """Resolve a document's event scope and apply its non-disclosing access gate."""
     if resource_id is None or not session_cookie_value(request):
@@ -178,22 +181,25 @@ async def _require_document_scope(
     )
     if row is None:
         raise HTTPException(status_code=404)
-    # EVENT_MANAGE is the console's "can open this event at all" gate: owner,
-    # manage or edit authority on the event itself, or ownership/manage of its
-    # organization.  It is the same permission the overview API reads with, so
-    # a page can never render for an event whose data will be refused.  A
-    # denial here is record-scope, so it is always 404 rather than depending on
-    # the policy engine's internal reason vocabulary.
+    # The document and its critical API must use the same permission. A denial
+    # here is record-scope, so it is always 404 rather than depending on the
+    # policy engine's internal reason vocabulary.
     decision = authorize(
         authenticated.actor,
-        Permission.EVENT_MANAGE,
+        permission,
         ResourceContext(str(row["organization_id"]), str(row["event_id"])),
     )
     if not decision.allowed:
         raise HTTPException(status_code=404)
 
 
-async def require_document_event(request: Request, event_id: str | None) -> None:
+async def require_document_event(
+    request: Request,
+    event_id: str | None,
+    permission: Permission = Permission.EVENT_MANAGE,
+    *,
+    include_archived: bool = False,
+) -> None:
     """Refuse an event-scoped page whose event the caller cannot open.
 
     Document routes are served before the page makes a single API call, and
@@ -201,11 +207,31 @@ async def require_document_event(request: Request, event_id: str | None) -> None
     visitors retain the sign-in shell; authenticated denials are deliberately
     indistinguishable from an unknown event.
     """
+    query = (
+        """SELECT organization_id,id AS event_id FROM events
+           WHERE id=?1 LIMIT 1"""
+        if include_archived
+        else """SELECT organization_id,id AS event_id FROM events
+                WHERE id=?1 AND status!='archived' LIMIT 1"""
+    )
     await _require_document_scope(
         request,
         event_id,
-        "SELECT organization_id,id AS event_id FROM events WHERE id=?1 LIMIT 1",
+        query,
+        permission,
     )
+
+
+async def require_public_document_event(request: Request, event_id: str) -> None:
+    """Return a public event document only for an active public event."""
+    row = row_mapping(
+        await database(request)
+        .prepare("SELECT id FROM events WHERE id=?1 AND status='active' LIMIT 1")
+        .bind(event_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
 
 
 async def require_document_round(request: Request, round_id: str | None) -> None:

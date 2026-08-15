@@ -110,7 +110,6 @@ def test_organizer_surfaces_render_the_api_availability_state() -> None:
         assert "now < form.opens_at_ms" not in script
         assert "now > form.closes_at_ms" not in script
     assert "Boolean(cfp.published_form)" in overview  # publish nudge, not availability
-    assert 'byId("cfp-state").textContent = cfpPublished ? cfpStateLabel' in overview
     # A page left open across the deadline re-reads the server answer, and a
     # boundary further out than one timer hop is walked toward rather than
     # skipped: returning early there left the badge stale forever.

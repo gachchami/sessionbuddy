@@ -1105,7 +1105,15 @@
   );
   byId("refresh").addEventListener(
     "click",
-    () => load().catch(() => status("Agenda could not be refreshed.", true)),
+    () => load().catch((error) => {
+      // A missing agenda is the normal pre-setup state, not a missing event.
+      if (error.status === 404) {
+        showSetup();
+        return;
+      }
+      if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      status("Agenda could not be refreshed.", true);
+    }),
   );
   byId("cancel-delete-session").addEventListener("click", () => {
     state.pendingDeleteSession = null;

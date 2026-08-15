@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from route_inventory import document_routes
 
 from sessionbuddy.api.app import app
 from sessionbuddy.observability import record_timing
@@ -54,28 +55,6 @@ def test_observability_registration_is_human_actionable() -> None:
         assert registration["slo"]["p95_ms"] > 0
 
 
-ASSET_SUFFIXES = (".css", ".js", ".json", ".txt", ".xml", ".svg", ".png")
-
-
-def _document_routes() -> set[str]:
-    """Every mounted route that serves a document rather than schema'd API or
-    a static asset. Routers are wrapped by the app's _IncludedRouter, so the
-    walk goes through original_router; fail loudly if that contract changes."""
-    paths: set[str] = set()
-    for wrapper in app.routes:
-        router = getattr(wrapper, "original_router", None)
-        routes = router.routes if router is not None else [wrapper]
-        for route in routes:
-            path = getattr(route, "path", None)
-            if path is None or getattr(route, "include_in_schema", False):
-                continue
-            if "/assets/" in path or path.endswith(ASSET_SUFFIXES):
-                continue
-            paths.add(path)
-    assert paths, "route walk found nothing; did _IncludedRouter change shape?"
-    return paths
-
-
 def test_every_document_route_is_registered_or_explicitly_excluded() -> None:
     manifest = json.loads(
         (PROJECT_ROOT / "observability" / "manifest.json").read_text(encoding="utf-8")
@@ -83,7 +62,7 @@ def test_every_document_route_is_registered_or_explicitly_excluded() -> None:
     pages = set(manifest["pages"])
     excluded = set(manifest["excluded_routes"])
 
-    discovered = _document_routes()
+    discovered = document_routes(app)
     assert pages & excluded == set(), "a route cannot be both registered and excluded"
     missing = discovered - pages - excluded
     stale = (pages | excluded) - discovered

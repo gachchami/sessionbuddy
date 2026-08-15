@@ -1,7 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const speakerGalleryHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/speaker_gallery.html"), "utf8");
+const apiClientJs = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/api_client.js"), "utf8");
+const speakerGalleryJs = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/speaker_gallery.js"), "utf8");
 
 const session = {
   authenticated: true,
@@ -73,6 +78,12 @@ test.describe("safe API and page failures", () => {
   });
 
   test("network failures show a connection message on a public page", async ({ page }) => {
+    await page.route(
+      (url) => url.pathname === `/events/${eventId}/speakers`,
+      (route) => route.fulfill({ contentType: "text/html", body: speakerGalleryHtml }),
+    );
+    await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({ contentType: "text/javascript", body: apiClientJs }));
+    await page.route("**/gallery/assets/gallery.js*", (route) => route.fulfill({ contentType: "text/javascript", body: speakerGalleryJs }));
     await page.route(`**/api/v1/public/events/${eventId}/speakers`, (route) => route.abort("failed"));
 
     await page.goto(`/events/${eventId}/speakers`);

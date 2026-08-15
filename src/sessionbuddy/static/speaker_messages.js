@@ -317,6 +317,8 @@
   }
 
   initialize().catch((error) => {
-    if (!window.SessionBuddyApi.redirectIfSignedOut(error)) setStatus(window.SessionBuddyApi.message(error), true);
+    if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+    setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();

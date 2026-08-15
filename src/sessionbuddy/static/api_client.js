@@ -121,6 +121,46 @@
     return true;
   }
 
+  function redirectIfWorkspaceUnavailable(error) {
+    if (Number(error?.status) !== 404) return false;
+    const scopedDocument = /^\/admin\/events\/[^/]+(?:\/|$)/.test(location.pathname)
+      || /^\/admin\/evaluation-rounds\/[^/]+$/.test(location.pathname);
+    if (!scopedDocument) return false;
+    if (!claimDocumentRecovery("404")) return false;
+    // Re-enter through the document route. Its server-side scope guard renders
+    // the same non-disclosing recovery page for a deleted resource and lost
+    // access, instead of leaving stale event navigation around an inline error.
+    location.replace(`${location.pathname}${location.search}${location.hash}`);
+    return true;
+  }
+
+  function redirectIfDocumentAccessChanged(error) {
+    if (Number(error?.status) !== 403) return false;
+    const scopedDocument = /^\/admin\/events\/[^/]+(?:\/|$)/.test(location.pathname)
+      || /^\/admin\/evaluation-rounds\/[^/]+$/.test(location.pathname);
+    if (!scopedDocument) return false;
+    if (!claimDocumentRecovery("403")) return false;
+    // A 403 is deliberately not a missing-resource state. Re-enter the page so
+    // its persona boundary can explain how to return to the active workspace.
+    location.replace(`${location.pathname}${location.search}${location.hash}`);
+    return true;
+  }
+
+  function claimDocumentRecovery(status) {
+    const key = `sessionbuddy:document-recovery:${status}:${location.pathname}`;
+    const now = Date.now();
+    try {
+      const previous = Number(sessionStorage.getItem(key) || 0);
+      if (now - previous < 15000) return false;
+      sessionStorage.setItem(key, String(now));
+      return true;
+    } catch (_) {
+      // Storage-denied browsers keep the inline error instead of risking an
+      // unbounded same-URL navigation loop.
+      return false;
+    }
+  }
+
   function message(error, fallback = "The request could not be completed. Try again.") {
     return error instanceof ApiError ? error.message : fallback;
   }
@@ -408,6 +448,8 @@
     refreshCharacterCounters: formValidation.installCharacterCounters,
     showValidationErrors: formValidation.showServerValidationErrors,
     redirectIfSignedOut,
+    redirectIfDocumentAccessChanged,
+    redirectIfWorkspaceUnavailable,
     request,
     signInPath
   });
