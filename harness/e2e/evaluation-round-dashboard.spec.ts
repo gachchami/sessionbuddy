@@ -176,4 +176,121 @@ test.describe("evaluation round dashboard", () => {
     await expect(responses.locator("dt")).toHaveText(["Quality", "Recommendation", "Comments"]);
     await expect(responses).toContainText("The full reviewer assessment remains visible.");
   });
+
+  test("shows decision progress immediately and confirms before the results refresh", async ({ page }) => {
+    const submission = {
+      submission_id: "submission-a",
+      speaker_name: "Taylor Speaker",
+      proposal_title: "Reliable acceptance feedback",
+      assigned_count: 1,
+      completed_count: 1,
+      average_rating: 4,
+      decision: null,
+      decision_round_id: null,
+      internal_reason: "",
+      correction_reason: "",
+      reviews: [],
+    };
+    let releaseDecision!: () => void;
+    let releaseRefresh!: () => void;
+    const decisionGate = new Promise<void>((resolve) => { releaseDecision = resolve; });
+    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    let decisionRequests = 0;
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/submissions/submission-a/decision", async (route) => {
+      decisionRequests += 1;
+      await decisionGate;
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ communication_queued: true }),
+      });
+    });
+    await openDashboard(page, results({
+      status: "closed",
+      assigned_count: 1,
+      completed_count: 1,
+      submissions: [submission],
+      submission_count: 1,
+    }));
+    await page.unroute("**/api/v1/admin/evaluation-rounds/round-a/results**");
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/results**", async (route) => {
+      await refreshGate;
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(results({
+          status: "closed",
+          assigned_count: 1,
+          completed_count: 1,
+          submissions: [{
+            ...submission,
+            decision: "accepted",
+            decision_round_id: "round-a",
+          }],
+          submission_count: 1,
+        })),
+      });
+    });
+
+    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "Confirm accepted" }).click();
+    await expect(page.getByRole("button", { name: "Recording…" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await expect(page.locator(".decision-confirmation")).toHaveAttribute("aria-busy", "true");
+    await page.getByRole("button", { name: "Recording…" }).dispatchEvent("click");
+    expect(decisionRequests).toBe(1);
+
+    releaseDecision();
+    await expect(page.getByText("Decision recorded as accepted. Speaker email queued."))
+      .toBeVisible();
+    releaseRefresh();
+    await expect(page.getByText("final decision in effect")).toBeVisible();
+    expect(decisionRequests).toBe(1);
+  });
+
+  test("reuses the decision idempotency key when an operator retries", async ({ page }) => {
+    const keys: string[] = [];
+    let attempts = 0;
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/submissions/submission-a/decision", async (route) => {
+      attempts += 1;
+      keys.push(route.request().headers()["idempotency-key"]);
+      if (attempts === 1) {
+        return route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { message: "Temporarily unavailable." } }),
+        });
+      }
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ communication_queued: false }),
+      });
+    });
+    await openDashboard(page, results({
+      status: "closed",
+      assigned_count: 1,
+      completed_count: 1,
+      submissions: [{
+        submission_id: "submission-a",
+        speaker_name: "Taylor Speaker",
+        proposal_title: "Retry-safe acceptance",
+        assigned_count: 1,
+        completed_count: 1,
+        average_rating: 4,
+        decision: null,
+        decision_round_id: null,
+        internal_reason: "",
+        correction_reason: "",
+        reviews: [],
+      }],
+      submission_count: 1,
+    }));
+
+    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "Confirm accepted" }).click();
+    await expect(page.getByRole("button", { name: "Confirm accepted" })).toBeEnabled();
+    await page.getByRole("button", { name: "Confirm accepted" }).click();
+    await expect(page.getByText("Decision recorded as accepted. No email sent."))
+      .toBeVisible();
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+  });
 });

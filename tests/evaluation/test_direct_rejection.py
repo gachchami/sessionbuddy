@@ -1,3 +1,6 @@
+import asyncio
+
+from sessionbuddy.evaluation import router as evaluation_router_module
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
     _client,
@@ -23,6 +26,73 @@ async def _accepted_reviewer(client, connection, environment, csrf, event_id, em
     return connection.execute(
         "SELECT id FROM users WHERE normalized_email=?", (email,)
     ).fetchone()[0]
+
+
+async def _round_decision_fixture(
+    client, connection, environment, csrf, organization_id, event_id, user_id, prefix
+):
+    form_id = f"{prefix}-form"
+    submission_id = f"{prefix}-submission"
+    round_id = f"{prefix}-round"
+    assignment_id = f"{prefix}-assignment"
+    connection.execute(
+        """INSERT INTO call_for_speaker_forms
+           (id,organization_id,event_id,version,slug,welcome_text,schema_json,status,
+            published_at_ms,created_at_ms,updated_at_ms)
+           VALUES (?, ?, ?, 1, ?, 'Welcome', '{"fields":[]}', 'published', 1000,1000,1000)""",
+        (form_id, organization_id, event_id, form_id),
+    )
+    connection.execute(
+        """INSERT INTO submissions
+           (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+            proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
+            submitted_at_ms,created_at_ms,updated_at_ms)
+           VALUES (?, ?, ?, ?, ?, 'Concurrent round decision', 'Abstract',
+                   'Priya Raman','priya@example.test',?,'submitted',1000,1000,1000)""",
+        (submission_id, organization_id, event_id, form_id, f"{prefix}-public", user_id),
+    )
+    connection.execute(
+        """INSERT INTO evaluation_rounds
+           (id,organization_id,event_id,name,rubric_json,status,created_at_ms,updated_at_ms)
+           VALUES (?, ?, ?, ?, '{}','open',1000,1000)""",
+        (round_id, organization_id, event_id, f"Review {prefix}"),
+    )
+    reviewer_user_id = await _accepted_reviewer(
+        client,
+        connection,
+        environment,
+        csrf,
+        event_id,
+        f"{prefix}-reviewer@example.com",
+    )
+    connection.execute(
+        """INSERT INTO evaluation_round_submissions
+           (round_id,submission_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+           VALUES (?, ?, ?, ?, 'active',1000,1000)""",
+        (round_id, submission_id, organization_id, event_id),
+    )
+    connection.execute(
+        """INSERT INTO evaluation_round_evaluators
+           (round_id,evaluator_user_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+           VALUES (?, ?, ?, ?, 'active',1000,1000)""",
+        (round_id, reviewer_user_id, organization_id, event_id),
+    )
+    connection.execute(
+        """INSERT INTO evaluation_assignments
+           (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,
+            status,created_at_ms,updated_at_ms)
+           VALUES (?, ?, ?, ?, ?, ?, 'assigned',1000,1000)""",
+        (
+            assignment_id,
+            organization_id,
+            event_id,
+            round_id,
+            submission_id,
+            reviewer_user_id,
+        ),
+    )
+    connection.commit()
+    return round_id, submission_id
 
 
 async def test_direct_rejection_needs_no_round(
@@ -566,6 +636,311 @@ async def test_unreviewed_proposal_can_be_accepted_with_an_audited_reason(
     ).fetchone()[0]
     assert '"direct_decision":true' in audit
     assert '"direct_rejection":false' in audit
+
+
+async def test_concurrent_matching_acceptance_requests_reconcile_to_one_decision(
+    production_environment,  # noqa: F811 - pytest fixture
+    monkeypatch,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO call_for_speaker_forms
+               (id,organization_id,event_id,version,slug,welcome_text,schema_json,status,
+                published_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('concurrent-accept-form',?, ?,1,'concurrent-accept','Welcome',
+                       '{"fields":[]}','published',1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO submissions
+               (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+                proposal_abstract,speaker_name,speaker_email,submitter_user_id,status,
+                submitted_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('concurrent-accept-submission',?,?,'concurrent-accept-form',
+                       'concurrent-accept-public','Concurrent acceptance','Abstract',
+                       'Priya Raman','priya@example.test',?,'submitted',1000,1000,1000)""",
+            (organization_id, event_id, user_id),
+        )
+
+        original_execute = evaluation_router_module._execute
+        both_ready = asyncio.Event()
+        ready = 0
+
+        async def execute_together(request, batch):
+            nonlocal ready
+            ready += 1
+            if ready == 2:
+                both_ready.set()
+            await asyncio.wait_for(both_ready.wait(), timeout=2)
+            await original_execute(request, batch)
+
+        monkeypatch.setattr(evaluation_router_module, "_execute", execute_together)
+        path = (
+            f"/api/v1/admin/events/{event_id}/submissions/"
+            "concurrent-accept-submission/accept"
+        )
+        payload = {
+            "decision": "accepted",
+            "internal_reason": "Matching concurrent organizer intent",
+            "send_email": True,
+            "speaker_message": "Your proposal was accepted.",
+            "override_incomplete_reviews": False,
+        }
+        first, second = await asyncio.gather(
+            client.post(
+                path,
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": "concurrent-acceptance-a",
+                },
+                json=payload,
+            ),
+            client.post(
+                path,
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": "concurrent-acceptance-b",
+                },
+                json=payload,
+            ),
+        )
+
+    assert [first.status_code, second.status_code] == [200, 200]
+    assert first.json()["id"] == second.json()["id"]
+    assert connection.execute(
+        "SELECT COUNT(*) FROM submission_decisions WHERE submission_id=?",
+        ("concurrent-accept-submission",),
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM accepted_sessions WHERE submission_id=?",
+        ("concurrent-accept-submission",),
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        """SELECT COUNT(*) FROM communication_messages
+           WHERE deterministic_key LIKE 'submission-decision:%'"""
+    ).fetchone()[0] == 1
+
+
+async def test_round_decision_replays_same_key_without_duplicate_side_effects(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        round_id, submission_id = await _round_decision_fixture(
+            client,
+            connection,
+            environment,
+            csrf,
+            organization_id,
+            event_id,
+            user_id,
+            "round-replay",
+        )
+        path = f"/api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
+        headers = {
+            "origin": "https://test",
+            "x-csrf-token": csrf,
+            "idempotency-key": "round-decision-replay",
+        }
+        payload = {
+            "decision": "accepted",
+            "internal_reason": "Organizer override",
+            "send_email": True,
+            "speaker_message": "Your proposal was accepted.",
+            "override_incomplete_reviews": True,
+        }
+        first = await client.post(path, headers=headers, json=payload)
+        second = await client.post(path, headers=headers, json=payload)
+        changed = await client.post(
+            path,
+            headers=headers,
+            json={**payload, "speaker_message": "A changed retry message."},
+        )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.content == second.content
+    assert first.json()["override_incomplete_reviews"] is True
+    assert changed.status_code == 409, changed.text
+    assert changed.headers["x-conflict-type"] == "final-decision"
+    assert "changed after an earlier attempt" in changed.json()["error"]["message"]
+    plan = [
+        str(row[3])
+        for row in connection.execute(
+            f"EXPLAIN QUERY PLAN {evaluation_router_module.DECISION_VIEW_SQL}",
+            (first.json()["id"],),
+        ).fetchall()
+    ]
+    assert any("SEARCH a USING INDEX idx_audit_target" in detail for detail in plan)
+    assert any("SEARCH cm USING COVERING INDEX" in detail for detail in plan)
+    assert not any(
+        "SCAN a" in detail or "SCAN cm" in detail or "TEMP B-TREE" in detail
+        for detail in plan
+    )
+    assert connection.execute(
+        "SELECT COUNT(*) FROM submission_decisions WHERE submission_id=?", (submission_id,)
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM communication_messages WHERE deterministic_key LIKE ?",
+        ("submission-decision:%",),
+    ).fetchone()[0] == 1
+
+
+async def test_concurrent_matching_round_decisions_reconcile_to_one_result(
+    production_environment,  # noqa: F811 - pytest fixture
+    monkeypatch,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        round_id, submission_id = await _round_decision_fixture(
+            client,
+            connection,
+            environment,
+            csrf,
+            organization_id,
+            event_id,
+            user_id,
+            "round-race",
+        )
+        original_execute = evaluation_router_module._execute
+        both_ready = asyncio.Event()
+        ready = 0
+
+        async def execute_together(request, batch):
+            nonlocal ready
+            ready += 1
+            if ready == 2:
+                both_ready.set()
+            await asyncio.wait_for(both_ready.wait(), timeout=2)
+            await original_execute(request, batch)
+
+        monkeypatch.setattr(evaluation_router_module, "_execute", execute_together)
+        path = f"/api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
+        payload = {
+            "decision": "accepted",
+            "internal_reason": "Organizer override",
+            "send_email": True,
+            "speaker_message": "Your proposal was accepted.",
+            "override_incomplete_reviews": True,
+        }
+        first, second = await asyncio.gather(
+            client.post(
+                path,
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": "round-race-request-a",
+                },
+                json=payload,
+            ),
+            client.post(
+                path,
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": "round-race-request-b",
+                },
+                json=payload,
+            ),
+        )
+
+    assert [first.status_code, second.status_code] == [200, 200]
+    assert first.json()["id"] == second.json()["id"]
+    assert connection.execute(
+        "SELECT COUNT(*) FROM submission_decisions WHERE submission_id=?", (submission_id,)
+    ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM communication_messages WHERE deterministic_key LIKE ?",
+        ("submission-decision:%",),
+    ).fetchone()[0] == 1
+
+
+async def test_concurrent_divergent_round_decisions_report_the_recorded_outcome(
+    production_environment,  # noqa: F811 - pytest fixture
+    monkeypatch,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        round_id, submission_id = await _round_decision_fixture(
+            client,
+            connection,
+            environment,
+            csrf,
+            organization_id,
+            event_id,
+            user_id,
+            "round-divergent",
+        )
+        original_execute = evaluation_router_module._execute
+        both_ready = asyncio.Event()
+        ready = 0
+
+        async def execute_together(request, batch):
+            nonlocal ready
+            ready += 1
+            if ready == 2:
+                both_ready.set()
+            await asyncio.wait_for(both_ready.wait(), timeout=2)
+            await original_execute(request, batch)
+
+        monkeypatch.setattr(evaluation_router_module, "_execute", execute_together)
+        path = f"/api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision"
+        common = {
+            "internal_reason": "Organizer override",
+            "send_email": False,
+            "speaker_message": "",
+            "override_incomplete_reviews": True,
+        }
+        first, second = await asyncio.gather(
+            client.post(
+                path,
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": "round-divergent-accept",
+                },
+                json={**common, "decision": "accepted"},
+            ),
+            client.post(
+                path,
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": "round-divergent-reject",
+                },
+                json={**common, "decision": "rejected"},
+            ),
+        )
+
+    responses = [first, second]
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    winner = next(response for response in responses if response.status_code == 200)
+    loser = next(response for response in responses if response.status_code == 409)
+    assert loser.headers["x-conflict-type"] == "final-decision"
+    assert "Another final decision was recorded" in loser.json()["error"]["message"]
+    recorded = connection.execute(
+        "SELECT decision FROM submission_decisions WHERE submission_id=?", (submission_id,)
+    ).fetchall()
+    assert [tuple(row) for row in recorded] == [(winner.json()["decision"],)]
 
 
 async def test_round_rejection_revokes_outstanding_assignment(

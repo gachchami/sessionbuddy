@@ -145,11 +145,17 @@ function telemetry(pageTemplate: string) {
   };
 }
 
-function mutationHeaders(csrf: string) {
+function newIdempotencyKey() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function mutationHeaders(csrf: string, idempotencyKey?: string) {
   return {
     "content-type": "application/json",
     "x-csrf-token": csrf,
-    "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+    "idempotency-key": idempotencyKey ?? newIdempotencyKey(),
   };
 }
 
@@ -854,7 +860,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [pendingDecision, setPendingDecision] = useState<{
     submission: SubmissionResult;
     decision: "accepted" | "rejected";
+    idempotencyKey: string;
   } | null>(null);
+  const [deciding, setDeciding] = useState(false);
   const [sendEmail, setSendEmail] = useState(true);
   const [speakerMessage, setSpeakerMessage] = useState("");
   const [resultSort, setResultSort] = useState<ResultSort>("submitted");
@@ -878,7 +886,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     });
   }, [results, resultSort]);
 
-  async function load(cursor: string | null = null) {
+  async function load(cursor: string | null = null, clearStatus = true) {
     const body = await api<RoundResults>(
       `/api/v1/admin/evaluation-rounds/${roundId}/results${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
     );
@@ -887,7 +895,8 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
         ? { ...body, submissions: [...current.submissions, ...body.submissions] }
         : body,
     );
-    setStatus("");
+    if (clearStatus) setStatus("");
+    return body;
   }
   async function signIn() {
     try {
@@ -926,52 +935,83 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
         : "",
     );
     if (!reasonInput.reportValidity()) return;
-    if (correction) {
-      const body = await api<{
-        communication_queued: boolean;
-        accepted_session_lifecycle_status: "active" | "withdrawn" | null;
-      }>(
-        `/api/v1/admin/events/${encodeURIComponent(results!.event_id)}/submissions/${encodeURIComponent(submission.submission_id)}/decision-corrections`,
+    if (deciding || !pendingDecision) return;
+    setDeciding(true);
+    try {
+      if (correction) {
+        const body = await api<{
+          communication_queued: boolean;
+          accepted_session_lifecycle_status: "active" | "withdrawn" | null;
+        }>(
+          `/api/v1/admin/events/${encodeURIComponent(results!.event_id)}/submissions/${encodeURIComponent(submission.submission_id)}/decision-corrections`,
+          {
+            method: "POST",
+            headers: mutationHeaders(csrf, pendingDecision.idempotencyKey),
+            body: JSON.stringify({
+              corrected_decision: decision,
+              reason,
+              send_email: sendEmail,
+              speaker_message: speakerMessage,
+            }),
+          },
+        );
+        setPendingDecision(null);
+        setSpeakerMessage("");
+        const success = `Decision corrected to ${decision}. The original decision remains in the audit history.${body.accepted_session_lifecycle_status === "withdrawn" && decision === "accepted" ? " The session remains withdrawn until speaker participation is restored." : ""}${body.communication_queued ? " Speaker email queued." : " No email sent."}`;
+        setStatus(success);
+        try {
+          await load(null, false);
+        } catch {
+          setStatus(`${success} Refresh the page to update the proposal card.`);
+        }
+        return;
+      }
+      const body = await api<{ communication_queued: boolean }>(
+        `/api/v1/admin/evaluation-rounds/${roundId}/submissions/${submission.submission_id}/decision`,
         {
           method: "POST",
-          headers: mutationHeaders(csrf),
+          headers: mutationHeaders(csrf, pendingDecision.idempotencyKey),
           body: JSON.stringify({
-            corrected_decision: decision,
-            reason,
+            decision,
+            internal_reason: reason,
             send_email: sendEmail,
             speaker_message: speakerMessage,
+            override_incomplete_reviews:
+              submission.completed_count < submission.assigned_count,
           }),
         },
       );
       setPendingDecision(null);
       setSpeakerMessage("");
-      await load();
-      setStatus(
-        `Decision corrected to ${decision}. The original decision remains in the audit history.${body.accepted_session_lifecycle_status === "withdrawn" && decision === "accepted" ? " The session remains withdrawn until speaker participation is restored." : ""}${body.communication_queued ? " Speaker email queued." : " No email sent."}`,
-      );
-      return;
+      const success = `Decision recorded as ${decision}.${body.communication_queued ? " Speaker email queued." : " No email sent."}`;
+      setStatus(success);
+      try {
+        await load(null, false);
+      } catch {
+        setStatus(`${success} Refresh the page to update the proposal card.`);
+      }
+    } catch (error) {
+      if ((error as { code?: string }).code === "final-decision_conflict") {
+        try {
+          const refreshed = await load(null, false);
+          const recorded = refreshed.submissions.find(
+            (item) => item.submission_id === submission.submission_id,
+          )?.decision;
+          if (recorded === decision) {
+            setPendingDecision(null);
+            setSpeakerMessage("");
+            setStatus(`Decision was already recorded as ${decision}.`);
+            return;
+          }
+        } catch {
+          // Preserve the decision conflict: a failed reconciliation read must not
+          // replace the actionable mutation error with an unrelated fetch error.
+        }
+      }
+      throw error;
+    } finally {
+      setDeciding(false);
     }
-    const body = await api<{ communication_queued: boolean }>(
-      `/api/v1/admin/evaluation-rounds/${roundId}/submissions/${submission.submission_id}/decision`,
-      {
-        method: "POST",
-        headers: mutationHeaders(csrf),
-        body: JSON.stringify({
-          decision,
-          internal_reason: reason,
-          send_email: sendEmail,
-          speaker_message: speakerMessage,
-          override_incomplete_reviews:
-            submission.completed_count < submission.assigned_count,
-        }),
-      },
-    );
-    setPendingDecision(null);
-    setSpeakerMessage("");
-    await load();
-    setStatus(
-      `Decision recorded as ${decision}.${body.communication_queued ? " Speaker email queued." : " No email sent."}`,
-    );
   }
   async function reassign(conflict: ConflictProgress) {
     const evaluator = document.getElementById(
@@ -1556,8 +1596,13 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         : "Reviews are incomplete. An organizer may override with a required internal reason; the override is audited."}
                   </p>
                   {pending ? (
-                    <div className="confirmation decision-confirmation" role="alert">
-                      <strong>
+                    <div
+                      className="confirmation decision-confirmation"
+                      role="group"
+                      aria-labelledby={`decision-confirmation-${submission.submission_id}`}
+                      aria-busy={deciding}
+                    >
+                      <strong id={`decision-confirmation-${submission.submission_id}`}>
                         {decided ? "Confirm audited " : "Confirm permanent "}
                         {pendingDecision.decision}
                         {complete ? "" : " with organizer override"}
@@ -1610,21 +1655,26 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       <div className="actions">
                         <button
                           className="secondary"
+                          disabled={deciding}
                           onClick={() => setPendingDecision(null)}
                         >
                           Cancel
                         </button>
                         <button
                           className={pendingDecision.decision === "rejected" ? "danger" : ""}
+                          disabled={deciding}
                           onClick={() =>
                             decide(submission, pendingDecision.decision).catch(
                               (error) => setStatus(errorMessage(error)),
                             )
                           }
                         >
-                          Confirm {pendingDecision.decision}
+                          {deciding ? "Recording…" : `Confirm ${pendingDecision.decision}`}
                         </button>
                       </div>
+                      <span className="visually-hidden" role="status" aria-live="polite">
+                        {deciding ? `Recording ${pendingDecision.decision} decision.` : ""}
+                      </span>
                     </div>
                   ) : (
                     <div className="actions proposal-result__actions">
@@ -1638,6 +1688,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                           setPendingDecision({
                             submission,
                             decision: "rejected",
+                            idempotencyKey: newIdempotencyKey(),
                           });
                           setSendEmail(true);
                         }}
@@ -1653,6 +1704,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                           setPendingDecision({
                             submission,
                             decision: "accepted",
+                            idempotencyKey: newIdempotencyKey(),
                           });
                           setSendEmail(true);
                         }}

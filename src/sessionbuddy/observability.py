@@ -19,6 +19,7 @@ SAFE_DEGRADATIONS = (
     "asset_scan_queue_publish_failed",
     "communication_queue_publish_failed",
     "decision_correction_conflict",
+    "submission_decision_concurrent_reconciled",
     "speaker_import_row_failed",
     "speaker_profile_audit_failed",
     "speaker_restore_audit_failed",
