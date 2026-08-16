@@ -1732,6 +1732,19 @@
         "p95_ms": 400
       }
     },
+    "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/decision-message-preview": {
+      "benchmark": "evaluation-decision-message-preview",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "evaluation",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
     "POST /api/v1/admin/events/{event_id}/submissions/{submission_id}/reject": {
       "benchmark": "evaluation-direct-rejection",
       "dashboards": [

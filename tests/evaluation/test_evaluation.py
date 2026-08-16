@@ -15,6 +15,7 @@ from sessionbuddy.evaluation.models import (
     EvaluationRoundCreate,
     EvaluationSave,
     RoundSubmissionAdd,
+    SubmissionDecisionCorrectionCreate,
     SubmissionDecisionCreate,
 )
 from sessionbuddy.evaluation.router import (
@@ -533,6 +534,8 @@ async def test_review_workspace_is_local_only_and_bundled() -> None:
         page = await client.get("/reviews")
         javascript = await client.get("/app/assets/reviews.js")
         css = await client.get("/app/assets/reviews.css")
+        assert javascript.headers["cache-control"] == "no-store"
+        assert css.headers["cache-control"] == "no-store"
         admin = await client.get(
             "/admin/evaluation-rounds/11111111-1111-4111-8111-111111111111"
         )
@@ -645,3 +648,20 @@ def test_draft_evaluations_permit_partial_input() -> None:
         )
     complete = EvaluationSave(state="final", rating=5, recommendation="accept")
     assert complete.rating == 5
+
+
+@pytest.mark.parametrize(
+    "value", ["line one\nline two", "line one\rline two", "a\u2028b", "a\u2029b"]
+)
+def test_decision_email_subjects_are_single_line(value: str) -> None:
+    with pytest.raises(ValidationError, match="single line"):
+        SubmissionDecisionCreate(decision="accepted", speaker_subject=value)
+    with pytest.raises(ValidationError, match="single line"):
+        SubmissionDecisionCorrectionCreate(
+            corrected_decision="rejected", reason="Correction", speaker_subject=value
+        )
+
+
+def test_whitespace_only_decision_subject_uses_the_default_sentinel() -> None:
+    decision = SubmissionDecisionCreate(decision="accepted", speaker_subject="   ")
+    assert decision.speaker_subject == ""

@@ -1,6 +1,12 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _decision_subject(value: str) -> str:
+    if any(character in value for character in ("\r", "\n", "\u2028", "\u2029")):
+        raise ValueError("speaker subjects must be a single line")
+    return value
 
 
 class EvaluationCriterion(BaseModel):
@@ -418,8 +424,11 @@ class SubmissionDecisionCreate(BaseModel):
     decision: Literal["accepted", "rejected"]
     internal_reason: str = Field(default="", max_length=2000)
     send_email: bool = False
+    speaker_subject: str = Field(default="", max_length=200)
     speaker_message: str = Field(default="", max_length=4000)
     override_incomplete_reviews: bool = False
+
+    _valid_speaker_subject = field_validator("speaker_subject")(_decision_subject)
 
     @model_validator(mode="after")
     def valid_override(self):
@@ -442,7 +451,30 @@ class SubmissionDecisionCorrectionCreate(BaseModel):
     corrected_decision: Literal["accepted", "rejected"]
     reason: str = Field(min_length=1, max_length=2000)
     send_email: bool = False
+    speaker_subject: str = Field(default="", max_length=200)
     speaker_message: str = Field(default="", max_length=4000)
+
+    _valid_speaker_subject = field_validator("speaker_subject")(_decision_subject)
+
+
+class SubmissionDecisionMessagePreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    decision: Literal["accepted", "rejected"]
+    correction: bool = False
+    speaker_subject: str = Field(default="", max_length=200)
+    speaker_message: str = Field(default="", max_length=4000)
+
+    _valid_speaker_subject = field_validator("speaker_subject")(_decision_subject)
+
+
+class SubmissionDecisionMessagePreview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resolved_subject: str
+    resolved_body: str
+    proposal_title: str
+    recipient_available: bool
 
 
 class SubmissionDecisionCorrectionView(SubmissionDecisionCorrectionCreate):

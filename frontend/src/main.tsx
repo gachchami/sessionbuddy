@@ -159,6 +159,10 @@ function mutationHeaders(csrf: string, idempotencyKey?: string) {
   };
 }
 
+function previewHeaders(csrf: string) {
+  return { "content-type": "application/json", "x-csrf-token": csrf };
+}
+
 function weightedScore(
   criteria: Assignment["criteria"],
   responses: Record<string, number | string>,
@@ -851,6 +855,13 @@ function ReviewWorkspace() {
 
 type ResultSort = "submitted" | "score_desc" | "score_asc";
 
+type DecisionMessagePreview = {
+  resolved_subject: string;
+  resolved_body: string;
+  proposal_title: string;
+  recipient_available: boolean;
+};
+
 function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [csrf, setCsrf] = useState("");
   const [results, setResults] = useState<RoundResults | null>(null);
@@ -864,9 +875,51 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   } | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [sendEmail, setSendEmail] = useState(true);
+  const [speakerSubject, setSpeakerSubject] = useState("");
   const [speakerMessage, setSpeakerMessage] = useState("");
+  const [messagePreview, setMessagePreview] = useState<DecisionMessagePreview | null>(null);
+  const [defaultMessagePreview, setDefaultMessagePreview] = useState<DecisionMessagePreview | null>(null);
+  const [messagePreviewError, setMessagePreviewError] = useState("");
   const [resultSort, setResultSort] = useState<ResultSort>("submitted");
   const [selectedEvaluatorId, setSelectedEvaluatorId] = useState("");
+
+  useEffect(() => {
+    if (!pendingDecision || !results) {
+      setMessagePreview(null);
+      setDefaultMessagePreview(null);
+      setMessagePreviewError("");
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      api<DecisionMessagePreview>(
+        `/api/v1/admin/events/${encodeURIComponent(results.event_id)}/submissions/${encodeURIComponent(pendingDecision.submission.submission_id)}/decision-message-preview`,
+        {
+          method: "POST",
+          headers: previewHeaders(csrf),
+          body: JSON.stringify({
+            decision: pendingDecision.decision,
+            correction: pendingDecision.submission.decision !== null,
+            speaker_subject: speakerSubject.trim(),
+            speaker_message: speakerMessage.trim(),
+          }),
+          signal: controller.signal,
+        },
+      ).then((preview) => {
+        setMessagePreview(preview);
+        if (!speakerSubject.trim() && !speakerMessage.trim()) setDefaultMessagePreview(preview);
+        setMessagePreviewError("");
+      }).catch((error) => {
+        if ((error as { name?: string }).name !== "AbortError") {
+          setMessagePreviewError("The preview could not be refreshed. The standard decision email will be used if you confirm now.");
+        }
+      });
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [pendingDecision, results?.event_id, csrf, speakerSubject, speakerMessage]);
 
   // Chairs rank proposals by score; the API returns them newest-submitted first, so the
   // ordering the committee actually works from is applied here over the loaded page(s).
@@ -917,6 +970,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     const unchanged = submission.decision === decision;
     if (unchanged) {
       setPendingDecision(null);
+      setSpeakerSubject("");
       setSpeakerMessage("");
       setStatus(`The final decision remains ${decision}; no correction was needed.`);
       return;
@@ -951,11 +1005,13 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               corrected_decision: decision,
               reason,
               send_email: sendEmail,
-              speaker_message: speakerMessage,
+              speaker_subject: sendEmail ? speakerSubject : "",
+              speaker_message: sendEmail ? speakerMessage : "",
             }),
           },
         );
         setPendingDecision(null);
+        setSpeakerSubject("");
         setSpeakerMessage("");
         const success = `Decision corrected to ${decision}. The original decision remains in the audit history.${body.accepted_session_lifecycle_status === "withdrawn" && decision === "accepted" ? " The session remains withdrawn until speaker participation is restored." : ""}${body.communication_queued ? " Speaker email queued." : " No email sent."}`;
         setStatus(success);
@@ -975,13 +1031,15 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             decision,
             internal_reason: reason,
             send_email: sendEmail,
-            speaker_message: speakerMessage,
+            speaker_subject: sendEmail ? speakerSubject : "",
+            speaker_message: sendEmail ? speakerMessage : "",
             override_incomplete_reviews:
               submission.completed_count < submission.assigned_count,
           }),
         },
       );
       setPendingDecision(null);
+      setSpeakerSubject("");
       setSpeakerMessage("");
       const success = `Decision recorded as ${decision}.${body.communication_queued ? " Speaker email queued." : " No email sent."}`;
       setStatus(success);
@@ -999,6 +1057,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
           )?.decision;
           if (recorded === decision) {
             setPendingDecision(null);
+            setSpeakerSubject("");
             setSpeakerMessage("");
             setStatus(`Decision was already recorded as ${decision}.`);
             return;
@@ -1639,30 +1698,64 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         {decided ? "Email the speaker about this correction" : "Email the speaker"}
                       </label>
                       {sendEmail && (
-                        <label>
-                          Message <span className="optional">Optional</span>
-                          <textarea
-                            rows={3}
-                            maxLength={4000}
-                            value={speakerMessage}
-                            onChange={(event) =>
-                              setSpeakerMessage(event.target.value)
-                            }
-                            placeholder="Leave blank to use the standard decision message."
-                          />
-                        </label>
+                        <div className="decision-composition">
+                          {!messagePreview ? (
+                            <p className={messagePreviewError ? "status warning" : "help"}>
+                              {messagePreviewError || "Loading the decision email…"}
+                            </p>
+                          ) : !messagePreview.recipient_available ? (
+                            <p className="status error" role="alert">
+                              This speaker has no email address. Add one before sending a decision email.
+                            </p>
+                          ) : (
+                            <>
+                              <p className="help"><strong>Default subject:</strong> {defaultMessagePreview?.resolved_subject || messagePreview.resolved_subject}</p>
+                              <label>
+                                Custom subject <span className="optional">Optional</span>
+                                <input
+                                  type="text"
+                                  maxLength={200}
+                                  value={speakerSubject}
+                                  onChange={(event) => setSpeakerSubject(event.target.value)}
+                                  placeholder="Leave blank to use the default subject."
+                                />
+                              </label>
+                              <p className="help"><strong>Default message:</strong> {defaultMessagePreview?.resolved_body || messagePreview.resolved_body}</p>
+                              <label>
+                                Custom message <span className="optional">Optional</span>
+                                <textarea
+                                  rows={3}
+                                  maxLength={4000}
+                                  value={speakerMessage}
+                                  onChange={(event) => setSpeakerMessage(event.target.value)}
+                                  placeholder="Leave blank to use the default message."
+                                />
+                              </label>
+                              <div className="review-email-preview" aria-label="Decision email preview">
+                                <strong>Subject: {messagePreview.resolved_subject}</strong>
+                                <p>{messagePreview.resolved_body}</p>
+                                <p><strong>{messagePreview.proposal_title}</strong></p>
+                              </div>
+                              {messagePreviewError && <p className="status warning">{messagePreviewError}</p>}
+                            </>
+                          )}
+                        </div>
                       )}
                       <div className="actions">
                         <button
                           className="secondary"
                           disabled={deciding}
-                          onClick={() => setPendingDecision(null)}
+                          onClick={() => {
+                            setPendingDecision(null);
+                            setSpeakerSubject("");
+                            setSpeakerMessage("");
+                          }}
                         >
                           Cancel
                         </button>
                         <button
                           className={pendingDecision.decision === "rejected" ? "danger" : ""}
-                          disabled={deciding}
+                          disabled={deciding || (sendEmail && messagePreview?.recipient_available === false)}
                           onClick={() =>
                             decide(submission, pendingDecision.decision).catch(
                               (error) => setStatus(errorMessage(error)),
@@ -1691,6 +1784,11 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                             idempotencyKey: newIdempotencyKey(),
                           });
                           setSendEmail(true);
+                          setSpeakerSubject("");
+                          setSpeakerMessage("");
+                          setMessagePreview(null);
+                          setDefaultMessagePreview(null);
+                          setMessagePreviewError("");
                         }}
                       >
                         {decided && submission.decision === "rejected" ? "Keep rejected" : decided ? "Correct to rejected" : "Reject"}
@@ -1707,6 +1805,11 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                             idempotencyKey: newIdempotencyKey(),
                           });
                           setSendEmail(true);
+                          setSpeakerSubject("");
+                          setSpeakerMessage("");
+                          setMessagePreview(null);
+                          setDefaultMessagePreview(null);
+                          setMessagePreviewError("");
                         }}
                       >
                         {decided && submission.decision === "accepted" ? "Keep accepted" : decided ? "Correct to accepted" : "Accept"}

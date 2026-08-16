@@ -300,6 +300,14 @@ button:disabled, .button[aria-disabled="true"] { cursor: not-allowed; opacity: .
 .status-compact:not(.error) { margin: .2rem 0 1.4rem; }
 .status.error, .error { color: var(--status-danger); }
 .status.error { padding: .75rem .85rem; border: 1px solid var(--status-danger-border); background: var(--status-danger-surface); }
+.status.warning { padding: .75rem .85rem; border: 1px solid #f4c27a; background: #fff8eb; color: var(--status-warning); }
+.decision-composition { display: grid; gap: .7rem; margin-top: .85rem; }
+.decision-composition__fields { display: grid; gap: .65rem; padding: .8rem; border: 1px solid #d9e1f2; border-radius: .6rem; background: #fafbff; }
+.decision-composition__fields > .help { margin: 0; }
+.decision-email-preview { padding: .8rem; border: 1px solid #c9d7f2; border-left: 4px solid var(--action-primary); border-radius: .55rem; background: #f7f9ff; }
+.decision-email-preview > strong { display: block; font-size: .875rem; }
+.decision-email-preview p { margin: .4rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reject-without-review__panel .decision-actions { position: sticky; bottom: 0; z-index: 1; margin: 0 -.25rem -.25rem; padding: .65rem .25rem .25rem; background: linear-gradient(to bottom, rgba(255,255,255,0), #fff 28%); }
 .status.success { padding: .75rem .85rem; border: 1px solid var(--status-success-border); background: var(--status-success-surface); color: var(--status-success-text); }
 .badge, .state-badge { display: inline-flex; align-items: center; width: fit-content; padding: .28rem .6rem; border-radius: 99rem; background: #eeeaff; color: #5c3bc7; font-size: .75rem; font-weight: 800; letter-spacing: .02em; }
 .badge.success, .state-badge.success { background: #ddf4e8; color: #17603f; }

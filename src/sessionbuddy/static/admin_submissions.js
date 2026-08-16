@@ -917,6 +917,134 @@
   function answerLabel(item, key) {
     return item.answer_labels?.[key] || humanize(key);
   }
+  function decisionEmailComposer(item, decision, correction, actionLabel) {
+    const wrap = document.createElement("div");
+    wrap.className = "decision-composition";
+    const notifyLabel = document.createElement("label");
+    notifyLabel.className = "check-label";
+    const notify = document.createElement("input");
+    notify.type = "checkbox";
+    notify.checked = true;
+    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"} about ${actionLabel}`));
+    const fields = document.createElement("div");
+    fields.className = "decision-composition__fields";
+    const loading = document.createElement("p");
+    loading.className = "help";
+    loading.textContent = "Loading the decision email…";
+    const defaultSubject = document.createElement("p");
+    defaultSubject.className = "help";
+    const subjectLabel = document.createElement("label");
+    subjectLabel.append(document.createTextNode("Custom subject "));
+    const subjectOptional = document.createElement("span");
+    subjectOptional.className = "optional";
+    subjectOptional.textContent = "Optional";
+    subjectLabel.append(subjectOptional);
+    const subject = document.createElement("input");
+    subject.type = "text";
+    subject.maxLength = 200;
+    subject.placeholder = "Leave blank to use the default subject.";
+    subjectLabel.append(subject);
+    const defaultMessage = document.createElement("p");
+    defaultMessage.className = "help";
+    const messageLabel = document.createElement("label");
+    messageLabel.append(document.createTextNode("Custom message "));
+    const messageOptional = document.createElement("span");
+    messageOptional.className = "optional";
+    messageOptional.textContent = "Optional";
+    messageLabel.append(messageOptional);
+    const message = document.createElement("textarea");
+    message.rows = 3;
+    message.maxLength = 4000;
+    message.placeholder = "Leave blank to use the default message.";
+    messageLabel.append(message);
+    const preview = document.createElement("div");
+    preview.className = "decision-email-preview";
+    preview.setAttribute("aria-label", "Decision email preview");
+    const previewStatus = document.createElement("p");
+    previewStatus.className = "help";
+    let resolved = null;
+    let defaults = null;
+    let previewTimer = 0;
+    function renderPreview() {
+      if (!resolved) return;
+      preview.replaceChildren();
+      const heading = document.createElement("strong");
+      heading.textContent = `Subject: ${resolved.resolved_subject}`;
+      const body = document.createElement("p");
+      body.textContent = resolved.resolved_body;
+      const title = document.createElement("p");
+      const titleStrong = document.createElement("strong");
+      titleStrong.textContent = resolved.proposal_title;
+      title.append(titleStrong);
+      preview.append(heading, body, title);
+    }
+    async function refreshPreview() {
+      try {
+        const next = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions/${encodeURIComponent(item.id)}/decision-message-preview`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
+          body: JSON.stringify({
+            decision,
+            correction,
+            speaker_subject: subject.value.trim(),
+            speaker_message: message.value.trim(),
+          }),
+        });
+        resolved = next;
+        defaults ||= next;
+        previewStatus.textContent = "";
+        previewStatus.classList.remove("warning");
+        renderPreview();
+        return next;
+      } catch (error) {
+        previewStatus.textContent = "The preview could not be refreshed. The standard decision email will be used if you confirm now.";
+        previewStatus.classList.add("warning");
+        throw error;
+      }
+    }
+    function schedulePreview() {
+      clearTimeout(previewTimer);
+      previewTimer = window.setTimeout(() => { void refreshPreview().catch(() => {}); }, 250);
+    }
+    subject.addEventListener("input", schedulePreview);
+    message.addEventListener("input", schedulePreview);
+    fields.append(loading);
+    wrap.append(notifyLabel, fields);
+    notify.addEventListener("change", () => { fields.hidden = !notify.checked; });
+    async function load() {
+      try {
+        await refreshPreview();
+      } catch (error) {
+        fields.replaceChildren(previewStatus);
+        throw error;
+      }
+      fields.replaceChildren();
+      if (!resolved.recipient_available) {
+        const unavailable = document.createElement("p");
+        unavailable.className = "status error";
+        unavailable.setAttribute("role", "alert");
+        unavailable.textContent = "This speaker has no email address. Add one before sending a decision email.";
+        fields.append(unavailable);
+        return;
+      }
+      const defaultSubjectLabel = document.createElement("strong");
+      defaultSubjectLabel.textContent = "Default subject: ";
+      defaultSubject.replaceChildren(defaultSubjectLabel, document.createTextNode(defaults.resolved_subject));
+      const defaultMessageLabel = document.createElement("strong");
+      defaultMessageLabel.textContent = "Default message: ";
+      defaultMessage.replaceChildren(defaultMessageLabel, document.createTextNode(defaults.resolved_body));
+      fields.append(defaultSubject, subjectLabel, defaultMessage, messageLabel, preview, previewStatus);
+      renderPreview();
+    }
+    return {
+      element: wrap,
+      notify,
+      subject,
+      message,
+      load,
+      canSend: () => !notify.checked || resolved?.recipient_available !== false,
+    };
+  }
   // One reject affordance, shared by the inline row and the proposal dialog.
   // The reason is captured in a field rather than window.prompt: the dialog is
   // modal, and a prompt raised over an open <dialog> is both poor UX and
@@ -933,34 +1061,16 @@
     panel.className = "reject-without-review__panel";
     panel.hidden = true;
     const label = document.createElement("label");
-    label.append(document.createTextNode("Internal reason"));
+    label.textContent = "Internal reason";
     const reason = document.createElement("textarea");
+    reason.id = `direct-rejection-reason-${item.id}`;
+    label.htmlFor = reason.id;
     reason.rows = 3;
     reason.maxLength = 2000;
-    label.append(reason);
     const help = document.createElement("p");
     help.className = "help";
     help.textContent = "Recorded for organizers only, never shown to the speaker. This decision is permanent.";
-    const notifyLabel = document.createElement("label");
-    notifyLabel.className = "check-label";
-    const notify = document.createElement("input");
-    notify.type = "checkbox";
-    notify.checked = true;
-    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"} about rejection`));
-    const speakerMessageLabel = document.createElement("label");
-    speakerMessageLabel.append(document.createTextNode("Speaker message "));
-    const optional = document.createElement("span");
-    optional.className = "optional";
-    optional.textContent = "Optional";
-    speakerMessageLabel.append(optional);
-    const speakerMessage = document.createElement("textarea");
-    speakerMessage.rows = 3;
-    speakerMessage.maxLength = 4000;
-    speakerMessage.placeholder = "Leave blank to use the standard rejection message.";
-    speakerMessageLabel.append(speakerMessage);
-    notify.addEventListener("change", () => {
-      speakerMessageLabel.hidden = !notify.checked;
-    });
+    const composer = decisionEmailComposer(item, "rejected", false, "rejection");
     const message = document.createElement("p");
     message.className = "status";
     message.setAttribute("role", "alert");
@@ -974,27 +1084,27 @@
     cancelButton.className = "secondary";
     cancelButton.textContent = "Cancel";
     const buttons = document.createElement("div");
-    buttons.className = "actions";
+    buttons.className = "actions decision-actions";
     // Keep the row clear of the dialog's bottom padding when it is scrolled into view.
     buttons.style.scrollMarginBottom = "1.5rem";
     buttons.append(confirmButton, cancelButton);
-    panel.append(label, help, notifyLabel, speakerMessageLabel, message, buttons);
-    // This panel sits at the bottom of a dialog that scrolls, and the alert sits
-    // directly above the confirm/cancel row. Focusing the alert on its own parks its
-    // bottom edge flush with the dialog's bottom edge, which leaves the buttons just
-    // below the fold: still enabled, but invisible and not hit-testable, so the
-    // organizer reads the guardrail as a dead end and escapes with Esc or a reload.
-    // Scroll the action row into view instead -- it carries the alert with it.
+    panel.append(label, message, reason, help, composer.element, buttons);
+    // The sticky action row remains visible while focus moves to the field that
+    // needs correction, so validation never strands the organizer below the fold.
     function showPanelError(text, focusTarget) {
       message.textContent = text;
       message.classList.add("error");
       focusTarget.focus({ preventScroll: true });
-      buttons.scrollIntoView({ block: "nearest" });
+      focusTarget.scrollIntoView({ block: "nearest" });
     }
     trigger.addEventListener("click", () => {
       trigger.hidden = true;
       panel.hidden = false;
       reason.focus();
+      confirmButton.disabled = true;
+      void composer.load()
+        .catch(() => {})
+        .finally(() => { confirmButton.disabled = false; });
     });
     cancelButton.addEventListener("click", () => {
       panel.hidden = true;
@@ -1007,6 +1117,10 @@
       const internalReason = reason.value.trim();
       if (!internalReason) {
         showPanelError("Add an internal reason before rejecting.", reason);
+        return;
+      }
+      if (!composer.canSend()) {
+        showPanelError("Add a speaker email address before sending this decision email.", reason);
         return;
       }
       confirmButton.disabled = true;
@@ -1022,8 +1136,9 @@
           body: JSON.stringify({
             decision: "rejected",
             internal_reason: internalReason,
-            send_email: notify.checked,
-            speaker_message: notify.checked ? speakerMessage.value.trim() : "",
+            send_email: composer.notify.checked,
+            speaker_subject: composer.notify.checked ? composer.subject.value.trim() : "",
+            speaker_message: composer.notify.checked ? composer.message.value.trim() : "",
             override_incomplete_reviews: false,
           }),
         });
@@ -1068,6 +1183,7 @@
     reason.maxLength = 2000;
     reason.required = true;
     label.append(reason);
+    const composer = decisionEmailComposer(item, target, true, "this correction");
     const feedback = document.createElement("p");
     feedback.className = "status";
     feedback.setAttribute("role", "alert");
@@ -1080,13 +1196,17 @@
     cancel.className = "secondary";
     cancel.textContent = "Cancel";
     const actions = document.createElement("div");
-    actions.className = "actions";
+    actions.className = "actions decision-actions";
     actions.append(cancel, confirm);
-    panel.append(explanation, label, feedback, actions);
+    panel.append(explanation, label, composer.element, feedback, actions);
     trigger.addEventListener("click", () => {
       trigger.hidden = true;
       panel.hidden = false;
       reason.focus();
+      confirm.disabled = true;
+      void composer.load()
+        .catch(() => {})
+        .finally(() => { confirm.disabled = false; });
     });
     cancel.addEventListener("click", () => {
       panel.hidden = true;
@@ -1097,6 +1217,12 @@
     confirm.addEventListener("click", async () => {
       if (!reason.value.trim()) {
         feedback.textContent = "Add the internal reason for this correction.";
+        feedback.classList.add("error");
+        reason.focus();
+        return;
+      }
+      if (!composer.canSend()) {
+        feedback.textContent = "Add a speaker email address before sending this correction email.";
         feedback.classList.add("error");
         reason.focus();
         return;
@@ -1114,8 +1240,9 @@
           body: JSON.stringify({
             corrected_decision: target,
             reason: reason.value.trim(),
-            send_email: false,
-            speaker_message: "",
+            send_email: composer.notify.checked,
+            speaker_subject: composer.notify.checked ? composer.subject.value.trim() : "",
+            speaker_message: composer.notify.checked ? composer.message.value.trim() : "",
           }),
         });
         const lifecycleNotice = corrected.accepted_session_lifecycle_status === "withdrawn" && target === "accepted"
@@ -1152,12 +1279,7 @@
     reason.rows = 3;
     reason.maxLength = 2000;
     label.append(reason);
-    const notifyLabel = document.createElement("label");
-    notifyLabel.className = "check-label";
-    const notify = document.createElement("input");
-    notify.type = "checkbox";
-    notify.checked = true;
-    notifyLabel.append(notify, document.createTextNode(` Email ${item.speaker_name || "the speaker"} about acceptance`));
+    const composer = decisionEmailComposer(item, "accepted", false, "acceptance");
     const feedback = document.createElement("p");
     feedback.className = "status";
     feedback.setAttribute("role", "alert");
@@ -1169,13 +1291,17 @@
     cancel.className = "secondary";
     cancel.textContent = "Cancel";
     const actions = document.createElement("div");
-    actions.className = "actions";
+    actions.className = "actions decision-actions";
     actions.append(cancel, confirm);
-    panel.append(explanation, label, notifyLabel, feedback, actions);
+    panel.append(explanation, label, composer.element, feedback, actions);
     trigger.addEventListener("click", () => {
       trigger.hidden = true;
       panel.hidden = false;
       reason.focus();
+      confirm.disabled = true;
+      void composer.load()
+        .catch(() => {})
+        .finally(() => { confirm.disabled = false; });
     });
     cancel.addEventListener("click", () => {
       panel.hidden = true;
@@ -1186,6 +1312,12 @@
     confirm.addEventListener("click", async () => {
       if (!reason.value.trim()) {
         feedback.textContent = "Add an internal reason before accepting without review.";
+        feedback.classList.add("error");
+        reason.focus();
+        return;
+      }
+      if (!composer.canSend()) {
+        feedback.textContent = "Add a speaker email address before sending this decision email.";
         feedback.classList.add("error");
         reason.focus();
         return;
@@ -1203,12 +1335,13 @@
           body: JSON.stringify({
             decision: "accepted",
             internal_reason: reason.value.trim(),
-            send_email: notify.checked,
-            speaker_message: "",
+            send_email: composer.notify.checked,
+            speaker_subject: composer.notify.checked ? composer.subject.value.trim() : "",
+            speaker_message: composer.notify.checked ? composer.message.value.trim() : "",
             override_incomplete_reviews: false,
           }),
         });
-        byId("status").textContent = `“${item.proposal_title}” was accepted without review.${notify.checked ? " Speaker email queued — track delivery in the message log." : " No email sent."}`;
+        byId("status").textContent = `“${item.proposal_title}” was accepted without review.${composer.notify.checked ? " Speaker email queued — track delivery in the message log." : " No email sent."}`;
         location.reload();
       } catch (error) {
         confirm.disabled = false;

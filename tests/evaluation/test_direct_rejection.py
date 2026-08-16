@@ -9,6 +9,15 @@ from tests.security.test_production_identity_flow import (
 )
 
 
+def test_legacy_decision_body_does_not_fabricate_an_override() -> None:
+    assert evaluation_router_module._decision_speaker_message(
+        "<p>Thank you for your proposal. It was not selected for this event.</p>"
+    ) == ""
+    assert evaluation_router_module._decision_speaker_message(
+        '<p data-message-source="custom">First line<br>Second line</p>'
+    ) == "First line\nSecond line"
+
+
 async def _accepted_reviewer(client, connection, environment, csrf, event_id, email):
     invitation = await client.post(
         f"/api/v1/admin/events/{event_id}/invitations",
@@ -123,6 +132,11 @@ async def test_direct_rejection_needs_no_round(
             (organization_id, event_id, user_id),
         )
         queued_before_rejection = len(queue.messages)
+        preview = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/direct-submission/decision-message-preview",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={"decision": "rejected", "correction": False},
+        )
         response = await client.post(
             f"/api/v1/admin/events/{event_id}/submissions/direct-submission/reject",
             headers={
@@ -134,14 +148,28 @@ async def test_direct_rejection_needs_no_round(
                 "decision": "rejected",
                 "internal_reason": "Outside this event's scope",
                 "send_email": True,
-                "speaker_message": "Thank you, but this proposal is outside our program scope.",
+                "speaker_message": (
+                    "Thank you, but this proposal is outside our program scope.\n"
+                    "Please submit again next year."
+                ),
                 "override_incomplete_reviews": False,
             },
         )
 
+    assert preview.status_code == 200, preview.text
+    assert preview.json() == {
+        "resolved_subject": "Content Summit: proposal not selected",
+        "resolved_body": "Thank you for your proposal. It was not selected for this event.",
+        "proposal_title": "No review needed",
+        "recipient_available": True,
+    }
     assert response.status_code == 200, response.text
     assert response.json()["round_id"] is None
     assert response.json()["communication_queued"] is True
+    assert response.json()["speaker_subject"] == ""
+    assert response.json()["speaker_message"] == (
+        "Thank you, but this proposal is outside our program scope.\nPlease submit again next year."
+    )
     decision = connection.execute(
         "SELECT decision,round_id FROM submission_decisions WHERE submission_id='direct-submission'"
     ).fetchone()
@@ -158,6 +186,7 @@ async def test_direct_rejection_needs_no_round(
     assert communication[0] == "priya@example.test"
     assert communication[1].endswith("proposal not selected")
     assert "outside our program scope" in communication[2]
+    assert "scope.<br>Please submit again next year." in communication[2]
     assert communication[3] == "queued"
     assert len(queue.messages) == queued_before_rejection + 1
 
@@ -355,6 +384,7 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                 "corrected_decision": "accepted",
                 "reason": "The program result changed, but the speaker withdrawal remains.",
                 "send_email": True,
+                "speaker_subject": "Your corrected conference result",
                 "speaker_message": (
                     "Your proposal result changed; your withdrawal remains in effect."
                 ),
@@ -371,6 +401,24 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                 "corrected_decision": "accepted",
                 "reason": "The program result changed, but the speaker withdrawal remains.",
                 "send_email": True,
+                "speaker_subject": "Your corrected conference result",
+                "speaker_message": (
+                    "Your proposal result changed; your withdrawal remains in effect."
+                ),
+            },
+        )
+        changed_correction_retry = await client.post(
+            f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/decision-corrections",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "correction-accept-withdrawn",
+            },
+            json={
+                "corrected_decision": "accepted",
+                "reason": "The program result changed, but the speaker withdrawal remains.",
+                "send_email": True,
+                "speaker_subject": "A changed correction subject",
                 "speaker_message": (
                     "Your proposal result changed; your withdrawal remains in effect."
                 ),
@@ -429,6 +477,12 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
     assert accepted_after_withdrawal_replay.json()["speaker_message"] == (
         "Your proposal result changed; your withdrawal remains in effect."
     )
+    assert accepted_after_withdrawal_replay.json()["speaker_subject"] == (
+        "Your corrected conference result"
+    )
+    assert changed_correction_retry.status_code == 409
+    assert changed_correction_retry.headers["x-conflict-type"] == "decision-correction"
+    assert "changed after an earlier attempt" in changed_correction_retry.json()["error"]["message"]
     assert accepted_without_existing_session.status_code == 200, (
         accepted_without_existing_session.text
     )
@@ -688,6 +742,7 @@ async def test_concurrent_matching_acceptance_requests_reconcile_to_one_decision
             "decision": "accepted",
             "internal_reason": "Matching concurrent organizer intent",
             "send_email": True,
+            "speaker_subject": "A custom acceptance subject",
             "speaker_message": "Your proposal was accepted.",
             "override_incomplete_reviews": False,
         }
@@ -757,11 +812,18 @@ async def test_round_decision_replays_same_key_without_duplicate_side_effects(
             "decision": "accepted",
             "internal_reason": "Organizer override",
             "send_email": True,
+            "speaker_subject": "A custom acceptance subject",
             "speaker_message": "Your proposal was accepted.",
             "override_incomplete_reviews": True,
         }
         first = await client.post(path, headers=headers, json=payload)
         second = await client.post(path, headers=headers, json=payload)
+        connection.execute(
+            """UPDATE communication_messages SET status='failed'
+               WHERE deterministic_key LIKE 'submission-decision:%'"""
+        )
+        connection.commit()
+        failed_delivery_replay = await client.post(path, headers=headers, json=payload)
         changed = await client.post(
             path,
             headers=headers,
@@ -771,7 +833,11 @@ async def test_round_decision_replays_same_key_without_duplicate_side_effects(
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
     assert first.content == second.content
+    assert failed_delivery_replay.json()["send_email"] is True
+    assert failed_delivery_replay.json()["communication_queued"] is False
     assert first.json()["override_incomplete_reviews"] is True
+    assert first.json()["speaker_subject"] == "A custom acceptance subject"
+    assert first.json()["speaker_message"] == "Your proposal was accepted."
     assert changed.status_code == 409, changed.text
     assert changed.headers["x-conflict-type"] == "final-decision"
     assert "changed after an earlier attempt" in changed.json()["error"]["message"]
@@ -783,7 +849,10 @@ async def test_round_decision_replays_same_key_without_duplicate_side_effects(
         ).fetchall()
     ]
     assert any("SEARCH a USING INDEX idx_audit_target" in detail for detail in plan)
-    assert any("SEARCH cm USING COVERING INDEX" in detail for detail in plan)
+    # The projection reads delivery/provenance columns from the single row found
+    # through the unique deterministic-key index. Keeping the index narrow costs
+    # one bounded table-row fetch here and avoids enlarging every message write.
+    assert any("SEARCH cm USING INDEX" in detail for detail in plan)
     assert not any(
         "SCAN a" in detail or "SCAN cm" in detail or "TEMP B-TREE" in detail
         for detail in plan

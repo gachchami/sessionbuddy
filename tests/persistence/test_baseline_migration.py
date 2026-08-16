@@ -78,6 +78,9 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
             "SELECT name_key FROM evaluation_rounds LIMIT 0"
         ).description is not None
         assert connection.execute(
+            "SELECT subject_source FROM communication_messages LIMIT 0"
+        ).description is not None
+        assert connection.execute(
             """SELECT sql FROM sqlite_master
                WHERE type='index' AND name='uq_evaluation_rounds_live_name'"""
         ).fetchone() is not None
@@ -119,6 +122,22 @@ def test_incremental_chain_preserves_and_explicitly_backfills_existing_rows() ->
                       'headshot','open',1000,1000)"""
         )
         connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,queued_at_ms,updated_at_ms)
+               VALUES('legacy-decision-message','org-a','event-a','speaker@example.test',
+                      'Existing decision subject','<p>Existing body</p>',
+                      'submission-decision:legacy:v1','delivered',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO communication_messages
+               (id,organization_id,event_id,recipient_email,subject,html_body,
+                deterministic_key,status,queued_at_ms,updated_at_ms)
+               VALUES('legacy-manual-message','org-a','event-a','speaker@example.test',
+                      'Existing manual subject','<p>Existing body</p>',
+                      'manual:legacy:v1','delivered',1000,1000)"""
+        )
+        connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
                 title,help_text,destination_type,state,created_at_ms,updated_at_ms)
@@ -155,6 +174,13 @@ def test_incremental_chain_preserves_and_explicitly_backfills_existing_rows() ->
             "SELECT accepted_session_id FROM accepted_session_participants WHERE id='participant-a'"
         ).fetchone() == ("session-a",)
         assert connection.execute("SELECT COUNT(*) FROM speaker_asset_comments").fetchone() == (0,)
+        assert connection.execute(
+            """SELECT id,subject,subject_source FROM communication_messages
+               ORDER BY id"""
+        ).fetchall() == [
+            ("legacy-decision-message", "Existing decision subject", None),
+            ("legacy-manual-message", "Existing manual subject", None),
+        ]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         connection.close()

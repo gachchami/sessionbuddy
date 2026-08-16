@@ -11827,6 +11827,12 @@
             "maxLength": 4000,
             "title": "Speaker Message",
             "type": "string"
+          },
+          "speaker_subject": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Speaker Subject",
+            "type": "string"
           }
         },
         "required": [
@@ -11915,6 +11921,12 @@
             "title": "Speaker Message",
             "type": "string"
           },
+          "speaker_subject": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Speaker Subject",
+            "type": "string"
+          },
           "submission_id": {
             "title": "Submission Id",
             "type": "string"
@@ -11964,12 +11976,82 @@
             "maxLength": 4000,
             "title": "Speaker Message",
             "type": "string"
+          },
+          "speaker_subject": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Speaker Subject",
+            "type": "string"
           }
         },
         "required": [
           "decision"
         ],
         "title": "SubmissionDecisionCreate",
+        "type": "object"
+      },
+      "SubmissionDecisionMessagePreview": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_title": {
+            "title": "Proposal Title",
+            "type": "string"
+          },
+          "recipient_available": {
+            "title": "Recipient Available",
+            "type": "boolean"
+          },
+          "resolved_body": {
+            "title": "Resolved Body",
+            "type": "string"
+          },
+          "resolved_subject": {
+            "title": "Resolved Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolved_subject",
+          "resolved_body",
+          "proposal_title",
+          "recipient_available"
+        ],
+        "title": "SubmissionDecisionMessagePreview",
+        "type": "object"
+      },
+      "SubmissionDecisionMessagePreviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "correction": {
+            "default": false,
+            "title": "Correction",
+            "type": "boolean"
+          },
+          "decision": {
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "speaker_message": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Speaker Message",
+            "type": "string"
+          },
+          "speaker_subject": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Speaker Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "SubmissionDecisionMessagePreviewRequest",
         "type": "object"
       },
       "SubmissionDecisionView": {
@@ -12023,6 +12105,12 @@
             "default": "",
             "maxLength": 4000,
             "title": "Speaker Message",
+            "type": "string"
+          },
+          "speaker_subject": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Speaker Subject",
             "type": "string"
           },
           "submission_id": {
@@ -17978,6 +18066,68 @@
           }
         },
         "summary": "Correct Final Submission Decision",
+        "tags": [
+          "evaluations"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/submissions/{submission_id}/decision-message-preview": {
+      "post": {
+        "description": "Resolve exactly what a decision email would say without recording a decision.",
+        "operationId": "previewSubmissionDecisionMessage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmissionDecisionMessagePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDecisionMessagePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Submission Decision Message",
         "tags": [
           "evaluations"
         ]

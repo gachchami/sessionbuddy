@@ -620,3 +620,26 @@ resolver table used by the distributor.
 - A successful proposal continues to provision the destination membership and
   speaker graph through the existing CFP transaction. Roleless authenticated
   accounts now fall back from `/` to `/calls` instead of receiving a 403.
+
+## Decision email composition
+
+- Initial decisions and audited corrections expose the exact resolved email
+  subject and body before confirmation. Organizers may supply optional subject
+  and body overrides; leaving either blank preserves the existing outcome-specific
+  default.
+- The stored message records whether its subject came from the built-in default
+  or an organizer override. Replayed decision responses expose only genuine
+  overrides, while pre-migration and unrelated messages remain unlabelled.
+- Preview and write paths share one resolver and the same proposal-management
+  authorization boundary. A missing speaker email is reported before confirmation.
+- Direct inbox corrections now default to notifying the speaker, with an
+  explicit opt-out, instead of silently changing the decision, tasks, and draft
+  agenda with no corresponding message.
+- The replay read intentionally uses the existing unique decision-message index
+  plus one table-row fetch. A Docker/SQLite benchmark on 100,000 messages (seven
+  samples of 20,000 warm lookups) measured 2.727 microseconds per lookup versus
+  2.656 microseconds with a forced covering index, while the covering variant
+  increased the synthetic database from 4,632 to 7,483 pages. The 0.071
+  microsecond read improvement does not justify enlarging every message write;
+  the query-plan test continues to require the bounded unique-index lookup and
+  rejects message or temporary-B-tree scans.

@@ -76,6 +76,18 @@ async function openDashboard(
     route.fulfill({ contentType: "application/json", body: JSON.stringify(organizerSession) }));
   await page.route("**/api/v1/admin/evaluation-rounds/round-a/results**", (route) =>
     route.fulfill({ contentType: "application/json", body: JSON.stringify(body) }));
+  await page.route("**/api/v1/admin/events/event-a/submissions/*/decision-message-preview", (route) => {
+    const request = route.request().postDataJSON() as { speaker_subject?: string; speaker_message?: string };
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        resolved_subject: request.speaker_subject || "Example Conference: proposal accepted",
+        resolved_body: request.speaker_message || "Congratulations — your session has been accepted. Open your speaker portal for next steps.",
+        proposal_title: "Reliable acceptance feedback",
+        recipient_available: true,
+      }),
+    });
+  });
   await page.goto("/admin/evaluation-rounds/round-a");
   await page.addScriptTag({
     path: resolve(appRoot, "assets/reviews.js"),
@@ -196,8 +208,10 @@ test.describe("evaluation round dashboard", () => {
     const decisionGate = new Promise<void>((resolve) => { releaseDecision = resolve; });
     const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
     let decisionRequests = 0;
+    let decisionPayload: Record<string, unknown> | null = null;
     await page.route("**/api/v1/admin/evaluation-rounds/round-a/submissions/submission-a/decision", async (route) => {
       decisionRequests += 1;
+      decisionPayload = route.request().postDataJSON();
       await decisionGate;
       return route.fulfill({
         contentType: "application/json",
@@ -231,12 +245,20 @@ test.describe("evaluation round dashboard", () => {
     });
 
     await page.getByRole("button", { name: "Accept" }).click();
+    await expect(page.getByText("Default subject: Example Conference: proposal accepted")).toBeVisible();
+    await page.getByLabel("Custom subject").fill("Your proposal update");
+    await page.getByLabel("Custom message").fill("We would be delighted to welcome your session.");
+    await expect(page.getByLabel("Decision email preview")).toContainText("Subject: Your proposal update");
     await page.getByRole("button", { name: "Confirm accepted" }).click();
     await expect(page.getByRole("button", { name: "Recording…" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Cancel" })).toBeDisabled();
     await expect(page.locator(".decision-confirmation")).toHaveAttribute("aria-busy", "true");
     await page.getByRole("button", { name: "Recording…" }).dispatchEvent("click");
     expect(decisionRequests).toBe(1);
+    expect(decisionPayload).toMatchObject({
+      speaker_subject: "Your proposal update",
+      speaker_message: "We would be delighted to welcome your session.",
+    });
 
     releaseDecision();
     await expect(page.getByText("Decision recorded as accepted. Speaker email queued."))
@@ -244,6 +266,9 @@ test.describe("evaluation round dashboard", () => {
     releaseRefresh();
     await expect(page.getByText("final decision in effect")).toBeVisible();
     expect(decisionRequests).toBe(1);
+    await page.getByRole("button", { name: "Correct to rejected" }).click();
+    await expect(page.getByLabel("Email the speaker about this correction")).toBeChecked();
+    await expect(page.getByLabel("Custom subject")).toBeVisible();
   });
 
   test("reuses the decision idempotency key when an operator retries", async ({ page }) => {

@@ -339,6 +339,24 @@ test.describe("form validation and workflow wiring", () => {
     });
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
     let directRejection: Record<string, unknown> | null = null;
+    let previewHeaders: Record<string, string> | null = null;
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions/*/decision-message-preview`, async (route) => {
+      previewHeaders = route.request().headers();
+      const request = route.request().postDataJSON() as { decision: "accepted" | "rejected"; correction: boolean; speaker_subject?: string; speaker_message?: string };
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          resolved_subject: request.speaker_subject || (request.correction
+            ? `Conference: corrected proposal result — ${request.decision === "accepted" ? "accepted" : "not selected"}`
+            : `Conference: proposal ${request.decision === "accepted" ? "accepted" : "not selected"}`),
+          resolved_body: request.speaker_message || (request.decision === "accepted"
+            ? "Congratulations — your session has been accepted."
+            : "Thank you for your proposal. It was not selected for this event."),
+          proposal_title: "A proposal",
+          recipient_available: true,
+        }),
+      });
+    });
     await page.route(`**/api/v1/admin/events/${eventId}/submissions/${assignmentId}/reject`, async (route) => {
       directRejection = route.request().postDataJSON();
       await route.fulfill({
@@ -368,20 +386,41 @@ test.describe("form validation and workflow wiring", () => {
       "/admin/evaluation-rounds/11111111-1111-4111-8111-111111111111",
     );
     await reviewedDetail.getByRole("button", { name: "Close" }).click();
+    await page.getByRole("button", { name: "View proposal" }).nth(2).click();
+    const decidedDetail = page.getByRole("dialog", { name: "Proposal details" });
+    await decidedDetail.getByRole("button", { name: "Correct decision" }).click();
+    await expect(decidedDetail.getByLabel("Email Decided speaker about this correction")).toBeChecked();
+    await expect(decidedDetail.getByLabel("Custom subject")).toBeVisible();
+    await decidedDetail.getByRole("button", { name: "Cancel" }).click();
+    await decidedDetail.getByRole("button", { name: "Close" }).click();
     await page.getByRole("button", { name: "View proposal" }).first().click();
     const detail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(detail).toContainText("speaker@example.com");
     await expect(detail).toContainText("Platform");
     await expect(detail).toContainText("Audience level");
     await expect(detail).toContainText("Intermediate");
+    await detail.getByRole("button", { name: "Accept without review" }).click();
+    await expect(detail.getByLabel("Email Speaker about acceptance")).toBeChecked();
+    await expect(detail.getByLabel("Custom subject")).toBeVisible();
+    await detail.getByRole("button", { name: "Cancel" }).click();
     await detail.getByRole("button", { name: "Reject without review" }).click();
     await expect(detail.getByLabel("Email Speaker about rejection")).toBeChecked();
+    await expect(detail.getByText("Default subject: Conference: proposal not selected")).toBeVisible();
     await detail.getByLabel("Internal reason").fill("Outside the program scope");
-    await detail.getByLabel("Speaker message").fill("Thank you for submitting to our event.");
+    await detail.locator('input[placeholder="Leave blank to use the default subject."]:visible')
+      .fill("Your conference proposal update");
+    await detail.locator('textarea[placeholder="Leave blank to use the default message."]:visible')
+      .fill("Thank you for submitting to our event.");
+    await expect(detail.locator('[aria-label="Decision email preview"]:visible'))
+      .toContainText("Subject: Your conference proposal update");
+    expect(previewHeaders?.["x-csrf-token"]).toBe("browser-test-csrf");
+    expect(previewHeaders?.["content-type"]).toContain("application/json");
+    expect(previewHeaders?.["idempotency-key"]).toBeUndefined();
     await detail.getByRole("button", { name: "Confirm rejection" }).click();
     await expect.poll(() => directRejection).toMatchObject({
       decision: "rejected",
       send_email: true,
+      speaker_subject: "Your conference proposal update",
       speaker_message: "Thank you for submitting to our event.",
     });
     await expect(page.getByRole("heading", { name: "Proposal inbox" })).toBeVisible();
@@ -509,6 +548,15 @@ test.describe("form validation and workflow wiring", () => {
           answers: { audience_level: "Intermediate" },
         }],
         total: 1,
+      }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/submissions/${assignmentId}/decision-message-preview`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        resolved_subject: "Conference: proposal not selected",
+        resolved_body: "Thank you for your proposal. It was not selected for this event.",
+        proposal_title: "A proposal",
+        recipient_available: true,
       }),
     }));
     // A conflict that is NOT the round guardrail, so it reaches the in-panel alert
