@@ -25,6 +25,7 @@
   let allSpeakers = [];
   let allEvents = [];
   let inviteEventId = "";
+  let eventDirectoryContext = null;
   let speakerImportRows = null;
   let speakerImportBatchKey = "";
 
@@ -310,6 +311,7 @@
       throw error;
     }
     const targets = targetsResult.value;
+    eventDirectoryContext = { event, organization };
     allEvents = [{
       event_id: event.id,
       event_name: event.name,
@@ -318,6 +320,14 @@
     }];
     allSpeakers = uniquePeople(targets.map((target) => targetAsPerson(target, organization, event)));
     return event;
+  }
+
+  async function refreshEventScopedRoster() {
+    if (!eventDirectoryContext) return;
+    const { event, organization } = eventDirectoryContext;
+    const result = await api(`/api/v1/admin/events/${encodeURIComponent(event.id)}/speaker-targets`);
+    allSpeakers = uniquePeople(result.data.map((target) => targetAsPerson(target, organization, event)));
+    renderDirectory();
   }
 
   async function loadOrganizationDirectory(organizations) {
@@ -558,6 +568,7 @@
     if (!inviteEventId || !form.reportValidity()) return;
     const button = form.querySelector('button[type="submit"]');
     const values = Object.fromEntries(new FormData(form));
+    let invitationCreated = false;
     button.disabled = true;
     try {
       await api(`/api/v1/admin/events/${encodeURIComponent(inviteEventId)}/invitations`, {
@@ -565,11 +576,16 @@
         headers: { "content-type": "application/json", "x-csrf-token": csrf },
         body: JSON.stringify({ ...values, expires_in_days: Number(values.expires_in_days) })
       });
+      invitationCreated = true;
       form.reset();
       inviteDialog.close();
-      byId("status").textContent = "Speaker invitation created and emailed.";
+      byId("status").textContent = "Speaker invitation created. Refreshing the roster…";
+      await refreshEventScopedRoster();
+      byId("status").textContent = "Speaker invitation created and emailed. The roster is up to date.";
     } catch (error) {
-      byId("status").textContent = window.SessionBuddyApi.message(error);
+      byId("status").textContent = invitationCreated
+        ? "Speaker invitation created and emailed, but the roster could not refresh. Reload this page to see the new invitation; do not send it again."
+        : window.SessionBuddyApi.message(error);
       byId("status").focus();
     } finally { button.disabled = false; }
   });

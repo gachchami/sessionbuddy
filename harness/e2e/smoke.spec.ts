@@ -730,7 +730,7 @@ test.describe("administration empty states", () => {
 
     // The success feedback must survive the list refresh (load() writes its
     // own generic status; the outcome message is set after it).
-    await expect(page.getByRole("status")).toHaveText("Speaker invitation created and emailed.");
+    await expect(page.getByRole("status")).toHaveText("Speaker invitation created and emailed. The roster is up to date.");
     await expect(page.locator("#invite-speaker-dialog")).not.toHaveAttribute("open", "");
     await page.getByRole("button", { name: "Invite speaker" }).click();
     await expect(page.getByRole("dialog", { name: "Invite speaker" }).getByRole("textbox", { name: "Email address" })).toHaveValue("");

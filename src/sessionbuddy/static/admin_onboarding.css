@@ -70,3 +70,14 @@ th { color: #536079; font-size: .75rem; text-transform: uppercase; }
   .action-toast { align-items: stretch; flex-direction: column; width: calc(100vw - 2rem); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+.onboarding-filter-refresh {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.organizer-panel--results.is-filtering .desktop-table,
+.organizer-panel--results.is-filtering .mobile-cards,
+.organizer-panel--results.is-filtering .pagination {
+  opacity: 0.48;
+}

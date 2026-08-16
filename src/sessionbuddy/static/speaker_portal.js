@@ -304,7 +304,8 @@
   function renderTasks(tasks, timezone, list, submissions = []) {
     list.replaceChildren();
     const outstanding = tasks.filter((task) => !["completed", "waived"].includes(task.state));
-    if (!outstanding.length) list.append(make("li", "No actions due.", "empty"));
+    const completed = tasks.filter((task) => ["completed", "waived"].includes(task.state));
+    if (!outstanding.length && !completed.length) list.append(make("li", "No actions due.", "empty"));
     outstanding.forEach((task) => {
       const item = make("li", undefined, "item-card");
       const heading = make("h3", task.title);
@@ -337,15 +338,17 @@
       }
       list.append(item);
     });
-    const completed = tasks.filter((task) => ["completed", "waived"].includes(task.state));
     if (completed.length) {
       list.append(make("li", `Completed (${completed.length})`, "task-history-heading"));
       completed.forEach((task) => {
         const item = make("li", undefined, "item-card task-complete");
-        item.append(
-          make("h3", task.title),
-          make("p", task.state === "waived" ? "Waived" : "Completed", "state-badge success"),
-        );
+        item.append(make("h3", task.title));
+        const meta = make("p", undefined, "item-meta");
+        meta.append(make("span", task.state === "waived" ? "Waived" : "Completed", "state-badge success"));
+        if (task.completed_at_ms !== null && task.completed_at_ms !== undefined) {
+          meta.append(make("span", `Completed ${eventTimeLabel(task.completed_at_ms, timezone)}`));
+        }
+        item.append(meta);
         list.append(item);
       });
     }
@@ -1098,7 +1101,8 @@
     const resources = state.resources.filter((resource) => resource.event_id === event.id);
     const assets = entry.assets || [];
     const activities = portal.activities || [];
-    if (!submissions.length && !outstanding.length && !notifications.length
+    const tasks = portal.tasks || [];
+    if (!submissions.length && !tasks.length && !notifications.length
         && !resources.length && !assets.length && !activities.length) {
       section.classList.add("is-empty-event");
       section.append(make("p", "No proposals or actions for this event.", "event-group__empty"));
@@ -1116,12 +1120,16 @@
     // Required work is the only secondary object promoted above messages and
     // reference material. An empty task collection is represented by absence,
     // not a full table that competes with the proposal.
-    if (outstanding.length) {
+    if (tasks.length) {
       const tasksBlock = make("section", undefined, "event-group__block event-group__attention");
-      tasksBlock.append(subHeading("Needs attention", outstanding.length));
+      tasksBlock.classList.toggle("event-group__attention", outstanding.length > 0);
+      tasksBlock.append(subHeading(
+        outstanding.length ? "Needs attention" : "Task history",
+        outstanding.length || tasks.length,
+      ));
       const taskList = make("ul", undefined, "item-list task-list");
       taskList.dataset.eventId = event.id;
-      renderTasks(outstanding, event.time_zone, taskList, submissions);
+      renderTasks(tasks, event.time_zone, taskList, submissions);
       tasksBlock.append(taskList);
       section.append(tasksBlock);
     }

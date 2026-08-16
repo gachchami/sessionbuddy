@@ -24,6 +24,14 @@ def test_speaker_directory_has_no_preload_fallback_action_flash() -> None:
     assert "speakerInvitationsFromCsv" in javascript
 
 
+def test_manual_invitation_refreshes_the_event_roster_before_reporting_success() -> None:
+    javascript = source("speaker_directory.js")
+    invite = javascript.index('byId("invite-speaker-form").addEventListener')
+    refresh = javascript.index("await refreshEventScopedRoster()", invite)
+    success = javascript.index("The roster is up to date.", refresh)
+    assert invite < refresh < success
+
+
 def test_invited_and_registered_speakers_are_eligible_for_custom_tasks() -> None:
     javascript = source("speaker_content.js")
     html = source("speaker_content.html")
@@ -85,6 +93,18 @@ def test_dashboard_reconciles_within_five_seconds_and_after_reconnect() -> None:
     assert 'sessionbuddy:onboarding-invalidated", () => refresh()' in javascript
 
 
+def test_dashboard_queues_user_refreshes_and_marks_stale_results_inert() -> None:
+    javascript = source("admin_onboarding.js")
+    html = source("admin_onboarding.html")
+    assert "requestedFilters: commitFilters ? filters : null" in javascript
+    assert "panel.inert = pending" in javascript
+    assert "state.committedFilters = filters" in javascript
+    assert "query(filters, append ? state.cursor : null)" in javascript
+    assert "if (commitFilters) showFilterRefreshPending(false)" in javascript
+    assert 'id="filter-refresh-status"' in html
+    assert html.index('id="filter-refresh-status"') < html.index('id="results-panel"')
+
+
 def test_dashboard_has_actor_scoped_links_and_graceful_reminder_action() -> None:
     javascript = source("admin_onboarding.js")
     html = source("admin_onboarding.html")
@@ -114,7 +134,7 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
         assert section in html
     # Tasks now live inside each generated event group rather than in one
     # page-level panel, so the renderer owns that contract.
-    assert 'subHeading("Needs attention", outstanding.length)' in javascript
+    assert 'outstanding.length ? "Needs attention" : "Task history"' in javascript
     assert 'completion.state === "rejected"' in javascript
     assert 'completion.state === "clean"' in javascript
     assert "rejected by the safety scan" in javascript
@@ -128,7 +148,8 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert 'action.href = "/account"' in javascript
     assert 'id="speaker-profile-tools"' not in html
     assert 'id="speaker-headshot-form"' not in html
-    assert "Completed (${completed.length})" in javascript
+    assert "renderTasks(tasks, event.time_zone, taskList, submissions)" in javascript
+    assert 'outstanding.length ? "Needs attention" : "Task history"' in javascript
     assert html.count('name="version_comment"') == 0
     assert (
         "`/speaker/proposals/${encodeURIComponent(submission.form_slug)}"

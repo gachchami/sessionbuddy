@@ -7,7 +7,7 @@
   let eventId = "";
   try { eventId = routeMatch ? decodeURIComponent(routeMatch[1]) : ""; } catch (_) { eventId = ""; }
   if (!/^[A-Za-z0-9_.-]{1,128}$/.test(eventId)) eventId = "";
-  const state = { timer: null, loading: false, terminal: false, cursor: null, rows: [], reminderTargets: [], lastSuccess: null, timeZone: "UTC", csrf: "", channel: null };
+  const state = { timer: null, loading: false, terminal: false, queuedRefresh: null, committedFilters: { state: "all", task_type: "" }, cursor: null, rows: [], reminderTargets: [], lastSuccess: null, timeZone: "UTC", csrf: "", channel: null };
   const byId = (id) => document.getElementById(id);
   const make = (tag, value, className) => { const node = document.createElement(tag); if (value !== undefined) node.textContent = value; if (className) node.className = className; return node; };
 
@@ -74,21 +74,26 @@
     };
   }
 
-  function query(cursor = null) {
+  function query(filters, cursor = null) {
     const params = new URLSearchParams();
-    const filters = selectedFilters();
     params.set("state", filters.state);
     if (filters.task_type) params.set("task_type", filters.task_type);
     if (cursor) params.set("cursor", cursor);
     return params.toString();
   }
 
-  function preserveFilters() {
+  function preserveFilters(filters) {
     const params = new URLSearchParams();
-    const filters = selectedFilters();
     if (filters.state !== "all") params.set("state", filters.state);
     if (filters.task_type) params.set("task_type", filters.task_type);
     history.replaceState(null, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
+  }
+
+  function showFilterRefreshPending(pending) {
+    const panel = byId("results-panel");
+    panel.classList.toggle("is-filtering", pending);
+    panel.inert = pending;
+    byId("filter-refresh-status").hidden = !pending;
   }
 
   function formatDate(value) {
@@ -194,7 +199,7 @@
     button.disabled = false;
   });
 
-  function render(data, append) {
+  function render(data, append, filters) {
     const summary = data.summary;
     state.timeZone = data.time_zone;
     byId("event-name").textContent = `${data.event_name} · Dates shown in ${data.time_zone}`;
@@ -204,7 +209,7 @@
     byId("count-due-soon").textContent = summary.due_soon;
     byId("count-awaiting-acceptance").textContent = summary.awaiting_acceptance;
     const incoming = data.data;
-    byId("list-title").textContent = selectedFilters().state === "open" ? "Outstanding tasks" : "Speaker tasks";
+    byId("list-title").textContent = filters.state === "open" ? "Outstanding tasks" : "Speaker tasks";
     if (!append) {
       state.rows = [];
       byId("onboarding-rows").replaceChildren();
@@ -219,16 +224,34 @@
     state.cursor = data.next_cursor || null;
   }
 
-  async function refresh({ append = false, announce = false } = {}) {
-    if (state.loading || state.terminal || document.hidden) return;
+  async function refresh({ append = false, announce = false, commitFilters = false, requestedFilters = null } = {}) {
+    const filters = requestedFilters || (commitFilters ? selectedFilters() : state.committedFilters);
+    if (state.terminal || document.hidden) {
+      if (commitFilters) showFilterRefreshPending(false);
+      return;
+    }
+    if (state.loading) {
+      if (announce || commitFilters) {
+        state.queuedRefresh = {
+          append, announce, commitFilters, requestedFilters: commitFilters ? filters : null
+        };
+        if (commitFilters) showFilterRefreshPending(true);
+      }
+      return;
+    }
     state.loading = true;
+    if (commitFilters) showFilterRefreshPending(true);
     byId("results-panel").setAttribute("aria-busy", "true");
     setConnection("", state.lastSuccess ? "Refreshing" : "Connecting");
     try {
-      const filterQuery = query(append ? state.cursor : null);
+      const filterQuery = query(filters, append ? state.cursor : null);
       const endpoint = `/api/v1/admin/events/${encodeURIComponent(eventId)}/onboarding`;
       const data = await api(`${endpoint}${filterQuery ? `?${filterQuery}` : ""}`);
-      render(data, append);
+      render(data, append, filters);
+      if (commitFilters) {
+        state.committedFilters = filters;
+        preserveFilters(filters);
+      }
       state.lastSuccess = new Date(data.generated_at_ms);
       setConnection("live", "Live snapshot");
       setStatus(announce ? "Onboarding snapshot refreshed." : `${state.rows.length} speaker record${state.rows.length === 1 ? "" : "s"} shown.`);
@@ -268,6 +291,10 @@
     } finally {
       state.loading = false;
       byId("results-panel").setAttribute("aria-busy", "false");
+      if (commitFilters) showFilterRefreshPending(false);
+      const queued = state.queuedRefresh;
+      state.queuedRefresh = null;
+      if (queued) queueMicrotask(() => refresh(queued));
     }
   }
 
@@ -289,11 +316,12 @@
     const taskType = params.get("task_type") || "";
     byId("state").value = ALLOWED_STATES.has(selectedState) ? selectedState : "all";
     byId("task-type").value = ALLOWED_TASK_TYPES.has(taskType) ? taskType : "";
-    preserveFilters();
+    state.committedFilters = selectedFilters();
+    preserveFilters(state.committedFilters);
   }
 
-  byId("filters").addEventListener("submit", (event) => { event.preventDefault(); preserveFilters(); refresh({ announce: true }); });
-  byId("clear-filters").addEventListener("click", () => { byId("filters").reset(); preserveFilters(); refresh({ announce: true }); });
+  byId("filters").addEventListener("submit", (event) => { event.preventDefault(); refresh({ announce: true, commitFilters: true }); });
+  byId("clear-filters").addEventListener("click", () => { byId("filters").reset(); refresh({ announce: true, commitFilters: true }); });
   byId("refresh").addEventListener("click", () => refresh({ announce: true }));
   byId("load-more").addEventListener("click", () => refresh({ append: true, announce: true }));
   document.addEventListener("visibilitychange", () => {

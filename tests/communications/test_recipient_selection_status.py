@@ -185,7 +185,10 @@ async def test_preview_rejects_variables_unavailable_to_speaker_messages_before_
 
         assert response.status_code == 422, response.text
         detail = response.json()["error"]["message"]
-        assert "variables that are not available here" in detail
+        assert "unknown template variable(s): schedule.room, schedule.start" in detail
+        assert "Available variables:" in detail
+        assert "portal.link" in detail
+        assert "task.title" not in detail
         assert "schedule.room, schedule.start" in detail
         assert "22222222-2222-4222-8222-222222222222" not in detail
 

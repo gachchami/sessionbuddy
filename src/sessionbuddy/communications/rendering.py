@@ -19,14 +19,24 @@ ALLOWED_VARIABLES = frozenset(
         "schedule.room",
     }
 )
+SPEAKER_MESSAGE_VARIABLES = frozenset(
+    {"event.name", "speaker.name", "speaker.first_name", "submission.title", "portal.link"}
+)
 
 
-def validate_template(template: str) -> frozenset[str]:
+def validate_template(
+    template: str, *, allowed_variables: frozenset[str] = ALLOWED_VARIABLES
+) -> frozenset[str]:
     if len(template) > 50_000:
         raise ValueError("template is too large")
     variables = frozenset(VARIABLE.findall(template))
-    if variables - ALLOWED_VARIABLES:
-        raise ValueError("template contains an unknown variable")
+    unknown = sorted(variables - allowed_variables)
+    if unknown:
+        valid = ", ".join(sorted(allowed_variables))
+        raise ValueError(
+            f"unknown template variable(s): {', '.join(unknown)}. "
+            f"Available variables: {valid}"
+        )
     residue = VARIABLE.sub("", template)
     if "{{" in residue or "}}" in residue:
         raise ValueError("template contains malformed variable syntax")

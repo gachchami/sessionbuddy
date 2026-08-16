@@ -312,6 +312,7 @@ def test_account_settings_uses_the_global_shell_without_polluting_primary_naviga
     assert ".sb-role-option" in stylesheet
     assert ".sb-role-option__check" in stylesheet
     assert ".sb-account__menu-identity" in stylesheet
+    assert ".sb-account:not([open]) > .sb-account__menu { display: none; }" in stylesheet
     assert ":focus-visible" in stylesheet
 
 

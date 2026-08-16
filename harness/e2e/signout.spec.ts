@@ -95,8 +95,15 @@ test.describe("account sign-out", () => {
       document.body.append(hero);
     });
 
+    // Use DOM locators while the disclosure is closed: role locators correctly
+    // exclude non-rendered descendants and therefore cannot inspect their rects.
+    const signOut = page.locator(".sb-account__sign-out");
+    const accountSettings = page.locator(".sb-account__menu a[href='/account']");
+    await expect(signOut).toBeHidden();
+    await expect(accountSettings).toBeHidden();
+    expect(await signOut.evaluate((button) => button.getBoundingClientRect().toJSON())).toMatchObject({ width: 0, height: 0 });
+    expect(await accountSettings.evaluate((link) => link.getBoundingClientRect().toJSON())).toMatchObject({ width: 0, height: 0 });
     await page.locator("summary[aria-label='Account menu for Admin User']").click();
-    const signOut = page.getByRole("button", { name: "Sign out" });
     await expect(signOut).toBeVisible();
     expect(await signOut.evaluate((button) => {
       const bounds = button.getBoundingClientRect();

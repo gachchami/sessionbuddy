@@ -180,6 +180,7 @@
   background: white;
   box-shadow: 0 1rem 2.5rem rgba(16,24,40,.16), 0 .2rem .6rem rgba(16,24,40,.05);
 }
+.sb-account:not([open]) > .sb-account__menu { display: none; }
 .sb-account__menu-title { margin: .25rem .45rem .35rem; color: #172033; font-size: 1rem; font-weight: 700; }
 .sb-account__menu-header { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); align-items: center; gap: .7rem; padding: .55rem .55rem .8rem; border-bottom: 1px solid #e9e7ef; }
 .sb-account__menu-avatar { width: 2.5rem; height: 2.5rem; }

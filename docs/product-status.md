@@ -669,3 +669,23 @@ resolver table used by the distributor.
   microsecond read improvement does not justify enlarging every message write;
   the query-plan test continues to require the bounded unique-index lookup and
   rejects message or temporary-B-tree scans.
+
+## Speaker operations feedback and task history
+
+- Event-message validation identifies the invalid merge token and lists only
+  the merge fields available in that composer, so organizers can correct a
+  message without consulting an internal renderer catalog.
+- A successful manual speaker invitation refreshes the event roster before it
+  reports completion. If that reconciliation read fails, the UI states that
+  the invitation committed and tells the organizer to reload rather than
+  encouraging a duplicate invitation.
+- Onboarding filter changes keep the previous snapshot visibly pending and
+  non-interactive until the matching server response lands. Polling continues
+  to use the last committed filters, and the URL changes only with a successful
+  matching result.
+- Completed and waived speaker tasks remain available as task history, including
+  when an event has no outstanding work. Completion timestamps are shown when
+  the API supplies them.
+- The collapsed account disclosure removes its menu from layout, so hidden
+  account actions cannot be discovered or hit-tested over unrelated page
+  content by browsers or accessibility tooling.

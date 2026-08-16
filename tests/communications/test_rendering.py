@@ -1,6 +1,10 @@
 import pytest
 
-from sessionbuddy.communications.rendering import render_template, validate_template
+from sessionbuddy.communications.rendering import (
+    SPEAKER_MESSAGE_VARIABLES,
+    render_template,
+    validate_template,
+)
 
 
 def test_variables_are_html_escaped_and_not_executable() -> None:
@@ -19,6 +23,30 @@ def test_variables_are_html_escaped_and_not_executable() -> None:
 def test_unknown_or_malformed_variables_are_rejected(template: str) -> None:
     with pytest.raises(ValueError):
         validate_template(template)
+
+
+def test_unknown_variable_error_names_the_token_and_catalog() -> None:
+    with pytest.raises(ValueError) as error:
+        validate_template("Open {{event.portal_link}} after {{speaker.name}} signs in")
+
+    message = str(error.value)
+    assert "event.portal_link" in message
+    assert "portal.link" in message
+    assert "speaker.name" in message
+
+
+def test_speaker_message_error_lists_only_fields_available_in_the_composer() -> None:
+    with pytest.raises(ValueError) as error:
+        validate_template(
+            "Open {{event.portal_link}} after {{speaker.name}} signs in",
+            allowed_variables=SPEAKER_MESSAGE_VARIABLES,
+        )
+
+    message = str(error.value)
+    assert "event.portal_link" in message
+    assert "portal.link" in message
+    assert "speaker.name" in message
+    assert "schedule.room" not in message
 
 
 def test_missing_value_is_rejected_instead_of_silently_blank() -> None:

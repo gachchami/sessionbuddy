@@ -505,6 +505,23 @@ test.describe("speaker portal responsive design", () => {
     await expect.poll(() => portalReads).toBe(2);
     await expect(attention(page)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Task history" })).toBeVisible();
+    await expect(page.getByText("Completed (1)")).toBeVisible();
+    await expect(page.locator(".task-complete")).toContainText("Confirm travel details");
+  });
+
+  test("an all-complete event keeps its task history reachable", async ({ page }) => {
+    await servePortal(page, {
+      ...portal,
+      tasks: [{ ...customTask, state: "completed", completed_at_ms: Date.UTC(2026, 8, 2) }],
+      notifications: [],
+    });
+    await page.goto("/speaker");
+    const event = page.locator('[data-event-id="event-responsive"]');
+    await expect(event.getByRole("heading", { name: "Needs attention" })).toHaveCount(0);
+    await expect(event.getByRole("heading", { name: "Task history" })).toBeVisible();
+    await expect(event.getByText("Completed (1)")).toBeVisible();
+    await expect(event.locator(".task-complete")).toContainText("Confirm travel details");
   });
 
   test("completing a task in a non-active event invalidates that event's onboarding channel", async ({ page }) => {

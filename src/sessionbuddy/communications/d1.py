@@ -30,12 +30,9 @@ from .models import (
     SpeakerMessageSendRequest,
 )
 from .presentation import message_category, message_preview
-from .rendering import render_template, validate_template
+from .rendering import SPEAKER_MESSAGE_VARIABLES, render_template, validate_template
 
 _INCOMPATIBLE_RECIPIENT_NAME_LIMIT = 10
-_SPEAKER_MESSAGE_VARIABLES = frozenset(
-    {"event.name", "speaker.name", "speaker.first_name", "submission.title", "portal.link"}
-)
 _STATUS_CURSOR = SignedCursorContract(
     "communication_status", {"id": BOUNDED_ID, "ts": STRICT_INT}
 )
@@ -287,18 +284,11 @@ class D1CommunicationsService:
         if self.organization_id is None:
             raise HTTPException(status_code=404)
         try:
-            required = validate_template(body.subject) | validate_template(body.body_text)
+            required = validate_template(
+                body.subject, allowed_variables=SPEAKER_MESSAGE_VARIABLES
+            ) | validate_template(body.body_text, allowed_variables=SPEAKER_MESSAGE_VARIABLES)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        unavailable = sorted(required - _SPEAKER_MESSAGE_VARIABLES)
-        if unavailable:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "This speaker message uses variables that are not available here: "
-                    f"{', '.join(unavailable)}. Remove those variables and preview again."
-                ),
-            )
         recipients: list[RecipientPreview] = []
         incompatible_invitees: list[tuple[str, tuple[str, ...]]] = []
         for recipient_target_id in body.event_speaker_ids:

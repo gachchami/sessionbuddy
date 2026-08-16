@@ -514,6 +514,24 @@ test.describe("form validation and workflow wiring", () => {
       });
     });
     await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/conflict`, async (route) => { conflictWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({}) }); });
+    await page.unroute("**/api/v1/auth/session");
+    await page.unroute("**/api/v1/session");
+    await mockSession(page, {
+      ...organizerSession,
+      email: "reviewer@example.com",
+      display_name: "Reviewer",
+      account_roles: ["reviewer"],
+      active_role: "reviewer",
+      default_role: "reviewer",
+      organization_access: [],
+      event_access: [{
+        organization_id: organizationId,
+        event_id: eventId,
+        event_name: "Conference 2030",
+        permissions: [],
+        assignments: ["reviewer"],
+      }],
+    });
     await page.goto("/reviews");
     await page.getByRole("button", { name: "Open review" }).click();
     await page.getByRole("button", { name: "Save draft" }).click();
@@ -522,12 +540,12 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByLabel("Recommendation").selectOption("accept");
     await page.getByRole("button", { name: "Save draft" }).click();
     await expect.poll(() => evaluationWrites).toBe(1);
-    await page.getByText("Declare a conflict of interest").click();
-    await page.getByRole("button", { name: "Remove my assignment" }).click();
+    await page.getByText("Cannot review this proposal").click();
+    await page.getByRole("button", { name: "Report conflict and remove assignment" }).click();
     expect(conflictWrites).toBe(0);
     await page.getByLabel("Explanation").fill("Same employer");
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Remove my assignment" }).click();
+    await page.getByRole("button", { name: "Report conflict and remove assignment" }).click();
     await expect.poll(() => conflictWrites).toBe(1);
   });
 
@@ -837,9 +855,12 @@ test.describe("form validation and workflow wiring", () => {
     await mockSession(page);
     let dashboardReads = 0;
     let lastQuery = "";
+    let releaseFilteredRead: () => void = () => {};
+    const filteredRead = new Promise<void>((resolve) => { releaseFilteredRead = resolve; });
     await page.route(`**/api/v1/admin/events/${eventId}/onboarding*`, async (route) => {
       dashboardReads += 1;
       lastQuery = new URL(route.request().url()).search;
+      if (dashboardReads === 2) await filteredRead;
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -858,9 +879,15 @@ test.describe("form validation and workflow wiring", () => {
     await page.getByLabel("Task state").selectOption("overdue");
     await page.getByLabel("Task type").selectOption("headshot");
     await page.getByRole("button", { name: "Apply filters" }).click();
+    await expect(page.getByText("Updating results for the selected filters…")).toBeVisible();
+    await expect(page.locator("#results-panel")).toHaveAttribute("inert", "");
+    await expect(page).not.toHaveURL(/state=overdue/);
+    releaseFilteredRead();
     await expect.poll(() => dashboardReads).toBeGreaterThanOrEqual(2);
     expect(lastQuery).toBe("?state=overdue&task_type=headshot");
     await expect(page).toHaveURL(/state=overdue&task_type=headshot/);
+    await expect(page.getByText("Updating results for the selected filters…")).toBeHidden();
+    await expect(page.locator("#results-panel")).not.toHaveAttribute("inert", "");
   });
 
   test("speaker custom task forms validate locally", async ({ page }) => {
