@@ -140,6 +140,13 @@ test("a published CFP opens clean and says so, and the outline is usable after e
   await expect(page.locator("#cfp-availability")).toBeVisible();
 
   // Leaving and coming back must not resurrect a phantom change either.
+  // Wait beyond the debounce: before the timer was cancelled on save, it
+  // recreated the just-deleted draft with the new live version and made the
+  // reload dirty. Mobile timing exposed this intermittently in the full gate.
+  await page.waitForTimeout(600);
+  await expect.poll(() => page.evaluate(() =>
+    Object.keys(sessionStorage).filter((key) => key.startsWith("sessionbuddy:cfp-draft:")),
+  )).toEqual([]);
   await page.reload();
   await expect(page.locator(".sb-topbar")).toBeVisible();
   await expect(actionLabel).toHaveText("Live");

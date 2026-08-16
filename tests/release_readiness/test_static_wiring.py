@@ -4,6 +4,52 @@ from pathlib import Path
 import pytest
 
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
+REPOSITORY = STATIC.parents[2]
+
+
+def test_shared_asset_cache_versions_are_consistent_across_every_consumer() -> None:
+    shared_assets = (
+        "/product/assets/product.css",
+        "/app-shell/assets/app-shell.css",
+        "/app-shell/assets/app-shell.js",
+    )
+    consumers = [*STATIC.rglob("*.html"), *STATIC.rglob("*.css")]
+    consumers.append(REPOSITORY / "frontend" / "index.html")
+    consumers.extend((REPOSITORY / "src" / "sessionbuddy" / "console").rglob("*.py"))
+    references: dict[str, list[tuple[Path, str]]] = {
+        asset: [] for asset in shared_assets
+    }
+
+    for path in consumers:
+        source = path.read_text(encoding="utf-8")
+        for asset in shared_assets:
+            for match in re.finditer(rf'{re.escape(asset)}\?v=(\d+)', source):
+                references[asset].append((path, match.group(1)))
+
+    for asset in shared_assets:
+        assert references[asset], f"No consumers found for {asset}"
+        versions = {version for _, version in references[asset]}
+        consumers_with_versions = [
+            (str(path.relative_to(REPOSITORY)), version)
+            for path, version in references[asset]
+        ]
+        assert len(versions) == 1, (
+            f"Inconsistent {asset} cache versions: "
+            f"{consumers_with_versions}"
+        )
+
+    assert any(
+        path == REPOSITORY / "frontend" / "index.html"
+        for path, _ in references["/app-shell/assets/app-shell.css"]
+    )
+    assert any(
+        path == STATIC / "speaker.css"
+        for path, _ in references["/product/assets/product.css"]
+    )
+    assert any(
+        path == REPOSITORY / "src" / "sessionbuddy" / "console" / "embedded_assets.py"
+        for path, _ in references["/app-shell/assets/app-shell.js"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -107,8 +153,8 @@ def test_changed_speaker_workflows_bust_cached_assets() -> None:
     assert "/admin/people/assets/people.js?v=8" in directory
     assert "/admin/speaker-content/assets/speaker-content.js?v=3" in content
     assert "/admin/speakers/assets/messages.js?v=7" in messages
-    assert all("/product/assets/product.css?v=71" in page for page in (directory, content))
-    assert "/product/assets/product.css?v=71" in messages
+    assert all("/product/assets/product.css?v=72" in page for page in (directory, content))
+    assert "/product/assets/product.css?v=72" in messages
 
 
 def test_speaker_message_retries_reuse_idempotency_key() -> None:

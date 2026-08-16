@@ -178,6 +178,7 @@ def test_authenticated_pages_share_navigation_and_account_menu() -> None:
     assert 'id="sign-in"' not in programs
     assert 'id="logout"' not in programs
     shell = (STATIC / "app_shell.js").read_text()
+    assert "Account menu for ${displayName(session)}" in shell
     assert '"Home"' in shell
     assert '"Events"' in shell
     assert '"People"' in shell

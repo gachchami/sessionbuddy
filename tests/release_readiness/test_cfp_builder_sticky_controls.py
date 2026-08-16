@@ -48,6 +48,28 @@ def _value(declarations: str, prop: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _rules_defining(
+    styles: str, prop: str, *, selector_contains: str
+) -> list[tuple[str, str]]:
+    """Return rules that own a declaration, independent of selector reshaping."""
+    styles = re.sub(r"/\*.*?\*/", "", styles, flags=re.DOTALL)
+    rules = []
+    for selector, declarations in re.findall(r"([^{}]+)\{([^{}]*)\}", styles):
+        normalized_selector = " ".join(selector.split())
+        if selector_contains not in normalized_selector:
+            continue
+        if _value(declarations, prop) is not None:
+            rules.append((normalized_selector, declarations))
+    assert rules, (
+        f"no rule containing {selector_contains!r} defines {prop!r}"
+    )
+    return rules
+
+
+def _is_root_scoped(selector: str) -> bool:
+    return selector.startswith(("html", ":root"))
+
+
 def test_cfp_builder_clips_without_becoming_a_scroll_container() -> None:
     styles = (STATIC / "product.css").read_text()
     overflow = _value(_declarations(styles, ".cfp-builder"), "overflow")
@@ -97,9 +119,11 @@ def test_app_shell_publishes_its_chrome_height() -> None:
     styles = (STATIC / "app_shell.css").read_text()
 
     assert "--sb-chrome-top" in styles
-    event_shell = _declarations(
-        styles, ".app-body.sb-shell-authenticated.sb-shell-event"
+    event_rules = _rules_defining(
+        styles, "--sb-chrome-top", selector_contains="sb-shell-event"
     )
+    event_shell = " ".join(declarations for _, declarations in event_rules)
+    assert any(_is_root_scoped(selector) for selector, _ in event_rules)
     assert _value(event_shell, "--sb-chrome-top") is not None, (
         "the event shell must publish its own chrome height; page styles pin "
         "sticky elements against it"
@@ -146,11 +170,19 @@ def test_no_builder_container_creates_a_scroll_container() -> None:
 def test_shell_scroll_offsets_are_derived_from_the_chrome_height() -> None:
     styles = (STATIC / "app_shell.css").read_text()
 
-    shell = _declarations(styles, ".app-body.sb-shell-authenticated")
+    shell_rules = _rules_defining(
+        styles, "--sb-scroll-offset", selector_contains="sb-shell-authenticated"
+    )
+    shell = " ".join(declarations for _, declarations in shell_rules)
+    viewport_rules = _rules_defining(
+        styles, "scroll-padding-top", selector_contains="sb-shell-authenticated"
+    )
+    viewport = " ".join(declarations for _, declarations in viewport_rules)
+    assert any(_is_root_scoped(selector) for selector, _ in viewport_rules)
     assert _value(shell, "--sb-scroll-offset") is not None, (
         "the shell must publish the offset a scrolled-to element has to clear"
     )
-    for block in (shell, _declarations(styles, SHELL_CONTROLS)):
+    for block in (shell, viewport, _declarations(styles, SHELL_CONTROLS)):
         for prop in ("scroll-padding-top", "scroll-margin-top"):
             value = _value(block, prop)
             if value is None:
@@ -170,7 +202,11 @@ def test_shell_scroll_offsets_are_derived_from_the_chrome_height() -> None:
 def test_cfp_page_clears_its_own_sticky_bars_too() -> None:
     styles = (STATIC / "product.css").read_text()
 
-    page = _declarations(styles, ".app-body.sb-shell-authenticated.cfp-page")
+    page_rules = _rules_defining(
+        styles, "--sb-scroll-offset", selector_contains="cfp-page"
+    )
+    page = " ".join(declarations for _, declarations in page_rules)
+    assert any(_is_root_scoped(selector) for selector, _ in page_rules)
     offset = _value(page, "--sb-scroll-offset")
 
     assert offset is not None and "--sb-chrome-top" in offset, (

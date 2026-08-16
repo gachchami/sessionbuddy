@@ -356,7 +356,7 @@
     const choices = roleChoices(session);
     const details = make("details", undefined, "sb-account");
     const summary = make("summary");
-    summary.setAttribute("aria-label", `Profile and account for ${session.email}`);
+    summary.setAttribute("aria-label", `Account menu for ${displayName(session)}`);
     const avatar = make("span", initials(session), "sb-account__avatar");
     avatar.setAttribute("aria-hidden", "true");
     const identity = make("span", undefined, "sb-account__identity");

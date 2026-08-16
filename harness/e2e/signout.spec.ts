@@ -95,7 +95,7 @@ test.describe("account sign-out", () => {
       document.body.append(hero);
     });
 
-    await page.locator("summary[aria-label='Profile and account for admin@example.com']").click();
+    await page.locator("summary[aria-label='Account menu for Admin User']").click();
     const signOut = page.getByRole("button", { name: "Sign out" });
     await expect(signOut).toBeVisible();
     expect(await signOut.evaluate((button) => {
@@ -129,7 +129,7 @@ test.describe("account sign-out", () => {
     });
 
     await page.goto("/admin/events");
-    await page.locator("summary[aria-label='Profile and account for admin@example.com']").click();
+    await page.locator("summary[aria-label='Account menu for Admin User']").click();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await expect(page).toHaveURL(/\/$/);
@@ -156,7 +156,7 @@ test.describe("account sign-out", () => {
     });
 
     await page.goto("/admin/events");
-    await page.locator("summary[aria-label='Profile and account for admin@example.com']").click();
+    await page.locator("summary[aria-label='Account menu for Admin User']").click();
     await page.getByRole("button", { name: "Sign out" }).click();
 
     // The failure re-enables the control with an explicit retry affordance

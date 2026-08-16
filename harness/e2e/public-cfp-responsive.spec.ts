@@ -121,6 +121,29 @@ async function expectWithinViewport(page: Page, selector: string, viewportWidth:
   expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth + 1);
 }
 
+async function reachableAtItsCentre(target: import("@playwright/test").Locator) {
+  return target.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const top = document.elementFromPoint(
+      Math.round(rect.left + rect.width / 2),
+      Math.round(rect.top + rect.height / 2),
+    );
+    return top === element || element.contains(top);
+  });
+}
+
+async function parkBehindActionBar(
+  target: import("@playwright/test").Locator,
+  actionBar: import("@playwright/test").Locator,
+) {
+  await target.evaluate((element, actionElement) => {
+    const targetRect = element.getBoundingClientRect();
+    const actionRect = (actionElement as Element).getBoundingClientRect();
+    const coveredY = actionRect.top + Math.min(actionRect.height / 2, targetRect.height / 2);
+    window.scrollBy({ top: targetRect.top + targetRect.height / 2 - coveredY, behavior: "instant" });
+  }, await actionBar.elementHandle());
+}
+
 test.describe("public CFP responsive design", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
@@ -345,6 +368,62 @@ test.describe("public CFP responsive design", () => {
     await expectWithinViewport(page, "#proposal-card", width);
     await expectWithinViewport(page, "#review-proposal", width);
   });
+
+  for (const viewport of [
+    { name: "desktop", width: 1280, height: 620 },
+    { name: "mobile", width: 390, height: 600 },
+  ]) {
+    test(`the sticky proposal actions never cover short fields on ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await servePublicCfp(page, true, [], null, {
+        ...publishedForm,
+        fields: [
+          ...publishedForm.fields,
+          {
+            key: "audience_level",
+            label: "Audience level",
+            type: "select",
+            required: true,
+            choices: ["Beginner", "Intermediate", "Advanced"],
+            help_text: null,
+            placeholder: null,
+          },
+        ],
+      });
+      await page.goto("/cfp/mobile/responsive-conference");
+
+      const actionBar = page.locator("#proposal-form > .actions");
+      const audience = page.getByLabel("Audience level");
+      await expect(actionBar).toBeVisible();
+      // Preserve enough scroll range to park even the final participant
+      // control underneath the sticky rail. Real CFPs get this space from
+      // longer forms; this compact fixture adds it explicitly.
+      await actionBar.evaluate((actions) => {
+        const spacer = document.createElement("div");
+        spacer.setAttribute("data-test-scroll-range", "true");
+        spacer.style.height = "100vh";
+        spacer.setAttribute("aria-hidden", "true");
+        actions.before(spacer);
+      });
+      await expect.poll(() => page.evaluate(() =>
+        Number.parseFloat(getComputedStyle(document.documentElement)
+          .getPropertyValue("--cfp-action-bar-height")))).toBeGreaterThan(0);
+
+      // Pre-patch evidence: both viewport cases failed for each of these two
+      // controls (4 failures total) when the scroll-margin rule was removed.
+      // Playwright considered the covered control visible, so its recovery
+      // scroll was a no-op. Park each control under the bar first to pin that
+      // exact geometry rather than merely asserting an ordinary visible state.
+      const participant = page.getByRole("button", { name: "+ Add participant" });
+      for (const target of [audience, participant]) {
+        await parkBehindActionBar(target, actionBar);
+        expect(await reachableAtItsCentre(target)).toBe(false);
+        await target.scrollIntoViewIfNeeded();
+        expect(await reachableAtItsCentre(target)).toBe(true);
+      }
+      await audience.selectOption("Intermediate");
+    });
+  }
 
   test("long proposal titles and a long signed-in email never widen a phone layout", async ({ page }) => {
     const width = 390;

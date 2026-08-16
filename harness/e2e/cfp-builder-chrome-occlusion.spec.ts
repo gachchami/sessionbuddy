@@ -120,10 +120,10 @@ async function reachableAtItsCentre(target: Locator): Promise<{ ok: boolean; blo
 }
 
 for (const viewport of [
-  { name: "desktop", width: 1280, height: 720 },
-  { name: "small desktop", width: 1024, height: 768 },
-  { name: "narrow", width: 900, height: 800 },
-  { name: "mobile", width: 390, height: 844 },
+  { name: "desktop", width: 1280, height: 720, expectedScrollPadding: 264 },
+  { name: "small desktop", width: 1024, height: 768, expectedScrollPadding: 264 },
+  { name: "narrow", width: 900, height: 800, expectedScrollPadding: 309.6 },
+  { name: "mobile", width: 390, height: 844, expectedScrollPadding: 305.6 },
 ]) {
   test(`the Session format row stays operable under the sticky chrome on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
@@ -134,6 +134,16 @@ for (const viewport of [
     // page with no chrome -- exactly the blind spot that let this ship.
     await expect(page.locator(".sb-topbar")).toBeVisible();
     await expect(page.locator(".sb-event-nav")).toBeVisible();
+    const headingActions = page.locator(".cfp-page-heading > .actions");
+    await expect(headingActions.locator("#preview-cfp")).toBeVisible();
+    const headingActionsBox = await headingActions.boundingBox();
+    expect(headingActionsBox).not.toBeNull();
+    expect(headingActionsBox!.x).toBeGreaterThanOrEqual(0);
+    expect(headingActionsBox!.x + headingActionsBox!.width).toBeLessThanOrEqual(viewport.width + 1);
+    const viewportPadding = await page.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
+    );
+    expect(viewportPadding).toBeCloseTo(viewport.expectedScrollPadding, 3);
 
     await page.locator('.cfp-outline-item[data-selection="proposal"]').click();
     const formatCard = page.locator("fieldset.question-card[data-index]").filter({ hasText: "Session format" });

@@ -91,6 +91,11 @@ test.describe("account profile responsive design", () => {
     await page.goto("/account");
     await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
 
+    const viewportPadding = await page.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
+    );
+    expect(viewportPadding).toBeCloseTo(88, 3); // 5.5rem mobile shell chrome.
+
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     await expect(page.locator("#workspace-navigation")).toHaveCount(1);
     await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" })).toBeVisible();
@@ -164,7 +169,7 @@ test.describe("account profile responsive design", () => {
     await page.goto("/account");
     await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
     await expect(page.getByText("Temporarily unavailable")).toHaveCount(0);
-    await page.getByLabel("Profile and account for admin@example.test").click();
+    await page.getByLabel("Account menu for Admin User").click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     expect(sessionRequests).toBeGreaterThanOrEqual(2);
   });

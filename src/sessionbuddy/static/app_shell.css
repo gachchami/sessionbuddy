@@ -356,7 +356,7 @@
    the scrolled-to element behind that chrome, and scrolling it into view again
    cannot recover it. Pages that stack their own sticky bars below the shell
    raise --sb-scroll-offset (see .cfp-page in product.css). */
-.app-body.sb-shell-authenticated { scroll-padding-top: var(--sb-scroll-offset); }
+html:has(> body.app-body.sb-shell-authenticated) { scroll-padding-top: var(--sb-scroll-offset); }
 .app-body.sb-shell-authenticated :where(button, a, input, select, textarea, summary) { scroll-margin-top: var(--sb-scroll-offset); }
 
 .sb-guest-header { border-bottom: 1px solid #e4e7ec; background: white; color: #182230; }
@@ -417,12 +417,12 @@
 /* Height of the fixed shell chrome (topbar + event nav), published so page
    styles can pin sticky elements directly beneath it. Values mirror the
    `> main.shell` padding-top declarations above and below. */
-.app-body.sb-shell-authenticated { --sb-chrome-top: 4.5rem; --sb-scroll-offset: var(--sb-chrome-top); }
-.app-body.sb-shell-authenticated.sb-shell-event { --sb-chrome-top: 9.5rem; }
+html:has(> body.app-body.sb-shell-authenticated) { --sb-chrome-top: 4.5rem; --sb-scroll-offset: var(--sb-chrome-top); }
+html:has(> body.app-body.sb-shell-authenticated.sb-shell-event) { --sb-chrome-top: 9.5rem; }
 @media (max-width: 60rem) {
-  .app-body.sb-shell-authenticated.sb-shell-event { --sb-chrome-top: 12.35rem; }
+  html:has(> body.app-body.sb-shell-authenticated.sb-shell-event) { --sb-chrome-top: 12.35rem; }
 }
 @media (max-width: 52rem) {
-  .app-body.sb-shell-authenticated { --sb-chrome-top: 5.5rem; }
-  .app-body.sb-shell-authenticated.sb-shell-event { --sb-chrome-top: 12.1rem; }
+  html:has(> body.app-body.sb-shell-authenticated) { --sb-chrome-top: 5.5rem; }
+  html:has(> body.app-body.sb-shell-authenticated.sb-shell-event) { --sb-chrome-top: 12.1rem; }
 }

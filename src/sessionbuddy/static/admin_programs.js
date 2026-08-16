@@ -1044,6 +1044,12 @@
     state.draftTimer = setTimeout(saveLocalDraft, 500);
   }
 
+  function discardLocalDraft() {
+    clearTimeout(state.draftTimer);
+    state.draftTimer = null;
+    sessionStorage.removeItem(draftKey());
+  }
+
   function restoreLocalDraft() {
     const raw = sessionStorage.getItem(draftKey());
     if (!raw) return false;
@@ -1437,7 +1443,10 @@
       state.publishedForm = form;
       state.editing = false;
       state.dirty = false;
-      sessionStorage.removeItem(draftKey());
+      // A field edit may still have a queued autosave. Cancel it before
+      // clearing storage so it cannot recreate a matching-version draft after
+      // this successful write and make a clean CFP look dirty on reload.
+      discardLocalDraft();
       clearValidation();
       renderWorkspace();
       completed = true;
@@ -1486,7 +1495,7 @@
     loadPublishedSettings(state.publishedForm);
     state.editing = false;
     state.dirty = false;
-    sessionStorage.removeItem(draftKey());
+    discardLocalDraft();
     renderWorkspace();
     setStatus("No changes were made.");
     byId("cfp-link-title").scrollIntoView({ behavior: "smooth", block: "start" });

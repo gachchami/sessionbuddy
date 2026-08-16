@@ -7,6 +7,7 @@
   const workspaceSegment = workspaceMatch?.[2] ? decodeURIComponent(workspaceMatch[2]) : "";
   const slug = workspaceMode ? decodeURIComponent(workspaceMatch[1]) : decodeURIComponent(pathParts.pop() || "");
   if (workspaceMode) document.body.classList.add("proposal-management-page");
+  document.documentElement.classList.add("cfp-public-scroll");
   const browserSessionId = () => {
     if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
     const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -26,6 +27,23 @@
   const browserDraftKey = () => `sessionbuddy:cfp:${slug}:draft:${workspaceMode
     ? (state.editingSubmission?.id || workspaceSegment) : "new"}`;
   const BROWSER_DRAFT_TTL_MS = 30 * 60 * 1000;
+
+  function observeProposalActions() {
+    const actions = byId("proposal-form")?.querySelector(":scope > .actions");
+    if (!actions) return;
+    const publishHeight = () => {
+      const height = Math.ceil(actions.getBoundingClientRect().height);
+      document.documentElement.style.setProperty("--cfp-action-bar-height", `${height}px`);
+    };
+    publishHeight();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(publishHeight);
+      observer.observe(actions);
+      window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+    } else {
+      window.addEventListener("resize", publishHeight);
+    }
+  }
 
   function normalizedEmail(value) {
     return String(value || "").trim().toLowerCase();
@@ -1151,5 +1169,6 @@
     }
   });
 
+  observeProposalActions();
   load();
 })();

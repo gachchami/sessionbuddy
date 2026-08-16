@@ -433,7 +433,24 @@ test.describe("form validation and workflow wiring", () => {
     await page.route("**/api/v1/evaluator/assignments*", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [assignment], next_cursor: null, total: 1, completed_count: 0 }) }));
     let evaluationWrites = 0;
     let conflictWrites = 0;
-    await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/evaluation`, async (route) => { evaluationWrites += 1; await route.fulfill({ contentType: "application/json", body: JSON.stringify({}) }); });
+    await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/evaluation`, async (route) => {
+      evaluationWrites += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "evaluation-1",
+          assignment_id: assignmentId,
+          rating: 4,
+          criterion_responses: {},
+          recommendation: "accept",
+          internal_comment: "",
+          state: "draft",
+          version: 1,
+          created_at_ms: Date.now(),
+          updated_at_ms: Date.now(),
+        }),
+      });
+    });
     await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/conflict`, async (route) => { conflictWrites += 1; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({}) }); });
     await page.goto("/reviews");
     await page.getByRole("button", { name: "Open review" }).click();
