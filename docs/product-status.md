@@ -162,6 +162,16 @@ reviews as immutable history.
 The organizer round view uses a compact progress rail and reviewer roster;
 proposal decision reasons, notification controls, and permanence warnings are
 revealed only after the organizer selects Accept or Reject.
+An open round also exposes additive assignment controls on each proposal. An
+organizer can attach any eligible reviewer who is not already assigned or in
+conflict to that exact proposal; completed and conflicted work remains locked.
+When a decision-ready round receives another assignment, the control states that
+the round returns to review in progress. Incremental assignments send at most one
+count-free queue-change notification per reviewer and round each hour, preventing
+proposal-by-proposal organizer actions from becoming proposal-by-proposal email.
+Reviewer-invitation failures stay inside the invitation dialog with focused,
+actionable feedback. Individual-review disclosures use the full bordered row as
+their native toggle, while proposals with no reviews show a static empty state.
 The proposal inbox presents rounds as an ordered status ledger. Only an open
 round blocks a proposal from selection; closed-round proposals can enter a later
 round, and draft rounds may be saved before any reviewers are assigned.

@@ -3330,10 +3330,15 @@
           "replacement_required": {
             "title": "Replacement Required",
             "type": "boolean"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "string"
           }
         },
         "required": [
           "assignment_id",
+          "submission_id",
           "evaluator_user_id",
           "evaluator_name",
           "proposal_title",
@@ -4124,6 +4129,10 @@
             "title": "Evaluator Name",
             "type": "string"
           },
+          "evaluator_user_id": {
+            "title": "Evaluator User Id",
+            "type": "string"
+          },
           "internal_comment": {
             "default": "",
             "title": "Internal Comment",
@@ -4173,6 +4182,7 @@
           }
         },
         "required": [
+          "evaluator_user_id",
           "evaluator_name",
           "state"
         ],

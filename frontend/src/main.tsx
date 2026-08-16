@@ -57,6 +57,7 @@ type SubmissionResult = {
   internal_reason: string;
   correction_reason: string;
   reviews: {
+    evaluator_user_id: string;
     evaluator_name: string;
     state: "not_started" | "draft" | "final";
     rating: number | null;
@@ -76,6 +77,7 @@ type EvaluatorProgress = {
 type Evaluator = { user_id: string; display_name: string };
 type ConflictProgress = {
   assignment_id: string;
+  submission_id: string;
   evaluator_user_id: string;
   evaluator_name: string;
   proposal_title: string;
@@ -916,7 +918,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [defaultMessagePreview, setDefaultMessagePreview] = useState<DecisionMessagePreview | null>(null);
   const [messagePreviewError, setMessagePreviewError] = useState("");
   const [resultSort, setResultSort] = useState<ResultSort>("submitted");
-  const [selectedEvaluatorId, setSelectedEvaluatorId] = useState("");
+  const [assignmentReviewerBySubmission, setAssignmentReviewerBySubmission] =
+    useState<Record<string, string>>({});
+  const [assigningSubmissionId, setAssigningSubmissionId] = useState<string | null>(null);
   const [exporting, setExporting] = useState<"results" | "reviews" | null>(null);
 
   function handleRoundError(error: unknown, focusStatus = false) {
@@ -1188,21 +1192,35 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     await load();
     setStatus("Conflicted assignment reassigned.");
   }
-  async function addEvaluator() {
-    if (!selectedEvaluatorId) return;
-    const result = await api<{ assignment_count: number }>(
-      `/api/v1/admin/evaluation-rounds/${roundId}/evaluators`,
-      {
-        method: "POST",
-        headers: mutationHeaders(csrf),
-        body: JSON.stringify({ evaluator_user_id: selectedEvaluatorId }),
-      },
-    );
-    setSelectedEvaluatorId("");
-    await load();
-    setStatus(
-      `Reviewer added with ${result.assignment_count} assignment${result.assignment_count === 1 ? "" : "s"}.`,
-    );
+  async function assignEvaluator(submission: SubmissionResult) {
+    const evaluatorId = assignmentReviewerBySubmission[submission.submission_id] || "";
+    if (!evaluatorId) return;
+    setAssigningSubmissionId(submission.submission_id);
+    try {
+      const result = await api<{ assignment_count: number }>(
+        `/api/v1/admin/evaluation-rounds/${roundId}/evaluators`,
+        {
+          method: "POST",
+          headers: mutationHeaders(csrf),
+          body: JSON.stringify({
+            evaluator_user_id: evaluatorId,
+            submission_ids: [submission.submission_id],
+          }),
+        },
+      );
+      setAssignmentReviewerBySubmission((current) => ({
+        ...current,
+        [submission.submission_id]: "",
+      }));
+      await load();
+      setStatus(
+        result.assignment_count === 1
+          ? `Reviewer assigned to “${submission.proposal_title}”.`
+          : `That reviewer is already assigned to “${submission.proposal_title}”.`,
+      );
+    } finally {
+      setAssigningSubmissionId(null);
+    }
   }
   async function removeEvaluator(evaluator: EvaluatorProgress) {
     if (
@@ -1441,88 +1459,6 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 <p className="eyebrow">People</p>
                 <h2 id="reviewer-progress-title">Reviewer progress</h2>
               </div>
-            {results.status === "open" && !closeReady && (
-              <div className="round-add-reviewer">
-                <label>
-                  <span className="visually-hidden">Reviewer to add</span>
-                  <select
-                    id="round-add-evaluator"
-                    value={selectedEvaluatorId}
-                    onChange={(event) => setSelectedEvaluatorId(event.target.value)}
-                  >
-                    <option value="">Choose reviewer…</option>
-                    {results.available_evaluators
-                      .filter(
-                        (candidate) =>
-                          !results.evaluators.some(
-                            (current) =>
-                              current.evaluator_user_id === candidate.user_id,
-                          ),
-                      )
-                      .map((candidate) => (
-                        <option
-                          key={candidate.user_id}
-                          value={candidate.user_id}
-                        >
-                          {candidate.display_name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <button
-                  className="secondary"
-                  disabled={!selectedEvaluatorId}
-                  onClick={() =>
-                    addEvaluator().catch(handleRoundError)
-                  }
-                >
-                  Add reviewer
-                </button>
-              </div>
-            )}
-            {results.status === "open" && closeReady && (
-              <details className="round-add-reviewer-disclosure">
-                <summary>Add another reviewer</summary>
-                <div className="round-add-reviewer">
-                  <label>
-                    <span className="visually-hidden">Reviewer to add</span>
-                    <select
-                      value={selectedEvaluatorId}
-                      onChange={(event) =>
-                        setSelectedEvaluatorId(event.target.value)
-                      }
-                    >
-                      <option value="">Choose reviewer…</option>
-                      {results.available_evaluators
-                        .filter(
-                          (candidate) =>
-                            !results.evaluators.some(
-                              (current) =>
-                                current.evaluator_user_id === candidate.user_id,
-                            ),
-                        )
-                        .map((candidate) => (
-                          <option key={candidate.user_id} value={candidate.user_id}>
-                            {candidate.display_name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                  <button
-                    className="secondary"
-                    disabled={!selectedEvaluatorId}
-                    onClick={() =>
-                      addEvaluator().catch(handleRoundError)
-                    }
-                  >
-                    Add reviewer
-                  </button>
-                </div>
-                <p className="help">
-                  This adds a new assignment and moves the round back into review.
-                </p>
-              </details>
-            )}
             </div>
           <div className="reviewer-list" aria-label="Evaluator progress">
             {results.evaluators.length === 0 && (
@@ -1682,10 +1618,8 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     {submission.completed_count}/{submission.assigned_count}{" "}
                     complete
                   </p>
-                  <details>
-                    <summary>
-                      Individual reviews ({submission.reviews.length})
-                    </summary>
+                  {submission.reviews.length > 0 ? <details className="individual-reviews">
+                    <summary>Individual reviews ({submission.reviews.length})</summary>
                     {submission.reviews.map((review, index) => (
                       <article key={`${submission.submission_id}-${index}`}>
                         <strong>{review.evaluator_name}</strong>
@@ -1730,7 +1664,72 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         )}
                       </article>
                     ))}
-                  </details>
+                  </details> : (
+                    <p className="proposal-result__empty-reviews">No individual reviews yet.</p>
+                  )}
+                  {results.status === "open" && (() => {
+                    const reviewers = new Map<string, string>();
+                    results.available_evaluators.forEach((candidate) =>
+                      reviewers.set(candidate.user_id, candidate.display_name));
+                    results.evaluators.forEach((candidate) =>
+                      reviewers.set(candidate.evaluator_user_id, candidate.display_name));
+                    const assigned = new Set(
+                      submission.reviews.map((review) => review.evaluator_user_id),
+                    );
+                    const conflicted = new Set(
+                      results.conflicts
+                        .filter((conflict) => conflict.submission_id === submission.submission_id)
+                        .map((conflict) => conflict.evaluator_user_id),
+                    );
+                    const available = [...reviewers.entries()].filter(
+                      ([userId]) => !assigned.has(userId) && !conflicted.has(userId),
+                    );
+                    return (
+                      <details className="proposal-assignment">
+                        <summary>Assign reviewer</summary>
+                        <div className="proposal-assignment__form">
+                          <label>
+                            Reviewer for {submission.proposal_title}
+                            <select
+                              value={assignmentReviewerBySubmission[submission.submission_id] || ""}
+                              onChange={(event) =>
+                                setAssignmentReviewerBySubmission((current) => ({
+                                  ...current,
+                                  [submission.submission_id]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Choose reviewer…</option>
+                              {available.map(([userId, displayName]) => (
+                                <option key={userId} value={userId}>{displayName}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            className="secondary"
+                            disabled={
+                              !assignmentReviewerBySubmission[submission.submission_id]
+                              || assigningSubmissionId === submission.submission_id
+                            }
+                            onClick={() => assignEvaluator(submission).catch(handleRoundError)}
+                          >
+                            {assigningSubmissionId === submission.submission_id
+                              ? "Assigning…"
+                              : "Assign to proposal"}
+                          </button>
+                        </div>
+                        {available.length === 0 && (
+                          <p className="help">Every eligible reviewer is already assigned or has declared a conflict.</p>
+                        )}
+                        {closeReady && (
+                          <p className="help proposal-assignment__warning" role="note">
+                            Assigning another review returns this round to Review in progress until that review is finalized.
+                          </p>
+                        )}
+                        <p className="help">This adds one assignment. Existing and finalized reviews are unchanged.</p>
+                      </details>
+                    );
+                  })()}
                   {decided ? (
                     <>
                       <p>

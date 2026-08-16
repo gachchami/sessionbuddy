@@ -120,14 +120,57 @@ test.describe("evaluation round dashboard", () => {
     await expect(page.getByText("No proposals assigned")).toHaveCount(0);
   });
 
-  test("does not offer an attached unassigned reviewer in the add control", async ({ page }) => {
+  test("assigns one open-round proposal to an already attached reviewer", async ({ page }) => {
+    let assignmentPayload: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/evaluators", async (route) => {
+      assignmentPayload = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          round_id: "round-a",
+          evaluator_user_id: "reviewer-a",
+          assignment_count: 1,
+        }),
+      });
+    });
     await openDashboard(page, results({
       status: "open",
+      assigned_count: 1,
+      completed_count: 1,
       available_evaluators: [{ user_id: "reviewer-a", display_name: "Sam Whitfield" }],
+      submissions: [{
+        submission_id: "submission-a",
+        speaker_name: "Taylor Speaker",
+        proposal_title: "One exact proposal",
+        assigned_count: 0,
+        completed_count: 0,
+        average_rating: null,
+        decision: null,
+        decision_round_id: null,
+        internal_reason: "",
+        correction_reason: "",
+        reviews: [],
+      }],
+      submission_count: 1,
     }));
 
     await expect(page.getByText("No proposals assigned")).toBeVisible();
-    await expect(page.locator("#round-add-evaluator option[value='reviewer-a']")).toHaveCount(0);
+    await expect(page.getByText("No individual reviews yet.")).toBeVisible();
+    await expect(page.getByText("Individual reviews (0)")).toHaveCount(0);
+    await page.getByText("Assign reviewer", { exact: true }).click();
+    await expect(page.getByRole("note")).toContainText(
+      "returns this round to Review in progress",
+    );
+    await page.getByRole("combobox", { name: "Reviewer for One exact proposal" })
+      .selectOption("reviewer-a");
+    await page.getByRole("button", { name: "Assign to proposal" }).click();
+    expect(assignmentPayload).toEqual({
+      evaluator_user_id: "reviewer-a",
+      submission_ids: ["submission-a"],
+    });
+    await expect(page.getByRole("status")).toContainText(
+      "Reviewer assigned to “One exact proposal”.",
+    );
     await expect(page.getByRole("button", { name: "Remove" })).toBeVisible();
   });
 
@@ -281,6 +324,7 @@ test.describe("evaluation round dashboard", () => {
         internal_reason: "",
         correction_reason: "",
         reviews: [{
+          evaluator_user_id: "reviewer-a",
           evaluator_name: "Sam Whitfield",
           state: "final",
           rating: 4,
@@ -297,7 +341,13 @@ test.describe("evaluation round dashboard", () => {
       submission_count: 1,
     }));
 
-    await page.getByText("Individual reviews (1)").click();
+    const disclosure = page.locator(".individual-reviews");
+    const summary = disclosure.locator("summary");
+    const box = await summary.boundingBox();
+    expect(box).not.toBeNull();
+    // Exercise the empty row body, not the summary text or disclosure glyph.
+    await summary.click({ position: { x: box!.width * 0.75, y: box!.height / 2 } });
+    await expect(disclosure).toHaveAttribute("open", "");
     await expect(page.getByText("No decision", { exact: true })).toBeVisible();
     const responses = page.locator(".review-responses");
     await expect(responses.locator("dt")).toHaveText(["Quality", "Recommendation", "Comments"]);

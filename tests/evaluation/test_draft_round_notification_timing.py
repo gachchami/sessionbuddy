@@ -346,3 +346,64 @@ async def test_a_reviewer_added_to_a_draft_hears_about_it_when_the_round_opens(
     assert len(mail) == 1
     # Both proposals, in one message, rather than one message per edit.
     assert "assigned 2 proposals" in mail[0][2]
+
+
+async def test_incremental_open_round_assignments_share_one_hourly_notice(
+    production_environment,  # noqa: F811 - pytest fixture
+    monkeypatch,
+) -> None:
+    """Proposal-by-proposal assignment cannot become proposal-by-proposal email spam.
+
+    The first click queues an immediate, count-free notice. Further clicks for the same
+    reviewer and round in the hour converge on the same outbox row, while both assignment
+    mutations still commit.
+    """
+    # Both mutations intentionally belong to one fixed clock-hour bucket. Without a
+    # frozen clock, the test itself could cross an hour boundary between POSTs and
+    # correctly observe two production windows as a false failure.
+    monkeypatch.setattr(
+        "sessionbuddy.evaluation.router.utc_now_ms", lambda: 1_900_000_123_000
+    )
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _organizer(client, connection)
+        _seed_submissions(connection, organization_id, event_id)
+        _seed_reviewer(connection, organization_id, event_id, _admin_user_id(connection))
+        created = await _create_round(
+            client,
+            csrf,
+            event_id,
+            _round_body(status="open"),
+            label="open-incremental",
+        )
+        assert created.status_code == 201, created.text
+        round_id = created.json()["id"]
+
+        # Isolate notifications produced by the incremental control, then make two real
+        # changes: revive A and B. Both proposals are already round members.
+        connection.execute("DELETE FROM communication_messages")
+        connection.execute(
+            """UPDATE evaluation_assignments SET status='revoked'
+               WHERE round_id=?""",
+            (round_id,),
+        )
+        connection.commit()
+        for label, submission_id in (("revive-a", A), ("add-b", B)):
+            changed = await client.post(
+                f"/api/v1/admin/evaluation-rounds/{round_id}/evaluators",
+                headers={"origin": "https://test", "x-csrf-token": csrf},
+                json={"evaluator_user_id": SAM_USER_ID, "submission_ids": [submission_id]},
+            )
+            assert changed.status_code == 200, (label, changed.text)
+            assert changed.json()["assignment_count"] == 1
+
+    mail = _assignment_mail(connection)
+    assert len(mail) == 1
+    assert "New review work was added to your queue" in mail[0][2]
+    assert "assigned 1 proposal" not in mail[0][2]
+    assert ":assignment-window:" in mail[0][3]
+    assert connection.execute(
+        """SELECT COUNT(*) FROM evaluation_assignments
+           WHERE round_id=? AND evaluator_user_id=? AND status='assigned'""",
+        (round_id, SAM_USER_ID),
+    ).fetchone()[0] == 2

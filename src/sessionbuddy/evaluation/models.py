@@ -373,6 +373,7 @@ class ConflictProgress(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     assignment_id: str
+    submission_id: str
     evaluator_user_id: str
     evaluator_name: str
     proposal_title: str
@@ -493,6 +494,7 @@ class SubmissionDecisionCorrectionView(SubmissionDecisionCorrectionCreate):
 class EvaluationDetail(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    evaluator_user_id: str
     evaluator_name: str
     state: Literal["not_started", "draft", "final"]
     rating: int | None = None

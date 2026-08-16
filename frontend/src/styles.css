@@ -125,15 +125,6 @@ button.danger-outline:hover { background: #fff5f4; }
 .round-section__heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 .round-section__heading .eyebrow { margin: 0 0 .2rem; }
 .round-section__heading h2 { margin: 0; font-size: 1.375rem; letter-spacing: -.02em; }
-.round-add-reviewer { display: flex; align-items: flex-end; gap: .5rem; }
-.round-add-reviewer label { margin: 0; }
-.round-add-reviewer select { min-height: 2.5rem; padding-block: .5rem; font-size: 1rem; }
-.round-add-reviewer button { min-height: 2.5rem; padding: .5rem .7rem; font-size: .875rem; }
-.round-add-reviewer-disclosure { margin: 0; padding: 0; border: 0; }
-.round-add-reviewer-disclosure > summary { width: fit-content; margin-left: auto; color: #475467; font-size: .875rem; font-weight: 700; }
-.round-add-reviewer-disclosure[open] { min-width: min(100%, 28rem); padding: .75rem; border: 1px solid var(--line); border-radius: .65rem; background: white; }
-.round-add-reviewer-disclosure[open] > summary { margin-bottom: .7rem; }
-.round-add-reviewer-disclosure .help { margin: .55rem 0 0; max-width: 26rem; }
 .reviewer-list { overflow: hidden; border: 1px solid var(--line); border-radius: .75rem; background: white; }
 .reviewer-list__empty { margin: 0; padding: 1rem; }
 .reviewer-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 1rem; border: 0; border-radius: 0; box-shadow: none; }
@@ -157,10 +148,21 @@ button.danger-outline:hover { background: #fff5f4; }
 .proposal-result__score { grid-column: 2; grid-row: 2 / span 2; align-self: center; margin: 0; color: var(--muted); font-size: .875rem; white-space: nowrap; }
 .proposal-result__score strong { color: var(--ink); font-size: 1.125rem; }
 .proposal-result > details, .proposal-result > .help, .proposal-result > .confirmation, .proposal-result > .actions, .proposal-result > p:not(.speaker):not(.proposal-result__score) { grid-column: 1 / -1; }
-.proposal-result > details { margin-top: .7rem; padding: .65rem .75rem; border: 1px solid #e1e5ec; border-radius: .55rem; background: #fafbfc; }
-.proposal-result > details > summary { width: fit-content; color: #344054; font-size: .875rem; }
-.proposal-result > details > article { margin-top: .65rem; padding: .75rem; border: 0; border-radius: .45rem; box-shadow: none; }
+.proposal-result > details { margin-top: .7rem; padding: 0; overflow: hidden; border: 1px solid #e1e5ec; border-radius: .55rem; background: #fafbfc; }
+.proposal-result > details > summary { position: relative; display: block; box-sizing: border-box; width: 100%; min-height: 2.75rem; padding: .65rem 2.5rem .65rem .75rem; color: #344054; cursor: pointer; font-size: .875rem; line-height: 1.45; list-style: none; }
+.proposal-result > details > summary::-webkit-details-marker { display: none; }
+.proposal-result > details > summary::after { position: absolute; top: 50%; right: .75rem; content: "+"; color: #667085; font-size: 1rem; font-weight: 500; transform: translateY(-50%); }
+.proposal-result > details[open] > summary { border-bottom: 1px solid #e1e5ec; background: white; }
+.proposal-result > details[open] > summary::after { content: "−"; }
+.proposal-result > details > article { margin: .65rem .75rem; padding: .75rem; border: 0; border-radius: .45rem; box-shadow: none; }
 .proposal-result > details > article p { margin: .35rem 0 0; }
+.proposal-result__empty-reviews { margin-top: .7rem; padding: .7rem .75rem; border: 1px dashed #d8dde7; border-radius: .55rem; color: var(--muted); font-size: .875rem; }
+.proposal-assignment__form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: .65rem; padding: .75rem; }
+.proposal-assignment__form label { margin: 0; }
+.proposal-assignment__form select { min-height: 2.5rem; padding-block: .5rem; font-size: 1rem; }
+.proposal-assignment__form button { min-height: 2.5rem; padding: .5rem .8rem; }
+.proposal-assignment > .help { margin: 0; padding: 0 .75rem .75rem; }
+.proposal-assignment > .proposal-assignment__warning { color: #8a4b08; font-weight: 700; }
 .proposal-result > .help { margin: .55rem 0 0; }
 .proposal-result__actions { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--line); }
 .decision-confirmation { margin-bottom: 0; }
@@ -174,7 +176,7 @@ button.danger-outline:hover { background: #fff5f4; }
 
 :where(a,button,input,select,textarea,summary):focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .proposal-result > details > summary:focus-visible,
-.round-add-reviewer-disclosure > summary:focus-visible { outline-width: 2px; outline-offset: 4px; border-radius: .2rem; }
+.proposal-assignment > summary:focus-visible { outline-width: 2px; outline-offset: -4px; border-radius: .2rem; }
 @media (max-width: 42rem) {
   .toolbar { align-items: stretch; flex-direction: column; }
   .toolbar .actions button { flex: 1; }
@@ -201,8 +203,8 @@ button.danger-outline:hover { background: #fff5f4; }
   .round-status { grid-column: 1 / -1; justify-self: start; margin-left: 0; }
   .round-section { margin-top: 1.6rem; }
   .round-section__heading { align-items: stretch; flex-direction: column; gap: .75rem; }
-  .round-add-reviewer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
-  .round-add-reviewer button { min-width: 7rem; }
+  .proposal-assignment__form { grid-template-columns: 1fr; }
+  .proposal-assignment__form button { width: 100%; }
   .reviewer-row { align-items: flex-start; flex-direction: column; gap: .65rem; padding: .85rem; }
   .reviewer-row__actions { width: 100%; padding-top: .45rem; border-top: 1px solid var(--line); }
   .reviewer-row__actions button { flex: 0 1 auto; }
@@ -210,10 +212,6 @@ button.danger-outline:hover { background: #fff5f4; }
   .proposal-result { display: block; }
   .proposal-result__state { margin-bottom: .55rem; }
   .proposal-result__score { margin: .55rem 0 0; }
-}
-@media (max-width: 27rem) {
-  .round-add-reviewer { grid-template-columns: 1fr; }
-  .round-add-reviewer button { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 .review-responses {

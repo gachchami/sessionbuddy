@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from html import escape, unescape
 from io import StringIO
 from time import perf_counter
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
@@ -748,6 +749,7 @@ def _queue_assignment_notifications(
     base_url: str,
     now_ms: int,
     dedup_suffix: str,
+    summarize_changes: bool = False,
 ) -> list[str]:
     """Queue one assignment-notification email per evaluator, atomically with
     the assignments themselves. Returns queued message ids for best-effort
@@ -767,19 +769,32 @@ def _queue_assignment_notifications(
         email = emails_by_user.get(evaluator_id, "")
         if not email or count <= 0:
             continue
-        message_id = new_id()
+        deterministic_key = f"evaluation-assignment:{round_id}:{evaluator_id}:{dedup_suffix}"
+        # Incremental assignment controls can be used several times in succession. A
+        # stable id plus the deterministic-key conflict guard makes those clicks one
+        # immediate queue notification per window, and duplicate queue envelopes remain
+        # harmless under the consumer's existing atomic claim.
+        message_id = (
+            str(uuid5(NAMESPACE_URL, deterministic_key)) if summarize_changes else new_id()
+        )
         message_ids.append(message_id)
         html_body = (
-            f"<p>You have been assigned {count} proposal"
-            f"{'s' if count != 1 else ''} to review in "
-            f"{escape(round_name)}.</p>{deadline}{link}"
+            f"<p>New review work was added to your queue in {escape(round_name)}.</p>"
+            f"{deadline}{link}"
+            if summarize_changes
+            else (
+                f"<p>You have been assigned {count} proposal"
+                f"{'s' if count != 1 else ''} to review in "
+                f"{escape(round_name)}.</p>{deadline}{link}"
+            )
         )
         batch.add_statement(
             db.prepare(
                 """INSERT INTO communication_messages
                    (id,organization_id,event_id,recipient_user_id,recipient_email,subject,
                     html_body,deterministic_key,status,queued_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)"""
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'queued',?9,?9)
+                   ON CONFLICT(organization_id,event_id,deterministic_key) DO NOTHING"""
             ).bind(
                 message_id,
                 organization_id,
@@ -788,7 +803,7 @@ def _queue_assignment_notifications(
                 email,
                 f"New review assignments: {round_name}",
                 html_body,
-                f"evaluation-assignment:{round_id}:{evaluator_id}:{dedup_suffix}",
+                deterministic_key,
                 now_ms,
             )
         )
@@ -2449,7 +2464,11 @@ async def add_round_evaluator(
             ),
             base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
             now_ms=now,
-            dedup_suffix=str(now),
+            # One immediate notice per reviewer and round each hour. The body names a
+            # queue change rather than a count, so later clicks in the window cannot make
+            # the already-queued message stale.
+            dedup_suffix=f"assignment-window:{now // 3_600_000}",
+            summarize_changes=True,
         )
         if round_row["status"] == "open"
         else []
@@ -3721,7 +3740,7 @@ async def get_round_results(
     submission_ids = [str(row["submission_id"]) for row in rows]
     review_rows: list[dict] = []
     if submission_ids:
-        review_query = """SELECT a.submission_id,
+        review_query = """SELECT a.submission_id,a.evaluator_user_id,
                       COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS evaluator_name,
                       COALESCE(e.state,'not_started') AS state,e.rating,e.recommendation,
                       COALESCE(e.criterion_responses_json,'{}') AS criterion_responses_json,
@@ -3753,6 +3772,7 @@ async def get_round_results(
                 )
         reviews_by_submission.setdefault(str(review["submission_id"]), []).append(
             EvaluationDetail(
+                evaluator_user_id=str(review["evaluator_user_id"]),
                 evaluator_name=str(review["evaluator_name"]),
                 state=str(review["state"]),
                 rating=int(review["rating"]) if review["rating"] is not None else None,
@@ -3862,10 +3882,13 @@ async def get_round_results(
             db.prepare(
                 """SELECT DISTINCT u.id AS user_id,
                           COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS display_name
-                   FROM evaluation_assignments a JOIN users u ON u.id=a.evaluator_user_id
+                   FROM users u
                    JOIN user_roles ur ON ur.user_id=u.id
-                   WHERE a.organization_id=?1 AND a.event_id=?2
-                     AND a.status!='revoked' AND u.status='active'
+                   JOIN identity_invitations i
+                     ON i.organization_id=?1 AND i.event_id=?2
+                    AND i.normalized_email=u.normalized_email
+                    AND i.role='evaluator' AND i.status='accepted'
+                   WHERE u.status='active'
                      AND ur.role='reviewer' AND ur.status='active'
                    ORDER BY u.normalized_email LIMIT 100"""
             ).bind(round_row["organization_id"], round_row["event_id"]),
@@ -3876,7 +3899,7 @@ async def get_round_results(
         await _timed_all(
             request,
             db.prepare(
-                """SELECT c.assignment_id, c.evaluator_user_id,
+                """SELECT c.assignment_id, a.submission_id, c.evaluator_user_id,
                   COALESCE(NULLIF(TRIM(u.display_name),''),u.email) AS evaluator_name,
                   s.proposal_title, c.conflict_type,
                   NOT EXISTS (

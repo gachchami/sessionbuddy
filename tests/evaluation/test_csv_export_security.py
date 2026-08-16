@@ -69,6 +69,7 @@ class _MeasuredStatement:
                 "results": [
                     {
                         "submission_id": f"submission-{index:02d}",
+                        "evaluator_user_id": "reviewer-id",
                         "evaluator_name": "Reviewer",
                         "state": "final",
                         "rating": 4,
@@ -209,6 +210,7 @@ async def test_detailed_review_csv_keeps_rubric_order_and_all_response_types(
                 decision=None,
                 reviews=[
                     EvaluationDetail(
+                        evaluator_user_id="reviewer-id",
                         evaluator_name="Reviewer",
                         state="final",
                         rating=3,

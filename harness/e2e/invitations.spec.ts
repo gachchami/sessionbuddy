@@ -119,6 +119,58 @@ test.describe("invitation dialog", () => {
     await page.getByRole("button", { name: "Cancel" }).click();
   });
 
+  test("shows an accepted-invitation conflict inside the open dialog", async ({ page }) => {
+    await page.route("**/api/v1/auth/session", (route) =>
+      route.fulfill({ contentType: "application/json", body: sessionBody }));
+    await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: eventId,
+        organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        name: "Linkless Conf",
+        status: "active",
+        version: 1,
+      }),
+    }));
+    await page.route(`**/api/v1/admin/events/${eventId}/members`, (route) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/access-grants`, (route) =>
+      route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
+    await page.route(`**/api/v1/admin/events/${eventId}/invitations`, (route) => {
+      if (route.request().method() === "POST") {
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: {
+              code: "conflict",
+              message: "This invitation has already been accepted",
+            },
+            request_id: "accepted-invitation",
+          }),
+        });
+      }
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ data: [] }),
+      });
+    });
+
+    await page.goto(`/admin/events/${eventId}/reviewers`);
+    await page.getByRole("button", { name: "Invite reviewer" }).click();
+    const dialog = page.getByRole("dialog", { name: "Invite reviewer" });
+    await dialog.getByRole("textbox", { name: "Full name" }).fill("Sam Whitfield");
+    await dialog.getByRole("textbox", { name: "Email address" }).fill("reviewer@example.com");
+    await dialog.getByRole("button", { name: "Send invitation" }).click();
+
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("status")).toContainText(
+      "This invitation has already been accepted",
+    );
+    await expect(dialog.getByRole("status")).toBeFocused();
+    await expect(page.locator("#status")).not.toContainText("already been accepted");
+  });
+
   test("resending an invitation rotates and exposes the new copyable link", async ({ page }) => {
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: sessionBody }));

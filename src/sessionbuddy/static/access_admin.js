@@ -221,7 +221,7 @@
         reinvite.textContent = `Invite ${pending.email} again`;
         reinvite.addEventListener("click", () => {
           byId("invite-form").elements.email.value = pending.email;
-          byId("invite-dialog").showModal();
+          openInviteDialog();
           byId("invite-form").elements.email.focus();
         });
         result.append(reinvite);
@@ -263,7 +263,7 @@
       invite.textContent = `Invite ${email}`;
       invite.addEventListener("click", () => {
         byId("invite-form").elements.email.value = email;
-        byId("invite-dialog").showModal();
+        openInviteDialog();
         byId("invite-form").elements.email.focus();
       });
       result.append(invite);
@@ -276,8 +276,12 @@
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const button = form.querySelector('button[type="submit"]');
+    const dialogStatus = byId("invite-status");
     const values = Object.fromEntries(new FormData(form));
     button.disabled = true;
+    button.textContent = "Sending…";
+    dialogStatus.hidden = false;
+    dialogStatus.textContent = "Sending reviewer invitation…";
     try {
       const issued = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`, {
         method: "POST",
@@ -290,13 +294,21 @@
       await load();
       byId("status").textContent = "Reviewer invitation created and emailed. The access link is ready to copy.";
     } catch (error) {
-      byId("status").textContent = window.SessionBuddyApi.message(error);
-      byId("status").focus();
-    } finally { button.disabled = false; }
+      dialogStatus.textContent = window.SessionBuddyApi.message(error);
+      dialogStatus.focus();
+    } finally {
+      button.disabled = false;
+      button.textContent = "Send invitation";
+    }
   });
 
+  function openInviteDialog() {
+    byId("invite-status").hidden = true;
+    byId("invite-status").textContent = "";
+    byId("invite-dialog").showModal();
+  }
   const dialog = byId("invite-dialog");
-  byId("open-invite").addEventListener("click", () => dialog.showModal());
+  byId("open-invite").addEventListener("click", openInviteDialog);
   byId("close-invite").addEventListener("click", () => dialog.close());
   byId("cancel-invite").addEventListener("click", () => dialog.close());
   byId("copy-invitation-access").addEventListener("click", async () => {
