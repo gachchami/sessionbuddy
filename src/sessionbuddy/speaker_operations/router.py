@@ -789,7 +789,7 @@ async def get_speaker_portal(
             db.prepare(
                 """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                           s.proposal_abstract,s.answers_json,s.version,s.submitter_user_id,
-                          f.slug AS form_slug,
+                          s.submitted_at_ms,f.slug AS form_slug,
                           COALESCE((SELECT d.decision FROM submission_decisions d
                             WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
                               AND d.submission_id=s.id
@@ -894,6 +894,7 @@ async def get_speaker_portal(
                 answers=json.loads(str(submission["answers_json"])),
                 status=str(submission["status"]),
                 form_slug=str(submission["form_slug"]),
+                submitted_at_ms=int(submission["submitted_at_ms"]),
                 version=int(submission["version"]),
                 editable=(
                     str(submission["status"]) == "submitted"

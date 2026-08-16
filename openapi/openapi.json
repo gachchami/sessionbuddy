@@ -11151,6 +11151,10 @@
             "title": "Status",
             "type": "string"
           },
+          "submitted_at_ms": {
+            "title": "Submitted At Ms",
+            "type": "integer"
+          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -11165,6 +11169,7 @@
           "answers",
           "status",
           "form_slug",
+          "submitted_at_ms",
           "version"
         ],
         "title": "SpeakerSubmissionView",

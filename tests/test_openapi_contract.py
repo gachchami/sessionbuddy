@@ -34,6 +34,13 @@ def test_generated_openapi_contract_matches_runtime_and_checked_document() -> No
     assert "/docs" not in generated["paths"]
 
 
+def test_speaker_portal_submission_timestamp_is_required_by_contract() -> None:
+    schema = app.openapi()["components"]["schemas"]["SpeakerSubmissionView"]
+
+    assert schema["properties"]["submitted_at_ms"]["type"] == "integer"
+    assert "submitted_at_ms" in schema["required"]
+
+
 @pytest.mark.parametrize("app_env", ["local", "development", "preview"])
 async def test_openapi_contract_is_available_only_in_nonproduction_environments(
     app_env: str,

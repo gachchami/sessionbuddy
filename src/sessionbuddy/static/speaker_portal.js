@@ -399,7 +399,7 @@
     return fields;
   }
 
-  function renderSubmissions(submissions, list) {
+  function renderSubmissions(submissions, list, timezone) {
     list.replaceChildren();
     if (!submissions.length) {
       list.append(make("li", "No proposals are connected to this account yet.", "empty"));
@@ -414,7 +414,7 @@
       const identity = make("span", undefined, "proposal-summary-row__identity");
       const submittedAt = Number(submission.submitted_at_ms);
       const submitted = Number.isFinite(submittedAt)
-        ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(submittedAt))
+        ? eventTimeLabel(submittedAt, timezone)
         : "date unavailable";
       identity.append(
         make("strong", submission.proposal_title),
@@ -1096,7 +1096,7 @@
     proposalBlock.append(subHeading("Your proposals", submissions.length));
     const sessionList = make("ul", undefined, "item-list submission-list");
     sessionList.dataset.eventId = event.id;
-    renderSubmissions(submissions, sessionList);
+    renderSubmissions(submissions, sessionList, event.time_zone);
     proposalBlock.append(sessionList);
     section.append(proposalBlock);
 

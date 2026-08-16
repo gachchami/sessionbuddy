@@ -77,7 +77,8 @@ const portal = {
       proposal_abstract: "A practical session about production systems.",
     },
     status: "submitted",
-    submitted_at_ms: Date.UTC(2026, 8, 1),
+    // Sep 1 in the browser's UTC clock is still Aug 31 in the event's New York zone.
+    submitted_at_ms: Date.UTC(2026, 8, 1, 2),
     editable: true,
     form_slug: "engineering-summit",
     version: 1,
@@ -152,6 +153,7 @@ async function servePortal(page: Page) {
 
 test.describe("speaker portal responsive design", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+  test.use({ timezoneId: "UTC", locale: "en-US" });
 
   for (const width of [320, 390]) {
     test(`speaker production desk fits a ${width}px phone`, async ({ page }) => {
@@ -182,6 +184,15 @@ test.describe("speaker portal responsive design", () => {
       await expect(page.getByRole("heading", { name: "Speaker portal" })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expect(page.locator(".proposal-summary-row")).toHaveCount(1);
+      const proposalMetadata = page.locator(".proposal-summary-row__identity small");
+      await expect(proposalMetadata).toContainText(
+        "Submitted Aug 31, 2026, 10:00 PM · Event time (America/New_York)",
+      );
+      expect(
+        await page.locator(".proposal-summary-row__link").evaluate(
+          (row) => row.scrollWidth <= row.clientWidth,
+        ),
+      ).toBe(true);
     });
   }
 
@@ -191,6 +202,9 @@ test.describe("speaker portal responsive design", () => {
     await page.goto("/speaker");
     await page.locator(".notification-list summary").click();
 
+    await expect(page.locator(".proposal-summary-row__identity small")).toContainText(
+      "Submitted Aug 31, 2026, 10:00 PM · Event time (America/New_York)",
+    );
     await expect(page.locator(".notification-list time")).toHaveAttribute("title", /Event time \(America\/New_York\)/);
     const results = await new AxeBuilder({ page }).include("#submissions").analyze();
     expect(results.violations).toEqual([]);

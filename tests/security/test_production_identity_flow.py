@@ -1500,6 +1500,10 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         ).fetchone()[0] == 0
         portal = await speaker.get("/api/v1/speaker/portal")
         portal_submissions = {item["id"]: item for item in portal.json()["submissions"]}
+        stored_submitted_at = connection.execute(
+            "SELECT submitted_at_ms FROM submissions WHERE id=?",
+            (submission.json()["id"],),
+        ).fetchone()[0]
         # The portal call allowance is computed from this signed-in speaker's
         # active proposals. A withdrawn proposal does not consume the limit.
         refreshed_call = portal.json()["open_call"]
@@ -1509,6 +1513,10 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                 refreshed_call["submission_limit"] - 1
             )
         assert portal_submissions[submission.json()["id"]]["status"] == "submitted"
+        assert (
+            portal_submissions[submission.json()["id"]]["submitted_at_ms"]
+            == stored_submitted_at
+        )
         assert portal_submissions[withdrawal_candidate.json()["id"]]["status"] == "withdrawn"
         assert portal_submissions[withdrawal_candidate.json()["id"]]["editable"] is False
         person_id = connection.execute(

@@ -56,6 +56,7 @@ class SpeakerSubmissionView(BaseModel):
     answers: dict[str, object]
     status: str
     form_slug: str
+    submitted_at_ms: int
     version: int
     editable: bool = False
 
