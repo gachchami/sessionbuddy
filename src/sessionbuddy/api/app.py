@@ -1,6 +1,7 @@
 import logging
 import time
 from html import escape
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -300,6 +301,21 @@ def _browser_error_response(
 async def not_found(request: Request, _exception: Exception) -> Response:
     if _expects_browser_page(request):
         path = request.url.path
+        if getattr(request.state, "document_scope", "") == "event_speaker":
+            event_id = str(getattr(request.state, "document_event_id", ""))
+            return _browser_error_response(
+                request,
+                status=404,
+                title="Speaker record unavailable",
+                eyebrow="Speaker record unavailable",
+                heading="This speaker record isn’t available.",
+                message=(
+                    "The link may be outdated, or the speaker may no longer belong "
+                    "to this event."
+                ),
+                primary_label="Open speaker roster",
+                primary_href=f"/admin/events/{quote(event_id, safe='')}/speakers",
+            )
         if path.startswith("/admin/events/"):
             return _browser_error_response(
                 request,

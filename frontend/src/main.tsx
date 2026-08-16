@@ -103,8 +103,8 @@ type RoundResults = {
 type ApiClient = {
   message(error: unknown, fallback?: string): string;
   redirectIfSignedOut(error: unknown): boolean;
-  redirectIfDocumentAccessChanged(error: unknown): boolean;
-  redirectIfWorkspaceUnavailable(error: unknown): boolean;
+  redirectIfDocumentAccessChanged(error: unknown, recoveryScope: string): boolean;
+  redirectIfWorkspaceUnavailable(error: unknown, recoveryScope: string): boolean;
   download(
     path: string,
     options?: RequestInit,
@@ -902,8 +902,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
 
   function handleRoundError(error: unknown, focusStatus = false) {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error)) return;
-    if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+    const recoveryScope = `round:${roundId}`;
+    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)) return;
+    if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
     setStatus(errorMessage(error));
     if (focusStatus) {
       window.setTimeout(() => document.querySelector<HTMLElement>(".round-desk__status")?.focus());
@@ -1012,8 +1013,9 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       await load();
     } catch (error) {
       if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error)) return;
-      if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      const recoveryScope = `round:${roundId}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)) return;
+      if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;
     }
   }

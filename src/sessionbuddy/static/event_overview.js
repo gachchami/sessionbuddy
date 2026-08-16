@@ -33,7 +33,8 @@
     try {
       selected = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
     } catch (error) {
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      const recoveryScope = `event:${eventId}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;
     }
     const settle = (promise) => promise

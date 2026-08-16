@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
@@ -241,20 +242,14 @@ async def admin_round_page(round_id: str, request: Request) -> HTMLResponse:
 
 
 @evaluation_router.get("/app/assets/reviews.css", response_class=Response, include_in_schema=False)
-async def reviews_css() -> Response:
-    return Response(
-        _asset("app/assets/reviews.css"),
-        media_type="text/css",
-        headers={"Cache-Control": "no-store"},
-    )
+async def reviews_css(request: Request) -> Response:
+    return content_addressed_asset(request, _asset("app/assets/reviews.css"), media_type="text/css")
 
 
 @evaluation_router.get("/app/assets/reviews.js", response_class=Response, include_in_schema=False)
-async def reviews_js() -> Response:
-    return Response(
-        _asset("app/assets/reviews.js"),
-        media_type="text/javascript",
-        headers={"Cache-Control": "no-store"},
+async def reviews_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("app/assets/reviews.js"), media_type="text/javascript"
     )
 
 

@@ -637,7 +637,8 @@
         byId("status").textContent = `Download started: ${result.filename}${count}. If it did not start, use the direct download link.`;
       } catch (error) {
         if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-        if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+        const recoveryScope = `event:${eventId}`;
+        if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
         byId("status").textContent = window.SessionBuddyApi.message(error, "The evaluation export could not be prepared.");
         byId("status").classList.add("error");
         byId("status").focus();
@@ -1438,7 +1439,14 @@
       const session = await api("/api/v1/auth/session");
       state.csrf = session.csrf_token;
       state.userId = session.user_id;
-      state.timeZone = await loadEventTimeZone();
+      try {
+        state.timeZone = await loadEventTimeZone();
+      } catch (error) {
+        const recoveryScope = `event:${eventId}`;
+        if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
+            || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
+        throw error;
+      }
       byId("round-time-zone").textContent = state.timeZone;
       const result = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`);
       state.submissions = result.data;
@@ -1474,14 +1482,24 @@
       byId("submissions").closest("section").setAttribute("aria-busy", "false");
       renderLoadMore(Number(result.total ?? result.data.length));
       updatePrerequisites();
-      const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
-      renderRoundHistory(history.data);
-      const currentRound = history.data.find((round) => round.status === "open") || null;
-      if (currentRound) showRound(currentRound);
+      try {
+        const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
+        renderRoundHistory(history.data);
+        const currentRound = history.data.find((round) => round.status === "open") || null;
+        if (currentRound) showRound(currentRound);
+      } catch (error) {
+        if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+        renderRoundHistory([]);
+        byId("status").textContent = window.SessionBuddyApi.message(
+          error,
+          "Proposal data loaded, but evaluation-round history is unavailable.",
+        );
+        byId("status").classList.add("error");
+      }
     } catch (error) {
       document.body.classList.remove("is-loading");
       byId("submissions").closest("section").setAttribute("aria-busy", "false");
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
       byId("status").textContent = window.SessionBuddyApi.message(error, "Proposals could not be loaded. Return to the event and try again.");
       byId("status").classList.add("error");
     }

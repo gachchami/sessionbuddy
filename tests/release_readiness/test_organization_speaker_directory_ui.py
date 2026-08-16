@@ -43,7 +43,11 @@ def test_only_an_explicit_event_route_changes_the_directory_context() -> None:
     assert 'byId("organization-filter-field").hidden = true;' in script
     assert 'byId("role-filter-field").hidden = true;' in script
     assert "/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speaker-targets" in script
-    assert "[organizations, event, targetsResponse] = await Promise.all" in script
+    assert "if (selectedSpeakerId)" in script
+    assert (
+        "/speakers/${encodeURIComponent(selectedSpeakerId)}" in script
+    )
+    assert "[organizations, event, targetsResponse] = await Promise.all" not in script
     update_path = (
         "/api/v1/admin/events/"
         "${encodeURIComponent(selectedSpeaker.event.id)}/speakers/"

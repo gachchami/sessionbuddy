@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation
 from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
@@ -42,6 +43,7 @@ from .http import (
     environment,
     guard_mutation,
     require_document_event,
+    require_document_event_speaker,
     require_document_persona,
     require_permission,
     secret,
@@ -224,8 +226,10 @@ async def event_overview_page(event_id: str, request: Request) -> Response:
 
 
 @access_router.get("/admin/event-overview/assets/event-overview.js", include_in_schema=False)
-async def event_overview_javascript() -> Response:
-    return Response(_asset("event_overview.js"), media_type="text/javascript")
+async def event_overview_javascript(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("event_overview.js"), media_type="text/javascript"
+    )
 
 
 @access_router.get("/admin/people", include_in_schema=False)
@@ -235,7 +239,8 @@ async def speaker_directory_page(
     request: Request, event_id: str | None = None, event_speaker_id: str | None = None
 ) -> Response:
     await require_document_persona(request, Persona.ORGANIZER)
-    await require_document_event(request, event_id)
+    scope = await require_document_event(request, event_id)
+    await require_document_event_speaker(request, scope, event_speaker_id)
     return Response(
         _asset("speaker_directory.html"),
         media_type="text/html",
@@ -282,8 +287,10 @@ async def speaker_messages_page(event_id: str, request: Request) -> Response:
 
 
 @access_router.get("/admin/people/assets/people.js", include_in_schema=False)
-async def speaker_directory_javascript() -> Response:
-    return Response(_asset("speaker_directory.js"), media_type="text/javascript")
+async def speaker_directory_javascript(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("speaker_directory.js"), media_type="text/javascript"
+    )
 
 
 @access_router.get("/admin/people/assets/search.js", include_in_schema=False)
@@ -292,8 +299,10 @@ async def people_search_javascript() -> Response:
 
 
 @access_router.get("/admin/speakers/assets/messages.js", include_in_schema=False)
-async def speaker_messages_javascript() -> Response:
-    return Response(_asset("speaker_messages.js"), media_type="text/javascript")
+async def speaker_messages_javascript(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("speaker_messages.js"), media_type="text/javascript"
+    )
 
 
 @access_router.get("/account", include_in_schema=False)
@@ -345,8 +354,8 @@ async def event_access_page(event_id: str, request: Request) -> Response:
 
 
 @access_router.get("/admin/access/assets/access.js", include_in_schema=False)
-async def event_access_javascript() -> Response:
-    return Response(_asset("access_admin.js"), media_type="text/javascript")
+async def event_access_javascript(request: Request) -> Response:
+    return content_addressed_asset(request, _asset("access_admin.js"), media_type="text/javascript")
 
 
 @access_router.get("/admin/events", include_in_schema=False)

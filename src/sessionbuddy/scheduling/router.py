@@ -15,6 +15,7 @@ from sessionbuddy.agenda import (
     queue_calendar_changes,
 )
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     require_document_event,
@@ -124,6 +125,8 @@ def _asset(name: str) -> str:
 
 
 def _product_asset(request: Request, name: str, media_type: str) -> Response:
+    if name == "agenda.js":
+        return content_addressed_asset(request, _asset(name), media_type=media_type)
     return Response(_asset(name), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 

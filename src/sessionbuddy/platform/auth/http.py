@@ -21,6 +21,12 @@ class AuthenticatedContext:
     session_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class EventDocumentScope:
+    organization_id: str
+    event_id: str
+
+
 NON_DISCLOSING_DENIAL_REASONS = frozenset(
     {
         "resource_not_found",
@@ -166,10 +172,10 @@ async def _require_document_scope(
     resource_id: str | None,
     query: str,
     permission: Permission = Permission.EVENT_MANAGE,
-) -> None:
+) -> EventDocumentScope | None:
     """Resolve a document's event scope and apply its non-disclosing access gate."""
     if resource_id is None or not session_cookie_value(request):
-        return
+        return None
     try:
         authenticated = await authenticate_request(request)
     except HTTPException as exc:
@@ -191,6 +197,10 @@ async def _require_document_scope(
     )
     if not decision.allowed:
         raise HTTPException(status_code=404)
+    scope = EventDocumentScope(str(row["organization_id"]), str(row["event_id"]))
+    request.state.document_scope = "event"
+    request.state.document_event_id = scope.event_id
+    return scope
 
 
 async def require_document_event(
@@ -199,7 +209,7 @@ async def require_document_event(
     permission: Permission = Permission.EVENT_MANAGE,
     *,
     include_archived: bool = False,
-) -> None:
+) -> EventDocumentScope | None:
     """Refuse an event-scoped page whose event the caller cannot open.
 
     Document routes are served before the page makes a single API call, and
@@ -214,12 +224,40 @@ async def require_document_event(
         else """SELECT organization_id,id AS event_id FROM events
                 WHERE id=?1 AND status!='archived' LIMIT 1"""
     )
-    await _require_document_scope(
+    return await _require_document_scope(
         request,
         event_id,
         query,
         permission,
     )
+
+
+async def require_document_event_speaker(
+    request: Request,
+    scope: EventDocumentScope | None,
+    event_speaker_id: str | None,
+) -> None:
+    """Require one speaker-participation record within an event document.
+
+    Pending invitation ids deliberately do not qualify. They appear in the roster's
+    union result, but have no detail document or speaker-participation mutations.
+    Withdrawn speakers do qualify because this document owns their restore action.
+    """
+    if scope is None or event_speaker_id is None:
+        return
+    request.state.document_scope = "event_speaker"
+    request.state.document_event_id = scope.event_id
+    row = row_mapping(
+        await database(request)
+        .prepare(
+            """SELECT id FROM event_speakers
+               WHERE id=?1 AND organization_id=?2 AND event_id=?3 LIMIT 1"""
+        )
+        .bind(event_speaker_id, scope.organization_id, scope.event_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
 
 
 async def require_public_document_event(request: Request, event_id: str) -> None:

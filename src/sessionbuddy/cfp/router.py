@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth import (
     authenticate_request,
@@ -482,8 +483,10 @@ async def product_css() -> Response:
 @cfp_router.get(
     "/product/assets/admin-programs.js", response_class=Response, include_in_schema=False
 )
-async def admin_programs_js() -> Response:
-    return Response(_asset("admin_programs.js"), media_type="text/javascript")
+async def admin_programs_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("admin_programs.js"), media_type="text/javascript"
+    )
 
 
 @cfp_router.get("/product/assets/public-cfp.js", response_class=Response, include_in_schema=False)
@@ -501,8 +504,10 @@ async def open_calls_js() -> Response:
     response_class=Response,
     include_in_schema=False,
 )
-async def admin_submissions_js() -> Response:
-    return Response(_asset("admin_submissions.js"), media_type="text/javascript")
+async def admin_submissions_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("admin_submissions.js"), media_type="text/javascript"
+    )
 
 
 @cfp_router.get(

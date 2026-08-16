@@ -145,11 +145,23 @@
   }
 
   async function load() {
-    const [session, selectedEvent, invitations] = await Promise.all([
+    const [sessionResult, selectedEventResult, invitationsResult] = await Promise.allSettled([
       api("/api/v1/auth/session"),
       api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`),
-      api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`)
+      api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/invitations`),
     ]);
+    if (sessionResult.status === "rejected") throw sessionResult.reason;
+    if (selectedEventResult.status === "rejected") {
+      const error = selectedEventResult.reason;
+      const recoveryScope = `event:${eventId}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
+          || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
+      throw error;
+    }
+    if (invitationsResult.status === "rejected") throw invitationsResult.reason;
+    const session = sessionResult.value;
+    const selectedEvent = selectedEventResult.value;
+    const invitations = invitationsResult.value;
     csrf = session.csrf_token;
     eventArchived = selectedEvent.status === "archived";
     byId("access-event-name").textContent = selectedEvent.name;
@@ -304,7 +316,6 @@
   }
   load().catch((error) => {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
     byId("status").textContent = window.SessionBuddyApi.message(error);
   });
 })();

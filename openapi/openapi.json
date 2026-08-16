@@ -17577,6 +17577,55 @@
       }
     },
     "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}": {
+      "get": {
+        "operationId": "get_admin_speaker_api_v1_admin_events__event_id__speakers__event_speaker_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_speaker_id",
+            "required": true,
+            "schema": {
+              "title": "Event Speaker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeakerTarget"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Admin Speaker",
+        "tags": [
+          "speaker-onboarding"
+        ]
+      },
       "patch": {
         "operationId": "update_admin_speaker_api_v1_admin_events__event_id__speakers__event_speaker_id__patch",
         "parameters": [

@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from sessionbuddy.cfp.availability import form_availability
 from sessionbuddy.communications.presentation import message_category
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation, record_timing
 from sessionbuddy.platform.auth import hash_token
 from sessionbuddy.platform.auth.http import (
@@ -177,6 +178,8 @@ def _db(request: Request):
 
 
 def _product_asset(request: Request, name: str, media_type: str) -> Response:
+    if name == "admin_onboarding.js":
+        return content_addressed_asset(request, _asset(name), media_type=media_type)
     return Response(_asset(name), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 

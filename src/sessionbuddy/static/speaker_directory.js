@@ -275,20 +275,41 @@
       byId("speaker-list").replaceChildren();
       return null;
     }
-    let event, organizations, targetsResponse;
-    try {
-      [organizations, event, targetsResponse] = await Promise.all([
-        organizationsPromise,
-        api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}`),
-        api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speaker-targets`),
-      ]);
-    } catch (error) {
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return null;
+    const settle = (promise) => promise
+      .then((value) => ({ ok: true, value }))
+      .catch((error) => ({ ok: false, error }));
+    // Event attribution and the roster/detail read are independent. Start both
+    // before awaiting either so the nested scope check does not add a serial
+    // Worker round trip to every directory navigation.
+    const eventPromise = settle(api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}`));
+    const targetsPromise = settle(selectedSpeakerId
+      ? api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speakers/${encodeURIComponent(selectedSpeakerId)}`)
+        .then((target) => [target])
+      : api(`/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speaker-targets`)
+        .then((result) => result.data));
+    const eventResult = await eventPromise;
+    if (!eventResult.ok) {
+      const error = eventResult.error;
+      const recoveryScope = `event:${selectedEventId}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
+          || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return null;
       throw error;
     }
+    const event = eventResult.value;
+    const organizations = await organizationsPromise;
     const organization = organizations.find((item) => item.id === event.organization_id);
     if (!organization) throw new Error("This event is not available to your account.");
-    const targets = targetsResponse.data;
+    const targetsResult = await targetsPromise;
+    if (!targetsResult.ok) {
+      const error = targetsResult.error;
+      const recoveryScope = selectedSpeakerId
+        ? `event-speaker:${selectedEventId}:${selectedSpeakerId}`
+        : `event:${selectedEventId}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
+          || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return null;
+      throw error;
+    }
+    const targets = targetsResult.value;
     allEvents = [{
       event_id: event.id,
       event_name: event.name,
@@ -513,7 +534,9 @@
     }
     if (selectedSpeakerId) {
       const selection = findEventSpeaker(selectedSpeakerId);
-      if (!selection) throw new Error("This speaker is not available in the selected event.");
+      // The singular endpoint is authoritative. A miss is handled as a
+      // document-scope failure above rather than inferred from a capped roster.
+      if (!selection) throw new Error("The speaker record could not be loaded.");
       showSpeakerDetail(selection.person, selection.participation);
     }
     byId("status").classList.remove("error");

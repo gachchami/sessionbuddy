@@ -225,7 +225,8 @@
       setConnection("live", "Live snapshot");
       setStatus(announce ? "Onboarding snapshot refreshed." : `${state.rows.length} speaker record${state.rows.length === 1 ? "" : "s"} shown.`);
     } catch (error) {
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      const recoveryScope = `event:${eventId}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       if ([403, 404].includes(Number(error.status))) {
         state.terminal = true;
         clearInterval(state.timer);

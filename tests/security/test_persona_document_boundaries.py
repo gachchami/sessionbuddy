@@ -21,12 +21,14 @@ class DocumentLookup:
         self.row = row
         self.error = error
         self.resource_id = ""
+        self.queries: list[str] = []
 
     def prepare(self, query: str):
         self.query = query
+        self.queries.append(query)
         return self
 
-    def bind(self, resource_id: str):
+    def bind(self, resource_id: str, *_scope: str):
         self.resource_id = resource_id
         return self
 
@@ -34,6 +36,28 @@ class DocumentLookup:
         if self.error is not None:
             raise self.error
         return self.row
+
+
+class NestedSpeakerDocumentLookup(DocumentLookup):
+    def __init__(self, valid_speaker_id: str = "speaker-1"):
+        super().__init__()
+        self.valid_speaker_id = valid_speaker_id
+        self.bound: tuple[str, ...] = ()
+
+    def bind(self, *values: str):
+        self.bound = values
+        return self
+
+    async def first(self):
+        if "FROM events" in self.query:
+            return {"organization_id": "organization-1", "event_id": "event-1"}
+        if "FROM event_speakers" in self.query:
+            return {"id": self.valid_speaker_id} if self.bound == (
+                self.valid_speaker_id,
+                "organization-1",
+                "event-1",
+            ) else None
+        raise AssertionError(f"unexpected document lookup: {self.query}")
 
 
 existing_event = DocumentLookup(
@@ -295,8 +319,12 @@ async def test_unknown_event_document_returns_plain_non_cacheable_404(
     assert "event-1" not in response.text
 
 
+@pytest.mark.parametrize(
+    "path",
+    ["/admin/events/event-1", "/admin/events/event-1/speakers/speaker-1"],
+)
 async def test_unavailable_event_document_does_not_disclose_authorization_reason(
-    monkeypatch,
+    monkeypatch, path: str,
 ) -> None:
     async def organizer_context(_request):
         return AuthenticatedContext(
@@ -314,15 +342,47 @@ async def test_unavailable_event_document_does_not_disclose_authorization_reason
         transport=ASGITransport(app=local_app), base_url="http://test"
     ) as client:
         client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
-        response = await client.get(
-            "/admin/events/event-1", headers={"accept": "text/html"}
-        )
+        response = await client.get(path, headers={"accept": "text/html"})
 
     assert response.status_code == 404
     assert "<title>Event unavailable" in response.text
     assert "This event isn’t available." in response.text
     assert 'href="/">Open active workspace' in response.text
     assert "Access denied" not in response.text
+    assert "data-auth-shell" not in response.text
+
+
+async def test_event_speaker_document_resolves_the_nested_record_before_rendering(
+    monkeypatch,
+) -> None:
+    async def organizer_context(_request):
+        return AuthenticatedContext(
+            actor=Actor("organizer-user", active_persona=Persona.ORGANIZER),
+            session_id="organizer-session",
+        )
+
+    monkeypatch.setattr(auth_http, "authenticate_request", organizer_context)
+    monkeypatch.setattr(
+        auth_http, "database", lambda _request: NestedSpeakerDocumentLookup()
+    )
+    monkeypatch.setattr(
+        auth_http,
+        "authorize",
+        lambda *_args: AuthorizationDecision(True, "allowed"),
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
+        response = await client.get(
+            "/admin/events/event-1/speakers/missing-speaker",
+            headers={"accept": "text/html"},
+        )
+
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "no-store"
+    assert "This speaker record isn’t available." in response.text
+    assert 'href="/admin/events/event-1/speakers"' in response.text
     assert "data-auth-shell" not in response.text
 
 
@@ -646,7 +706,9 @@ async def test_event_documents_declare_their_archived_event_policy(
         response = await client.get(path, headers={"accept": "text/html"})
 
     assert response.status_code == 200
-    assert ("status!='archived'" not in lookup.query) is allows_archived
+    event_queries = [query for query in lookup.queries if "FROM events" in query]
+    assert len(event_queries) == 1
+    assert ("status!='archived'" not in event_queries[0]) is allows_archived
 
 
 PUBLIC_EVENT_DOCUMENT_PATHS = (

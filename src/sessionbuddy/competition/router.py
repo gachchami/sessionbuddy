@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from sessionbuddy.cfp.availability import form_availability
 from sessionbuddy.console import embedded_assets
+from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation
 from sessionbuddy.platform.auth import authenticate_request, generate_token, hash_token
 from sessionbuddy.platform.auth.http import (
@@ -64,6 +65,85 @@ from .models import (
 )
 
 competition_router = APIRouter()
+
+
+# This shared projection intentionally owns no placeholders. The scoped suffix
+# binds speaker/org/event as ?1/?2/?3, while the list suffix binds org/event/time.
+_SPEAKER_TARGET_SELECT_SQL = """SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
+       COALESCE(u.email,'') AS email,
+       p.display_name,COALESCE(p.job_title,'') AS job_title,
+       COALESCE(p.company,'') AS company,
+       COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
+       CASE WHEN NULLIF(p.biography,'') IS NULL
+         THEN 'account' ELSE 'organization' END AS biography_source,
+       NULLIF(p.biography,'') AS biography_override,
+       COALESCE(p.location,'') AS location,p.links_json,p.version,
+       es.version AS participation_version,es.status AS lifecycle_status,
+       es.selection_status,es.confirmation_status,
+       COALESCE(
+         -- Prefer the ACCEPTED submission; fall back to newest.
+         (SELECT s.proposal_title FROM submission_speakers ss
+           JOIN submissions s ON s.organization_id=ss.organization_id
+            AND s.event_id=ss.event_id AND s.id=ss.submission_id
+           JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
+            AND ac.event_id=s.event_id AND ac.submission_id=s.id
+           WHERE ss.organization_id=es.organization_id
+            AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
+            AND ac.lifecycle_status='active'
+           ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
+         (SELECT s.proposal_title FROM submission_speakers ss
+           JOIN submissions s ON s.organization_id=ss.organization_id
+            AND s.event_id=ss.event_id AND s.id=ss.submission_id
+           WHERE ss.organization_id=es.organization_id
+            AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
+           ORDER BY s.submitted_at_ms DESC LIMIT 1),
+         'No proposal') AS proposal_title
+FROM event_speakers es JOIN people p
+  ON p.organization_id=es.organization_id AND p.id=es.person_id
+LEFT JOIN users u ON u.id=p.user_id"""
+
+_SCOPED_SPEAKER_TARGET_SQL = (
+    _SPEAKER_TARGET_SELECT_SQL
+    + """ WHERE es.id=?1 AND es.organization_id=?2 AND es.event_id=?3 LIMIT 1"""
+)
+
+_SPEAKER_TARGET_LIST_SQL = (
+    """WITH targets AS ("""  # noqa: S608 - module-owned SQL fragments only
+    + _SPEAKER_TARGET_SELECT_SQL
+    + """ WHERE es.organization_id=?1 AND es.event_id=?2
+         UNION ALL
+         SELECT i.id,NULL,NULL,i.email,
+                COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
+                '','account',NULL,'','[]',1,1,NULL,'invited','invited',
+                'Invitation pending'
+         FROM identity_invitations i
+         WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
+           AND i.status='pending' AND i.expires_at_ms>?3
+           AND NOT EXISTS (
+             SELECT 1 FROM event_speakers active_es
+             JOIN people active_p ON active_p.organization_id=active_es.organization_id
+              AND active_p.id=active_es.person_id
+             JOIN users active_u ON active_u.id=active_p.user_id
+             WHERE active_es.organization_id=i.organization_id
+              AND active_es.event_id=i.event_id
+              AND active_es.status!='withdrawn'
+              AND active_u.normalized_email=i.normalized_email
+           )
+       )
+       SELECT * FROM targets ORDER BY display_name,event_speaker_id LIMIT 500"""
+)
+
+
+async def _scoped_speaker_target(
+    db, organization_id: str, event_id: str, event_speaker_id: str
+) -> SpeakerTarget | None:
+    """Read one participation through the projection shared with the roster."""
+    row = row_mapping(
+        await db.prepare(_SCOPED_SPEAKER_TARGET_SQL)
+        .bind(event_speaker_id, organization_id, event_id)
+        .first()
+    )
+    return _speaker_target(row) if row is not None else None
 
 
 @competition_router.get(
@@ -213,8 +293,10 @@ async def event_workspace_page(event_id: str, request: Request) -> HTMLResponse:
 @competition_router.get(
     "/admin/workspace/assets/workspace.js", response_class=Response, include_in_schema=False
 )
-async def event_workspace_js() -> Response:
-    return Response(_asset("event_workspace.js"), media_type="text/javascript")
+async def event_workspace_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("event_workspace.js"), media_type="text/javascript"
+    )
 
 
 @competition_router.get(
@@ -233,8 +315,10 @@ async def speaker_content_page(event_id: str, request: Request) -> HTMLResponse:
     response_class=Response,
     include_in_schema=False,
 )
-async def speaker_content_js() -> Response:
-    return Response(_asset("speaker_content.js"), media_type="text/javascript")
+async def speaker_content_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("speaker_content.js"), media_type="text/javascript"
+    )
 
 
 @competition_router.get(
@@ -468,66 +552,28 @@ async def list_speaker_targets(event_id: str, request: Request) -> SpeakerTarget
     event, _ = await _managed_event(request, event_id, mutation=False)
     rows = result_rows(
         await _db(request)
-        .prepare(
-            """WITH targets AS (
-                 SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
-                        COALESCE(u.email,'') AS email,
-                        p.display_name,COALESCE(p.job_title,'') AS job_title,
-                        COALESCE(p.company,'') AS company,
-                        COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
-                        CASE WHEN NULLIF(p.biography,'') IS NULL
-                          THEN 'account' ELSE 'organization' END AS biography_source,
-                        NULLIF(p.biography,'') AS biography_override,
-                        COALESCE(p.location,'') AS location,p.links_json,p.version,
-                        es.version AS participation_version,es.status AS lifecycle_status,
-                        es.selection_status,es.confirmation_status,
-                        COALESCE(
-                          -- Prefer the ACCEPTED submission; fall back to newest.
-                          (SELECT s.proposal_title FROM submission_speakers ss
-                            JOIN submissions s ON s.organization_id=ss.organization_id
-                             AND s.event_id=ss.event_id AND s.id=ss.submission_id
-                            JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
-                             AND ac.event_id=s.event_id AND ac.submission_id=s.id
-                            WHERE ss.organization_id=es.organization_id
-                             AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
-                             AND ac.lifecycle_status='active'
-                            ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
-                          (SELECT s.proposal_title FROM submission_speakers ss
-                            JOIN submissions s ON s.organization_id=ss.organization_id
-                             AND s.event_id=ss.event_id AND s.id=ss.submission_id
-                            WHERE ss.organization_id=es.organization_id
-                             AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
-                            ORDER BY s.submitted_at_ms DESC LIMIT 1),
-                          'No proposal') AS proposal_title
-                 FROM event_speakers es JOIN people p
-                   ON p.organization_id=es.organization_id AND p.id=es.person_id
-                 LEFT JOIN users u ON u.id=p.user_id
-                 WHERE es.organization_id=?1 AND es.event_id=?2
-                 UNION ALL
-                 SELECT i.id,NULL,NULL,i.email,
-                        COALESCE(NULLIF(i.display_name,''),i.email),i.job_title,i.company,
-                        '','account',NULL,'','[]',1,1,NULL,'invited','invited',
-                        'Invitation pending'
-                 FROM identity_invitations i
-                 WHERE i.organization_id=?1 AND i.event_id=?2 AND i.role='speaker'
-                   AND i.status='pending' AND i.expires_at_ms>?3
-                   AND NOT EXISTS (
-                     SELECT 1 FROM event_speakers active_es
-                     JOIN people active_p ON active_p.organization_id=active_es.organization_id
-                      AND active_p.id=active_es.person_id
-                     JOIN users active_u ON active_u.id=active_p.user_id
-                     WHERE active_es.organization_id=i.organization_id
-                      AND active_es.event_id=i.event_id
-                      AND active_es.status!='withdrawn'
-                      AND active_u.normalized_email=i.normalized_email
-                   )
-               )
-               SELECT * FROM targets ORDER BY display_name,event_speaker_id LIMIT 500"""
-        )
+        .prepare(_SPEAKER_TARGET_LIST_SQL)
         .bind(event["organization_id"], event_id, utc_now_ms())
         .all()
     )
     return SpeakerTargetList(data=[_speaker_target(row) for row in rows])
+
+
+@competition_router.get(
+    "/api/v1/admin/events/{event_id}/speakers/{event_speaker_id}",
+    response_model=SpeakerTarget,
+    tags=["speaker-onboarding"],
+)
+async def get_admin_speaker(
+    event_id: str, event_speaker_id: str, request: Request
+) -> SpeakerTarget:
+    event, _ = await _managed_event(request, event_id, mutation=False)
+    target = await _scoped_speaker_target(
+        _db(request), str(event["organization_id"]), event_id, event_speaker_id
+    )
+    if target is None:
+        raise HTTPException(status_code=404)
+    return target
 
 
 @competition_router.get(
@@ -1035,46 +1081,12 @@ async def update_admin_speaker(
         # the truthful success response while making the missing audit visible
         # in request telemetry for operator follow-up.
         record_degradation(request, "speaker_profile_audit_failed")
-    row = row_mapping(
-        await db.prepare(
-            """SELECT es.id AS event_speaker_id,p.id AS person_id,p.user_id,
-                      COALESCE(u.email,'') AS email,
-                      p.display_name,COALESCE(p.job_title,'') AS job_title,
-                      COALESCE(p.company,'') AS company,
-                      COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
-                      CASE WHEN NULLIF(p.biography,'') IS NULL
-                        THEN 'account' ELSE 'organization' END AS biography_source,
-                      NULLIF(p.biography,'') AS biography_override,
-                      COALESCE(p.location,'') AS location,p.links_json,p.version,
-                      es.version AS participation_version,es.status AS lifecycle_status,
-                      es.selection_status,es.confirmation_status,
-                      COALESCE(
-                        -- Prefer the ACCEPTED submission; fall back to newest.
-                        (SELECT s.proposal_title FROM submission_speakers ss
-                          JOIN submissions s ON s.organization_id=ss.organization_id
-                           AND s.event_id=ss.event_id AND s.id=ss.submission_id
-                          JOIN accepted_sessions ac ON ac.organization_id=s.organization_id
-                           AND ac.event_id=s.event_id AND ac.submission_id=s.id
-                          WHERE ss.organization_id=es.organization_id
-                           AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
-                          ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
-                        (SELECT s.proposal_title FROM submission_speakers ss
-                          JOIN submissions s ON s.organization_id=ss.organization_id
-                           AND s.event_id=ss.event_id AND s.id=ss.submission_id
-                          WHERE ss.organization_id=es.organization_id
-                           AND ss.event_id=es.event_id AND ss.event_speaker_id=es.id
-                          ORDER BY s.submitted_at_ms DESC LIMIT 1),
-                        'No proposal') AS proposal_title
-               FROM event_speakers es JOIN people p ON p.organization_id=es.organization_id
-                 AND p.id=es.person_id LEFT JOIN users u ON u.id=p.user_id
-               WHERE es.id=?1 AND es.organization_id=?2 AND es.event_id=?3 LIMIT 1"""
-        )
-        .bind(event_speaker_id, event["organization_id"], event_id)
-        .first()
+    target = await _scoped_speaker_target(
+        db, str(event["organization_id"]), event_id, event_speaker_id
     )
-    if row is None:
+    if target is None:
         raise HTTPException(status_code=404)
-    return _speaker_target(row)
+    return target
 
 
 @competition_router.post(

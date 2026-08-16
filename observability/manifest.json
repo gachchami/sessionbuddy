@@ -426,6 +426,19 @@
         "p95_ms": 600
       }
     },
+    "GET /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}": {
+      "benchmark": "admin-read-speaker",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "speaker-onboarding",
+      "runbook": "docs/debugging-runbook.md#speaker-onboarding",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 600
+      }
+    },
     "GET /api/v1/admin/events/{event_id}/speakers/{event_speaker_id}/headshot": {
       "benchmark": "admin-read-speaker-headshot",
       "dashboards": [

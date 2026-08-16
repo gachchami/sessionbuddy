@@ -97,7 +97,8 @@
   }
   initialize().catch((error) => {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+    const recoveryScope = `event:${eventId}`;
+    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
     setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();

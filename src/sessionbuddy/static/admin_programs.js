@@ -1382,7 +1382,9 @@
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
         return;
       }
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+      const eventId = state.context?.event_id || eventIdFromPage({});
+      const recoveryScope = `event:${eventId || "unknown"}`;
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       setStatus(window.SessionBuddyApi.message(error), true);
     }
   }

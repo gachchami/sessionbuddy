@@ -299,6 +299,17 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
             "the roster shows the rejected proposal beside an 'accepted' badge"
         )
 
+        detail = await client.get(
+            f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}"
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json() == target
+
+        missing = await client.get(
+            f"/api/v1/admin/events/{event_id}/speakers/not-a-speaker"
+        )
+        assert missing.status_code == 404
+
         # Single speaker record: the organizer edit endpoint re-reads the
         # same attribution query for its response.
         record = await client.patch(
@@ -342,8 +353,6 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
             row for row in metrics.json()["recent_speakers"] if row["person_id"] == "person-1"
         )
         assert recent["proposal_title"] == "Accepted talk"
-
-
         # SessionBoard consumers historically receive the primary speaker
         # first. Pin that contract with a co-speaker whose name would otherwise
         # sort ahead of Priya alphabetically.
@@ -392,6 +401,73 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
             "Priya Raman",
             "Aaron Co-speaker",
         ]
+
+
+async def test_archived_event_hides_speaker_document_and_singular_api_together(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        _csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection, organization_id, event_id
+        )
+        connection.execute("UPDATE events SET status='archived' WHERE id=?", (event_id,))
+        connection.commit()
+
+        document = await client.get(
+            f"/admin/events/{event_id}/speakers/{speaker_id}",
+            headers={"accept": "text/html"},
+        )
+        detail = await client.get(
+            f"/api/v1/admin/events/{event_id}/speakers/{speaker_id}"
+        )
+
+        assert document.status_code == 404
+        assert "This event isn’t available." in document.text
+        assert detail.status_code == 404
+
+
+async def test_singular_speaker_reads_cannot_cross_event_scope(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        second_event = await client.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={**EVENT_PAYLOAD, "name": "Other Attribution Summit"},
+        )
+        assert second_event.status_code == 201, second_event.text
+        second_event_id = second_event.json()["id"]
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('person-other-event',?,'Other Event Speaker',1000,1000)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('speaker-other-event',?,?,'person-other-event',
+                       'onboarding','accepted',3000,3000,1000,1000)""",
+            (organization_id, second_event_id),
+        )
+        connection.commit()
+
+        document = await client.get(
+            f"/admin/events/{event_id}/speakers/speaker-other-event",
+            headers={"accept": "text/html"},
+        )
+        detail = await client.get(
+            f"/api/v1/admin/events/{event_id}/speakers/speaker-other-event"
+        )
+
+        assert document.status_code == 404, document.text
+        assert "This speaker record isn’t available." in document.text
+        assert detail.status_code == 404, detail.text
 
 
 async def test_rejected_profile_links_do_not_mutate_speaker_or_audit(
@@ -530,6 +606,32 @@ async def test_speaker_without_accepted_submission_falls_back_to_latest(
         )
         # With nothing accepted, the newest submission is the best signal.
         assert target["proposal_title"] == "Rejected talk"
+
+
+async def test_withdrawn_speaker_keeps_an_event_detail_document(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        _csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection, organization_id, event_id
+        )
+        connection.execute(
+            """UPDATE event_speakers
+               SET status='withdrawn',withdrawn_at_ms=1800000000000
+               WHERE id=?""",
+            (speaker_id,),
+        )
+        connection.commit()
+
+        document = await client.get(
+            f"/admin/events/{event_id}/speakers/{speaker_id}",
+            headers={"accept": "text/html"},
+        )
+
+        assert document.status_code == 200, document.text
+        assert "speaker-directory-page" in document.text
 
 
 async def test_pending_invitation_is_hidden_after_matching_speaker_is_active(
@@ -788,6 +890,17 @@ async def test_pending_invitation_can_receive_task_before_registration(
             target["event_speaker_id"] == invitation_id and target["selection_status"] == "invited"
             for target in targets.json()["data"]
         )
+        detail = await client.get(
+            f"/api/v1/admin/events/{event_id}/speakers/{invitation_id}"
+        )
+        assert detail.status_code == 404, detail.text
+        document = await client.get(
+            f"/admin/events/{event_id}/speakers/{invitation_id}",
+            headers={"accept": "text/html"},
+        )
+        assert document.status_code == 404, document.text
+        assert "This speaker record isn’t available." in document.text
+        assert "data-auth-shell" not in document.text
         created = await client.post(
             f"/api/v1/admin/events/{event_id}/speaker-tasks",
             headers={

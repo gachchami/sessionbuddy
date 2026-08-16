@@ -140,7 +140,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'value="Asia/Kolkata"' not in text
     assert '<option value="" selected disabled>Select a format</option>' in text
     assert 'aria-describedby="time-zone-help"' in text
-    assert '<strong>Schedule</strong>' in text
+    assert "<strong>Schedule</strong>" in text
     assert 'name="start_date" type="date"' in text
     assert 'name="start_time" type="time" value="09:00"' in text
     assert 'name="end_date" type="date"' in text
@@ -203,7 +203,7 @@ def test_evaluation_shell_and_runtime_admin_table_have_keyboard_repairs() -> Non
     assert 'class="review-skip"' in reviews and 'href="#root"' in reviews
     # The keyboard repairs live in the island stylesheet, which must be a real
     # head <link> (not injected by the bundle) so they apply before hydration.
-    assert '<link rel="stylesheet" crossorigin href="/app/assets/reviews.css">' in reviews
+    assert '<link rel="stylesheet" crossorigin href="/app/assets/reviews.css?v=' in reviews
     assert ".review-skip" in reviews_css
     assert ":focus-visible" in reviews_css
     assert "prefers-reduced-motion" in reviews_css

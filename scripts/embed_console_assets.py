@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -91,6 +93,51 @@ BINARY_ASSETS = {
     "aie-code-sf-2026.jpg": "AIE_CODE_SF_2026_JPG",
 }
 
+CONTENT_ADDRESSED_ASSETS = (
+    ("access_admin.html", "access_admin.js", "/admin/access/assets/access.js"),
+    ("admin_onboarding.html", "admin_onboarding.js", "/admin/onboarding/assets/onboarding.js"),
+    ("admin_programs.html", "admin_programs.js", "/product/assets/admin-programs.js"),
+    ("admin_submissions.html", "admin_submissions.js", "/product/assets/admin-submissions.js"),
+    ("agenda_admin.html", "agenda.js", "/admin/agenda/assets/agenda.js"),
+    ("event_overview.html", "event_overview.js", "/admin/event-overview/assets/event-overview.js"),
+    ("event_workspace.html", "event_workspace.js", "/admin/workspace/assets/workspace.js"),
+    (
+        "speaker_content.html",
+        "speaker_content.js",
+        "/admin/speaker-content/assets/speaker-content.js",
+    ),
+    ("speaker_directory.html", "speaker_directory.js", "/admin/people/assets/people.js"),
+    ("speaker_messages.html", "speaker_messages.js", "/admin/speakers/assets/messages.js"),
+    ("app/index.html", "app/assets/reviews.js", "/app/assets/reviews.js"),
+    ("app/index.html", "app/assets/reviews.css", "/app/assets/reviews.css"),
+)
+
+
+def _versioned_html(filename: str, content: str) -> str:
+    for html_name, asset_name, asset_path in CONTENT_ADDRESSED_ASSETS:
+        if html_name != filename:
+            continue
+        digest = hashlib.sha256((STATIC / asset_name).read_bytes()).hexdigest()[:12]
+        pattern = re.escape(asset_path) + r"(?:\?v=[A-Za-z0-9._-]+)?"
+        content, count = re.subn(pattern, f"{asset_path}?v={digest}", content)
+        if count != 1:
+            raise RuntimeError(f"expected one {asset_path} reference in {html_name}; found {count}")
+    return content
+
+
+def sync_content_addresses(*, check: bool) -> None:
+    for html_name in {item[0] for item in CONTENT_ADDRESSED_ASSETS}:
+        path = STATIC / html_name
+        current = path.read_text(encoding="utf-8")
+        expected = _versioned_html(html_name, current)
+        if current == expected:
+            continue
+        if check:
+            raise SystemExit(
+                f"{html_name} has stale asset identities; run this script without --check"
+            )
+        path.write_text(expected, encoding="utf-8")
+
 
 def render() -> str:
     lines = [
@@ -113,6 +160,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    sync_content_addresses(check=args.check)
     expected = render()
     if args.check:
         if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != expected:

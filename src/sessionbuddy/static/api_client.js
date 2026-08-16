@@ -166,12 +166,12 @@
     return true;
   }
 
-  function redirectIfWorkspaceUnavailable(error) {
+  function redirectIfWorkspaceUnavailable(error, recoveryScope) {
     if (Number(error?.status) !== 404) return false;
     const scopedDocument = /^\/admin\/events\/[^/]+(?:\/|$)/.test(location.pathname)
       || /^\/admin\/evaluation-rounds\/[^/]+$/.test(location.pathname);
     if (!scopedDocument) return false;
-    if (!claimDocumentRecovery("404")) return false;
+    if (!claimDocumentRecovery("404", recoveryScope)) return false;
     // Re-enter through the document route. Its server-side scope guard renders
     // the same non-disclosing recovery page for a deleted resource and lost
     // access, instead of leaving stale event navigation around an inline error.
@@ -179,20 +179,20 @@
     return true;
   }
 
-  function redirectIfDocumentAccessChanged(error) {
+  function redirectIfDocumentAccessChanged(error, recoveryScope) {
     if (Number(error?.status) !== 403) return false;
     const scopedDocument = /^\/admin\/events\/[^/]+(?:\/|$)/.test(location.pathname)
       || /^\/admin\/evaluation-rounds\/[^/]+$/.test(location.pathname);
     if (!scopedDocument) return false;
-    if (!claimDocumentRecovery("403")) return false;
+    if (!claimDocumentRecovery("403", recoveryScope)) return false;
     // A 403 is deliberately not a missing-resource state. Re-enter the page so
     // its persona boundary can explain how to return to the active workspace.
     location.replace(`${location.pathname}${location.search}${location.hash}`);
     return true;
   }
 
-  function claimDocumentRecovery(status) {
-    const key = `sessionbuddy:document-recovery:${status}:${location.pathname}`;
+  function claimDocumentRecovery(status, recoveryScope) {
+    const key = `sessionbuddy:document-recovery:${status}:${recoveryScope}`;
     const now = Date.now();
     try {
       const previous = Number(sessionStorage.getItem(key) || 0);

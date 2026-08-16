@@ -1,7 +1,10 @@
+import hashlib
 import re
 from pathlib import Path
 
 import pytest
+
+from scripts.embed_console_assets import CONTENT_ADDRESSED_ASSETS
 
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 REPOSITORY = STATIC.parents[2]
@@ -17,39 +20,54 @@ def test_shared_asset_cache_versions_are_consistent_across_every_consumer() -> N
     consumers = [*STATIC.rglob("*.html"), *STATIC.rglob("*.css")]
     consumers.append(REPOSITORY / "frontend" / "index.html")
     consumers.extend((REPOSITORY / "src" / "sessionbuddy" / "console").rglob("*.py"))
-    references: dict[str, list[tuple[Path, str]]] = {
-        asset: [] for asset in shared_assets
-    }
+    references: dict[str, list[tuple[Path, str]]] = {asset: [] for asset in shared_assets}
 
     for path in consumers:
         source = path.read_text(encoding="utf-8")
         for asset in shared_assets:
-            for match in re.finditer(rf'{re.escape(asset)}\?v=(\d+)', source):
+            for match in re.finditer(rf"{re.escape(asset)}\?v=(\d+)", source):
                 references[asset].append((path, match.group(1)))
 
     for asset in shared_assets:
         assert references[asset], f"No consumers found for {asset}"
         versions = {version for _, version in references[asset]}
         consumers_with_versions = [
-            (str(path.relative_to(REPOSITORY)), version)
-            for path, version in references[asset]
+            (str(path.relative_to(REPOSITORY)), version) for path, version in references[asset]
         ]
-        assert len(versions) == 1, (
-            f"Inconsistent {asset} cache versions: "
-            f"{consumers_with_versions}"
-        )
+        assert len(versions) == 1, f"Inconsistent {asset} cache versions: {consumers_with_versions}"
 
     assert any(
         path == REPOSITORY / "frontend" / "index.html"
         for path, _ in references["/app-shell/assets/app-shell.css"]
     )
     assert any(
-        path == STATIC / "speaker.css"
-        for path, _ in references["/product/assets/product.css"]
+        path == STATIC / "speaker.css" for path, _ in references["/product/assets/product.css"]
     )
     assert any(
         path == REPOSITORY / "src" / "sessionbuddy" / "console" / "embedded_assets.py"
         for path, _ in references["/app-shell/assets/app-shell.js"]
+    )
+
+
+def test_document_recovery_calls_name_their_defining_resource_scope() -> None:
+    sources = [*STATIC.rglob("*.js"), REPOSITORY / "frontend" / "src" / "main.tsx"]
+    recovery_call = re.compile(
+        r"redirectIf(?:WorkspaceUnavailable|DocumentAccessChanged)"
+        r"\(((?:[^()]|\([^()]*\))*)\)"
+    )
+    violations = []
+    for path in sources:
+        source = path.read_text(encoding="utf-8")
+        for arguments in recovery_call.findall(source):
+            # Source calls are intentionally simple expressions. Requiring a
+            # comma catches both `helper(error)` and `helper(toApiError(error))`
+            # without pretending this source-wiring test is a JavaScript parser.
+            if "," not in arguments:
+                violations.append((str(path.relative_to(REPOSITORY)), arguments))
+
+    assert not violations, (
+        "Document recovery must be keyed to an explicit event, round, or nested "
+        f"resource instead of the current pathname: {violations}"
     )
 
 
@@ -89,8 +107,7 @@ def test_literal_javascript_element_references_are_wired(
     referenced = set(re.findall(r'\bbyId\(["\']([^"\']+)', javascript))
 
     assert referenced <= declared, (
-        f"{javascript_name} references missing IDs in {html_name}: "
-        f"{sorted(referenced - declared)}"
+        f"{javascript_name} references missing IDs in {html_name}: {sorted(referenced - declared)}"
     )
 
 
@@ -99,7 +116,7 @@ def test_every_api_driven_page_loads_the_shared_client_first() -> None:
         html = html_path.read_text(encoding="utf-8")
         if "<script" not in html or "auth_link_error" in html_path.name:
             continue
-        api_client = html.find('/app-shell/assets/api-client.js')
+        api_client = html.find("/app-shell/assets/api-client.js")
         assert api_client >= 0, f"{html_path.name} does not load the shared API client"
         page_scripts = [match.start() for match in re.finditer(r"<script\s+src=", html)]
         api_client_script = html.rfind("<script", 0, api_client)
@@ -149,14 +166,14 @@ def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> Non
 
 
 def test_changed_speaker_workflows_bust_cached_assets() -> None:
-    directory = (STATIC / "speaker_directory.html").read_text()
-    content = (STATIC / "speaker_content.html").read_text()
-    messages = (STATIC / "speaker_messages.html").read_text()
-    assert "/admin/people/assets/people.js?v=8" in directory
-    assert "/admin/speaker-content/assets/speaker-content.js?v=4" in content
-    assert "/admin/speakers/assets/messages.js?v=7" in messages
-    assert all("/product/assets/product.css?v=75" in page for page in (directory, content))
-    assert "/product/assets/product.css?v=75" in messages
+    for html_name, script_name, asset_path in CONTENT_ADDRESSED_ASSETS:
+        page = (STATIC / html_name).read_text(encoding="utf-8")
+        script = (STATIC / script_name).read_bytes()
+        expected = hashlib.sha256(script).hexdigest()[:12]
+        assert f"{asset_path}?v={expected}" in page, (
+            f"{html_name} must reference {asset_path}?v={expected}; "
+            "run scripts/embed_console_assets.py"
+        )
 
 
 def test_speaker_message_retries_reuse_idempotency_key() -> None:
@@ -185,9 +202,9 @@ def test_event_images_use_an_explicit_preview_then_upload_flow() -> None:
     script = (STATIC / "events_admin.js").read_text()
 
     for kind in ("logo", "cover"):
-        section = page.split(
-            f'aria-labelledby="event-{kind}-label">', 1
-        )[1].split("</section>", 1)[0]
+        section = page.split(f'aria-labelledby="event-{kind}-label">', 1)[1].split("</section>", 1)[
+            0
+        ]
         assert 'class="image-upload__file"' in section
         assert f'id="event-{kind}-file"' in section
         assert f'aria-labelledby="event-{kind}-label"' in section
@@ -221,7 +238,7 @@ def test_event_creation_waits_for_selected_image_uploads() -> None:
     )
     assert guard_at < create_at
     upload_guard_message = (
-        'Upload the selected logo or cover before '
+        "Upload the selected logo or cover before "
         '${eventId ? "saving changes" : "creating the event"}.'
     )
     assert upload_guard_message in submit_handler
@@ -278,8 +295,7 @@ def test_event_create_payload_supports_every_branding_state(
         "website_url": "https://conference.example.test",
     }
     create_payload = {
-        target: form_values[source] or None
-        for target, source in payload_fields.items()
+        target: form_values[source] or None for target, source in payload_fields.items()
     }
     assert create_payload == {
         "logo_url": logo_url or None,
@@ -291,9 +307,7 @@ def test_event_create_payload_supports_every_branding_state(
 def test_event_create_button_tracks_pending_branding_uploads() -> None:
     page = (STATIC / "events_admin.html").read_text()
     script = (STATIC / "events_admin.js").read_text()
-    availability = script.split("function updateSaveAvailability() {", 1)[1].split(
-        "\n  }", 1
-    )[0]
+    availability = script.split("function updateSaveAvailability() {", 1)[1].split("\n  }", 1)[0]
     upload_handler = script.split("async function uploadSelectedAsset(kind) {", 1)[1]
     upload_success = upload_handler.split("try {", 1)[1].split("} catch", 1)[0]
 
@@ -304,14 +318,12 @@ def test_event_create_button_tracks_pending_branding_uploads() -> None:
     assert "form.elements.cover_file.files[0]" in availability
     assert 'byId("save-event").disabled = pending || state.submitting;' in availability
 
-    logo_change = script.split(
-        'elements.logo_file.addEventListener("change", (event) => {', 1
-    )[1].split(
-        'elements.cover_file.addEventListener("change", (event) => {', 1
-    )[0]
-    cover_change = script.split(
-        'elements.cover_file.addEventListener("change", (event) => {', 1
-    )[1].split("async function uploadEventAsset", 1)[0]
+    logo_change = script.split('elements.logo_file.addEventListener("change", (event) => {', 1)[
+        1
+    ].split('elements.cover_file.addEventListener("change", (event) => {', 1)[0]
+    cover_change = script.split('elements.cover_file.addEventListener("change", (event) => {', 1)[
+        1
+    ].split("async function uploadEventAsset", 1)[0]
     assert "updateSaveAvailability();" in logo_change
     assert "updateSaveAvailability();" in cover_change
 
@@ -329,9 +341,7 @@ def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> Non
     stylesheet = (STATIC / "product.css").read_text()
 
     for kind in ("logo", "cover"):
-        card = page.split(
-            f'aria-labelledby="event-{kind}-label">', 1
-        )[1].split("</section>", 1)[0]
+        card = page.split(f'aria-labelledby="event-{kind}-label">', 1)[1].split("</section>", 1)[0]
         assert card.index(f'id="event-{kind}-file"') < card.index(
             f'id="event-{kind}-preview-frame"'
         )
@@ -353,9 +363,7 @@ def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
     # The 404-retry loop papered over the missing single-event read endpoint;
     # both are gone now, so the workspace loads in one call.
     script = (STATIC / "admin_programs.js").read_text()
-    loader = script.split("async function loadWorkspace(eventId) {", 1)[1].split(
-        "\n  }", 1
-    )[0]
+    loader = script.split("async function loadWorkspace(eventId) {", 1)[1].split("\n  }", 1)[0]
     assert "setTimeout" not in loader
     assert "return api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)" in loader
     restore = script.split("async function restoreSession() {", 1)[1]
@@ -366,10 +374,7 @@ def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
 def test_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> None:
     script = (STATIC / "admin_programs.js").read_text()
 
-    assert (
-        "editor.elements.confirmation_subject.value = form.confirmation_subject"
-        in script
-    )
+    assert "editor.elements.confirmation_subject.value = form.confirmation_subject" in script
     assert "editor.elements.confirmation_body.value = form.confirmation_body" in script
     assert "payload.confirmation_subject = values.confirmation_subject" in script
     assert "payload.confirmation_body = values.confirmation_body" in script
