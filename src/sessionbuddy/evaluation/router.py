@@ -29,7 +29,7 @@ from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, Idempote
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.http import attachment_header
-from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.speaker_operations.acceptance_tasks import (
     SPEAKER_TASK_FLAGS_SQL,
     acceptance_speaker_tasks,
@@ -183,6 +183,11 @@ def _decision_composition(
     )
 
 
+_EVALUATION_CURSOR = SignedCursorContract(
+    "evaluation_keyset", {"id": BOUNDED_ID, "ts": STRICT_INT}
+)
+
+
 def _evaluation_cursor(
     request: Request,
     value: str | None,
@@ -191,17 +196,14 @@ def _evaluation_cursor(
     scope_id: str,
 ) -> tuple[int, str] | None:
     """Decode a signed keyset cursor scoped to one list and identity."""
-    decoded = decode_signed_cursor(
+    decoded = _EVALUATION_CURSOR.decode(
         request,
         value,
         scope={"kind": kind, "scope": scope_id},
-        position_fields={"id", "ts"},
     )
     if decoded is None:
         return None
     timestamp, row_id = decoded["ts"], decoded["id"]
-    if type(timestamp) is not int or not isinstance(row_id, str) or not 1 <= len(row_id) <= 100:
-        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
     return timestamp, row_id
 
 
@@ -212,8 +214,8 @@ def _evaluation_next_cursor(
     scope_id: str,
     timestamp: int,
     row_id: str,
-) -> str:
-    return encode_signed_cursor(
+) -> str | None:
+    return _EVALUATION_CURSOR.encode(
         request,
         scope={"kind": kind, "scope": scope_id},
         position={"id": row_id, "ts": timestamp},

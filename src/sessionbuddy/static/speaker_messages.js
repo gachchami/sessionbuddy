@@ -294,7 +294,13 @@
   byId("load-older-messages").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
-    try { await loadMessageHistory(true); } finally { button.disabled = false; }
+    try { await loadMessageHistory(true); }
+    catch (error) {
+      if (!window.SessionBuddyApi.isStaleCursor(error)) throw error;
+      messageCursor = null;
+      await loadMessageHistory(false);
+      setStatus(window.SessionBuddyApi.messageWithReference("The message history changed while you were away. Showing the latest messages from the beginning.", error));
+    } finally { button.disabled = false; }
   });
   byId("message-history-filter").addEventListener("change", renderMessageHistory);
 
@@ -305,7 +311,7 @@
     try {
       event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
     } catch (error) {
-      const recoveryScope = `event:${eventId}`;
+      const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
           || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;

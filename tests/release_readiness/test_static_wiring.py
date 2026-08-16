@@ -443,3 +443,29 @@ def test_public_schedule_export_reports_success() -> None:
 def test_cfp_signed_in_email_help_is_not_duplicated() -> None:
     script = (STATIC / "public_cfp.js").read_text()
     assert 'let help = byId("signed-in-email-help")' in script
+
+
+def test_document_recovery_scopes_use_shared_builders() -> None:
+    javascript = [path for path in STATIC.glob("*.js") if path.name != "api_client.js"]
+    paths = [*javascript, REPOSITORY / "frontend" / "src" / "main.tsx"]
+    forbidden = (
+        "`event:${",
+        "`round:${",
+        "`event-speaker:${",
+        '"event:" +',
+        '"round:" +',
+        '"event-speaker:" +',
+        "'event:' +",
+        "'round:' +",
+        "'event-speaker:' +",
+    )
+    for path in paths:
+        source_text = path.read_text()
+        assert not any(value in source_text for value in forbidden), path
+        assert not re.search(
+            r"redirectIf(?:WorkspaceUnavailable|DocumentAccessChanged)\([^,()]+\)",
+            source_text,
+        ), path
+    api_client = (STATIC / "api_client.js").read_text()
+    assert "if (!recoveryScope) return false;" in api_client
+    assert "documentRecoveryKey(status, recoveryScope)" in api_client

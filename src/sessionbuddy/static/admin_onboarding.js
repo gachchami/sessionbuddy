@@ -36,6 +36,14 @@
       ? `Last refreshed ${state.lastSuccess.toLocaleTimeString()}` : "Not refreshed yet";
   }
 
+  function enterTerminal(message, error) {
+    state.terminal = true;
+    clearInterval(state.timer);
+    document.querySelectorAll("#main button, #main input, #main select").forEach((control) => { control.disabled = true; });
+    setStatus(window.SessionBuddyApi.messageWithReference(message, error), true);
+    setConnection("stale", "Access unavailable");
+  }
+
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
     const width = innerWidth;
@@ -225,20 +233,38 @@
       setConnection("live", "Live snapshot");
       setStatus(announce ? "Onboarding snapshot refreshed." : `${state.rows.length} speaker record${state.rows.length === 1 ? "" : "s"} shown.`);
     } catch (error) {
-      const recoveryScope = `event:${eventId}`;
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
-      if ([403, 404].includes(Number(error.status))) {
+      if (Number(error.status) === 401) {
         state.terminal = true;
         clearInterval(state.timer);
-        setStatus("This event is no longer available to your account.", true);
-        setConnection("stale", "Access unavailable");
+        if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+      }
+      if (window.SessionBuddyApi.isStaleCursor(error)) {
+        state.cursor = null;
+        byId("load-more").hidden = true;
+        setStatus(window.SessionBuddyApi.messageWithReference("The list changed while you were away. Refreshing from the beginning.", error));
+        setConnection("", "Refreshing list");
+        setTimeout(async () => {
+          await refresh({ announce: true });
+          const panel = byId("results-panel");
+          panel.tabIndex = -1;
+          panel.focus({ preventScroll: true });
+        }, 0);
         return;
       }
-      const authMessage = error.status === 401 || error.status === 403
-        ? "Your account cannot access this event."
-        : "Live refresh failed. Showing the last successful snapshot while reconnecting.";
-      setStatus(authMessage, true);
-      setConnection("stale", error.status === 401 || error.status === 403 ? "Access unavailable" : "Reconnecting");
+      const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
+      if ([403, 404].includes(Number(error.status))) {
+        enterTerminal("This event is no longer available to your account.", error);
+        return;
+      }
+      if (Number(error.status) >= 400 && Number(error.status) < 500) {
+        clearInterval(state.timer);
+        setStatus(window.SessionBuddyApi.message(error), true);
+        setConnection("stale", "Refresh needed");
+        return;
+      }
+      setStatus(window.SessionBuddyApi.messageWithReference("Live refresh failed. Showing the last successful snapshot while reconnecting.", error), true);
+      setConnection("stale", "Reconnecting");
     } finally {
       state.loading = false;
       byId("results-panel").setAttribute("aria-busy", "false");

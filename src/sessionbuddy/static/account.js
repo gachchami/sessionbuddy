@@ -442,8 +442,14 @@
         status.textContent = `${list.querySelectorAll(".ownership-recovery-item").length} recovery ${list.querySelectorAll(".ownership-recovery-item").length === 1 ? "event" : "events"} shown.`;
       }
     } catch (error) {
-      section.hidden = true;
-      if (error.status !== 404) showStatus(window.SessionBuddyApi.message(error), "error", true);
+      if (window.SessionBuddyApi.isStaleCursor(error)) {
+        section.dataset.nextCursor = "";
+        await loadOwnershipRecoveryEvents(organizationId, true);
+        status.textContent = window.SessionBuddyApi.messageWithReference("The recovery list changed while you were away. Showing the latest events from the beginning.", error);
+      } else {
+        section.hidden = true;
+        if (error.status !== 404) showStatus(window.SessionBuddyApi.message(error), "error", true);
+      }
     }
   }
 

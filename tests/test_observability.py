@@ -6,7 +6,7 @@ import pytest
 from route_inventory import document_routes
 
 from sessionbuddy.api.app import app
-from sessionbuddy.observability import record_timing
+from sessionbuddy.observability import record_integrity_signal, record_timing
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,6 +53,40 @@ def test_observability_registration_is_human_actionable() -> None:
         assert registration["dashboards"]
         assert (PROJECT_ROOT / registration["runbook"].split("#", maxsplit=1)[0]).is_file()
         assert registration["slo"]["p95_ms"] > 0
+
+
+def test_integrity_signals_are_bounded_and_actionable() -> None:
+    manifest = json.loads(
+        (PROJECT_ROOT / "observability" / "manifest.json").read_text(encoding="utf-8")
+    )
+    signals = manifest["integrity_signals"]
+    cursor = signals["sessionbuddy.signed_cursor.shape_failure"]
+    assert cursor["alert_condition"] == "count > 0 in 5m"
+    assert cursor["group_by"] == ["cursor_contract", "field", "constraint"]
+    assert set(cursor["group_by"]) <= set(cursor["dimensions"])
+    assert cursor["owner"]
+    assert cursor["dashboards"]
+    assert (PROJECT_ROOT / cursor["runbook"].split("#", maxsplit=1)[0]).is_file()
+
+
+def test_integrity_signal_sanitizes_drift_without_changing_control_flow(capsys) -> None:
+    request = SimpleNamespace(
+        scope={},
+        state=SimpleNamespace(request_id="request-a"),
+    )
+
+    record_integrity_signal(
+        request,
+        "sessionbuddy.signed_cursor.shape_failure",
+        cursor_contract="new-contract",
+        field="new-field",
+        constraint="new-constraint",
+    )
+
+    event = json.loads(capsys.readouterr().out)
+    assert event["cursor_contract"] == "other"
+    assert event["field"] == "other"
+    assert event["constraint"] == "other"
 
 
 def test_every_document_route_is_registered_or_explicitly_excluded() -> None:

@@ -166,11 +166,34 @@
     return true;
   }
 
+  function scopePart(value) {
+    const part = String(value || "").trim();
+    return part && /^[A-Za-z0-9_.-]{1,128}$/.test(part) ? part : null;
+  }
+
+  function scopedRecoveryValue(kind, value) {
+    const part = scopePart(value);
+    return part ? `${kind}:${part}` : null;
+  }
+
+  const recoveryScope = Object.freeze({
+    event: (eventId) => scopedRecoveryValue("event", eventId),
+    round: (roundId) => scopedRecoveryValue("round", roundId),
+    eventSpeaker: (eventId, speakerId) => {
+      const event = scopedRecoveryValue("event-speaker", eventId);
+      const speaker = scopePart(speakerId);
+      return event && speaker ? `${event}:${speaker}` : null;
+    }
+  });
+
+  function documentRecoveryKey(status, scope) {
+    if (!scope || typeof scope !== "string") throw new TypeError("A recovery scope is required");
+    return `sessionbuddy:document-recovery:${status}:${scope}`;
+  }
+
   function redirectIfWorkspaceUnavailable(error, recoveryScope) {
     if (Number(error?.status) !== 404) return false;
-    const scopedDocument = /^\/admin\/events\/[^/]+(?:\/|$)/.test(location.pathname)
-      || /^\/admin\/evaluation-rounds\/[^/]+$/.test(location.pathname);
-    if (!scopedDocument) return false;
+    if (!recoveryScope) return false;
     if (!claimDocumentRecovery("404", recoveryScope)) return false;
     // Re-enter through the document route. Its server-side scope guard renders
     // the same non-disclosing recovery page for a deleted resource and lost
@@ -181,9 +204,7 @@
 
   function redirectIfDocumentAccessChanged(error, recoveryScope) {
     if (Number(error?.status) !== 403) return false;
-    const scopedDocument = /^\/admin\/events\/[^/]+(?:\/|$)/.test(location.pathname)
-      || /^\/admin\/evaluation-rounds\/[^/]+$/.test(location.pathname);
-    if (!scopedDocument) return false;
+    if (!recoveryScope) return false;
     if (!claimDocumentRecovery("403", recoveryScope)) return false;
     // A 403 is deliberately not a missing-resource state. Re-enter the page so
     // its persona boundary can explain how to return to the active workspace.
@@ -192,7 +213,8 @@
   }
 
   function claimDocumentRecovery(status, recoveryScope) {
-    const key = `sessionbuddy:document-recovery:${status}:${recoveryScope}`;
+    if (!recoveryScope) return false;
+    const key = documentRecoveryKey(status, recoveryScope);
     const now = Date.now();
     try {
       const previous = Number(sessionStorage.getItem(key) || 0);
@@ -208,6 +230,14 @@
 
   function message(error, fallback = "The request could not be completed. Try again.") {
     return error instanceof ApiError ? error.message : fallback;
+  }
+
+  function messageWithReference(value, error) {
+    return withReference(value, error instanceof ApiError ? error.requestId : "");
+  }
+
+  function isStaleCursor(error) {
+    return error instanceof ApiError && error.code === "stale_cursor";
   }
 
   function installFormValidation() {
@@ -488,13 +518,17 @@
 
   window.SessionBuddyApi = Object.freeze({
     ApiError,
+    documentRecoveryKey,
+    isStaleCursor,
     message,
+    messageWithReference,
     parseResponse,
     refreshCharacterCounters: formValidation.installCharacterCounters,
     showValidationErrors: formValidation.showServerValidationErrors,
     redirectIfSignedOut,
     redirectIfDocumentAccessChanged,
     redirectIfWorkspaceUnavailable,
+    recoveryScope,
     download,
     request,
     signInPath

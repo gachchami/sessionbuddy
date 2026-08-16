@@ -38,6 +38,10 @@ const agendaJavaScript = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/agenda.js"),
   "utf8",
 );
+const adminSubmissionsHtml = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/admin_submissions.html"),
+  "utf8",
+);
 const publicCfpHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.html"), "utf8");
 const publicCfpJavaScript = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.js"), "utf8");
 const setupHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.html"), "utf8");
@@ -811,6 +815,18 @@ test.describe("administration empty states", () => {
 
   test("submissions keep the event navigation", async ({ page }) => {
     const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    await page.route(`**/admin/events/${eventId}/submissions`, (route) => route.fulfill({
+      contentType: "text/html",
+      body: adminSubmissionsHtml,
+    }));
+    await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: apiClientJavaScript,
+    }));
+    await page.route("**/app-shell/assets/app-shell.js*", (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: appShellJavaScript,
+    }));
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({

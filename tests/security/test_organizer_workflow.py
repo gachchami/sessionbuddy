@@ -963,6 +963,8 @@ async def test_events_list_paginates_with_signed_cursors(
             params={"cursor": page_one["next_cursor"][:-4] + "AAAA"},
         )
         assert tampered.status_code == 400
+        assert tampered.json()["error"]["code"] == "stale_cursor"
+        assert tampered.json()["error"]["metadata"] == {"reason": "invalid"}
 
 
 async def test_active_events_can_be_ordered_nearest_upcoming_first(
@@ -1344,4 +1346,6 @@ async def test_malformed_cursors_return_structured_400(
                 params={"cursor": malformed},
             )
             assert response.status_code == 400, (malformed, response.status_code)
-            assert response.json()["error"]["code"] == "invalid_request", malformed
+            payload = response.json()["error"]
+            assert payload["code"] == "stale_cursor", malformed
+            assert payload["metadata"]["reason"] == "invalid", malformed

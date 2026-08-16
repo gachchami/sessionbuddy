@@ -637,8 +637,6 @@
         byId("status").textContent = `Download started: ${result.filename}${count}. If it did not start, use the direct download link.`;
       } catch (error) {
         if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-        const recoveryScope = `event:${eventId}`;
-        if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
         byId("status").textContent = window.SessionBuddyApi.message(error, "The evaluation export could not be prepared.");
         byId("status").classList.add("error");
         byId("status").focus();
@@ -1442,7 +1440,7 @@
       try {
         state.timeZone = await loadEventTimeZone();
       } catch (error) {
-        const recoveryScope = `event:${eventId}`;
+        const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
         if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
             || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
         throw error;
@@ -1618,7 +1616,18 @@
       renderLoadMore(Number(result.total ?? state.submissions.length));
       updatePrerequisites();
     } catch (error) {
+      if (window.SessionBuddyApi.isStaleCursor(error)) {
+        state.nextCursor = null;
+        byId("status").textContent = window.SessionBuddyApi.messageWithReference("The proposal list changed while you were away. Refreshing from the beginning.", error);
+        try {
+          await load();
+        } catch (refreshError) {
+          byId("status").textContent = window.SessionBuddyApi.message(refreshError, "The proposal list could not be refreshed. Try again.");
+        }
+        return;
+      }
       byId("status").textContent = window.SessionBuddyApi.message(error, "More submissions could not be loaded. Try again.");
+    } finally {
       button.disabled = false;
       button.textContent = "Load more";
     }

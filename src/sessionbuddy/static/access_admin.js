@@ -153,7 +153,7 @@
     if (sessionResult.status === "rejected") throw sessionResult.reason;
     if (selectedEventResult.status === "rejected") {
       const error = selectedEventResult.reason;
-      const recoveryScope = `event:${eventId}`;
+      const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
           || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;

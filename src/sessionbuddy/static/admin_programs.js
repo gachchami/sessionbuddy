@@ -1383,8 +1383,10 @@
         return;
       }
       const eventId = state.context?.event_id || eventIdFromPage({});
-      const recoveryScope = `event:${eventId || "unknown"}`;
-      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
+      if (eventId) {
+        const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
+        if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
+      }
       setStatus(window.SessionBuddyApi.message(error), true);
     }
   }

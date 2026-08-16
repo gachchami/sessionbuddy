@@ -180,7 +180,13 @@
     const button = event.currentTarget;
     button.disabled = true;
     try { await loadEventPage(state.nextCursor); }
-    catch (error) { setStatus(window.SessionBuddyApi.message(error), true); }
+    catch (error) {
+      if (window.SessionBuddyApi.isStaleCursor(error)) {
+        state.nextCursor = null;
+        await loadEventPage();
+        setStatus(window.SessionBuddyApi.messageWithReference("The event list changed while you were away. Showing the latest events from the beginning.", error));
+      } else setStatus(window.SessionBuddyApi.message(error), true);
+    }
     finally { button.disabled = false; }
   });
 

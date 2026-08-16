@@ -43,7 +43,7 @@ from sessionbuddy.platform.db.d1 import (
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
-from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
@@ -2759,25 +2759,26 @@ async def create_submission(
 
 
 SUBMISSIONS_PAGE_LIMIT = 100
+_SUBMISSIONS_CURSOR = SignedCursorContract(
+    "cfp_submissions", {"id": BOUNDED_ID, "sub": STRICT_INT}
+)
+
+
 def _submissions_cursor(
     request: Request, value: str | None, *, event_id: str
 ) -> tuple[int, str] | None:
     """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
-    decoded = decode_signed_cursor(
-        request, value, scope={"event": event_id}, position_fields={"id", "sub"}
-    )
+    decoded = _SUBMISSIONS_CURSOR.decode(request, value, scope={"event": event_id})
     if decoded is None:
         return None
     submitted_at, row_id = decoded["sub"], decoded["id"]
-    if type(submitted_at) is not int or not isinstance(row_id, str) or len(row_id) > 100:
-        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
     return submitted_at, row_id
 
 
 def _submissions_next_cursor(
     request: Request, *, event_id: str, submitted_at_ms: int, row_id: str
-) -> str:
-    return encode_signed_cursor(
+) -> str | None:
+    return _SUBMISSIONS_CURSOR.encode(
         request,
         scope={"event": event_id},
         position={"id": row_id, "sub": submitted_at_ms},

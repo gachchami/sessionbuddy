@@ -290,7 +290,7 @@
     const eventResult = await eventPromise;
     if (!eventResult.ok) {
       const error = eventResult.error;
-      const recoveryScope = `event:${selectedEventId}`;
+      const recoveryScope = window.SessionBuddyApi.recoveryScope.event(selectedEventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
           || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return null;
       throw error;
@@ -303,8 +303,8 @@
     if (!targetsResult.ok) {
       const error = targetsResult.error;
       const recoveryScope = selectedSpeakerId
-        ? `event-speaker:${selectedEventId}:${selectedSpeakerId}`
-        : `event:${selectedEventId}`;
+        ? window.SessionBuddyApi.recoveryScope.eventSpeaker(selectedEventId, selectedSpeakerId)
+        : window.SessionBuddyApi.recoveryScope.event(selectedEventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)
           || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return null;
       throw error;

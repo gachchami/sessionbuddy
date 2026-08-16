@@ -41,7 +41,15 @@
   }
   const api = (path, options = {}, behavior = {}) => window.SessionBuddyApi.request(path, options, behavior);
   async function loadEventTimeZone() {
-    const event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    let event;
+    try {
+      event = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    } catch (error) {
+      const scope = window.SessionBuddyApi.recoveryScope.event(eventId);
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, scope)
+          || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, scope)) return null;
+      throw error;
+    }
     if (!event?.time_zone) throw new Error("The event time zone could not be loaded.");
     return event.time_zone;
   }
@@ -490,7 +498,9 @@
   async function initialize() {
     if (!eventId) throw new Error("Invalid event link.");
     const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
-    state.timeZone = await loadEventTimeZone();
+    const timeZone = await loadEventTimeZone();
+    if (!timeZone) return;
+    state.timeZone = timeZone;
     byId("task-time-zone").textContent = state.timeZone;
     updateTaskType();
     const results = await Promise.allSettled([loadResources(), loadTargets(), loadAssets()]);
@@ -504,8 +514,6 @@
   }
   initialize().catch((error) => {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-    const recoveryScope = `event:${eventId}`;
-    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
     setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();

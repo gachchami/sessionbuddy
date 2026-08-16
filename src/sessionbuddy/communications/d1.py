@@ -14,7 +14,7 @@ from sessionbuddy.platform.db.commands import (
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
-from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 
 from .models import (
     CommunicationStatus,
@@ -36,6 +36,9 @@ _INCOMPATIBLE_RECIPIENT_NAME_LIMIT = 10
 _SPEAKER_MESSAGE_VARIABLES = frozenset(
     {"event.name", "speaker.name", "speaker.first_name", "submission.title", "portal.link"}
 )
+_STATUS_CURSOR = SignedCursorContract(
+    "communication_status", {"id": BOUNDED_ID, "ts": STRICT_INT}
+)
 
 
 def _status_cursor(
@@ -45,17 +48,14 @@ def _status_cursor(
     organization_id: str,
     event_id: str,
 ) -> tuple[int, str] | None:
-    decoded = decode_signed_cursor(
+    decoded = _STATUS_CURSOR.decode(
         request,
         value,
         scope={"event": event_id, "organization": organization_id},
-        position_fields={"id", "ts"},
     )
     if decoded is None:
         return None
     timestamp, row_id = decoded["ts"], decoded["id"]
-    if type(timestamp) is not int or not isinstance(row_id, str) or not 1 <= len(row_id) <= 100:
-        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
     return timestamp, row_id
 
 
@@ -66,8 +66,8 @@ def _status_next_cursor(
     event_id: str,
     timestamp: int,
     row_id: str,
-) -> str:
-    return encode_signed_cursor(
+) -> str | None:
+    return _STATUS_CURSOR.encode(
         request,
         scope={"event": event_id, "organization": organization_id},
         position={"id": row_id, "ts": timestamp},

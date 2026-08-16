@@ -619,7 +619,11 @@
       state.nextCursor = result.next_cursor;
       renderEventList();
     } catch (error) {
-      setStatus(error.message, true);
+      if (window.SessionBuddyApi.isStaleCursor(error)) {
+        state.nextCursor = null;
+        await loadEvents(state.organizationId);
+        setStatus(window.SessionBuddyApi.messageWithReference("The event list changed while you were away. Showing the latest events from the beginning.", error));
+      } else setStatus(window.SessionBuddyApi.message(error), true);
     } finally {
       button.disabled = false;
     }

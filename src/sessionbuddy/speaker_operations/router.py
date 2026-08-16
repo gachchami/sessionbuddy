@@ -43,7 +43,7 @@ from sessionbuddy.platform.db.d1 import (
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.http import attachment_header
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
-from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.platform.storage import (
     ScanResult,
     malware_scan_disabled,
@@ -368,6 +368,12 @@ async def _timed_all(request: Request, statement):
         record_timing(request, "db", (perf_counter() - started) * 1000)
 
 
+_ONBOARDING_CURSOR = SignedCursorContract(
+    "speaker_onboarding",
+    {"as_of": STRICT_INT, "due": STRICT_INT, "id": BOUNDED_ID},
+)
+
+
 def _cursor(
     request: Request,
     value: str | None,
@@ -376,22 +382,14 @@ def _cursor(
     state: str,
     task_type: str | None,
 ) -> tuple[int, int, str, int] | None:
-    decoded = decode_signed_cursor(
+    decoded = _ONBOARDING_CURSOR.decode(
         request,
         value,
         scope={"event": event_id, "state": state, "task_type": task_type},
-        position_fields={"as_of", "due", "id"},
     )
     if decoded is None:
         return None
     values = (decoded["due"], decoded["id"], decoded["as_of"], decoded["exp"])
-    if (
-        type(values[0]) is not int
-        or not isinstance(values[1], str)
-        or len(values[1]) > 100
-        or type(values[2]) is not int
-    ):
-        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
     return values
 
 
@@ -404,8 +402,8 @@ def _next_cursor(
     due_at_ms: int | None,
     task_id: str,
     as_of: int,
-) -> str:
-    return encode_signed_cursor(
+) -> str | None:
+    return _ONBOARDING_CURSOR.encode(
         request,
         scope={"event": event_id, "state": state, "task_type": task_type},
         position={

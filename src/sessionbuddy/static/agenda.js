@@ -1111,7 +1111,7 @@
         showSetup();
         return;
       }
-      if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, `event:${eventId}`)) return;
+      if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, window.SessionBuddyApi.recoveryScope.event(eventId))) return;
       status("Agenda could not be refreshed.", true);
     }),
   );

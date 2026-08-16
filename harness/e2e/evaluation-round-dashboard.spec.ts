@@ -210,9 +210,11 @@ test.describe("evaluation round dashboard", () => {
       await page.getByRole("link", { name: "Results CSV" }).click();
 
       await navigation;
-      expect(await page.evaluate((code) => sessionStorage.getItem(
-        `sessionbuddy:document-recovery:${code}:round:round-a`,
-      ), String(status))).not.toBeNull();
+      expect(await page.evaluate((code) => {
+        const api = (window as any).SessionBuddyApi;
+        const scope = api.recoveryScope.round("round-a");
+        return sessionStorage.getItem(api.documentRecoveryKey(code, scope));
+      }, String(status))).not.toBeNull();
     });
   }
 
@@ -237,11 +239,12 @@ test.describe("evaluation round dashboard", () => {
   });
 
   test("keeps a repeated document-recovery failure inline during the throttle window", async ({ page }) => {
-    await page.addInitScript(() => sessionStorage.setItem(
-      "sessionbuddy:document-recovery:404:round:round-a",
-      String(Date.now()),
-    ));
     await openDashboard(page, results({ event_name: "Example Event", status: "closed" }));
+    await page.evaluate(() => {
+      const api = (window as any).SessionBuddyApi;
+      const scope = api.recoveryScope.round("round-a");
+      sessionStorage.setItem(api.documentRecoveryKey("404", scope), String(Date.now()));
+    });
     await page.route("**/api/v1/admin/evaluation-rounds/round-a/export.csv", (route) =>
       route.fulfill({
         status: 404,

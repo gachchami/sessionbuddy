@@ -52,7 +52,9 @@ def test_speaker_task_due_date_uses_the_event_time_zone() -> None:
     assert 'id="task-time-zone-context"' in page
     assert 'aria-describedby="task-time-zone-context"' in page
     assert 'id="task-time-zone"' in page
-    assert "state.timeZone = await loadEventTimeZone()" in script
+    assert "const timeZone = await loadEventTimeZone()" in script
+    assert "if (!timeZone) return" in script
+    assert "state.timeZone = timeZone" in script
     assert 'byId("task-time-zone").textContent = state.timeZone' in script
     assert "const due = inputMillis(values.due_at)" in script
     assert "new Date(values.due_at).getTime()" not in script

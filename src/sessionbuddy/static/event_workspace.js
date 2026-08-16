@@ -92,13 +92,26 @@
     byId("event-id").textContent = eventId; byId("api-base").textContent = `${location.origin}/v1`;
     setStatus("Sharing tools ready. Checking integration access…");
     const session = await api("/api/v1/auth/session"); state.csrf = session.csrf_token;
+    try {
+      await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
+    } catch (error) {
+      const scope = window.SessionBuddyApi.recoveryScope.event(eventId);
+      if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, scope)
+          || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, scope)) return;
+      if ([403, 404].includes(Number(error?.status))) {
+        setStatus(window.SessionBuddyApi.messageWithReference("Event access could not be confirmed. Refresh this page before using the sharing tools.", error), true);
+        return;
+      }
+      // This probe detects mid-session document access loss. The sharing tools
+      // do not depend on its payload and authorize every operation themselves,
+      // so a transient read failure must not disable the whole page.
+      if (Number(error?.status) === 401) throw error;
+    }
     byId("generate-token").disabled = false;
     setStatus("Sharing and integration tools ready.");
   }
   initialize().catch((error) => {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-    const recoveryScope = `event:${eventId}`;
-    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
     setStatus(window.SessionBuddyApi.message(error), true);
   });
 })();

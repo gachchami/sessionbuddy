@@ -17,6 +17,14 @@ other session while atomically replacing the caller's cookie and CSRF token,
 browser-friendly expired-link recovery, and the read-only
 `/engine-room` operator console.
 
+Signed pagination cursors now use bound, strict position contracts across all
+five paginated surfaces. Routine expiry and invalid cursors return the shared
+`stale_cursor` recovery code, while malformed server-minted positions emit a
+separate, grouped integrity signal. Browser document recovery is explicitly
+scoped to the resource and operation: terminal access failures stop onboarding
+polling, transient failures retain reconnect behavior, and stale pagination
+restarts from the first page without presenting a missing-resource state.
+
 The platform People directory is organization-authority scoped and presents each
 person once in a table across the organizations the operator may manage. Search
 has an explicit, tested field contract for name, email, and company; organization

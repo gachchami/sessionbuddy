@@ -27,6 +27,7 @@ from sessionbuddy.platform.auth.access import (
 )
 from sessionbuddy.platform.auth.demo_router import demo_router
 from sessionbuddy.platform.auth.http import session_cookie_value
+from sessionbuddy.platform.signed_cursors import StaleCursorError
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
@@ -377,6 +378,15 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
             ),
             primary_label="Open active workspace",
             primary_href="/",
+        )
+    if isinstance(exception, StaleCursorError):
+        return _error_response(
+            request,
+            400,
+            "stale_cursor",
+            "This list changed or the continuation expired. Refresh the list to continue.",
+            metadata={"reason": exception.reason},
+            headers=exception.headers,
         )
     errors = {
         400: ("invalid_request", "The request could not be processed"),

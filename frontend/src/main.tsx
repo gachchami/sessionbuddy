@@ -101,10 +101,17 @@ type RoundResults = {
 };
 
 type ApiClient = {
+  isStaleCursor(error: unknown): boolean;
   message(error: unknown, fallback?: string): string;
+  messageWithReference(message: string, error: unknown): string;
+  recoveryScope: {
+    event(eventId: string): string | null;
+    round(roundId: string): string | null;
+    eventSpeaker(eventId: string, speakerId: string): string | null;
+  };
   redirectIfSignedOut(error: unknown): boolean;
-  redirectIfDocumentAccessChanged(error: unknown, recoveryScope: string): boolean;
-  redirectIfWorkspaceUnavailable(error: unknown, recoveryScope: string): boolean;
+  redirectIfDocumentAccessChanged(error: unknown, recoveryScope: string | null): boolean;
+  redirectIfWorkspaceUnavailable(error: unknown, recoveryScope: string | null): boolean;
   download(
     path: string,
     options?: RequestInit,
@@ -293,6 +300,18 @@ function ReviewWorkspace() {
         ? "New assignments will appear here, and we’ll notify you by email."
         : "",
     );
+  }
+  async function loadMoreAssignments() {
+    try {
+      await loadAssignments(nextCursor);
+    } catch (error) {
+      if (!window.SessionBuddyApi.isStaleCursor(error)) throw error;
+      await loadAssignments(null);
+      setStatus(window.SessionBuddyApi.messageWithReference(
+        "The review list changed while you were away. Showing the latest assignments from the beginning.",
+        error,
+      ));
+    }
   }
   async function signIn() {
     try {
@@ -856,7 +875,7 @@ function ReviewWorkspace() {
           <button
             className="secondary"
             onClick={() =>
-              loadAssignments(nextCursor).catch((error) =>
+              loadMoreAssignments().catch((error) =>
                 setStatus(errorMessage(error)),
               )
             }
@@ -902,7 +921,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
 
   function handleRoundError(error: unknown, focusStatus = false) {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-    const recoveryScope = `round:${roundId}`;
+    const recoveryScope = window.SessionBuddyApi.recoveryScope.round(roundId);
     if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)) return;
     if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
     setStatus(errorMessage(error));
@@ -1006,6 +1025,19 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     if (clearStatus) setStatus("");
     return body;
   }
+  async function loadMoreResults() {
+    if (!results?.next_cursor) return;
+    try {
+      await load(results.next_cursor);
+    } catch (error) {
+      if (!window.SessionBuddyApi.isStaleCursor(error)) throw error;
+      await load(null, false);
+      setStatus(window.SessionBuddyApi.messageWithReference(
+        "The result list changed while you were away. Showing the latest proposals from the beginning.",
+        error,
+      ));
+    }
+  }
   async function signIn() {
     try {
       const body = await api<{ csrf_token: string }>("/api/v1/auth/session");
@@ -1013,7 +1045,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       await load();
     } catch (error) {
       if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
-      const recoveryScope = `round:${roundId}`;
+      const recoveryScope = window.SessionBuddyApi.recoveryScope.round(roundId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)) return;
       if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;
@@ -1888,7 +1920,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               <button
                 className="secondary"
                 onClick={() =>
-                  load(results.next_cursor).catch((error) =>
+                  loadMoreResults().catch((error) =>
                     setStatus(errorMessage(error)),
                   )
                 }

@@ -33,7 +33,7 @@
     try {
       selected = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}`);
     } catch (error) {
-      const recoveryScope = `event:${eventId}`;
+      const recoveryScope = window.SessionBuddyApi.recoveryScope.event(eventId);
       if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
       throw error;
     }

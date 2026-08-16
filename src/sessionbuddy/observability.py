@@ -24,6 +24,17 @@ SAFE_DEGRADATIONS = (
     "speaker_profile_audit_failed",
     "speaker_restore_audit_failed",
 )
+SAFE_INTEGRITY_SIGNALS = ("sessionbuddy.signed_cursor.shape_failure",)
+SAFE_CURSOR_CONTRACTS = (
+    "admin_events",
+    "cfp_submissions",
+    "communication_status",
+    "evaluation_keyset",
+    "speaker_onboarding",
+    "other",
+)
+SAFE_CURSOR_FIELDS = ("as_of", "due", "id", "position", "starts", "sub", "ts", "other")
+SAFE_CURSOR_CONSTRAINTS = ("empty", "fields", "length", "required", "type", "other")
 
 
 def record_timing(request: Request, phase: str, duration_ms: float) -> None:
@@ -51,6 +62,32 @@ def record_degradation(request: Request, code: str) -> None:
         request.state.degradations = degradations
     if code not in degradations:
         degradations.append(code)
+
+
+def record_integrity_signal(
+    request: Request,
+    signal: str,
+    *,
+    cursor_contract: str,
+    field: str,
+    constraint: str,
+) -> None:
+    """Emit one bounded-cardinality integrity event without cursor contents."""
+    if signal not in SAFE_INTEGRITY_SIGNALS:
+        return
+    cursor_contract = cursor_contract if cursor_contract in SAFE_CURSOR_CONTRACTS else "other"
+    field = field if field in SAFE_CURSOR_FIELDS else "other"
+    constraint = constraint if constraint in SAFE_CURSOR_CONSTRAINTS else "other"
+    event = {
+        "event": signal,
+        "level": "error",
+        "request_id": getattr(request.state, "request_id", "unavailable"),
+        "route": _route_template(request),
+        "cursor_contract": cursor_contract,
+        "field": field,
+        "constraint": constraint,
+    }
+    print(json.dumps(event, separators=(",", ":"), sort_keys=True))
 
 
 def _route_template(request: Request) -> str:

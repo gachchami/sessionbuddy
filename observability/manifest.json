@@ -2240,6 +2240,28 @@
       }
     }
   },
+  "integrity_signals": {
+    "sessionbuddy.signed_cursor.shape_failure": {
+      "alert_condition": "count > 0 in 5m",
+      "dashboards": [
+        "release-health",
+        "cursor-integrity"
+      ],
+      "dimensions": [
+        "cursor_contract",
+        "route",
+        "field",
+        "constraint"
+      ],
+      "group_by": [
+        "cursor_contract",
+        "field",
+        "constraint"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#database-regression"
+    }
+  },
   "async_handlers": {
     "cron:activity-dispatch": {
       "alert_condition": "activity_dispatch at level error or oldest unprocessed activity age above five minutes",

@@ -30,7 +30,7 @@ from sessionbuddy.platform.db.d1 import (
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
-from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.platform.storage import malware_scan_disabled
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
@@ -2185,6 +2185,11 @@ async def list_events(
     return EventList(data=events, next_cursor=next_cursor)
 
 
+_EVENTS_CURSOR = SignedCursorContract(
+    "admin_events", {"id": BOUNDED_ID, "starts": STRICT_INT}
+)
+
+
 def _events_cursor(
     request: Request,
     value: str | None,
@@ -2195,17 +2200,14 @@ def _events_cursor(
     order: str,
 ) -> tuple[int, str] | None:
     """Decode and verify a signed keyset cursor; 400 on tamper or expiry."""
-    decoded = decode_signed_cursor(
+    decoded = _EVENTS_CURSOR.decode(
         request,
         value,
         scope={"org": organization_id, "order": order, "q": search, "view": view},
-        position_fields={"id", "starts"},
     )
     if decoded is None:
         return None
     starts_at, row_id = decoded["starts"], decoded["id"]
-    if type(starts_at) is not int or not isinstance(row_id, str) or len(row_id) > 100:
-        raise HTTPException(status_code=400, detail="Invalid or expired cursor")
     return starts_at, row_id
 
 
@@ -2459,8 +2461,8 @@ def _events_next_cursor(
     order: str,
     starts_at_ms: int,
     row_id: str,
-) -> str:
-    return encode_signed_cursor(
+) -> str | None:
+    return _EVENTS_CURSOR.encode(
         request,
         scope={"org": organization_id, "order": order, "q": search, "view": view},
         position={"id": row_id, "starts": starts_at_ms},

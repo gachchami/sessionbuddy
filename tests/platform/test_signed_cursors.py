@@ -8,12 +8,22 @@ from sessionbuddy.communications.d1 import _status_cursor, _status_next_cursor
 from sessionbuddy.evaluation.router import _evaluation_cursor, _evaluation_next_cursor
 from sessionbuddy.platform.auth.access import _events_cursor, _events_next_cursor
 from sessionbuddy.platform.db.types import utc_now_ms
-from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
+from sessionbuddy.platform.signed_cursors import (
+    BOUNDED_ID,
+    STRICT_INT,
+    SignedCursorContract,
+    StaleCursorError,
+    decode_signed_cursor,
+    encode_signed_cursor,
+)
 from sessionbuddy.speaker_operations.router import _cursor, _next_cursor
 
 
 def _request():
-    return SimpleNamespace(scope={"env": SimpleNamespace(CSRF_HMAC_KEY="c" * 32)})
+    return SimpleNamespace(
+        scope={"env": SimpleNamespace(CSRF_HMAC_KEY="c" * 32)},
+        state=SimpleNamespace(request_id="request-a"),
+    )
 
 
 def _tamper(value: str) -> str:
@@ -63,6 +73,98 @@ def test_shared_codec_binds_exact_scope_shape_signature_and_ttl() -> None:
             )
         assert denied.value.status_code == 400
         assert denied.value.detail == "Invalid or expired cursor"
+
+
+def test_cursor_failures_expose_one_recovery_code_with_safe_reasons() -> None:
+    request = _request()
+    contract = SignedCursorContract("cfp_submissions", {"id": BOUNDED_ID, "sub": STRICT_INT})
+    assert contract.decode(request, None, scope={"event": "event-a"}) is None
+    expired = encode_signed_cursor(
+        request,
+        scope={"event": "event-a"},
+        position={"id": "row-a", "sub": 42},
+        expires_at_ms=1,
+    )
+    malformed = encode_signed_cursor(
+        request,
+        scope={"event": "event-a"},
+        position={"id": "", "sub": 42},
+        expires_at_ms=10_000,
+    )
+    with pytest.raises(StaleCursorError, match="Invalid or expired cursor") as expired_error:
+        contract.decode(request, expired, scope={"event": "event-a"}, now_ms=2)
+    assert expired_error.value.reason == "expired"
+    with pytest.raises(StaleCursorError) as shape_error:
+        contract.decode(request, malformed, scope={"event": "event-a"}, now_ms=2)
+    assert shape_error.value.reason == "shape"
+
+
+def test_bound_contract_omits_cursor_when_position_drift_would_break_page_two() -> None:
+    request = _request()
+    contract = SignedCursorContract("cfp_submissions", {"id": BOUNDED_ID, "sub": STRICT_INT})
+
+    assert contract.encode(
+        request,
+        scope={"event": "event-a"},
+        position={"id": "row-a", "sub": 42, "unexpected": "value"},
+    ) is None
+
+
+def test_scope_key_change_is_recoverable_without_integrity_alert() -> None:
+    request = _request()
+    contract = SignedCursorContract("cfp_submissions", {"id": BOUNDED_ID, "sub": STRICT_INT})
+    old = encode_signed_cursor(
+        request,
+        scope={"event": "event-a"},
+        position={"id": "row-a", "sub": 42},
+    )
+
+    with pytest.raises(StaleCursorError) as error:
+        contract.decode(
+            request,
+            old,
+            scope={"event": "event-a", "filter": "active"},
+        )
+    assert error.value.reason == "invalid"
+
+
+def test_cursor_from_another_contract_cannot_emit_shape_alert() -> None:
+    request = _request()
+    submissions = SignedCursorContract(
+        "cfp_submissions", {"id": BOUNDED_ID, "sub": STRICT_INT}
+    )
+    events_cursor = encode_signed_cursor(
+        request,
+        scope={"org": "org-a", "order": "recent", "q": "", "view": "active"},
+        position={"id": "row-a", "starts": 42},
+    )
+
+    with pytest.raises(StaleCursorError) as error:
+        submissions.decode(request, events_cursor, scope={"event": "event-a"})
+    assert error.value.reason == "invalid"
+
+
+def test_decode_shape_failure_names_the_missing_position_field() -> None:
+    request = _request()
+    contract = SignedCursorContract("cfp_submissions", {"id": BOUNDED_ID, "sub": STRICT_INT})
+    malformed = encode_signed_cursor(
+        request,
+        scope={"event": "event-a"},
+        position={"sub": 42},
+    )
+
+    with pytest.raises(StaleCursorError) as error:
+        contract.decode(request, malformed, scope={"event": "event-a"})
+    assert error.value.reason == "shape"
+    assert error.value.field == "id"
+    assert error.value.constraint == "required"
+
+
+@pytest.mark.parametrize("row_id", ["", "x" * 101])
+def test_every_bound_cursor_contract_rejects_invalid_ids_before_encoding(row_id: str) -> None:
+    # Every adjacent encoder/decoder pair now shares BOUNDED_ID; this assertion
+    # pins the strict empty/length rule that previously drifted.
+    assert BOUNDED_ID.violation(row_id) in {"empty", "length"}
 
 
 def _consumer_cases():
