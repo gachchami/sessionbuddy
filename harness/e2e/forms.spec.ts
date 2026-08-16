@@ -127,17 +127,18 @@ test.describe("form validation and workflow wiring", () => {
 
     await page.goto(`/admin/events/${eventId}/cfp`);
     const form = page.locator("#publish-form");
+    const publishButton = page.locator("#publish-cfp-action");
     await form.locator("#cfp-description-editor").fill("Share your best conference proposal.");
     await page.getByRole("button", { name: "Availability" }).click();
     await form.getByLabel("Opening time").fill("2030-03-20T10:00");
     await form.getByLabel("Closing time").fill("2030-03-20T09:00");
-    await form.getByRole("button", { name: "Publish CFP" }).click();
+    await publishButton.click();
     expect(publishWrites).toBe(0);
     await form.getByLabel("Closing time").fill("2030-03-21T09:00");
     await form.getByRole("button", { name: "Open immediately" }).click();
     await expect(form.getByLabel("Opening time")).toHaveValue("");
-    await form.getByRole("button", { name: "Publish CFP" }).click();
-    await expect(page.locator("#status")).toHaveText("Your CFP was published successfully.");
+    await publishButton.click();
+    await expect(page.locator("#status")).toHaveText("CFP published.");
     expect(publishWrites).toBe(1);
     expect(publishedBody).toMatchObject({ slug: "conference-2030", opens_at_ms: null });
   });
@@ -969,8 +970,9 @@ test.describe("form validation and workflow wiring", () => {
     await expect(page.getByRole("heading", { name: "Set up the schedule" })).toBeVisible();
     await page.getByRole("button", { name: "Create agenda" }).click();
     expect(setupWrites).toBe(0);
-    await page.getByLabel("Rooms").fill("Main stage");
-    await page.getByLabel(/Tracks/).fill("General");
+    const setupForm = page.locator("#agenda-setup-form");
+    await setupForm.getByRole("textbox", { name: /^Rooms/ }).fill("Main stage");
+    await setupForm.getByRole("textbox", { name: /^Tracks/ }).fill("General");
     await page.getByRole("button", { name: "Create agenda" }).click();
     await expect(page.getByRole("button", { name: "Schedule session: A proposal", exact: true })).toBeVisible();
     expect(setupWrites).toBe(1);

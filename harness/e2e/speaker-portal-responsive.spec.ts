@@ -304,7 +304,7 @@ test.describe("speaker portal responsive design", () => {
     await page.goto("/speaker");
 
     await expect(page.locator(".event-group")).toHaveCount(2);
-    await expect(page.locator("#portal-summary")).toHaveText("Manage sessions, tasks, and resources across 2 events.");
+    await expect(page.locator("#portal-summary")).toHaveText("Sessions, tasks, and resources across 2 events.");
     await expect(page.getByRole("heading", { name: "AI Engineering Summit 2026" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Applied AI Conference 2027" })).toBeVisible();
 

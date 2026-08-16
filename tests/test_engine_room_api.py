@@ -50,7 +50,9 @@ async def test_root_serves_public_product_homepage(client: AsyncClient) -> None:
     assert response.headers["cache-control"] == "no-store"
     assert "From open call to published agenda." in response.text
     assert 'href="/sign-in?redirect=%2Fadmin"' in response.text
-    assert "Keep every role aligned" in response.text
+    assert "Keep the program moving." in response.text
+    assert "Collect" in response.text
+    assert "Publish" in response.text
     assert 'href="/engine-room"' not in response.text
 
 

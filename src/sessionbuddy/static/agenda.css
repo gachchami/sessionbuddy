@@ -1,24 +1,38 @@
 .agenda-hero {
   display: flex;
   justify-content: space-between;
-  align-items: end;
+  align-items: center;
   gap: 1rem;
   margin-bottom: 1.25rem;
 }
+.agenda-hero h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 3vw, 2.35rem);
+  letter-spacing: -.03em;
+}
+.agenda-hero .lede {
+  display: block;
+  margin: .3rem 0 0;
+  color: #59667c;
+  font-size: .875rem;
+  line-height: 1.45;
+}
 .revision {
-  display: grid;
   min-width: 10rem;
-  padding: 1rem;
+  display: grid;
+  gap: .12rem;
+  padding: .55rem .75rem;
   border: 1px solid #dce1eb;
-  border-radius: .75rem;
-  background: white;
+  border-radius: .65rem;
+  background: #fff;
 }
 .revision span,
 .help {
   color: #59667c;
 }
 .revision strong {
-  font-size: 1.375rem;
+  font-size: 1rem;
+  line-height: 1.35;
 }
 .agenda-toolbar {
   display: flex;
@@ -35,7 +49,7 @@
   color: #59667c;
   font-size: .75rem;
   font-weight: 700;
-  letter-spacing: .06em;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 .agenda-toolbar fieldset {
@@ -91,7 +105,7 @@
 }
 .agenda-layout {
   display: grid;
-  grid-template-columns: minmax(15rem,.35fr) minmax(0,1fr);
+  grid-template-columns: minmax(0,1fr) minmax(15rem,.32fr);
   gap: 1.25rem;
   margin-top: 1.25rem;
 }
@@ -99,21 +113,27 @@
   margin-top: 1rem;
 }
 .agenda-tools summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
   cursor: pointer;
   font-weight: 700;
 }
 .tool-grid {
   display: grid;
-  grid-template-columns: minmax(16rem,1.25fr) repeat(3,minmax(12rem,1fr));
+  grid-template-columns: repeat(2,minmax(16rem,1fr));
   gap: 1.5rem;
   margin-top: 1.25rem;
 }
 .tool-grid section + section {
-  border-left: 1px solid #dce1eb;
-  padding-left: 1.5rem;
+  border-left: 0;
+  padding-left: 0;
 }
 .tool-grid h2 {
-  font-size: 1rem;
+  margin-bottom: .35rem;
+  font-size: 1.125rem;
+  line-height: 1.3;
+  letter-spacing: -.015em;
 }
 .tool-grid form {
   display: grid;
@@ -236,6 +256,18 @@
   border: 1px solid #dce1eb;
   border-radius: .9rem;
   background: white;
+}
+.board-panel .section-heading h2,
+.workflow-stage--backlog h2 {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+}
+.workflow-stage--backlog > .help {
+  margin: .45rem 0 1rem;
+  font-size: .875rem;
+  line-height: 1.5;
 }
 .setup-panel {
   max-width: 42rem;

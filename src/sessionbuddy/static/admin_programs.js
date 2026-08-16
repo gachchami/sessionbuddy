@@ -22,7 +22,7 @@
   // reads this instead.
   const identityFieldKeys = ["speaker_name", "speaker_email"];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
-  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventTracks: [], publishedForm: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventAccentColor: "#3159d9", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -166,6 +166,178 @@
     return node;
   }
 
+  function actionIcon(pathData) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 20 20");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.append(path);
+    return svg;
+  }
+
+  function newCustomField() {
+    const keys = new Set(state.fields.map((field) => field.key));
+    let suffix = 1;
+    while (keys.has(`question_${suffix}`)) suffix += 1;
+    return { key: `question_${suffix}`, type: "text", label: "New question", required: false, choices: [] };
+  }
+
+  function rememberFieldState(message, undoMessage) {
+    state.fieldUndo = {
+      fields: structuredClone(state.fields),
+      selection: state.selectedOutline,
+      message,
+      undoMessage
+    };
+  }
+
+  function finishFieldChange(selection, message) {
+    renderFields();
+    selectOutline(selection, false);
+    showFieldFeedback(message, true);
+    state.dirty = true;
+    renderReadiness();
+    queuePreview();
+    queueLocalDraft();
+  }
+
+  function showFieldFeedback(message, canUndo, duration = canUndo ? 6000 : 1400) {
+    clearTimeout(state.fieldFeedbackTimer);
+    const feedback = byId("cfp-reorder-feedback");
+    byId("cfp-reorder-message").textContent = message;
+    byId("undo-field-move").hidden = !canUndo;
+    feedback.hidden = false;
+    state.fieldFeedbackTimer = window.setTimeout(() => {
+      feedback.hidden = true;
+      if (canUndo) state.fieldUndo = null;
+    }, duration);
+  }
+
+  function moveField(fieldKey, direction) {
+    readFields();
+    const reorderable = reorderableFieldsForCurrentView();
+    const relativeIndex = reorderable.findIndex((item) => item.key === fieldKey);
+    const targetField = reorderable[relativeIndex + direction];
+    if (!targetField) return;
+    const current = state.fields.findIndex((item) => item.key === fieldKey);
+    const target = state.fields.findIndex((item) => item.key === targetField.key);
+    const label = state.fields[current].label;
+    rememberFieldState(`${label} moved.`, `${label} returned to its previous position.`);
+    [state.fields[current], state.fields[target]] = [state.fields[target], state.fields[current]];
+    finishFieldChange(state.selectedOutline, `${label} moved ${direction < 0 ? "earlier" : "later"}.`);
+  }
+
+  function reorderableFieldsForCurrentView() {
+    const orderKind = state.selectedOutline.split(":")[0];
+    return state.fields.filter((field) => orderKind === "proposal"
+      ? proposalFieldKeys.has(field.key)
+      : !identityFieldKeys.includes(field.key) && !proposalFieldKeys.has(field.key));
+  }
+
+  function moveFieldTo(fieldKey, targetKey, placeAfter) {
+    readFields();
+    const sourceIndex = state.fields.findIndex((item) => item.key === fieldKey);
+    const targetIndex = state.fields.findIndex((item) => item.key === targetKey);
+    if (sourceIndex < identityFieldKeys.length || targetIndex < identityFieldKeys.length || sourceIndex === targetIndex) return;
+    const previousFields = structuredClone(state.fields);
+    const previousOrder = state.fields.map((item) => item.key).join("\n");
+    const [moved] = state.fields.splice(sourceIndex, 1);
+    let insertionIndex = state.fields.findIndex((item) => item.key === targetKey);
+    if (placeAfter) insertionIndex += 1;
+    state.fields.splice(insertionIndex, 0, moved);
+    if (state.fields.map((item) => item.key).join("\n") === previousOrder) return;
+    state.fieldUndo = {
+      fields: previousFields,
+      selection: state.selectedOutline,
+      message: `${moved.label} moved.`,
+      undoMessage: `${moved.label} returned to its previous position.`
+    };
+    finishFieldChange(state.selectedOutline, `${moved.label} moved.`);
+  }
+
+  function clearFieldDropTargets() {
+    document.querySelectorAll(".field-order-row").forEach((row) => {
+      row.classList.remove("is-dragging", "is-drop-before", "is-drop-after");
+    });
+  }
+
+  function renderFieldOrderPanel() {
+    const panel = byId("field-order-panel");
+    panel.hidden = !state.fieldOrderOpen;
+    byId("toggle-field-order").setAttribute("aria-expanded", String(state.fieldOrderOpen));
+    byId("toggle-field-order").textContent = state.fieldOrderOpen ? "Done reordering" : "Reorder questions";
+    if (!state.fieldOrderOpen) return;
+    const reorderable = reorderableFieldsForCurrentView();
+    byId("field-order-list").replaceChildren(...reorderable.map((field, index) => {
+      const row = make("div");
+      row.className = "field-order-row";
+      row.dataset.fieldKey = field.key;
+      row.draggable = true;
+      row.title = `Drag ${field.label} to reorder`;
+      const handle = make("span");
+      handle.className = "field-order-drag-handle";
+      handle.dataset.dragHandle = "";
+      handle.title = `Drag ${field.label} to reorder`;
+      handle.setAttribute("aria-hidden", "true");
+      handle.append(actionIcon("M7 5h.01M13 5h.01M7 10h.01M13 10h.01M7 15h.01M13 15h.01"));
+      row.addEventListener("dragstart", (event) => {
+        if (event.target.closest("button")) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", field.key);
+        row.classList.add("is-dragging");
+      });
+      row.addEventListener("dragend", clearFieldDropTargets);
+      row.addEventListener("dragover", (event) => {
+        // Drag payload reads are protected during dragover in some browsers.
+        // The source row is already marked at dragstart, so use that marker to
+        // decide whether this row can accept the drop.
+        const sourceKey = document.querySelector(".field-order-row.is-dragging")?.dataset.fieldKey;
+        if (!sourceKey || sourceKey === field.key) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const after = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+        row.classList.toggle("is-drop-before", !after);
+        row.classList.toggle("is-drop-after", after);
+      });
+      row.addEventListener("dragleave", () => row.classList.remove("is-drop-before", "is-drop-after"));
+      row.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const sourceKey = event.dataTransfer.getData("text/plain")
+          || document.querySelector(".field-order-row.is-dragging")?.dataset.fieldKey;
+        const after = event.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
+        clearFieldDropTargets();
+        moveFieldTo(sourceKey, field.key, after);
+      });
+      const identity = make("div");
+      identity.append(make("strong", field.label));
+      const actions = make("div");
+      const earlier = make("button");
+      earlier.append(actionIcon("M5 12l5-5 5 5"));
+      earlier.type = "button";
+      earlier.className = "tertiary field-order-step";
+      earlier.disabled = index === 0;
+      earlier.setAttribute("aria-label", `Move ${field.label} earlier`);
+      earlier.title = "Move earlier";
+      earlier.addEventListener("click", () => moveField(field.key, -1));
+      const later = make("button");
+      later.append(actionIcon("M5 8l5 5 5-5"));
+      later.type = "button";
+      later.className = "tertiary field-order-step";
+      later.disabled = index === reorderable.length - 1;
+      later.setAttribute("aria-label", `Move ${field.label} later`);
+      later.title = "Move later";
+      later.addEventListener("click", () => moveField(field.key, 1));
+      actions.append(earlier, later);
+      row.append(handle, identity, actions);
+      return row;
+    }));
+  }
+
   function richTextMarkup(node) {
     const serializer = new XMLSerializer();
     return [...node.childNodes].map((child) => serializer.serializeToString(child)).join("");
@@ -181,8 +353,10 @@
     const editor = byId("cfp-description-editor");
     const text = editor.textContent.replace(/\s+/g, " ").trim();
     const opening = editor.innerText.split(/\n+/).map((line) => line.trim()).find(Boolean) || text;
-    byId("publish-form").elements.description_html.value = richTextMarkup(editor);
+    const description = byId("publish-form").elements.description_html;
+    description.value = richTextMarkup(editor);
     byId("publish-form").elements.welcome_text.value = opening.slice(0, 1000);
+    window.SessionBuddyApi.refreshCharacterCounters(description);
   }
 
   function renderImportantDates() {
@@ -353,6 +527,9 @@
     const opening = toEpoch(opens.value);
     closes.min = Number.isFinite(opening) ? toLocalInput(opening + 60000) : "";
     closes.max = state.eventStartsAtMs ? toLocalInput(state.eventStartsAtMs - 1) : "";
+    const immediate = byId("open-cfp-immediately");
+    immediate.disabled = !opens.value;
+    immediate.textContent = opens.value ? "Open immediately instead" : "Opens immediately";
   }
 
   function eventIdFromPage(session) {
@@ -368,7 +545,7 @@
     if (state.context) document.body.dataset.eventId = state.context.event_id;
     window.dispatchEvent(new Event("sessionbuddy:event-context"));
     const publishForm = byId("publish-form");
-    const publishButton = publishForm.querySelector('button[type="submit"], button:not([type])');
+    const publishButton = byId("publish-cfp-action");
     const eventIsActive = state.eventStatus === "active";
     publishButton.disabled = !state.context || (!published && !eventIsActive);
     publishButton.textContent = published ? "Update live CFP" : "Publish CFP";
@@ -392,7 +569,6 @@
       byId("cfp-autosave-state").textContent = "Live form matches the editor";
     }
     byId("publish-settings").hidden = Boolean(published) && !state.editing;
-    byId("cfp-notification-settings").hidden = Boolean(published) && !state.editing;
     byId("cfp-summary").hidden = false;
     byId("edit-cfp").hidden = !published || state.editing;
     byId("cancel-cfp-edit").hidden = !published;
@@ -406,6 +582,8 @@
       : published
       ? cfpAvailabilityDetail(published)
       : "Complete the form settings below, then publish.";
+    renderReadiness();
+    syncPreviewMode();
 
     const live = byId("cfp-link-live");
     const empty = byId("cfp-link-empty");
@@ -422,14 +600,15 @@
       return;
     }
     if (!published) {
-      empty.textContent = "Configure and publish the proposal form below to get a shareable link.";
+      empty.textContent = "Publish to create a public link.";
       return;
     }
     const eventKey = state.context.event_id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
     const publicUrl = `${location.origin}/cfp/${eventKey}/${published.slug}`;
     byId("cfp-live-bar").hidden = false;
-    byId("cfp-live-url").textContent = publicUrl;
     byId("cfp-live-url").href = publicUrl;
+    byId("cfp-live-url").title = publicUrl;
+    byId("cfp-live-url").setAttribute("aria-label", `View public CFP form at ${publicUrl}`);
     byId("cfp-live-url-prefix").textContent = `${location.origin}/cfp/`;
     byId("copy-cfp-header").hidden = false;
     byId("cfp-url").value = publicUrl;
@@ -443,6 +622,68 @@
     const required = fields.filter((field) => field.required).length;
     byId("cfp-summary-questions").textContent = `${fields.length} total · ${required} required`;
     byId("cfp-summary-fields").textContent = fields.map((field) => field.label).join(" · ") || "No questions configured";
+  }
+
+  function readinessItems() {
+    const form = byId("publish-form");
+    const description = byId("cfp-description-editor").textContent.trim();
+    const requiredCopy = ["success_title", "success_message", "confirmation_subject", "confirmation_body"]
+      .every((name) => form.elements[name].value.trim());
+    const opens = toEpoch(form.elements.opens_at.value);
+    const closes = toEpoch(form.elements.closes_at.value);
+    const scheduleIsValid = (!Number.isFinite(opens) || !Number.isFinite(closes) || closes > opens)
+      && (!Number.isFinite(closes) || !state.eventStartsAtMs || closes < state.eventStartsAtMs);
+    return [
+      { label: "Event is active", ready: state.eventStatus === "active", action: true },
+      { label: "Description is complete", ready: Boolean(description), selection: "basics" },
+      { label: "Confirmation messages are complete", ready: requiredCopy, selection: "confirmation" },
+      { label: Number.isFinite(opens) ? "Opening time is scheduled" : "Form opens immediately when published", ready: scheduleIsValid, selection: "availability" },
+      { label: `${Math.max(0, state.fields.length - identityFieldKeys.length)} proposal fields configured`, ready: state.fields.length > identityFieldKeys.length, selection: "proposal" }
+    ];
+  }
+
+  function renderReadiness() {
+    if (!state.context) return;
+    const items = readinessItems();
+    const blockers = items.filter((item) => !item.ready);
+    const readyCount = items.filter((item) => item.ready).length;
+    byId("cfp-readiness-count").textContent = readyCount === items.length
+      ? "Ready to publish"
+      : `${readyCount} of ${items.length} ready`;
+    byId("cfp-readiness").classList.toggle("is-ready", readyCount === items.length);
+    document.querySelectorAll(".cfp-outline-item").forEach((button) => {
+      button.classList.remove("needs-attention");
+      button.querySelector(".cfp-outline-readiness")?.remove();
+    });
+    blockers.filter((item) => item.selection).forEach((item) => {
+      const tab = document.querySelector(`.cfp-outline-item[data-selection="${item.selection}"]`);
+      tab?.classList.add("needs-attention");
+      const note = make("span", `Needs attention: ${item.label}`);
+      note.className = "sr-only cfp-outline-readiness";
+      tab?.append(note);
+    });
+    const readinessList = byId("cfp-readiness-list");
+    const globalBlockers = blockers.filter((item) => !item.selection);
+    readinessList.hidden = globalBlockers.length === 0;
+    readinessList.replaceChildren(...globalBlockers.map((item) => {
+      const row = make("li");
+      row.className = "needs-action";
+      const marker = make("span", "Needs attention");
+      marker.className = "cfp-readiness__marker";
+      row.append(marker, make("span", item.label));
+      if (!item.ready && item.selection) {
+        const fix = make("button", "Fix");
+        fix.type = "button";
+        fix.className = "tertiary cfp-readiness__fix";
+        fix.addEventListener("click", () => selectOutline(item.selection));
+        row.append(fix);
+      }
+      return row;
+    }));
+    const eventAction = byId("cfp-readiness-event-action");
+    eventAction.hidden = state.eventStatus === "active";
+    eventAction.href = `/admin/events/${encodeURIComponent(state.context.event_id)}`;
+    byId("cfp-readiness").hidden = state.eventStatus === "active";
   }
 
   function loadPublishedSettings(form) {
@@ -511,33 +752,42 @@
         requiredBadge.className = "required-marker";
         summaryMeta.append(requiredBadge);
       }
-      if (!identityFieldKeys.includes(field.key)) {
+      if (!system) {
         const orderControls = make("span");
         orderControls.className = "question-order-controls";
-        const move = (direction) => {
+        const addAfter = make("button");
+        addAfter.append(actionIcon("M10 4v12M4 10h12"));
+        addAfter.type = "button";
+        addAfter.className = "question-order-button question-order-button--add";
+        addAfter.setAttribute("aria-label", `Add a question after ${field.label}`);
+        addAfter.title = `Add a question after ${field.label}`;
+        addAfter.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
           readFields();
           const current = state.fields.findIndex((item) => item.key === field.key);
-          const target = current + direction;
-          if (target < identityFieldKeys.length || target >= state.fields.length) return;
-          [state.fields[current], state.fields[target]] = [state.fields[target], state.fields[current]];
-          renderFields();
-          selectOutline(proposalFieldKeys.has(field.key) ? "proposal" : "custom", false);
-          state.dirty = true;
-          queueLocalDraft();
-        };
-        const up = make("button", "↑");
-        up.type = "button";
-        up.className = "question-order-button";
-        up.setAttribute("aria-label", `Move ${field.label} up`);
-        up.disabled = index <= identityFieldKeys.length;
-        up.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); move(-1); });
-        const down = make("button", "↓");
-        down.type = "button";
-        down.className = "question-order-button";
-        down.setAttribute("aria-label", `Move ${field.label} down`);
-        down.disabled = index === state.fields.length - 1;
-        down.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); move(1); });
-        orderControls.append(up, down);
+          const added = newCustomField();
+          rememberFieldState("Question added.", "Added question removed.");
+          state.fields.splice(current + 1, 0, added);
+          finishFieldChange(`question:${current + 1}`, "Question added below.");
+        });
+        const removeQuestion = make("button");
+        removeQuestion.append(actionIcon("M4 10h12"));
+        removeQuestion.type = "button";
+        removeQuestion.className = "question-order-button question-order-button--remove";
+        removeQuestion.setAttribute("aria-label", `Remove ${field.label}`);
+        removeQuestion.title = `Remove ${field.label}`;
+        removeQuestion.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          readFields();
+          const current = state.fields.findIndex((item) => item.key === field.key);
+          rememberFieldState("Question removed.", `${field.label} restored.`);
+          state.collapsedFieldKeys.delete(field.key);
+          state.fields.splice(current, 1);
+          finishFieldChange("custom", `${field.label} removed.`);
+        });
+        orderControls.append(addAfter, removeQuestion);
         summaryMeta.append(orderControls);
       }
       editorSummary.append(summaryIdentity, summaryMeta);
@@ -770,15 +1020,6 @@
         advanced.addEventListener("toggle", syncAdvancedVisibility);
         syncAdvancedVisibility();
         editorBody.append(advanced);
-        const remove = make("button", "Remove field");
-        remove.type = "button";
-        remove.className = "secondary";
-        remove.addEventListener("click", () => {
-          readFields();
-          state.collapsedFieldKeys.delete(field.key);
-          state.fields.splice(index, 1);
-          renderFields();
-        });
         const done = make("button", "Done editing question");
         done.type = "button";
         done.className = "secondary";
@@ -793,7 +1034,7 @@
         });
         const actions = make("div");
         actions.className = "field-actions";
-        actions.append(done, remove);
+        actions.append(done);
         editorBody.append(actions);
       }
       editor.append(editorSummary, editorBody);
@@ -831,6 +1072,7 @@
         list.append(coSpeakers);
       }
     });
+    renderFieldOrderPanel();
     renderOutline();
   }
 
@@ -890,17 +1132,30 @@
     // the single-question screen you land on right after adding one.
     byId("cfp-questions").classList.toggle("cfp-editor-section--proposal", kind === "proposal");
     byId("cfp-questions").classList.toggle("cfp-editor-section--custom", kind === "custom");
+    renderFieldOrderPanel();
     const customCount = state.fields.filter((field) => !identityFieldKeys.includes(field.key) && !proposalFieldKeys.has(field.key)).length;
     byId("cfp-custom-empty").hidden = kind !== "custom" || customCount > 0;
     const selectedField = kind === "question" ? state.fields[Number(rawIndex)] : null;
     const titles = { basics: "Description", proposal: "Proposal details", custom: "Custom questions", "co-speakers": "Additional participants", availability: "Availability", confirmation: "Confirmation" };
+    const purposes = {
+      basics: "What speakers should know before applying.",
+      proposal: "Standard information required for every proposal.",
+      custom: "Event-specific questions.",
+      "co-speakers": "Set the participant limit.",
+      availability: "Set the submission window.",
+      confirmation: "Edit the receipt and confirmation email."
+    };
     byId("cfp-selection-title").textContent = selectedField?.label || titles[kind] || "Form";
     byId("cfp-selection-context").textContent = kind === "availability" ? "Form setting" : `${titles[kind] || "Proposal"} screen`;
-    byId("cfp-selection-preview").hidden = true;
+    byId("cfp-selection-purpose").textContent = selectedField
+      ? "Edit the question and display rules."
+      : purposes[kind] || "Form settings.";
+    syncPreviewMode();
     document.querySelectorAll(".cfp-editor-section").forEach((section) => { if (!section.hidden) section.removeAttribute("aria-hidden"); });
     if (selectedField) questionCards[Number(rawIndex)]?.querySelector("details")?.setAttribute("open", "");
     if (focus) activeOutline?.focus({ preventScroll: true });
     activeOutline?.scrollIntoView({ block: "nearest", inline: "center" });
+    queuePreview();
   }
 
   function readFields() {
@@ -1285,6 +1540,8 @@
       state.importantDates.push({ label: "", at_ms: null });
       renderImportantDates();
       state.dirty = true;
+      renderReadiness();
+      queuePreview();
       queueLocalDraft();
       byId("important-date-rows").querySelector(".important-date-row:last-child input")?.focus();
     });
@@ -1300,23 +1557,46 @@
         byId("publish-action-label").textContent = "Unsaved changes";
         byId("publish-result").textContent = "Nothing changes publicly until you update the live CFP.";
       }
+      renderReadiness();
+      queuePreview();
       queueLocalDraft();
     });
     publish.elements.opens_at.addEventListener("input", () => syncAvailabilityLimits(publish));
     byId("open-cfp-immediately").addEventListener("click", () => {
       publish.elements.opens_at.value = "";
       publish.elements.opens_at.dispatchEvent(new Event("input", { bubbles: true }));
+      syncAvailabilityLimits(publish);
       publish.elements.opens_at.focus();
     });
     const add = byId("add-field");
+    byId("toggle-field-order").addEventListener("click", () => {
+      state.fieldOrderOpen = !state.fieldOrderOpen;
+      renderFieldOrderPanel();
+      if (state.fieldOrderOpen) byId("field-order-list").querySelector("button:not(:disabled)")?.focus();
+    });
     add.addEventListener("click", () => {
       readFields();
-      const field = { key: `question_${state.fields.length - 3}`, type: "text", label: "New question", required: false, choices: [] };
+      const field = newCustomField();
       state.collapsedFieldKeys.delete(field.key);
       state.fields.push(field);
       renderFields();
       selectOutline(`question:${state.fields.length - 1}`);
       state.dirty = true;
+      renderReadiness();
+      queuePreview();
+      queueLocalDraft();
+    });
+    byId("undo-field-move").addEventListener("click", () => {
+      if (!state.fieldUndo) return;
+      const previous = state.fieldUndo;
+      state.fields = structuredClone(previous.fields);
+      state.fieldUndo = null;
+      renderFields();
+      selectOutline(previous.selection, false);
+      showFieldFeedback(previous.undoMessage, false);
+      state.dirty = true;
+      renderReadiness();
+      queuePreview();
       queueLocalDraft();
     });
     renderFields();
@@ -1326,18 +1606,11 @@
       state.routingRules.push({ source_key: "", operator: "equals", value: "", category: "", track: "", review_queue: "" });
       renderRoutingRules();
       state.dirty = true;
+      renderReadiness();
+      queuePreview();
       queueLocalDraft();
     });
     renderRoutingRules();
-    byId("cfp-notification-settings").addEventListener("input", (event) => {
-      event.target.setCustomValidity?.("");
-      state.dirty = true;
-      if (state.publishedForm) {
-        byId("publish-action-label").textContent = "Unsaved changes";
-        byId("publish-result").textContent = "Nothing changes publicly until you update the live CFP.";
-      }
-      queueLocalDraft();
-    });
   }
 
   async function restoreSession() {
@@ -1355,6 +1628,9 @@
       if (!currentEvent?.time_zone) throw new Error("The event time zone could not be loaded.");
       state.eventStatus = currentEvent.status;
       state.eventTimeZone = currentEvent.time_zone;
+      state.eventAccentColor = currentEvent.accent_color || "#3159d9";
+      state.eventLogoUrl = currentEvent.logo_url || "";
+      state.eventCoverUrl = currentEvent.cover_image_url || "";
       byId("cfp-time-zone").textContent = state.eventTimeZone;
       await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
@@ -1376,7 +1652,7 @@
       renderFields();
       syncAvailabilityLimits(byId("publish-form"));
       renderWorkspace();
-      setStatus(state.publishedForm ? "" : "Configure and publish the proposal form.");
+      setStatus("");
     } catch (error) {
       if (error.status === 401) {
         location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`);
@@ -1394,7 +1670,7 @@
   byId("publish-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const formElement = event.currentTarget;
-    const submitButton = formElement.querySelector('button[type="submit"], button:not([type])');
+    const submitButton = byId("publish-cfp-action");
     if (formElement.getAttribute("aria-busy") === "true") return;
     const updating = Boolean(state.publishedForm);
     const idleLabel = updating ? "Update live CFP" : "Publish CFP";
@@ -1459,7 +1735,7 @@
       byId("publish-result").textContent = "Your form is up to date.";
       byId("cfp-saved-state").textContent = "Saved just now";
       byId("cfp-saved-state").hidden = false;
-      setStatus(updating ? "Your CFP changes were saved." : "Your CFP was published successfully.", "success");
+      setStatus(updating ? "Changes saved." : "CFP published.", "success");
     } catch (error) {
       if (error.status === 401) {
         saveLocalDraft();
@@ -1535,24 +1811,136 @@
   byId("copy-cfp-url").addEventListener("click", (event) => copyCfpUrl(event.currentTarget));
   byId("copy-cfp-header").addEventListener("click", (event) => copyCfpUrl(event.currentTarget));
 
+  function queuePreview() {
+    if (!state.previewOpen || !state.context) return;
+    cancelAnimationFrame(state.previewFrame);
+    state.previewFrame = requestAnimationFrame(renderPreview);
+  }
+
+  function syncPreviewMode() {
+    const preview = byId("cfp-selection-preview");
+    preview.hidden = !state.previewOpen;
+    byId("publish-form").classList.toggle("is-preview-mode", state.previewOpen);
+    byId("cfp-form-outline").hidden = state.previewOpen;
+    byId("cfp-selection-heading").hidden = state.previewOpen;
+    byId("preview-cfp").textContent = state.previewOpen ? "Back to editing" : "Preview form";
+    byId("preview-cfp").setAttribute("aria-pressed", String(state.previewOpen));
+    if (state.previewOpen) renderPreview();
+  }
+
+  function renderConfirmationPreview(content, values) {
+    const wrapper = make("div");
+    wrapper.className = "cfp-confirmation-preview";
+    const screen = make("section");
+    screen.append(make("small", "On-screen confirmation"), make("h2", String(values.success_title || "Proposal received")), make("p", String(values.success_message || "Add a confirmation message.")));
+    if (byId("publish-form").elements.redirect_to_portal.checked) {
+      const portal = make("span", "Open speaker portal");
+      portal.className = "button secondary";
+      screen.append(portal);
+    }
+    const email = make("section");
+    email.append(make("small", "Confirmation email"), make("strong", String(values.confirmation_subject || "Add an email subject")), make("p", String(values.confirmation_body || "Add the email message.")));
+    wrapper.append(screen, email);
+    content.append(wrapper);
+  }
+
   function renderPreview() {
     const form = byId("publish-form");
     const values = Object.fromEntries(new FormData(form));
     const fields = readFields().fields;
     const content = byId("cfp-preview-content");
+    const preview = byId("cfp-selection-preview");
     content.replaceChildren();
+    preview.style.setProperty("--event-accent", state.eventAccentColor);
+    content.style.setProperty("--event-accent", state.eventAccentColor);
+    content.style.setProperty("--cfp-accent", state.eventAccentColor);
+    byId("cfp-preview-context").textContent = "Applicant view · preview only";
     const header = document.createElement("header");
-    const eventName = document.createElement("p");
-    eventName.className = "eyebrow";
-    eventName.textContent = state.eventName || "Event";
-    const title = document.createElement("h1");
-    title.textContent = "Call for Proposals";
-    const welcome = document.createElement("p");
+    header.className = "public-event-hero";
+    const brand = make("div");
+    brand.className = "public-brand-preview__card cfp-event-header cfp-preview-brand";
+    if (!state.eventCoverUrl) brand.classList.add("cfp-event-header--no-cover");
+    brand.style.setProperty("--event-preview-accent", state.eventAccentColor);
+    const brandBar = make("div");
+    brandBar.className = "public-brand-preview__header cfp-preview-brand__bar";
+    const product = make("span");
+    product.className = "brand";
+    const productMark = make("img");
+    productMark.className = "brand-mark";
+    productMark.src = "/landing/assets/sessionbuddy-favicon.svg";
+    productMark.alt = "";
+    product.append(productMark, make("strong", "SessionBuddy"));
+    brandBar.append(product);
+    if (state.eventLogoUrl) {
+      const logo = make("img");
+      logo.className = "public-brand-preview__logo cfp-preview-brand__logo";
+      logo.src = state.eventLogoUrl;
+      logo.alt = `${state.eventName || "Event"} logo`;
+      brandBar.append(logo);
+    } else {
+      const monogram = make("span", (state.eventName || "EV").slice(0, 2).toUpperCase());
+      monogram.className = "cfp-preview-brand__monogram";
+      monogram.setAttribute("aria-hidden", "true");
+      brandBar.append(monogram);
+    }
+    const cover = make("div");
+    cover.className = "public-brand-preview__cover cfp-preview-brand__cover";
+    if (state.eventCoverUrl) {
+      const image = make("img");
+      image.src = state.eventCoverUrl;
+      image.alt = `${state.eventName || "Event"} cover`;
+      cover.append(image);
+    }
+    const brandBody = make("div");
+    brandBody.className = "public-brand-preview__body";
+    brandBody.append(make("h1", state.eventName || "Event"));
+    brand.append(brandBar);
+    if (state.eventCoverUrl) brand.append(cover);
+    brand.append(brandBody);
+    const title = document.createElement("h2");
+    title.textContent = "Submit a proposal";
+    const welcome = document.createElement("div");
     welcome.className = "lede";
-    welcome.textContent = String(values.welcome_text || "Add a welcome message.");
-    header.append(eventName, title, welcome);
+    welcome.textContent = String(values.welcome_text || "").trim() || "Introduce the call and invite speakers to submit.";
+    header.append(title, welcome);
+
+    const brief = make("section");
+    brief.className = "cfp-brief";
+    const briefHeading = make("div");
+    briefHeading.className = "cfp-brief__heading";
+    briefHeading.append(make("h2", "What we’re looking for"));
+    const description = document.createElement("div");
+    description.className = "cfp-preview-description rich-description cfp-brief__content";
+    const descriptionEditor = byId("cfp-description-editor");
+    const hasDescription = Boolean(descriptionEditor.textContent.trim());
+    if (hasDescription) {
+      description.append(...[...descriptionEditor.childNodes].map((child) => child.cloneNode(true)));
+    } else {
+      const placeholder = make("p", "Your event description will appear here for applicants.");
+      placeholder.className = "is-placeholder";
+      description.append(placeholder);
+    }
+    const previewWelcome = welcome.textContent.replace(/\s+/g, " ").trim();
+    const previewDescription = description.textContent.replace(/\s+/g, " ").trim();
+    welcome.hidden = previewWelcome.length > 240 && previewDescription.startsWith(previewWelcome);
+    brief.append(briefHeading, description);
+    content.append(brand);
+    if (state.selectedOutline === "confirmation") {
+      content.append(header, brief);
+      renderConfirmationPreview(content, values);
+      return;
+    }
     const previewForm = document.createElement("div");
-    previewForm.className = "cfp-preview-form";
+    previewForm.className = "cfp-preview-form flow-form-card";
+    const formHeading = make("div");
+    formHeading.className = "cfp-form-heading";
+    const formHeadingCopy = make("div");
+    formHeadingCopy.append(
+      make("h2", "Proposal details"),
+      make("p", "Required fields are marked with an asterisk *."),
+    );
+    formHeading.append(formHeadingCopy);
+    previewForm.append(formHeading);
     const visibleFields = fields.filter((field) => !identityFieldKeys.includes(field.key));
     visibleFields.forEach((field) => {
       const label = document.createElement("label");
@@ -1583,22 +1971,13 @@
     submit.disabled = true;
     submit.textContent = "Submit proposal";
     previewForm.append(submit);
-    content.append(header, previewForm);
+    content.append(header, brief, previewForm);
   }
 
   byId("preview-cfp").addEventListener("click", () => {
-    const preview = byId("cfp-selection-preview");
-    const opening = preview.hidden;
-    if (opening) renderPreview();
-    document.querySelectorAll(".cfp-editor-section").forEach((section) => { section.hidden = true; });
-    byId("cfp-form-outline").hidden = opening;
-    byId("cfp-selection-heading").hidden = opening;
-    byId("cfp-editor-actions").hidden = opening;
-    byId("cfp-notification-settings").hidden = opening;
-    preview.hidden = !opening;
-    byId("preview-cfp").textContent = opening ? "Back to editing" : "Preview form";
-    byId("preview-cfp").setAttribute("aria-pressed", String(opening));
-    if (!opening) selectOutline(state.selectedOutline, false);
+    state.previewOpen = !state.previewOpen;
+    syncPreviewMode();
+    if (!state.previewOpen) selectOutline(state.selectedOutline, false);
     byId("preview-cfp").focus();
   });
   window.addEventListener("beforeunload", (event) => {

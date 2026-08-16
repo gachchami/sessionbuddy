@@ -187,16 +187,23 @@
     state.model = body; document.body.classList.toggle("embedded", embedded);
     if (location.pathname.endsWith("/itinerary")) state.view = "mine";
     if (sessionsOnly) document.querySelector(".schedule-filters").hidden = true;
-    byId("title").textContent = sessionsOnly ? `${body.event.name} sessions` : body.event.name; byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
+    const eventName = body.event.name;
+    const monogram = eventName.trim().slice(0, 2).toUpperCase() || "EV";
+    byId("title").textContent = sessionsOnly ? `${eventName} sessions` : eventName;
+    byId("schedule-link").href = `/events/${encodeURIComponent(eventId)}/schedule`;
+    byId("speakers-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
+    byId("event-cover-name").textContent = eventName;
+    byId("event-cover-monogram").textContent = monogram;
+    byId("event-logo-fallback").textContent = monogram;
     byId("timezone").textContent = body.revision
       ? `Times shown in ${body.event.time_zone}. Published revision ${body.revision.revision_number}.`
       : `Times will be shown in ${body.event.time_zone}.`;
     byId("status").textContent = body.revision
       ? `${body.items.length} published session${body.items.length === 1 ? "" : "s"}.`
       : "The organizer has not published the schedule yet.";
-    if (body.event.accent_color) document.documentElement.style.setProperty("--blue", body.event.accent_color);
-    if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").hidden = false; }
-    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
+    if (body.event.accent_color) document.documentElement.style.setProperty("--event-accent", body.event.accent_color);
+    if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").hidden = false; byId("event-logo-fallback").hidden = true; }
+    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; byId("event-cover-fallback").hidden = true; }
     populateDiscovery(); saveItinerary(); render();
     const requestedParams = new URLSearchParams(location.search);
     const requestedSearch = requestedParams.get("search") || "";

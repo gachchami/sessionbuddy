@@ -1,4 +1,4 @@
-@import url("/product/assets/product.css?v=76");
+@import url("/product/assets/product.css?v=78");
 
 :root {
   --speaker-ink: #182235;
@@ -401,7 +401,7 @@ body.speaker-portal-page {
 
 @media (max-width: 48rem) {
   main { padding-top: .5rem; }
-  .speaker-portal-shell { width: min(100% - 1rem, 68rem); }
+  .speaker-portal-shell { width: min(calc(100% - var(--layout-gutter-total, 2rem)), 68rem); }
   .portal-hero { align-items: stretch; flex-direction: column; gap: .85rem; margin-bottom: .85rem; padding: 1.05rem 1rem; }
   .portal-hero__tools { width: 100%; }
   .portfolio-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }

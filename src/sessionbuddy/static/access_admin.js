@@ -45,13 +45,16 @@
     const email = document.createElement("span");
     email.className = "people-email";
     email.setAttribute("role", "cell");
+    email.dataset.label = "Email";
     email.textContent = invitation.email;
     const status = document.createElement("span");
     status.setAttribute("role", "cell");
+    status.dataset.label = "Eligibility";
     status.className = `state-badge ${statusTone(invitation.status)}`.trim();
     status.textContent = invitation.status === "accepted" ? "Eligible" : "Invitation pending";
     const actions = document.createElement("div");
     actions.setAttribute("role", "cell");
+    actions.dataset.label = "Actions";
     actions.className = "actions reviewer-row-actions";
     if (invitation.status === "pending") {
       const resend = document.createElement("button");
@@ -172,11 +175,11 @@
     visible.sort((left, right) => Number(right.status === "accepted") - Number(left.status === "accepted") || left.email.localeCompare(right.email));
     byId("reviewer-list").replaceChildren(...(visible.length
       ? visible.map(invitationRow)
-      : [emptyRow("No reviewers yet. Invite someone to review proposals for this event.")]));
-    byId("reviewer-count").textContent = String(visible.length);
+      : [emptyRow("No reviewers yet.")]));
+    byId("reviewer-count").textContent = `${visible.length} ${visible.length === 1 ? "reviewer" : "reviewers"}`;
     byId("status").textContent = eventArchived
       ? "This event is archived. Existing reviewer access can be revoked, but new invitations cannot be sent."
-      : "Reviewer eligibility is up to date.";
+      : "";
   }
 
   byId("reviewer-search-form").addEventListener("submit", async (event) => {

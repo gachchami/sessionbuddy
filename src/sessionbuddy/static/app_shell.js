@@ -3,8 +3,9 @@
 
   const cfpStateCopy = (call) => {
     const labels = { scheduled: "Scheduled", open: "Open", closed: "Closed" };
-    const boundary = call.cfp_boundary_at_ms
-      ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(call.cfp_boundary_at_ms))
+    const boundaryDate = new Date(Number(call.cfp_boundary_at_ms));
+    const boundary = call.cfp_boundary_at_ms && Number.isFinite(boundaryDate.getTime())
+      ? new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(boundaryDate)
       : "";
     if (call.cfp_boundary_kind === "opens" && boundary) return `Opens ${boundary}`;
     if (call.cfp_boundary_kind === "closes" && boundary) {
@@ -547,7 +548,6 @@
       ["Overview", prefix, "overview", [prefix]],
       ["CFP", `${prefix}/cfp`, "form", [`${prefix}/cfp`]],
       ["Proposals", `${prefix}/submissions`, "review", [`${prefix}/submissions`]],
-      ["Rounds", `${prefix}/submissions#rounds-title`, "review", []],
       ["Speakers", `${prefix}/speakers`, "mic", [
         `${prefix}/speakers`,
         `${prefix}/onboarding`,
@@ -827,33 +827,64 @@
     try {
       const response = await window.SessionBuddyApi.request("/api/v1/public/events");
       publicEvents.replaceChildren();
-      if (!response.data.length) {
+      const events = Array.isArray(response?.data) ? response.data : [];
+      if (!events.length) {
         const empty = make("p", "No public events are available yet.", "public-events-empty");
         empty.setAttribute("role", "status");
         publicEvents.append(empty);
         return;
       }
-      for (const event of response.data) {
+      let visibleEvents = 0;
+      for (const event of events) {
+        if (!event || typeof event !== "object") continue;
+        const hasPublicDestination = Boolean(event.cfp_slug || event.schedule_published || event.speaker_count);
+        if (!hasPublicDestination) continue;
+        visibleEvents += 1;
         const card = make("article", undefined, "public-event-card");
-        const date = make("time", new Date(event.starts_at_ms).toLocaleDateString());
-        date.dateTime = new Date(event.starts_at_ms).toISOString();
-        card.append(date, make("h3", event.name));
-        const details = [event.location, event.delivery_mode.replaceAll("_", " ")].filter(Boolean).join(" · ");
+        const startsAt = new Date(Number(event.starts_at_ms));
+        const hasDateValue = event.starts_at_ms !== null && event.starts_at_ms !== undefined && event.starts_at_ms !== "";
+        const hasValidDate = hasDateValue && Number.isFinite(startsAt.getTime());
+        const date = make("time", hasValidDate ? new Intl.DateTimeFormat(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric"
+        }).format(startsAt) : "Date to be announced");
+        if (hasValidDate) date.dateTime = startsAt.toISOString();
+        card.append(date, make("h3", String(event.name || "Untitled event")));
+        const deliveryMode = typeof event.delivery_mode === "string" ? event.delivery_mode.replaceAll("_", " ") : "";
+        const details = [event.location, deliveryMode].filter(Boolean).join(" · ");
         card.append(make("p", details || "Event details coming soon."));
         const actions = make("div", undefined, "public-event-actions");
         if (event.cfp_slug) {
-          const eventKey = event.id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
-          actions.append(link("Call for Proposals →", `/cfp/${eventKey}/${encodeURIComponent(event.cfp_slug)}`));
-          actions.prepend(make("span", cfpStateCopy(event), "role-label"));
+          const eventId = String(event.id || "");
+          const eventKey = eventId.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase();
+          const state = make("p", cfpStateCopy(event), "public-event-state");
+          if (["open", "scheduled", "closed"].includes(event.cfp_state)) {
+            state.classList.add(`public-event-state--${event.cfp_state}`);
+          }
+          card.append(state);
+          actions.append(link("Call for Proposals →", eventKey
+            ? `/cfp/${eventKey}/${encodeURIComponent(event.cfp_slug)}`
+            : `/cfp/${encodeURIComponent(event.cfp_slug)}`));
         }
-        if (event.schedule_published) actions.append(link("Schedule →", `/events/${encodeURIComponent(event.id)}/schedule`));
-        if (event.speaker_count) actions.append(link("Speakers →", `/events/${encodeURIComponent(event.id)}/speakers`));
-        if (!actions.children.length) actions.append(make("span", "Program details coming soon.", "role-label"));
-        card.append(actions); publicEvents.append(card);
+        if (event.id && event.schedule_published) actions.append(link("Schedule →", `/events/${encodeURIComponent(event.id)}/schedule`));
+        if (event.id && event.speaker_count) actions.append(link("Speakers →", `/events/${encodeURIComponent(event.id)}/speakers`));
+        if (actions.children.length) card.append(actions);
+        publicEvents.append(card);
+      }
+      if (!visibleEvents) {
+        const empty = make("p", "No public programs right now.", "public-events-empty");
+        empty.setAttribute("role", "status");
+        publicEvents.append(empty);
       }
     } catch (_) {
-      const error = make("p", "Public events could not be loaded. Try again later.", "public-events-empty");
+      const error = make("div", undefined, "public-events-empty public-events-error");
       error.setAttribute("role", "alert");
+      error.append(make("p", "Public events could not be loaded."));
+      const retry = make("button", "Try again", "public-events-retry");
+      retry.type = "button";
+      retry.addEventListener("click", renderPublicEvents);
+      error.append(retry);
       publicEvents.replaceChildren(error);
     } finally {
       publicEvents.setAttribute("aria-busy", "false");

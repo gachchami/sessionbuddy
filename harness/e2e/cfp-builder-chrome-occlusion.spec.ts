@@ -120,10 +120,10 @@ async function reachableAtItsCentre(target: Locator): Promise<{ ok: boolean; blo
 }
 
 for (const viewport of [
-  { name: "desktop", width: 1280, height: 720, expectedScrollPadding: 264 },
-  { name: "small desktop", width: 1024, height: 768, expectedScrollPadding: 264 },
-  { name: "narrow", width: 900, height: 800, expectedScrollPadding: 309.6 },
-  { name: "mobile", width: 390, height: 844, expectedScrollPadding: 305.6 },
+  { name: "desktop", width: 1280, height: 720, expectedScrollPadding: 240 },
+  { name: "small desktop", width: 1024, height: 768, expectedScrollPadding: 240 },
+  { name: "narrow", width: 900, height: 800, expectedScrollPadding: 240 },
+  { name: "mobile", width: 390, height: 844, expectedScrollPadding: 240 },
 ]) {
   test(`the Session format row stays operable under the sticky chrome on ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
@@ -149,11 +149,13 @@ for (const viewport of [
     const formatCard = page.locator("fieldset.question-card[data-index]").filter({ hasText: "Session format" });
     const summary = formatCard.locator("summary");
     await summary.click();
+    await page.getByRole("button", { name: "Reorder questions" }).click();
+    const formatOrder = page.locator(".field-order-row").filter({ hasText: "Session format" });
 
     for (const target of [
       summary,
-      formatCard.locator('[aria-label^="Move Session format up"]'),
-      formatCard.locator('[aria-label^="Move Session format down"]'),
+      formatOrder.getByRole("button", { name: "Move Session format earlier" }),
+      formatOrder.getByRole("button", { name: "Move Session format later" }),
     ]) {
       // The recovery an operator (human or agent) reaches for when a control is
       // covered. It has to actually work.

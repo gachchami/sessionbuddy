@@ -55,7 +55,14 @@ async function serveBuilder(page: Page) {
   }));
   await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify({ id: eventId, status: "active", time_zone: "UTC" }),
+    body: JSON.stringify({
+      id: eventId,
+      status: "active",
+      time_zone: "UTC",
+      accent_color: "#6d4aff",
+      logo_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='24'%3E%3C/svg%3E",
+      cover_image_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='120'%3E%3C/svg%3E",
+    }),
   }));
   await page.route(`**/api/v1/admin/events/${eventId}/agenda/tracks`, (route) => route.fulfill({
     contentType: "application/json",
@@ -138,5 +145,58 @@ test.describe("CFP rich text accessibility", () => {
     expect(bounds).toBeTruthy();
     expect(bounds!.x).toBeGreaterThanOrEqual(0);
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(321);
+  });
+
+  test("the character count and draft preview preserve rich description edits", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await serveBuilder(page);
+    await page.goto(`/admin/events/${eventId}/cfp`);
+
+    const editor = page.getByRole("textbox", { name: "CFP description" });
+    await editor.evaluate((node) => {
+      node.replaceChildren();
+      const paragraph = document.createElement("p");
+      const strong = document.createElement("strong");
+      strong.textContent = "Bring a practical lesson";
+      paragraph.append(strong);
+      const list = document.createElement("ul");
+      const item = document.createElement("li");
+      item.textContent = "Include concrete examples";
+      list.append(item);
+      const link = document.createElement("a");
+      link.href = "https://example.test/guidelines";
+      link.textContent = "very-long-guideline-reference-".repeat(12);
+      node.append(paragraph, list, link);
+      node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    });
+
+    await expect(page.locator('[name="description_html"] + .character-counter')).not.toHaveText(/^0 of/);
+    await page.getByRole("button", { name: "Preview form", exact: true }).click();
+    const preview = page.locator("#cfp-selection-preview");
+    await expect(preview.locator("strong", { hasText: "Bring a practical lesson" })).toBeVisible();
+    await expect(preview.locator("li", { hasText: "Include concrete examples" })).toBeVisible();
+    await expect(preview.getByRole("img", { name: "Accessible Conference logo" })).toBeVisible();
+    await expect(preview.getByRole("img", { name: "Accessible Conference cover" })).toBeVisible();
+    await expect(preview.locator(".cfp-preview-brand")).toHaveCSS("border-top-color", "rgb(109, 74, 255)");
+    const geometry = await preview.evaluate((node) => {
+      const content = node.querySelector<HTMLElement>(".cfp-preview-content")!;
+      const description = node.querySelector<HTMLElement>(".cfp-preview-description")!;
+      const cover = node.querySelector<HTMLElement>(".cfp-preview-brand__cover")!;
+      const coverBounds = cover.getBoundingClientRect();
+      return {
+        contentFits: content.scrollWidth <= content.clientWidth + 1,
+        descriptionFits: description.scrollWidth <= description.clientWidth + 1,
+        descriptionFontSize: Number.parseFloat(getComputedStyle(description).fontSize),
+        coverRatio: coverBounds.width / coverBounds.height,
+        previewOverflowY: getComputedStyle(node).overflowY,
+      };
+    });
+    expect(geometry.contentFits).toBe(true);
+    expect(geometry.descriptionFits).toBe(true);
+    expect(geometry.descriptionFontSize).toBe(16);
+    // The draft preview uses the same wide event-cover crop as the published
+    // CFP instead of a taller, misleading card-only composition.
+    expect(geometry.coverRatio).toBeCloseTo(3, 1);
+    expect(geometry.previewOverflowY).toBe("visible");
   });
 });

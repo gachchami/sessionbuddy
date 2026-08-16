@@ -133,7 +133,7 @@ test.describe("write feedback is truthful", () => {
     await page.getByRole("button", { name: /Preview/ }).click();
     await expect(page.getByRole("status").first()).toHaveText("Preview ready for 1 recipient.");
     await page.getByRole("button", { name: /^Send/ }).click();
-    const confirmation = page.getByRole("dialog", { name: "Send messages?" });
+      const confirmation = page.getByRole("dialog", { name: "Queue emails?" });
     await expect(confirmation).toBeVisible();
     await expect(confirmation).toContainText("1 personalized email will be queued.");
     await expect(confirmation).toContainText("queued immediately and cannot be recalled");

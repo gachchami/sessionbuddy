@@ -164,12 +164,14 @@ test.describe("public CFP responsive design", () => {
       // Signed out is a preview, not a gate: the questions render so a speaker
       // can read them before deciding to create an account.
       await expect(page.locator("#proposal-card")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Save draft in this browser" })).toBeVisible();
+      await expect(page.locator("#draft-storage-note")).toHaveText("Stored on this device for 30 minutes.");
       await expect(page.locator("#call-opens")).toHaveText("Open now");
       await expect(page.locator("#preview-note")).toBeVisible();
       await expect(page.locator("#field-proposal_title")).toBeVisible();
       const signup = page.getByRole("button", { name: "Email me a signup link" });
       await expect(signup).toHaveAttribute("aria-describedby", "cfp-signup-help");
-      await expect(page.locator("#cfp-signup-help")).toContainText("No password is needed");
+      await expect(page.locator("#cfp-signup-help")).toHaveText("We’ll email a one-time link to create your account and sign you in.");
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expectWithinViewport(page, "#event-public-header", width);
       await expectWithinViewport(page, "#sign-in-card", width);
@@ -367,6 +369,8 @@ test.describe("public CFP responsive design", () => {
     expect(pageErrors).toEqual([]);
     await expect(page.locator("#proposal-card")).toBeVisible();
     await expect(page.locator("#sign-in-card")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Save draft to account" })).toBeVisible();
+    await expect(page.locator("#draft-storage-note")).toHaveText("Available after you sign in again.");
     await expect(page.getByRole("link", { name: "My proposals" })).toHaveCount(0);
     await expect(page.locator("#proposal-workspace")).toBeHidden();
     const columns = await page.locator("#dynamic-fields").evaluate(

@@ -82,7 +82,7 @@
     if (!eventId) throw new Error("Invalid speaker gallery link.");
     const body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/speakers`);
     state.event = body.event;
-    document.documentElement.style.setProperty("--blue", body.event.accent_color || "#3159d9"); byId("event-name").textContent = body.event.name;
+    document.documentElement.style.setProperty("--event-accent", body.event.accent_color || "#3159d9"); byId("event-name").textContent = body.event.name;
     byId("schedule-link").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     byId("directory-link").href = `/events/${encodeURIComponent(eventId)}/${galleryLayout ? "speakers" : "gallery"}`;
     byId("directory-link").textContent = galleryLayout ? "Speaker directory" : "Speaker gallery";

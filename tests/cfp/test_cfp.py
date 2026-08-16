@@ -592,12 +592,17 @@ def test_public_cfp_defers_authentication_until_final_submission() -> None:
     assert "Email verified. Review your restored proposal, then confirm submission." in script
     assert "form_slug: slug, redirect_path: location.pathname" in script
     assert "if (!state.authenticated)" in script
-    assert '<h2 id="sign-in-title">Sign in</h2>' in page
+    assert '<h2 id="sign-in-title">Sign in to submit</h2>' in page
+    assert "Save draft in this browser" in page
+    assert "Stored on this device for 30 minutes" in page
+    assert 'button.textContent = "Save draft to account"' in script
+    assert 'note.textContent = "Available after you sign in again."' in script
+    assert page.index('id="proposal-card"') < page.index('id="sign-in-card"')
     assert 'for="cfp-sign-in-email"' in page
     assert 'id="cfp-sign-in-email" name="email"' in page
     assert "Email me a signup link" in page
     assert 'aria-describedby="cfp-signup-help"' in page
-    assert "Sign in to submit" not in page
+    assert '<button id="cfp-password-sign-in">Sign in</button>' in page
 
 
 def test_public_cfp_shows_the_form_to_a_visitor_who_is_not_signed_in() -> None:
@@ -957,8 +962,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         account.status_code,
         app_shell_js.status_code,
     } == {200}
-    assert "Email me a sign-in link" in sign_in.text
-    assert "Evaluation team" in access.text
+    assert "Send a sign-in link" in sign_in.text
     assert "Reviewers" in access.text
     assert "All events" in events.text
     assert "Edit organization name" not in events.text
@@ -966,7 +970,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "Create active event" in events.text
     assert "data-auth-shell" in events.text
     assert "Call for Proposals" in admin.text
-    assert "Share your CFP" in admin.text
+    assert "Share the public CFP" in admin.text
     assert "data-auth-shell" in admin.text
     assert "Submit a proposal" in public.text
     assert "Proposals" in submissions.text

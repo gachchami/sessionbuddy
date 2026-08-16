@@ -75,10 +75,10 @@ test.describe("event invitation RBAC", () => {
     const state = await serve(page);
     await page.setViewportSize({ width: 320, height: 740 });
     await page.goto(`/admin/events/${eventId}/reviewers`);
-    await page.getByLabel("Find an eligible reviewer by email").fill("reviewer@example.test");
+    await page.getByLabel("Find reviewer by email").fill("reviewer@example.test");
     await page.getByRole("button", { name: "Search" }).click();
     await expect(page.getByText(/Existing Reviewer is eligible/)).toBeVisible();
-    await page.getByLabel("Find an eligible reviewer by email").fill("new@example.test");
+    await page.getByLabel("Find reviewer by email").fill("new@example.test");
     await page.getByRole("button", { name: "Search" }).click();
     await page.getByRole("button", { name: "Invite new@example.test" }).click();
     await expect(page.getByRole("dialog", { name: "Invite reviewer" })).toBeVisible();

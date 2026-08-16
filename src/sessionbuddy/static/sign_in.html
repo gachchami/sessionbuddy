@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=76">
+  <link rel="stylesheet" href="/product/assets/product.css?v=78">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/auth/assets/sign-in.js?v=9" defer></script>
-  <script src="/auth/assets/demo-access.js?v=3" defer></script>
+  <script src="/auth/assets/sign-in.js?v=10" defer></script>
+  <script src="/auth/assets/demo-access.js?v=4" defer></script>
 </head>
 <body class="app-body auth-body sign-in-page">
   <a class="skip-link" href="#main">Skip to sign in</a>
@@ -18,33 +18,43 @@
     </div>
   </header>
   <main id="main" class="auth-main sign-in-shell" tabindex="-1">
-    <section class="auth-card sign-in-card" aria-labelledby="sign-in-title">
-      <div id="sign-in-entry">
-        <p class="eyebrow">Welcome back</p><h1 id="sign-in-title">Sign in</h1>
-        <p class="auth-intro">You’ll open your default workspace. Switch roles from your account menu after signing in.</p>
-        <form id="sign-in-form" class="auth-form">
-          <label>Email address
-            <input name="email" type="email" autocomplete="email" maxlength="320" placeholder="you@example.com" autofocus required>
-          </label>
-          <label>Password
-            <input name="password" type="password" autocomplete="current-password" maxlength="128" required>
-          </label>
-          <button id="password-sign-in">Sign in</button>
-          <div class="auth-choice" aria-hidden="true"><span>or</span></div>
-          <button id="send-sign-in-link" class="secondary" type="button">Email me a sign-in link</button>
-        </form>
-        <p class="auth-note">Email links expire after 15 minutes and work only once.</p>
-      </div>
-      <div id="sign-in-sent" class="auth-confirmation" tabindex="-1" hidden>
-        <div class="auth-confirmation__icon" aria-hidden="true">✓</div>
-        <h1>Check your email</h1>
-        <p id="sent-message"></p>
-        <p>Open the link in this browser. It expires in 15 minutes and can only be used once.</p>
-        <button id="change-sign-in-email" class="secondary" type="button">Use a different email</button>
-      </div>
-      <p id="status" class="auth-message" role="status" aria-live="polite" tabindex="-1" hidden></p>
-      <div data-demo-access></div>
-    </section>
+    <div class="sign-in-layout">
+      <section class="auth-card sign-in-card" aria-labelledby="sign-in-title">
+        <div id="sign-in-entry">
+          <h1 id="sign-in-title">Sign in</h1>
+          <p class="auth-intro">Continue to SessionBuddy.</p>
+          <form id="sign-in-form" class="auth-form">
+            <label>Email address
+              <input name="email" type="email" autocomplete="email" maxlength="320" placeholder="you@example.com" autofocus required>
+            </label>
+            <label for="sign-in-password">Password</label>
+            <div class="password-field">
+              <input id="sign-in-password" name="password" type="password" autocomplete="current-password" maxlength="128" required>
+              <button id="toggle-password" class="password-toggle secondary" type="button" aria-controls="sign-in-password" aria-pressed="false">Show</button>
+            </div>
+            <button id="password-sign-in">Sign in</button>
+            <div class="auth-alternative" aria-labelledby="email-link-title">
+              <h2 id="email-link-title">Forgot your password?</h2>
+              <p>Use a one-time email link instead. It expires after 15 minutes.</p>
+              <button id="send-sign-in-link" class="secondary" type="button">Send a sign-in link</button>
+            </div>
+          </form>
+          <p class="auth-membership-note">New to SessionBuddy? Your organization or event organizer will invite you.</p>
+        </div>
+        <div id="sign-in-sent" class="auth-confirmation" tabindex="-1" hidden>
+          <div class="auth-confirmation__icon" aria-hidden="true">✓</div>
+          <h1>Check your email</h1>
+          <p id="sent-message"></p>
+          <p>Open the link in this browser. It expires in 15 minutes and can only be used once.</p>
+          <button id="change-sign-in-email" class="secondary" type="button">Use a different email</button>
+        </div>
+        <p id="status" class="auth-message" role="status" aria-live="polite" tabindex="-1" hidden></p>
+      </section>
+
+      <aside class="sign-in-demo" data-demo-panel aria-label="Demo access" hidden>
+        <div data-demo-access data-demo-title="Try a demo" data-demo-intro="Explore a ready-made workspace. No password required."></div>
+      </aside>
+    </div>
   </main>
 </body>
 </html>

@@ -6,11 +6,11 @@
   <meta name="description" content="Move conference programs from open call to published agenda with SessionBuddy.">
   <title>SessionBuddy · Conference program management</title>
   <link rel="icon" href="/landing/assets/sessionbuddy-favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/landing/assets/landing.css?v=6">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=25">
+  <link rel="stylesheet" href="/landing/assets/landing.css?v=14">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=29" defer></script>
-  <script src="/landing/assets/demo-access.js?v=2" defer></script>
+  <script src="/landing/assets/demo-access.js?v=3" defer></script>
 </head>
 <body class="marketing-page">
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -33,9 +33,7 @@
           <p class="eyebrow">Conference program management</p>
           <h1 id="hero-title">From open call to published agenda.</h1>
           <p class="hero-lede">Collect proposals, run reviews, prepare speakers, and publish the program from one workspace.</p>
-          <div class="hero-actions"><a class="button button-primary" data-auth-entry href="/sign-in?redirect=%2Fadmin">Start your program</a></div>
-          <ul class="proof-list" aria-label="Program outcomes"><li>Keep every role aligned</li><li>Move speakers forward</li><li>Publish with confidence</li></ul>
-          <div data-demo-access></div>
+          <div class="hero-actions"><a class="button button-primary" data-auth-entry href="/sign-in?redirect=%2Fadmin">Sign in to manage a program</a></div>
         </div>
 
         <aside class="agenda-card" aria-labelledby="agenda-title">
@@ -49,37 +47,59 @@
       </div>
     </section>
 
+    <section class="workflow-section" aria-labelledby="workflow-title">
+      <div class="page-shell workflow-layout">
+        <div class="workflow-heading">
+          <p class="eyebrow">One connected workflow</p>
+          <h2 id="workflow-title">Keep the program moving.</h2>
+          <p>Everyone works from the same event record, from the first proposal to the published schedule.</p>
+        </div>
+        <ol class="workflow-steps">
+          <li><span>01</span><div><h3>Collect</h3><p>Open the call and receive structured proposals.</p></div></li>
+          <li><span>02</span><div><h3>Review</h3><p>Assign reviewers and make decisions with context.</p></div></li>
+          <li><span>03</span><div><h3>Prepare</h3><p>Coordinate speaker tasks, files, and communication.</p></div></li>
+          <li><span>04</span><div><h3>Publish</h3><p>Build the agenda and share the finished program.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="demo-section" data-demo-panel aria-labelledby="demo-section-title" hidden>
+      <div class="page-shell demo-layout">
+        <div class="demo-heading">
+          <p class="eyebrow">Explore the workspace</p>
+          <h2 id="demo-section-title">Try it from every seat.</h2>
+          <p>Enter a sample workspace instantly. No password or setup required.</p>
+        </div>
+        <div data-demo-access></div>
+      </div>
+    </section>
+
     <section class="public-programs-section" aria-labelledby="public-programs-title">
       <div class="page-shell">
         <div class="public-programs-heading">
-          <div><p class="eyebrow">Calls for proposals and schedules</p><h2 id="public-programs-title">Explore current programs.</h2></div>
-          <p>Find calls for proposals, browse published schedules, and meet announced speakers.</p>
+          <h2 id="public-programs-title">Explore events</h2>
+          <p>Open calls, schedules, and speakers.</p>
         </div>
         <div data-public-events class="public-events-grid" aria-busy="true">
           <p class="public-events-empty" role="status">Loading public events…</p>
         </div>
-      </div>
-    </section>
-
-    <section class="featured-section" aria-labelledby="featured-title">
-      <div class="page-shell">
-        <div class="featured-heading">
-          <div><p class="eyebrow">Featured programs</p><h2 id="featured-title">See what’s moving through SessionBuddy.</h2></div>
-          <p>Upcoming AI Engineer conferences supported by a program workspace built for organizers, reviewers, and speakers.</p>
+        <div class="featured-heading featured-heading--compact">
+          <div><p class="eyebrow">Featured</p><h3 id="featured-title">AI Engineer conferences</h3></div>
+          <p>Upcoming programs supported by SessionBuddy.</p>
         </div>
         <div class="featured-grid">
-          <article class="featured-event event-new-york">
-            <div class="event-content"><p class="event-brand">AI Engineer <span>New York</span></p><p class="event-meta">Oct 12–14 · New York <span>Planning</span></p><h3>AI Engineer New York 2026</h3><p>Program setup, submissions, and speaker preparation in one event workspace.</p><a href="https://www.ai.engineer/nyc/2026">Explore event <span aria-hidden="true">→</span></a></div>
+          <article class="featured-event event-new-york" aria-labelledby="featured-nyc-title">
+            <div class="event-content"><p class="event-brand">AI Engineer <span>New York</span></p><p class="event-meta">Oct 12–14 · New York <span>Planning</span></p><h3 id="featured-nyc-title">AI Engineer New York 2026</h3><p>Program setup, submissions, and speaker preparation in one event workspace.</p><a href="https://www.ai.engineer/nyc/2026">Explore event <span aria-hidden="true">→</span></a></div>
           </article>
-          <article class="featured-event event-code">
-            <div class="event-content"><p class="event-brand code-brand">AI Engineer <span>Code Summit</span></p><p class="event-meta">Nov 10–12 · San Francisco <span>Application only</span></p><h3>AI Engineer Code 2026</h3><p>A dedicated code conference coming home to Silicon Valley.</p><a href="https://www.ai.engineer/code/2026">Explore event <span aria-hidden="true">→</span></a></div>
+          <article class="featured-event event-code" aria-labelledby="featured-code-title">
+            <div class="event-content"><p class="event-brand code-brand">AI Engineer <span>Code Summit</span></p><p class="event-meta">Nov 10–12 · San Francisco <span>Application only</span></p><h3 id="featured-code-title">AI Engineer Code 2026</h3><p>A dedicated code conference coming home to Silicon Valley.</p><a href="https://www.ai.engineer/code/2026">Explore event <span aria-hidden="true">→</span></a></div>
           </article>
         </div>
       </div>
     </section>
 
     <section class="closing-section" aria-labelledby="closing-title">
-      <div class="page-shell closing-card"><div><p class="eyebrow">One program, one workspace</p><h2 id="closing-title">Ready to move your conference forward?</h2></div><a class="button button-primary" data-auth-entry href="/sign-in?redirect=%2Fadmin">Start your program</a></div>
+      <div class="page-shell closing-card"><div><p class="eyebrow">One program, one workspace</p><h2 id="closing-title">Ready to move your conference forward?</h2></div><a class="button button-primary" data-auth-entry href="/sign-in?redirect=%2Fadmin">Sign in to manage a program</a></div>
     </section>
   </main>
 

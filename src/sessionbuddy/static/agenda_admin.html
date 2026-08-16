@@ -5,14 +5,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Agenda editor · SessionBuddy</title>
-    <link rel="stylesheet" href="/product/assets/product.css?v=76" type="text/css">
-    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=5" type="text/css">
-    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=25" type="text/css">
+    <link rel="stylesheet" href="/product/assets/product.css?v=78" type="text/css">
+    <link rel="stylesheet" href="/admin/agenda/assets/agenda.css?v=6" type="text/css">
+    <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26" type="text/css">
     <script src="/app-shell/assets/api-client.js?v=8" defer type="text/javascript">
 </script>
     <script src="/app-shell/assets/app-shell.js?v=29" defer type="text/javascript">
 </script>
-    <script src="/admin/agenda/assets/agenda.js?v=61ad0a7999e6" defer type="text/javascript">
+    <script src="/admin/agenda/assets/agenda.js?v=228ac6a587aa" defer type="text/javascript">
 </script>
   </head>
   <body class="app-body workflow-page workflow-page--agenda">
@@ -34,9 +34,6 @@
         Checking your session…
       </div>
       <section id="agenda-setup" class="panel setup-panel workflow-stage" aria-labelledby="agenda-setup-title" hidden>
-        <p class="eyebrow">
-          First step
-        </p>
         <h2 id="agenda-setup-title">
           Set up the schedule
         </h2>
@@ -69,7 +66,7 @@
           <div class="tool-grid">
             <section aria-labelledby="create-session-title">
               <h2 id="create-session-title">Create a session</h2>
-              <p class="help">Add an organizer-created session for active speakers or invited speakers who have not accepted yet.</p>
+              <p class="help">Add a session that did not come through the CFP.</p>
               <form id="manual-session-form">
                 <label>Title<input name="title" maxlength="200" required></label>
                 <label>Abstract<textarea name="abstract" rows="4" maxlength="5000" required></textarea></label>
@@ -79,7 +76,7 @@
             </section>
             <section aria-labelledby="auto-title">
               <h2 id="auto-title">Build a first draft</h2>
-              <p class="help">Place unscheduled sessions into available rooms without room or speaker conflicts. Review everything before publishing.</p>
+              <p class="help">Place unscheduled sessions without room or speaker conflicts.</p>
               <form id="auto-schedule-form">
                 <p id="auto-schedule-time-zone" class="help">Start time uses the event time zone: <strong data-event-time-zone>Loading…</strong>.</p>
                 <label>Start time<input name="start_at" type="datetime-local" required aria-describedby="auto-schedule-time-zone"></label>
@@ -91,7 +88,7 @@
               </form>
             </section>
             <section aria-labelledby="rooms-title">
-              <h2 id="rooms-title">Room management</h2>
+              <h2 id="rooms-title">Rooms</h2>
               <form id="room-form" class="inline-form">
                 <label><span class="sr-only">New room name</span><input name="name" maxlength="200" placeholder="New room" required></label>
                 <button type="submit">Add</button>
@@ -100,7 +97,7 @@
               <details id="archived-room-section" hidden><summary>Archived rooms</summary><ul id="archived-room-list" class="resource-list"></ul></details>
             </section>
             <section aria-labelledby="tracks-title">
-              <h2 id="tracks-title">Track management</h2>
+              <h2 id="tracks-title">Tracks</h2>
               <form id="track-form" class="inline-form">
                 <label><span class="sr-only">New track name</span><input name="name" maxlength="200" placeholder="New track" required></label>
                 <button type="submit">Add</button>
@@ -109,7 +106,7 @@
               <details id="archived-track-section" hidden><summary>Archived tracks</summary><ul id="archived-track-list" class="resource-list"></ul></details>
             </section>
             <section aria-labelledby="labels-title">
-              <h2 id="labels-title">Label management</h2>
+              <h2 id="labels-title">Labels</h2>
               <p class="help">Labels belong to this event and help attendees scan the program.</p>
               <form id="label-form" class="label-create-form">
                 <label><span>Label name</span><input name="name" maxlength="80" placeholder="Beginner" required></label>
@@ -122,18 +119,6 @@
           </div>
         </details>
         <div class="agenda-layout">
-          <aside class="panel workflow-stage workflow-stage--backlog" aria-labelledby="unscheduled-title">
-            <h2 id="unscheduled-title">
-              Unscheduled sessions
-            </h2>
-            <p class="help">
-              Use Schedule session on an unscheduled session, or Edit session on a scheduled session, to update its title, abstract, labels, time, room, or track with the keyboard. Dragging is optional.
-            </p>
-            <ul id="unscheduled" class="session-list" aria-live="polite">
-              <li class="workflow-empty-state">Loading sessions&hellip;
-              </li>
-            </ul>
-          </aside>
           <section id="agenda" class="panel board-panel workflow-stage workflow-stage--schedule" aria-labelledby="agenda-title" aria-busy="true">
             <div class="section-heading">
               <h2 id="agenda-title">
@@ -152,6 +137,11 @@
               </p>
             </div>
           </section>
+          <aside class="panel workflow-stage workflow-stage--backlog" aria-labelledby="unscheduled-title">
+            <h2 id="unscheduled-title">Unscheduled sessions</h2>
+            <p class="help">Use Schedule session to place an item. Dragging is optional.</p>
+            <ul id="unscheduled" class="session-list" aria-live="polite"><li class="workflow-empty-state">Loading sessions&hellip;</li></ul>
+          </aside>
         </div>
       </div>
       <dialog id="editor" aria-labelledby="editor-title">

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=76">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=25">
+  <link rel="stylesheet" href="/product/assets/product.css?v=78">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=29" defer></script>
   <script src="/account/assets/account.js?v=14" defer></script>
@@ -14,10 +14,10 @@
   <a class="skip-link" href="#main">Skip to account</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page account-page organizer-main" tabindex="-1">
-    <div id="account-context-heading" class="page-heading page-heading--compact account-context-heading" hidden><div><p class="eyebrow">Personal settings</p><h1 id="account-title">Account</h1><p id="account-summary" class="lede">Profile details and access.</p></div></div>
+    <div id="account-context-heading" class="page-heading page-heading--compact account-context-heading" hidden><div><h1 id="account-title">Account</h1><p id="account-summary" class="sr-only">Profile details and access.</p></div></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
     <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title" hidden>
-      <div class="account-profile-heading"><div><p class="eyebrow">Your identity</p><h2 id="profile-title">Profile</h2><p>Used across every SessionBuddy workspace you can access.</p></div><div id="profile-roles" class="account-role-list"></div></div>
+      <div class="account-profile-heading"><div><h2 id="profile-title">Profile</h2></div><div id="profile-roles" class="account-role-list"></div></div>
       <form id="profile-form">
         <section class="account-headshot" aria-labelledby="headshot-title">
           <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
@@ -57,7 +57,7 @@
     </section>
     <section id="organization-settings" class="directory-section organizer-section organizer-section--organizations" aria-labelledby="organization-settings-title" hidden>
       <div class="section-heading">
-        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Manage organization details and organizers whose authority applies across every event.</p></div>
+        <div><h2 id="organization-settings-title">Organization settings</h2><p class="section-summary">Organization details and admins.</p></div>
       </div>
       <div id="organization-settings-list" class="entity-grid"></div>
     </section>

@@ -15,23 +15,30 @@ def test_sign_in_preserves_passwordless_flow_with_clear_copy() -> None:
     assert 'type="email" autocomplete="email"' in markup
     assert 'id="password-sign-in">Sign in</button>' in markup
     assert 'id="send-sign-in-link" class="secondary" type="button"' in markup
+    assert 'id="toggle-password"' in markup
+    assert 'aria-controls="sign-in-password" aria-pressed="false"' in markup
     assert 'id="sign-in-sent"' in markup
     assert 'role="status" aria-live="polite"' in markup
     assert '"/api/v1/auth/magic-links"' in javascript
     assert '"/api/v1/auth/password/sign-in"' in javascript
     assert "redirect_path: redirect" in javascript
     assert 'confirmation.focus()' in javascript
+    assert 'password.type = showing ? "password" : "text"' in javascript
 
 
-def test_sign_in_is_minimal_and_explains_default_role_behavior() -> None:
+def test_sign_in_separates_account_access_from_demo_exploration() -> None:
     markup = source("sign_in.html")
     stylesheet = source("product.css")
 
     assert 'class="sign-in-story"' not in markup
-    assert "You’ll open your default workspace." in markup
+    assert "Continue to SessionBuddy." in markup
+    assert "Forgot your password?" in markup
+    assert "Your organization or event organizer will invite you." in markup
+    assert 'class="sign-in-demo" data-demo-panel' in markup
     assert 'class="auth-role-note"' not in markup
     assert "Organizer" not in markup and "Reviewer" not in markup and "Speaker" not in markup
     assert ".sign-in-card::before" in stylesheet
+    assert ".sign-in-layout" in stylesheet
     assert "@media (max-width: 48rem)" in stylesheet
 
 

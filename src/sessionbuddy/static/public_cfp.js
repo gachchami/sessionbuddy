@@ -145,11 +145,21 @@
     renderRichText(content, form.description_html, "");
     const briefText = content.textContent.replace(/\s+/g, " ").trim();
     const welcomeText = String(form.welcome_text || "").replace(/\s+/g, " ").trim();
+    // The builder can seed a long welcome from the opening of the rich
+    // description. Do not print that same passage twice at the top of the
+    // published page; the complete rich text remains visible in the brief.
+    const welcomeRepeatsBrief = welcomeText.length > 240 && briefText.startsWith(welcomeText);
+    byId("welcome").hidden = !workspaceMode && welcomeRepeatsBrief;
     section.hidden = !briefText || briefText === welcomeText;
   }
 
   function renderEventHeader(form) {
-    byId("event-public-header").style.setProperty("--event-preview-accent", form.accent_color || "#3159d9");
+    const accent = form.accent_color || "#3159d9";
+    document.documentElement.style.setProperty("--event-accent", accent);
+    const header = byId("event-public-header");
+    header.style.setProperty("--event-preview-accent", accent);
+    header.classList.toggle("cfp-event-header--no-cover", !form.cover_image_url);
+    header.querySelector(".public-brand-preview__cover").hidden = !form.cover_image_url;
     byId("event-title").textContent = form.event_name || "Event";
     byId("event-monogram").textContent = (form.event_name || "EV").slice(0, 2).toUpperCase();
     if (form.event_starts_at_ms && form.event_ends_at_ms) {
@@ -670,6 +680,7 @@
     byId("save-participants").hidden = !participantsEditable;
     byId("save-participants").disabled = !participantsEditable;
     byId("submit-proposal").textContent = editable ? "Save changes" : "Confirm submission";
+    updateDraftStorageUi();
     let viewingStatus = `Viewing “${submission.proposal_title}”. Only the primary submitter can make changes.`;
     if (submission.status === "accepted" && participantsEditable) {
       viewingStatus = `Viewing “${submission.proposal_title}”. Proposal answers are final; additional participants can still be managed.`;
@@ -778,12 +789,29 @@
   function showReview(reviewing) {
     byId("dynamic-fields").hidden = reviewing;
     byId("review-panel").hidden = !reviewing;
-    byId("save-draft").hidden = reviewing;
+    byId("draft-action").hidden = reviewing;
     byId("review-proposal").hidden = reviewing;
     byId("back-to-form").hidden = !reviewing;
     byId("submit-proposal").hidden = !reviewing;
     setStep(reviewing ? "review" : "details");
     if (reviewing) renderReview();
+  }
+
+  function updateDraftStorageUi() {
+    const button = byId("save-draft");
+    const note = byId("draft-storage-note");
+    if (state.editingSubmission) {
+      button.textContent = "Save proposal changes";
+      note.textContent = "Updates this submitted proposal.";
+      return;
+    }
+    if (state.authenticated) {
+      button.textContent = "Save draft to account";
+      note.textContent = "Available after you sign in again.";
+      return;
+    }
+    button.textContent = "Save draft in this browser";
+    note.textContent = "Stored on this device for 30 minutes.";
   }
 
   function safeUploadUrl(value) {
@@ -860,8 +888,8 @@
       if (workspaceMode) {
         byId("title").textContent = "Proposal";
         byId("welcome").textContent = state.form.event_name;
+        byId("welcome").hidden = false;
       }
-      if (state.form.accent_color) document.documentElement.style.setProperty("--blue", state.form.accent_color);
       if (state.form.logo_url) { byId("event-logo").src = state.form.logo_url; byId("event-logo").hidden = false; }
       if (state.form.cover_image_url) { byId("event-cover").src = state.form.cover_image_url; byId("event-cover").alt = `${state.form.event_name} cover`; byId("event-cover").hidden = false; byId("event-cover-empty").hidden = true; }
       renderFields(state.form.fields || [], state.form.conditions || []);
@@ -883,6 +911,7 @@
         state.sessionDisplayName = session.display_name || "";
         byId("proposal-card").hidden = false;
         byId("sign-in-card").hidden = true;
+        updateDraftStorageUi();
         if (!workspaceMode) {
           try {
             state.submissions = (await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/mine`)).data || [];
@@ -945,6 +974,11 @@
         byId("proposal-card").hidden = workspaceMode;
         byId("preview-note").hidden = workspaceMode;
         byId("sign-in-card").hidden = false;
+        updateDraftStorageUi();
+        byId("sign-in-title").textContent = workspaceMode ? "Sign in to open proposal" : "Sign in to submit";
+        byId("cfp-sign-in-intro").textContent = workspaceMode
+          ? "Use the speaker account that owns this proposal."
+          : "Use your speaker account, or create one with an email link.";
         const signInEmail = byId("sign-in-form").elements.email;
         if (saved?.ownerEmail) signInEmail.value = saved.ownerEmail;
         setStatus(saved
@@ -1050,7 +1084,7 @@
     try {
       if (!state.authenticated && !state.editingSubmission) {
         saveBrowserDraft(false);
-        setStatus("Draft saved in this browser.", "success");
+        setStatus("Draft saved in this browser for 30 minutes.", "success");
         return;
       }
       if (state.editingSubmission) {
@@ -1078,7 +1112,7 @@
         clearTimeout(state.draftTimer);
         state.draftTimer = null;
         try { localStorage.removeItem(browserDraftKey()); } catch (_) { /* best effort */ }
-      setStatus("Draft saved.", "success");
+      setStatus("Draft saved to your account.", "success");
     } catch (error) {
       if (error.code === "decision_conflict" && state.editingSubmission) {
         const submissionId = state.editingSubmission.id;
@@ -1199,7 +1233,7 @@
         link.href = "/speaker";
         receipt.append(link);
       }
-      setStatus(state.editingSubmission ? "Proposal updated successfully." : "Proposal submitted successfully.", "success");
+      setStatus(state.editingSubmission ? "Proposal updated." : "Proposal submitted.", "success");
       completed = true;
       state.draftDirty = false;
       button.textContent = state.editingSubmission ? "Saved ✓" : "Submitted ✓";

@@ -11,7 +11,7 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert 'id="clear-selection"' in markup
     assert 'id="selected-count" role="status"' in markup
     assert 'id="configure-round" type="button" disabled' in markup
-    assert "A final decision remains in effect during any later advisory review" in markup
+    assert "Final decisions stay in effect" in markup
     assert "selection.checked = false" in javascript
     assert 'selection.checked = item.status === "submitted"' not in javascript
     assert 'selection.addEventListener("change", submissionSelectionChanged);' in javascript

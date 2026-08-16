@@ -5,22 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Speaker onboarding · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=76">
-  <link rel="stylesheet" href="/admin/onboarding/assets/onboarding.css?v=2">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=25">
+  <link rel="stylesheet" href="/product/assets/product.css?v=78">
+  <link rel="stylesheet" href="/admin/onboarding/assets/onboarding.css?v=4">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=29" defer></script>
   <script src="/admin/onboarding/assets/onboarding.js?v=a1243644580e" defer></script>
 </head>
-<body class="app-body organizer-page organizer-page--onboarding">
+<body class="app-body organizer-page organizer-page--onboarding speaker-workspace-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <header data-auth-shell></header>
-  <main id="main" class="shell organizer-main" tabindex="-1">
-    <section class="hero organizer-hero organizer-hero--onboarding" aria-labelledby="page-title">
-      <div><h1 id="page-title">Speaker onboarding</h1><p id="event-name" class="sr-only"></p></div>
+  <main id="main" class="shell organizer-main speaker-workspace-shell" tabindex="-1">
+    <section class="hero organizer-hero organizer-hero--onboarding speaker-workspace-hero" aria-labelledby="page-title">
+      <div><h1 id="page-title">Speakers</h1><p id="event-name" class="lede">Track onboarding progress for this event.</p></div>
       <div class="connection"><span id="connection-dot" aria-hidden="true"></span><strong id="connection-state">Connecting</strong><span id="last-refreshed">Not refreshed yet</span></div>
     </section>
     <div data-speaker-hub-tabs></div>
+    <section class="speaker-workspace-section-heading" aria-labelledby="onboarding-title">
+      <div><h2 id="onboarding-title">Onboarding</h2><p>See what each speaker still needs to complete.</p></div>
+    </section>
     <div id="status" class="status" role="status" aria-live="polite">Checking your admin session…</div>
     <section class="summary-grid organizer-metrics" aria-label="Onboarding summary">
       <article><span>Complete</span><strong id="count-complete">—</strong></article>
@@ -30,11 +33,11 @@
       <article><span>Awaiting acceptance</span><strong id="count-awaiting-acceptance">—</strong></article>
     </section>
     <section class="panel organizer-panel organizer-panel--filters" aria-labelledby="filters-title">
-      <div class="section-heading"><h2 id="filters-title">Filters</h2><button id="refresh" class="secondary" type="button">Refresh</button></div>
+      <div class="section-heading"><h2 id="filters-title">Filters</h2></div>
       <form id="filters" class="filters">
         <label for="state">Task state<select id="state" name="state"><option value="all">All tasks</option><option value="open">All outstanding</option><option value="completed">Completed</option><option value="overdue">Overdue outstanding</option><option value="due_soon">Due-soon outstanding</option></select></label>
         <label for="task-type">Task type<select id="task-type" name="task_type"><option value="">All task types</option><option value="profile">Profile</option><option value="headshot">Headshot</option><option value="slides">Slides</option><option value="supporting_document">Supporting document</option><option value="custom">Custom task</option></select></label>
-        <div class="filter-actions"><button type="submit">Apply filters</button><button id="clear-filters" class="secondary" type="button">Clear</button></div>
+        <div class="filter-actions"><button type="submit">Apply filters</button><button id="clear-filters" class="secondary" type="button">Clear</button><button id="refresh" class="secondary" type="button">Refresh</button></div>
       </form>
     </section>
     <p id="filter-refresh-status" class="onboarding-filter-refresh" role="status" aria-live="polite" hidden>Updating results for the selected filters…</p>

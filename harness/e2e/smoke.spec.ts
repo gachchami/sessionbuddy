@@ -151,11 +151,58 @@ test.describe("public smoke checks", () => {
 
     await page.goto("/");
 
-    await expect(page.getByRole("heading", { name: "Explore current programs." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Explore events" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Agent Platforms Summit" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Call for Proposals →" })).toHaveAttribute(
       "href",
       "/cfp/222222/agent-platforms",
+    );
+    await expect(page.locator("[data-public-events]")).toHaveAttribute("aria-busy", "false");
+  });
+
+  test("public homepage recovers from a failed event request", async ({ page }) => {
+    await serveConfiguredHomepage(page);
+    let attempts = 0;
+    await page.route("**/api/v1/public/events", async (route) => {
+      attempts += 1;
+      if (attempts <= 2) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "unavailable", message: "Database unavailable" } }),
+        });
+        return;
+      }
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ data: [{
+          name: "A very long international conference title مؤتمر تقني عالمي 🌍",
+          starts_at_ms: null,
+          location: "",
+          delivery_mode: null,
+          cfp_slug: "global-call",
+          cfp_boundary_at_ms: "invalid",
+          cfp_state: "open",
+          schedule_published: false,
+          speaker_count: 0,
+        }] }),
+      });
+    });
+
+    await page.goto("/");
+    const error = page.getByRole("alert");
+    await expect(error).toContainText("Public events could not be loaded.");
+    await expect(error).not.toContainText("Database unavailable");
+    await error.getByRole("button", { name: "Try again" }).click();
+    await expect(error).toContainText("Public events could not be loaded.");
+    await error.getByRole("button", { name: "Try again" }).click();
+
+    await expect(page.getByRole("heading", { name: /A very long international/ })).toBeVisible();
+    await expect(page.getByText("Date to be announced")).toBeVisible();
+    await expect(page.getByText("Event details coming soon.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Call for Proposals →" })).toHaveAttribute(
+      "href",
+      "/cfp/global-call",
     );
     await expect(page.locator("[data-public-events]")).toHaveAttribute("aria-busy", "false");
   });
@@ -410,7 +457,7 @@ test.describe("public smoke checks", () => {
     const response = await page.goto("/sign-in");
     expect(response?.ok()).toBeTruthy();
     const email = page.getByRole("textbox", { name: "Email address" });
-    const send = page.getByRole("button", { name: "Email me a sign-in link" });
+    const send = page.getByRole("button", { name: "Send a sign-in link" });
     await email.fill("speaker@example.com");
     await send.click();
 
@@ -421,7 +468,7 @@ test.describe("public smoke checks", () => {
     await page.getByRole("button", { name: "Use a different email" }).click();
     await expect(email).toBeEnabled();
     await expect(email).toBeFocused();
-    await expect(page.getByRole("button", { name: "Email me a sign-in link" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Send a sign-in link" })).toBeEnabled();
   });
 
   test("the CFP defers speaker registration until proposal submission", async ({ page }) => {
@@ -806,7 +853,7 @@ test.describe("administration empty states", () => {
     await expect(eventStatus.getByText("0 submitted", { exact: true })).toBeVisible();
     await expect(eventStatus.getByText("0 confirmed", { exact: true })).toBeVisible();
     await expect(eventStatus.getByText("0 sessions", { exact: true })).toBeVisible();
-    await expect(eventStatus.getByRole("link", { name: "Call for Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/cfp`);
+    await expect(eventStatus.getByRole("link", { name: "CFP", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/cfp`);
     const eventNavigation = page.getByRole("navigation", { name: "Event navigation" });
     await expect(eventNavigation.getByRole("link", { name: "Proposals", exact: true })).toHaveAttribute("href", `/admin/events/${eventId}/submissions`);
     await expect(eventNavigation.getByRole("link", { name: "Speakers" })).toHaveAttribute("href", `/admin/events/${eventId}/speakers`);
@@ -935,17 +982,19 @@ test.describe("administration empty states", () => {
       "href",
       `/admin/events/${eventId}/submissions`,
     );
+    await page.getByRole("button", { name: "Confirmation", exact: true }).click();
     await expect(page.getByLabel("Email subject")).toHaveValue("We received your World Fair proposal");
     await expect(page.getByLabel("Email message")).toHaveValue("Thank you. The program team will review your proposal.");
     await page.getByLabel("Email subject").fill("Your revised confirmation");
     await page.getByLabel("Email message").fill("Your revised confirmation message.");
     await page.getByRole("button", { name: "Update live CFP" }).click();
-    await expect(page.locator("#status")).toHaveText("Your CFP changes were saved.");
+    await expect(page.locator("#status")).toHaveText("Changes saved.");
 
     await page.reload();
     await expect(page.getByLabel("Public CFP URL")).toHaveValue(
       `${new URL(page.url()).origin}/cfp/cccccc/world-fair-2026`,
     );
+    await page.getByRole("button", { name: "Confirmation", exact: true }).click();
     await expect(page.getByLabel("Email subject")).toHaveValue("Your revised confirmation");
     await expect(page.getByLabel("Email message")).toHaveValue("Your revised confirmation message.");
   });

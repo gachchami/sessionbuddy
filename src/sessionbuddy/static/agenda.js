@@ -341,8 +341,8 @@
     byId("agenda-setup").hidden = true;
     byId("agenda-workspace").hidden = false;
     byId("revision-card").hidden = false;
-    byId("event-title").textContent = model.event.name;
-    byId("timezone").textContent = `Draft agenda · ${model.event.time_zone}`;
+    byId("event-title").textContent = "Agenda";
+    byId("timezone").textContent = `${model.event.name} · ${model.event.time_zone}`;
     document.querySelectorAll("[data-event-time-zone]").forEach((node) => {
       node.textContent = model.event.time_zone;
     });

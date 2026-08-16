@@ -128,8 +128,8 @@ test("a published CFP opens clean and says so, and the outline is usable after e
   await expect(page.locator("#publish-result")).toHaveText("Nothing changes publicly until you update the live CFP.");
 
   // The sequence the eval agent ran: save, then go to Availability.
-  await page.locator("#publish-form").getByRole("button", { name: "Update live CFP" }).click();
-  await expect(page.locator("#status")).toHaveText("Your CFP changes were saved.");
+  await page.getByRole("button", { name: "Update live CFP" }).click();
+  await expect(page.locator("#status")).toHaveText("Changes saved.");
   expect(server.updateCount()).toBe(1);
   // Saving returns to the summary by design, so the outline is hidden until
   // the editor is reopened -- and once it is, the tab has to work first time.
@@ -152,4 +152,67 @@ test("a published CFP opens clean and says so, and the outline is usable after e
   await expect(actionLabel).toHaveText("Live");
   await availability.click({ timeout: 2000 });
   await expect(page.locator("#cfp-availability")).toBeVisible();
+});
+
+test("the builder keeps publishing guidance, confirmation copy, preview, and reordering in one workspace", async ({ page }) => {
+  await serveBuilder(page);
+  await page.goto(`/admin/events/${eventId}/cfp`);
+
+  await expect(page.locator("#cfp-readiness")).toContainText("Ready to publish");
+  await page.getByRole("button", { name: "Confirmation", exact: true }).click();
+  await expect(page.getByRole("group", { name: "On-screen confirmation" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Confirmation email" })).toBeVisible();
+
+  const successHeading = page.locator("#publish-form").getByLabel("Success heading");
+  await successHeading.fill("Your proposal is in");
+  await page.getByRole("button", { name: "Preview form", exact: true }).click();
+  await expect(page.locator("#cfp-selection-preview")).toContainText("Applicant view · preview only");
+  await expect(page.locator("#cfp-selection-preview").getByRole("heading", { name: "Your proposal is in" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Back to editing", exact: true }).click();
+  await page.getByRole("button", { name: /Proposal details/ }).click();
+  await page.getByRole("button", { name: "Reorder questions" }).click();
+  const formatOrder = page.locator(".field-order-row").filter({ hasText: "Session format" });
+  const titleOrder = page.locator(".field-order-row").filter({ hasText: "Proposal title" });
+  await formatOrder.dragTo(titleOrder, { targetPosition: { x: 40, y: 2 } });
+  await expect(page.locator("#cfp-reorder-feedback")).toContainText("Session format moved.");
+  await expect(page.locator(".field-order-row").first()).toContainText("Session format");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await formatOrder.getByRole("button", { name: "Move Session format later" }).click();
+  await expect(page.locator("#cfp-reorder-feedback")).toContainText("Session format moved later.");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(page.locator("#cfp-reorder-feedback")).toContainText("Session format returned to its previous position.");
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeHidden();
+
+  await page.getByRole("button", { name: /Custom questions/ }).click();
+  await expect(page.locator("#field-order-list .field-order-row")).toHaveCount(0);
+  await expect(page.locator("#field-order-panel")).not.toContainText("Standard proposal field");
+  await page.getByRole("button", { name: "Add custom question" }).click();
+  let customCards = page.locator("fieldset.question-card").filter({ has: page.locator('[name="field_key"]') }).filter({ hasNotText: "System field" });
+  await expect(customCards).toHaveCount(1);
+  await page.getByRole("button", { name: "Add a question after New question" }).click();
+  await expect(customCards).toHaveCount(2);
+  await page.getByRole("button", { name: "Remove New question" }).click();
+  await expect(customCards).toHaveCount(1);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(customCards).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Availability", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Change in event settings" })).toHaveAttribute("href", "/admin/events");
+  const opening = page.getByLabel("Opening time");
+  const closing = page.getByLabel("Closing time");
+  const immediately = page.getByRole("button", { name: "Opens immediately" });
+  await expect(immediately).toBeDisabled();
+  if ((page.viewportSize()?.width || 0) >= 768) {
+    const [openingBox, closingBox] = await Promise.all([opening.boundingBox(), closing.boundingBox()]);
+    expect(openingBox).not.toBeNull();
+    expect(closingBox).not.toBeNull();
+    expect(Math.abs(openingBox!.x - closingBox!.x)).toBeLessThan(1);
+    expect(Math.abs(openingBox!.width - closingBox!.width)).toBeLessThan(1);
+    expect(closingBox!.y).toBeGreaterThan(openingBox!.y);
+  }
+  await opening.fill("2029-01-02T09:30");
+  await expect(page.getByRole("button", { name: "Open immediately instead" })).toBeEnabled();
+  await page.getByRole("button", { name: "Open immediately instead" }).click();
+  await expect(opening).toHaveValue("");
 });

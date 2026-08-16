@@ -445,6 +445,24 @@ def test_cfp_signed_in_email_help_is_not_duplicated() -> None:
     assert 'let help = byId("signed-in-email-help")' in script
 
 
+def test_public_pages_use_the_current_sessionbuddy_mark() -> None:
+    pages = (
+        "auth_link_confirm.html",
+        "auth_link_error.html",
+        "co_speaker_invitation.html",
+        "public_cfp.html",
+        "public_profile.html",
+        "schedule.html",
+        "speaker_gallery.html",
+    )
+    current_mark = 'src="/landing/assets/sessionbuddy-favicon.svg"'
+    legacy_mark = '<span class="brand-mark" aria-hidden="true">S</span>'
+    for page_name in pages:
+        page = (STATIC / page_name).read_text()
+        assert current_mark in page, page_name
+        assert legacy_mark not in page, page_name
+
+
 def test_document_recovery_scopes_use_shared_builders() -> None:
     javascript = [path for path in STATIC.glob("*.js") if path.name != "api_client.js"]
     paths = [*javascript, REPOSITORY / "frontend" / "src" / "main.tsx"]

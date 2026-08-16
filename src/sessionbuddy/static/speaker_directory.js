@@ -136,16 +136,18 @@
     if (detail.textContent) identity.append(detail);
     person.append(initials, identity);
 
-    const cell = (text, className = "") => {
+    const cell = (text, className = "", label = "") => {
       const node = document.createElement("span");
       node.className = className;
       node.setAttribute("role", "cell");
+      if (label) node.dataset.label = label;
       node.textContent = text || "—";
       return node;
     };
     const roles = document.createElement("span");
     roles.className = "people-role-list";
     roles.setAttribute("role", "cell");
+    roles.dataset.label = "Roles";
     for (const role of item.organization_roles || ["Speaker"]) {
       const chip = document.createElement("span");
       chip.className = `people-role people-role--${role.toLowerCase()}`;
@@ -153,8 +155,8 @@
       roles.append(chip);
     }
     const count = eventScoped ? participations.length : eventCount(item);
-    row.append(person, cell(item.email, "people-email"), cell(item.organization_name), roles,
-      cell(`${count} event${count === 1 ? "" : "s"}`, "people-event-count"));
+    row.append(person, cell(item.email, "people-email", "Email"), cell(item.organization_name, "", "Organization"), roles,
+      cell(`${count} event${count === 1 ? "" : "s"}`, "people-event-count", "Events"));
     return row;
   }
 

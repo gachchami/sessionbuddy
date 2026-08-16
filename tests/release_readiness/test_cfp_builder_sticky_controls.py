@@ -1,4 +1,4 @@
-"""The CFP builder's publish and navigation controls must stay on screen.
+"""The CFP builder must keep controls reachable without nested scrollports.
 
 An SBek eval scenario burned its whole turn budget scrolling the CFP builder to
 relocate the publish and availability controls (`claude/ux-evidence-log.md`).
@@ -7,9 +7,8 @@ The page already declared `position: sticky` on those controls, but an
 scrollport, and that box never scrolls -- so every sticky rule inside the
 builder was inert and the controls scrolled away with the form.
 
-These tests pin the contract that made them stick: the builder clips without
-becoming a scroll container, and the pinned offsets are derived from the shell
-chrome height rather than a hardcoded guess that drifts from the shell.
+The current design removes the competing builder scrollport and keeps its
+controls in normal flow. Shell offsets remain derived from the chrome height.
 
 A later eval run found the sibling of that defect one level down
 (`claude/ux-evidence-log.md`, 2026-08-16): the "Session format" system-field row
@@ -70,27 +69,26 @@ def _is_root_scoped(selector: str) -> bool:
     return selector.startswith(("html", ":root"))
 
 
-def test_cfp_builder_clips_without_becoming_a_scroll_container() -> None:
+def test_cfp_builder_uses_the_document_scroll_context() -> None:
     styles = (STATIC / "product.css").read_text()
-    overflow = _value(_declarations(styles, ".cfp-builder"), "overflow")
+    builder = _declarations(styles, ".cfp-builder")
 
-    assert overflow is not None
-    assert overflow.split()[0] not in SCROLL_CONTAINER_VALUES, (
-        "`.cfp-builder` must not create a scroll container: it is the ancestor of "
-        "every sticky control in the form builder, and a scrollport ancestor that "
-        "never scrolls makes `position: sticky` inert. Use `overflow: clip`."
-    )
+    assert _value(builder, "position") == "static"
+    assert _value(builder, "height") == "auto"
+    assert _value(builder, "overflow") == "visible"
 
 
-def test_publish_action_bar_stays_pinned_to_the_viewport() -> None:
+def test_publish_actions_stay_in_the_builder_header() -> None:
+    page = (STATIC / "admin_programs.html").read_text()
     styles = (STATIC / "product.css").read_text()
     actions = _declarations(styles, ".cfp-editor-actions")
 
-    assert _value(actions, "position") == "sticky"
-    assert _value(actions, "bottom") == "0"
+    assert page.index('id="cfp-editor-actions"') < page.index('id="publish-form"')
+    assert 'id="publish-cfp-action" type="submit" form="publish-form"' in page
+    assert _value(actions, "display") == "flex"
 
 
-def test_form_outline_and_add_question_bar_pin_to_the_pane_not_the_page() -> None:
+def test_form_outline_and_add_question_bar_remain_in_normal_flow() -> None:
     """Superseded design, deliberately.
 
     These two bars used to be pinned against `--sb-chrome-top` over a
@@ -107,12 +105,8 @@ def test_form_outline_and_add_question_bar_pin_to_the_pane_not_the_page() -> Non
         "the outline is a fixed-size row of the builder pane's flex column now"
     )
 
-    top = _value(_declarations(styles, ".cfp-question-actions"), "top")
-    assert top == "0", (
-        "inside the pane's scrollport, the add-question bar pins at its top; a "
-        "`--sb-chrome-top` offset here would push it a whole chrome height down "
-        "into the form"
-    )
+    actions = _declarations(styles, ".cfp-question-actions")
+    assert _value(actions, "position") == "static"
 
 
 def test_app_shell_publishes_its_chrome_height() -> None:
@@ -223,47 +217,18 @@ def test_add_question_bar_does_not_swallow_clicks_beneath_it() -> None:
     styles = (STATIC / "product.css").read_text()
 
     bar = _declarations(styles, ".cfp-question-actions")
-    assert _value(bar, "pointer-events") == "none", (
-        "`.cfp-question-actions` fades to transparent over its lower third, so "
-        "question rows scrolling beneath it stay visible while it takes their "
-        "clicks; the bar itself must not be a hit-test target"
-    )
-    inner = _declarations(styles, ".cfp-question-actions > *")
-    assert _value(inner, "pointer-events") == "auto", (
-        "the + Add custom question button inside the bar must stay clickable"
-    )
+    assert _value(bar, "position") == "static"
+    assert _value(bar, "pointer-events") != "none"
 
 
-def test_the_form_is_the_one_scrolling_region_and_the_bars_sit_outside_it() -> None:
-    """The builder is a pane, not a document.
-
-    Sticky bars over a page-scrolled document always overlap the content beneath
-    them. That is fine for a person, who scrolls a little further; it is not fine
-    for an automated operator, because Chromium's `scrollIntoViewIfNeeded` -- what
-    click harnesses call -- ignores `scroll-padding`/`scroll-margin` and stops as
-    soon as the element is anywhere in the viewport, which may be directly under a
-    bar. An eval agent lost 19 consecutive clicks to exactly that.
-
-    So the form scrolls inside a bounded pane, with the outline nav above it and
-    the publish bar pinned to the pane's own bottom. Nothing overlaps the rows.
-    """
+def test_the_form_does_not_create_a_second_vertical_scroll_region() -> None:
     styles = (STATIC / "product.css").read_text()
 
     builder = _declarations(styles, ".cfp-builder")
-    assert _value(builder, "height") is not None, (
-        "the builder must be bounded to the viewport, otherwise its form has no "
-        "region of its own to scroll in"
-    )
-    assert "--sb-chrome-top" in (_value(builder, "top") or ""), (
-        "pin the pane against the shell chrome variable, not a literal"
-    )
+    assert _value(builder, "height") == "auto"
 
     editor = _declarations(styles, ".cfp-editor")
-    assert _value(editor, "overflow-y") in SCROLL_CONTAINER_VALUES, (
-        "`.cfp-editor` is the intended scrollport -- unlike the containers in "
-        "BUILDER_CONTAINERS, this box really does scroll, which is what makes "
-        "the sticky bars inside it pin to the pane instead of over the rows"
-    )
+    assert _value(editor, "overflow-y") == "visible"
 
     nav = _declarations(styles, ".cfp-section-nav")
     assert _value(nav, "position") != "sticky", (

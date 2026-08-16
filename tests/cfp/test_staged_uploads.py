@@ -1614,7 +1614,7 @@ def test_public_cfp_resets_file_state_between_proposals() -> None:
     assert script.count("resetProposalFiles();") >= 2
     choose = script.split("function chooseSubmission", 1)[1].split("function ", 1)[0]
     assert "resetProposalFiles();" in choose
-    success_marker = 'setStatus(state.editingSubmission ? "Proposal updated successfully."'
+    success_marker = 'setStatus(state.editingSubmission ? "Proposal updated."'
     submit_success = script.split(success_marker, 1)[1].split("} catch", 1)[0]
     assert "resetProposalFiles();" in submit_success
     assert "state.existingFiles" in script

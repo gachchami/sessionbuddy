@@ -14,7 +14,7 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     assert 'id="cfp-selection-preview"' in page
     assert "Preview form" in page
     preview_toggle = (
-        'byId("preview-cfp").textContent = opening ? '
+        'byId("preview-cfp").textContent = state.previewOpen ? '
         '"Back to editing" : "Preview form";'
     )
     assert preview_toggle in script
@@ -23,8 +23,19 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
         "!identityFieldKeys.includes(field.key));"
     )
     assert visible_fields in script
-    assert 'id="cfp-live-preview"' not in page
-    assert "queuePreview()" not in script
+    assert 'id="cfp-readiness"' in page
+    assert "function queuePreview()" in script
+    assert 'classList.toggle("is-preview-mode", state.previewOpen)' in script
+    assert 'Applicant view · preview only' in page
+    assert 'state.selectedOutline === "confirmation"' in script
+    assert 'id="cfp-notification-settings"' not in page
+    confirmation = page.split('id="cfp-confirmation"', 1)[1].split("</section>", 1)[0]
+    assert 'name="confirmation_subject"' in confirmation
+    assert 'name="confirmation_body"' in confirmation
+    assert 'id="undo-field-move"' in page
+    assert 'earlier.setAttribute("aria-label", `Move ${field.label} earlier`)' in script
+    assert 'later.setAttribute("aria-label", `Move ${field.label} later`)' in script
+    assert 'document.createElementNS("http://www.w3.org/2000/svg", "svg")' in script
     assert "cfp-preview-dialog" not in page
     assert 'id="cfp-summary"' in page
     assert 'byId("cfp-summary").hidden = false;' in script

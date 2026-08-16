@@ -23,14 +23,16 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
     assert '["Overview", prefix, "overview"' in javascript
 
 
-def test_event_navigation_is_centered_on_desktop_and_left_aligned_when_wrapped() -> None:
+def test_event_navigation_stays_in_one_scrollable_row() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     event_nav_rule = stylesheet.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
-    assert "justify-content: center;" in event_nav_rule
+    assert "justify-content: flex-start;" in event_nav_rule
+    assert "flex-wrap: nowrap;" in event_nav_rule
+    assert "overflow-x: auto;" in event_nav_rule
     compact_rule = stylesheet.split("@media (max-width: 60rem)", 1)[1]
     compact_event_nav = compact_rule.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
-    assert "justify-content: flex-start;" in compact_event_nav
+    assert "min-height: var(--sb-event-nav-height);" in compact_event_nav
 
 
 def test_event_navigation_warms_documents_and_transitions_without_hijacking_links() -> None:
@@ -527,10 +529,11 @@ def test_event_navigation_matches_the_server_authority_split() -> None:
     assert event_nav_call in javascript
 
 
-def test_event_navigation_exposes_evaluation_rounds() -> None:
+def test_event_navigation_does_not_duplicate_proposal_sections() -> None:
     javascript = Path("src/sessionbuddy/static/app_shell.js").read_text()
 
-    assert '["Rounds", `${prefix}/submissions#rounds-title`, "review", []]' in javascript
+    assert '["Rounds", `${prefix}/submissions#rounds-title`' not in javascript
+    assert '["Proposals", `${prefix}/submissions`' in javascript
     assert "if (canAdministerAccess) {" in javascript
 
 

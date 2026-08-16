@@ -4,22 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Call for Proposals · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=76">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=25">
+  <link rel="stylesheet" href="/product/assets/product.css?v=78">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=29" defer></script>
-  <script src="/product/assets/admin-programs.js?v=ffd34084a78d" defer></script>
+  <script src="/product/assets/admin-programs.js?v=59c88ba7b0c7" defer></script>
 </head>
 <body class="app-body cfp-page workflow-page workflow-page--cfp">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page workflow-shell" tabindex="-1">
-    <div class="page-heading workflow-hero cfp-page-heading"><div class="cfp-page-heading__identity"><h1>Call for Proposals</h1><p id="cfp-page-meta" hidden>Loading form…</p><div id="cfp-live-bar" class="cfp-live-bar" hidden><div class="cfp-live-bar__address"><span class="cfp-live-bar__state"><span aria-hidden="true"></span>Published</span><a id="cfp-live-url" href="#" target="_blank" rel="noopener"></a><span id="cfp-live-url-editor" class="cfp-live-url-editor" hidden><span id="cfp-live-url-prefix"></span><input id="cfp-live-slug" aria-label="Edit public URL slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80"></span></div><div class="cfp-live-bar__actions"><button id="copy-cfp-header" type="button" class="secondary">Copy</button><span id="cfp-copy-feedback" class="sr-only" role="status" aria-live="polite"></span><button id="configure-url-header" type="button" class="secondary">Edit URL</button><button id="save-url-header" type="button" hidden>Save</button><button id="cancel-url-header" type="button" class="secondary" hidden>Cancel</button></div></div></div><div class="actions"><button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button><button id="preview-cfp" type="button" class="secondary">Preview form</button></div></div>
+    <div class="page-heading workflow-hero cfp-page-heading"><div class="cfp-page-heading__identity"><h1>Call for Proposals</h1><p id="cfp-page-meta" hidden>Loading form…</p><div id="cfp-live-bar" class="cfp-live-bar" hidden><div class="cfp-live-bar__address"><span class="cfp-live-bar__state"><span aria-hidden="true"></span>Published</span><a id="cfp-live-url" href="#" target="_blank" rel="noopener">View public CFP form</a><span id="cfp-live-url-editor" class="cfp-live-url-editor" hidden><span id="cfp-live-url-prefix"></span><input id="cfp-live-slug" aria-label="Edit public URL slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" minlength="3" maxlength="80"></span></div><div class="cfp-live-bar__actions"><button id="copy-cfp-header" type="button" class="secondary">Copy link</button><span id="cfp-copy-feedback" class="sr-only" role="status" aria-live="polite"></span><button id="configure-url-header" type="button" class="secondary">Edit URL</button><button id="save-url-header" type="button" hidden>Save URL</button><button id="cancel-url-header" type="button" class="secondary" hidden>Cancel</button></div></div></div><div class="actions"><button id="edit-cfp" type="button" class="secondary" hidden>Edit CFP</button><button id="preview-cfp" type="button" class="secondary">Preview form</button></div></div>
     <div id="status" class="status" role="status" aria-live="polite">Checking your session…</div>
     <dialog id="cfp-share-dialog" class="submission-dialog" aria-labelledby="cfp-link-title">
     <section id="cfp-summary" class="cfp-link-card workflow-summary-card" aria-labelledby="cfp-link-title">
       <div class="section-heading">
-        <div><p class="eyebrow">Public page</p><h2 id="cfp-link-title">Share your CFP</h2></div>
+        <div><p class="eyebrow">Published form</p><h2 id="cfp-link-title">Share the public CFP</h2></div>
         <div class="cfp-summary-actions">
           <span id="cfp-saved-state" class="save-state" role="status" aria-live="polite" hidden></span>
           <span id="cfp-state" class="badge">Not published</span>
@@ -32,7 +32,7 @@
         <div class="copy-row">
           <input id="cfp-url" type="url" readonly>
           <button id="copy-cfp-url" type="button" class="secondary">Copy link</button>
-          <a id="open-cfp-url" class="button" href="#" target="_blank" rel="noopener">Open form</a>
+          <a id="open-cfp-url" class="button" href="#" target="_blank" rel="noopener">View public CFP form</a>
         </div>
         <div class="actions">
           <a id="review-submissions" href="#">Review submissions</a>
@@ -51,49 +51,52 @@
     </dialog>
     <section id="publish-settings" class="cfp-builder workflow-stage" aria-labelledby="cfp-builder-title">
       <div class="cfp-builder__heading">
-        <div><h2 id="cfp-builder-title" tabindex="-1">Form builder</h2><p>Select a screen or question to edit it.</p></div>
-        <div class="cfp-builder__state"><span id="cfp-autosave-state" class="draft-state" role="status" aria-live="polite"></span><span id="published-note" class="badge success" hidden>Published</span></div>
+        <div><h2 id="cfp-builder-title" tabindex="-1">Build your proposal form</h2><div class="cfp-builder__statusline"><strong id="publish-action-label">Draft</strong><span id="publish-result" class="result">Complete the form, then publish it.</span></div></div>
+        <div id="cfp-editor-actions" class="cfp-editor-actions"><div class="cfp-builder__state"><span id="cfp-autosave-state" class="draft-state" role="status" aria-live="polite"></span><span id="published-note" class="badge success" hidden>Published</span></div><div class="actions"><button id="cancel-cfp-edit" type="button" class="secondary" hidden>Discard changes</button><button id="publish-cfp-action" type="submit" form="publish-form" disabled>Publish CFP</button></div></div>
       </div>
+      <section id="cfp-readiness" class="cfp-readiness" aria-labelledby="cfp-readiness-title">
+        <div class="cfp-readiness__summary"><strong id="cfp-readiness-title">Readiness</strong><span id="cfp-readiness-count">Checking…</span></div>
+        <ul id="cfp-readiness-list" aria-label="Publishing requirements"></ul>
+        <a id="cfp-readiness-event-action" class="button secondary" href="#" hidden>Open event overview</a>
+      </section>
       <div class="cfp-editor-layout">
         <nav id="cfp-form-outline" class="cfp-section-nav" aria-label="Form outline">
           <div id="cfp-outline-items" class="cfp-outline-items"></div>
         </nav>
         <form id="publish-form" class="cfp-editor" novalidate>
-          <div id="cfp-selection-heading" class="cfp-selection-heading"><div><p id="cfp-selection-context" class="eyebrow">Welcome screen</p><h3 id="cfp-selection-title" tabindex="-1">Welcome</h3></div></div>
+          <div id="cfp-selection-heading" class="cfp-selection-heading"><div><p id="cfp-selection-context" class="cfp-selection-context">Welcome screen</p><h3 id="cfp-selection-title" tabindex="-1">Welcome</h3><p id="cfp-selection-purpose">What speakers should know before applying.</p></div></div>
           <div id="cfp-validation-summary" class="validation-summary" role="alert" tabindex="-1" hidden>
             <strong>Check the highlighted fields</strong>
             <ul id="cfp-validation-list"></ul>
           </div>
           <section id="cfp-basics" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Description</h3><p>Explain what you are looking for and show speakers the important dates.</p></div></div>
-            <div class="rich-text-field"><span id="cfp-description-label" class="field-label">CFP description</span><p id="cfp-description-help" class="help">Describe the sessions you want. Select text before adding a link.</p><div class="rich-text-toolbar" role="toolbar" aria-label="Description formatting"><button type="button" class="secondary" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button><button type="button" class="secondary" data-rich-command="italic" aria-label="Italic"><em>I</em></button><button type="button" class="secondary" data-rich-command="insertUnorderedList">Bullets</button><button type="button" class="secondary" data-rich-command="createLink">Link</button></div><div id="cfp-description-editor" class="rich-text-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="cfp-description-label" aria-describedby="cfp-description-help" data-placeholder="Tell speakers what kinds of proposals you are looking for."></div><textarea name="description_html" maxlength="10000" hidden></textarea><input name="welcome_text" type="hidden"></div>
-            <fieldset class="important-dates-editor"><legend>Important dates <span class="optional">Optional</span></legend><p class="help">Add acceptance waves, final decisions, or other milestones speakers should know.</p><div id="important-date-rows"></div><button id="add-important-date" type="button" class="secondary">Add date</button></fieldset>
+            <div class="rich-text-field"><span id="cfp-description-label" class="field-label">CFP description</span><p id="cfp-description-help" class="sr-only">Use the toolbar to format selected text.</p><div class="rich-text-toolbar" role="toolbar" aria-label="Description formatting"><button type="button" class="secondary" data-rich-command="bold" aria-label="Bold"><strong>B</strong></button><button type="button" class="secondary" data-rich-command="italic" aria-label="Italic"><em>I</em></button><button type="button" class="secondary" data-rich-command="insertUnorderedList">Bullets</button><button type="button" class="secondary" data-rich-command="createLink">Link</button></div><div id="cfp-description-editor" class="rich-text-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="cfp-description-label" aria-describedby="cfp-description-help" data-placeholder="Tell speakers what kinds of proposals you are looking for."></div><textarea name="description_html" maxlength="10000" hidden></textarea><input name="welcome_text" type="hidden"></div>
+            <fieldset class="important-dates-editor"><legend>Important dates <span class="optional">Optional</span></legend><div id="important-date-rows"></div><button id="add-important-date" type="button" class="secondary">Add date</button></fieldset>
             <input name="slug" type="hidden">
           </section>
           <section id="cfp-availability" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Availability</h3><p>Choose when proposals can be submitted.</p></div></div>
-            <p id="cfp-time-zone-context" class="time-zone-note">Time zone: <strong id="cfp-time-zone">Loading…</strong></p>
-            <div class="form-grid"><div class="cfp-availability-field"><label>Opening time<input name="opens_at" type="datetime-local" aria-describedby="cfp-time-zone-context cfp-opens-help"><small id="cfp-opens-help">Leave blank to open immediately when you publish.</small></label><button id="open-cfp-immediately" type="button" class="tertiary">Open immediately</button></div><label>Closing time<input name="closes_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional — leave blank for no closing date.</small></label></div>
+            <p id="cfp-time-zone-context" class="time-zone-note">Time zone: <strong id="cfp-time-zone">Loading…</strong> <a id="change-event-time-zone" href="/admin/events">Change in event settings</a></p>
+            <div class="form-grid"><div class="cfp-availability-field"><span id="cfp-opens-label" class="field-label">Opening time</span><div class="cfp-datetime-action"><input name="opens_at" type="datetime-local" aria-labelledby="cfp-opens-label" aria-describedby="cfp-time-zone-context cfp-opens-help"><button id="open-cfp-immediately" type="button" class="tertiary">Opens immediately</button></div><small id="cfp-opens-help">Leave blank to open immediately when you publish.</small></div><label>Closing time<input name="closes_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional — leave blank for no closing date.</small></label></div>
             <label class="cfp-short-field">Maximum proposals per speaker<input name="submission_limit" type="number" min="1" max="1000000" placeholder="No limit"><small>Optional</small></label>
           </section>
           <section id="cfp-questions" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Questions</h3><p>Collect speaker and proposal information.</p></div></div>
             <div class="cfp-profile-note"><strong>Speaker identity comes from the registered profile</strong><span>Name, email, biography, photo, and organization are not configured here.</span></div>
-            <p class="help">System fields use event data. Custom questions belong only to this form.</p><div class="cfp-question-actions"><button id="add-field" type="button" class="secondary">+ Add custom question</button></div><div id="form-fields"></div><div id="cfp-custom-empty" class="cfp-custom-empty" hidden><strong>No custom questions yet</strong><span>Add a question for information this event needs beyond the standard proposal fields.</span></div>
+            <div class="cfp-question-actions"><button id="toggle-field-order" type="button" class="secondary" aria-expanded="false" aria-controls="field-order-panel">Reorder questions</button><button id="add-field" type="button" class="secondary">+ Add custom question</button></div><section id="field-order-panel" class="field-order-panel" aria-labelledby="field-order-title" hidden><div><h4 id="field-order-title">Question order</h4></div><div id="field-order-list" class="field-order-list"></div></section><div id="cfp-reorder-feedback" class="cfp-reorder-feedback" role="status" aria-live="polite" hidden><span id="cfp-reorder-message"></span><button id="undo-field-move" type="button" class="tertiary">Undo</button></div><div id="form-fields"></div><div id="cfp-custom-empty" class="cfp-custom-empty" hidden><strong>No custom questions yet</strong><span>Add one for information beyond the standard proposal fields.</span></div>
           </section>
           <section id="cfp-co-speakers" class="cfp-editor-section workflow-step"><div class="cfp-editor-section__heading"><div><h3>Additional participants</h3></div></div><div class="cfp-profile-note"><strong>Additional participants are optional and join by invitation</strong><span>Speakers, co-authors, moderators, and panelists accept an invitation and complete their own registered profile.</span></div><label class="cfp-short-field">Maximum additional participants<input name="co_speaker_limit" type="number" value="3" min="0" max="10" required><small>Allows panels and workshops by default. Set 0 to disable additional participants.</small></label></section>
           <section id="cfp-confirmation" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Confirmation</h3><p>Set what speakers see and receive after submitting.</p></div></div>
-            <label>Success heading<input name="success_title" value="Proposal received" maxlength="200" required></label>
-            <label>On-screen message<textarea name="success_message" rows="3" maxlength="2000" required>We sent a confirmation to your email address.</textarea></label>
-            <label class="check-label"><input name="redirect_to_portal" type="checkbox" checked> Show a link to the speaker portal</label>
+            <fieldset class="cfp-confirmation-group"><legend>On-screen confirmation</legend><label>Success heading<input name="success_title" value="Proposal received" maxlength="200" required></label><label>Message<textarea name="success_message" rows="3" maxlength="2000" required>We sent a confirmation to your email address.</textarea></label><label class="check-label"><input name="redirect_to_portal" type="checkbox" checked> Show a link to the speaker portal</label></fieldset>
+            <fieldset class="cfp-confirmation-group"><legend>Confirmation email</legend><label>Email subject<input name="confirmation_subject" value="We received your proposal" maxlength="200" required></label><label>Email message<textarea name="confirmation_body" rows="4" maxlength="4000" required>Thank you for submitting. Your proposal is now ready for review.</textarea></label></fieldset>
           </section>
           <section id="cfp-routing" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Routing</h3><p>Optionally sort matching proposals automatically.</p></div></div>
             <p class="help">Each row is one rule. Matching proposals are sent to the selected destination.</p><div id="routing-rules"></div><datalist id="event-track-options"></datalist><button id="add-routing" class="secondary" type="button">+ Add rule</button>
           </section>
-          <section id="cfp-selection-preview" class="cfp-selection-preview" aria-labelledby="cfp-selection-preview-title" hidden><div class="cfp-selection-preview__bar"><strong id="cfp-selection-preview-title">Form preview</strong></div><div id="cfp-preview-content" class="cfp-preview-content"></div></section>
-          <div id="cfp-editor-actions" class="cfp-editor-actions"><div><strong id="publish-action-label">Draft</strong><span id="publish-result" class="result">Complete the form, then publish it.</span></div><div class="actions"><button id="cancel-cfp-edit" type="button" class="secondary" hidden>Discard changes</button><button type="submit" disabled>Publish CFP</button></div></div>
+          <section id="cfp-selection-preview" class="cfp-selection-preview" aria-labelledby="cfp-selection-preview-title" hidden><div class="cfp-selection-preview__bar"><div><strong id="cfp-selection-preview-title">Draft preview</strong><span id="cfp-preview-context">Applicant view · preview only</span></div></div><div id="cfp-preview-content" class="cfp-preview-content"></div></section>
         </form>
       </div>
     </section>
@@ -105,12 +108,6 @@
         <div class="dialog-actions"><button id="cancel-cfp-link" type="button" class="secondary">Cancel</button><button type="submit">Add link</button></div>
       </form>
     </dialog>
-    <section id="cfp-notification-settings" class="card cfp-notification-settings" aria-labelledby="cfp-notification-title">
-      <div class="section-heading"><div><p class="eyebrow">After submission</p><h2 id="cfp-notification-title">Confirmation email</h2></div></div>
-      <p class="help">Sent to the primary speaker after a proposal is submitted.</p>
-      <label>Email subject<input form="publish-form" name="confirmation_subject" value="We received your proposal" maxlength="200" required></label>
-      <label>Email message<textarea form="publish-form" name="confirmation_body" rows="4" maxlength="4000" required>Thank you for submitting. Your proposal is now ready for review.</textarea></label>
-    </section>
   </main>
 </body>
 </html>

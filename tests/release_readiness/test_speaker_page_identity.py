@@ -3,14 +3,14 @@ from pathlib import Path
 STATIC = Path("src/sessionbuddy/static")
 
 
-def test_organizer_speaker_pages_have_distinct_titles_and_headings() -> None:
+def test_speaker_pages_keep_specific_document_titles_and_stable_workspace_headings() -> None:
     expected = {
         "speaker_directory.html": ("People", "People"),
-        "admin_onboarding.html": ("Speaker onboarding", "Speaker onboarding"),
-        "speaker_content.html": ("Speaker tasks and files", "Speaker tasks and files"),
+        "admin_onboarding.html": ("Speaker onboarding", "Speakers"),
+        "speaker_content.html": ("Speaker tasks and files", "Speakers"),
         # Messages is an event-wide organizer page reached from the main nav,
         # not one of the speaker-hub areas above.
-        "speaker_messages.html": ("Event messages", "Event messages"),
+        "speaker_messages.html": ("Event messages", "Messages"),
     }
 
     for filename, (title, heading) in expected.items():

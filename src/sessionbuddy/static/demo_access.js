@@ -33,12 +33,12 @@
     const heading = document.createElement("h2");
     heading.id = "demo-access-title";
     heading.className = "demo-access__title";
-    heading.textContent = "Explore the demo";
+    heading.textContent = mount.dataset.demoTitle || "Choose a role";
     section.append(heading);
 
     const intro = document.createElement("p");
     intro.className = "demo-access__intro";
-    intro.textContent = "Sign in instantly as a sample account. No password needed.";
+    intro.textContent = mount.dataset.demoIntro || "Open a ready-made workspace.";
     section.append(intro);
 
     const status = document.createElement("p");
@@ -80,7 +80,7 @@
 
       const role = document.createElement("span");
       role.className = "demo-access__role";
-      role.textContent = "Demo account";
+      role.textContent = "Sample workspace";
 
       const label = document.createElement("span");
       label.className = "demo-access__label";
@@ -91,7 +91,7 @@
       const description = document.createElement("span");
       description.className = "demo-access__description";
       description.id = `demo-access-description-${persona.role}`;
-      description.textContent = persona.description;
+      description.textContent = persona.description || "Open the sample workspace.";
 
       const arrow = document.createElement("span");
       arrow.className = "demo-access__arrow";
@@ -140,6 +140,7 @@
 
     section.append(list, status);
     mount.replaceChildren(section);
+    mount.closest("[data-demo-panel]")?.removeAttribute("hidden");
   }
 
   async function mountDemoAccess() {

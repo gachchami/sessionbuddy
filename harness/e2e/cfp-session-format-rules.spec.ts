@@ -169,6 +169,7 @@ for (const viewport of [
       "Key takeaway",
     ]);
     const previewToggle = page.locator("#preview-cfp");
+    await expect(previewToggle).toHaveText("Preview form");
     await previewToggle.click();
     await expect(previewToggle).toHaveText("Back to editing");
     await expect(previewToggle).toHaveAttribute("aria-pressed", "true");
@@ -251,7 +252,7 @@ test("builds and publishes the complete CFP-S1 evaluation form without retry loo
   await workshop.getByRole("button", { name: "Done editing question" }).click();
 
   await page.getByRole("button", { name: "Publish CFP" }).click();
-  await expect(page.locator("#status")).toHaveText("Your CFP was published successfully.");
+  await expect(page.locator("#status")).toHaveText("CFP published.");
 
   expect(publishedBody).not.toBeNull();
   expect(publishedBody!.slug).toBe("format-conference");
@@ -335,7 +336,7 @@ test("keeps unresolved saved display rules visible and blocks publish until expl
   await expect(legacy.getByRole("alert")).toContainText("no longer valid");
   const source = legacy.getByLabel("Question or event field");
   await expect(source).toHaveValue("deleted_format");
-  await page.locator('#publish-form button[type="submit"]').click();
+  await page.locator('#publish-cfp-action').click();
   expect(await source.evaluate((element) => !(element as HTMLSelectElement).checkValidity())).toBe(true);
   await source.selectOption("");
   await expect(legacy.getByRole("alert")).toBeHidden();
@@ -345,6 +346,6 @@ test("keeps unresolved saved display rules visible and blocks publish until expl
   const answer = deletedChoice.locator('select[name="condition_value"]');
   await expect(answer).toHaveValue("Panel (45 min)");
   await expect(answer.locator("option:checked")).toContainText("Unavailable answer");
-  await page.locator('#publish-form button[type="submit"]').click();
+  await page.locator('#publish-cfp-action').click();
   expect(await answer.evaluate((element) => !(element as HTMLSelectElement).checkValidity())).toBe(true);
 });

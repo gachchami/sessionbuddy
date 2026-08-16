@@ -1421,8 +1421,8 @@
     setSummary("summary-rejected", totals.rejected);
     setSummary("summary-actions", totals.actions);
     byId("portal-summary").textContent = entries.length === 1
-      ? "Manage sessions, tasks, and resources for your event."
-      : `Manage sessions, tasks, and resources across ${entries.length} events.`;
+      ? "Sessions, tasks, and resources for this event."
+      : `Sessions, tasks, and resources across ${entries.length} events.`;
     container.replaceChildren();
     if (!entries.length) {
       container.append(make("p", "No events are connected to this account yet.", "empty"));

@@ -8,6 +8,7 @@
   const email = form.elements.email;
   const password = form.elements.password;
   const passwordButton = document.getElementById("password-sign-in");
+  const passwordToggle = document.getElementById("toggle-password");
   const linkButton = document.getElementById("send-sign-in-link");
   const changeEmail = document.getElementById("change-sign-in-email");
   const requested = new URLSearchParams(location.search).get("redirect") || "/";
@@ -24,10 +25,19 @@
     email.disabled = sending;
     password.disabled = sending;
     passwordButton.disabled = sending;
+    passwordToggle.disabled = sending;
     linkButton.disabled = sending;
     passwordButton.textContent = sending && mode === "password" ? "Signing in…" : "Sign in";
-    linkButton.textContent = sending && mode === "link" ? "Sending your link…" : "Email me a sign-in link";
+    linkButton.textContent = sending && mode === "link" ? "Sending your link…" : "Send a sign-in link";
   }
+
+  passwordToggle.addEventListener("click", () => {
+    const showing = password.type === "text";
+    password.type = showing ? "password" : "text";
+    passwordToggle.textContent = showing ? "Show" : "Hide";
+    passwordToggle.setAttribute("aria-pressed", String(!showing));
+    password.focus();
+  });
 
   changeEmail.addEventListener("click", () => {
     confirmation.hidden = true;
@@ -35,11 +45,15 @@
     email.disabled = false;
     password.disabled = false;
     passwordButton.disabled = false;
+    passwordToggle.disabled = false;
     linkButton.disabled = false;
     passwordButton.textContent = "Sign in";
-    linkButton.textContent = "Email me a sign-in link";
+    linkButton.textContent = "Send a sign-in link";
     showStatus("");
     password.value = "";
+    password.type = "password";
+    passwordToggle.textContent = "Show";
+    passwordToggle.setAttribute("aria-pressed", "false");
     email.focus();
     email.select();
   });

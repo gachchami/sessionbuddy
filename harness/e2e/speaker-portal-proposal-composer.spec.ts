@@ -209,7 +209,7 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.locator("#status")).toHaveText("Review your changes, then select Save changes.");
     await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
     await page.getByRole("button", { name: "Back", exact: true }).click();
-    await page.getByRole("button", { name: "Save draft" }).click();
+    await page.getByRole("button", { name: "Save proposal changes", exact: true }).click();
     await expect(page.locator("#status")).toContainText("Changes saved");
     await page.goto("/speaker/proposals/devflow-2027/proposal-b");
     await expect(page.getByLabel("Proposal title")).toHaveValue("Second proposal");
@@ -371,6 +371,7 @@ test.describe("speaker proposal workspace", () => {
       "Second collaborator — Co-speaker (second@example.test)",
     );
     await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator("#status")).toHaveText("Proposal updated.");
     expect((harness.patches.at(-1)?.body.co_speakers as Array<{ role: string }>)[0].role).toBe("moderator");
   });
 
@@ -384,7 +385,7 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.getByLabel("Proposal title")).toHaveValue("Retry-safe proposal");
     await expect(page.locator("#status")).toBeFocused();
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator("#status")).toHaveText("Proposal updated successfully.");
+    await expect(page.locator("#status")).toHaveText("Proposal updated.");
     expect(harness.patches).toHaveLength(2);
     expect(harness.patches[0].idempotencyKey).toBe(harness.patches[1].idempotencyKey);
     expect(harness.patches[1].body.proposal_title).toBe("Retry-safe proposal");
@@ -408,7 +409,7 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.locator("#status")).toHaveClass(/error/);
     expect(harness.counts()).toEqual({ uploadAuthorizations: 2, uploadPuts: 1, uploadCompletions: 1 });
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator("#status")).toHaveText("Proposal updated successfully.");
+    await expect(page.locator("#status")).toHaveText("Proposal updated.");
     expect(harness.counts()).toEqual({ uploadAuthorizations: 3, uploadPuts: 2, uploadCompletions: 2 });
     expect(harness.patches.at(-1)?.body.answers).toMatchObject({
       supporting: "staged:staged-1", diagram: "staged:staged-3",

@@ -19,7 +19,7 @@ def test_cfp_settings_use_an_always_visible_question_focused_editor() -> None:
     assert "Proposal form settings" not in page
     assert ".cfp-editor-layout" in stylesheet
     assert ".cfp-section-nav.is-folded" not in stylesheet
-    assert ".cfp-editor-actions { position: sticky;" in stylesheet
+    assert ".cfp-editor-actions { z-index: 3;" in stylesheet
 
 
 def test_cfp_url_keeps_the_application_route_fixed() -> None:

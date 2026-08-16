@@ -7,7 +7,7 @@ def test_account_organizers_are_organization_scoped_and_cascade_to_events() -> N
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
-    assert "organizers whose authority applies across every event" in markup
+    assert "Organization details and admins." in markup
     assert 'accessTitle.textContent = "Organizers"' in javascript
     assert "can manage every event in this organization" in javascript
     assert 'permission.value = "manage"' in javascript
