@@ -174,6 +174,8 @@ class EvaluationRoundView(BaseModel):
     event_id: str
     name: str
     status: Literal["draft", "open", "closed"]
+    review_opens_at_ms: int | None = Field(default=None, ge=0)
+    review_closes_at_ms: int | None = Field(default=None, ge=0)
     assignment_count: int
     evaluator_count: int
     proposals: list[RoundProposalView] = Field(default_factory=list)

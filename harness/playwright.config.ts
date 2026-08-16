@@ -20,6 +20,9 @@ export default defineConfig({
   reporter: [["list"], ["html", { outputFolder: ".local/playwright-report", open: "never" }]],
   use: {
     baseURL,
+    // Application code uses the viewer's locale. Tests that assert exact date
+    // copy need a declared viewer locale instead of inheriting the host default.
+    locale: "en-US",
     trace: fast ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
     video: fast ? "off" : "retain-on-failure",

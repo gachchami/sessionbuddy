@@ -822,6 +822,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .round-ledger__content h3 a { color: var(--ink); text-decoration: none; }
 .round-ledger__content h3 a:hover { text-decoration: underline; text-underline-offset: .18em; }
 .round-ledger__content .result { margin: 0; color: var(--muted); font-size: .875rem; }
+.round-ledger__window { margin: .2rem 0 0; color: #7a8495; font-size: .75rem; }
 .round-ledger__status { color: #667085; font-size: .75rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .round-ledger__row--open .round-ledger__status { color: #5934cb; }
 .round-ledger__row--draft .round-ledger__status { color: #b54708; }
@@ -875,7 +876,9 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .event-signal-list dd { margin: 0; color: #182230; font-size: 1rem; font-weight: 800; letter-spacing: -.02em; }
 .event-signal-list small { color: #7a8495; font-size: .75rem; }
 .proposal-inbox__abstract { max-width: 28rem; color: var(--muted); line-height: 1.45; }
-.proposal-inbox__status { color: #475569; font-size: .75rem; font-weight: 800; text-transform: capitalize; }
+.proposal-inbox__status { color: #475569; font-size: .75rem; }
+.proposal-inbox__status-label { display: block; font-weight: 800; }
+.proposal-inbox__review-state { display: block; margin-top: .2rem; color: #667085; font-size: .75rem; font-weight: 600; line-height: 1.35; }
 .proposal-inbox__status--accepted { color: #17603f; }
 .proposal-inbox__status--rejected { color: #9f2016; }
 .proposal-selection-actions { align-items: center; }

@@ -17,6 +17,9 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert 'selection.addEventListener("change", submissionSelectionChanged);' in javascript
     assert "item.evaluation_round_name" in javascript
     assert "`Already in ${item.evaluation_round_name}`" in javascript
+    assert 'submitted: "Submitted"' in javascript
+    assert 'open: "In review"' in javascript
+    assert 'reviewState.textContent = `Under review in ${item.evaluation_round_name}`' in javascript
     assert 'selection.dataset.finalDecision = String(' in javascript
     assert 'input.dataset.finalDecision === "true"' in javascript
     assert 'byId("configure-round").disabled = count === 0' in javascript

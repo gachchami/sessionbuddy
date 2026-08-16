@@ -662,9 +662,10 @@
       const stateMarker = document.createElement("span"); stateMarker.className = "round-ledger__marker"; stateMarker.setAttribute("aria-hidden", "true");
       const content = document.createElement("div"); content.className = "round-ledger__content";
       const heading = document.createElement("h3"); const link = document.createElement("a"); link.href = `/admin/evaluation-rounds/${encodeURIComponent(round.id)}`; link.textContent = round.name; heading.append(link);
-      const status = document.createElement("span"); status.className = "round-ledger__status"; status.textContent = round.status === "open" ? "In review" : round.status;
+      const status = document.createElement("span"); status.className = "round-ledger__status"; status.textContent = roundStatusLabel(round.status);
       const summary = document.createElement("p"); summary.className = "result"; summary.textContent = `${round.assignment_count} assignment${round.assignment_count === 1 ? "" : "s"} · ${round.evaluator_count} reviewer${round.evaluator_count === 1 ? "" : "s"}`;
-      content.append(status, heading, summary);
+      const reviewWindow = document.createElement("p"); reviewWindow.className = "round-ledger__window"; reviewWindow.textContent = roundWindowLabel(round);
+      content.append(status, heading, summary, reviewWindow);
       const actions = document.createElement("div"); actions.className = "round-ledger__actions";
       const monitor = document.createElement("a"); monitor.className = round.status === "open" ? "button" : "button secondary"; monitor.href = link.href; monitor.textContent = round.status === "draft" ? "View draft" : round.status === "closed" ? "View results" : "Manage round";
       const exportLink = document.createElement("a"); exportLink.className = "round-ledger__export"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
@@ -1485,6 +1486,21 @@
       byId("status").classList.add("error");
     }
   }
+  const PROPOSAL_STATUS_LABELS = Object.freeze({ submitted: "Submitted", withdrawn: "Withdrawn", accepted: "Accepted", rejected: "Rejected" });
+  const ROUND_STATUS_LABELS = Object.freeze({ draft: "Draft", open: "In review", closed: "Closed" });
+  function enumLabel(labels, value) { return Object.hasOwn(labels, value) ? labels[value] : String(value ?? ""); }
+  function proposalStatusLabel(value) { return enumLabel(PROPOSAL_STATUS_LABELS, value); }
+  function roundStatusLabel(value) { return enumLabel(ROUND_STATUS_LABELS, value); }
+  function roundWindowLabel(round) {
+    const options = { day: "numeric", month: "short", year: "numeric", timeZone: state.timeZone };
+    const formatter = new Intl.DateTimeFormat(undefined, options);
+    const opens = round.review_opens_at_ms == null ? null : Number(round.review_opens_at_ms);
+    const closes = round.review_closes_at_ms == null ? null : Number(round.review_closes_at_ms);
+    if (Number.isFinite(opens) && Number.isFinite(closes)) return `${formatter.format(new Date(opens))}–${formatter.format(new Date(closes))} · Event time (${state.timeZone})`;
+    if (Number.isFinite(opens)) return `Opens ${formatter.format(new Date(opens))} · Event time (${state.timeZone})`;
+    if (Number.isFinite(closes)) return `Closes ${formatter.format(new Date(closes))} · Event time (${state.timeZone})`;
+    return "Review dates not set";
+  }
   function appendSubmissionRows(items) {
     const body = byId("submissions");
     items.forEach((item) => {
@@ -1528,9 +1544,13 @@
           }
           if (label === "Status") {
             cell.className = `proposal-inbox__status proposal-inbox__status--${String(value).toLowerCase()}`;
-            cell.append(document.createTextNode(value));
+            const statusLabel = document.createElement("span");
+            statusLabel.className = "proposal-inbox__status-label";
+            statusLabel.textContent = proposalStatusLabel(value);
+            cell.append(statusLabel);
             if (item.reassessment_state === "under_review") {
               const reviewState = document.createElement("small");
+              reviewState.className = "proposal-inbox__review-state";
               reviewState.textContent = `Under review in ${item.evaluation_round_name}`;
               cell.append(reviewState);
             }

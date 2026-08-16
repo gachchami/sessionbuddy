@@ -280,7 +280,7 @@ test.describe("form validation and workflow wiring", () => {
     await mockSession(page);
     await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ id: eventId, time_zone: "UTC" }),
+      body: JSON.stringify({ id: eventId, time_zone: "Asia/Kolkata" }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}/cfp`, (route) => route.fulfill({
       contentType: "application/json",
@@ -309,13 +309,14 @@ test.describe("form validation and workflow wiring", () => {
           speaker_email: "round@example.com",
           proposal_title: "A proposal already in review",
           proposal_abstract: "Review is underway",
-          status: "submitted",
+          status: "accepted",
           submitted_at_ms: 1_900_000_000_000,
           routed_category: null,
           routed_track: null,
           routed_review_queue: null,
           evaluation_round_id: "11111111-1111-4111-8111-111111111111",
-          evaluation_round_name: "Initial review",
+          evaluation_round_name: "AI review",
+          reassessment_state: "under_review",
           answers: {},
         }, {
           id: "22222222-2222-4222-8222-222222222222",
@@ -338,6 +339,11 @@ test.describe("form validation and workflow wiring", () => {
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ user_id: userId, display_name: "Reviewer" }] }) });
     });
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/current`, (route) => route.fulfill({ contentType: "application/json", body: "null" }));
+    await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds/round-draft/draft`, (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Draft edit failed" }),
+    }));
     let directRejection: Record<string, unknown> | null = null;
     let previewHeaders: Record<string, string> | null = null;
     await page.route(`**/api/v1/admin/events/${eventId}/submissions/*/decision-message-preview`, async (route) => {
@@ -367,7 +373,16 @@ test.describe("form validation and workflow wiring", () => {
     let roundWrites = 0;
     await page.route(`**/api/v1/admin/events/${eventId}/evaluation-rounds`, async (route) => {
       if (route.request().method() === "GET") {
-        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) });
+        await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{
+          id: "round-draft", event_id: eventId, name: "Initial Review", status: "draft",
+          review_opens_at_ms: null, review_closes_at_ms: null,
+          assignment_count: 0, evaluator_count: 1, proposals: [],
+        }, {
+          id: "round-closed", event_id: eventId, name: "Initial review", status: "closed",
+          review_opens_at_ms: Date.UTC(2030, 7, 31, 23, 30),
+          review_closes_at_ms: Date.UTC(2030, 8, 2, 23, 30),
+          assignment_count: 1, evaluator_count: 1, proposals: [],
+        }] }) });
         return;
       }
       roundWrites += 1;
@@ -375,16 +390,24 @@ test.describe("form validation and workflow wiring", () => {
     });
 
     await page.goto(`/admin/events/${eventId}/submissions`);
+    const reviewedStatus = page.locator(".proposal-inbox__status").nth(1);
+    await expect.poll(() => reviewedStatus.evaluate((element) => (element as HTMLElement).innerText)).toBe("Accepted\nUnder review in AI review");
+    await expect(reviewedStatus.locator(".proposal-inbox__review-state")).toHaveCSS("font-size", "12px");
+    await expect(reviewedStatus).toHaveCSS("text-transform", "none");
+    const ledgerRows = page.locator("#round-history .round-ledger__row");
+    await expect(ledgerRows).toContainText(["DraftInitial Review", "ClosedInitial review"]);
+    await expect(page.locator("#round-history")).toContainText("Sep 1, 2030–Sep 3, 2030 · Event time (Asia/Kolkata)");
+    await expect(page.locator("#round-history")).toContainText("Review dates not set");
+    await page.getByRole("button", { name: "Edit draft" }).click();
+    await expect(page.locator("#round-status")).toHaveText("Something went wrong on our side. Try again.");
+    await expect(page.locator("#round-status")).toBeFocused();
     await expect(page.getByText(`Receipt ${assignmentId.slice(0, 8)}`, { exact: false })).toBeVisible();
     await page.getByRole("button", { name: "View proposal" }).nth(1).click();
     const reviewedDetail = page.getByRole("dialog", { name: "Proposal details" });
     await expect(reviewedDetail.getByText("Evaluation round", { exact: true })).toBeVisible();
-    await expect(reviewedDetail.getByText("Initial review", { exact: true })).toBeVisible();
+    await expect(reviewedDetail.getByText("AI review", { exact: true })).toBeVisible();
     await expect(reviewedDetail.getByRole("button", { name: "Reject without review" })).toHaveCount(0);
-    await expect(reviewedDetail.getByRole("link", { name: "Open Initial review to decide" })).toHaveAttribute(
-      "href",
-      "/admin/evaluation-rounds/11111111-1111-4111-8111-111111111111",
-    );
+    await expect(reviewedDetail.getByRole("button", { name: "Correct decision" })).toBeVisible();
     await reviewedDetail.getByRole("button", { name: "Close" }).click();
     await page.getByRole("button", { name: "View proposal" }).nth(2).click();
     const decidedDetail = page.getByRole("dialog", { name: "Proposal details" });
@@ -425,7 +448,7 @@ test.describe("form validation and workflow wiring", () => {
     });
     await expect(page.getByRole("heading", { name: "Proposal inbox" })).toBeVisible();
     await expect(page.getByText("0 selected", { exact: true })).toBeVisible();
-    await expect(page.getByText("Already in Initial review", { exact: true })).toBeVisible();
+    await expect(page.getByText("Already in AI review", { exact: true })).toBeVisible();
     await expect(page.locator('input[name="submission_ids"]')).toHaveCount(2);
     const decidedProposal = page.getByLabel("Include An accepted proposal");
     await expect(decidedProposal).not.toBeChecked();

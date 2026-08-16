@@ -1618,6 +1618,7 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
             # and then lost. Revoked assignments are excluded so a removed reviewer stops
             # inflating the count the organizer is shown.
             """SELECT r.id,r.event_id,r.name,r.status,
+                      r.review_opens_at_ms,r.review_closes_at_ms,
                       (SELECT COUNT(*) FROM evaluation_assignments a
                         WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
                       (SELECT COUNT(*) FROM evaluation_round_evaluators e
@@ -4737,6 +4738,7 @@ async def _round_view(db, round_id: str) -> EvaluationRoundView:
             # exclude revoked pairs. Kept identical on purpose -- a round must not report
             # one set of numbers when it is created and another when it is listed.
             """SELECT r.id, r.event_id, r.name, r.status,
+                  r.review_opens_at_ms, r.review_closes_at_ms,
                   (SELECT COUNT(*) FROM evaluation_assignments a
                     WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
                   (SELECT COUNT(*) FROM evaluation_round_evaluators e

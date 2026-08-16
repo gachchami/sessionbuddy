@@ -295,6 +295,7 @@ test.describe("evaluation round dashboard", () => {
     }));
 
     await page.getByText("Individual reviews (1)").click();
+    await expect(page.getByText("No decision", { exact: true })).toBeVisible();
     const responses = page.locator(".review-responses");
     await expect(responses.locator("dt")).toHaveText(["Quality", "Recommendation", "Comments"]);
     await expect(responses).toContainText("The full reviewer assessment remains visible.");

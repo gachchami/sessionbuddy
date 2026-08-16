@@ -225,6 +225,15 @@ function formatScore(value: number | null | undefined): string {
   return value == null ? "—" : value.toFixed(2);
 }
 
+// This island and the separately built console intentionally keep small,
+// explicit maps. Browser coverage pins their shared visible vocabulary.
+function decisionLabel(
+  decision: SubmissionResult["decision"],
+): string {
+  const labels = { accepted: "Accepted", rejected: "Rejected" } as const;
+  return decision === null ? "No decision" : labels[decision];
+}
+
 function ReviewWorkspace() {
   const [csrf, setCsrf] = useState("");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -1017,6 +1026,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       setPendingDecision(null);
       setSpeakerSubject("");
       setSpeakerMessage("");
+      // Raw enum is intentional here: it is lowercase prose, not a standalone label.
       setStatus(`The final decision remains ${decision}; no correction was needed.`);
       return;
     }
@@ -1058,6 +1068,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
         setPendingDecision(null);
         setSpeakerSubject("");
         setSpeakerMessage("");
+        // Raw enum is intentional here: it is lowercase prose, not a standalone label.
         const success = `Decision corrected to ${decision}. The original decision remains in the audit history.${body.accepted_session_lifecycle_status === "withdrawn" && decision === "accepted" ? " The session remains withdrawn until speaker participation is restored." : ""}${body.communication_queued ? " Speaker email queued." : " No email sent."}`;
         setStatus(success);
         try {
@@ -1086,6 +1097,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       setPendingDecision(null);
       setSpeakerSubject("");
       setSpeakerMessage("");
+      // Raw enum is intentional here: it is lowercase prose, not a standalone label.
       const success = `Decision recorded as ${decision}.${body.communication_queued ? " Speaker email queued." : " No email sent."}`;
       setStatus(success);
       try {
@@ -1622,7 +1634,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                           ? "ready for decision"
                           : "review in progress"}
                     </span>
-                    <span>{submission.decision || "undecided"}</span>
+                    <span>{decisionLabel(submission.decision)}</span>
                   </div>
                   <h3>{submission.proposal_title}</h3>
                   <p className="speaker">{submission.speaker_name}</p>
