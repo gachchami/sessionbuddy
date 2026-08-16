@@ -4399,6 +4399,10 @@
             "title": "Event Id",
             "type": "string"
           },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
           "next_cursor": {
             "anyOf": [
               {
@@ -4443,6 +4447,7 @@
         "required": [
           "round_id",
           "event_id",
+          "event_name",
           "round_name",
           "status",
           "assigned_count",
@@ -13361,7 +13366,16 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "X-Export-Row-Count": {
+                "description": "Number of CSV data records, excluding the header row.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {
@@ -13524,7 +13538,16 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful Response"
+            "description": "Successful Response",
+            "headers": {
+              "X-Export-Row-Count": {
+                "description": "Number of CSV data records, excluding the header row.",
+                "schema": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              }
+            }
           },
           "422": {
             "content": {

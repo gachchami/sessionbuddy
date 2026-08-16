@@ -12,6 +12,7 @@ def test_shared_asset_cache_versions_are_consistent_across_every_consumer() -> N
         "/product/assets/product.css",
         "/app-shell/assets/app-shell.css",
         "/app-shell/assets/app-shell.js",
+        "/app-shell/assets/api-client.js",
     )
     consumers = [*STATIC.rglob("*.html"), *STATIC.rglob("*.css")]
     consumers.append(REPOSITORY / "frontend" / "index.html")
@@ -138,7 +139,8 @@ def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> Non
     script = (STATIC / "speaker_content.js").read_text()
     assert "version.version_comment" in script
     assert "/versions/${encodeURIComponent(version.id)}/download-grants" in script
-    assert "link.download = version.filename" in script
+    assert "fallbackFilename: version.filename" in script
+    assert "SessionBuddyApi.download" in script
     assert "asset.uploaded_by" in script
     assert "asset.scan_status" in script
     assert "asset.preview_url" in script
@@ -151,10 +153,10 @@ def test_changed_speaker_workflows_bust_cached_assets() -> None:
     content = (STATIC / "speaker_content.html").read_text()
     messages = (STATIC / "speaker_messages.html").read_text()
     assert "/admin/people/assets/people.js?v=8" in directory
-    assert "/admin/speaker-content/assets/speaker-content.js?v=3" in content
+    assert "/admin/speaker-content/assets/speaker-content.js?v=4" in content
     assert "/admin/speakers/assets/messages.js?v=7" in messages
-    assert all("/product/assets/product.css?v=73" in page for page in (directory, content))
-    assert "/product/assets/product.css?v=73" in messages
+    assert all("/product/assets/product.css?v=74" in page for page in (directory, content))
+    assert "/product/assets/product.css?v=74" in messages
 
 
 def test_speaker_message_retries_reuse_idempotency_key() -> None:

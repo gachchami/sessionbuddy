@@ -95,10 +95,14 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .round-desk__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .55rem; }
 .round-desk__actions :is(.button, button) { min-height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; padding: .55rem .75rem; border-radius: .5rem; font-size: .875rem; font-weight: 700; text-decoration: none; }
 .round-desk__actions .button.secondary { border: 1px solid #d0d5dd; background: white; color: #344054; }
+.round-desk__exports { display: flex; gap: .4rem; }
+.round-desk__exports [aria-disabled="true"] { pointer-events: none; opacity: .55; }
 button.danger-outline { border: 1px solid #f0b4ae; background: #fff; color: #b42318; }
 button.danger-outline:hover { background: #fff5f4; }
 .round-desk__status { min-height: 1.4rem; margin: .7rem 0; color: #475467; font-size: .875rem; }
 .round-desk__status:empty { display: none; }
+.round-desk__download-fallbacks { margin: -.2rem 0 .9rem; color: #667085; font-size: .75rem; }
+.round-desk__download-fallbacks a { color: #475467; text-underline-offset: .16em; }
 .round-desk__links { display: flex; align-items: center; gap: .45rem; margin: 1rem 0 1.25rem; }
 .round-desk__links a { padding: .42rem .6rem; border-radius: .45rem; color: #475467; font-size: .875rem; font-weight: 700; text-decoration: none; }
 .round-desk__links a:hover { background: #eef1f6; color: var(--ink); }
@@ -185,6 +189,7 @@ button.danger-outline:hover { background: #fff5f4; }
   .round-desk__header h1 { font-size: clamp(2rem, 10vw, 2.7rem); }
   .round-desk__header p:last-child { max-width: 31rem; line-height: 1.45; }
   .round-desk__actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .round-desk__exports { display: grid; grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
   .round-desk__actions > :last-child { grid-column: 1 / -1; }
   .round-desk__links { flex-wrap: wrap; gap: .25rem; margin-block: .75rem 1rem; }
   .round-desk__links a { padding: .42rem .5rem; }

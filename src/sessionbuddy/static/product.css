@@ -828,6 +828,9 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .round-ledger__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }
 .round-ledger__actions :is(.button,button) { min-height: 2.5rem; padding: .5rem .75rem; font-size: .875rem; }
 .round-ledger__export { padding: .45rem .35rem; color: #475467; font-size: .875rem; font-weight: 700; text-underline-offset: .18em; }
+.round-ledger__fallbacks { margin: .4rem 0 0; color: #667085; font-size: .75rem; }
+.round-ledger__direct { color: inherit; text-underline-offset: .16em; }
+.round-ledger__export[aria-disabled="true"] { pointer-events: none; opacity: .6; }
 .current-round-actions:empty { display: none; }
 .current-round-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .85rem; padding: .8rem 1rem; border-color: #dcd7fe; background: #faf9ff; }
 .current-round-actions__label { display: grid; gap: .1rem; }

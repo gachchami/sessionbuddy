@@ -124,20 +124,15 @@
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
         body: "{}"
       });
-      let response;
-      await api("/api/v1/assets/download", {
+      const result = await window.SessionBuddyApi.download("/api/v1/assets/download", {
         method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": state.csrf },
         body: JSON.stringify({ token: grant.token })
       }, {
-        expectJson: false,
-        onResponse: (received) => { response = received; }
+        fallback: "The file could not be downloaded.",
+        fallbackFilename: version.filename
       });
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement("a");
-      link.href = url; link.download = version.filename; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus(`${version.filename} downloaded.`);
+      setStatus(`Download started: ${result.filename}.`);
     } catch (error) {
       setStatus(window.SessionBuddyApi.message(error, "The file could not be downloaded."), true);
     } finally { button.disabled = false; }
@@ -149,13 +144,15 @@
     button.textContent = "Downloading headshot…";
     setStatus(`Preparing ${asset.filename} for download…`);
     try {
-      const response = await fetch(asset.direct_download_url, { credentials: "same-origin" });
-      if (!response.ok) throw new Error("The headshot could not be downloaded.");
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement("a");
-      link.href = url; link.download = asset.filename; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus(`${asset.filename} downloaded.`);
+      const result = await window.SessionBuddyApi.download(
+        asset.direct_download_url,
+        {},
+        {
+          fallback: "The headshot could not be downloaded.",
+          fallbackFilename: asset.filename
+        }
+      );
+      setStatus(`Download started: ${result.filename}.`);
     } catch (error) {
       setStatus(error.message || "The headshot could not be downloaded.", true);
     } finally {

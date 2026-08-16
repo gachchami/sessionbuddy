@@ -525,6 +525,7 @@ class EvaluationRoundResults(BaseModel):
 
     round_id: str
     event_id: str
+    event_name: str
     round_name: str
     status: Literal["draft", "open", "closed"]
     assigned_count: int

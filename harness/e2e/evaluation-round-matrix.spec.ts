@@ -196,4 +196,32 @@ test.describe("evaluation round assignment matrix", () => {
     expect(saves[0].body.submission_ids).toContain(OFF_PAGE);
     expect(saves[0].body.assignments).toContainEqual({ submission_id: OFF_PAGE, evaluator_user_id: REVIEWER });
   });
+
+  test("round ledger exports confirm the filename and keep one quiet fallback line", async ({ page }) => {
+    await organizerPage(page, { draft: true });
+    await page.route("**/api/v1/admin/evaluation-rounds/round-draft/export.csv", (route) =>
+      route.fulfill({
+        contentType: "text/csv; charset=utf-8",
+        headers: {
+          "content-disposition": "attachment; filename=\"prepared-review-results.csv\"",
+          "x-export-row-count": "2",
+        },
+        body: "submission_id,proposal_title\na,First\nb,Second\n",
+      }));
+
+    const ledger = page.locator(".round-ledger__row");
+    await expect(ledger.getByRole("link", { name: "Export CSV" })).toBeVisible();
+    await expect(ledger.getByRole("link", { name: "Export review details" })).toBeVisible();
+    const fallback = ledger.locator(".round-ledger__fallbacks");
+    await expect(fallback).toContainText("Download blocked?");
+    await expect(fallback.getByRole("link", { name: "Direct results download" }))
+      .toHaveAttribute("target", "_blank");
+
+    const downloadPromise = page.waitForEvent("download");
+    await ledger.getByRole("link", { name: "Export CSV" }).click();
+    expect((await downloadPromise).suggestedFilename()).toBe("prepared-review-results.csv");
+    await expect(page.locator("#status")).toContainText(
+      "Download started: prepared-review-results.csv — 2 records.",
+    );
+  });
 });

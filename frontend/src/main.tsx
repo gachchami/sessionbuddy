@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { formatRecommendationChoice } from "./presentation";
@@ -85,6 +85,7 @@ type ConflictProgress = {
 type RoundResults = {
   round_id: string;
   event_id: string;
+  event_name: string;
   round_name: string;
   status: "draft" | "open" | "closed";
   assigned_count: number;
@@ -104,6 +105,11 @@ type ApiClient = {
   redirectIfSignedOut(error: unknown): boolean;
   redirectIfDocumentAccessChanged(error: unknown): boolean;
   redirectIfWorkspaceUnavailable(error: unknown): boolean;
+  download(
+    path: string,
+    options?: RequestInit,
+    behavior?: Record<string, unknown>,
+  ): Promise<{ filename: string; rowCount: number | null }>;
   request<T>(
     path: string,
     options?: RequestInit,
@@ -121,7 +127,8 @@ declare global {
 const api = <T = Record<string, never>,>(
   path: string,
   options: RequestInit = {},
-) => window.SessionBuddyApi.request<T>(path, options);
+  behavior: Record<string, unknown> = {},
+) => window.SessionBuddyApi.request<T>(path, options, behavior);
 const errorMessage = (error: unknown) => window.SessionBuddyApi.message(error);
 
 function telemetry(pageTemplate: string) {
@@ -882,6 +889,44 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [messagePreviewError, setMessagePreviewError] = useState("");
   const [resultSort, setResultSort] = useState<ResultSort>("submitted");
   const [selectedEvaluatorId, setSelectedEvaluatorId] = useState("");
+  const [exporting, setExporting] = useState<"results" | "reviews" | null>(null);
+
+  function handleRoundError(error: unknown, focusStatus = false) {
+    if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+    if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error)) return;
+    if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+    setStatus(errorMessage(error));
+    if (focusStatus) {
+      window.setTimeout(() => document.querySelector<HTMLElement>(".round-desk__status")?.focus());
+    }
+  }
+
+  async function downloadRoundExport(
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    kind: "results" | "reviews",
+  ) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    if (exporting) return;
+    setExporting(kind);
+    const label = kind === "results" ? "results" : "review details";
+    setStatus(`Preparing ${label} for ${results?.round_name || "this round"}…`);
+    try {
+      const result = await window.SessionBuddyApi.download(event.currentTarget.href, {}, {
+        accept: "text/csv",
+        fallback: "The evaluation export could not be prepared.",
+        fallbackFilename: kind === "results" ? "results.csv" : "review-details.csv",
+      });
+      const count = result.rowCount === null
+        ? ""
+        : ` — ${result.rowCount} record${result.rowCount === 1 ? "" : "s"}`;
+      setStatus(`Download started: ${result.filename}${count}. If it did not start, use the direct download link.`);
+    } catch (error) {
+      handleRoundError(error, true);
+    } finally {
+      setExporting(null);
+    }
+  }
 
   useEffect(() => {
     if (!pendingDecision || !results) {
@@ -1153,7 +1198,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   }
   useEffect(() => {
     telemetry("/admin/evaluation-rounds/{round_id}");
-    signIn().catch((error) => setStatus(window.SessionBuddyApi.message(error)));
+    signIn().catch(handleRoundError);
   }, []);
   const closeReady =
     !!results &&
@@ -1173,16 +1218,28 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
           </p>
         </div>
         <div className="round-desk__actions">
-          <a
-            className="button secondary"
-            href={`/api/v1/admin/evaluation-rounds/${encodeURIComponent(roundId)}/export.csv`}
-          >
-            Export CSV
-          </a>
+          <div className="round-desk__exports" role="group" aria-label="Round exports">
+            <a
+              className="button secondary"
+              href={`/api/v1/admin/evaluation-rounds/${encodeURIComponent(roundId)}/export.csv`}
+              aria-disabled={exporting !== null}
+              onClick={(event) => downloadRoundExport(event, "results")}
+            >
+              {exporting === "results" ? "Preparing CSV…" : "Results CSV"}
+            </a>
+            <a
+              className="button secondary"
+              href={`/api/v1/admin/evaluation-rounds/${encodeURIComponent(roundId)}/reviews.csv`}
+              aria-disabled={exporting !== null}
+              onClick={(event) => downloadRoundExport(event, "reviews")}
+            >
+              {exporting === "reviews" ? "Preparing CSV…" : "Review details CSV"}
+            </a>
+          </div>
           <button
             className="secondary"
             onClick={() =>
-              signIn().catch((error) => setStatus(errorMessage(error)))
+              signIn().catch(handleRoundError)
             }
           >
             Refresh
@@ -1195,15 +1252,21 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                 setShowForceClose(true);
                 return;
               }
-              closeRound(false).catch((error) => setStatus(errorMessage(error)));
+              closeRound(false).catch(handleRoundError);
             }}
           >
             {closeReady ? "Close round" : "Close round early"}
           </button>
         </div>
       </header>
-      <p className="round-desk__status" role="status" aria-live="polite">
+      <p className="round-desk__status" role="status" aria-live="polite" tabIndex={-1}>
         {status}
+      </p>
+      <p className="round-desk__download-fallbacks">
+        Download blocked?{" "}
+        <a href={`/api/v1/admin/evaluation-rounds/${encodeURIComponent(roundId)}/export.csv`} target="_blank" rel="noopener">Open results directly</a>
+        <span aria-hidden="true"> · </span>
+        <a href={`/api/v1/admin/evaluation-rounds/${encodeURIComponent(roundId)}/reviews.csv`} target="_blank" rel="noopener">Open review details directly</a>
       </p>
       {showForceClose && (
         <section className="confirmation" role="alert">
@@ -1232,9 +1295,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
             <button
               className="danger"
               onClick={() =>
-                closeRound(true).catch((error) =>
-                  setStatus(errorMessage(error)),
-                )
+                closeRound(true).catch(handleRoundError)
               }
             >
               Confirm force close
@@ -1361,9 +1422,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                   className="secondary"
                   disabled={!selectedEvaluatorId}
                   onClick={() =>
-                    addEvaluator().catch((error) =>
-                      setStatus(errorMessage(error)),
-                    )
+                    addEvaluator().catch(handleRoundError)
                   }
                 >
                   Add reviewer
@@ -1402,9 +1461,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     className="secondary"
                     disabled={!selectedEvaluatorId}
                     onClick={() =>
-                      addEvaluator().catch((error) =>
-                        setStatus(errorMessage(error)),
-                      )
+                      addEvaluator().catch(handleRoundError)
                     }
                   >
                     Add reviewer
@@ -1444,9 +1501,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       <button
                         className="tertiary"
                         onClick={() =>
-                          remindEvaluator(evaluator).catch((error) =>
-                            setStatus(errorMessage(error)),
-                          )
+                          remindEvaluator(evaluator).catch(handleRoundError)
                         }
                       >
                         Send reminder
@@ -1458,9 +1513,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                       <button
                         className="tertiary danger-text"
                         onClick={() =>
-                          removeEvaluator(evaluator).catch((error) =>
-                            setStatus(errorMessage(error)),
-                          )
+                          removeEvaluator(evaluator).catch(handleRoundError)
                         }
                       >
                         Remove
@@ -1511,9 +1564,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         </label>
                         <button
                           onClick={() =>
-                            reassign(conflict).catch((error) =>
-                              setStatus(errorMessage(error)),
-                            )
+                            reassign(conflict).catch(handleRoundError)
                           }
                         >
                           Reassign
@@ -1757,9 +1808,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                           className={pendingDecision.decision === "rejected" ? "danger" : ""}
                           disabled={deciding || (sendEmail && messagePreview?.recipient_available === false)}
                           onClick={() =>
-                            decide(submission, pendingDecision.decision).catch(
-                              (error) => setStatus(errorMessage(error)),
-                            )
+                            decide(submission, pendingDecision.decision).catch(handleRoundError)
                           }
                         >
                           {deciding ? "Recording…" : `Confirm ${pendingDecision.decision}`}

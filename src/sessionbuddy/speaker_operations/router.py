@@ -40,6 +40,7 @@ from sessionbuddy.platform.db.d1 import (
     to_python,
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.http import attachment_header
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 from sessionbuddy.platform.storage import (
@@ -2195,7 +2196,7 @@ async def export_admin_deliverables(
         media_type="application/zip",
         headers={
             "Cache-Control": "private, no-store",
-            "Content-Disposition": _attachment_header(f"deliverables-{event_id}.zip"),
+            "Content-Disposition": attachment_header(f"deliverables-{event_id}.zip"),
         },
     )
 
@@ -2226,15 +2227,6 @@ async def _stream_private_object(stored):
         yield bytes(await array_buffer())
         return
     raise RuntimeError("unsupported private object body")
-
-
-def _attachment_header(filename: str) -> str:
-    safe_ascii = "".join(
-        character for character in filename if character.isalnum() or character in ".-_ "
-    )
-    safe_ascii = safe_ascii.strip()[:120] or "download"
-    encoded = quote(filename, safe="")
-    return f"attachment; filename=\"{safe_ascii}\"; filename*=UTF-8''{encoded}"
 
 
 @speaker_operations_router.post(
@@ -2418,7 +2410,7 @@ async def consume_asset_download_grant(
         media_type=download.content_type,
         headers={
             "Cache-Control": "private, no-store",
-            "Content-Disposition": _attachment_header(download.filename),
+            "Content-Disposition": attachment_header(download.filename),
             "Content-Length": str(download.byte_size),
         },
     )

@@ -145,6 +145,117 @@ test.describe("evaluation round dashboard", () => {
     await expect(page.getByRole("note")).toHaveCount(0);
   });
 
+  test("names, confirms, and safely fails round exports", async ({ page }) => {
+    let releaseExport!: () => void;
+    const exportGate = new Promise<void>((resolve) => { releaseExport = resolve; });
+    let exportRequests = 0;
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/export.csv", async (route) => {
+      exportRequests += 1;
+      await exportGate;
+      return route.fulfill({
+        contentType: "text/csv; charset=utf-8",
+        headers: {
+          "content-disposition": "attachment; filename=\"fallback.csv\"; filename*=UTF-8''example-event-initial-review-results-round.csv",
+          "x-export-row-count": "42",
+        },
+        body: "submission_id,proposal_title\nsubmission-a,Example\n",
+      });
+    });
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/reviews.csv", (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        headers: { "x-conflict-type": "export-limit" },
+        body: JSON.stringify({
+          error: { code: "conflict", message: "This round exceeds the single-file export limit." },
+          request_id: "export-request",
+        }),
+      }));
+    await openDashboard(page, results({ event_name: "Example Event", status: "closed" }));
+
+    const resultsLink = page.getByRole("link", { name: "Results CSV" });
+    await resultsLink.focus();
+    const downloadPromise = page.waitForEvent("download");
+    await resultsLink.click();
+    await expect(page.getByRole("link", { name: "Preparing CSV…" })).toHaveAttribute("aria-disabled", "true");
+    await page.getByRole("link", { name: "Preparing CSV…" }).dispatchEvent("click");
+    expect(exportRequests).toBe(1);
+    releaseExport();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("example-event-initial-review-results-round.csv");
+    await expect(page.getByRole("status")).toContainText("Download started: example-event-initial-review-results-round.csv — 42 records.");
+    await expect(resultsLink).toBeFocused();
+    await expect(page.getByRole("link", { name: "Open results directly" })).toHaveAttribute("target", "_blank");
+
+    let downloads = 0;
+    page.on("download", () => { downloads += 1; });
+    await page.getByRole("link", { name: "Review details CSV" }).click();
+    await expect(page.getByRole("status")).toContainText("This round exceeds the single-file export limit.");
+    expect(page.url()).toContain("/admin/evaluation-rounds/round-a");
+    expect(downloads).toBe(0);
+    await expect(page.getByRole("link", { name: "Review details CSV" })).toHaveAttribute("aria-disabled", "false");
+  });
+
+  for (const status of [403, 404]) {
+    test(`re-enters the guarded round document after an export ${status}`, async ({ page }) => {
+      await openDashboard(page, results({ event_name: "Example Event", status: "closed" }));
+      await page.route("**/api/v1/admin/evaluation-rounds/round-a/export.csv", (route) =>
+        route.fulfill({
+          status,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "access_changed", message: "Access changed." } }),
+        }));
+
+      const navigation = page.waitForNavigation({ waitUntil: "domcontentloaded" });
+      await page.getByRole("link", { name: "Results CSV" }).click();
+
+      await navigation;
+      expect(await page.evaluate((code) => sessionStorage.getItem(
+        `sessionbuddy:document-recovery:${code}:/admin/evaluation-rounds/round-a`,
+      ), String(status))).not.toBeNull();
+    });
+  }
+
+  test("redirects a signed-out export to sign-in", async ({ page }) => {
+    await openDashboard(page, results({ event_name: "Example Event", status: "closed" }));
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/export.csv", (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "authentication_required", message: "Sign in." } }),
+      }));
+
+    const signInNavigation = page.waitForRequest((request) => {
+      const target = new URL(request.url());
+      return request.isNavigationRequest()
+        && target.pathname === "/sign-in"
+        && target.searchParams.get("redirect") === "/admin/evaluation-rounds/round-a";
+    });
+    await page.getByRole("link", { name: "Results CSV" }).click();
+
+    await signInNavigation;
+  });
+
+  test("keeps a repeated document-recovery failure inline during the throttle window", async ({ page }) => {
+    await page.addInitScript(() => sessionStorage.setItem(
+      "sessionbuddy:document-recovery:404:/admin/evaluation-rounds/round-a",
+      String(Date.now()),
+    ));
+    await openDashboard(page, results({ event_name: "Example Event", status: "closed" }));
+    await page.route("**/api/v1/admin/evaluation-rounds/round-a/export.csv", (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "not_found", message: "The round is no longer available." } }),
+      }));
+
+    await page.getByRole("link", { name: "Results CSV" }).click();
+
+    await expect(page).toHaveURL(/\/admin\/evaluation-rounds\/round-a$/);
+    await expect(page.getByRole("status")).toContainText("The round is no longer available.");
+    await expect(page.getByRole("status")).toBeFocused();
+  });
+
   test("shows every typed criterion response in rubric order", async ({ page }) => {
     await openDashboard(page, results({
       status: "closed",

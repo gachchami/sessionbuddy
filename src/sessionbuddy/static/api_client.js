@@ -111,6 +111,51 @@
     return performRequest(path, options, behavior);
   }
 
+  function responseFilename(response, fallback = "download") {
+    const disposition = response.headers.get("content-disposition") || "";
+    const encoded = disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+    if (encoded) {
+      try { return decodeURIComponent(encoded.trim()); } catch (_) { /* use fallback form */ }
+    }
+    const quoted = disposition.match(/filename\s*=\s*"([^"]+)"/i)?.[1];
+    const plain = disposition.match(/filename\s*=\s*([^;\s]+)/i)?.[1];
+    return (quoted || plain || fallback).trim() || fallback;
+  }
+
+  async function download(path, options = {}, behavior = {}) {
+    let response;
+    const headers = new Headers(options.headers || {});
+    if (!headers.has("accept")) headers.set("accept", behavior.accept || "application/octet-stream");
+    await request(path, { ...options, headers }, {
+      expectJson: false,
+      fallback: behavior.fallback,
+      // parseResponse only consumes JSON-typed success bodies. Clone those so
+      // downloadable .json assets survive parsing without doubling the memory
+      // footprint of ordinary CSV, ZIP, image, and document downloads.
+      onResponse: (received) => {
+        const contentType = (received.headers.get("content-type") || "").toLowerCase();
+        response = contentType.includes("json") ? received.clone() : received;
+      }
+    });
+    const filename = responseFilename(response, behavior.fallbackFilename || "download");
+    const rowCountValue = response.headers.get("x-export-row-count");
+    const rowCount = rowCountValue !== null && /^\d+$/.test(rowCountValue)
+      ? Number(rowCountValue)
+      : null;
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.hidden = true;
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    setTimeout(() => {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }, 1000);
+    return Object.freeze({ filename, rowCount });
+  }
+
   function signInPath() {
     return `/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`;
   }
@@ -450,6 +495,7 @@
     redirectIfSignedOut,
     redirectIfDocumentAccessChanged,
     redirectIfWorkspaceUnavailable,
+    download,
     request,
     signInPath
   });

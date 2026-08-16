@@ -1,5 +1,7 @@
 import hashlib
 import json
+import re
+import unicodedata
 from csv import writer
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -25,6 +27,7 @@ from sessionbuddy.platform.authorization import Permission, Persona, ResourceCon
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.http import attachment_header
 from sessionbuddy.platform.signed_cursors import decode_signed_cursor, encode_signed_cursor
 from sessionbuddy.speaker_operations.acceptance_tasks import (
     SPEAKER_TASK_FLAGS_SQL,
@@ -75,7 +78,21 @@ EVALUATION_PAGE_LIMIT = 50
 
 # Upper bound on pages walked by the CSV export: 200 pages x 50 rows = 10,000 proposals,
 # far above any real round, but a hard stop against a cursor that never terminates.
-EXPORT_MAX_PAGES = 200
+# A full 50-proposal page with reviews executes eight D1 statements. The
+# instrumented large-page test pins that measured cost. Budget only half of the
+# Workers 1,000-subrequest ceiling for the pagination walk so authentication,
+# telemetry, and future conditional reads retain substantial headroom.
+ROUND_RESULTS_D1_CALLS_PER_FULL_PAGE = 8
+EXPORT_D1_SUBREQUEST_BUDGET = 500
+EXPORT_MAX_PAGES = (
+    EXPORT_D1_SUBREQUEST_BUDGET // ROUND_RESULTS_D1_CALLS_PER_FULL_PAGE
+)
+EXPORT_RESPONSE_HEADERS = {
+    "X-Export-Row-Count": {
+        "description": "Number of CSV data records, excluding the header row.",
+        "schema": {"type": "integer", "minimum": 0},
+    }
+}
 
 # This projection is safe only for the decision write path: immediate success,
 # <=24-hour idempotent replay, or a concurrent loser reading the winner it just raced.
@@ -3472,8 +3489,11 @@ async def get_round_results(
         await _timed_first(
             request,
             db.prepare(
-                """SELECT id, organization_id, event_id, name, status, rubric_json
-           FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
+                """SELECT r.id, r.organization_id, r.event_id, r.name, r.status,
+                          r.rubric_json, e.name AS event_name
+                   FROM evaluation_rounds r
+                   JOIN events e ON e.id=r.event_id AND e.organization_id=r.organization_id
+                   WHERE r.id = ?1 LIMIT 1"""
             ).bind(round_id),
         )
     )
@@ -3743,6 +3763,7 @@ async def get_round_results(
     return EvaluationRoundResults(
         round_id=round_id,
         event_id=str(round_row["event_id"]),
+        event_name=str(round_row["event_name"]),
         round_name=str(round_row["name"]),
         status=str(round_row["status"]),
         assigned_count=int(aggregate["assigned_count"] or 0),
@@ -3766,24 +3787,97 @@ async def get_round_results(
     )
 
 
+def _csv_safe(value: object) -> object:
+    """Prevent spreadsheet formula execution without changing ordinary values."""
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return f"'{value}"
+    return value
+
+
+async def _collect_export_submissions(
+    round_id: str,
+    request: Request,
+    first_page: EvaluationRoundResults,
+    *,
+    max_pages: int = EXPORT_MAX_PAGES,
+) -> list[SubmissionEvaluationResult]:
+    """Walk every results page and fail closed rather than return a partial file."""
+    proposal_limit = max_pages * EVALUATION_PAGE_LIMIT
+    if first_page.submission_count > proposal_limit:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This round exceeds the {proposal_limit:,}-proposal single-file "
+                "export limit. Ask your SessionBuddy administrator for a paginated "
+                "bulk export; no partial CSV was downloaded."
+            ),
+            headers={"X-Conflict-Type": "export-limit"},
+        )
+    exported = list(first_page.submissions)
+    cursor = first_page.next_cursor
+    pages = 1
+    while cursor and pages < max_pages:
+        page = await get_round_results(round_id, request, cursor=cursor)
+        exported.extend(page.submissions)
+        cursor = page.next_cursor
+        pages += 1
+    if cursor:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This round exceeds the {proposal_limit:,}-proposal "
+                "single-file export limit. Ask your SessionBuddy administrator for a "
+                "paginated bulk export; no partial CSV was downloaded."
+            ),
+            headers={"X-Conflict-Type": "export-limit"},
+        )
+    return exported
+
+
+def _filename_component(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value).strip().lower()
+    component = re.sub(r"[^\w]+", "-", normalized, flags=re.UNICODE)
+    return re.sub(r"-+", "-", component).strip("-._")
+
+
+def _truncate_utf8(value: str, byte_limit: int) -> str:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= byte_limit:
+        return value
+    return encoded[:byte_limit].decode("utf-8", errors="ignore").rstrip("-._")
+
+
+def _evaluation_export_filename_parts(
+    results: EvaluationRoundResults, *, review_details: bool
+) -> tuple[str, str]:
+    kind = "review-details" if review_details else "results"
+    discriminator = _filename_component(results.round_id.split("-", 1)[0])[:8] or "round"
+    tail = f"-{kind}-{discriminator}.csv"
+    prefix = "-".join(
+        part
+        for part in (
+            _filename_component(results.event_name),
+            _filename_component(results.round_name),
+        )
+        if part
+    ) or "evaluation-round"
+    prefix = _truncate_utf8(prefix, max(1, 180 - len(tail.encode("utf-8"))))
+    return f"{prefix}{tail}", tail
+
+
 @evaluation_router.get(
     "/api/v1/admin/evaluation-rounds/{round_id}/export.csv",
     response_class=Response,
     operation_id="exportEvaluationRoundResults",
     tags=["evaluations"],
+    responses={200: {"headers": EXPORT_RESPONSE_HEADERS}},
 )
 async def export_round_results(round_id: str, request: Request) -> Response:
     results = await get_round_results(round_id, request)
-    exported = list(results.submissions)
-    # get_round_results is paginated at EVALUATION_PAGE_LIMIT; an export that only walked
-    # the first page would silently drop every proposal past row 50.
-    cursor = results.next_cursor
-    pages = 1
-    while cursor and pages < EXPORT_MAX_PAGES:
-        page = await get_round_results(round_id, request, cursor=cursor)
-        exported.extend(page.submissions)
-        cursor = page.next_cursor
-        pages += 1
+    exported = await _collect_export_submissions(round_id, request, results)
+    filename, filename_suffix = _evaluation_export_filename_parts(
+        results, review_details=False
+    )
     output = StringIO(newline="")
     csv = writer(output)
     csv.writerow(
@@ -3798,17 +3892,12 @@ async def export_round_results(round_id: str, request: Request) -> Response:
         ]
     )
 
-    def safe(value: object) -> object:
-        if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
-            return f"'{value}"
-        return value
-
     for submission in exported:
         csv.writerow(
             [
                 submission.submission_id,
-                safe(submission.proposal_title),
-                safe(submission.speaker_name),
+                _csv_safe(submission.proposal_title),
+                _csv_safe(submission.speaker_name),
                 submission.assigned_count,
                 submission.completed_count,
                 submission.average_rating if submission.average_rating is not None else "",
@@ -3820,7 +3909,11 @@ async def export_round_results(round_id: str, request: Request) -> Response:
         media_type="text/csv; charset=utf-8",
         headers={
             "Cache-Control": "no-store",
-            "Content-Disposition": f'attachment; filename="evaluation-round-{round_id}.csv"',
+            "Content-Disposition": attachment_header(
+                filename,
+                ascii_suffix=filename_suffix,
+            ),
+            "X-Export-Row-Count": str(len(exported)),
         },
     )
 
@@ -3830,23 +3923,15 @@ async def export_round_results(round_id: str, request: Request) -> Response:
     response_class=Response,
     operation_id="exportEvaluationRoundReviews",
     tags=["evaluations"],
+    responses={200: {"headers": EXPORT_RESPONSE_HEADERS}},
 )
 async def export_round_reviews(round_id: str, request: Request) -> Response:
     """Export one row per evaluation with rubric-ordered criterion responses."""
     results = await get_round_results(round_id, request)
-    exported = list(results.submissions)
-    cursor = results.next_cursor
-    pages = 1
-    while cursor and pages < EXPORT_MAX_PAGES:
-        page = await get_round_results(round_id, request, cursor=cursor)
-        exported.extend(page.submissions)
-        cursor = page.next_cursor
-        pages += 1
-
-    def safe(value: object) -> object:
-        if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
-            return f"'{value}"
-        return value
+    exported = await _collect_export_submissions(round_id, request, results)
+    filename, filename_suffix = _evaluation_export_filename_parts(
+        results, review_details=True
+    )
 
     output = StringIO(newline="")
     csv = writer(output)
@@ -3872,16 +3957,16 @@ async def export_round_reviews(round_id: str, request: Request) -> Response:
             csv.writerow(
                 [
                     submission.submission_id,
-                    safe(submission.proposal_title),
-                    safe(submission.speaker_name),
-                    safe(review.evaluator_name),
+                    _csv_safe(submission.proposal_title),
+                    _csv_safe(submission.speaker_name),
+                    _csv_safe(review.evaluator_name),
                     review.state,
                     review.rating if review.rating is not None else "",
                     review.weighted_score if review.weighted_score is not None else "",
-                    safe(review.recommendation or ""),
-                    safe(review.internal_comment),
+                    _csv_safe(review.recommendation or ""),
+                    _csv_safe(review.internal_comment),
                     *[
-                        safe(review.criterion_responses.get(criterion.key, ""))
+                        _csv_safe(review.criterion_responses.get(criterion.key, ""))
                         for criterion in results.criteria
                     ],
                 ]
@@ -3891,8 +3976,12 @@ async def export_round_reviews(round_id: str, request: Request) -> Response:
         media_type="text/csv; charset=utf-8",
         headers={
             "Cache-Control": "no-store",
-            "Content-Disposition": (
-                f'attachment; filename="evaluation-round-{round_id}-reviews.csv"'
+            "Content-Disposition": attachment_header(
+                filename,
+                ascii_suffix=filename_suffix,
+            ),
+            "X-Export-Row-Count": str(
+                sum(len(submission.reviews) for submission in exported)
             ),
         },
     )

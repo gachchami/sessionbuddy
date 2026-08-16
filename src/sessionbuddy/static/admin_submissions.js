@@ -616,6 +616,38 @@
   commentRequired.append(commentRequiredInput, " Require a written reviewer comment");
   guidance.after(commentRequired);
   syncPurposeControls();
+  function enhanceRoundExport(link, round, kind) {
+    link.addEventListener("click", async (event) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (link.dataset.busy === "true") return;
+      link.dataset.busy = "true";
+      link.setAttribute("aria-disabled", "true");
+      const label = link.textContent;
+      link.textContent = "Preparing CSV…";
+      byId("status").classList.remove("error");
+      byId("status").textContent = `Preparing ${kind} for ${round.name}…`;
+      try {
+        const result = await window.SessionBuddyApi.download(link.href, {}, {
+          accept: "text/csv",
+          fallback: "The evaluation export could not be prepared.",
+          fallbackFilename: kind === "review details" ? "review-details.csv" : "results.csv"
+        });
+        const count = result.rowCount === null ? "" : ` — ${result.rowCount} record${result.rowCount === 1 ? "" : "s"}`;
+        byId("status").textContent = `Download started: ${result.filename}${count}. If it did not start, use the direct download link.`;
+      } catch (error) {
+        if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
+        if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error) || window.SessionBuddyApi.redirectIfDocumentAccessChanged(error)) return;
+        byId("status").textContent = window.SessionBuddyApi.message(error, "The evaluation export could not be prepared.");
+        byId("status").classList.add("error");
+        byId("status").focus();
+      } finally {
+        delete link.dataset.busy;
+        link.removeAttribute("aria-disabled");
+        link.textContent = label;
+      }
+    });
+  }
   function renderRoundHistory(rounds) {
     state.rounds = rounds;
     const container = byId("round-history");
@@ -637,6 +669,13 @@
       const monitor = document.createElement("a"); monitor.className = round.status === "open" ? "button" : "button secondary"; monitor.href = link.href; monitor.textContent = round.status === "draft" ? "View draft" : round.status === "closed" ? "View results" : "Manage round";
       const exportLink = document.createElement("a"); exportLink.className = "round-ledger__export"; exportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/export.csv`; exportLink.textContent = "Export CSV";
       const reviewExportLink = document.createElement("a"); reviewExportLink.className = "round-ledger__export"; reviewExportLink.href = `/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/reviews.csv`; reviewExportLink.textContent = "Export review details";
+      const directFallbacks = document.createElement("p"); directFallbacks.className = "round-ledger__fallbacks"; directFallbacks.append("Download blocked? ");
+      const directExport = document.createElement("a"); directExport.className = "round-ledger__direct"; directExport.href = exportLink.href; directExport.target = "_blank"; directExport.rel = "noopener"; directExport.textContent = "Direct results download";
+      const directReviews = document.createElement("a"); directReviews.className = "round-ledger__direct"; directReviews.href = reviewExportLink.href; directReviews.target = "_blank"; directReviews.rel = "noopener"; directReviews.textContent = "Direct review-details download";
+      directFallbacks.append(directExport, " · ", directReviews);
+      content.append(directFallbacks);
+      enhanceRoundExport(exportLink, round, "results");
+      enhanceRoundExport(reviewExportLink, round, "review details");
       actions.append(monitor, exportLink, reviewExportLink);
       if (round.status === "open") {
         const remind = document.createElement("button");
