@@ -188,6 +188,41 @@ test.describe("evaluation round dashboard", () => {
     await expect(page.getByRole("note")).toHaveCount(0);
   });
 
+  test("surfaces post-close replacement work and keeps reminders available", async ({ page }) => {
+    await openDashboard(page, results({
+      status: "closed",
+      assigned_count: 1,
+      evaluators: [{
+        ...reviewer,
+        assigned_count: 1,
+        late_assignment_count: 1,
+        late_completed_count: 0,
+      }],
+      submissions: [{
+        submission_id: "submission-a",
+        speaker_name: "Riley Speaker",
+        proposal_title: "Reliable late reviews",
+        assigned_count: 1,
+        completed_count: 0,
+        average_rating: null,
+        decision: "accepted",
+        decision_round_id: "round-a",
+        internal_reason: "Strong fit",
+        correction_reason: "",
+        reviews: [],
+      }],
+      submission_count: 1,
+    }));
+
+    await expect(page.getByRole("button", { name: "Send reminder" })).toBeVisible();
+    await expect(page.getByRole("note")).toContainText(
+      "replacement review was assigned after this round closed",
+    );
+    await expect(page.getByRole("note")).toContainText(
+      "recorded decisions do not change automatically",
+    );
+  });
+
   test("names, confirms, and safely fails round exports", async ({ page }) => {
     let releaseExport!: () => void;
     const exportGate = new Promise<void>((resolve) => { releaseExport = resolve; });

@@ -77,6 +77,8 @@ async def test_results_keep_active_unassigned_reviewers_and_count_each_assignmen
             "assigned_count": 1,
             "completed_count": 1,
             "conflict_count": 1,
+            "late_assignment_count": 0,
+            "late_completed_count": 0,
         }
 
         # Revoking the only pair leaves Sam attached to the draft. Progress must retain

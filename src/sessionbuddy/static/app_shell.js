@@ -231,7 +231,13 @@
   function usableCachedSession() {
     const cached = readCachedSession();
     if (!cached) return null;
-    if (!activeRole(cached) || !dashboardDestination(cached)) {
+    const active = activeRole(cached);
+    const requiredPersona = personaForCurrentPath();
+    if (
+      !active
+      || !dashboardDestination(cached)
+      || (requiredPersona && active.role !== requiredPersona)
+    ) {
       clearCachedSession();
       return null;
     }
@@ -501,6 +507,15 @@
     return "";
   }
 
+  function personaForCurrentPath() {
+    const inWorkspace = (prefix) => location.pathname === prefix
+      || location.pathname.startsWith(`${prefix}/`);
+    if (inWorkspace("/admin")) return "organizer";
+    if (inWorkspace("/reviews")) return "reviewer";
+    if (inWorkspace("/speaker")) return "speaker";
+    return null;
+  }
+
   function isPersonaNeutralPath() {
     return location.pathname === "/calls" || location.pathname === "/account";
   }
@@ -605,12 +620,6 @@
     const organizer = roles.has("organizer");
     const section = currentSection();
     const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker");
-    if (location.pathname.startsWith("/admin") && !organizer) {
-      if (roles.has("reviewer")) location.replace("/reviews");
-      else if (roles.has("speaker")) location.replace("/speaker");
-      else renderSessionContractError();
-      return;
-    }
     // Account settings are persona-neutral. Treating /account as an organizer
     // workspace made an event-scoped organizer bounce account -> event ->
     // account forever while their required profile was still incomplete.
@@ -931,6 +940,14 @@
       clearCachedSession();
       renderSessionContractError("workspace");
       renderLandingSessionContractError();
+      return false;
+    }
+    const requiredPersona = personaForCurrentPath();
+    const active = activeRole(session);
+    if (requiredPersona && active?.role !== requiredPersona) {
+      const destination = dashboardDestination(session);
+      if (destination) location.replace(destination);
+      else renderSessionContractError("workspace");
       return false;
     }
     window.SessionBuddyShellSession = session;

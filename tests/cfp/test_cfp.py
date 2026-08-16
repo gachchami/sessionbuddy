@@ -993,8 +993,8 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'error.code === "stale_conflict"' in cfp_source
     assert "View proposal" in submissions_js.text
     assert "item.answers" in submissions_js.text
-    assert 'location.pathname.startsWith("/admin") && !organizer' in app_shell_js.text
-    assert 'location.replace("/speaker")' in app_shell_js.text
+    assert "requiredPersona && active?.role !== requiredPersona" in app_shell_js.text
+    assert "const destination = dashboardDestination(session)" in app_shell_js.text
     assert "@media (max-width: 48rem)" in css.text
 
 

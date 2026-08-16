@@ -257,6 +257,7 @@ class EvaluationAssignmentView(BaseModel):
     criterion_responses: dict[str, int | str] = Field(default_factory=dict)
     blind_review: bool = False
     review_closes_at_ms: int | None = None
+    assigned_after_close: bool = False
     evaluation_state: Literal["not_started", "draft", "final"]
     rating: int | None = None
     recommendation: str | None = None
@@ -367,6 +368,8 @@ class EvaluatorProgress(BaseModel):
     assigned_count: int
     completed_count: int
     conflict_count: int
+    late_assignment_count: int = 0
+    late_completed_count: int = 0
 
 
 class ConflictProgress(BaseModel):

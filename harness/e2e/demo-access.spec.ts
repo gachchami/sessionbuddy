@@ -81,6 +81,39 @@ test.describe("demo persona access", () => {
     });
   }
 
+  test("replacing an account clears stale persona routing before navigation", async ({ page }) => {
+    await withDemoMode(page, true);
+    captureSignIn(page);
+    const visited: string[] = [];
+    page.on("request", (request) => visited.push(new URL(request.url()).pathname));
+    await page.route("**/admin", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Organizer workspace</title><h1>Dana organizer</h1>",
+    }));
+
+    await page.goto("/sign-in");
+    await page.evaluate(() => {
+      sessionStorage.setItem("sessionbuddy:shell-session", JSON.stringify({
+        stored_at: Date.now(),
+        session: {
+          active_role: "reviewer",
+          default_role: "reviewer",
+          account_roles: ["reviewer"],
+        },
+      }));
+      sessionStorage.setItem("sessionbuddy:document-recovery:reviews", "2");
+    });
+
+    await page.getByRole("button", { name: "Sign in as demo organizer" }).click();
+    await page.waitForURL("**/admin");
+    await expect(page.getByRole("heading", { name: "Dana organizer" })).toBeVisible();
+    expect(visited).not.toContain("/reviews");
+    await expect.poll(() => page.evaluate(() => ({
+      shell: sessionStorage.getItem("sessionbuddy:shell-session"),
+      recovery: sessionStorage.getItem("sessionbuddy:document-recovery:reviews"),
+    }))).toEqual({ shell: null, recovery: null });
+  });
+
   test("only the clicked control enters a loading state", async ({ page }) => {
     await withDemoMode(page, true);
     let release: () => void = () => {};

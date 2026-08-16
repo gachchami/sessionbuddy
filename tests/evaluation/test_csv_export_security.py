@@ -27,6 +27,7 @@ class _MeasuredStatement:
                 "event_id": "event-id",
                 "name": "Large review",
                 "status": "closed",
+                "closed_at_ms": 9_000,
                 "rubric_json": json.dumps(
                     {"criteria": [{"key": "score", "label": "Score", "weight": 100}]}
                 ),
@@ -89,6 +90,8 @@ class _MeasuredStatement:
                         "assigned_count": 50,
                         "completed_count": 50,
                         "conflict_count": 0,
+                        "late_assignment_count": 0,
+                        "late_completed_count": 0,
                     }
                 ]
             }

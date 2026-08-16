@@ -427,6 +427,26 @@ def test_account_is_persona_neutral_and_same_destination_still_renders_shell() -
     assert not destination_guard.rstrip().endswith("return;\n    }")
 
 
+def test_cached_identity_never_routes_an_authorization_sensitive_document() -> None:
+    shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+    api_client = (STATIC / "api_client.js").read_text(encoding="utf-8")
+
+    assert "const requiredPersona = personaForCurrentPath();" in shell
+    persona_matcher = shell.split("function personaForCurrentPath()", 1)[1].split(
+        "function isPersonaNeutralPath()", 1
+    )[0]
+    assert 'if (inWorkspace("/speaker")) return "speaker";' in persona_matcher
+    assert 'location.pathname.startsWith("/speaker")' not in persona_matcher
+    assert "requiredPersona && active.role !== requiredPersona" in shell
+    assert "requiredPersona && active?.role !== requiredPersona" in shell
+    assert "function prepareForSessionReplacement()" in api_client
+    assert 'sessionStorage.removeItem("sessionbuddy:shell-session")' in api_client
+    assert 'key?.startsWith("sessionbuddy:document-recovery:")' in api_client
+    for source_name in ("demo_access.js", "sign_in.js", "public_cfp.js"):
+        source = (STATIC / source_name).read_text(encoding="utf-8")
+        assert "SessionBuddyApi.prepareForSessionReplacement();" in source
+
+
 def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
     page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")

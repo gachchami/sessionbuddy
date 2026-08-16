@@ -19,18 +19,12 @@ from sessionbuddy.platform.db.types import new_id
 from .cookies import sign_session_cookie
 from .csrf import issue_csrf_token
 from .http import secret
+from .redirects import ROLE_DESTINATIONS
 from .tokens import generate_token, hash_token
 
 IDLE_SESSION_MS = 12 * 60 * 60 * 1000
 ABSOLUTE_SESSION_MS = 30 * 24 * 60 * 60 * 1000
 COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
-
-ROLE_DESTINATIONS = {
-    "organizer": "/admin",
-    "reviewer": "/reviews",
-    "speaker": "/speaker",
-}
-
 
 def valid_redirect(value: str) -> bool:
     return value.startswith("/") and not value.startswith("//") and "\\" not in value

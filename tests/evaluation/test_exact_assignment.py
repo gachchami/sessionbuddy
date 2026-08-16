@@ -74,9 +74,21 @@ async def _organizer(client, connection):
 
 SAM_EMAIL = "sam.reviewer@example.com"
 SAM_USER_ID = "dddddddd-3333-4333-8333-dddddddddddd"
+TAYLOR_EMAIL = "taylor.reviewer@example.com"
+TAYLOR_USER_ID = "eeeeeeee-3333-4333-8333-eeeeeeeeeeee"
 
 
-def _seed_reviewer(connection, organization_id, event_id, invited_by_user_id):
+def _seed_reviewer(
+    connection,
+    organization_id,
+    event_id,
+    invited_by_user_id,
+    *,
+    user_id=SAM_USER_ID,
+    email=SAM_EMAIL,
+    key="sam",
+    display_name="Sam Whitfield",
+):
     """A genuinely separate reviewer identity.
 
     Reusing the bootstrap admin looks simpler and does not work: a database trigger
@@ -90,30 +102,38 @@ def _seed_reviewer(connection, organization_id, event_id, invited_by_user_id):
         """INSERT INTO users
            (id,email,normalized_email,status,version,authorization_version,
             created_at_ms,updated_at_ms,display_name)
-           VALUES (?, ?,?,'active',1,1,1000,1000,'Sam Whitfield')""",
-        (SAM_USER_ID, SAM_EMAIL, SAM_EMAIL),
+           VALUES (?, ?,?,'active',1,1,1000,1000,?)""",
+        (user_id, email, email, display_name),
     )
     connection.execute(
         """INSERT INTO organization_memberships
            (id,organization_id,user_id,role,status,version,created_at_ms,updated_at_ms)
-           VALUES ('om-sam',?,?,'member','active',1,1000,1000)""",
-        (organization_id, SAM_USER_ID),
+           VALUES (?, ?,?,'member','active',1,1000,1000)""",
+        (f"om-{key}", organization_id, user_id),
     )
     connection.execute(
         "INSERT INTO user_roles VALUES (?,'reviewer','active',1000,1000,NULL,1)",
-        (SAM_USER_ID,),
+        (user_id,),
     )
     connection.execute(
         """INSERT INTO identity_invitations
            (id,organization_id,event_id,normalized_email,email,role,status,invited_by_user_id,
             expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms,display_name,job_title,
             company,biography)
-           VALUES ('inv-sam',?,?,?,?,'evaluator','accepted',?,9999999999999,1000,1000,1000,
-                   'Sam Whitfield','','','')""",
-        (organization_id, event_id, SAM_EMAIL, SAM_EMAIL, invited_by_user_id),
+           VALUES (?, ?,?,?,?,'evaluator','accepted',?,9999999999999,1000,1000,1000,
+                   ?,'','','')""",
+        (
+            f"inv-{key}",
+            organization_id,
+            event_id,
+            email,
+            email,
+            invited_by_user_id,
+            display_name,
+        ),
     )
     connection.commit()
-    return SAM_USER_ID
+    return user_id
 
 
 def _seed_round(connection, organization_id, event_id, sam_user_id, *, status="open"):
@@ -282,6 +302,180 @@ async def test_conflict_revoked_pair_is_not_resurrected_and_stays_out_of_the_que
             ).fetchone()[0]
             == "revoked"
         ), "a recorded conflict of interest must stay revoked"
+
+
+async def test_finalized_reviewer_can_report_conflict_without_rewriting_evaluation(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        organizer_csrf, organization_id, event_id = await _organizer(client, connection)
+        admin_user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        sam = _seed_reviewer(connection, organization_id, event_id, admin_user_id)
+        taylor = _seed_reviewer(
+            connection,
+            organization_id,
+            event_id,
+            admin_user_id,
+            user_id=TAYLOR_USER_ID,
+            email=TAYLOR_EMAIL,
+            key="taylor",
+            display_name="Taylor Reed",
+        )
+        _seed_round(connection, organization_id, event_id, sam)
+        _assign(connection, organization_id, event_id, [(A, sam)], status="completed")
+        assignment_id = connection.execute(
+            "SELECT id FROM evaluation_assignments WHERE submission_id=?", (A,)
+        ).fetchone()[0]
+        connection.execute(
+            "UPDATE evaluation_rounds SET status='closed',closed_at_ms=1100 WHERE id=?",
+            (ROUND_ID,),
+        )
+        connection.execute(
+            """INSERT INTO evaluations
+               (id,organization_id,event_id,round_id,assignment_id,evaluator_user_id,
+                rating,recommendation,internal_comment,state,created_at_ms,updated_at_ms,
+                finalized_at_ms,criterion_responses_json)
+               VALUES ('final-before-conflict',?,?,?,?,?,4,'accept','Complete review',
+                       'final',1000,1000,1000,'{}')""",
+            (organization_id, event_id, ROUND_ID, assignment_id, sam),
+        )
+        connection.commit()
+
+        reviewer = await _sign_in(client, connection, SAM_EMAIL)
+        reported = await client.post(
+            f"/api/v1/evaluator/assignments/{assignment_id}/conflict",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": reviewer["csrf_token"],
+                "idempotency-key": "post-final-conflict",
+            },
+            json={"conflict_type": "same_company", "explanation": "Late disclosure."},
+        )
+        assert reported.status_code == 200, reported.text
+        assert connection.execute(
+            "SELECT status FROM evaluation_assignments WHERE id=?", (assignment_id,)
+        ).fetchone()[0] == "revoked"
+        saved = connection.execute(
+            "SELECT state,rating,internal_comment FROM evaluations WHERE id='final-before-conflict'"
+        ).fetchone()
+        assert tuple(saved) == ("final", 4, "Complete review")
+
+        organizer = await _sign_in(client, connection, "admin@example.com")
+        results = await client.get(
+            f"/api/v1/admin/evaluation-rounds/{ROUND_ID}/results",
+            headers={"x-csrf-token": organizer["csrf_token"]},
+        )
+        assert results.status_code == 200, results.text
+        proposal = next(
+            item for item in results.json()["submissions"] if item["submission_id"] == A
+        )
+        assert proposal["assigned_count"] == 0
+        assert proposal["completed_count"] == 0
+        assert proposal["average_rating"] is None
+        assert results.json()["conflicts"][0]["assignment_id"] == assignment_id
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,
+                created_at_ms,updated_at_ms)
+               VALUES (?,?,?,?, 'removed',1000,1000)""",
+            (ROUND_ID, taylor, organization_id, event_id),
+        )
+        connection.commit()
+        refused_removed = await client.post(
+            f"/api/v1/admin/evaluation-assignments/{assignment_id}/reassign",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": organizer["csrf_token"],
+                "idempotency-key": "removed-reviewer-reassignment",
+            },
+            json={"evaluator_user_id": taylor},
+        )
+        assert refused_removed.status_code == 409, refused_removed.text
+        assert connection.execute(
+            """SELECT status FROM evaluation_round_evaluators
+               WHERE round_id=? AND evaluator_user_id=?""",
+            (ROUND_ID, taylor),
+        ).fetchone()[0] == "removed"
+        connection.execute(
+            "DELETE FROM evaluation_round_evaluators WHERE round_id=? AND evaluator_user_id=?",
+            (ROUND_ID, taylor),
+        )
+        connection.commit()
+        reassigned = await client.post(
+            f"/api/v1/admin/evaluation-assignments/{assignment_id}/reassign",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": organizer["csrf_token"],
+                "idempotency-key": "closed-round-reassignment",
+            },
+            json={"evaluator_user_id": taylor},
+        )
+        assert reassigned.status_code == 200, reassigned.text
+        replacement_id = reassigned.json()["assignment_id"]
+        notification = connection.execute(
+            """SELECT subject,html_body,status FROM communication_messages
+               WHERE recipient_user_id=? ORDER BY queued_at_ms DESC LIMIT 1""",
+            (taylor,),
+        ).fetchone()
+        assert notification[0] == "Replacement review assigned: Initial review"
+        assert "assigned to you after the round closed" in notification[1]
+        assert notification[2] == "queued"
+
+        reminder = await client.post(
+            f"/api/v1/admin/evaluation-rounds/{ROUND_ID}/evaluators/{taylor}/reminder",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": organizer["csrf_token"],
+            },
+            json={},
+        )
+        assert reminder.status_code == 200, reminder.text
+
+        replacement_reviewer = await _sign_in(client, connection, TAYLOR_EMAIL)
+        replacement_queue = await client.get("/api/v1/evaluator/assignments")
+        assert replacement_queue.status_code == 200, replacement_queue.text
+        assert [item["id"] for item in replacement_queue.json()["data"]] == [
+            replacement_id
+        ]
+        assert replacement_queue.json()["data"][0]["assigned_after_close"] is True
+        replacement_review = await client.put(
+            f"/api/v1/evaluator/assignments/{replacement_id}/evaluation",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": replacement_reviewer["csrf_token"],
+                "idempotency-key": "closed-round-replacement-review",
+            },
+            json={
+                "rating": 5,
+                "recommendation": "accept",
+                "internal_comment": "Independent replacement review.",
+                "criterion_responses": {},
+                "state": "final",
+            },
+        )
+        assert replacement_review.status_code == 200, replacement_review.text
+
+        organizer = await _sign_in(client, connection, "admin@example.com")
+        refreshed_results = await client.get(
+            f"/api/v1/admin/evaluation-rounds/{ROUND_ID}/results",
+            headers={"x-csrf-token": organizer["csrf_token"]},
+        )
+        refreshed_proposal = next(
+            item
+            for item in refreshed_results.json()["submissions"]
+            if item["submission_id"] == A
+        )
+        assert refreshed_proposal["assigned_count"] == 1
+        assert refreshed_proposal["completed_count"] == 1
+        assert refreshed_proposal["average_rating"] == 5
+        audit = connection.execute(
+            """SELECT metadata_json FROM audit_events
+               WHERE action='evaluation.conflict.declare' ORDER BY occurred_at_ms DESC LIMIT 1"""
+        ).fetchone()[0]
+        assert '"finalized_review_excluded":true' in audit
 
 
 async def test_refused_draft_assignment_update_is_atomic(

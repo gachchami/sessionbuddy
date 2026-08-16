@@ -118,7 +118,12 @@ organization-wide organizer management, event-specific reviewer and speaker
 invitations, invitation revocation, and verified invitation acceptance. Every
 workspace page keeps its own durable URL and normal browser navigation; the
 shell paints in the page's first frame from a per-tab cached session that is
-revalidated in the background (and dropped on sign-out, role switch, or 401),
+revalidated in the background. Account replacement clears that cached identity
+and every document-recovery hint before navigation; cached identities may paint
+only a document for their own active persona. Wrong-persona browser documents
+redirect to the server-confirmed active workspace while protected APIs retain
+their structured 403 response. The cache is also dropped on sign-out, role
+switch, or 401,
 named view transitions hold the sidebar, topbar, and event navigation visually
 still across documents, and supporting browsers prerender one hovered
 destination at a time (keyboard and touch intent warms the cache with a
@@ -139,7 +144,16 @@ event in that organization.
 
 Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit
-records. Scorecards combine weighted numeric criteria with required or optional
+records. A reviewer may report a newly recognized conflict after finalizing:
+the evaluation remains immutable audit evidence, its completed assignment is
+revoked, and the review is excluded from active aggregates for organizer
+reassignment. A replacement assigned after closure is notified immediately, appears
+in the reviewer docket without the expired original deadline, and remains eligible
+for organizer reminders. A reviewer explicitly removed from the round is never
+silently reactivated by reassignment. Late replacement scores update evaluation
+aggregates, but never rewrite a recorded final decision; organizers must use the
+audited correction workflow when the new evidence changes the intended outcome.
+Scorecards combine weighted numeric criteria with required or optional
 dropdown and free-text responses; only numeric criteria contribute to the
 overall mean. Draft rounds can be reopened and edited before review starts, and
 are directly available from event navigation. Acceptance creates the accepted session and only the onboarding work
@@ -374,15 +388,15 @@ the byte transfer retain the pending upload for a safe completion retry and tell
 the user that the file was received, is not yet public/current, and does not need
 to be selected or transferred again.
 
-Persona document boundaries now fail closed before a portal shell is served.
-An authenticated Organizer receives HTTP 403 from `/speaker` and `/reviews`,
-while matching Speaker/Reviewer sessions and anonymous sign-in shells retain
-their intended behavior. The SessionBuddy brand follows only the explicit
-active persona. Unknown active-role state still returns 403; the server and
-browser no longer infer a destination from default roles, legacy memberships,
-or unrelated resource access. An authenticated account with no active role yet
-is the explicit exception: `/` redirects it to the persona-neutral `/calls`
-directory.
+Persona document boundaries now redirect an authenticated account away from a
+wrong-persona browser document and into its server-confirmed active workspace;
+matching Speaker/Reviewer sessions and anonymous sign-in shells retain their
+intended behavior. Protected APIs still return structured HTTP 403 responses
+for the wrong persona. The SessionBuddy brand follows only the explicit active
+persona. Unknown active-role state still returns 403; the server and browser no
+longer infer a destination from default roles, legacy memberships, or unrelated
+resource access. An authenticated account with no active role yet is the
+explicit exception: `/` redirects it to the persona-neutral `/calls` directory.
 
 First-run profile onboarding preserves the exact bootstrap first and last name,
 shows legacy display-name splitting as an editable unsaved draft, and provides

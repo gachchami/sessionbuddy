@@ -97,7 +97,8 @@ test.describe("reviewer workspace", () => {
             ],
             criterion_responses: {},
             blind_review: true,
-            review_closes_at_ms: null,
+            review_closes_at_ms: Date.UTC(2026, 7, 20, 12),
+            assigned_after_close: true,
             answers: [{ label: "Track", value: "Platform & Infra" }],
             hidden_answer_count: 3,
           }],
@@ -108,10 +109,13 @@ test.describe("reviewer workspace", () => {
     await page.goto("/reviews");
 
     await expect(page.getByRole("heading", { name: "Building reliable platform tooling" })).toBeVisible();
+    await expect(page.getByText("Assigned after the round closed · no original deadline")).toBeVisible();
+    await expect(page.getByText(/^Due /)).toHaveCount(0);
     await expect(page.getByRole("group", { name: "Scorecard" })).toHaveCount(0);
     await expect(page.locator(".sb-sidebar")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Open review" }).click();
+    await expect(page.getByRole("note")).toContainText("original deadline no longer applies");
     await expect(page.getByRole("group", { name: "Scorecard" })).toBeVisible();
     await page.getByRole("button", { name: "Finalize" }).click();
     await expect(page.getByText("Complete every required scorecard response with a valid value before finalizing.")).toBeVisible();
@@ -329,6 +333,8 @@ test.describe("reviewer workspace", () => {
   });
 
   test("treats a fully completed docket as an archive, not active work", async ({ page }) => {
+    const assignmentId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    let conflictWrites = 0;
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));
     await page.route("**/api/v1/evaluator/assignments**", (route) =>
@@ -339,7 +345,7 @@ test.describe("reviewer workspace", () => {
           completed_count: 1,
           next_cursor: null,
           data: [{
-            id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            id: assignmentId,
             round_name: "Initial review",
             proposal_title: "Taming 40-Minute CI",
             proposal_abstract: "This abstract belongs in the full review, not the docket.",
@@ -362,6 +368,18 @@ test.describe("reviewer workspace", () => {
           }],
         }),
       }));
+    await page.route(`**/api/v1/evaluator/assignments/${assignmentId}/conflict`, async (route) => {
+      conflictWrites += 1;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "late-conflict",
+          assignment_id: assignmentId,
+          conflict_type: "speaker_relationship",
+          explanation: "Disclosed after finalization.",
+        }),
+      });
+    });
 
     await page.goto("/reviews");
 
@@ -371,6 +389,14 @@ test.describe("reviewer workspace", () => {
     await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toBeVisible();
     await expect(page.getByText("This abstract belongs in the full review, not the docket.")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "View", exact: true })).toHaveClass(/secondary/);
+    await page.getByRole("button", { name: "View", exact: true }).click();
+    await page.getByText("Report a conflict with this review").click();
+    await expect(page.getByText("Your finalized review will remain in the audit history", { exact: false })).toBeVisible();
+    await page.getByLabel("Explanation").fill("Disclosed after finalization.");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Report conflict and exclude review" }).click();
+    await expect.poll(() => conflictWrites).toBe(1);
+    await expect(page.getByText("Conflict reported. Your finalized review was preserved in the audit history and excluded from results.")).toBeVisible();
   });
 
   test("finalizing the open review keeps it on screen and leaves the queue reachable", async ({ page }) => {
@@ -472,10 +498,10 @@ test.describe("reviewer workspace", () => {
     // A conflict refreshes the queue, then writes its more specific confirmation. A
     // count-sync effect must not overwrite that confirmation after the refresh render.
     await page.getByRole("button", { name: "Open review" }).click();
-    await page.getByText("Declare a conflict of interest").click();
+    await page.getByText("Cannot review this proposal").click();
     await page.getByLabel("Explanation").fill("Prior collaboration.");
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Remove my assignment" }).click();
-    await expect(page.getByText("Conflict declared. The assignment is ready for reassignment.")).toBeVisible();
+    await page.getByRole("button", { name: "Report conflict and remove assignment" }).click();
+    await expect(page.getByText("Conflict reported. The assignment is ready for reassignment.")).toBeVisible();
   });
 });

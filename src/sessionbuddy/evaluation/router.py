@@ -750,6 +750,7 @@ def _queue_assignment_notifications(
     now_ms: int,
     dedup_suffix: str,
     summarize_changes: bool = False,
+    replacement_after_close: bool = False,
 ) -> list[str]:
     """Queue one assignment-notification email per evaluator, atomically with
     the assignments themselves. Returns queued message ids for best-effort
@@ -779,6 +780,10 @@ def _queue_assignment_notifications(
         )
         message_ids.append(message_id)
         html_body = (
+            f"<p>A proposal in {escape(round_name)} was assigned to you after the "
+            f"round closed because another reviewer reported a conflict.</p>{link}"
+            if replacement_after_close
+            else
             f"<p>New review work was added to your queue in {escape(round_name)}.</p>"
             f"{deadline}{link}"
             if summarize_changes
@@ -801,7 +806,11 @@ def _queue_assignment_notifications(
                 event_id,
                 evaluator_id,
                 email,
-                f"New review assignments: {round_name}",
+                (
+                    f"Replacement review assigned: {round_name}"
+                    if replacement_after_close
+                    else f"New review assignments: {round_name}"
+                ),
                 html_body,
                 deterministic_key,
                 now_ms,
@@ -2835,7 +2844,10 @@ async def remind_round_evaluator(
                JOIN evaluation_assignments a ON a.round_id=r.id AND a.status!='revoked'
                JOIN users u ON u.id=a.evaluator_user_id
                LEFT JOIN evaluations e ON e.assignment_id=a.id
-               WHERE r.id=?1 AND a.evaluator_user_id=?2 AND r.status='open'
+               WHERE r.id=?1 AND a.evaluator_user_id=?2
+                 AND (r.status='open' OR
+                      (r.status='closed' AND r.closed_at_ms IS NOT NULL
+                       AND a.created_at_ms>r.closed_at_ms))
                GROUP BY r.id,u.id LIMIT 1"""
         )
         .bind(round_id, evaluator_user_id)
@@ -3020,6 +3032,7 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                   CASE WHEN COALESCE(json_extract(r.rubric_json,'$.blind_review'),0)=1
                        THEN 'Hidden for blind review' ELSE s.speaker_name END AS speaker_name,
                   r.organization_id, r.event_id, r.rubric_json,r.review_closes_at_ms,
+                  r.status AS round_status, r.closed_at_ms,
                   COALESCE(e.state, 'not_started') AS evaluation_state,
                   e.rating, e.recommendation,
                   COALESCE(e.internal_comment, '') AS internal_comment,
@@ -3028,13 +3041,16 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                   COALESCE(f.schema_json, '{}') AS form_schema_json,
                   a.created_at_ms
            FROM evaluation_assignments a
-           JOIN evaluation_rounds r ON r.id = a.round_id AND r.status = 'open'
+           JOIN evaluation_rounds r ON r.id = a.round_id
            JOIN submissions s ON s.id = a.submission_id
            LEFT JOIN call_for_speaker_forms f ON f.id = s.form_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id
            WHERE a.evaluator_user_id = ?1 AND a.status != 'revoked'
-             AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
-             AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2)
+             AND ((r.status='open'
+                    AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
+                    AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2))
+                  OR (r.status='closed' AND r.closed_at_ms IS NOT NULL
+                      AND a.created_at_ms>r.closed_at_ms))
              AND (?3 IS NULL OR a.created_at_ms<?3 OR (a.created_at_ms=?3 AND a.id<?4))
            ORDER BY a.created_at_ms DESC, a.id DESC LIMIT ?5"""
     rows = result_rows(
@@ -3094,6 +3110,11 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                     if row["review_closes_at_ms"] is not None
                     else None
                 ),
+                assigned_after_close=(
+                    row["round_status"] == "closed"
+                    and row["closed_at_ms"] is not None
+                    and int(row["created_at_ms"]) > int(row["closed_at_ms"])
+                ),
                 evaluation_state=str(row["evaluation_state"]),
                 rating=int(row["rating"]) if row["rating"] is not None else None,
                 recommendation=(
@@ -3112,11 +3133,14 @@ async def list_my_assignments(request: Request) -> EvaluationAssignmentList:
                 """SELECT COUNT(a.id) AS total,
                           SUM(CASE WHEN e.state='final' THEN 1 ELSE 0 END) AS completed_count
                    FROM evaluation_assignments a
-                   JOIN evaluation_rounds r ON r.id=a.round_id AND r.status='open'
+                   JOIN evaluation_rounds r ON r.id=a.round_id
                    LEFT JOIN evaluations e ON e.assignment_id=a.id
                    WHERE a.evaluator_user_id=?1 AND a.status!='revoked'
-                     AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
-                     AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2)"""
+                     AND ((r.status='open'
+                            AND (r.review_opens_at_ms IS NULL OR r.review_opens_at_ms<=?2)
+                            AND (r.review_closes_at_ms IS NULL OR r.review_closes_at_ms>?2))
+                          OR (r.status='closed' AND r.closed_at_ms IS NOT NULL
+                              AND a.created_at_ms>r.closed_at_ms))"""
             )
             .bind(authenticated.actor.user_id, now),
         )
@@ -3156,7 +3180,8 @@ async def save_evaluation(
         await db.prepare(
             """SELECT a.id, a.organization_id, a.event_id, a.round_id, a.evaluator_user_id,
                   a.status, r.status AS round_status, r.rubric_json, e.id AS evaluation_id,
-                  r.review_opens_at_ms,r.review_closes_at_ms,e.state AS existing_state,
+                  r.review_opens_at_ms,r.review_closes_at_ms,r.closed_at_ms,
+                  a.created_at_ms,e.state AS existing_state,
                   COALESCE(e.version, 0) AS existing_version
            FROM evaluation_assignments a JOIN evaluation_rounds r ON r.id = a.round_id
            LEFT JOIN evaluations e ON e.assignment_id = a.id WHERE a.id = ?1 LIMIT 1"""
@@ -3172,12 +3197,20 @@ async def save_evaluation(
     ) and (
         assignment["review_closes_at_ms"] is None or int(assignment["review_closes_at_ms"]) > now
     )
+    late_closed_replacement = (
+        assignment["round_status"] == "closed"
+        and assignment["closed_at_ms"] is not None
+        and int(assignment["created_at_ms"]) > int(assignment["closed_at_ms"])
+    )
     resource = ResourceContext(
         str(assignment["organization_id"]),
         str(assignment["event_id"]),
         evaluator_user_id=str(assignment["evaluator_user_id"]),
         evaluator_assignment_status=str(assignment["status"]),
-        evaluation_round_open=assignment["round_status"] == "open" and within_window,
+        evaluation_round_open=(
+            assignment["round_status"] == "open" and within_window
+        )
+        or late_closed_replacement,
     )
     # A completed replay is a read of the review that this reviewer already owns,
     # not a second save. Authorize ownership first so a lost response can be
@@ -3443,7 +3476,10 @@ async def declare_conflict(
         raise HTTPException(status_code=404)
     auth = await require_permission(
         request,
-        Permission.EVALUATION_SAVE,
+        # Reporting a conflict remains available after finalization and round
+        # close. It revokes the assignment but never rewrites the immutable
+        # evaluation, so ownership/read authority is the correct boundary.
+        Permission.EVALUATION_OWN_READ,
         ResourceContext(
             str(assignment["organization_id"]),
             str(assignment["event_id"]),
@@ -3453,7 +3489,7 @@ async def declare_conflict(
         ),
         mutation=True,
     )
-    if assignment["status"] != "assigned" or assignment["evaluation_state"] == "final":
+    if assignment["status"] == "revoked":
         raise HTTPException(status_code=409)
     key = _key(idempotency_key)
     route = "POST /api/v1/evaluator/assignments/{assignment_id}/conflict"
@@ -3495,7 +3531,8 @@ async def declare_conflict(
     batch.add_statement(
         db.prepare(
             """UPDATE evaluation_assignments SET status = 'revoked', updated_at_ms = ?1
-           WHERE id = ?2 AND evaluator_user_id = ?3 AND status = 'assigned'"""
+           WHERE id = ?2 AND evaluator_user_id = ?3
+             AND status IN ('assigned', 'completed')"""
         ).bind(now, assignment_id, auth.actor.user_id)
     )
     batch.audit(
@@ -3510,7 +3547,10 @@ async def declare_conflict(
             occurred_at_ms=now,
             organization_id=str(assignment["organization_id"]),
             event_id=str(assignment["event_id"]),
-            metadata={"conflict_type": body.conflict_type},
+            metadata={
+                "conflict_type": body.conflict_type,
+                "finalized_review_excluded": assignment["evaluation_state"] == "final",
+            },
         )
     )
     batch.complete_idempotency(
@@ -3540,7 +3580,8 @@ async def reassign_conflict(
     assignment = row_mapping(
         await db.prepare(
             """SELECT a.organization_id, a.event_id, a.round_id, a.submission_id,
-                  a.status, r.status AS round_status
+                  a.status, r.status AS round_status, r.closed_at_ms,
+                  r.name AS round_name, r.review_closes_at_ms
            FROM evaluation_assignments a JOIN evaluation_rounds r ON r.id = a.round_id
            JOIN evaluation_conflicts c ON c.assignment_id = a.id
            WHERE a.id = ?1 LIMIT 1"""
@@ -3556,11 +3597,18 @@ async def reassign_conflict(
         ResourceContext(str(assignment["organization_id"]), str(assignment["event_id"])),
         mutation=True,
     )
-    if assignment["status"] != "revoked" or assignment["round_status"] != "open":
+    if assignment["status"] != "revoked" or assignment["round_status"] not in (
+        "open",
+        "closed",
+    ):
         raise HTTPException(status_code=409)
-    evaluator = (
+    evaluator = row_mapping(
         await db.prepare(
-            """SELECT 1 AS found FROM users u JOIN user_roles ur ON ur.user_id=u.id
+            """SELECT u.email,
+                      (SELECT m.status FROM evaluation_round_evaluators m
+                       WHERE m.round_id=?4 AND m.evaluator_user_id=u.id LIMIT 1)
+                        AS round_membership_status
+               FROM users u JOIN user_roles ur ON ur.user_id=u.id
                JOIN identity_invitations i
                  ON i.organization_id=?2 AND i.event_id=?3
                 AND i.normalized_email=u.normalized_email
@@ -3568,8 +3616,13 @@ async def reassign_conflict(
                WHERE u.id=?1 AND u.status='active'
                  AND ur.role='reviewer' AND ur.status='active' LIMIT 1"""
         )
-        .bind(body.evaluator_user_id, assignment["organization_id"], assignment["event_id"])
-        .first("found")
+        .bind(
+            body.evaluator_user_id,
+            assignment["organization_id"],
+            assignment["event_id"],
+            assignment["round_id"],
+        )
+        .first()
     )
     if evaluator is None:
         raise HTTPException(
@@ -3579,6 +3632,14 @@ async def reassign_conflict(
                 str(assignment["organization_id"]),
                 str(assignment["event_id"]),
                 [body.evaluator_user_id],
+            ),
+        )
+    if evaluator["round_membership_status"] == "removed":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This reviewer was removed from the round. Choose a different "
+                "replacement reviewer."
             ),
         )
     key = _key(idempotency_key)
@@ -3599,6 +3660,10 @@ async def reassign_conflict(
             assignment_id=str(row["id"]), evaluator_user_id=str(row["evaluator_user_id"])
         )
     now = utc_now_ms()
+    if assignment["round_status"] == "closed" and assignment["closed_at_ms"] is not None:
+        # Keep post-close replacements distinguishable from assignments that existed
+        # when the round closed, even if both actions land in the same millisecond.
+        now = max(now, int(assignment["closed_at_ms"]) + 1)
     new_assignment_id = new_id()
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
@@ -3611,6 +3676,20 @@ async def reassign_conflict(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+               VALUES (?1,?2,?3,?4,'active',?5,?5)
+               ON CONFLICT(round_id,evaluator_user_id) DO NOTHING"""
+        ).bind(
+            assignment["round_id"],
+            body.evaluator_user_id,
+            assignment["organization_id"],
+            assignment["event_id"],
+            now,
+        )
+    )
     batch.add_statement(
         db.prepare(
             """INSERT INTO evaluation_assignments
@@ -3626,6 +3705,25 @@ async def reassign_conflict(
             body.evaluator_user_id,
             now,
         )
+    )
+    notification_ids = _queue_assignment_notifications(
+        batch,
+        db,
+        emails_by_user={body.evaluator_user_id: str(evaluator["email"])},
+        assignment_counts={body.evaluator_user_id: 1},
+        organization_id=str(assignment["organization_id"]),
+        event_id=str(assignment["event_id"]),
+        round_id=str(assignment["round_id"]),
+        round_name=str(assignment["round_name"]),
+        review_closes_at_ms=(
+            int(assignment["review_closes_at_ms"])
+            if assignment["review_closes_at_ms"] is not None
+            else None
+        ),
+        base_url=str(getattr(request.scope.get("env"), "PUBLIC_BASE_URL", "") or ""),
+        now_ms=now,
+        dedup_suffix=f"replacement:{new_assignment_id}",
+        replacement_after_close=assignment["round_status"] == "closed",
     )
     batch.audit(
         AuditEvent(
@@ -3650,6 +3748,7 @@ async def reassign_conflict(
         completed_at_ms=now,
     )
     await _execute(request, batch)
+    await publish_committed_messages(request, notification_ids)
     return ReassignmentView(
         assignment_id=new_assignment_id, evaluator_user_id=body.evaluator_user_id
     )
@@ -3673,6 +3772,7 @@ async def get_round_results(
             request,
             db.prepare(
                 """SELECT r.id, r.organization_id, r.event_id, r.name, r.status,
+                          r.closed_at_ms,
                           r.rubric_json, e.name AS event_name
                    FROM evaluation_rounds r
                    JOIN events e ON e.id=r.event_id AND e.organization_id=r.organization_id
@@ -3852,7 +3952,13 @@ async def get_round_results(
                   COUNT(DISTINCT CASE WHEN a.status != 'revoked' AND e.state = 'final'
                                       THEN a.id END) AS completed_count,
                   COUNT(DISTINCT CASE WHEN a.status != 'revoked' THEN c.id END)
-                    AS conflict_count
+                    AS conflict_count,
+                  COUNT(DISTINCT CASE WHEN a.status != 'revoked' AND ?2 IS NOT NULL
+                                      AND a.created_at_ms > ?2 THEN a.id END)
+                    AS late_assignment_count,
+                  COUNT(DISTINCT CASE WHEN a.status != 'revoked' AND ?2 IS NOT NULL
+                                      AND a.created_at_ms > ?2 AND e.state = 'final'
+                                      THEN a.id END) AS late_completed_count
            FROM evaluation_round_evaluators m
            JOIN users u ON u.id = m.evaluator_user_id
            LEFT JOIN evaluation_assignments a
@@ -3863,7 +3969,7 @@ async def get_round_results(
            WHERE m.round_id = ?1 AND m.status = 'active'
            GROUP BY m.evaluator_user_id, u.email, u.display_name
            ORDER BY u.normalized_email LIMIT 100"""
-            ).bind(round_id),
+            ).bind(round_id, round_row["closed_at_ms"]),
         )
     )
     evaluator_progress = [
@@ -3873,6 +3979,8 @@ async def get_round_results(
             assigned_count=int(row["assigned_count"] or 0),
             completed_count=int(row["completed_count"] or 0),
             conflict_count=int(row["conflict_count"] or 0),
+            late_assignment_count=int(row["late_assignment_count"] or 0),
+            late_completed_count=int(row["late_completed_count"] or 0),
         )
         for row in evaluator_rows
     ]
@@ -3890,8 +3998,13 @@ async def get_round_results(
                     AND i.role='evaluator' AND i.status='accepted'
                    WHERE u.status='active'
                      AND ur.role='reviewer' AND ur.status='active'
+                     AND NOT EXISTS (
+                       SELECT 1 FROM evaluation_round_evaluators removed
+                       WHERE removed.round_id=?3 AND removed.evaluator_user_id=u.id
+                         AND removed.status='removed'
+                     )
                    ORDER BY u.normalized_email LIMIT 100"""
-            ).bind(round_row["organization_id"], round_row["event_id"]),
+            ).bind(round_row["organization_id"], round_row["event_id"], round_id),
         )
     )
     available_evaluators = [EvaluatorView.model_validate(row) for row in available_evaluator_rows]

@@ -55,6 +55,7 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email: address, password: password.value, redirect_path: redirect })
       });
+      window.SessionBuddyApi.prepareForSessionReplacement();
       location.assign(session.redirect_path || redirect);
     } catch (error) {
       showStatus(error.status === 401

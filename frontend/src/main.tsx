@@ -32,6 +32,7 @@ type Assignment = {
   criterion_responses: Record<string, number | string>;
   blind_review: boolean;
   review_closes_at_ms: number | null;
+  assigned_after_close: boolean;
   answers: { label: string; value: string }[];
   hidden_answer_count: number;
 };
@@ -73,6 +74,8 @@ type EvaluatorProgress = {
   assigned_count: number;
   completed_count: number;
   conflict_count: number;
+  late_assignment_count: number;
+  late_completed_count: number;
 };
 type Evaluator = { user_id: string; display_name: string };
 type ConflictProgress = {
@@ -483,7 +486,9 @@ function ReviewWorkspace() {
     if (!explanationInput.reportValidity()) return;
     if (
       !window.confirm(
-        `Remove your assignment for “${assignment.proposal_title}”? An organizer will need to reassign it, and you cannot undo this yourself.`,
+        assignment.evaluation_state === "final"
+          ? `Report a conflict for “${assignment.proposal_title}”? Your finalized review will be excluded from results, an organizer will need to reassign it, and you cannot undo this yourself.`
+          : `Remove your assignment for “${assignment.proposal_title}”? An organizer will need to reassign it, and you cannot undo this yourself.`,
       )
     )
       return;
@@ -494,7 +499,11 @@ function ReviewWorkspace() {
     });
     setDirty((current) => ({ ...current, [assignment.id]: false }));
     await loadAssignments();
-    setStatus("Conflict declared. The assignment is ready for reassignment.");
+    setStatus(
+      assignment.evaluation_state === "final"
+        ? "Conflict reported. Your finalized review was preserved in the audit history and excluded from results."
+        : "Conflict reported. The assignment is ready for reassignment.",
+    );
   }
   function finalize(event: FormEvent<HTMLFormElement>, assignment: Assignment) {
     event.preventDefault();
@@ -619,11 +628,13 @@ function ReviewWorkspace() {
                 <span>{assignment.evaluation_state === "final" ? "Finalized" : assignment.evaluation_state.replace("_", " ")}</span>
               </div>
               <h2>{assignment.proposal_title}</h2>
-              {assignment.review_closes_at_ms && (
+              {assignment.assigned_after_close ? (
+                <p className="help">Assigned after the round closed · no original deadline</p>
+              ) : assignment.review_closes_at_ms ? (
                 <p className="help">
                   Due {new Date(assignment.review_closes_at_ms).toLocaleString()} (your local time)
                 </p>
-              )}
+              ) : null}
               <div className="actions">
                 <button
                   type="button"
@@ -667,6 +678,53 @@ function ReviewWorkspace() {
             </div>
             <h2>{assignment.proposal_title}</h2>
             <p className="speaker">{assignment.speaker_name}</p>
+            <details className="review-conflict">
+              <summary>
+                {assignment.evaluation_state === "final"
+                  ? "Report a conflict with this review"
+                  : "Cannot review this proposal"}
+              </summary>
+              <div className="review-conflict__body">
+                <p className="help">
+                  {assignment.evaluation_state === "final"
+                    ? "Your finalized review will remain in the audit history but will no longer count toward results. An organizer will need to reassign the proposal."
+                    : "This removes the proposal from your assignments. An organizer will need to assign another reviewer."}
+                </p>
+                <label>
+                  Conflict type
+                  <select id={`conflict-type-${assignment.id}`}>
+                    <option value="speaker_relationship">Speaker relationship</option>
+                    <option value="same_company">Same company</option>
+                    <option value="financial">Financial</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  Explanation
+                  <textarea
+                    id={`conflict-note-${assignment.id}`}
+                    rows={3}
+                    maxLength={1000}
+                    required
+                  />
+                </label>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="danger-outline"
+                    onClick={() =>
+                      declareConflict(assignment).catch((error) =>
+                        setStatus(errorMessage(error)),
+                      )
+                    }
+                  >
+                    {assignment.evaluation_state === "final"
+                      ? "Report conflict and exclude review"
+                      : "Report conflict and remove assignment"}
+                  </button>
+                </div>
+              </div>
+            </details>
             {assignment.blind_review && (
               <p className="help">Speaker identity is hidden for this round.</p>
             )}
@@ -694,12 +752,17 @@ function ReviewWorkspace() {
                 to protect blind review.
               </p>
             )}
-            {assignment.review_closes_at_ms && (
+            {assignment.assigned_after_close ? (
+              <p className="help" role="note">
+                This replacement review was assigned after the round closed. Complete it as
+                soon as you can; the original deadline no longer applies.
+              </p>
+            ) : assignment.review_closes_at_ms ? (
               <p className="help">
                 Due {new Date(assignment.review_closes_at_ms).toLocaleString()}{" "}
                 (your local time)
               </p>
-            )}
+            ) : null}
             {assignment.evaluator_guidance && (
               <aside>{assignment.evaluator_guidance}</aside>
             )}
@@ -834,41 +897,6 @@ function ReviewWorkspace() {
                 </div>
               )}
             </form>
-            {assignment.evaluation_state !== "final" && (
-              <details>
-                <summary>Declare a conflict of interest</summary>
-                <label>
-                  Conflict type
-                  <select id={`conflict-type-${assignment.id}`}>
-                    <option value="speaker_relationship">
-                      Speaker relationship
-                    </option>
-                    <option value="same_company">Same company</option>
-                    <option value="financial">Financial</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
-                <label>
-                  Explanation
-                  <textarea
-                    id={`conflict-note-${assignment.id}`}
-                    rows={3}
-                    maxLength={1000}
-                    required
-                  />
-                </label>
-                <button
-                  className="secondary"
-                  onClick={() =>
-                    declareConflict(assignment).catch((error) =>
-                      setStatus(errorMessage(error)),
-                    )
-                  }
-                >
-                  Remove my assignment
-                </button>
-              </details>
-            )}
           </article>;
         })}
       </section>
@@ -1190,7 +1218,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       },
     );
     await load();
-    setStatus("Conflicted assignment reassigned.");
+    setStatus("Assignment reassigned. The replacement reviewer was notified.");
   }
   async function assignEvaluator(submission: SubmissionResult) {
     const evaluatorId = assignmentReviewerBySubmission[submission.submission_id] || "";
@@ -1275,6 +1303,14 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     results.assigned_count > 0 &&
     results.completed_count === results.assigned_count &&
     !results.conflicts.some((conflict) => conflict.replacement_required);
+  const lateReplacementCount =
+    results?.evaluators.reduce(
+      (count, evaluator) => count + (evaluator.late_assignment_count ?? 0),
+      0,
+    ) ?? 0;
+  const hasRecordedDecision = results?.submissions.some(
+    (submission) => submission.decision !== null,
+  );
 
   return (
     <main className="round-desk">
@@ -1453,6 +1489,16 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
               to finish assignments and open the round.
             </p>
           )}
+          {results.status === "closed" && lateReplacementCount > 0 && (
+            <p className="help round-draft-note" role="note">
+              {lateReplacementCount} replacement review
+              {lateReplacementCount === 1 ? " was" : "s were"} assigned after this
+              round closed. New scores update these results, but recorded decisions do
+              not change automatically.
+              {hasRecordedDecision &&
+                " Review affected decisions and use the audited correction action when needed."}
+            </p>
+          )}
           <section className="round-section" aria-labelledby="reviewer-progress-title">
             <div className="round-section__heading">
               <div>
@@ -1483,8 +1529,11 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                     </div>
                   </div>
                   <div className="reviewer-row__actions">
-                  {results.status === "open" &&
-                    evaluator.completed_count < evaluator.assigned_count && (
+                  {((results.status === "open" &&
+                    evaluator.completed_count < evaluator.assigned_count) ||
+                    (results.status === "closed" &&
+                      (evaluator.late_completed_count ?? 0) <
+                        (evaluator.late_assignment_count ?? 0))) && (
                       <button
                         className="tertiary"
                         onClick={() =>

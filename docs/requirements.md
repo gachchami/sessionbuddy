@@ -218,7 +218,14 @@ Rules:
 
 - Evaluators can open only assigned submissions.
 - Evaluations can be saved as drafts and cannot be finalized with missing required answers.
-- Individual evaluations are immutable after the round closes unless an admin reopens them with an audit reason.
+- Individual evaluations are immutable after the round closes. An administrator
+  may reopen the round with an audit reason, or—when a finalized reviewer later
+  reports a conflict—create one audited replacement assignment without reopening
+  unrelated work. The conflicted evaluation remains immutable audit evidence but
+  is excluded from active aggregates; only the new replacement assignment may be
+  completed after close. A late replacement score never changes a recorded final
+  decision automatically; that still requires the audited decision-correction
+  workflow.
 - Aggregate scores use one documented calculation and retain individual source records.
 - Evaluation completion and acceptance/rejection are separate states.
 - Decision email is an explicit confirmed action; saving a decision never sends accidentally.

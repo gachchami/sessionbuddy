@@ -160,6 +160,32 @@
     return `/sign-in?redirect=${encodeURIComponent(location.pathname + location.search)}`;
   }
 
+  function prepareForSessionReplacement() {
+    // Account replacement is stronger than an active-role change. Remove every
+    // per-tab identity hint before navigation so the previous account cannot
+    // steer the new session while the fresh session request is in flight.
+    try {
+      sessionStorage.removeItem("sessionbuddy:shell-session");
+      for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+        const key = sessionStorage.key(index);
+        if (key?.startsWith("sessionbuddy:document-recovery:")) {
+          sessionStorage.removeItem(key);
+        }
+      }
+    } catch (_) {
+      // Storage-denied browsers remain network-first on the destination.
+    }
+    try {
+      if (typeof BroadcastChannel === "function") {
+        const channel = new BroadcastChannel("sessionbuddy-auth");
+        channel.postMessage("session-changed");
+        channel.close();
+      }
+    } catch (_) {
+      // Cross-tab invalidation is best effort; this tab is already cleared.
+    }
+  }
+
   function redirectIfSignedOut(error) {
     if (error?.status !== 401) return false;
     location.assign(signInPath());
@@ -526,6 +552,7 @@
     refreshCharacterCounters: formValidation.installCharacterCounters,
     showValidationErrors: formValidation.showServerValidationErrors,
     redirectIfSignedOut,
+    prepareForSessionReplacement,
     redirectIfDocumentAccessChanged,
     redirectIfWorkspaceUnavailable,
     recoveryScope,

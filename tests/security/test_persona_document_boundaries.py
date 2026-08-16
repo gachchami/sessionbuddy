@@ -71,14 +71,14 @@ async def local_app(scope, receive, send):
 
 
 @pytest.mark.parametrize(
-    ("path", "portal_marker", "sign_in_marker"),
+    "path",
     [
-        ("/speaker", 'class="app-body speaker-portal-page"', "Speaker sign in"),
-        ("/reviews", "SessionBuddy · Reviews", "data-auth-shell"),
+        "/speaker",
+        "/reviews",
     ],
 )
 async def test_organizer_session_cannot_load_persona_documents_or_their_shells(
-    monkeypatch, path: str, portal_marker: str, sign_in_marker: str
+    monkeypatch, path: str
 ) -> None:
     async def organizer_context(_request):
         return AuthenticatedContext(
@@ -93,17 +93,10 @@ async def test_organizer_session_cannot_load_persona_documents_or_their_shells(
         client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
         response = await client.get(path, headers={"accept": "text/html"})
 
-    assert response.status_code == 403
-    assert response.headers["content-type"].startswith("text/html")
-    assert "<!doctype html>" in response.text.lower()
-    assert "<title>Access denied" in response.text
-    assert "This page is not available for your active role." in response.text
-    assert "Open active workspace" in response.text
-    assert 'href="/"' in response.text
-    assert 'href="/admin"' not in response.text
-    assert '"code":"forbidden"' not in response.text
-    assert portal_marker not in response.text
-    assert sign_in_marker not in response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.text == ""
 
 
 @pytest.mark.parametrize("path", ["/speaker", "/reviews"])
@@ -254,10 +247,12 @@ async def test_non_organizer_session_cannot_load_admin_document_shells(
         client.cookies.set("sessionbuddy-local", f"{persona.value}-session-cookie")
         response = await client.get(path, headers={"accept": "text/html"})
 
-    assert response.status_code == 403
-    assert response.headers["content-type"].startswith("text/html")
-    assert "This page is not available for your active role." in response.text
-    assert "data-auth-shell" not in response.text
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        "/speaker" if persona is Persona.SPEAKER else "/reviews"
+    )
+    assert response.headers["cache-control"] == "no-store"
+    assert response.text == ""
 
 
 @pytest.mark.parametrize("path", ADMIN_DOCUMENT_PATHS)

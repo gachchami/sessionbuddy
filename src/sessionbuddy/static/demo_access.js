@@ -120,6 +120,7 @@
               redirect_path: requestedRedirect(persona.destination)
             })
           });
+          window.SessionBuddyApi.prepareForSessionReplacement();
           location.assign(safeRedirect(session.redirect_path) || persona.destination);
         } catch (error) {
           // Deliberately generic: the visitor cannot act on a backend reason,

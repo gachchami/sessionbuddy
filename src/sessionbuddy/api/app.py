@@ -27,6 +27,7 @@ from sessionbuddy.platform.auth.access import (
 )
 from sessionbuddy.platform.auth.demo_router import demo_router
 from sessionbuddy.platform.auth.http import session_cookie_value
+from sessionbuddy.platform.auth.redirects import ROLE_DESTINATIONS
 from sessionbuddy.platform.signed_cursors import StaleCursorError
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
@@ -113,11 +114,7 @@ def _session_home_destination(session) -> str:
     active_role = getattr(session, "active_role", None)
     if active_role is None or active_role == "":
         return "/calls"
-    destination = {
-        "organizer": "/admin",
-        "speaker": "/speaker",
-        "reviewer": "/reviews",
-    }.get(active_role)
+    destination = ROLE_DESTINATIONS.get(active_role)
     if destination is None:
         raise HTTPException(status_code=403)
     return destination
@@ -365,6 +362,12 @@ async def not_found(request: Request, _exception: Exception) -> Response:
 
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exception: HTTPException) -> Response:
+    if (
+        300 <= exception.status_code < 400
+        and exception.headers
+        and exception.headers.get("Location")
+    ):
+        return Response(status_code=exception.status_code, headers=exception.headers)
     if exception.status_code == 403 and _expects_browser_page(request):
         return _browser_error_response(
             request,

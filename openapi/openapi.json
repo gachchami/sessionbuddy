@@ -3887,6 +3887,11 @@
             "title": "Answers",
             "type": "array"
           },
+          "assigned_after_close": {
+            "default": false,
+            "title": "Assigned After Close",
+            "type": "boolean"
+          },
           "blind_review": {
             "default": false,
             "title": "Blind Review",
@@ -4762,6 +4767,16 @@
           "evaluator_user_id": {
             "title": "Evaluator User Id",
             "type": "string"
+          },
+          "late_assignment_count": {
+            "default": 0,
+            "title": "Late Assignment Count",
+            "type": "integer"
+          },
+          "late_completed_count": {
+            "default": 0,
+            "title": "Late Completed Count",
+            "type": "integer"
           }
         },
         "required": [

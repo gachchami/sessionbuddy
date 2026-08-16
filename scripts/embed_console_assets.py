@@ -111,6 +111,10 @@ CONTENT_ADDRESSED_ASSETS = (
     ("app/index.html", "app/assets/reviews.js", "/app/assets/reviews.js"),
     ("app/index.html", "app/assets/reviews.css", "/app/assets/reviews.css"),
 )
+SHARED_ASSET_VERSIONS = {
+    "/app-shell/assets/api-client.js": "8",
+    "/app-shell/assets/app-shell.js": "29",
+}
 
 
 def _versioned_html(filename: str, content: str) -> str:
@@ -126,15 +130,23 @@ def _versioned_html(filename: str, content: str) -> str:
 
 
 def sync_content_addresses(*, check: bool) -> None:
-    for html_name in {item[0] for item in CONTENT_ADDRESSED_ASSETS}:
-        path = STATIC / html_name
+    html_paths = {STATIC / item[0] for item in CONTENT_ADDRESSED_ASSETS}
+    html_paths.update(STATIC.rglob("*.html"))
+    html_paths.add(ROOT / "frontend" / "index.html")
+    for path in html_paths:
         current = path.read_text(encoding="utf-8")
-        expected = _versioned_html(html_name, current)
+        expected = _versioned_html(
+            str(path.relative_to(STATIC)) if path.is_relative_to(STATIC) else path.name,
+            current,
+        )
+        for asset_path, version in SHARED_ASSET_VERSIONS.items():
+            pattern = re.escape(asset_path) + r"(?:\?v=[A-Za-z0-9._-]+)?"
+            expected = re.sub(pattern, f"{asset_path}?v={version}", expected)
         if current == expected:
             continue
         if check:
             raise SystemExit(
-                f"{html_name} has stale asset identities; run this script without --check"
+                f"{path} has stale asset identities; run this script without --check"
             )
         path.write_text(expected, encoding="utf-8")
 

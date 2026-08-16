@@ -24,14 +24,14 @@ const session = {
   event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Example Event", permissions: ["owner"], assignments: [] }],
 };
 
-async function mockSession(page: Page) {
+async function mockSession(page: Page, currentSession = session) {
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify(session),
+    body: JSON.stringify(currentSession),
   }));
   await page.route("**/api/v1/session", (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify(session),
+    body: JSON.stringify(currentSession),
   }));
 }
 
@@ -93,7 +93,22 @@ test.describe("safe API and page failures", () => {
   });
 
   test("React review pages also normalize text server failures", async ({ page }) => {
-    await mockSession(page);
+    await mockSession(page, {
+      ...session,
+      email: "reviewer@example.com",
+      display_name: "Reviewer",
+      account_roles: ["reviewer"],
+      active_role: "reviewer",
+      default_role: "reviewer",
+      organization_access: [],
+      event_access: [{
+        organization_id: organizationId,
+        event_id: eventId,
+        event_name: "Example Event",
+        permissions: [],
+        assignments: ["reviewer"],
+      }],
+    });
     await page.route("**/api/v1/evaluator/assignments", (route) => route.fulfill({
       status: 502,
       contentType: "text/plain",

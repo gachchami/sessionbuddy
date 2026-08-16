@@ -44,6 +44,15 @@ h2 { margin-top: 2rem; }
 .review-detail:empty { display: none; }
 .review-detail > article { max-width: 58rem; margin: 0 auto; padding: clamp(1.25rem, 3vw, 2rem); border-radius: 1rem; }
 .review-back { margin-bottom: 1rem; }
+.review-conflict { margin: .9rem 0 1.25rem; padding: 0; overflow: hidden; border: 1px solid #ead7d4; border-radius: .7rem; background: #fffafa; }
+.review-conflict > summary { position: relative; display: block; padding: .75rem 2.5rem .75rem .85rem; color: #8f2d27; list-style: none; }
+.review-conflict > summary::-webkit-details-marker { display: none; }
+.review-conflict > summary::after { position: absolute; top: 50%; right: .85rem; content: "+"; color: #a34840; transform: translateY(-50%); }
+.review-conflict[open] > summary { border-bottom: 1px solid #ead7d4; background: #fff5f4; }
+.review-conflict[open] > summary::after { content: "−"; }
+.review-conflict__body { padding: 0 .85rem .85rem; }
+.review-conflict__body > .help { margin: .8rem 0 0; line-height: 1.5; }
+.review-conflict__body .actions { justify-content: flex-start; }
 .scorecard { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; margin: 1.5rem 0 0; padding: 1rem; border: 0; border-radius: .85rem; background: #f3f6fc; }
 .scorecard legend { padding: 0 .35rem; color: #344054; font-size: .875rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .scorecard__criterion { align-content: start; margin: 0; padding: .85rem; border: 1px solid #dde3ef; border-radius: .7rem; background: white; }

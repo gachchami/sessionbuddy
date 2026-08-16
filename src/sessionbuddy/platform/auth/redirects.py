@@ -3,6 +3,12 @@
 from collections.abc import Collection
 from urllib.parse import unquote, urlsplit
 
+ROLE_DESTINATIONS = {
+    "organizer": "/admin",
+    "reviewer": "/reviews",
+    "speaker": "/speaker",
+}
+
 
 def is_allowed_redirect(value: str, allowed_paths: Collection[str]) -> bool:
     """Accept only explicitly allowed, normalized application-relative paths."""

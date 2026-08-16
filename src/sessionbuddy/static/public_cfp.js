@@ -977,6 +977,7 @@
       // partially completed proposal as ready for the review step.
       saveBrowserDraft(false);
       const session = await api("/api/v1/auth/password/sign-in", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password, redirect_path: location.pathname }) });
+      window.SessionBuddyApi.prepareForSessionReplacement();
       location.assign(session.redirect_path || location.pathname);
     } catch (error) {
       form.elements.email.disabled = false;

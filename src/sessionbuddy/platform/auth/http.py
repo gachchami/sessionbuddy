@@ -11,6 +11,7 @@ from sessionbuddy.platform.db.d1 import row_mapping
 from sessionbuddy.platform.db.types import utc_now_ms
 
 from .d1 import D1AuthorizationFacts, D1SessionStore
+from .redirects import ROLE_DESTINATIONS
 from .request_guard import guard_cookie_mutation
 from .service import authenticate_session
 
@@ -164,6 +165,14 @@ async def require_document_persona(request: Request, persona: Persona) -> None:
             return
         raise
     if authenticated.actor.active_persona is not persona:
+        destination = ROLE_DESTINATIONS.get(authenticated.actor.active_persona.value)
+        if destination is None:
+            raise HTTPException(status_code=403)
+        if "text/html" in request.headers.get("accept", "").lower():
+            raise HTTPException(
+                status_code=303,
+                headers={"Location": destination, "Cache-Control": "no-store"},
+            )
         raise HTTPException(status_code=403)
 
 
