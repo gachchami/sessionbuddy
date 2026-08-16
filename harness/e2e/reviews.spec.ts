@@ -140,7 +140,11 @@ test.describe("reviewer workspace", () => {
         savedPayload = route.request().postDataJSON();
         evaluationState = String(savedPayload?.state);
         savedResponses = savedPayload?.criterion_responses as Record<string, number>;
-        return route.fulfill({ contentType: "application/json", body: "{}" });
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+          id: "weighted-evaluation", assignment_id: assignmentId, rating: 2,
+          recommendation: "accept", internal_comment: "",
+          criterion_responses: savedResponses, state: evaluationState, version: 1,
+        }) });
       }
       return route.fulfill({
         contentType: "application/json",
@@ -215,7 +219,11 @@ test.describe("reviewer workspace", () => {
     await page.route("**/api/v1/evaluator/assignments**", (route) => {
       if (new URL(route.request().url()).pathname.endsWith(`/${assignmentId}/evaluation`)) {
         savedPayload = route.request().postDataJSON();
-        return route.fulfill({ contentType: "application/json", body: "{}" });
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+          id: "purpose-evaluation", assignment_id: assignmentId, rating: 4,
+          recommendation: "Maybe", internal_comment: "Useful but intentionally tentative.",
+          criterion_responses: savedPayload?.criterion_responses, state: "final", version: 1,
+        }) });
       }
       return route.fulfill({
         contentType: "application/json",
@@ -285,7 +293,11 @@ test.describe("reviewer workspace", () => {
     await page.route("**/api/v1/evaluator/assignments**", (route) => {
       if (new URL(route.request().url()).pathname.endsWith(`/${assignmentId}/evaluation`)) {
         savedPayload = route.request().postDataJSON();
-        return route.fulfill({ contentType: "application/json", body: "{}" });
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+          id: "legacy-evaluation", assignment_id: assignmentId, rating: 4,
+          recommendation: "strong_accept", internal_comment: "",
+          criterion_responses: savedPayload?.criterion_responses, state: "draft", version: 1,
+        }) });
       }
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({
         total: 1, completed_count: 0, next_cursor: null, data: [{
@@ -395,21 +407,29 @@ test.describe("reviewer workspace", () => {
     const firstId = "11111111-1111-4111-8111-111111111111";
     const secondId = "22222222-2222-4222-8222-222222222222";
     let releaseFinalize!: () => void;
-    let releaseRefresh!: () => void;
     const finalizeGate = new Promise<void>((resolve) => { releaseFinalize = resolve; });
-    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
-    let committed = false;
+    let assignmentListRequests = 0;
 
     await page.route("**/api/v1/auth/session", (route) =>
       route.fulfill({ contentType: "application/json", body: reviewerSession }));
     await page.route("**/api/v1/evaluator/assignments**", async (route) => {
-      if (new URL(route.request().url()).pathname.endsWith(`/${firstId}/evaluation`)) {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith(`/${firstId}/evaluation`)) {
         await finalizeGate;
         states.one = String(route.request().postDataJSON().state);
-        committed = true;
-        return route.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true }) });
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+          id: "final-evaluation", assignment_id: firstId, rating: 4,
+          recommendation: "accept", internal_comment: "", criterion_responses: {},
+          state: "final", version: 1,
+        }) });
       }
-      if (committed) await refreshGate;
+      if (path.endsWith(`/${secondId}/conflict`)) {
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+          id: "conflict-two", assignment_id: secondId,
+          conflict_type: "speaker_relationship", explanation: "Prior collaboration.",
+        }) });
+      }
+      assignmentListRequests += 1;
       return route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -437,15 +457,25 @@ test.describe("reviewer workspace", () => {
     await expect(page.getByText("Finalizing review…")).toBeVisible();
     releaseFinalize();
 
-    // The committed state is visible while the deliberately slow refresh is still blocked.
+    // The canonical mutation response is enough to commit the card immediately; no
+    // queue refetch may replace a previously paged list with page one.
     await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toBeVisible();
     await expect(page.getByText("Review finalized")).toBeVisible();
-    releaseRefresh();
     await expect(page.getByText("1 remaining")).toBeVisible();
+    expect(assignmentListRequests).toBe(1);
 
     // And the rest of the queue is one click away, without a reload.
     await page.getByRole("button", { name: "Back to assigned proposals" }).click();
     await expect(page.getByRole("heading", { name: "Scaling Postgres" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Taming 40-Minute CI" })).toHaveCount(0);
+
+    // A conflict refreshes the queue, then writes its more specific confirmation. A
+    // count-sync effect must not overwrite that confirmation after the refresh render.
+    await page.getByRole("button", { name: "Open review" }).click();
+    await page.getByText("Declare a conflict of interest").click();
+    await page.getByLabel("Explanation").fill("Prior collaboration.");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Remove my assignment" }).click();
+    await expect(page.getByText("Conflict declared. The assignment is ready for reassignment.")).toBeVisible();
   });
 });

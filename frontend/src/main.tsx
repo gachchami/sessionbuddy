@@ -35,6 +35,16 @@ type Assignment = {
   answers: { label: string; value: string }[];
   hidden_answer_count: number;
 };
+type EvaluationView = {
+  id: string;
+  assignment_id: string;
+  rating: number | null;
+  recommendation: string | null;
+  internal_comment: string;
+  criterion_responses: Record<string, number | string>;
+  state: "draft" | "final";
+  version: number;
+};
 type SubmissionResult = {
   submission_id: string;
   speaker_name: string;
@@ -210,6 +220,7 @@ function ReviewWorkspace() {
   const [showFinalized, setShowFinalized] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [reviewCounts, setReviewCounts] = useState({ total: 0, completed: 0 });
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
@@ -224,7 +235,6 @@ function ReviewWorkspace() {
     addEventListener("beforeunload", warn);
     return () => removeEventListener("beforeunload", warn);
   }, [dirtyCount]);
-
   function setCard(assignmentId: string, message: string) {
     setCardStatus((current) => ({ ...current, [assignmentId]: message }));
   }
@@ -250,11 +260,12 @@ function ReviewWorkspace() {
     }));
     setAssignments((current) => (cursor ? [...current, ...assignments] : assignments));
     setNextCursor(body.next_cursor);
+    setReviewCounts({ total: body.total, completed: body.completed_count });
     setLoadState("ready");
     setStatus(
       body.total === 0
         ? "New assignments will appear here, and we’ll notify you by email."
-        : `${body.completed_count} of ${body.total} review${body.total === 1 ? "" : "s"} finalized.`,
+        : "",
     );
   }
   async function signIn() {
@@ -364,17 +375,19 @@ function ReviewWorkspace() {
       assignment.id,
       state === "final" ? "Finalizing review…" : "Saving draft…",
     );
+    const payload = {
+      rating,
+      criterion_responses: criterionResponses,
+      recommendation,
+      internal_comment: internalComment,
+      state,
+    };
     try {
-      await api(`/api/v1/evaluator/assignments/${assignment.id}/evaluation`, {
+      const saved = await api<EvaluationView>(
+        `/api/v1/evaluator/assignments/${assignment.id}/evaluation`, {
         method: "PUT",
         headers: mutationHeaders(csrf),
-        body: JSON.stringify({
-          rating,
-          criterion_responses: criterionResponses,
-          recommendation,
-          internal_comment: internalComment,
-          state,
-        }),
+        body: JSON.stringify(payload),
       });
       setDirty((current) => ({ ...current, [assignment.id]: false }));
       setAssignments((current) =>
@@ -382,28 +395,22 @@ function ReviewWorkspace() {
           item.id === assignment.id
             ? {
                 ...item,
-                evaluation_state: state,
-                rating,
-                criterion_responses: criterionResponses,
-                recommendation,
-                internal_comment: internalComment,
+                evaluation_state: saved.state,
+                rating: saved.rating,
+                criterion_responses: saved.criterion_responses,
+                recommendation: saved.recommendation,
+                internal_comment: saved.internal_comment,
               }
             : item,
         ),
       );
-      setCard(
-        assignment.id,
-        state === "final" ? "" : "Draft saved.",
-      );
-      try {
-        await loadAssignments();
-      } catch {
-        setCard(
-          assignment.id,
-          state === "final"
-            ? "Evaluation finalized. Reload to refresh the remaining review count."
-            : "Draft saved. Reload to refresh this review.",
-        );
+      setCard(assignment.id, saved.state === "final" ? "" : "Draft saved.");
+      if (saved.state === "final" && assignment.evaluation_state !== "final") {
+        setReviewCounts((current) => ({
+          ...current,
+          completed: Math.min(current.total, current.completed + 1),
+        }));
+        setStatus("");
       }
     } finally {
       setSaving((current) => {
@@ -497,10 +504,13 @@ function ReviewWorkspace() {
     : assignments.filter(
         (assignment) => assignment.evaluation_state !== "final",
       );
-  const finalizedCount = assignments.filter(
+  // The loaded array may be only page one. Keep the docket honest by using the
+  // server totals while the cards continue to render the pages fetched so far.
+  const finalizedCount = reviewCounts.completed;
+  const remainingCount = Math.max(0, reviewCounts.total - finalizedCount);
+  const hasLoadedFinalized = assignments.some(
     (assignment) => assignment.evaluation_state === "final",
-  ).length;
-  const remainingCount = assignments.length - finalizedCount;
+  );
 
   return (
     <main>
@@ -534,9 +544,9 @@ function ReviewWorkspace() {
         <div className={`review-docket-status${remainingCount === 0 ? " review-docket-status--complete" : ""}`}>
           <p role="status">
             <strong>{remainingCount === 0 ? "All reviews complete" : `${remainingCount} remaining`}</strong>
-            <span>{remainingCount === 0 ? `${finalizedCount} finalized` : `${finalizedCount} of ${assignments.length} finalized`}</span>
+            <span>{remainingCount === 0 ? `${finalizedCount} finalized` : `${finalizedCount} of ${reviewCounts.total} finalized`}</span>
           </p>
-          {finalizedCount > 0 && (
+          {hasLoadedFinalized && (
             <label className="check">
               <input
                 type="checkbox"
@@ -547,6 +557,11 @@ function ReviewWorkspace() {
             </label>
           )}
         </div>
+      )}
+      {loadState === "ready" && assignments.length > 0 && status && (
+        <p className="review-action-status" role="status" aria-live="polite">
+          {status}
+        </p>
       )}
       {!selectedAssignmentId && (
         <section className="review-list" aria-label="Assigned proposals">

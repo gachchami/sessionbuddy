@@ -2831,20 +2831,69 @@ async def save_evaluation(
     ) and (
         assignment["review_closes_at_ms"] is None or int(assignment["review_closes_at_ms"]) > now
     )
+    resource = ResourceContext(
+        str(assignment["organization_id"]),
+        str(assignment["event_id"]),
+        evaluator_user_id=str(assignment["evaluator_user_id"]),
+        evaluator_assignment_status=str(assignment["status"]),
+        evaluation_round_open=assignment["round_status"] == "open" and within_window,
+    )
+    # A completed replay is a read of the review that this reviewer already owns,
+    # not a second save. Authorize ownership first so a lost response can be
+    # recovered even after the review window closes.
+    authenticated = await require_permission(
+        request,
+        Permission.EVALUATION_OWN_READ,
+        resource,
+        mutation=True,
+    )
+    # Authentication and the mutation guard run before header-shape validation, so
+    # anonymous callers receive the route's normal 401 rather than a key-format 400.
+    _key(idempotency_key)
+    fingerprint = hashlib.sha256(
+        json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
+    ).digest()
+    route = "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation"
+    # One version-scoped semantic operation serializes draft and final writes that
+    # started from the same review state. A later intentional draft save receives
+    # the next version key; a finalized review keeps its current key for replay.
+    existing_version = int(assignment["existing_version"])
+    target_version = (
+        existing_version if assignment["existing_state"] == "final" else existing_version + 1
+    )
+    mutation_key = f"evaluation-save:{assignment_id}:v{target_version}"
+    key_hash = hashlib.sha256(mutation_key.encode()).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+           WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
+             AND state = 'completed'"""
+        )
+        .bind(authenticated.actor.user_id, route, key_hash)
+        .first()
+    )
+    if replay:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This review version was already saved with different answers. "
+                    "Reload the review before trying again."
+                ),
+            )
+        return await _evaluation_view_by_assignment(db, assignment_id)
+
     authenticated = await require_permission(
         request,
         Permission.EVALUATION_SAVE,
-        ResourceContext(
-            str(assignment["organization_id"]),
-            str(assignment["event_id"]),
-            evaluator_user_id=str(assignment["evaluator_user_id"]),
-            evaluator_assignment_status=str(assignment["status"]),
-            evaluation_round_open=assignment["round_status"] == "open" and within_window,
-        ),
+        resource,
         mutation=True,
     )
-    if assignment["status"] == "revoked" or assignment["existing_state"] == "final":
-        raise HTTPException(status_code=409)
+    if assignment["existing_state"] == "final":
+        raise HTTPException(
+            status_code=409,
+            detail="This review is already finalized. Reload to see the recorded evaluation.",
+        )
     rubric = json.loads(str(assignment["rubric_json"]))
     rating_min, rating_max = int(rubric["rating"]["min"]), int(rubric["rating"]["max"])
     criteria = list(rubric.get("criteria", []))
@@ -2921,34 +2970,15 @@ async def save_evaluation(
             detail="Add the required reviewer comment before finalizing this review.",
         )
 
-    key = _key(idempotency_key)
-    route = "PUT /api/v1/evaluator/assignments/{assignment_id}/evaluation"
-    fingerprint = hashlib.sha256(
-        json.dumps(body.model_dump(), separators=(",", ":"), sort_keys=True).encode()
-    ).digest()
-    replay = row_mapping(
-        await db.prepare(
-            """SELECT request_fingerprint, response_resource_id FROM idempotency_records
-           WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
-             AND state = 'completed'"""
-        )
-        .bind(authenticated.actor.user_id, route, hashlib.sha256(key.encode()).digest())
-        .first()
-    )
-    if replay:
-        if _blob(replay["request_fingerprint"]) != fingerprint:
-            raise HTTPException(status_code=409)
-        return await _evaluation_view(db, str(replay["response_resource_id"]))
-
     evaluation_id = str(assignment["evaluation_id"] or new_id())
-    version = int(assignment["existing_version"]) + 1
+    version = target_version
     finalized_at = now if body.state == "final" else None
     record = IdempotencyRecord(
         principal_key=authenticated.actor.user_id,
         organization_id=str(assignment["organization_id"]),
         event_id=str(assignment["event_id"]),
         route_key=route,
-        idempotency_key=key,
+        idempotency_key=mutation_key,
         request_fingerprint=fingerprint,
         expires_at_ms=now + 86_400_000,
     )
@@ -3014,17 +3044,34 @@ async def save_evaluation(
         resource_id=evaluation_id,
         completed_at_ms=now,
     )
-    await _execute(request, batch)
-    return EvaluationView(
-        id=evaluation_id,
-        assignment_id=assignment_id,
-        rating=rating,
-        recommendation=body.recommendation,
-        internal_comment=body.internal_comment,
-        criterion_responses=body.criterion_responses,
-        state=body.state,
-        version=version,
-    )
+    try:
+        await _execute(request, batch)
+    except HTTPException as exc:
+        # A same-key race may lose at begin_idempotency after the other request
+        # commits. Recover only a matching completed record; unrelated conflicts
+        # retain their original failure.
+        if exc.status_code != 409:
+            raise
+        raced = row_mapping(
+            await db.prepare(
+                """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key = ?1 AND route_key = ?2 AND idempotency_key_hash = ?3
+                 AND state = 'completed'"""
+            )
+            .bind(authenticated.actor.user_id, route, key_hash)
+            .first()
+        )
+        if raced is None:
+            raise
+        if _blob(raced["request_fingerprint"]) != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This review version was already saved with different answers. "
+                    "Reload the review before trying again."
+                ),
+            ) from exc
+    return await _evaluation_view_by_assignment(db, assignment_id)
 
 
 @evaluation_router.post(
@@ -4445,6 +4492,22 @@ async def _evaluation_view(db, evaluation_id: str) -> EvaluationView:
            FROM evaluations WHERE id = ?1"""
         )
         .bind(evaluation_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404)
+    row["criterion_responses"] = json.loads(str(row.pop("criterion_responses_json")))
+    return EvaluationView.model_validate(row)
+
+
+async def _evaluation_view_by_assignment(db, assignment_id: str) -> EvaluationView:
+    row = row_mapping(
+        await db.prepare(
+            """SELECT id, assignment_id, rating, recommendation, internal_comment,
+                      criterion_responses_json,state, version
+               FROM evaluations WHERE assignment_id = ?1"""
+        )
+        .bind(assignment_id)
         .first()
     )
     if row is None:
