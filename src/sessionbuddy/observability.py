@@ -16,6 +16,7 @@ SAFE_DEGRADATIONS = (
     "account_profile_update_unverified",
     "account_session_rotation_unconfirmed",
     "account_stale_session_cleanup_failed",
+    "accepted_participant_reconciliation_failed",
     "asset_scan_queue_publish_failed",
     "communication_queue_publish_failed",
     "decision_correction_conflict",

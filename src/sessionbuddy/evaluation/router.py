@@ -32,7 +32,9 @@ from sessionbuddy.platform.http import attachment_header
 from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.speaker_operations.acceptance_tasks import (
     SPEAKER_TASK_FLAGS_SQL,
-    acceptance_speaker_tasks,
+    acceptance_requires_onboarding,
+    append_acceptance_speaker_tasks,
+    reconcile_accepted_submission_speakers,
 )
 
 from .models import (
@@ -150,11 +152,41 @@ class _DecisionComposition:
 def _decision_composition(
     *,
     event_name: object,
+    speaker_name: object,
+    proposal_title: object,
     decision: str,
     correction: bool,
     subject_override: str,
     message_override: str,
 ) -> _DecisionComposition:
+    tokens = {
+        "event.name": str(event_name),
+        "speaker.name": str(speaker_name),
+        "submission.title": str(proposal_title),
+    }
+    legacy_tokens = {
+        "{event_name}": tokens["event.name"],
+        "{speaker_name}": tokens["speaker.name"],
+        "{talk_title}": tokens["submission.title"],
+    }
+
+    def resolve(value: str) -> str:
+        canonical_pattern = r"{{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*}}"
+        unknown = sorted(set(re.findall(canonical_pattern, value)) - tokens.keys())
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown decision-message token: {{{{{unknown[0]}}}}}.",
+            )
+        pattern = canonical_pattern + r"|({(?:event_name|speaker_name|talk_title)})"
+        return re.sub(
+            pattern,
+            lambda match: (
+                tokens[match.group(1)] if match.group(1) else legacy_tokens[match.group(2)]
+            ),
+            value,
+        )
+
     outcome = "accepted" if decision == "accepted" else "not selected"
     default_subject = (
         f"{event_name}: corrected proposal result — {outcome}"
@@ -176,8 +208,8 @@ def _decision_composition(
             else "Thank you for your proposal. It was not selected for this event."
         )
     return _DecisionComposition(
-        subject=subject_override or default_subject,
-        body=message_override or default_body,
+        subject=resolve(subject_override or default_subject),
+        body=resolve(message_override or default_body),
         subject_source="override" if subject_override else "builtin",
         message_source="custom" if message_override else "default",
     )
@@ -276,6 +308,119 @@ def _fingerprint(body) -> bytes:
 def _blob(value: object) -> bytes:
     converted = to_python(value)
     return converted if isinstance(converted, bytes) else bytes(converted)
+
+
+async def _additional_acceptance_speakers(
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    submission_id: str,
+) -> list[dict[str, object]]:
+    """Load accepted-task context for non-primary participants on one proposal."""
+    query = SPEAKER_TASK_FLAGS_SQL.join(
+        (
+            """SELECT ss.event_speaker_id,es.status AS event_speaker_status,
+                      COALESCE(NULLIF(p.biography,''),u.description,'') AS biography,
+                      EXISTS(SELECT 1 FROM user_headshots uh WHERE uh.user_id=p.user_id)
+                        AS has_account_headshot,
+                      EXISTS(SELECT 1 FROM speaker_assets sa
+                        JOIN speaker_asset_versions av ON av.asset_id=sa.id
+                          AND av.is_current=1 AND av.scan_state='clean'
+                        WHERE sa.organization_id=s.organization_id AND sa.event_id=s.event_id
+                          AND sa.event_speaker_id=ss.event_speaker_id AND sa.kind='headshot')
+                        AS has_event_headshot,
+""",
+            """
+               FROM submissions s
+               JOIN submission_speakers ss ON ss.organization_id=s.organization_id
+                 AND ss.event_id=s.event_id AND ss.submission_id=s.id AND ss.role!='primary'
+               JOIN event_speakers es ON es.organization_id=s.organization_id
+                 AND es.event_id=s.event_id AND es.id=ss.event_speaker_id
+               JOIN people p ON p.organization_id=s.organization_id AND p.id=es.person_id
+               JOIN users u ON u.id=p.user_id
+               WHERE s.id=?1 AND s.organization_id=?2 AND s.event_id=?3""",
+        )
+    )
+    return result_rows(
+        await db.prepare(query).bind(submission_id, organization_id, event_id).all()
+    )
+
+
+def _append_rejected_participant_cleanup(
+    batch,
+    db,
+    *,
+    organization_id: str,
+    event_id: str,
+    submission_id: str,
+    now: int,
+) -> None:
+    """Waive rejected work and derive every linked speaker's remaining lifecycle."""
+    batch.add_statement(
+        db.prepare(
+            """UPDATE speaker_tasks AS task
+               SET state='waived',waived_at_ms=?1,updated_at_ms=?1,version=version+1
+               WHERE task.organization_id=?2 AND task.event_id=?3 AND task.state='open'
+                 AND task.event_speaker_id IN (SELECT linked.event_speaker_id
+                   FROM submission_speakers linked
+                   WHERE linked.organization_id=?2 AND linked.event_id=?3
+                     AND linked.submission_id=?4)
+                 AND ((task.task_type IN ('profile','headshot') AND NOT (
+                   EXISTS (SELECT 1 FROM submission_speakers linked
+                     JOIN accepted_sessions active
+                       ON active.organization_id=linked.organization_id
+                      AND active.event_id=linked.event_id
+                      AND active.submission_id=linked.submission_id
+                      AND active.lifecycle_status='active'
+                     WHERE linked.organization_id=?2 AND linked.event_id=?3
+                       AND linked.event_speaker_id=task.event_speaker_id)
+                   OR EXISTS (SELECT 1 FROM accepted_session_participants participant
+                     JOIN accepted_sessions active
+                       ON active.organization_id=participant.organization_id
+                      AND active.event_id=participant.event_id
+                      AND active.id=participant.accepted_session_id
+                      AND active.lifecycle_status='active'
+                     WHERE participant.organization_id=?2 AND participant.event_id=?3
+                       AND participant.event_speaker_id=task.event_speaker_id)))
+                   OR (task.task_type NOT IN ('profile','headshot')
+                       AND task.submission_id=?4))"""
+        ).bind(now, organization_id, event_id, submission_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """UPDATE event_speakers AS speaker SET
+                 selection_status=CASE WHEN (
+                   EXISTS (SELECT 1 FROM submission_speakers linked
+                     JOIN accepted_sessions active
+                       ON active.organization_id=linked.organization_id
+                      AND active.event_id=linked.event_id
+                      AND active.submission_id=linked.submission_id
+                      AND active.lifecycle_status='active'
+                     WHERE linked.organization_id=?2 AND linked.event_id=?3
+                       AND linked.event_speaker_id=speaker.id)
+                   OR EXISTS (SELECT 1 FROM accepted_session_participants participant
+                     JOIN accepted_sessions active
+                       ON active.organization_id=participant.organization_id
+                      AND active.event_id=participant.event_id
+                      AND active.id=participant.accepted_session_id
+                      AND active.lifecycle_status='active'
+                     WHERE participant.organization_id=?2 AND participant.event_id=?3
+                       AND participant.event_speaker_id=speaker.id))
+                   THEN 'accepted' ELSE 'rejected' END,
+                 status=CASE WHEN speaker.status='withdrawn' THEN speaker.status
+                   WHEN EXISTS (SELECT 1 FROM speaker_tasks task
+                     WHERE task.organization_id=?2 AND task.event_id=?3
+                       AND task.event_speaker_id=speaker.id AND task.state='open')
+                   THEN 'onboarding' ELSE 'complete' END,
+                 last_activity_at_ms=?1,updated_at_ms=?1
+               WHERE speaker.organization_id=?2 AND speaker.event_id=?3
+                 AND speaker.id IN (SELECT linked.event_speaker_id
+                   FROM submission_speakers linked
+                   WHERE linked.organization_id=?2 AND linked.event_id=?3
+                     AND linked.submission_id=?4)"""
+        ).bind(now, organization_id, event_id, submission_id)
+    )
 
 
 def _assignment_pairs(
@@ -893,7 +1038,8 @@ async def preview_submission_decision_message(
     context = row_mapping(
         await _db(request)
         .prepare(
-            """SELECT s.organization_id,s.proposal_title,s.speaker_email,e.name AS event_name
+            """SELECT s.organization_id,s.proposal_title,s.speaker_name,s.speaker_email,
+                      e.name AS event_name
                FROM submissions s
                JOIN events e ON e.organization_id=s.organization_id AND e.id=s.event_id
                WHERE s.id=?1 AND s.event_id=?2 LIMIT 1"""
@@ -911,6 +1057,8 @@ async def preview_submission_decision_message(
     )
     composition = _decision_composition(
         event_name=context["event_name"],
+        speaker_name=context["speaker_name"],
+        proposal_title=context["proposal_title"],
         decision=body.decision,
         correction=body.correction,
         subject_override=body.speaker_subject,
@@ -942,7 +1090,7 @@ async def correct_final_submission_decision(
     context_query = SPEAKER_TASK_FLAGS_SQL.join(
         (
             """SELECT s.organization_id,s.event_id,s.speaker_email,s.submitter_user_id,
-                      s.proposal_title,e.name AS event_name,
+                      s.speaker_name,s.proposal_title,e.name AS event_name,
                       d.id AS original_decision_id,
                       COALESCE((SELECT c.corrected_decision
                         FROM submission_decision_corrections c
@@ -1060,6 +1208,16 @@ async def correct_final_submission_decision(
         )
 
     now = utc_now_ms()
+    additional_speakers = (
+        await _additional_acceptance_speakers(
+            db,
+            organization_id=str(context["organization_id"]),
+            event_id=event_id,
+            submission_id=submission_id,
+        )
+        if body.corrected_decision == "accepted"
+        else []
+    )
     correction_id = new_id()
     communication_id = new_id() if body.send_email else None
     speaker_withdrawn = context["event_speaker_status"] == "withdrawn"
@@ -1144,10 +1302,12 @@ async def correct_final_submission_decision(
                 )
             )
         if context["event_speaker_id"] is not None:
+            primary_onboarding = acceptance_requires_onboarding(context)
             batch.add_statement(
                 db.prepare(
                     """UPDATE event_speakers SET selection_status='accepted',
-                              status=CASE WHEN status='withdrawn' THEN status ELSE 'onboarding' END,
+                              status=CASE WHEN status='withdrawn' THEN status
+                                WHEN ?5=1 THEN 'onboarding' ELSE 'complete' END,
                               accepted_at_ms=COALESCE(accepted_at_ms,?1),
                               last_activity_at_ms=?1,updated_at_ms=?1
                        WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
@@ -1156,38 +1316,51 @@ async def correct_final_submission_decision(
                     context["organization_id"],
                     event_id,
                     context["event_speaker_id"],
+                    1 if primary_onboarding else 0,
                 )
             )
-            tasks = (
-                [] if speaker_withdrawn else acceptance_speaker_tasks(context)
-            )
-            for task_type, title, help_text, days in tasks:
-                batch.add_statement(
-                    db.prepare(
-                        """INSERT INTO speaker_tasks
-                           (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                            title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
-                           SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10
-                           WHERE NOT EXISTS (
-                             SELECT 1 FROM speaker_tasks existing
-                              WHERE existing.organization_id=?2 AND existing.event_id=?3
-                                AND existing.event_speaker_id=?4
-                                AND existing.task_type=?6 AND existing.state='open'
-                                AND (?6!='slides' OR existing.submission_id=?5)
-                           )"""
-                    ).bind(
-                        new_id(),
-                        context["organization_id"],
-                        event_id,
-                        context["event_speaker_id"],
-                        submission_id,
-                        task_type,
-                        title,
-                        help_text,
-                        now + days * 86_400_000,
-                        now,
-                    )
+            if not speaker_withdrawn:
+                append_acceptance_speaker_tasks(
+                    batch,
+                    db,
+                    context,
+                    organization_id=str(context["organization_id"]),
+                    event_id=event_id,
+                    submission_id=submission_id,
+                    event_speaker_id=str(context["event_speaker_id"]),
+                    now=now,
                 )
+        for additional in additional_speakers:
+            if str(additional["event_speaker_status"]) == "withdrawn":
+                continue
+            additional_id = str(additional["event_speaker_id"])
+            additional_onboarding = acceptance_requires_onboarding(
+                additional, include_slides=False
+            )
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_speakers SET selection_status='accepted',
+                              status=CASE WHEN ?5=1 THEN 'onboarding' ELSE 'complete' END,
+                              accepted_at_ms=COALESCE(accepted_at_ms,?1),
+                              last_activity_at_ms=?1,updated_at_ms=?1
+                       WHERE organization_id=?2 AND event_id=?3 AND id=?4
+                         AND status!='withdrawn'"""
+                ).bind(
+                    now, context["organization_id"], event_id, additional_id,
+                    1 if additional_onboarding else 0,
+                )
+            )
+            append_acceptance_speaker_tasks(
+                batch,
+                db,
+                additional,
+                organization_id=str(context["organization_id"]),
+                event_id=event_id,
+                submission_id=submission_id,
+                event_speaker_id=additional_id,
+                now=now,
+                include_slides=False,
+            )
     else:
         # Keep the accepted-session record and its content history, but remove it from
         # active scheduling. Draft agenda placements are disposable; published revisions
@@ -1212,38 +1385,19 @@ async def correct_final_submission_decision(
                           version=version+1 WHERE id=?2 AND organization_id=?3 AND event_id=?4"""
             ).bind(now, session_id, context["organization_id"], event_id)
         )
-        batch.add_statement(
-            db.prepare(
-                """UPDATE speaker_tasks SET state='waived',waived_at_ms=?1,updated_at_ms=?1,
-                          version=version+1 WHERE organization_id=?2 AND event_id=?3
-                          AND submission_id=?4 AND state='open'"""
-            ).bind(now, context["organization_id"], event_id, submission_id)
+        _append_rejected_participant_cleanup(
+            batch,
+            db,
+            organization_id=str(context["organization_id"]),
+            event_id=event_id,
+            submission_id=submission_id,
+            now=now,
         )
-        if context["event_speaker_id"] is not None:
-            batch.add_statement(
-                db.prepare(
-                    """UPDATE event_speakers SET selection_status='rejected',
-                              last_activity_at_ms=?1,updated_at_ms=?1
-                       WHERE organization_id=?2 AND event_id=?3 AND id=?4
-                         AND NOT EXISTS (
-                           SELECT 1 FROM submission_speakers linked
-                           JOIN accepted_sessions active
-                             ON active.organization_id=linked.organization_id
-                            AND active.event_id=linked.event_id
-                            AND active.submission_id=linked.submission_id
-                            AND active.lifecycle_status='active'
-                           WHERE linked.organization_id=?2 AND linked.event_id=?3
-                             AND linked.event_speaker_id=?4)"""
-                ).bind(
-                    now,
-                    context["organization_id"],
-                    event_id,
-                    context["event_speaker_id"],
-                )
-            )
     if communication_id is not None:
         composition = _decision_composition(
             event_name=context["event_name"],
+            speaker_name=context["speaker_name"],
+            proposal_title=context["proposal_title"],
             decision=body.corrected_decision,
             correction=True,
             subject_override=body.speaker_subject,
@@ -1300,6 +1454,18 @@ async def correct_final_submission_decision(
         completed_at_ms=now,
     )
     await _execute_decision_correction(request, batch)
+    if body.corrected_decision == "accepted":
+        try:
+            await reconcile_accepted_submission_speakers(
+                db,
+                organization_id=str(context["organization_id"]),
+                event_id=event_id,
+                submission_id=submission_id,
+                now=now,
+                execute_batch=lambda followup: _execute(request, followup),
+            )
+        except HTTPException:
+            record_degradation(request, "accepted_participant_reconciliation_failed")
     if communication_id is not None:
         await publish_committed_messages(request, [communication_id])
     return SubmissionDecisionCorrectionView(
@@ -4401,7 +4567,8 @@ async def record_submission_decision(
         raise HTTPException(status_code=409)
     speaker_query = SPEAKER_TASK_FLAGS_SQL.join(
         (
-            """SELECT s.speaker_email,s.submitter_user_id,s.proposal_title,e.name AS event_name,
+            """SELECT s.speaker_email,s.submitter_user_id,s.speaker_name,s.proposal_title,
+                      e.name AS event_name,
                       ss.event_speaker_id,p.biography,
                       EXISTS(
                         SELECT 1 FROM user_headshots uh
@@ -4489,6 +4656,16 @@ async def record_submission_decision(
     communication_id = new_id() if body.send_email else None
     version = 1
     now = utc_now_ms()
+    additional_speakers = (
+        await _additional_acceptance_speakers(
+            db,
+            organization_id=str(context["organization_id"]),
+            event_id=str(context["event_id"]),
+            submission_id=submission_id,
+        )
+        if body.decision == "accepted"
+        else []
+    )
     record = IdempotencyRecord(
         principal_key=auth.actor.user_id,
         organization_id=str(context["organization_id"]),
@@ -4536,73 +4713,71 @@ async def record_submission_decision(
             )
         )
         if speaker["event_speaker_id"] is not None:
+            primary_onboarding = acceptance_requires_onboarding(speaker)
             batch.add_statement(
                 db.prepare(
-                    """UPDATE event_speakers SET selection_status='accepted',status='onboarding',
-                              accepted_at_ms=?1,last_activity_at_ms=?1,updated_at_ms=?1
+                    """UPDATE event_speakers SET selection_status='accepted',
+                              status=CASE WHEN status='withdrawn' THEN status
+                                WHEN ?5=1 THEN 'onboarding' ELSE 'complete' END,
+                              accepted_at_ms=COALESCE(accepted_at_ms,?1),
+                              last_activity_at_ms=?1,updated_at_ms=?1
                        WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
                 ).bind(
                     now,
                     context["organization_id"],
                     context["event_id"],
                     speaker["event_speaker_id"],
+                    1 if primary_onboarding else 0,
                 )
             )
             # Registration has already established the speaker's identity. Acceptance
             # therefore creates work only for information or assets that are actually
             # missing; a generic supporting-document request has no actionable meaning
             # and must be created later as an explicit, contextual request if needed.
-            tasks = acceptance_speaker_tasks(speaker)
-            for task_type, title, help_text, days in tasks:
-                batch.add_statement(
-                    db.prepare(
-                        """INSERT INTO speaker_tasks
-                           (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                            title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
-                           SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10
-                           WHERE NOT EXISTS (
-                             SELECT 1 FROM speaker_tasks existing
-                              WHERE existing.organization_id=?2 AND existing.event_id=?3
-                                AND existing.event_speaker_id=?4
-                                AND existing.task_type=?6 AND existing.state='open'
-                                AND (?6!='slides' OR existing.submission_id=?5)
-                           )"""
-                    ).bind(
-                        new_id(),
-                        context["organization_id"],
-                        context["event_id"],
-                        speaker["event_speaker_id"],
-                        submission_id,
-                        task_type,
-                        title,
-                        help_text,
-                        now + days * 86_400_000,
-                        now,
-                    )
-                )
-    elif speaker["event_speaker_id"] is not None:
-        # Downgrade selection status only when no OTHER submission of this
-        # speaker has an accepted decision — a rejection of proposal B must not
-        # clobber the accepted status earned by proposal A.
-        batch.add_statement(
-            db.prepare(
-                """UPDATE event_speakers SET selection_status='rejected',last_activity_at_ms=?1,
-                          updated_at_ms=?1 WHERE organization_id=?2 AND event_id=?3 AND id=?4
-                     AND NOT EXISTS (
-                       SELECT 1 FROM submission_decisions d
-                       JOIN submission_speakers ss ON ss.submission_id=d.submission_id
-                       WHERE ss.organization_id=?2 AND ss.event_id=?3
-                         AND ss.event_speaker_id=?4 AND d.decision='accepted'
-                         AND d.submission_id!=?5
-                     )"""
-            ).bind(
-                now,
-                context["organization_id"],
-                context["event_id"],
-                speaker["event_speaker_id"],
-                submission_id,
+            append_acceptance_speaker_tasks(
+                batch,
+                db,
+                speaker,
+                organization_id=str(context["organization_id"]),
+                event_id=str(context["event_id"]),
+                submission_id=submission_id,
+                event_speaker_id=str(speaker["event_speaker_id"]),
+                now=now,
             )
-        )
+        for additional in additional_speakers:
+            if str(additional["event_speaker_status"]) == "withdrawn":
+                continue
+            additional_id = str(additional["event_speaker_id"])
+            additional_onboarding = acceptance_requires_onboarding(
+                additional, include_slides=False
+            )
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_speakers SET selection_status='accepted',
+                              status=CASE WHEN ?5=1 THEN 'onboarding' ELSE 'complete' END,
+                              accepted_at_ms=COALESCE(accepted_at_ms,?1),
+                              last_activity_at_ms=?1,updated_at_ms=?1
+                       WHERE organization_id=?2 AND event_id=?3 AND id=?4
+                         AND status!='withdrawn'"""
+                ).bind(
+                    now,
+                    context["organization_id"],
+                    context["event_id"],
+                    additional_id,
+                    1 if additional_onboarding else 0,
+                )
+            )
+            append_acceptance_speaker_tasks(
+                batch,
+                db,
+                additional,
+                organization_id=str(context["organization_id"]),
+                event_id=str(context["event_id"]),
+                submission_id=submission_id,
+                event_speaker_id=additional_id,
+                now=now,
+                include_slides=False,
+            )
     if body.decision == "rejected":
         # A permanent rejection immediately removes unfinished work from every
         # reviewer queue. Completed reviews remain immutable historical evidence.
@@ -4613,25 +4788,19 @@ async def record_submission_decision(
                      AND status='assigned'"""
             ).bind(now, context["organization_id"], context["event_id"], submission_id)
         )
-        # Waive only the rejected submission's tasks, never tasks that belong
-        # to another (accepted) submission of the same speaker.
-        batch.add_statement(
-            db.prepare(
-                """UPDATE speaker_tasks SET state='waived',waived_at_ms=?1,updated_at_ms=?1,
-                          version=version+1 WHERE organization_id=?2 AND event_id=?3
-                          AND event_speaker_id=?4 AND state='open'
-                          AND COALESCE(submission_id,'')=?5"""
-            ).bind(
-                now,
-                context["organization_id"],
-                context["event_id"],
-                speaker["event_speaker_id"],
-                submission_id,
-            )
+        _append_rejected_participant_cleanup(
+            batch,
+            db,
+            organization_id=str(context["organization_id"]),
+            event_id=str(context["event_id"]),
+            submission_id=submission_id,
+            now=now,
         )
     if communication_id is not None:
         composition = _decision_composition(
             event_name=speaker["event_name"],
+            speaker_name=speaker["speaker_name"],
+            proposal_title=speaker["proposal_title"],
             decision=body.decision,
             correction=False,
             subject_override=body.speaker_subject,
@@ -4710,6 +4879,20 @@ async def record_submission_decision(
         )
         if concurrent is not None and str(concurrent["decision"]) == body.decision:
             record_degradation(request, "submission_decision_concurrent_reconciled")
+            if body.decision == "accepted":
+                try:
+                    await reconcile_accepted_submission_speakers(
+                        db,
+                        organization_id=str(context["organization_id"]),
+                        event_id=str(context["event_id"]),
+                        submission_id=submission_id,
+                        now=now,
+                        execute_batch=lambda followup: _execute(request, followup),
+                    )
+                except HTTPException:
+                    record_degradation(
+                        request, "accepted_participant_reconciliation_failed"
+                    )
             return await _decision_view(db, str(concurrent["id"]))
         if concurrent is None:
             raise
@@ -4721,6 +4904,18 @@ async def record_submission_decision(
             ),
             headers={"X-Conflict-Type": "final-decision"},
         ) from exc
+    if body.decision == "accepted":
+        try:
+            await reconcile_accepted_submission_speakers(
+                db,
+                organization_id=str(context["organization_id"]),
+                event_id=str(context["event_id"]),
+                submission_id=submission_id,
+                now=now,
+                execute_batch=lambda followup: _execute(request, followup),
+            )
+        except HTTPException:
+            record_degradation(request, "accepted_participant_reconciliation_failed")
     if communication_id is not None:
         await publish_committed_messages(request, [communication_id])
     # Return the same canonical projection used by idempotent and concurrent

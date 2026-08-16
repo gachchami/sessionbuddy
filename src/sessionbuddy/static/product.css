@@ -204,6 +204,7 @@ body.public-body { background: radial-gradient(circle at 10% 0, rgba(109,74,255,
 .proposal-summary-row { list-style: none; }
 .proposal-summary-row__link { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: .75rem; min-height: 3.5rem; padding: .7rem .85rem; border-bottom: 1px solid #e6e2ef; color: inherit; text-decoration: none; }
 .proposal-summary-row__link:hover { background: #f8f6ff; }
+.proposal-summary-row__link.is-read-only:hover { background: transparent; }
 .proposal-summary-row__link strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proposal-summary-row__identity { min-width: 0; display: grid; gap: .15rem; }
 .proposal-summary-row__identity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

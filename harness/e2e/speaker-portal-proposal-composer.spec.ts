@@ -34,7 +34,8 @@ const form = {
 };
 
 const proposal = (id: string, title: string, version = 1) => ({
-  id, editable: true, speaker_name: "Priya Raman", speaker_email: "priya@example.test",
+  id, editable: true, can_manage_participants: true,
+  speaker_name: "Priya Raman", speaker_email: "priya@example.test",
   proposal_title: title, proposal_abstract: `${title} abstract`, status: "submitted", version,
   submitted_at_ms: Date.UTC(2027, 7, 3),
   answers: { speaker_name: "Priya Raman", speaker_email: "priya@example.test", proposal_title: title, proposal_abstract: `${title} abstract`, format: "Talk" },
@@ -108,6 +109,19 @@ async function serveWorkspace(page: Page, options: WorkspaceOptions = {}) {
     submissions[index] = { ...submissions[index], status: "withdrawn", editable: false };
     await route.fulfill({ json: submissions[index] });
   });
+  await page.route("**/api/v1/forms/devflow-2027/submissions/proposal-*/participants", async (route) => {
+    const id = route.request().url().split("/").at(-2) || "";
+    const body = route.request().postDataJSON() as { co_speakers: Array<Record<string, unknown>>; version: number };
+    const index = submissions.findIndex((item) => item.id === id);
+    submissions[index] = {
+      ...submissions[index],
+      co_speakers: body.co_speakers,
+      version: body.version + 1,
+      editable: false,
+      status: "accepted",
+    };
+    await route.fulfill({ json: submissions[index] });
+  });
   await page.route("**/api/v1/cfp/forms/form-devflow/upload-authorizations", async (route) => {
     uploadAuthorizations += 1;
     const status = uploadAuthorizationStatuses.shift() || 201;
@@ -137,6 +151,53 @@ async function serveWorkspace(page: Page, options: WorkspaceOptions = {}) {
 
 test.describe("speaker proposal workspace", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+
+  test("preserves required semantics and participant roles through acceptance", async ({ page }) => {
+    const harness = await serveWorkspace(page, { form: {
+      co_speaker_limit: 3,
+      fields: [
+        ...form.fields,
+        { key: "key_takeaway", type: "textarea", label: "Key takeaway", required: true, choices: [], help_text: "", placeholder: "" },
+      ],
+    } });
+    Object.assign(harness.submissions[0], { status: "accepted", editable: false });
+    await page.goto("/speaker/proposals/devflow-2027/proposal-a");
+
+    const takeaway = page.locator("#field-key_takeaway");
+    await expect(takeaway).toBeDisabled();
+    await expect(takeaway).toHaveAttribute("required", "");
+    await expect(takeaway.locator("xpath=ancestor::label")).toContainText("(required)");
+    await expect(page.locator("#co-speaker-limit-status")).toHaveText("0 of 3 additional participants added.");
+    await page.getByRole("button", { name: "Add participant" }).click();
+    const participant = page.locator(".co-speaker-row").last();
+    await participant.getByLabel("Name").fill("Marcus Okafor");
+    await participant.getByLabel("Email").fill("marcus@example.test");
+    await participant.getByLabel("Role").selectOption("co_author");
+    await page.getByRole("button", { name: "Save participants" }).click();
+
+    await expect(page.locator("#status")).toHaveText(
+      "Participants saved. Invitations were sent only to newly added participants.",
+    );
+    expect(harness.submissions[0].co_speakers).toEqual([
+      expect.objectContaining({ display_name: "Marcus Okafor", role: "co_author" }),
+    ]);
+    await expect(page.getByLabel("Proposal title")).toBeDisabled();
+  });
+
+  test("accepted co-presenters cannot invoke the primary submitter participant editor", async ({ page }) => {
+    const harness = await serveWorkspace(page);
+    Object.assign(harness.submissions[0], {
+      status: "accepted",
+      editable: false,
+      can_manage_participants: false,
+    });
+
+    await page.goto("/speaker/proposals/devflow-2027/proposal-a");
+
+    await expect(page.getByRole("button", { name: "Add participant" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save participants" })).toBeHidden();
+    await expect(page.locator("#status")).toContainText("only by the primary submitter");
+  });
 
   test("keeps exact proposal editors isolated by URL without a second proposal index", async ({ page }) => {
     await serveWorkspace(page);
@@ -303,6 +364,12 @@ test.describe("speaker proposal workspace", () => {
     );
     await rows.nth(1).getByLabel("Email").fill("second@example.test");
     await page.getByRole("button", { name: "Review proposal" }).click();
+    await expect(page.locator("#review-list")).toContainText(
+      "First collaborator — Moderator (collaborator@example.test)",
+    );
+    await expect(page.locator("#review-list")).toContainText(
+      "Second collaborator — Co-speaker (second@example.test)",
+    );
     await page.getByRole("button", { name: "Save changes" }).click();
     expect((harness.patches.at(-1)?.body.co_speakers as Array<{ role: string }>)[0].role).toBe("moderator");
   });

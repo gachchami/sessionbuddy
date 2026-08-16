@@ -1022,7 +1022,7 @@ test.describe("dynamic form drafts", () => {
     await expect(page.getByText("Workshop equipment (required)")).toHaveCount(0);
     await expect(page.getByText("Additional questions may appear based on your answers.")).toBeVisible();
     await page.getByRole("textbox", { name: /Speaker name/ }).fill("Example Speaker");
-    await page.getByRole("textbox", { name: "Email", exact: true }).fill("speaker@example.com");
+    await page.getByRole("textbox", { name: "Email (required)", exact: true }).fill("speaker@example.com");
     await page.getByRole("textbox", { name: /Proposal title/ }).fill("Deferred authentication");
     await page.getByRole("textbox", { name: /Proposal abstract/ }).fill("The entire form is complete before sign-in.");
     await page.getByRole("button", { name: "Review proposal" }).click();

@@ -464,7 +464,7 @@
     editor.elements.opens_at.value = toLocalInput(form.opens_at_ms);
     editor.elements.closes_at.value = toLocalInput(form.closes_at_ms);
     editor.elements.submission_limit.value = form.submission_limit || "";
-    editor.elements.co_speaker_limit.value = form.co_speaker_limit ?? 1;
+    editor.elements.co_speaker_limit.value = form.co_speaker_limit ?? 3;
     if (form.success_title) editor.elements.success_title.value = form.success_title;
     if (form.success_message) editor.elements.success_message.value = form.success_message;
     if (form.confirmation_subject) editor.elements.confirmation_subject.value = form.confirmation_subject;
@@ -1647,7 +1647,7 @@
           opens_at_ms: current.opens_at_ms,
           closes_at_ms: current.closes_at_ms,
           submission_limit: current.submission_limit,
-          co_speaker_limit: current.co_speaker_limit ?? 1,
+          co_speaker_limit: current.co_speaker_limit ?? 3,
           success_title: current.success_title,
           success_message: current.success_message,
           redirect_to_portal: current.redirect_to_portal,

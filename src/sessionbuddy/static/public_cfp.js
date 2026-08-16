@@ -203,10 +203,13 @@
   function availabilityMessage(form) {
     const boundary = formatEventDate(form.availability_boundary_at_ms, form);
     if (form.availability_state === "scheduled" && boundary) {
-      return `${form.availability_message} Applications open ${boundary}.`;
+      return `${form.availability_message} Applications open ${boundary}. The current status and dates below take precedence over dates in the organizer introduction.`;
     }
     if (form.availability_state === "closed" && boundary) {
-      return `${form.availability_message} The call closed ${boundary}.`;
+      return `${form.availability_message} The call closed ${boundary}. The current status and dates below take precedence over dates in the organizer introduction.`;
+    }
+    if (["scheduled", "closed"].includes(form.availability_state)) {
+      return `${form.availability_message} The current status and dates below take precedence over dates in the organizer introduction.`;
     }
     return form.availability_message;
   }
@@ -214,8 +217,11 @@
   function renderCallDetails(form) {
     const openingLabel = formatEventDate(form.opens_at_ms, form);
     const deadlineLabel = formatEventDate(form.closes_at_ms, form);
-    byId("call-opens").textContent = openingLabel || "Open now";
+    const closed = form.availability_state === "closed";
+    byId("call-opens").textContent = openingLabel || (closed ? "Opened immediately" : "Open now");
+    byId("call-opens").closest("div").querySelector("dt").textContent = closed ? "Opened" : "Opens";
     byId("call-deadline").textContent = deadlineLabel || "No closing date set";
+    byId("call-deadline").closest("div").querySelector("dt").textContent = closed ? "Closed" : "Deadline";
     // The close date is the single most decision-relevant fact for a submitter,
     // so it also belongs in the event header rather than only in the sidebar
     // card, which sits below the fold in the two-column application layout.
@@ -265,7 +271,7 @@
       if (field.required) {
         const marker = make("span", "*", "required-marker");
         marker.setAttribute("aria-hidden", "true");
-        fieldLabel.append(marker);
+        fieldLabel.append(marker, make("span", " (required)", "sr-only"));
       }
       label.append(fieldLabel);
       label.dataset.fieldKey = field.key;
@@ -376,7 +382,7 @@
     const primaryEmail = String(form.elements.namedItem("speaker_email")?.value || "").trim().toLowerCase();
     const rows = [...byId("co-speaker-rows").querySelectorAll(".co-speaker-row")];
     const seen = new Set();
-    const limit = state.form?.co_speaker_limit ?? 1;
+    const limit = state.form?.co_speaker_limit ?? 3;
     let valid = rows.length <= limit;
     for (const row of rows) {
       const email = row.querySelector('[name="co_speaker_email"]');
@@ -392,6 +398,9 @@
       if (normalized) seen.add(normalized);
     }
     byId("add-co-speaker").disabled = rows.length >= limit;
+    byId("co-speaker-limit-status").textContent = limit > 0
+      ? `${rows.length} of ${limit} additional participants added.`
+      : "Additional participants are disabled for this call.";
     return valid;
   }
 
@@ -410,9 +419,9 @@
     if (selected) chooseSubmission(selected);
   }
 
-  async function recoverOptimisticConflict(error) {
-    if (error.status !== 409 || !state.editingSubmission) return false;
-    const submissionId = state.editingSubmission.id;
+  async function recoverOptimisticConflict(error, submission = state.editingSubmission) {
+    if (error.status !== 409 || !submission) return false;
+    const submissionId = submission.id;
     clearBrowserDraft();
     state.draftDirty = false;
     await reloadSubmissions(submissionId);
@@ -427,7 +436,8 @@
     const section = byId("co-speaker-invitations");
     const list = byId("co-speaker-invitation-list");
     const invitations = (submission.co_speakers || []).filter((item) => item.id);
-    section.hidden = !submission.editable || invitations.length === 0;
+    const actionsAvailable = submission.editable === true;
+    section.hidden = !(submission.editable || submission.status === "accepted") || invitations.length === 0;
     list.replaceChildren();
     for (const invitation of invitations) {
       const card = make("article", undefined, "co-speaker-invitation");
@@ -443,7 +453,7 @@
         meta.append(make("span", `Expires ${new Date(invitation.expires_at_ms).toLocaleString()}`, "help"));
       }
       const actions = make("div", undefined, "actions");
-      if (["pending", "declined"].includes(invitation.invitation_status)) {
+      if (actionsAvailable && ["pending", "declined"].includes(invitation.invitation_status)) {
         const resend = make("button", "Send again", "secondary");
         resend.type = "button";
         resend.addEventListener("click", async () => {
@@ -458,7 +468,7 @@
         });
         actions.append(resend);
       }
-      if (invitation.invitation_status !== "removed") {
+      if (actionsAvailable && invitation.invitation_status !== "removed") {
         const remove = make("button", "Remove", "secondary");
         remove.type = "button";
         remove.addEventListener("click", async () => {
@@ -631,6 +641,7 @@
 
   function chooseSubmission(submission) {
     const editable = submission.editable === true && state.form.accepting_submissions !== false;
+    const participantsEditable = submission.status === "accepted" && submission.can_manage_participants === true;
     resetProposalFiles();
     state.viewingSubmission = submission;
     state.editingSubmission = editable ? submission : null;
@@ -650,15 +661,25 @@
     const form = byId("proposal-form");
     validateCoSpeakers(form);
     for (const control of form.elements) control.disabled = !editable;
+    if (participantsEditable) {
+      byId("co-speakers").querySelectorAll("input, select, button").forEach((control) => { control.disabled = false; });
+      validateCoSpeakers(form);
+    }
     if (editable) lockSignedInEmail();
     byId("withdraw-proposal").hidden = !editable || submission.status === "withdrawn";
+    byId("save-participants").hidden = !participantsEditable;
+    byId("save-participants").disabled = !participantsEditable;
     byId("submit-proposal").textContent = editable ? "Save changes" : "Confirm submission";
     let viewingStatus = `Viewing “${submission.proposal_title}”. Only the primary submitter can make changes.`;
-    if (state.form.accepting_submissions === false) {
+    if (submission.status === "accepted" && participantsEditable) {
+      viewingStatus = `Viewing “${submission.proposal_title}”. Proposal answers are final; additional participants can still be managed.`;
+    } else if (submission.status === "accepted") {
+      viewingStatus = `Viewing “${submission.proposal_title}”. Proposal answers and participants can be changed only by the primary submitter.`;
+    } else if (state.form.accepting_submissions === false) {
       viewingStatus = `Viewing “${submission.proposal_title}”. The call for proposals is closed, so this proposal is read-only.`;
     } else if (submission.status === "withdrawn") {
       viewingStatus = `Viewing “${submission.proposal_title}”. This proposal was withdrawn and is read-only.`;
-    } else if (["accepted", "rejected"].includes(submission.status)) {
+    } else if (submission.status === "rejected") {
       viewingStatus = `Viewing “${submission.proposal_title}”. A final decision has been recorded, so this proposal is read-only.`;
     }
     setStatus(
@@ -668,6 +689,41 @@
       "success"
     );
   }
+
+  byId("save-participants").addEventListener("click", async () => {
+    const submission = state.viewingSubmission;
+    const form = byId("proposal-form");
+    if (!submission || submission.status !== "accepted" || submission.can_manage_participants !== true) return;
+    const participantsValid = validateCoSpeakers(form);
+    if (!participantsValid || !form.reportValidity()) {
+      setStatus("Check each participant name, email, and role before saving.", "error");
+      return;
+    }
+    const button = byId("save-participants");
+    button.disabled = true;
+    button.textContent = "Saving participants…";
+    try {
+      const updated = await api(`/api/v1/forms/${encodeURIComponent(slug)}/submissions/${encodeURIComponent(submission.id)}/participants`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": state.csrf,
+          "idempotency-key": `participant-update:${submission.id}:v${submission.version + 1}`,
+        },
+        body: JSON.stringify({ co_speakers: coSpeakers(), version: submission.version }),
+      });
+      state.submissions = state.submissions.map((item) => item.id === updated.id ? updated : item);
+      chooseSubmission(updated);
+      setStatus("Participants saved. Invitations were sent only to newly added participants.", "success");
+    } catch (error) {
+      button.disabled = false;
+      if (!(await recoverOptimisticConflict(error, submission))) {
+        setStatus(window.SessionBuddyApi.message(error), "error");
+      }
+    } finally {
+      button.textContent = "Save participants";
+    }
+  });
 
   byId("withdraw-proposal").addEventListener("click", async (event) => {
     const submission = state.editingSubmission;
@@ -710,7 +766,11 @@
     const speakers = coSpeakers();
     if (speakers.length) {
       const group = document.createElement("div");
-      group.append(make("dt", "Co-speakers"), make("dd", speakers.map((speaker) => `${speaker.display_name} (${speaker.email})`).join(", ")));
+      const roles = new Map((state.form.participant_roles || []).map((role) => [role.value, role.label]));
+      group.append(
+        make("dt", "Additional participants"),
+        make("dd", speakers.map((speaker) => `${speaker.display_name} — ${roles.get(speaker.role) || "Participant"} (${speaker.email})`).join(", "))
+      );
       list.append(group);
     }
   }
@@ -806,7 +866,7 @@
       if (state.form.cover_image_url) { byId("event-cover").src = state.form.cover_image_url; byId("event-cover").alt = `${state.form.event_name} cover`; byId("event-cover").hidden = false; byId("event-cover-empty").hidden = true; }
       renderFields(state.form.fields || [], state.form.conditions || []);
       renderCallDetails(state.form);
-      byId("co-speakers").hidden = (state.form.co_speaker_limit ?? 1) === 0;
+      byId("co-speakers").hidden = (state.form.co_speaker_limit ?? 3) === 0;
       if (state.form.accepting_submissions === false) {
         byId("closed-card").hidden = false;
         const message = availabilityMessage(state.form);
@@ -980,7 +1040,7 @@
     setStatus("");
   });
   byId("add-co-speaker").addEventListener("click", () => {
-    if (byId("co-speaker-rows").children.length < (state.form?.co_speaker_limit ?? 1)) addCoSpeakerRow({}, true);
+    if (byId("co-speaker-rows").children.length < (state.form?.co_speaker_limit ?? 3)) addCoSpeakerRow({}, true);
     validateCoSpeakers(byId("proposal-form"));
     queueBrowserDraft();
   });

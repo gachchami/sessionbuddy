@@ -1,6 +1,31 @@
 {
   "components": {
     "schemas": {
+      "AcceptedSubmissionParticipantsUpdate": {
+        "additionalProperties": false,
+        "description": "Participant-only correction that leaves finalized proposal content untouched.",
+        "properties": {
+          "co_speakers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CoSpeakerInput"
+            },
+            "maxItems": 10,
+            "title": "Co Speakers",
+            "type": "array"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "AcceptedSubmissionParticipantsUpdate",
+        "type": "object"
+      },
       "AccountProfileUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -763,7 +788,7 @@
             "title": "Closes At Ms"
           },
           "co_speaker_limit": {
-            "default": 1,
+            "default": 3,
             "title": "Co Speaker Limit",
             "type": "integer"
           },
@@ -5969,7 +5994,7 @@
             "title": "Closes At Ms"
           },
           "co_speaker_limit": {
-            "default": 1,
+            "default": 3,
             "maximum": 10.0,
             "minimum": 0.0,
             "title": "Co Speaker Limit",
@@ -6231,7 +6256,7 @@
             "title": "Closes At Ms"
           },
           "co_speaker_limit": {
-            "default": 1,
+            "default": 3,
             "maximum": 10.0,
             "minimum": 0.0,
             "title": "Co Speaker Limit",
@@ -7783,6 +7808,11 @@
             "title": "Answers",
             "type": "object"
           },
+          "can_manage_participants": {
+            "default": false,
+            "title": "Can Manage Participants",
+            "type": "boolean"
+          },
           "co_speakers": {
             "items": {
               "$ref": "#/components/schemas/CoSpeakerView"
@@ -8661,7 +8691,7 @@
             "title": "Closes At Ms"
           },
           "co_speaker_limit": {
-            "default": 1,
+            "default": 3,
             "title": "Co Speaker Limit",
             "type": "integer"
           },
@@ -11158,6 +11188,16 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "is_primary_submitter": {
+            "default": true,
+            "title": "Is Primary Submitter",
+            "type": "boolean"
+          },
+          "participant_role": {
+            "default": "primary",
+            "title": "Participant Role",
             "type": "string"
           },
           "proposal_abstract": {
@@ -20351,6 +20391,77 @@
           }
         },
         "summary": "Resend Co Speaker Invitation",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/v1/forms/{slug}/submissions/{submission_id}/participants": {
+      "patch": {
+        "description": "Correct participants on an accepted proposal without reopening its answers.",
+        "operationId": "updateAcceptedSubmissionParticipants",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "title": "Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptedSubmissionParticipantsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateSubmissionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Accepted Submission Participants",
         "tags": [
           "submissions"
         ]

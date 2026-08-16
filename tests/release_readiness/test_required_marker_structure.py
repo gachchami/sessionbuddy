@@ -174,7 +174,7 @@ def test_runtime_required_markers_wrap_text_for_nested_and_for_labels() -> None:
     public_cfp = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
     render_fields = public_cfp.split("function renderFields(fields, conditions) {", 1)[1]
     assert 'const fieldLabel = make("span", field.label, "field-label");' in render_fields
-    assert "fieldLabel.append(marker);" in render_fields
+    assert 'fieldLabel.append(marker, make("span", " (required)", "sr-only"));' in render_fields
     assert "label.append(fieldLabel);" in render_fields
 
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")

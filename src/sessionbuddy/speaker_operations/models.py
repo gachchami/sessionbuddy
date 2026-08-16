@@ -59,6 +59,8 @@ class SpeakerSubmissionView(BaseModel):
     submitted_at_ms: int
     version: int
     editable: bool = False
+    is_primary_submitter: bool = True
+    participant_role: str = "primary"
 
 
 class SpeakerEventView(BaseModel):

@@ -364,8 +364,9 @@ def test_acceptance_slides_guard_is_scoped_to_the_submission() -> None:
     assert flags.count("has_headshot_task") == 1
     assert flags.count("has_slides_task") == 1
     assert "AND st.submission_id=s.id" in flags
-    # One definition serves both decision paths and participation restoration.
-    assert router.count("SPEAKER_TASK_FLAGS_SQL.join(") == 2
+    # One definition serves both decision paths, their additional participants,
+    # and participation restoration without copying the task-existence clauses.
+    assert router.count("SPEAKER_TASK_FLAGS_SQL.join(") == 3
     assert competition.count("SPEAKER_TASK_FLAGS_SQL.join(") == 1
 
 

@@ -45,11 +45,17 @@ from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.platform.storage import malware_scan_disabled, presign_r2_put
+from sessionbuddy.speaker_operations.acceptance_tasks import (
+    acceptance_speaker_tasks,
+    append_acceptance_speaker_tasks,
+    reconcile_accepted_submission_speakers,
+)
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 from .availability import FormAvailability, form_availability, public_event_key
 from .models import (
+    AcceptedSubmissionParticipantsUpdate,
     AdminPublishedFormView,
     CfpWorkspaceView,
     CoSpeakerInvitationCreated,
@@ -173,11 +179,21 @@ async def _owned_co_speaker_context(
             """SELECT c.id,c.organization_id,c.event_id,c.submission_id,c.display_name,
                       c.email,c.normalized_email,c.role,c.invitation_status,
                       c.invitation_expires_at_ms,c.invitation_version,c.user_id,
-                      s.submitter_user_id,s.proposal_title,f.closes_at_ms,e.name AS event_name
+                      s.submitter_user_id,s.proposal_title,f.closes_at_ms,e.name AS event_name,
+                      COALESCE((SELECT correction.corrected_decision
+                        FROM submission_decision_corrections correction
+                        WHERE correction.organization_id=s.organization_id
+                          AND correction.event_id=s.event_id
+                          AND correction.submission_id=s.id
+                        ORDER BY correction.corrected_at_ms DESC,correction.id DESC LIMIT 1),
+                        decision.decision) AS effective_decision
                FROM submission_contributors c
                JOIN submissions s ON s.id=c.submission_id
                JOIN call_for_speaker_forms f ON f.id=s.form_id
                JOIN events e ON e.id=s.event_id
+               LEFT JOIN submission_decisions decision
+                 ON decision.organization_id=s.organization_id
+                AND decision.event_id=s.event_id AND decision.submission_id=s.id
                WHERE c.id=?1 AND c.submission_id=?2 AND f.slug=?3
                  AND s.submitter_user_id=?4 AND c.invitation_status!='removed' LIMIT 1"""
         )
@@ -210,12 +226,20 @@ async def _reconcile_co_speakers(
     primary_name: str,
     desired,
     actor_user_id: str,
+    expected_submission_version: int | None = None,
+    idempotency_record: IdempotencyRecord | None = None,
 ) -> None:
     db, now = _db(request), utc_now_ms()
     existing = result_rows(
         await db.prepare(
-            """SELECT id,normalized_email,user_id,role,invitation_status,invitation_version
-               FROM submission_contributors WHERE submission_id=?1"""
+            """SELECT c.id,c.normalized_email,c.user_id,c.display_name,c.email,c.role,
+                      c.invitation_status,c.invitation_version,
+                      (SELECT es.id FROM event_speakers es
+                         JOIN people p ON p.id=es.person_id
+                        WHERE es.organization_id=c.organization_id
+                          AND es.event_id=c.event_id AND p.user_id=c.user_id LIMIT 1)
+                        AS event_speaker_id
+               FROM submission_contributors c WHERE c.submission_id=?1"""
         )
         .bind(submission_id)
         .all()
@@ -227,10 +251,45 @@ async def _reconcile_co_speakers(
         for email, row in all_existing_by_email.items()
         if row["invitation_status"] != "removed"
     }
-    if not desired_by_email and not active_existing_by_email:
+    if (
+        not desired_by_email
+        and not active_existing_by_email
+        and expected_submission_version is None
+    ):
         # Nothing to reconcile; an empty command batch is not executable.
         return
     batch = CommandBatch(db)
+    if idempotency_record is not None:
+        batch.begin_idempotency(idempotency_record, now)
+    if expected_submission_version is not None:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE submissions SET version=version+1,updated_at_ms=?1
+                   WHERE id=?2 AND organization_id=?3 AND event_id=?4 AND version=?5"""
+            ).bind(now, submission_id, organization_id, event_id, expected_submission_version)
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO submission_write_guards
+                   (id,submission_id,applied_changes,created_at_ms)
+                   VALUES(?1,?2,changes(),?3)"""
+            ).bind(new_id(), submission_id, now)
+        )
+        batch.audit(
+            AuditEvent(
+                actor_type="user",
+                actor_user_id=actor_user_id,
+                action="submission.participants.correct",
+                target_type="submission",
+                target_id=submission_id,
+                result="succeeded",
+                correlation_id=request.state.request_id,
+                occurred_at_ms=now,
+                organization_id=organization_id,
+                event_id=event_id,
+                metadata={"participant_count": len(desired)},
+            )
+        )
     queued: list[str] = []
     for normalized, current in active_existing_by_email.items():
         contributor = desired_by_email.get(normalized)
@@ -263,6 +322,26 @@ async def _reconcile_co_speakers(
                         current["user_id"],
                     )
                 )
+            if (
+                str(current["display_name"]) != contributor.display_name
+                or str(current["email"]) != contributor.email
+                or str(current["role"]) != contributor.role
+            ):
+                batch.audit(
+                    AuditEvent(
+                        actor_type="user",
+                        actor_user_id=actor_user_id,
+                        action="submission.co_speaker.update",
+                        target_type="submission_contributor",
+                        target_id=str(current["id"]),
+                        result="succeeded",
+                        correlation_id=request.state.request_id,
+                        occurred_at_ms=now,
+                        organization_id=organization_id,
+                        event_id=event_id,
+                        metadata={"participant_role": contributor.role},
+                    )
+                )
             continue
         batch.add_statement(
             db.prepare(
@@ -292,8 +371,78 @@ async def _reconcile_co_speakers(
                            SELECT 1 FROM submission_speakers ss
                            JOIN event_speakers es ON es.id=ss.event_speaker_id
                            JOIN people p ON p.id=es.person_id
-                           WHERE ss.event_id=?3 AND p.user_id=?4 AND ss.role='primary')"""
+                           WHERE ss.event_id=?3 AND p.user_id=?4 AND ss.role='primary')
+                         AND NOT EXISTS (
+                           SELECT 1 FROM accepted_session_participants participant
+                           JOIN accepted_sessions active
+                             ON active.id=participant.accepted_session_id
+                            AND active.organization_id=participant.organization_id
+                            AND active.event_id=participant.event_id
+                            AND active.lifecycle_status='active'
+                           JOIN event_speakers es ON es.id=participant.event_speaker_id
+                           JOIN people p ON p.id=es.person_id
+                           WHERE participant.organization_id=?2 AND participant.event_id=?3
+                             AND p.user_id=?4)"""
                 ).bind(now, organization_id, event_id, current["user_id"], current["id"])
+            )
+        if current["event_speaker_id"] is not None:
+            event_speaker_id = str(current["event_speaker_id"])
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE speaker_tasks SET state='waived',waived_at_ms=?1,
+                         updated_at_ms=?1,version=version+1
+                       WHERE organization_id=?2 AND event_id=?3 AND event_speaker_id=?4
+                         AND task_type IN ('profile','headshot') AND state='open'
+                         AND NOT EXISTS (
+                           SELECT 1 FROM submission_speakers linked
+                           JOIN accepted_sessions active
+                             ON active.organization_id=linked.organization_id
+                            AND active.event_id=linked.event_id
+                            AND active.submission_id=linked.submission_id
+                            AND active.lifecycle_status='active'
+                           WHERE linked.organization_id=?2 AND linked.event_id=?3
+                             AND linked.event_speaker_id=?4)
+                         AND NOT EXISTS (
+                           SELECT 1 FROM accepted_session_participants participant
+                           JOIN accepted_sessions active
+                             ON active.organization_id=participant.organization_id
+                            AND active.event_id=participant.event_id
+                            AND active.id=participant.accepted_session_id
+                            AND active.lifecycle_status='active'
+                           WHERE participant.organization_id=?2 AND participant.event_id=?3
+                             AND participant.event_speaker_id=?4)"""
+                ).bind(now, organization_id, event_id, event_speaker_id)
+            )
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_speakers SET
+                         selection_status=CASE WHEN (EXISTS (
+                           SELECT 1 FROM submission_speakers linked
+                           JOIN accepted_sessions active
+                             ON active.organization_id=linked.organization_id
+                            AND active.event_id=linked.event_id
+                            AND active.submission_id=linked.submission_id
+                            AND active.lifecycle_status='active'
+                           WHERE linked.organization_id=?2 AND linked.event_id=?3
+                             AND linked.event_speaker_id=?4)
+                           OR EXISTS (
+                             SELECT 1 FROM accepted_session_participants participant
+                             JOIN accepted_sessions active
+                               ON active.organization_id=participant.organization_id
+                              AND active.event_id=participant.event_id
+                              AND active.id=participant.accepted_session_id
+                              AND active.lifecycle_status='active'
+                             WHERE participant.organization_id=?2 AND participant.event_id=?3
+                               AND participant.event_speaker_id=?4))
+                           THEN 'accepted' ELSE 'submitted' END,
+                         status=CASE WHEN status='withdrawn' THEN status
+                           WHEN EXISTS (SELECT 1 FROM speaker_tasks task
+                             WHERE task.organization_id=?2 AND task.event_id=?3
+                               AND task.event_speaker_id=?4 AND task.state='open')
+                           THEN 'onboarding' ELSE 'complete' END,
+                         last_activity_at_ms=?1,updated_at_ms=?1
+                       WHERE organization_id=?2 AND event_id=?3 AND id=?4"""
+                ).bind(now, organization_id, event_id, event_speaker_id)
             )
         batch.audit(
             AuditEvent(
@@ -364,6 +513,14 @@ async def _reconcile_co_speakers(
             )
         )
         queued.append(message_id)
+    if idempotency_record is not None:
+        batch.complete_idempotency(
+            idempotency_record,
+            status=200,
+            resource_type="submission",
+            resource_id=submission_id,
+            completed_at_ms=now,
+        )
     await _execute(request, batch)
     await publish_committed_messages(request, queued)
 
@@ -491,7 +648,11 @@ async def admin_programs_js(request: Request) -> Response:
 
 @cfp_router.get("/product/assets/public-cfp.js", response_class=Response, include_in_schema=False)
 async def public_cfp_js() -> Response:
-    return Response(_asset("public_cfp.js"), media_type="text/javascript")
+    return Response(
+        _asset("public_cfp.js"),
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @cfp_router.get("/product/assets/open-calls.js", response_class=Response, include_in_schema=False)
@@ -1145,7 +1306,9 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
                       CASE WHEN s.submitter_user_id=?2
                                   AND s.status='submitted'
                                   AND d.submission_id IS NULL
-                           THEN 1 ELSE 0 END AS editable
+                           THEN 1 ELSE 0 END AS editable,
+                      CASE WHEN s.submitter_user_id=?2 THEN 1 ELSE 0 END
+                        AS can_manage_participants
                FROM submissions s LEFT JOIN submission_decisions d ON d.submission_id=s.id
                WHERE s.form_id=?1 AND (
                  s.submitter_user_id=?2 OR EXISTS (
@@ -1178,6 +1341,7 @@ async def list_my_submissions(slug: str, request: Request) -> OwnedSubmissionLis
                 {
                     **values,
                     "editable": bool(values["editable"]),
+                    "can_manage_participants": bool(values["can_manage_participants"]),
                     "answers": answers,
                     "co_speakers": contributors,
                 }
@@ -1274,7 +1438,17 @@ async def _respond_to_co_speaker_invitation(
         await db.prepare(
             """SELECT c.id,c.organization_id,c.event_id,c.submission_id,c.display_name,
                       c.email,c.normalized_email,c.role,c.invitation_status,
-                      c.invitation_expires_at_ms,s.proposal_title,e.name AS event_name
+                      c.invitation_expires_at_ms,s.proposal_title,e.name AS event_name,
+                      COALESCE((SELECT correction.corrected_decision
+                        FROM submission_decision_corrections correction
+                        WHERE correction.organization_id=s.organization_id
+                          AND correction.event_id=s.event_id
+                          AND correction.submission_id=s.id
+                        ORDER BY correction.corrected_at_ms DESC,correction.id DESC LIMIT 1),
+                        (SELECT decision.decision FROM submission_decisions decision
+                         WHERE decision.organization_id=s.organization_id
+                           AND decision.event_id=s.event_id
+                           AND decision.submission_id=s.id LIMIT 1)) AS effective_decision
                FROM submission_contributors c
                JOIN submissions s ON s.id=c.submission_id
                JOIN events e ON e.id=c.event_id
@@ -1290,7 +1464,12 @@ async def _respond_to_co_speaker_invitation(
     user_id: str | None = None
     if response_status == "accepted":
         existing_user = row_mapping(
-            await db.prepare("SELECT id FROM users WHERE normalized_email=?1 LIMIT 1")
+            await db.prepare(
+                """SELECT u.id,u.description,
+                          EXISTS(SELECT 1 FROM user_headshots headshot
+                                 WHERE headshot.user_id=u.id) AS has_account_headshot
+                   FROM users u WHERE u.normalized_email=?1 LIMIT 1"""
+            )
             .bind(row["normalized_email"])
             .first()
         )
@@ -1326,7 +1505,8 @@ async def _respond_to_co_speaker_invitation(
         )
         person = row_mapping(
             await db.prepare(
-                "SELECT id FROM people WHERE organization_id=?1 AND user_id=?2 LIMIT 1"
+                """SELECT id,biography FROM people
+                   WHERE organization_id=?1 AND user_id=?2 LIMIT 1"""
             )
             .bind(row["organization_id"], user_id)
             .first()
@@ -1342,21 +1522,55 @@ async def _respond_to_co_speaker_invitation(
             )
         speaker = row_mapping(
             await db.prepare(
-                """SELECT id FROM event_speakers
-                   WHERE organization_id=?1 AND event_id=?2 AND person_id=?3 LIMIT 1"""
+                """SELECT es.id,es.status,
+                          EXISTS(SELECT 1 FROM speaker_assets asset
+                            JOIN speaker_asset_versions version ON version.asset_id=asset.id
+                              AND version.is_current=1 AND version.scan_state='clean'
+                            WHERE asset.organization_id=es.organization_id
+                              AND asset.event_id=es.event_id
+                              AND asset.event_speaker_id=es.id AND asset.kind='headshot')
+                            AS has_event_headshot,
+                          EXISTS(SELECT 1 FROM speaker_tasks task
+                            WHERE task.organization_id=es.organization_id
+                              AND task.event_id=es.event_id AND task.event_speaker_id=es.id
+                              AND task.task_type='profile' AND task.state='open')
+                            AS has_profile_task,
+                          EXISTS(SELECT 1 FROM speaker_tasks task
+                            WHERE task.organization_id=es.organization_id
+                              AND task.event_id=es.event_id AND task.event_speaker_id=es.id
+                              AND task.task_type='headshot' AND task.state='open')
+                            AS has_headshot_task
+                   FROM event_speakers es
+                   WHERE es.organization_id=?1 AND es.event_id=?2 AND es.person_id=?3 LIMIT 1"""
             )
             .bind(row["organization_id"], row["event_id"], person_id)
             .first()
         )
         speaker_id = str(speaker["id"]) if speaker is not None else new_id()
+        accepted_submission = str(row["effective_decision"] or "") == "accepted"
         if speaker is None:
             batch.add_statement(
                 db.prepare(
                     """INSERT INTO event_speakers
                        (id,organization_id,event_id,person_id,status,accepted_at_ms,
                         last_activity_at_ms,created_at_ms,updated_at_ms,selection_status)
-                       VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,'submitted')"""
-                ).bind(speaker_id, row["organization_id"], row["event_id"], person_id, now)
+                       VALUES(?1,?2,?3,?4,'onboarding',?5,?5,?5,?5,?6)"""
+                ).bind(
+                    speaker_id,
+                    row["organization_id"],
+                    row["event_id"],
+                    person_id,
+                    now,
+                    "accepted" if accepted_submission else "submitted",
+                )
+            )
+        elif accepted_submission:
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_speakers SET selection_status='accepted',
+                         accepted_at_ms=COALESCE(accepted_at_ms,?1),last_activity_at_ms=?1,
+                         updated_at_ms=?1 WHERE id=?2"""
+                ).bind(now, speaker_id)
             )
         batch.add_statement(
             db.prepare(
@@ -1371,6 +1585,39 @@ async def _respond_to_co_speaker_invitation(
                 speaker_id, row["role"], row["display_name"], now,
             )
         )
+        if accepted_submission and str((speaker or {}).get("status") or "") != "withdrawn":
+            task_context = {
+                "biography": (
+                    (person or {}).get("biography")
+                    or (existing_user or {}).get("description")
+                    or ""
+                ),
+                "has_account_headshot": bool(
+                    (existing_user or {}).get("has_account_headshot")
+                ),
+                "has_event_headshot": bool((speaker or {}).get("has_event_headshot")),
+                "has_profile_task": bool((speaker or {}).get("has_profile_task")),
+                "has_headshot_task": bool((speaker or {}).get("has_headshot_task")),
+                "has_slides_task": False,
+            }
+            tasks = acceptance_speaker_tasks(task_context, include_slides=False)
+            batch.add_statement(
+                db.prepare(
+                    """UPDATE event_speakers SET status=?1,updated_at_ms=?2
+                       WHERE id=?3 AND status!='withdrawn'"""
+                ).bind("onboarding" if tasks else "complete", now, speaker_id)
+            )
+            append_acceptance_speaker_tasks(
+                batch,
+                db,
+                task_context,
+                organization_id=str(row["organization_id"]),
+                event_id=str(row["event_id"]),
+                submission_id=str(row["submission_id"]),
+                event_speaker_id=speaker_id,
+                now=now,
+                include_slides=False,
+            )
     batch.add_statement(
         db.prepare(
             """UPDATE submission_contributors SET invitation_status=?1,user_id=?2,
@@ -1404,6 +1651,21 @@ async def _respond_to_co_speaker_invitation(
         )
     )
     await _execute(request, batch)
+    if response_status == "accepted":
+        try:
+            await reconcile_accepted_submission_speakers(
+                db,
+                organization_id=str(row["organization_id"]),
+                event_id=str(row["event_id"]),
+                submission_id=str(row["submission_id"]),
+                now=now,
+                execute_batch=lambda followup: _execute(request, followup),
+            )
+        except HTTPException:
+            # The invitation response is already committed. Do not claim it
+            # failed merely because the defensive convergence pass did; record
+            # the repair gap for operators and preserve the truthful outcome.
+            record_degradation(request, "accepted_participant_reconciliation_failed")
     return CoSpeakerInvitationView(
         id=str(row["id"]),
         submission_id=str(row["submission_id"]),
@@ -1467,7 +1729,10 @@ async def resend_co_speaker_invitation(
     )
     db, now = _db(request), utc_now_ms()
     token, message_id = generate_token(), new_id()
-    expires_at = _co_speaker_expiry(now, row["closes_at_ms"])
+    invitation_deadline = (
+        None if str(row["effective_decision"] or "") == "accepted" else row["closes_at_ms"]
+    )
+    expires_at = _co_speaker_expiry(now, invitation_deadline)
     if expires_at <= now:
         raise HTTPException(status_code=409, detail="Applications are closed.")
     fingerprint = hashlib.sha256(
@@ -1573,6 +1838,15 @@ async def remove_co_speaker(
     authenticated, row = await _owned_co_speaker_context(
         request, slug, submission_id, co_speaker_id
     )
+    if str(row["effective_decision"] or "") == "accepted":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Use the accepted proposal participant editor so participant "
+                "removal and onboarding are reconciled together."
+            ),
+            headers={"X-Conflict-Type": "decision"},
+        )
     db, now = _db(request), utc_now_ms()
     batch = CommandBatch(db)
     batch.add_statement(
@@ -2242,6 +2516,163 @@ async def update_submission(
         actor_user_id=authenticated.actor.user_id,
     )
     return await _editable_submission_by_id(db, submission_id)
+
+
+@cfp_router.patch(
+    "/api/v1/forms/{slug}/submissions/{submission_id}/participants",
+    response_model=PrivateSubmissionView,
+    operation_id="updateAcceptedSubmissionParticipants",
+    tags=["submissions"],
+)
+async def update_accepted_submission_participants(
+    slug: str,
+    submission_id: str,
+    body: AcceptedSubmissionParticipantsUpdate,
+    request: Request,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+) -> PrivateSubmissionView:
+    """Correct participants on an accepted proposal without reopening its answers."""
+    authenticated = await authenticate_request(request)
+    db = _db(request)
+    row = row_mapping(
+        await db.prepare(
+            """SELECT s.organization_id,s.event_id,s.proposal_title,s.speaker_name,
+                      s.speaker_email,s.submitter_user_id,s.version,f.schema_json,
+                      COALESCE((SELECT c.corrected_decision
+                        FROM submission_decision_corrections c
+                        WHERE c.organization_id=s.organization_id AND c.event_id=s.event_id
+                          AND c.submission_id=s.id
+                        ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),d.decision)
+                        AS effective_decision
+               FROM submissions s
+               JOIN call_for_speaker_forms f ON f.id=s.form_id AND f.slug=?2
+               LEFT JOIN submission_decisions d ON d.organization_id=s.organization_id
+                 AND d.event_id=s.event_id AND d.submission_id=s.id
+               WHERE s.id=?1 LIMIT 1"""
+        )
+        .bind(submission_id, slug)
+        .first()
+    )
+    if row is None or str(row["submitter_user_id"] or "") != authenticated.actor.user_id:
+        raise HTTPException(status_code=404)
+    await require_permission(
+        request,
+        Permission.SUBMISSION_READ_OWN,
+        ResourceContext(
+            str(row["organization_id"]),
+            str(row["event_id"]),
+            resource_owner_user_id=authenticated.actor.user_id,
+        ),
+        mutation=True,
+    )
+    if str(row["effective_decision"] or "") != "accepted":
+        raise HTTPException(
+            status_code=409,
+            detail="Participants can be changed only after this proposal is accepted.",
+            headers={"X-Conflict-Type": "decision"},
+        )
+    key = _idempotency_key(idempotency_key)
+    route = "PATCH /api/v1/forms/{slug}/submissions/{submission_id}/participants"
+    fingerprint = hashlib.sha256(
+        json.dumps(body.model_dump(mode="json"), separators=(",", ":"), sort_keys=True).encode()
+    ).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND state='completed' LIMIT 1"""
+        )
+        .bind(
+            authenticated.actor.user_id,
+            route,
+            hashlib.sha256(key.encode()).digest(),
+        )
+        .first()
+    )
+    if replay is not None:
+        if bytes(to_python(replay["request_fingerprint"])) != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="This retry key was already used for a different participant list.",
+            )
+        return await _private_submission_by_id(db, submission_id, editable=False)
+    if int(row["version"]) != body.version:
+        raise HTTPException(
+            status_code=409,
+            detail="This participant list changed. Reload it and try again.",
+        )
+    schema = json.loads(str(row["schema_json"]))
+    limit = int(schema.get("co_speaker_limit", 3))
+    if len(body.co_speakers) > limit:
+        raise HTTPException(
+            status_code=422,
+            detail=f"This form allows up to {limit} additional participants.",
+        )
+    primary_email = normalize_email(str(row["speaker_email"]))
+    participant_emails = [normalize_email(item.email) for item in body.co_speakers]
+    if primary_email in participant_emails or len(participant_emails) != len(
+        set(participant_emails)
+    ):
+        raise HTTPException(
+            status_code=422, detail="Participant email addresses must be unique."
+        )
+    await _guard_new_co_speaker_invitations(
+        request,
+        actor_user_id=authenticated.actor.user_id,
+        event_id=str(row["event_id"]),
+        desired=body.co_speakers,
+        submission_id=submission_id,
+    )
+    now = utc_now_ms()
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        organization_id=str(row["organization_id"]),
+        event_id=str(row["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    try:
+        await _reconcile_co_speakers(
+            request,
+            submission_id=submission_id,
+            organization_id=str(row["organization_id"]),
+            event_id=str(row["event_id"]),
+            invitation_deadline_ms=None,
+            proposal_title=str(row["proposal_title"]),
+            primary_name=str(row["speaker_name"]),
+            desired=body.co_speakers,
+            actor_user_id=authenticated.actor.user_id,
+            expected_submission_version=body.version,
+            idempotency_record=record,
+        )
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        completed = row_mapping(
+            await db.prepare(
+                """SELECT request_fingerprint FROM idempotency_records
+                   WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                     AND state='completed' LIMIT 1"""
+            )
+            .bind(
+                authenticated.actor.user_id,
+                route,
+                hashlib.sha256(key.encode()).digest(),
+            )
+            .first()
+        )
+        if (
+            completed is not None
+            and bytes(to_python(completed["request_fingerprint"])) == fingerprint
+        ):
+            return await _private_submission_by_id(db, submission_id, editable=False)
+        raise HTTPException(
+            status_code=409,
+            detail="This participant list changed. Reload it and try again.",
+        ) from exc
+    return await _private_submission_by_id(db, submission_id, editable=False)
 
 
 @cfp_router.post(
@@ -3024,10 +3455,20 @@ async def _form_by_id(db, form_id: str) -> AdminPublishedFormView:
 async def _submission_by_id(db, submission_id: str) -> SubmissionView:
     row = row_mapping(
         await db.prepare(
-            """SELECT id, speaker_name, speaker_email, proposal_title,
-                      proposal_abstract, answers_json, status, submitted_at_ms,version,
-                      routed_category,routed_track,routed_review_queue
-               FROM submissions WHERE id = ?1"""
+            """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
+                      s.proposal_abstract,s.answers_json,
+                      COALESCE((SELECT c.corrected_decision
+                        FROM submission_decision_corrections c
+                        WHERE c.organization_id=s.organization_id AND c.event_id=s.event_id
+                          AND c.submission_id=s.id
+                        ORDER BY c.corrected_at_ms DESC,c.id DESC LIMIT 1),
+                        d.decision,s.status) AS status,
+                      s.submitted_at_ms,s.version,s.routed_category,s.routed_track,
+                      s.routed_review_queue
+               FROM submissions s
+               LEFT JOIN submission_decisions d ON d.organization_id=s.organization_id
+                 AND d.event_id=s.event_id AND d.submission_id=s.id
+               WHERE s.id=?1"""
         )
         .bind(submission_id)
         .first()
@@ -3062,6 +3503,10 @@ async def _private_submission_by_id(
                 exclude={"co_speakers": {"__all__": {"role_label"}}}
             ),
             "editable": editable,
+            # Every caller of this private resolver has already established
+            # submitter ownership. Contributor-visible list responses are
+            # built separately and keep this false.
+            "can_manage_participants": True,
         }
     )
 
@@ -3318,7 +3763,7 @@ def _request_source(request: Request) -> str:
 
 
 def _validate_submission_schema(schema: dict[str, object], body: SubmissionCreate) -> None:
-    co_speaker_limit = schema.get("co_speaker_limit", 1)
+    co_speaker_limit = schema.get("co_speaker_limit", 3)
     if not isinstance(co_speaker_limit, int) or not 0 <= co_speaker_limit <= 10:
         raise HTTPException(status_code=409)
     if len(body.co_speakers) > co_speaker_limit:

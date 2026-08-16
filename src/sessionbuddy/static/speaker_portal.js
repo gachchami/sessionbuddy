@@ -407,9 +407,15 @@
     }
     submissions.forEach((submission) => {
       const item = make("li", undefined, "proposal-summary-row");
-      const link = make("a", undefined, "proposal-summary-row__link");
-      link.href = `/speaker/proposals/${encodeURIComponent(submission.form_slug)}/${encodeURIComponent(submission.id)}`;
-      const statusLabel = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+      const isPrimarySubmitter = submission.is_primary_submitter !== false;
+      const link = make(isPrimarySubmitter ? "a" : "div", undefined, "proposal-summary-row__link");
+      if (isPrimarySubmitter) {
+        link.href = `/speaker/proposals/${encodeURIComponent(submission.form_slug)}/${encodeURIComponent(submission.id)}`;
+      } else {
+        link.classList.add("is-read-only");
+      }
+      const statusValue = submission.status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+      const statusLabel = `Proposal: ${statusValue}`;
       const tone = SUBMISSION_TONE[submission.status] || "";
       const identity = make("span", undefined, "proposal-summary-row__identity");
       const submittedAt = Number(submission.submitted_at_ms);
@@ -420,11 +426,18 @@
         make("strong", submission.proposal_title),
         make("small", `Submitted ${submitted} · Receipt ${submission.id.slice(0, 8)}`)
       );
+      if (!isPrimarySubmitter) {
+        const roles = {
+          co_speaker: "Co-speaker", co_author: "Co-author", moderator: "Moderator",
+          panelist: "Panelist", other: "Additional participant"
+        };
+        identity.append(make("small", `Your role: ${roles[submission.participant_role] || "Additional participant"}`));
+      }
       link.append(
         identity,
-        make("span", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`),
-        make("span", "→", "proposal-summary-row__arrow")
+        make("span", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`)
       );
+      if (isPrimarySubmitter) link.append(make("span", "→", "proposal-summary-row__arrow"));
       item.append(link);
       list.append(item);
     });

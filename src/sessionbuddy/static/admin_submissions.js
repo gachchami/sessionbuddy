@@ -996,6 +996,9 @@
     message.maxLength = 4000;
     message.placeholder = "Leave blank to use the default message.";
     messageLabel.append(message);
+    const tokenHelp = document.createElement("small");
+    tokenHelp.className = "help";
+    tokenHelp.textContent = "Available placeholders: {{speaker.name}}, {{submission.title}}, {{event.name}}. The preview shows the delivered text.";
     const preview = document.createElement("div");
     preview.className = "decision-email-preview";
     preview.setAttribute("aria-label", "Decision email preview");
@@ -1036,13 +1039,18 @@
         renderPreview();
         return next;
       } catch (error) {
-        previewStatus.textContent = "The preview could not be refreshed. The standard decision email will be used if you confirm now.";
+        resolved = null;
+        previewStatus.textContent = window.SessionBuddyApi.message(error, "The decision email preview could not be refreshed.");
         previewStatus.classList.add("warning");
         throw error;
       }
     }
     function schedulePreview() {
       clearTimeout(previewTimer);
+      resolved = null;
+      preview.replaceChildren();
+      previewStatus.textContent = "Refreshing the decision email preview…";
+      previewStatus.classList.remove("warning");
       previewTimer = window.setTimeout(() => { void refreshPreview().catch(() => {}); }, 250);
     }
     subject.addEventListener("input", schedulePreview);
@@ -1072,7 +1080,7 @@
       const defaultMessageLabel = document.createElement("strong");
       defaultMessageLabel.textContent = "Default message: ";
       defaultMessage.replaceChildren(defaultMessageLabel, document.createTextNode(defaults.resolved_body));
-      fields.append(defaultSubject, subjectLabel, defaultMessage, messageLabel, preview, previewStatus);
+      fields.append(defaultSubject, subjectLabel, defaultMessage, messageLabel, tokenHelp, preview, previewStatus);
       renderPreview();
     }
     return {
@@ -1081,7 +1089,7 @@
       subject,
       message,
       load,
-      canSend: () => !notify.checked || resolved?.recipient_available !== false,
+      canSend: () => !notify.checked || Boolean(resolved?.recipient_available),
     };
   }
   // One reject affordance, shared by the inline row and the proposal dialog.

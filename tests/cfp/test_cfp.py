@@ -377,9 +377,9 @@ def test_form_conditions_only_reference_earlier_fields() -> None:
         )
 
 
-def test_form_co_speaker_limit_defaults_to_one_and_is_enforced() -> None:
+def test_form_co_speaker_limit_defaults_to_three_and_is_enforced() -> None:
     form = FormPublish(slug="speaker-limit", welcome_text="Welcome")
-    assert form.co_speaker_limit == 1
+    assert form.co_speaker_limit == 3
 
     submission = SubmissionCreate(
         speaker_name="Primary",

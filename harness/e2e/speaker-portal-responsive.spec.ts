@@ -85,7 +85,7 @@ const portal = {
   }],
 };
 
-async function servePortal(page: Page) {
+async function servePortal(page: Page, portalResponse = portal) {
   await page.route("**/speaker", (route) => route.fulfill({ contentType: "text/html", body: portalHtml }));
   await page.route("**/api/v1/session", (route) => route.fulfill({
     contentType: "application/json",
@@ -101,7 +101,7 @@ async function servePortal(page: Page) {
   }));
   await page.route("**/api/v1/speaker/portal", (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify(portal),
+    body: JSON.stringify(portalResponse),
   }));
   await page.route("**/api/v1/speaker/portal?event_id=event-second", (route) => route.fulfill({
     contentType: "application/json",
@@ -184,6 +184,8 @@ test.describe("speaker portal responsive design", () => {
       await expect(page.getByRole("heading", { name: "Speaker portal" })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expect(page.locator(".proposal-summary-row")).toHaveCount(1);
+      await expect(page.locator(".proposal-summary-row .state-badge")).toHaveText("Proposal: Submitted");
+      await expect(page.locator(".summary-tile__label", { hasText: /^Awaiting decision$/ })).toHaveCount(1);
       const proposalMetadata = page.locator(".proposal-summary-row__identity small");
       await expect(proposalMetadata).toContainText(
         "Submitted Aug 31, 2026, 10:00 PM · Event time (America/New_York)",
@@ -219,6 +221,26 @@ test.describe("speaker portal responsive design", () => {
     const proposal = page.getByRole("link", { name: /A deliberately long session title/ });
     await expect(proposal).toHaveAttribute("href", /\/speaker\/proposals\/.+\/.+/);
     await expect(page.locator(".proposal-editor")).toHaveCount(0);
+  });
+
+  test("additional participants see their role without a dead owner-only link", async ({ page }) => {
+    const coAuthorPortal = {
+      ...portal,
+      submissions: [{
+        ...portal.submissions[0],
+        status: "accepted",
+        editable: false,
+        is_primary_submitter: false,
+        participant_role: "co_author",
+      }],
+    };
+    await servePortal(page, coAuthorPortal);
+    await page.goto("/speaker");
+
+    const proposal = page.locator(".proposal-summary-row");
+    await expect(proposal).toContainText("Your role: Co-author");
+    await expect(proposal.getByRole("link", { name: /A deliberately long session title/ })).toHaveCount(0);
+    await expect(proposal.locator(".proposal-summary-row__arrow")).toHaveCount(0);
   });
 
   test("saved drafts remain visible alongside submitted proposals", async ({ page }) => {

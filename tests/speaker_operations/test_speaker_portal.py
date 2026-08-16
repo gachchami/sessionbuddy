@@ -394,6 +394,9 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
             return None
 
         async def all(self):
+            if "FROM submission_speakers" in self.query:
+                self.database.submission_query = self.query
+                return {"results": []}
             if "FROM communication_messages" in self.query:
                 self.database.notification_scope = self.values
                 self.database.notification_query = self.query
@@ -411,6 +414,7 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
     class Database:
         notification_scope = None
         notification_query = ""
+        submission_query = ""
 
         def prepare(self, query):
             return Statement(self, query)
@@ -463,6 +467,8 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
     assert "recipient_user_id=?3" in database.notification_query
     assert "status='delivered'" in database.notification_query
     assert "deterministic_key NOT LIKE 'auth:%'" in database.notification_query
+    assert "FROM submission_decision_corrections correction" in database.submission_query
+    assert "ORDER BY correction.corrected_at_ms DESC" in database.submission_query
     assert result.notifications[0].category == "announcement"
     assert result.notifications[0].body_text == "Bring your badge.\nBrief"
     assert result.notifications[0].links == ["https://safe.example/brief"]

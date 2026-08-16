@@ -235,6 +235,7 @@ test.describe("public CFP responsive design", () => {
     await servePublicCfp(page, true, [submission], null, {
       ...publishedForm,
       accepting_submissions: false,
+      availability_state: "closed",
       availability_message: "This call is closed.",
     });
 
@@ -242,6 +243,12 @@ test.describe("public CFP responsive design", () => {
 
     await expect(page.locator("#status")).toContainText(
       "The call for proposals is closed, so this proposal is read-only.",
+    );
+    await expect(page.locator("#call-opens")).toHaveText("Opened immediately");
+    await expect(page.locator("#call-opens").locator("xpath=../dt")).toHaveText("Opened");
+    await expect(page.locator("#call-deadline").locator("xpath=../dt")).toHaveText("Closed");
+    await expect(page.locator("#availability")).toContainText(
+      "take precedence over dates in the organizer introduction",
     );
     await expect(page.locator("#status")).not.toContainText(
       "Only the primary submitter can make changes.",
@@ -268,7 +275,7 @@ test.describe("public CFP responsive design", () => {
     await expect(page.locator("#call-opens")).toContainText("EDT");
   });
 
-  test("a decided proposal is read-only and discards stale browser-only co-speaker edits", async ({ page }) => {
+  test("an accepted proposal keeps answers read-only while allowing participant corrections", async ({ page }) => {
     const submission = {
       id: "88888888-8888-4888-8888-888888888888",
       proposal_title: "Accepted systems talk",
@@ -277,6 +284,7 @@ test.describe("public CFP responsive design", () => {
       speaker_email: "speaker@example.test",
       status: "accepted",
       editable: false,
+      can_manage_participants: true,
       version: 3,
       answers: {},
       co_speakers: [],
@@ -303,10 +311,11 @@ test.describe("public CFP responsive design", () => {
 
     await page.goto(`/speaker/proposals/responsive-conference/${submission.id}`);
 
-    await expect(page.locator("#status")).toContainText(
-      "A final decision has been recorded, so this proposal is read-only.",
-    );
+    await expect(page.locator("#status")).toContainText("Proposal answers are final");
+    await expect(page.locator("#status")).toContainText("additional participants can still be managed");
     await expect(page.getByLabel("Proposal title")).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Add participant" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Save participants" })).toBeVisible();
     await expect(page.getByText("Marcus Okafor")).toHaveCount(0);
     await expect.poll(() => page.evaluate(
       (submissionId) => localStorage.getItem(`sessionbuddy:cfp:responsive-conference:draft:${submissionId}`),

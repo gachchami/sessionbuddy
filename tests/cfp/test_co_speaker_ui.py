@@ -18,7 +18,7 @@ def test_public_cfp_collects_repeatable_distinct_co_speaker_contacts() -> None:
     assert "state.form?.participant_roles" in script
     assert "role: row.querySelector('[name=\"co_speaker_role\"]')" in script
     assert "rows.length <= limit" in script
-    assert "state.form?.co_speaker_limit ?? 1" in script
+    assert "state.form?.co_speaker_limit ?? 3" in script
     assert "An additional participant must use a different email" in script
     assert "Each additional participant must use a different email" in script
     assert "const readyToReview = Boolean(restored.readyToSubmit)" in script
@@ -38,7 +38,7 @@ def test_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> Non
     assert "Name, email, and role for each additional participant" in script
     assert 'make("span", "Optional")' in script
     assert 'make("span", "Repeatable")' in script
-    assert 'name="co_speaker_limit" type="number" value="1"' in page
+    assert 'name="co_speaker_limit" type="number" value="3"' in page
     assert "admin-programs.js?v=" in page
 
 
@@ -54,17 +54,33 @@ def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:
     assert endpoint in script
     assert "`${invitationEndpoint(submission, invitation)}/resend`" in script
     assert 'method: "DELETE"' in script
-    assert "!submission.editable" in script
+    assert 'submission.status === "accepted"' in script
+    assert 'submission.can_manage_participants === true' in script
+    assert "const actionsAvailable = submission.editable === true" in script
+    assert 'id="save-participants"' in page
+    assert "/participants`" in script
 
 
 def test_stale_co_speaker_save_reloads_the_authoritative_proposal() -> None:
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
 
-    assert "async function recoverOptimisticConflict(error)" in script
+    assert (
+        "async function recoverOptimisticConflict(error, "
+        "submission = state.editingSubmission)"
+    ) in script
     assert "error.status !== 409" in script
     assert "await reloadSubmissions(submissionId)" in script
     assert "The latest saved version is loaded" in script
     assert script.count("await recoverOptimisticConflict(error)") == 2
+    assert "await recoverOptimisticConflict(error, submission)" in script
+
+
+def test_accepted_participant_validation_and_conflicts_are_not_silent() -> None:
+    script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
+
+    assert "const participantsValid = validateCoSpeakers(form)" in script
+    assert "!participantsValid || !form.reportValidity()" in script
+    assert "Invitations were sent only to newly added participants" in script
 
 
 def test_co_speaker_rows_and_statuses_have_scoped_layout_styles() -> None:

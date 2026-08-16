@@ -79,7 +79,11 @@ disambiguation. The advisory title lookup is owner-scoped and searches the full
 form history rather than relying on the 25-item recent-proposal list. Additional
 participants can be identified as co-speakers,
 co-authors, moderators, panelists, or another participant role; the selected role
-is preserved through invitation acceptance and later proposal edits. Primary
+is preserved through review, invitation acceptance, and later proposal edits. New
+forms allow three additional participants by default while organizers retain an
+explicit per-form limit. Accepted proposals keep their answers immutable but expose
+a version-guarded participant-correction path, so a legitimate co-presenter can be
+added without reopening or rewriting the final decision. Primary
 speakers can withdraw their own submitted
 proposal before review begins; withdrawal is audited, repeat-safe, excluded from
 review assignment, and read-only in the speaker portal. CFP-scoped sign-in grants the
@@ -99,6 +103,10 @@ regardless of what the page displays. A `/speaker/proposals/...` workspace URL
 names one stored submission, so it continues to require a session. The page no
 longer submits the sign-in form on the visitor's behalf; a speaker who may have
 no password chooses between signing in and requesting a one-time link.
+Closed and scheduled calls use authoritative, past- or future-tense status labels;
+the page explicitly identifies those configured dates as taking precedence over
+stale dates that may remain in organizer-authored introduction copy. Required
+questions expose both the native required state and a screen-reader label.
 
 ## Organization and event administration
 

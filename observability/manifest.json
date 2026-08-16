@@ -1159,6 +1159,19 @@
         "p95_ms": 400
       }
     },
+    "PATCH /api/v1/forms/{slug}/submissions/{submission_id}/participants": {
+      "benchmark": "cfp-update-accepted-submission-participants",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "PATCH /api/v1/speaker-profiles/{person_id}": {
       "benchmark": "speaker-profile-update",
       "dashboards": [

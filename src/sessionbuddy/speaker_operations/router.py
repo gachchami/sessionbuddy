@@ -791,11 +791,17 @@ async def get_speaker_portal(
             db.prepare(
                 """SELECT s.id,s.speaker_name,s.speaker_email,s.proposal_title,
                           s.proposal_abstract,s.answers_json,s.version,s.submitter_user_id,
-                          s.submitted_at_ms,f.slug AS form_slug,
-                          COALESCE((SELECT d.decision FROM submission_decisions d
-                            WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
-                              AND d.submission_id=s.id
-                            ORDER BY d.decided_at_ms DESC,d.id DESC LIMIT 1),s.status) AS status
+                          s.submitted_at_ms,f.slug AS form_slug,ss.role AS participant_role,
+                          COALESCE((SELECT correction.corrected_decision
+                            FROM submission_decision_corrections correction
+                            WHERE correction.organization_id=s.organization_id
+                              AND correction.event_id=s.event_id
+                              AND correction.submission_id=s.id
+                            ORDER BY correction.corrected_at_ms DESC,correction.id DESC LIMIT 1),
+                            (SELECT d.decision FROM submission_decisions d
+                             WHERE d.organization_id=s.organization_id AND d.event_id=s.event_id
+                               AND d.submission_id=s.id
+                             ORDER BY d.decided_at_ms DESC,d.id DESC LIMIT 1),s.status) AS status
                    FROM submission_speakers ss
                    JOIN submissions s
                      ON s.organization_id = ss.organization_id
@@ -902,6 +908,11 @@ async def get_speaker_portal(
                     str(submission["status"]) == "submitted"
                     and str(submission["submitter_user_id"] or "") == authenticated.actor.user_id
                 ),
+                is_primary_submitter=(
+                    str(submission["submitter_user_id"] or "")
+                    == authenticated.actor.user_id
+                ),
+                participant_role=str(submission["participant_role"]),
             )
             for submission in submissions
         ],

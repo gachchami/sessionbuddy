@@ -185,7 +185,7 @@ class FormSettings(BaseModel):
     opens_at_ms: int | None = Field(default=None, ge=0)
     closes_at_ms: int | None = Field(default=None, ge=0)
     submission_limit: int | None = Field(default=None, ge=1, le=1_000_000)
-    co_speaker_limit: int = Field(default=1, ge=0, le=10)
+    co_speaker_limit: int = Field(default=3, ge=0, le=10)
     success_title: str = Field(default="Proposal received", min_length=1, max_length=200)
     success_message: str = Field(
         default="We sent a confirmation to your email address.", min_length=1, max_length=2000
@@ -304,7 +304,7 @@ class PublishedFormView(BaseModel):
     opens_at_ms: int | None = None
     closes_at_ms: int | None = None
     submission_limit: int | None = None
-    co_speaker_limit: int = 1
+    co_speaker_limit: int = 3
     participant_roles: tuple[ContributorRoleOption, ...] = DEFAULT_CONTRIBUTOR_ROLE_OPTIONS
     submissions_received: int = 0
     accepting_submissions: bool = True
@@ -345,6 +345,14 @@ class CoSpeakerInput(BaseModel):
     @classmethod
     def validate_email(cls, value: str) -> str:
         return _validate_email_address(value)
+
+
+class AcceptedSubmissionParticipantsUpdate(BaseModel):
+    """Participant-only correction that leaves finalized proposal content untouched."""
+
+    model_config = ConfigDict(extra="forbid")
+    co_speakers: tuple[CoSpeakerInput, ...] = Field(default=(), max_length=10)
+    version: int = Field(ge=1)
 
 
 class CoSpeakerView(CoSpeakerInput):
@@ -422,6 +430,7 @@ class SubmissionView(SubmissionCreate):
 
 class PrivateSubmissionView(SubmissionView):
     editable: bool
+    can_manage_participants: bool = False
 
 
 class SubmissionList(BaseModel):

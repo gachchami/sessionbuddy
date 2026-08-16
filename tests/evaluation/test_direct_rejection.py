@@ -1,5 +1,8 @@
 import asyncio
 
+import pytest
+from fastapi import HTTPException
+
 from sessionbuddy.evaluation import router as evaluation_router_module
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
@@ -16,6 +19,82 @@ def test_legacy_decision_body_does_not_fabricate_an_override() -> None:
     assert evaluation_router_module._decision_speaker_message(
         '<p data-message-source="custom">First line<br>Second line</p>'
     ) == "First line\nSecond line"
+
+
+def test_decision_message_tokens_resolve_before_preview_and_delivery() -> None:
+    composition = evaluation_router_module._decision_composition(
+        event_name="DevFlow",
+        speaker_name="Priya Raman",
+        proposal_title="Reliable systems",
+        decision="accepted",
+        correction=False,
+        subject_override="{{speaker.name}}: {{submission.title}}",
+        message_override=(
+            "Hi {{speaker.name}}, your session '{{submission.title}}' is accepted for "
+            "{{event.name}}."
+        ),
+    )
+
+    assert composition.subject == "Priya Raman: Reliable systems"
+    assert composition.body == (
+        "Hi Priya Raman, your session 'Reliable systems' is accepted for DevFlow."
+    )
+
+    legacy = evaluation_router_module._decision_composition(
+        event_name="DevFlow",
+        speaker_name="Priya Raman",
+        proposal_title="Reliable systems",
+        decision="accepted",
+        correction=False,
+        subject_override="",
+        message_override=(
+            "Hi {speaker_name}, congratulations! Your session '{talk_title}' "
+            "has been accepted for {event_name}."
+        ),
+    )
+    assert legacy.body == (
+        "Hi Priya Raman, congratulations! Your session 'Reliable systems' "
+        "has been accepted for DevFlow."
+    )
+
+
+def test_decision_message_rejects_unknown_tokens_but_preserves_literal_braces() -> None:
+    with pytest.raises(HTTPException) as invalid:
+        evaluation_router_module._decision_composition(
+            event_name="DevFlow",
+            speaker_name="Priya Raman",
+            proposal_title="Reliable systems",
+            decision="accepted",
+            correction=False,
+            subject_override="",
+            message_override="Hi {{speaker.first_name}}",
+        )
+    assert invalid.value.status_code == 422
+
+    literal = evaluation_router_module._decision_composition(
+        event_name="DevFlow",
+        speaker_name="Priya Raman",
+        proposal_title="Reliable systems",
+        decision="accepted",
+        correction=False,
+        subject_override="Notes {for the speaker}",
+        message_override="Use {curly braces} in your example.",
+    )
+    assert literal.subject == "Notes {for the speaker}"
+    assert literal.body == "Use {curly braces} in your example."
+
+
+def test_decision_message_substitutions_do_not_expand_replacement_text() -> None:
+    composition = evaluation_router_module._decision_composition(
+        event_name="DevFlow",
+        speaker_name="Speaker named {talk_title}",
+        proposal_title="Reliable systems",
+        decision="accepted",
+        correction=False,
+        subject_override="",
+        message_override="Hi {{speaker.name}}",
+    )
+    assert composition.body == "Hi Speaker named {talk_title}"
 
 
 async def _accepted_reviewer(client, connection, environment, csrf, event_id, email):
@@ -243,6 +322,32 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
             (organization_id, event_id),
         )
         connection.execute(
+            """INSERT INTO users
+               (id,email,normalized_email,status,created_at_ms,updated_at_ms)
+               VALUES ('active-co-user','active-co@example.test','active-co@example.test',
+                       'active',800,800)"""
+        )
+        connection.execute(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES ('active-co-member',?,'active-co-user','member','active',800,800)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('active-co-person',?,'active-co-user','Active Co Speaker',800,800)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('active-co-speaker',?,?,'active-co-person','complete','submitted',
+                       800,800,800,800)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
             """INSERT INTO people
                (id,organization_id,display_name,created_at_ms,updated_at_ms)
                VALUES ('correction-co-person',?,'Co Speaker',800,800)""",
@@ -280,6 +385,14 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                 snapshot_name,created_at_ms)
                VALUES ('correction-co-link',?,?,'corrected-submission',
                        'correction-co-speaker','co_speaker','Co Speaker',800)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                snapshot_name,created_at_ms)
+               VALUES ('active-co-link',?,?,'corrected-submission',
+                       'active-co-speaker','co_author','Active Co Speaker',800)""",
             (organization_id, event_id),
         )
         connection.execute(
@@ -368,6 +481,14 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
         ).fetchone()
         assert rejected_session[0] == "withdrawn"
         assert rejected_session[1] is not None
+        assert tuple(connection.execute(
+            """SELECT status,selection_status FROM event_speakers
+               WHERE id='active-co-speaker'"""
+        ).fetchone()) == ("complete", "rejected")
+        assert connection.execute(
+            """SELECT COUNT(*) FROM speaker_tasks
+               WHERE event_speaker_id='active-co-speaker' AND state='waived'"""
+        ).fetchone()[0] == 2
         connection.execute(
             """UPDATE event_speakers SET status='withdrawn',withdrawn_at_ms=1200
                WHERE id='correction-speaker'"""
@@ -864,6 +985,87 @@ async def test_round_decision_replays_same_key_without_duplicate_side_effects(
         "SELECT COUNT(*) FROM communication_messages WHERE deterministic_key LIKE ?",
         ("submission-decision:%",),
     ).fetchone()[0] == 1
+
+
+async def test_acceptance_onboards_participant_who_accepted_invitation_first(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        round_id, submission_id = await _round_decision_fixture(
+            client,
+            connection,
+            environment,
+            csrf,
+            organization_id,
+            event_id,
+            user_id,
+            "participant-before-decision",
+        )
+        connection.execute(
+            """INSERT INTO users
+               (id,email,normalized_email,status,created_at_ms,updated_at_ms)
+               VALUES ('early-participant','early@example.test','early@example.test',
+                       'active',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO organization_memberships
+               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES ('early-membership',?,'early-participant','member','active',1000,1000)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO people
+               (id,organization_id,user_id,display_name,created_at_ms,updated_at_ms)
+               VALUES ('early-person',?,'early-participant','Early Participant',1000,1000)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('early-speaker',?,?,'early-person','complete','submitted',
+                       1000,1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO submission_speakers
+               (id,organization_id,event_id,submission_id,event_speaker_id,role,
+                snapshot_name,created_at_ms)
+               VALUES ('early-link',?,?,?,'early-speaker','co_author',
+                       'Early Participant',1000)""",
+            (organization_id, event_id, submission_id),
+        )
+        response = await client.post(
+            f"/api/v1/admin/evaluation-rounds/{round_id}/submissions/{submission_id}/decision",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "participant-before-decision-accept",
+            },
+            json={
+                "decision": "accepted",
+                "internal_reason": "Selected",
+                "send_email": False,
+                "speaker_message": "",
+                "override_incomplete_reviews": True,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert tuple(connection.execute(
+        """SELECT status,selection_status FROM event_speakers
+           WHERE id='early-speaker'"""
+    ).fetchone()) == ("onboarding", "accepted")
+    tasks = connection.execute(
+        """SELECT task_type FROM speaker_tasks
+           WHERE event_speaker_id='early-speaker' ORDER BY task_type"""
+    ).fetchall()
+    assert [row[0] for row in tasks] == ["headshot", "profile"]
 
 
 async def test_concurrent_matching_round_decisions_reconcile_to_one_result(

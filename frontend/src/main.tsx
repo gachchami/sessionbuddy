@@ -964,6 +964,11 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       setMessagePreviewError("");
       return;
     }
+    // A preview belongs to the exact subject/message pair that produced it.
+    // Clear it before the debounce so Confirm can never submit while showing
+    // text resolved for the previous values.
+    setMessagePreview(null);
+    setMessagePreviewError("");
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       api<DecisionMessagePreview>(
@@ -985,7 +990,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
         setMessagePreviewError("");
       }).catch((error) => {
         if ((error as { name?: string }).name !== "AbortError") {
-          setMessagePreviewError("The preview could not be refreshed. The standard decision email will be used if you confirm now.");
+          setMessagePreviewError("The preview could not be refreshed. Try again before confirming this decision.");
         }
       });
     }, 250);
@@ -1813,7 +1818,10 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                                   type="text"
                                   maxLength={200}
                                   value={speakerSubject}
-                                  onChange={(event) => setSpeakerSubject(event.target.value)}
+                                  onChange={(event) => {
+                                    setMessagePreview(null);
+                                    setSpeakerSubject(event.target.value);
+                                  }}
                                   placeholder="Leave blank to use the default subject."
                                 />
                               </label>
@@ -1824,10 +1832,16 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                                   rows={3}
                                   maxLength={4000}
                                   value={speakerMessage}
-                                  onChange={(event) => setSpeakerMessage(event.target.value)}
+                                  onChange={(event) => {
+                                    setMessagePreview(null);
+                                    setSpeakerMessage(event.target.value);
+                                  }}
                                   placeholder="Leave blank to use the default message."
                                 />
                               </label>
+                              <p className="help">
+                                Available placeholders: {"{{speaker.name}}"}, {"{{submission.title}}"}, {"{{event.name}}"}. The preview shows the delivered text.
+                              </p>
                               <div className="review-email-preview" aria-label="Decision email preview">
                                 <strong>Subject: {messagePreview.resolved_subject}</strong>
                                 <p>{messagePreview.resolved_body}</p>
@@ -1852,7 +1866,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                         </button>
                         <button
                           className={pendingDecision.decision === "rejected" ? "danger" : ""}
-                          disabled={deciding || (sendEmail && messagePreview?.recipient_available === false)}
+                          disabled={deciding || (sendEmail && !messagePreview?.recipient_available)}
                           onClick={() =>
                             decide(submission, pendingDecision.decision).catch(handleRoundError)
                           }
