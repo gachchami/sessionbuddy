@@ -514,6 +514,16 @@ resolver table used by the distributor.
   entered. Reviewers per proposal is clamped to the pool rather than promising
   reviews the round cannot produce, and a cap too low to cover the selection is
   reported with what to change instead of producing a proposal nobody reviews.
+- Choice and text criteria can be designated as the round's canonical
+  recommendation and reviewer comment. Reviewers see one control for each
+  purpose; compatibility fields are derived from those responses so existing
+  decision and export consumers remain consistent. Other choice and text
+  criterion responses are visible in organizer results and the detailed review
+  CSV rather than becoming write-only data.
+- New rounds use human-readable recommendation defaults, while stored legacy
+  tokens keep their API values and are humanized only when displayed. The round
+  builder warns when an undesignated criterion is named like a built-in field,
+  but labels remain organizer-owned and are not rejected.
 - Open rounds carry a reminder action on the ledger, sending to every reviewer
   with outstanding work. It reuses the existing per-reviewer endpoint, which
   derives the outstanding count server-side and folds each send into an hourly

@@ -142,7 +142,9 @@ implemented, including the contract refinement. Line numbers below are **post-co
   an explicit `state === "final" && !form.checkValidity()` guard.
 - **A divergence I expected to find is not reachable.** `EvaluationCriterion` forbids a weight on
   `select` and `text` criteria, so the client's `response_type === "score"` filter and the server's
-  `_round_criteria` weight filter select the same set. No third definition to drift.
+  weight filter select the same set. No third definition to drift. *(That server-side helper was
+  later renamed `_round_criteria_for_historical_scores`; see
+  `claude/recommendation-model-collision-2026-08-22.md` §13.)*
 
 ### Residual — three of four now closed by `5ab5636`
 
@@ -171,16 +173,39 @@ implemented, including the contract refinement. Line numbers below are **post-co
 
 ### Also from this run
 
-**Recommendation model collision — analyzed, not scheduled.** Two differently-labelled
+**Recommendation model collision — implemented, pending the production audit.** Two differently-labelled
 Recommendation controls on the same review form (title-case `Accept/Maybe/Reject` from a scorecard
 `select` criterion, and raw `strong_accept/accept/reject/strong_reject` from the round's mandatory
 built-in), plus the same duplication for comments. This is **not** two UI defects: it is a product-
 model collision — two independent field systems rendered unconditionally, both required at
 finalize, permitting contradictory answers — compounded by **write-only review content**: every
 `select` and `text` criterion response is persisted and never surfaced to organizers or exported.
-The reviewer's actual 139-character assessment is unreadable by anyone. Full analysis, constraints,
-audit policy and a seven-step remediation sequence in
-`claude/recommendation-model-collision-2026-08-22.md`.
+The reviewer's actual 139-character assessment is unreadable by anyone.
+
+**Classification, 2026-08-23.** A read-only pass over all fourteen local D1 databases found **zero**
+rounds with a `select` or `text` criterion. Subsequent read-only inspection of deployed dev found
+the affected rubric: the mandatory built-in retained the shipped snake-case scale while the custom
+criterion supplied `Accept / Maybe / Reject`; the custom Comments response held the reviewer's
+139-character assessment and legacy `internal_comment` was empty. The default therefore
+contributed to the workaround, purpose-based one-control rendering is part of the causal fix, and
+organizer visibility for non-score responses prevents already-persisted prose from remaining
+write-only.
+
+**Status, 2026-08-23.** Steps 0 and 2–6 shipped in `80cbea8` (19 files, +1,010/−97, including
+`frontend/src/presentation.ts`) and were reviewed over three passes: explicit criterion
+`purpose`, exactly one reviewer control for a designated rubric with the value mirrored into the
+legacy columns, non-score responses exposed to organizers in rubric order and in a new per-review
+`reviews.csv`, humanized display with raw values still stored and submitted, and a non-blocking
+builder warning for semantic duplicates. The shipped default was also changed to
+`Strong accept, Accept, Reject, Strong reject`, deliberately reopening a previously rejected option
+once remote evidence showed the raw default was what drove the workaround.
+
+Still open: the reconciliation audit against production, which gates retirement of the legacy
+fields; the eval-seed correction, which lives in the evals repository; and the server-side
+half-point `round(…)`, which is residual 3 above.
+
+Full analysis, constraints, audit policy, classification table, remediation sequence and
+implementation status in `claude/recommendation-model-collision-2026-08-22.md`.
 
 **Fixture drift, untriaged.** The ABS-S3 fixture no longer matches the scenario script and cost
 real coverage: Riley Reviewer had **one** assignment, not two (step 6 unperformable); all three
