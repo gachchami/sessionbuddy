@@ -1,73 +1,66 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-test("Events table and save failures stay usable on mobile", async ({ page }) => {
+const session = {
+  authenticated: true,
+  user_id: "user",
+  email: "organizer@example.com",
+  display_name: "User Zero",
+  profile_complete: true,
+  csrf_token: "csrf",
+  default_email_sender_name: "SessionBuddy",
+  default_email_address: "events@example.test",
+  account_roles: ["organizer"],
+  active_role: "organizer",
+  default_role: "organizer",
+  organization_id: organizationId,
+  organization_name: "AIEngineer",
+  organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }],
+  event_access: [],
+};
+
+const organizations = { data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1 }] };
+
+function eventFixture(index = 0) {
+  return {
+    id: `event-${index}`,
+    organization_id: organizationId,
+    name: `AIEngineer Event ${index + 1}`,
+    status: "active",
+    version: 1,
+    starts_at_ms: Date.UTC(2027, index % 12, 12, 3, 30),
+    ends_at_ms: Date.UTC(2027, index % 12, 13, 11, 30),
+    time_zone: "Asia/Kolkata",
+    delivery_mode: "hybrid",
+    location: "Bengaluru",
+    description: "Event description",
+    proposal_count: index + 1,
+    pending_review_count: index % 3,
+    schedule_status: index ? "draft" : "published",
+    cfp_status: index ? "draft" : "published",
+    accent_color: "#3159d9",
+    logo_url: null,
+    cover_image_url: null,
+    website_url: null,
+    email_sender_name: null,
+    email_reply_to: null,
+  };
+}
+
+async function mockIdentity(page: Page) {
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(session) }));
+  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(organizations) }));
+  await page.route(`**/api/v1/admin/organizations/${organizationId}/activities`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
+}
+
+test("the mobile event ledger leads to a usable routed editor and preserves a failed save", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({
-      authenticated: true,
-      user_id: "user",
-      email: "organizer@example.com",
-      display_name: "User Zero",
-      profile_complete: true,
-      csrf_token: "csrf",
-      default_email_sender_name: "SessionBuddy",
-      default_email_address: "events@example.test",
-      account_roles: ["organizer"],
-      active_role: "organizer",
-      default_role: "organizer",
-      organization_id: organizationId,
-      organization_name: "AIEngineer",
-      organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }],
-      event_access: [],
-    }),
-  }));
-  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1 }] }),
-  }));
+  await mockIdentity(page);
   await page.route(`**/api/v1/admin/organizations/${organizationId}/events?*`, (route) => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify({ data: Array.from({ length: 12 }, (_, index) => ({
-      id: `event-${index}`,
-      organization_id: organizationId,
-      name: `AIEngineer Event ${index + 1}`,
-      status: "active",
-      version: 1,
-      starts_at_ms: Date.UTC(2027, index % 12, 12, 3, 30),
-      ends_at_ms: Date.UTC(2027, index % 12, 13, 11, 30),
-      time_zone: "Asia/Kolkata",
-      delivery_mode: "hybrid",
-      location: "Bengaluru",
-      description: "Event description",
-      proposal_count: index + 1,
-      pending_review_count: index % 3,
-      schedule_status: index ? "draft" : "published",
-    })), next_cursor: "more" }),
+    body: JSON.stringify({ data: Array.from({ length: 12 }, (_, index) => eventFixture(index)), next_cursor: "more" }),
   }));
-  await page.route("**/api/v1/admin/events/*/duplicate", async (route) => {
-    expect(route.request().postDataJSON()).toMatchObject({
-      name: "AIEngineer Event 1 copy",
-      source_version: 1,
-      status: "draft",
-      retain_source_logo: false,
-      retain_source_cover: false,
-    });
-    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ name: "AIEngineer Event 1 copy" }) });
-  });
-  await page.route(`**/api/v1/admin/organizations/${organizationId}/events`, async (route) => {
-    expect(route.request().postDataJSON()).toMatchObject({
-      status: "active",
-      logo_url: "/event-branding/test-logo.png",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1_200));
-    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({
-      error: { code: "service_unavailable", message: "Event service is temporarily unavailable." },
-      request_id: "request-1",
-    }) });
-  });
   await page.route(`**/api/v1/admin/organizations/${organizationId}/event-assets/logo`, async (route) => {
     expect(route.request().headers()["content-type"]).toBe("image/png");
     expect(route.request().headers()["x-csrf-token"]).toBe("csrf");
@@ -78,137 +71,109 @@ test("Events table and save failures stay usable on mobile", async ({ page }) =>
       body: JSON.stringify({ asset_url: "/event-branding/test-logo.png", kind: "logo" }),
     });
   });
+  await page.route(`**/api/v1/admin/organizations/${organizationId}/events`, async (route) => {
+    expect(route.request().method()).toBe("POST");
+    expect(route.request().postDataJSON()).toMatchObject({
+      name: "AIEngineer Summit 2027",
+      status: "active",
+      logo_url: "/event-branding/test-logo.png",
+      time_zone: "Asia/Kolkata",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: { code: "service_unavailable", message: "Event service is temporarily unavailable." },
+        request_id: "request-1",
+      }),
+    });
+  });
 
-  await page.goto("/admin/events");
+  await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Events", exact: true })).toBeVisible();
-  await expect(page.locator(".event-table-row")).toHaveCount(12);
-  const firstEvent = page.locator(".event-table-row").first();
-  await expect(firstEvent.locator(".event-table-cfp")).toContainText("Manage CFP");
-  await expect(firstEvent.locator(".event-table-cfp")).toContainText("1 proposal");
+  await expect(page.locator(".organizer-home-event-row")).toHaveCount(12);
+  const firstEvent = page.locator('.organizer-home-event-row[data-event-id="event-0"]');
+  await expect(firstEvent.getByRole("link", { name: "AIEngineer Event 1", exact: true })).toHaveAttribute("href", "/admin/events/event-0");
+  await expect(firstEvent.getByRole("link", { name: "1 proposal" })).toHaveAttribute("href", "/admin/events/event-0/submissions");
+  await expect(firstEvent.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/events/event-0/settings");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
-  await firstEvent.locator('summary[aria-label="More actions for AIEngineer Event 1"]').click();
-  await page.getByRole("button", { name: "Duplicate AIEngineer Event 1 as a draft" }).click();
-  let dialog = page.getByRole("dialog", { name: "Duplicate AIEngineer Event 1" });
-  await expect(dialog.getByLabel(/Event name/)).toHaveValue("AIEngineer Event 1 copy");
-  await expect(dialog.getByLabel("Attendance format")).toHaveValue("hybrid");
-  await expect(dialog.getByLabel("Location")).toHaveValue("Bengaluru");
-  await dialog.getByRole("button", { name: "Save draft" }).click();
-  await expect(page.locator("#status")).toHaveText("Draft saved.");
-
-  await page.getByRole("button", { name: "Create event", exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Create an event" });
-  const dialogGeometry = await dialog.evaluate((element) => {
+  await page.getByRole("link", { name: "Create event" }).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/events/new\\?organization_id=${organizationId}$`));
+  await expect(page.getByRole("heading", { name: "Create event" })).toBeVisible();
+  const editor = page.locator("#event-editor-form");
+  const editorGeometry = await editor.evaluate((element) => {
     const rect = element.getBoundingClientRect();
     return { left: rect.left, right: rect.right, width: rect.width, scrollWidth: element.scrollWidth };
   });
-  expect(dialogGeometry.left).toBeGreaterThanOrEqual(0);
-  expect(dialogGeometry.right).toBeLessThanOrEqual(390);
-  expect(dialogGeometry.scrollWidth).toBeLessThanOrEqual(Math.ceil(dialogGeometry.width));
-  await expect(dialog.locator(".dialog-actions")).toBeVisible();
-  await dialog.getByLabel(/Event name/).fill("AIEngineer Summit 2027");
-  await dialog.getByLabel(/Time zone/).fill("Asia/Kolkata");
-  await dialog.getByLabel("Attendance format").selectOption("hybrid");
-  await dialog.getByLabel("Start date").fill("2027-10-12");
-  await dialog.getByLabel("End date").fill("2027-10-13");
-  await dialog.getByLabel("Location").fill("Bengaluru");
-  await dialog.getByLabel(/Description/).fill("A production AI engineering conference.");
-  await dialog.locator(".advanced-settings > summary").click();
-  await dialog.getByLabel(/Event website/).fill("https://aiengineer.example/summit-2027");
-  await dialog.getByLabel(/Accent color/).fill("#ffff00");
-  const logo = dialog.getByRole("button", { name: "Event logo", exact: true });
-  await expect(logo).toHaveAttribute("type", "file");
-  await logo.setInputFiles({ name: "event-logo.png", mimeType: "image/png", buffer: Buffer.from("event-logo") });
-  await expect(dialog.locator("#event-logo-status")).toHaveText("Ready to upload.");
-  await dialog.getByRole("button", { name: "Upload", exact: true }).first().click();
-  await expect(dialog.locator("#event-logo-status")).toHaveText("Uploaded.");
-  await expect(dialog.locator("#public-brand-preview-title")).toHaveText("AIEngineer Summit 2027");
-  await expect(dialog.locator("#public-brand-preview-date")).toContainText("Oct 12, 2027");
-  await expect(dialog.locator("#public-brand-preview-location")).toContainText("Bengaluru");
-  await expect(dialog.locator("#public-brand-preview-website")).toHaveText("aiengineer.example");
-  const previewColor = await dialog.locator("#public-brand-preview-card").evaluate((element) => {
-    const style = getComputedStyle(element);
-    return style.borderTopColor;
-  });
-  expect(previewColor).toBe("rgb(255, 255, 0)");
-  const save = dialog.getByRole("button", { name: "Create active event", exact: true });
+  expect(editorGeometry.left).toBeGreaterThanOrEqual(0);
+  expect(editorGeometry.right).toBeLessThanOrEqual(390);
+  expect(editorGeometry.scrollWidth).toBeLessThanOrEqual(Math.ceil(editorGeometry.width));
+
+  await page.getByLabel("Event name").fill("AIEngineer Summit 2027");
+  await page.getByLabel("Time zone").fill("Asia/Kolkata");
+  await page.getByLabel("Attendance format").selectOption("hybrid");
+  await page.locator('input[name="start_date"]').fill("2027-10-12");
+  await page.locator('input[name="end_date"]').fill("2027-10-13");
+  await page.getByLabel("Location").fill("Bengaluru");
+  await page.getByLabel("Description").fill("A production AI engineering conference.");
+  await page.getByText("Branding", { exact: true }).click();
+  await page.getByLabel("Event website").fill("https://aiengineer.example/summit-2027");
+  await page.locator("#logo-file").setInputFiles({ name: "event-logo.png", mimeType: "image/png", buffer: Buffer.from("event-logo") });
+  await page.getByRole("button", { name: "Upload logo" }).click();
+  await expect(page.locator("#logo-status")).toContainText("Save changes to use this image");
+
+  const save = page.getByRole("button", { name: "Create active event" });
   await save.click();
-  await expect(dialog.locator("#event-dialog-status")).toContainText("Reference: request-1");
+  await expect(page.locator("#editor-status")).toContainText("Reference: request-1");
   await expect(save).toBeEnabled();
-  await expect(dialog).toBeVisible();
+  await expect(page.getByLabel("Event name")).toHaveValue("AIEngineer Summit 2027");
+  await expect(page).toHaveURL(new RegExp("/admin/events/new"));
 });
 
-test("newer event searches cannot be replaced by a slower older response", async ({ page }) => {
-  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({
-      authenticated: true, user_id: "user", email: "organizer@example.com", display_name: "User Zero",
-      profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
-      default_role: "organizer", organization_id: organizationId, organization_name: "AIEngineer",
-      organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }], event_access: [],
-    }),
-  }));
-  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1 }] }),
-  }));
+test("a slower older event search cannot replace a newer response", async ({ page }) => {
+  await mockIdentity(page);
   await page.route(`**/api/v1/admin/organizations/${organizationId}/events?*`, async (route) => {
     const query = new URL(route.request().url()).searchParams.get("q") || "";
     if (query === "older") await new Promise((resolve) => setTimeout(resolve, 650));
     const name = query === "newer" ? "Newer result" : query === "older" ? "Older result" : "Initial event";
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{
-      id: query || "initial", organization_id: organizationId, name, status: "active", version: 1,
-      starts_at_ms: Date.UTC(2027, 1, 1), ends_at_ms: Date.UTC(2027, 1, 2), time_zone: "Asia/Kolkata",
-      delivery_mode: "hybrid", location: "Bengaluru", description: "Event description",
-    }], next_cursor: null }) });
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ ...eventFixture(), id: query || "initial", name }], next_cursor: null }) });
   });
 
-  await page.goto("/admin/events");
-  const search = page.getByRole("searchbox", { name: "Search events" });
+  await page.goto("/admin");
+  const search = page.getByRole("searchbox", { name: "Search" });
   await search.fill("older");
   await page.waitForTimeout(350);
   await search.fill("newer");
-  await expect(page.getByRole("heading", { name: "Newer result" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Newer result" })).toBeVisible();
   await page.waitForTimeout(500);
-  await expect(page.getByRole("heading", { name: "Older result" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Newer result" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Older result" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Newer result" })).toBeVisible();
+  await expect(page).toHaveURL(/q=newer/);
 });
 
-test("an archived event keeps its past dates when an organizer saves changes", async ({ page }) => {
+test("an archived event keeps its past dates when saved from routed settings", async ({ page }) => {
   const historicalEvent = {
+    ...eventFixture(),
     id: "historical-event",
-    organization_id: organizationId,
     name: "AIEngineer Archive 2025",
     status: "archived",
     version: 4,
     starts_at_ms: Date.UTC(2025, 5, 3, 3, 30),
     ends_at_ms: Date.UTC(2025, 5, 4, 11, 30),
-    time_zone: "Asia/Kolkata",
     delivery_mode: "in_person",
-    location: "Bengaluru",
     description: "A completed conference retained for the public archive.",
-    proposal_count: 12,
   };
-  await page.route("**/api/v1/auth/session", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({
-      authenticated: true, user_id: "user", email: "organizer@example.com", display_name: "User Zero",
-      profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
-      default_role: "organizer", organization_id: organizationId, organization_name: "AIEngineer",
-      organization_access: [{ organization_id: organizationId, organization_name: "AIEngineer", permissions: ["owner"] }], event_access: [],
-    }),
-  }));
-  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1 }] }),
-  }));
-  await page.route(`**/api/v1/admin/organizations/${organizationId}/events?*`, (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [historicalEvent], next_cursor: null }),
-  }));
+  await mockIdentity(page);
   await page.route("**/api/v1/admin/events/historical-event", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(historicalEvent) });
+      return;
+    }
     expect(route.request().method()).toBe("PATCH");
     expect(route.request().postDataJSON()).toMatchObject({
+      name: "AIEngineer Historical Archive",
       status: "archived",
       starts_at_ms: historicalEvent.starts_at_ms,
       ends_at_ms: historicalEvent.ends_at_ms,
@@ -220,12 +185,13 @@ test("an archived event keeps its past dates when an organizer saves changes", a
     });
   });
 
-  await page.goto("/admin/events");
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit AIEngineer Archive 2025" });
-  await expect(dialog.getByLabel("End date")).toHaveValue("2025-06-04");
-  await expect(dialog.getByLabel("Status")).toHaveValue("archived");
-  await dialog.getByLabel(/Event name/).fill("AIEngineer Historical Archive");
-  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.locator("#status")).toHaveText("Event updated.");
+  await page.goto("/admin/events/historical-event/settings");
+  await expect(page.getByRole("heading", { name: "AIEngineer Archive 2025" })).toBeVisible();
+  await expect(page.locator('input[name="start_date"]')).toHaveValue("2025-06-03");
+  await expect(page.locator('input[name="end_date"]')).toHaveValue("2025-06-04");
+  await expect(page.locator("#lifecycle-state")).toHaveText("archived");
+  await page.getByLabel("Event name").fill("AIEngineer Historical Archive");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.locator("#editor-status")).toHaveText("Event saved.");
+  await expect(page.locator("#lifecycle-state")).toHaveText("archived");
 });

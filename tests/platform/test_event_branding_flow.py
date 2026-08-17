@@ -10,6 +10,10 @@ from sessionbuddy.cfp.models import DEFAULT_FORM_FIELDS
 from sessionbuddy.cfp.router import get_form
 from sessionbuddy.competition.router import public_speakers
 from sessionbuddy.platform.auth import access
+from sessionbuddy.platform.auth.branding_purge import (
+    PENDING_BRANDING_RETENTION_MS,
+    purge_pending_branding_assets,
+)
 from sessionbuddy.platform.auth.http import AuthenticatedContext
 from sessionbuddy.platform.authorization import Actor, Permission, Persona
 from sessionbuddy.platform.db.types import utc_now_ms
@@ -35,6 +39,9 @@ class Bucket:
     async def get(self, key: str):
         body = self.objects.get(key)
         return None if body is None else Stored(body)
+
+    async def delete(self, key: str) -> None:
+        del self.objects[key]
 
 
 @pytest.fixture
@@ -226,10 +233,35 @@ async def test_branding_reference_cannot_cross_tenant_or_kind(
         )
 
 
+async def test_expired_pending_branding_reference_requires_a_new_upload(
+    branding_database, allow_organization_admin
+) -> None:
+    connection, database = branding_database
+    bucket = Bucket()
+    uploaded = await access.upload_organization_event_asset(
+        "org-a", "logo", branding_request(database, bucket)
+    )
+    connection.execute(
+        "UPDATE event_branding_assets SET created_at_ms=? WHERE asset_url=?",
+        (utc_now_ms() - PENDING_BRANDING_RETENTION_MS - 1, uploaded.asset_url),
+    )
+
+    with pytest.raises(HTTPException) as expired:
+        await access._require_event_branding_reference(
+            database,
+            organization_id="org-a",
+            kind="logo",
+            asset_url=uploaded.asset_url,
+        )
+
+    assert expired.value.status_code == 422
+    assert expired.value.detail == "invalid event logo asset"
+
+
 async def test_public_branding_url_streams_only_a_registered_object(
     branding_database, allow_organization_admin
 ) -> None:
-    _connection, database = branding_database
+    connection, database = branding_database
     bucket = Bucket()
     request = branding_request(database, bucket)
     uploaded = await access.upload_organization_event_asset("org-a", "cover", request)
@@ -241,13 +273,149 @@ async def test_public_branding_url_streams_only_a_registered_object(
     chunks = [chunk async for chunk in response.body_iterator]
     assert b"".join(chunks) == PNG
     assert response.media_type == "image/png"
-    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert response.headers["cache-control"] == "private, no-store"
+
+    connection.execute(
+        """INSERT INTO events
+           (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+            delivery_mode,description,cover_image_url,status,created_at_ms,updated_at_ms)
+           VALUES('cache-event','org-a','Cache event',10,20,'UTC','Online','virtual',
+                  'Cache behavior',?,'active',2,2)""",
+        (uploaded.asset_url,),
+    )
+    attached_response = await access.public_event_branding_asset(
+        asset_name, branding_request(database, bucket, b"")
+    )
+    assert (
+        attached_response.headers["cache-control"]
+        == "public, max-age=31536000, immutable"
+    )
+    connection.execute("UPDATE events SET cover_image_url=NULL WHERE id='cache-event'")
+    retired_response = await access.public_event_branding_asset(
+        asset_name, branding_request(database, bucket, b"")
+    )
+    assert (
+        retired_response.headers["cache-control"]
+        == "public, max-age=31536000, immutable"
+    )
 
     with pytest.raises(HTTPException) as missing:
         await access.public_event_branding_asset(
             "not-registered.png", branding_request(database, bucket, b"")
         )
     assert missing.value.status_code == 404
+
+
+async def test_pending_branding_purge_is_indexed_restartable_and_idempotent(
+    branding_database,
+) -> None:
+    connection, database = branding_database
+    bucket = Bucket()
+    now = PENDING_BRANDING_RETENTION_MS + 10_000
+    for event_id, organization_id in (
+        ("attached-event", "org-a"),
+        ("retired-event", "org-a"),
+    ):
+        connection.execute(
+            """INSERT INTO events
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms)
+               VALUES(?,?,?,10,20,'UTC','Online','virtual','Purge guard','active',1,1)""",
+            (event_id, organization_id, event_id),
+        )
+    rows = (
+        ("expired-a", "org-a", None, "pending", 1, None),
+        ("fresh-a", "org-a", None, "pending", 10_001, None),
+        ("attached-a", "org-a", "attached-event", "attached", 1, 2),
+        ("retired-a", "org-a", "retired-event", "retired", 1, 2),
+        ("expired-b", "org-b", None, "pending", 1, None),
+    )
+    for asset_id, organization_id, event_id, status, created_at_ms, attached_at_ms in rows:
+        object_key = f"public/event-branding/{organization_id}/{asset_id}.png"
+        asset_url = f"/api/v1/public/event-assets/{asset_id}.png"
+        connection.execute(
+            """INSERT INTO event_branding_assets
+               (id,organization_id,event_id,kind,object_key,asset_url,content_type,
+                byte_size,checksum_sha256,status,created_by_user_id,created_at_ms,
+                attached_at_ms)
+               VALUES(?,?,?,'logo',?,?,'image/png',1,?,?,?,?,?)""",
+            (
+                asset_id,
+                organization_id,
+                event_id,
+                object_key,
+                asset_url,
+                bytes(32),
+                status,
+                f"user-{organization_id[-1]}",
+                created_at_ms,
+                attached_at_ms,
+            ),
+        )
+        bucket.objects[object_key] = PNG
+
+    plan = connection.execute(
+        """EXPLAIN QUERY PLAN
+           SELECT id,object_key FROM event_branding_assets
+           WHERE organization_id=? AND status='pending'
+             AND created_at_ms<=? AND event_id IS NULL
+           ORDER BY created_at_ms,id LIMIT ?""",
+        ("org-a", now - PENDING_BRANDING_RETENTION_MS, 200),
+    ).fetchall()
+    detail = " ".join(str(row[3]) for row in plan)
+    assert "USING INDEX idx_event_branding_assets_pending" in detail
+    assert "SCAN event_branding_assets" not in detail
+
+    first = await purge_pending_branding_assets(database, bucket, now)
+    assert first.deleted_rows == 2
+    assert first.deleted_objects == 2
+    assert first.delete_failures == 0
+    assert {
+        row[0]
+        for row in connection.execute(
+            "SELECT id FROM event_branding_assets ORDER BY id"
+        ).fetchall()
+    } == {"attached-a", "fresh-a", "retired-a"}
+
+    second = await purge_pending_branding_assets(database, bucket, now)
+    assert second.deleted_rows == second.deleted_objects == second.delete_failures == 0
+
+
+async def test_pending_branding_purge_keeps_row_deletion_when_object_delete_fails(
+    branding_database,
+) -> None:
+    connection, database = branding_database
+    object_key = "public/event-branding/org-a/retry.png"
+    connection.execute(
+        """INSERT INTO event_branding_assets
+           (id,organization_id,event_id,kind,object_key,asset_url,content_type,
+            byte_size,checksum_sha256,status,created_by_user_id,created_at_ms)
+           VALUES('retry','org-a',NULL,'logo',?, '/api/v1/public/event-assets/retry.png',
+                  'image/png',1,?,'pending','user-a',1)""",
+        (object_key, bytes(32)),
+    )
+
+    class FailingBucket(Bucket):
+        async def delete(self, key: str) -> None:
+            raise RuntimeError("R2 unavailable")
+
+    failed = await purge_pending_branding_assets(
+        database, FailingBucket(), PENDING_BRANDING_RETENTION_MS + 1
+    )
+    assert failed.deleted_rows == 1
+    assert failed.deleted_objects == 0
+    assert failed.delete_failures == 1
+    assert connection.execute(
+        "SELECT status FROM event_branding_assets WHERE id='retry'"
+    ).fetchone() is None
+
+    recovered_bucket = Bucket()
+    recovered_bucket.objects[object_key] = PNG
+    recovered = await purge_pending_branding_assets(
+        database, recovered_bucket, PENDING_BRANDING_RETENTION_MS + 1
+    )
+    assert recovered.deleted_rows == recovered.deleted_objects == 0
+    assert recovered.delete_failures == 0
 
 
 @pytest.mark.parametrize(

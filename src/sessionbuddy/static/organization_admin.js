@@ -108,32 +108,15 @@
     return card;
   }
 
-  function activityResource(resourceType) {
-    return ({
-      organization: "organization", event: "event", proposal: "proposal",
-      invitation: "invitation", call_for_speaker_form: "call for proposals",
-      evaluation_round: "evaluation round", evaluation: "review",
-      evaluation_assignment: "review assignment", event_speaker: "speaker",
-      accepted_session: "session", speaker_task: "speaker task",
-      schedule_revision: "schedule", agenda_item: "agenda item"
-    })[resourceType] || String(resourceType).replaceAll("_", " ");
-  }
-
-  function activityVerb(operation) {
-    return ({ create: "created", read: "viewed", update: "updated", delete: "removed" })[operation] || operation;
-  }
-
   async function loadActivity(organizationId) {
     const activities = (await api(`/api/v1/admin/organizations/${encodeURIComponent(organizationId)}/activities`)).data;
     const rows = activities.map((activity) => {
       const row = document.createElement("li");
       row.className = "organization-activity-item";
       const title = document.createElement("strong");
-      const resource = activityResource(activity.resource_type);
-      const subject = activity.subject_name ? ` ${activity.subject_name}` : "";
-      title.textContent = `${activity.actor_name} ${activityVerb(activity.operation)} ${resource}${subject}`;
+      title.textContent = window.SessionBuddyActivityFormat.sentence(activity);
       const detail = document.createElement("span");
-      detail.textContent = `${activity.resource_id} · ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(activity.occurred_at_ms))}`;
+      detail.textContent = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(activity.occurred_at_ms));
       row.append(title, detail);
       return row;
     });

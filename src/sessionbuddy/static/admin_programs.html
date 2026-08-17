@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="/product/assets/product.css?v=78">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=29" defer></script>
-  <script src="/product/assets/admin-programs.js?v=59c88ba7b0c7" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
+  <script src="/product/assets/admin-programs.js?v=39fd1d7cbce4" defer></script>
 </head>
 <body class="app-body cfp-page workflow-page workflow-page--cfp">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
@@ -77,7 +77,7 @@
           </section>
           <section id="cfp-availability" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Availability</h3><p>Choose when proposals can be submitted.</p></div></div>
-            <p id="cfp-time-zone-context" class="time-zone-note">Time zone: <strong id="cfp-time-zone">Loading…</strong> <a id="change-event-time-zone" href="/admin/events">Change in event settings</a></p>
+            <p id="cfp-time-zone-context" class="time-zone-note">Time zone: <strong id="cfp-time-zone">Loading…</strong> <a id="change-event-time-zone" href="/admin">Change in event settings</a></p>
             <div class="form-grid"><div class="cfp-availability-field"><span id="cfp-opens-label" class="field-label">Opening time</span><div class="cfp-datetime-action"><input name="opens_at" type="datetime-local" aria-labelledby="cfp-opens-label" aria-describedby="cfp-time-zone-context cfp-opens-help"><button id="open-cfp-immediately" type="button" class="tertiary">Opens immediately</button></div><small id="cfp-opens-help">Leave blank to open immediately when you publish.</small></div><label>Closing time<input name="closes_at" type="datetime-local" aria-describedby="cfp-time-zone-context"><small>Optional — leave blank for no closing date.</small></label></div>
             <label class="cfp-short-field">Maximum proposals per speaker<input name="submission_limit" type="number" min="1" max="1000000" placeholder="No limit"><small>Optional</small></label>
           </section>

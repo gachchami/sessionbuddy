@@ -108,32 +108,16 @@ And the workaround leaves permanent residue. The org-level fact is filed under t
 
 Fixing only the invite route would not produce a working collaborator.
 
-### 4a. The invited organization admin cannot open any existing event
+### 4a. Existing-event visibility for organization administrators — resolved
 
-Acceptance grants an org-scoped `manage` grant and an `organizer` persona — no event membership, no event grant (`access.py:4497-4547`). But event contexts resolve to the *event* id with no organization fallback:
-
-```python
-# platform/authorization/types.py:71-73
-@property
-def authorization_resource_id(self) -> str:
-    return self.resource_id or self.event_id or self.organization_id
-
-# platform/authorization/policy.py:59-65
-resource_id = context.authorization_resource_id
-if resource_id in actor.owned_resource_ids: return True
-grants = actor.resource_grants.get(resource_id, frozenset())   # flat lookup, no cascade
-```
-
-Pinned by test:
-
-```python
-# tests/security/test_authorization.py:125-129
-def test_organization_ownership_does_not_cascade_to_event() -> None:
-    ...
-    assert (event.allowed, event.reason) == (False, "resource_access_required")
-```
-
-So a brand-new "organization administrator" sees an **empty Events list** and can administer nothing that existed before they arrived. They can only create new events, which they then own. `tests/security/test_organizer_workflow.py:441-483` proves org-wide control precisely by creating a *second* event — it never asserts the co-owner can touch the carrier event, because they can't.
+Acceptance grants an organization-scoped `manage` grant and an `organizer`
+persona, without duplicating an event membership or grant for every event.
+`policy.py` cascades that authority to events in the exact organization.
+`list_events` now mirrors the policy: organization owners and active `manage`
+grantees see events created by other organizers, including across cursor pages.
+Event-only owners and `edit`/`manage` grantees still receive only their
+explicitly authorized events, and foreign organizations remain
+indistinguishable from missing resources.
 
 ### 4b. `view` and `edit` org grantees are locked out of the console entirely
 

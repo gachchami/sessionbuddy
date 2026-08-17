@@ -12,7 +12,7 @@ def source(name: str) -> str:
 def test_organizer_pages_expose_consistent_theme_hooks() -> None:
     pages = {
         "admin_home.html": "organizer-page--home",
-        "events_admin.html": "organizer-page--events",
+        "event_editor.html": "event-editor-page",
         "event_overview.html": "organizer-page--event-overview",
         "access_admin.html": "organizer-page--access",
         "account.html": "organizer-page--account",
@@ -25,10 +25,10 @@ def test_organizer_pages_expose_consistent_theme_hooks() -> None:
         assert modifier in page
         assert "organizer-main" in page
         hero_hook = (
-            "organizer-home-identity"
+            "organizer-home-heading"
             if name == "admin_home.html"
-            else "events-page-heading"
-            if name == "events_admin.html"
+            else "event-editor__heading"
+            if name == "event_editor.html"
             else "event-command-header"
             if name == "event_overview.html"
             else "account-context-heading"
@@ -39,8 +39,8 @@ def test_organizer_pages_expose_consistent_theme_hooks() -> None:
 
 
 def test_organizer_pages_mark_major_surfaces_and_generated_cards() -> None:
-    assert "organizer-home-event-list" in source("admin_home.html")
-    assert "events-workspace" in source("events_admin.html")
+    assert "organizer-home-table" in source("admin_home.html")
+    assert "event-editor__layout" in source("event_editor.html")
     assert "organizer-callout" in source("event_overview.html")
     assert "reviewer-directory" in source("access_admin.html")
     assert "organizer-panel--profile" in source("account.html")
@@ -48,7 +48,7 @@ def test_organizer_pages_mark_major_surfaces_and_generated_cards() -> None:
 
     scripts_and_hooks = {
         "admin_home.js": "organization-name",
-        "events_admin.js": "event-table-row",
+        "event_editor.js": "event-editor-form",
         "event_overview.js": "event-name",
         "access_admin.js": "reviewer-row-actions",
         "account.js": "organizer-access-card",
@@ -61,7 +61,7 @@ def test_organizer_pages_mark_major_surfaces_and_generated_cards() -> None:
 def test_theme_markup_keeps_page_headings_and_landmarks_accessible() -> None:
     for name in (
         "admin_home.html",
-        "events_admin.html",
+        "event_editor.html",
         "event_overview.html",
         "access_admin.html",
         "account.html",

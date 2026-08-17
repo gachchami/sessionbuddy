@@ -3,131 +3,110 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_events_page_uses_an_operational_management_layout() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
-    script = (STATIC / "events_admin.js").read_text(encoding="utf-8")
-    styles = (STATIC / "product.css").read_text(encoding="utf-8")
+def test_home_uses_an_operational_event_management_layout() -> None:
+    page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
+    script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
+    styles = (STATIC / "admin_home.css").read_text(encoding="utf-8")
 
-    assert 'class="event-filter-tabs"' in page
+    assert 'class="organizer-home-filters"' in page
     assert page.index('data-event-filter="all"') < page.index('data-event-filter="active"')
     assert 'data-event-filter="all" aria-pressed="true"' in page
-    assert 'eventFilter: "all"' in script
-    assert 'id="event-search" type="search"' in page
+    assert 'id="event-search" name="q" type="search"' in page
     assert 'id="event-sort"' in page
     assert '<option value="upcoming">Upcoming first</option>' in page
-    assert 'class="event-table-header"' in page
-    assert 'class="event-table-frame" role="table" aria-label="Events"' in page
-    assert 'class="event-management-list" role="rowgroup"' in page
-    assert 'item.className = "event-table-row"' in script
-    assert 'monogram.className = "event-monogram"' in script
-    assert "function visibleEvents()" in script
-    assert "function renderEventList()" in script
-    assert "const requestId = ++state.eventsRequestId" in script
+    assert 'class="organizer-home-table" role="table" aria-label="Events"' in page
+    assert 'class="organizer-home-table__body" role="rowgroup"' in page
+    assert 'row.className = "organizer-home-event-row"' in script
+    assert "const requestId = cursor ? state.eventsRequestId : ++state.eventsRequestId" in script
     assert "if (requestId !== state.eventsRequestId) return false" in script
-    assert "const requestId = state.eventsRequestId" in script
-    assert "if (requestId !== state.eventsRequestId) return;" in script
-    assert "++state.eventsRequestId" in script
-    assert 'params.set("order", state.eventOrder)' in script
+    assert 'params.set("order", state.order)' in script
     assert "event.proposal_count" in script
-    assert "/duplicate`" in script
-    assert 'name="duplicate_source_event_id"' in page
-    assert 'name="duplicate_source_version"' in page
-    assert "body.source_version = Number(values.duplicate_source_version)" in script
-    assert 'name="retain_source_logo"' in page
-    assert 'name="retain_source_cover"' in page
-    assert "function duplicateEvent(event)" in script
-    assert 'id="save-event-draft"' in page
-    assert "Save a private draft, or create the event as active." in page
-    assert ">Create active event</button>" in page
-    assert 'if (!eventId) body.status = createStatus' in script
-    assert 'event.submitter?.value === "draft"' in script
-    assert 'state.editingDraft = event.status === "draft"' in script
-    assert "body.status = intendedStatus" in script
-    assert 'state.editingDraft\n        ? values.status === "archived"' in script
-    assert ': values.status || state.events.get(eventId)?.status\n      : createStatus' in script
-    assert 'byId("event-status-label").hidden = false' in script
-    assert 'values.status === "archived"' in script
-    assert '"Event archived."' in script
-    assert '"Event activated."' in script
-    assert 'intendedStatus === "active" && endsAt <= Date.now()' in script
-    assert "Update the event dates before activating." in script
-    assert ".event-table-header, .event-table-row" in styles
-    assert ".event-table-actions" in styles
-    assert '`/admin/events/${encodeURIComponent(event.id)}/cfp`' in script
-    assert 'cfp.classList.add("event-action--cfp")' in script
-    assert 'more.className = "event-row-more"' in script
-    assert 'link("Manage CFP", `/admin/events/${encodeURIComponent(event.id)}/cfp`)' in script
-    assert ".event-row-more__menu" in styles
+    assert "name.href = `/admin/events/${encodeURIComponent(event.id)}`" in script
+    assert "settings.href = `/admin/events/${encodeURIComponent(event.id)}/settings`" in script
+    assert "duplicate.href = `/admin/events/new?source=${encodeURIComponent(event.id)}`" in script
+    assert 'textContent = "Open"' not in script
+    assert ".organizer-home-table__header" in styles
+    assert ".organizer-home-event-actions" in styles
 
 
-def test_event_dialog_keeps_runtime_failures_with_the_form() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
-    script = (STATIC / "events_admin.js").read_text(encoding="utf-8")
+def test_event_editor_keeps_runtime_failures_with_the_form() -> None:
+    page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
+    script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
 
-    assert 'id="event-dialog-status"' in page
-    assert "function setDialogStatus" in script
-    assert "if (state.submitting) return;" in script
-    assert "This event changed elsewhere." in script
-    assert 'error.status === 401' in script
-    assert "preserveEventDraft(form)" in script
-    assert "restoreEventDraft()" in script
+    assert 'id="editor-status"' in page
+    assert "function setStatus" in script
+    assert 'form.setAttribute("aria-busy", String(busy))' in script
+    assert "Someone else saved this event while you were editing." in script
+    assert "error.status === 401" in script
+    assert "preserveDraft()" in script
+    assert "savedDraft()" in script
     assert "redirectIfSignedOut(error)" in script
-    assert 'headers["idempotency-key"] = state.createMutation.key' in script
+    assert 'headers["idempotency-key"] = state.mutation.key' in script
     assert "crypto.getRandomValues(new Uint8Array(32))" in script
-    assert 'id="event-email-default"' in page
-    assert "session.default_email_sender_name" in script
-    assert "session.default_email_address" in script
+    assert 'id="email-default"' in page
+    assert "state.session.default_email_sender_name" in script
+    assert "state.session.default_email_address" in script
+    assert 'id="conflict-panel"' in page
+    assert 'mine.textContent = "Keep mine"' in script
+    assert 'latest.textContent = "Use latest"' in script
     assert "event-location-map" not in page
     assert "google.com/maps" not in script
 
 
-def test_event_dialog_uses_the_organizer_run_sheet_layout() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
-    styles = (STATIC / "product.css").read_text(encoding="utf-8")
+def test_event_editor_uses_the_operate_layout_and_lifecycle_controls() -> None:
+    page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
+    script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
+    styles = (STATIC / "event_editor.css").read_text(encoding="utf-8")
 
-    assert 'aria-describedby="event-form-help event-dialog-status"' in page
-    assert 'class="event-form-layout"' in page
-    assert 'class="event-form-primary"' in page
-    assert 'class="event-form-secondary"' in page
-    assert 'class="event-date-grid"' in page
-    assert page.count('class="event-date-group"') == 2
+    assert 'class="event-editor__layout"' in page
+    assert 'class="event-editor__main"' in page
+    assert 'class="event-editor__support"' in page
+    assert 'class="event-editor__date-grid"' in page
+    assert page.count("<fieldset>") == 2
     assert ">Branding</strong>" in page
-    assert ".organizer-dialog--event" in styles
-    assert "grid-template-columns: minmax(0, 1.5fr)" in styles
-    assert "height: min(100dvh, 100%)" in styles
+    assert 'id="activate-event"' in page
+    assert 'id="archive-event"' in page
+    assert 'id="restore-draft"' in page
+    assert 'id="restore-active"' in page
+    assert 'id="duplicate-event"' in page
+    assert 'id="save-draft"' in page
+    assert 'id="save-event"' in page
+    assert (
+        'byId("activate-event").textContent = state.dirty ? "Save and activate" : "Activate event"'
+        in script
+    )
+    assert "Update the event dates before activating." in script
+    assert 'saved.status === "archived" ? "Event archived."' in script
+    assert ".event-editor__save-bar" in styles
+    assert "position: sticky" in styles
+    assert "grid-template-columns: minmax(0, 46rem) minmax(16rem, 22rem)" in styles
 
 
-def test_event_branding_composes_a_live_public_page_preview() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
-    script = (STATIC / "events_admin.js").read_text(encoding="utf-8")
-    styles = (STATIC / "product.css").read_text(encoding="utf-8")
+def test_event_branding_uploads_have_live_preview_and_save_boundary() -> None:
+    page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
+    script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
+    styles = (STATIC / "event_editor.css").read_text(encoding="utf-8")
 
-    assert 'class="public-brand-preview"' in page
-    for preview_id in (
-        "public-brand-preview-card",
-        "public-brand-preview-cover",
-        "public-brand-preview-logo",
-        "public-brand-preview-title",
-        "public-brand-preview-date",
-        "public-brand-preview-location",
-        "public-brand-preview-website",
-    ):
+    for preview_id in ("logo-preview", "cover-preview", "logo-status", "cover-status"):
         assert f'id="{preview_id}"' in page
-    assert "function updatePublicBrandPreview()" in script
-    assert 'setProperty("--event-preview-accent", accent)' in script
-    assert 'setPublicPreviewImage("logo", source)' in script
-    assert 'setPublicPreviewImage("cover", source)' in script
-    assert ".public-brand-preview__cover" in styles
+    assert 'id="upload-logo"' in page
+    assert 'id="upload-cover"' in page
+    assert "function updateImages()" in script
+    assert "state.unsavedUploads.add(kind)" in script
+    assert '"Upload complete · Save changes to use this image."' in script
+    assert "state.unsavedUploads.clear()" in script
+    assert ".event-editor__cover-preview:not([hidden])" in styles
     assert "aspect-ratio: 16 / 9" in styles
-    assert "max-width: 12rem" in styles
-    assert "max-height: 3rem" in styles
-    assert "border-top: 4px solid var(--event-preview-accent" in styles
+    assert "max-inline-size: 10rem" in styles
 
 
-def test_home_summarizes_events_and_events_keeps_the_full_management_surface() -> None:
+def test_home_is_the_event_index_and_editor_is_the_management_destination() -> None:
     home = (STATIC / "admin_home.html").read_text(encoding="utf-8")
-    events = (STATIC / "events_admin.html").read_text(encoding="utf-8")
+    editor = (STATIC / "event_editor.html").read_text(encoding="utf-8")
 
-    assert 'class="organizer-home-event-list" aria-label="Events"' in home
-    assert 'class="event-table-frame" role="table" aria-label="Events"' in events
-    assert 'class="event-management-list" role="rowgroup"' in events
+    assert 'class="organizer-home-table" role="table" aria-label="Events"' in home
+    assert 'href="/admin/events/new"' in home
+    assert 'id="event-editor-form"' in editor
+    assert 'id="lifecycle"' in editor
+    assert not (STATIC / "events_admin.html").exists()
+    assert not (STATIC / "events_admin.js").exists()

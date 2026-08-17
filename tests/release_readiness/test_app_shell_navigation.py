@@ -348,7 +348,7 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert "Platform status" not in primary_navigation
     assert "Speaker portal" not in hero_actions
     assert 'const label = "Open dashboard"' in javascript
-    assert 'if (canManageOrganization(session)) return "/admin"' in javascript
+    assert 'if (managesAnyOrganization(session)) return "/admin"' in javascript
     assert 'return "/speaker"' in javascript
     assert 'return "/reviews"' in javascript
     assert 'choice.role === "speaker"' in javascript
@@ -450,7 +450,7 @@ def test_cached_identity_never_routes_an_authorization_sensitive_document() -> N
 
 
 def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
+    page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
 
     assert "context-bar__icon" not in page
@@ -491,7 +491,7 @@ def test_every_organizer_persona_reaches_a_navigable_workspace() -> None:
     # Organization links are gated on organization authority alone, so they
     # still render on the persona-neutral /account page.
     organization_gate = (
-        "const organizationNavigation = organizer && canManageOrganization(session);"
+        "const organizationNavigation = organizer && managesAnyOrganization(session);"
     )
     assert organization_gate in javascript
     assert "if (organizationNavigation) {" in javascript
@@ -535,6 +535,27 @@ def test_event_navigation_does_not_duplicate_proposal_sections() -> None:
     assert '["Rounds", `${prefix}/submissions#rounds-title`' not in javascript
     assert '["Proposals", `${prefix}/submissions`' in javascript
     assert "if (canAdministerAccess) {" in javascript
+
+
+def test_event_settings_and_new_event_have_stable_shell_destinations() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert 'return value === "new" ? "" : value;' in javascript
+    assert 'if (location.pathname === "/admin/events/new") return "New event";' in javascript
+    assert 'if (location.pathname.endsWith("/settings")) return "Settings";' in javascript
+    assert '["Settings", `${prefix}/settings`, "settings"' in javascript
+
+
+def test_sessionbuddy_access_helpers_are_exact_resource_scoped() -> None:
+    javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert "function canManageOrganization(session, organizationId)" in javascript
+    assert "item.organization_id === organizationId" in javascript
+    assert "function canEditEvent(session, event)" in javascript
+    assert "function canManageLifecycle(session, event)" in javascript
+    assert "function canDuplicateEvent(session, event)" in javascript
+    assert "const direct = exactEventAccess(session, event);" in javascript
+    assert "window.SessionBuddyAccess = Object.freeze({" in javascript
 
 
 def test_account_menu_dismissal_is_shared_across_shell_layouts() -> None:

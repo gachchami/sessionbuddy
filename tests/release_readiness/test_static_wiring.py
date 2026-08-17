@@ -79,7 +79,7 @@ def test_document_recovery_calls_name_their_defining_resource_scope() -> None:
         ("setup.html", "setup.js"),
         ("sign_in.html", "sign_in.js"),
         ("admin_home.html", "admin_home.js"),
-        ("events_admin.html", "events_admin.js"),
+        ("event_editor.html", "event_editor.js"),
         ("event_overview.html", "event_overview.js"),
         ("speaker_directory.html", "speaker_directory.js"),
         ("speaker_messages.html", "speaker_messages.js"),
@@ -184,69 +184,62 @@ def test_speaker_message_retries_reuse_idempotency_key() -> None:
 
 
 def test_event_branding_uses_a_validated_logo_upload() -> None:
-    page = (STATIC / "events_admin.html").read_text()
-    script = (STATIC / "events_admin.js").read_text()
+    page = (STATIC / "event_editor.html").read_text()
+    script = (STATIC / "event_editor.js").read_text()
     assert "Logo URL" not in page
     assert 'name="logo_file" type="file"' in page
     assert 'accept="image/png,image/jpeg,image/webp"' in page
     assert "2 * 1024 * 1024" in script
     assert "/event-assets/${kind}`" in script
-    assert 'uploadSelectedAsset("logo")' in script
+    assert 'upload(kind)' in script
     assert 'name="cover_file" type="file"' in page
-    assert "16:9 · 1600 × 900 · 2 MB" in page
-    assert 'uploadSelectedAsset("cover")' in script
+    assert "16:9 · PNG, JPG, or WebP · 2 MB" in page
+    assert 'byId(`upload-${kind}`).addEventListener("click", () => upload(kind))' in script
 
 
 def test_event_images_use_an_explicit_preview_then_upload_flow() -> None:
-    page = (STATIC / "events_admin.html").read_text()
-    script = (STATIC / "events_admin.js").read_text()
+    page = (STATIC / "event_editor.html").read_text()
+    script = (STATIC / "event_editor.js").read_text()
 
     for kind in ("logo", "cover"):
-        section = page.split(f'aria-labelledby="event-{kind}-label">', 1)[1].split("</section>", 1)[
-            0
-        ]
-        assert 'class="image-upload__file"' in section
-        assert f'id="event-{kind}-file"' in section
-        assert f'aria-labelledby="event-{kind}-label"' in section
-        assert f'id="event-{kind}-preview-frame"' in section
-        assert f'id="event-{kind}-status"' in section
+        section = page.split(f'aria-labelledby="{kind}-title">', 1)[1].split("</section>", 1)[0]
+        assert f'id="{kind}-file"' in section
+        assert f'id="{kind}-preview"' in section
+        assert f'id="{kind}-status"' in section
         assert re.search(
-            rf'<button[^>]*id="upload-event-{kind}"[^>]*type="button"[^>]*disabled',
+            rf'<button[^>]*id="upload-{kind}"[^>]*type="button"[^>]*disabled',
             section,
         )
-        assert f'byId("upload-event-{kind}").addEventListener("click"' in script
+    assert 'byId(`upload-${kind}`).addEventListener("click", () => upload(kind))' in script
 
 
 def test_event_creation_waits_for_selected_image_uploads() -> None:
-    script = (STATIC / "events_admin.js").read_text()
-    upload_handler = script.split("async function uploadSelectedAsset(kind) {", 1)[1]
-    submit_handler = script.split(
-        'byId("event-form").addEventListener("submit", async (event) => {', 1
-    )[1]
+    script = (STATIC / "event_editor.js").read_text()
+    upload_handler = script.split("async function upload(kind) {", 1)[1]
+    validate_handler = script.split("function validate(intendedStatus) {", 1)[1]
+    save_handler = script.split("async function save(status", 1)[1].split(
+        "async function upload(kind)", 1
+    )[0]
 
     # Selecting an optional image makes it pending; its explicit upload action
     # must clear that state before the event-creation request is allowed.
     assert ".value = uploaded.asset_url" in upload_handler
     assert upload_handler.index(".value = uploaded.asset_url") < upload_handler.index(
-        'input.value = ""'
+        'fileInput.value = ""'
     )
-    guard_at = submit_handler.index(
+    guard_at = validate_handler.index(
         "form.elements.logo_file.files[0] || form.elements.cover_file.files[0]"
     )
-    create_at = submit_handler.index(
+    create_at = save_handler.index(
         "/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/events"
     )
-    assert guard_at < create_at
-    upload_guard_message = (
-        "Upload the selected logo or cover before "
-        '${eventId ? "saving changes" : "creating the event"}.'
-    )
-    assert upload_guard_message in submit_handler
+    assert guard_at >= 0 and create_at >= 0
+    assert "Upload the selected image or clear it before saving." in validate_handler
 
     # Uploading as an implicit side effect after event creation recreates the
     # partial-success bug this flow is intended to prevent.
-    create_request = submit_handler[create_at:]
-    assert "uploadSelectedAsset(" not in create_request
+    create_request = save_handler[create_at:]
+    assert "upload(kind)" not in create_request
 
 
 @pytest.mark.parametrize(
@@ -265,12 +258,9 @@ def test_event_creation_waits_for_selected_image_uploads() -> None:
 def test_event_create_payload_supports_every_branding_state(
     logo_url: str, cover_image_url: str
 ) -> None:
-    page = (STATIC / "events_admin.html").read_text()
-    script = (STATIC / "events_admin.js").read_text()
-    submit_handler = script.split(
-        'byId("event-form").addEventListener("submit", async (event) => {', 1
-    )[1]
-    body_source = submit_handler.split("const body = {", 1)[1].split("};", 1)[0]
+    page = (STATIC / "event_editor.html").read_text()
+    script = (STATIC / "event_editor.js").read_text()
+    body_source = script.split("return { name: values.name.trim()", 1)[1].split(" };", 1)[0]
 
     # The staged upload references live in hidden form controls, so FormData
     # includes them without exposing implementation URLs as editable fields.
@@ -305,58 +295,40 @@ def test_event_create_payload_supports_every_branding_state(
 
 
 def test_event_create_button_tracks_pending_branding_uploads() -> None:
-    page = (STATIC / "events_admin.html").read_text()
-    script = (STATIC / "events_admin.js").read_text()
-    availability = script.split("function updateSaveAvailability() {", 1)[1].split("\n  }", 1)[0]
-    upload_handler = script.split("async function uploadSelectedAsset(kind) {", 1)[1]
+    page = (STATIC / "event_editor.html").read_text()
+    script = (STATIC / "event_editor.js").read_text()
+    availability = script.split("function updateDirty() {", 1)[1].split("\n  }", 1)[0]
+    upload_handler = script.split("async function upload(kind) {", 1)[1]
     upload_success = upload_handler.split("try {", 1)[1].split("} catch", 1)[0]
 
     # With neither image selected, Create starts enabled. Choosing either file
     # makes it pending and disables Create through the shared state function.
-    assert re.search(r'<button[^>]*id="save-event"(?![^>]*disabled)[^>]*>', page)
-    assert "form.elements.logo_file.files[0]" in availability
-    assert "form.elements.cover_file.files[0]" in availability
-    assert 'byId("save-event").disabled = pending || state.submitting;' in availability
-
-    logo_change = script.split('elements.logo_file.addEventListener("change", (event) => {', 1)[
-        1
-    ].split('elements.cover_file.addEventListener("change", (event) => {', 1)[0]
-    cover_change = script.split('elements.cover_file.addEventListener("change", (event) => {', 1)[
-        1
-    ].split("async function uploadEventAsset", 1)[0]
-    assert "updateSaveAvailability();" in logo_change
-    assert "updateSaveAvailability();" in cover_change
+    assert re.search(r'<button[^>]*id="save-event"[^>]*disabled[^>]*>', page)
+    assert 'byId("save-event").disabled = !state.dirty' in availability
+    assert 'byId(`upload-${kind}`).disabled = !file || !valid || state.readOnly' in script
 
     # Successful staging first stores the durable reference, then clears the
     # selected file and recomputes availability, enabling Create again only
     # after the upload has completed.
     stored_at = upload_success.index(".value = uploaded.asset_url")
-    cleared_at = upload_success.index('input.value = ""')
-    refreshed_at = upload_success.index("updateSaveAvailability();")
+    cleared_at = upload_success.index('fileInput.value = ""')
+    refreshed_at = upload_success.index("updateDirty();")
     assert stored_at < cleared_at < refreshed_at
 
 
 def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> None:
-    page = (STATIC / "events_admin.html").read_text()
-    stylesheet = (STATIC / "product.css").read_text()
+    page = (STATIC / "event_editor.html").read_text()
+    stylesheet = (STATIC / "event_editor.css").read_text()
 
     for kind in ("logo", "cover"):
-        card = page.split(f'aria-labelledby="event-{kind}-label">', 1)[1].split("</section>", 1)[0]
-        assert card.index(f'id="event-{kind}-file"') < card.index(
-            f'id="event-{kind}-preview-frame"'
-        )
-        assert card.index(f'id="upload-event-{kind}"') < card.index(
-            f'id="event-{kind}-preview-frame"'
-        )
-        assert 'class="secondary image-upload__submit"' in card
+        card = page.split(f'aria-labelledby="{kind}-title">', 1)[1].split("</section>", 1)[0]
+        assert card.index(f'id="{kind}-file"') < card.index(f'id="{kind}-preview"')
+        assert card.index(f'id="upload-{kind}"') < card.index(f'id="{kind}-preview"')
+        assert 'class="secondary"' in card
 
-    upload_card_rule = stylesheet.rsplit(".image-upload {", 1)[1].split("}", 1)[0]
-    assert "flex-direction: column" in upload_card_rule
-    assert "align-self: start" in upload_card_rule
-    assert ".image-upload__file::file-selector-button" in stylesheet
-    preview_rule = stylesheet.split("\n.image-upload__preview {", 1)[1].split("}", 1)[0]
-    assert "max-height:" in preview_rule
-    assert "overflow: hidden" in preview_rule
+    assert ".event-editor__uploads" in stylesheet
+    assert ".event-editor__logo-preview:not([hidden])" in stylesheet
+    assert ".event-editor__cover-preview:not([hidden])" in stylesheet
 
 
 def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:

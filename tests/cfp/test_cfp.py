@@ -935,8 +935,8 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
         setup_js = await client.get("/setup/assets/setup.js")
         auth_link_confirm_js = await client.get("/auth/assets/auth-link-confirm.js")
         access = await client.get("/admin/events/22222222-2222-4222-8222-222222222222/access")
-        events = await client.get("/admin/events")
-        events_js = await client.get("/admin/events/assets/events.js")
+        events = await client.get("/admin/events", follow_redirects=False)
+        event_editor_js = await client.get("/admin/event-editor/assets/event-editor.js")
         admin_home = await client.get("/admin")
         event_overview = await client.get("/admin/events/22222222-2222-4222-8222-222222222222")
         speaker_directory = await client.get("/admin/people")
@@ -947,7 +947,11 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert {admin.status_code, public.status_code, submissions.status_code, css.status_code} == {
         200
     }
-    assert sign_in.status_code == access.status_code == events.status_code == 200
+    assert sign_in.status_code == access.status_code == 200
+    assert events.status_code == 302
+    assert events.headers["location"] == "/admin"
+    assert events.headers["cache-control"] == "no-store"
+    assert events.text == ""
     assert setup.status_code == setup_css.status_code == setup_js.status_code == 200
     assert auth_link_confirm_js.status_code == 200
     assert auth_link_confirm_js.headers["content-type"].startswith("text/javascript")
@@ -964,11 +968,10 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     } == {200}
     assert "Send a sign-in link" in sign_in.text
     assert "Reviewers" in access.text
-    assert "All events" in events.text
-    assert "Edit organization name" not in events.text
+    assert "Events" in admin_home.text
     assert "Organization settings" in account.text
-    assert "Create active event" in events.text
-    assert "data-auth-shell" in events.text
+    assert "Create event" in admin_home.text
+    assert "data-auth-shell" in admin_home.text
     assert "Call for Proposals" in admin.text
     assert "Share the public CFP" in admin.text
     assert "data-auth-shell" in admin.text
@@ -981,8 +984,8 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert 'page_template: "/admin/events/{event_id}/cfp"' in admin_js.text
     assert 'const list = byId("form-fields")' in admin_js.text
     assert "conditions" in admin_js.text
-    assert "/admin/events/${encodeURIComponent(event.id)}" in events_js.text
-    assert 'button("Edit"' in events_js.text
+    assert "/api/v1/admin/events/${encodeURIComponent(state.event.id)}" in event_editor_js.text
+    assert 'state.mode === "edit"' in event_editor_js.text
     assert 'page_template: "/cfp/{event_key}/{slug}"' in public_js.text
     assert "const form = event.currentTarget" in public_js.text
     assert "event.currentTarget.querySelectorAll" not in public_js.text

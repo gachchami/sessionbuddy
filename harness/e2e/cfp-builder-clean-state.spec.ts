@@ -198,7 +198,10 @@ test("the builder keeps publishing guidance, confirmation copy, preview, and reo
   await expect(customCards).toHaveCount(2);
 
   await page.getByRole("button", { name: "Availability", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Change in event settings" })).toHaveAttribute("href", "/admin/events");
+  await expect(page.getByRole("link", { name: "Change in event settings" })).toHaveAttribute(
+    "href",
+    `/admin/events/${eventId}/settings#date-time`,
+  );
   const opening = page.getByLabel("Opening time");
   const closing = page.getByLabel("Closing time");
   const immediately = page.getByRole("button", { name: "Opens immediately" });

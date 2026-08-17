@@ -33,6 +33,11 @@ ASSETS = {
     "api_docs.js": "API_DOCS_JS",
     "admin_home.html": "ADMIN_HOME_HTML",
     "admin_home.js": "ADMIN_HOME_JS",
+    "admin_home.css": "ADMIN_HOME_CSS",
+    "activity_format.js": "ACTIVITY_FORMAT_JS",
+    "event_editor.html": "EVENT_EDITOR_HTML",
+    "event_editor.js": "EVENT_EDITOR_JS",
+    "event_editor.css": "EVENT_EDITOR_CSS",
     "event_overview.html": "EVENT_OVERVIEW_HTML",
     "event_overview.js": "EVENT_OVERVIEW_JS",
     "speaker_directory.html": "SPEAKER_DIRECTORY_HTML",
@@ -62,8 +67,6 @@ ASSETS = {
     "demo_access.js": "DEMO_ACCESS_JS",
     "access_admin.html": "ACCESS_ADMIN_HTML",
     "access_admin.js": "ACCESS_ADMIN_JS",
-    "events_admin.html": "EVENTS_ADMIN_HTML",
-    "events_admin.js": "EVENTS_ADMIN_JS",
     "admin_submissions.html": "ADMIN_SUBMISSIONS_HTML",
     "admin_submissions.js": "ADMIN_SUBMISSIONS_JS",
     "app/index.html": "REVIEWS_HTML",
@@ -94,12 +97,34 @@ BINARY_ASSETS = {
 }
 
 CONTENT_ADDRESSED_ASSETS = (
+    ("admin_home.html", "admin_home.js", "/admin/home/assets/home.js"),
+    ("admin_home.html", "admin_home.css", "/admin/home/assets/home.css"),
+    (
+        "admin_home.html",
+        "activity_format.js",
+        "/app-shell/assets/activity-format.js",
+    ),
+    (
+        "organization_admin.html",
+        "activity_format.js",
+        "/app-shell/assets/activity-format.js",
+    ),
     ("access_admin.html", "access_admin.js", "/admin/access/assets/access.js"),
     ("admin_onboarding.html", "admin_onboarding.js", "/admin/onboarding/assets/onboarding.js"),
     ("admin_programs.html", "admin_programs.js", "/product/assets/admin-programs.js"),
     ("admin_submissions.html", "admin_submissions.js", "/product/assets/admin-submissions.js"),
     ("agenda_admin.html", "agenda.js", "/admin/agenda/assets/agenda.js"),
     ("event_overview.html", "event_overview.js", "/admin/event-overview/assets/event-overview.js"),
+    (
+        "event_editor.html",
+        "event_editor.js",
+        "/admin/event-editor/assets/event-editor.js",
+    ),
+    (
+        "event_editor.html",
+        "event_editor.css",
+        "/admin/event-editor/assets/event-editor.css",
+    ),
     ("event_workspace.html", "event_workspace.js", "/admin/workspace/assets/workspace.js"),
     (
         "speaker_content.html",
@@ -113,7 +138,7 @@ CONTENT_ADDRESSED_ASSETS = (
 )
 SHARED_ASSET_VERSIONS = {
     "/app-shell/assets/api-client.js": "8",
-    "/app-shell/assets/app-shell.js": "29",
+    "/app-shell/assets/app-shell.js": "30",
 }
 
 

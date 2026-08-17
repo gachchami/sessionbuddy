@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 // Sign-out from the app-shell account menu. The page under test is the real
-// /admin/events document served by the worker; every API interaction is
+// /admin Home reached through the /admin/events compatibility alias; every API interaction is
 // mocked so the test pins the browser-side contract: a guarded POST to
 // /api/v1/session/logout with the session's CSRF token, a redirect home on
 // success, and a recoverable button on failure.
@@ -167,10 +167,10 @@ test.describe("account sign-out", () => {
     await page.getByRole("button", { name: "Sign out" }).click();
 
     // The failure re-enables the control with an explicit retry affordance
-    // and never navigates away from the page.
+    // and never navigates away from the canonical Home page.
     const retry = page.getByRole("button", { name: "Try sign out again" });
     await expect(retry).toBeEnabled();
-    await expect(page).toHaveURL(/\/admin\/events$/);
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/admin");
 
     await retry.click();
     await expect(page).toHaveURL(/\/$/);

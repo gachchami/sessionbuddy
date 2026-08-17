@@ -1,6 +1,8 @@
 import sqlite3
 import time
 
+import pytest
+
 from tests.security.test_organizer_workflow import EVENT_PAYLOAD, _bootstrap_admin, _mutation
 from tests.security.test_production_identity_flow import (
     _client,
@@ -40,6 +42,47 @@ async def _sign_in(client, connection: sqlite3.Connection, email: str) -> dict[s
     session = await client.get("/api/v1/auth/session")
     assert session.status_code == 200
     return session.json()
+
+
+@pytest.mark.parametrize("permission", ["view", "edit"])
+async def test_organization_grantee_can_enter_event_list_without_event_grants(
+    production_environment,  # noqa: F811 - pytest fixture
+    permission: str,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as owner:
+        owner_csrf, organization_id = await _bootstrap_admin(owner, connection)
+        created = await owner.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=_mutation(owner_csrf),
+            json=EVENT_PAYLOAD,
+        )
+        assert created.status_code == 201
+        email = f"organization-{permission}@example.com"
+        _insert_user(
+            connection,
+            user_id=f"organization-{permission}",
+            email=email,
+        )
+        granted = await owner.post(
+            f"/api/v1/admin/organizations/{organization_id}/access-grants",
+            headers=_mutation(owner_csrf),
+            json={"email": email, "permission": permission},
+        )
+        assert granted.status_code == 201
+
+        async with _client(environment) as grantee:
+            await _sign_in(grantee, connection, email)
+            listed = await grantee.get(
+                f"/api/v1/admin/organizations/{organization_id}/events"
+            )
+            foreign = await grantee.get(
+                "/api/v1/admin/organizations/foreign-organization/events"
+            )
+
+        assert listed.status_code == 200
+        assert listed.json() == {"data": [], "next_cursor": None}
+        assert foreign.status_code == 404
 
 
 async def test_organization_grant_lifecycle_is_exact_revocable_and_owner_immutable(

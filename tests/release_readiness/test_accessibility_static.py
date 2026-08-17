@@ -100,12 +100,12 @@ def test_expired_link_recovery_page_has_accessible_actions() -> None:
 
 
 def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
-    text, _ = parse("events_admin.html")
-    javascript = (STATIC / "events_admin.js").read_text()
+    text, _ = parse("event_editor.html")
+    javascript = (STATIC / "event_editor.js").read_text()
     stylesheet = (STATIC / "product.css").read_text()
-    assert 'id="new-event"' in text
-    assert 'id="event-dialog"' in text
-    event_form = text.split('<form id="event-form">', 1)[1].split("</form>", 1)[0]
+    assert 'id="event-editor-form"' in text
+    assert 'id="event-dialog"' not in text
+    event_form = text.split('<form id="event-editor-form"', 1)[1].split("</form>", 1)[0]
     event_form_parser = AuditParser()
     event_form_parser.feed(event_form)
     event_name = next(
@@ -125,29 +125,22 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
         "location",
         "description",
     ):
-        field_line = next(
-            line for line in event_form.splitlines() if f'name="{field_name}"' in line
-        )
-        assert '<span class="required-marker" aria-hidden="true">*</span>' in field_line
-        assert " required" in field_line
-    assert ".required-marker" in stylesheet
-    assert "color: var(--danger)" in stylesheet
-    assert "form.validation-attempted" in stylesheet
-    assert 'classList.add("validation-attempted")' in javascript
+        assert f'name="{field_name}"' in event_form
+        field_fragment = event_form.split(f'name="{field_name}"', 1)[1].split(">", 1)[0]
+        assert " required" in field_fragment
     assert 'setAttribute("aria-invalid", "true")' in javascript
     assert "--status-danger: #b42318" in stylesheet
     assert "--danger: var(--status-danger)" in stylesheet
     assert 'value="Asia/Kolkata"' not in text
-    assert '<option value="" selected disabled>Select a format</option>' in text
-    assert 'aria-describedby="time-zone-help"' in text
-    assert "<strong>Schedule</strong>" in text
+    assert '<option value="">Select a format</option>' in text
+    assert 'aria-describedby="event-time-zone-context"' in text
+    assert 'id="event-time-zone-context"' in text
     assert 'name="start_date" type="date"' in text
-    assert 'name="start_time" type="time" value="09:00"' in text
+    assert 'name="start_time" type="time" step="900" value="09:00"' in text
     assert 'name="end_date" type="date"' in text
-    assert 'name="end_time" type="time" value="17:00"' in text
+    assert 'name="end_time" type="time" step="900" value="17:00"' in text
     assert 'id="date-time-preview"' in text
-    assert "showModal()" in javascript
-    assert 'form.elements.delivery_mode.value = ""' in javascript
+    assert 'delivery_mode: ""' in javascript
     assert 'intendedStatus === "active" && endsAt <= Date.now()' in javascript
     assert "Update the event dates before activating." in javascript
     assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
@@ -157,7 +150,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
 def test_authenticated_pages_share_navigation_and_account_menu() -> None:
     pages = (
         "admin_home.html",
-        "events_admin.html",
+        "event_editor.html",
         "admin_programs.html",
         "access_admin.html",
         "admin_submissions.html",

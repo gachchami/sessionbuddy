@@ -211,8 +211,8 @@ async def test_anonymous_browser_keeps_the_portal_sign_in_shell(
 
 ADMIN_DOCUMENT_PATHS = (
     "/admin",
-    "/admin/events",
     "/admin/events/event-1",
+    "/admin/events/event-1/settings",
     "/admin/events/event-1/cfp",
     "/admin/events/event-1/submissions",
     "/admin/events/event-1/agenda",
@@ -227,6 +227,26 @@ ADMIN_DOCUMENT_PATHS = (
     "/admin/people",
     "/admin/evaluation-rounds/round-1",
 )
+
+
+async def test_events_alias_redirects_without_authentication_or_persona_lookup(
+    monkeypatch,
+) -> None:
+    async def unexpected_authentication(_request):
+        raise AssertionError("the compatibility alias must not authenticate")
+
+    monkeypatch.setattr(auth_http, "authenticate_request", unexpected_authentication)
+    async with AsyncClient(
+        transport=ASGITransport(app=local_app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/admin/events", headers={"accept": "text/html"}, follow_redirects=False
+        )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/admin"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.text == ""
 
 
 @pytest.mark.parametrize("path", ADMIN_DOCUMENT_PATHS)
@@ -662,6 +682,7 @@ async def test_reviewer_invitation_mutations_match_archived_document_policy(
     ("path", "allows_archived"),
     (
         ("/admin/events/event-1", True),
+        ("/admin/events/event-1/settings", True),
         ("/admin/events/event-1/access", True),
         ("/admin/events/event-1/reviewers", True),
         ("/admin/events/event-1/cfp", False),
@@ -745,6 +766,7 @@ def test_scoped_document_route_inventory_is_complete() -> None:
     }
     assert actual == {
         "/admin/events/{event_id}",
+        "/admin/events/{event_id}/settings",
         "/admin/events/{event_id}/cfp",
         "/admin/events/{event_id}/submissions",
         "/admin/events/{event_id}/agenda",

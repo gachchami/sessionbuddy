@@ -1632,6 +1632,7 @@
       state.eventLogoUrl = currentEvent.logo_url || "";
       state.eventCoverUrl = currentEvent.cover_image_url || "";
       byId("cfp-time-zone").textContent = state.eventTimeZone;
+      byId("change-event-time-zone").href = `/admin/events/${encodeURIComponent(eventId)}/settings#date-time`;
       await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
       state.editing = true;

@@ -51,6 +51,7 @@
       agenda: ["M6 3h12v18H6z", "M9 7h6", "M9 11h6", "M9 15h4"],
       external: ["M14 4h6v6", "M20 4 11 13", "M18 13v7H4V6h7"],
       message: ["M4 5h16v11H9l-5 4V5Z", "M8 9h8", "M8 12h5"],
+      settings: ["M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z", "M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 3.67-.08-.02a1.7 1.7 0 0 0-1.8.64l-.82.47a1.7 1.7 0 0 0-.86 1.56V23H9.88v-.09a1.7 1.7 0 0 0-.86-1.56l-.82-.47a1.7 1.7 0 0 0-1.8-.64l-.08.02-2.12-3.67.06-.06A1.7 1.7 0 0 0 4.6 15v-.94a1.7 1.7 0 0 0-.34-1.02l-.06-.06 2.12-3.67.08.02a1.7 1.7 0 0 0 1.8-.64l.82-.47a1.7 1.7 0 0 0 .86-1.56V6.5h4.24v.09a1.7 1.7 0 0 0 .86 1.56l.82.47a1.7 1.7 0 0 0 1.8.64l.08-.02 2.12 3.67-.06.06a1.7 1.7 0 0 0-.34 1.02Z"],
       account: ["M20 21a8 8 0 0 0-16 0", "M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"],
       chevron: ["m9 18 6-6-6-6"],
       collapse: ["m14 18-6-6 6-6", "M20 4v16"],
@@ -255,7 +256,10 @@
   function eventIdFromLocation() {
     const match = location.pathname.match(/^\/admin\/events\/([^/]+)/);
     if (match) {
-      try { return decodeURIComponent(match[1]); } catch (_) { return ""; }
+      try {
+        const value = decodeURIComponent(match[1]);
+        return value === "new" ? "" : value;
+      } catch (_) { return ""; }
     }
     return new URLSearchParams(location.search).get("event_id") || document.body.dataset.eventId || "";
   }
@@ -290,7 +294,7 @@
   }
 
   function organizerDestination(session) {
-    if (canManageOrganization(session)) return "/admin";
+    if (managesAnyOrganization(session)) return "/admin";
     const event = eventsWithContentAccess(session)[0];
     return event ? `/admin/events/${encodeURIComponent(event.event_id)}` : null;
   }
@@ -318,9 +322,48 @@
     return new Set(active ? [active.role] : []);
   }
 
-  function canManageOrganization(session) {
+  function managesAnyOrganization(session) {
     return (session.organization_access || []).some((item) => holds(item, ADMIN_PERMISSIONS));
   }
+
+  function canManageOrganization(session, organizationId) {
+    if (!organizationId) return false;
+    return (session.organization_access || []).some((item) =>
+      item.organization_id === organizationId && holds(item, ADMIN_PERMISSIONS));
+  }
+
+  function exactEventAccess(session, event) {
+    const eventId = event?.id || event?.event_id || "";
+    if (!eventId) return null;
+    return (session.event_access || []).find((item) => item.event_id === eventId) || null;
+  }
+
+  function canEditEvent(session, event) {
+    const direct = exactEventAccess(session, event);
+    return Boolean(
+      (direct && holds(direct, CONTENT_PERMISSIONS))
+      || canManageOrganization(session, event?.organization_id),
+    );
+  }
+
+  function canManageLifecycle(session, event) {
+    const direct = exactEventAccess(session, event);
+    return Boolean(
+      (direct && holds(direct, ADMIN_PERMISSIONS))
+      || canManageOrganization(session, event?.organization_id),
+    );
+  }
+
+  function canDuplicateEvent(session, event) {
+    return canManageOrganization(session, event?.organization_id);
+  }
+
+  window.SessionBuddyAccess = Object.freeze({
+    canManageOrganization,
+    canEditEvent,
+    canManageLifecycle,
+    canDuplicateEvent,
+  });
 
   function worksInEventDirectly(session, eventId) {
     // Event authority is exact and never inherited from an organization. An
@@ -522,7 +565,9 @@
   }
 
   function pageLabel(section, eventId) {
+    if (location.pathname === "/admin/events/new") return "New event";
     if (eventId) {
+      if (location.pathname.endsWith("/settings")) return "Settings";
       if (location.pathname.includes("/speakers")) return "Speakers";
       if (location.pathname.includes("/speaker-content")) return "Speakers";
       if (location.pathname.includes("/messages")) return "Messages";
@@ -558,7 +603,8 @@
       // way to find the sent-mail log while it lived inside the Speakers hub.
       ["Messages", `${prefix}/messages`, "message", [`${prefix}/messages`]],
       ["Agenda", `${prefix}/agenda`, "agenda", [`${prefix}/agenda`]],
-      ["Share", `${prefix}/workspace`, "external", [`${prefix}/workspace`]]
+      ["Share", `${prefix}/workspace`, "external", [`${prefix}/workspace`]],
+      ["Settings", `${prefix}/settings`, "settings", [`${prefix}/settings`]]
     ];
     // Access administration needs owner/manage on this exact event. An `edit`
     // grantee reaches every page above and is refused this one, so offering it
@@ -625,7 +671,7 @@
     // account forever while their required profile was still incomplete.
     const organizerWorkspace = organizer && !["account", "speaker", "reviews", "calls"].includes(section);
     const currentEventId = eventIdFromLocation();
-    const organizationWorkspace = organizerWorkspace && canManageOrganization(session);
+    const organizationWorkspace = organizerWorkspace && managesAnyOrganization(session);
     if (organizerWorkspace && !organizationWorkspace && !currentEventId) {
       const destination = activeDestination;
       if (destination !== location.pathname) {
@@ -660,7 +706,7 @@
     // authority — event grants never cascade upward. They are NOT gated on
     // organizerWorkspace: /account is persona-neutral for the redirect guard,
     // but an organizer still needs a way out of it.
-    const organizationNavigation = organizer && canManageOrganization(session);
+    const organizationNavigation = organizer && managesAnyOrganization(session);
     if (organizationNavigation) {
       nav.append(navLink("Home", "/admin", "home", organizerWorkspace && !currentEventId && section === "home"));
       nav.append(navLink("People", "/admin/people", "people", organizerWorkspace && !currentEventId && section === "speakers"));

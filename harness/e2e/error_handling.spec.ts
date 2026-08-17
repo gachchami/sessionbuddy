@@ -54,8 +54,9 @@ test.describe("safe API and page failures", () => {
     }));
 
     await page.goto("/admin/events");
+    await expect.poll(() => new URL(page.url()).pathname).toBe("/admin");
     const status = page.locator("#status");
-    await expect(status).toContainText("Something went wrong on our side. Try again.");
+    await expect(status).toContainText("Events could not be refreshed.");
     await expect(status).toContainText("event-load-reference");
     await expect(status).not.toContainText("Unexpected token");
     await expect(status).not.toContainText("Internal Server Error");

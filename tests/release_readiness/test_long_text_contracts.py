@@ -51,7 +51,7 @@ STATIC_LONG_TEXT_LIMITS = {
     ("agenda_admin.html", "abstract"): 5000,
     ("speaker_content.html", "body_text"): 20000,
     ("speaker_content.html", "help_text"): 2000,
-    ("events_admin.html", "description"): 2000,
+    ("event_editor.html", "description"): 2000,
     ("event_workspace.html", "embed-css"): 2000,
     ("speaker_directory.html", "biography_override"): 5000,
     ("speaker_directory.html", "biography"): 5000,

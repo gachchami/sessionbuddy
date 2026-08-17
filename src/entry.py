@@ -17,6 +17,7 @@ from sessionbuddy.communications.runtime import (
     park_unconfigured_delivery,
 )
 from sessionbuddy.communications.runtime import ReminderWorkflow as _ReminderWorkflow
+from sessionbuddy.platform.auth.branding_purge import purge_pending_branding_assets
 from sessionbuddy.platform.db.d1 import to_python
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.speaker_operations.asset_boundary import (
@@ -88,6 +89,21 @@ class Default(WorkerEntrypoint):
                     "deleted_rows": speaker_purge.deleted_rows,
                     "deleted_objects": speaker_purge.deleted_objects,
                     "delete_failures": speaker_purge.delete_failures,
+                },
+                separators=(",", ":"),
+            )
+        )
+        branding_purge = await purge_pending_branding_assets(
+            self.env.DB, self.env.ASSETS, utc_now_ms()
+        )
+        print(
+            json.dumps(
+                {
+                    "event": "event_branding_pending_purge",
+                    "level": "error" if branding_purge.delete_failures else "info",
+                    "deleted_rows": branding_purge.deleted_rows,
+                    "deleted_objects": branding_purge.deleted_objects,
+                    "delete_failures": branding_purge.delete_failures,
                 },
                 separators=(",", ":"),
             )

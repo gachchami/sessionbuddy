@@ -8,15 +8,16 @@ def source(name: str) -> str:
 
 
 def test_active_event_archive_requires_an_explicit_consequence_confirmation() -> None:
-    page = source("events_admin.html")
-    script = source("events_admin.js")
+    page = source("event_editor.html")
+    script = source("event_editor.js")
 
-    assert 'id="event-archive-dialog"' in page
-    assert "disappear from active and public event listings" in page
-    assert "find it under Past events and restore it" in page
-    assert 'currentEvent?.status === "active"' in script
-    assert 'byId("event-archive-dialog").showModal()' in script
-    assert 'requestSubmit(byId("save-event"))' in script
+    assert 'id="archive-dialog"' in page
+    assert "It disappears from active and public listings" in page
+    assert "published call for proposals and public schedule go offline" in page
+    assert 'status !== "active"' in script
+    assert 'byId("archive-dialog").showModal()' in script
+    assert 'save("archived", "Archiving…")' in script
+    assert "Save your changes before archiving." in script
 
 
 def test_agenda_archive_actions_confirm_consequences_and_offer_restore() -> None:

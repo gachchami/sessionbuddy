@@ -4,21 +4,18 @@ ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 
 
-def test_events_page_only_switches_organization() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
-    script = (STATIC / "events_admin.js").read_text(encoding="utf-8")
+def test_home_switches_organization_without_editing_organization_settings() -> None:
+    page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
+    script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
     assert 'id="organization-picker"' in page
-    assert 'class="context-bar organizer-context-bar"' not in page
-    assert 'id="organization-title" class="sr-only"' in page
     assert 'id="edit-organization"' not in page
     assert 'id="organization-dialog"' not in page
-    assert 'byId("organization").addEventListener("change"' in script
+    assert 'byId("organization-picker").addEventListener("change"' in script
     assert '["owner", "manage"].includes(permission)' in script
     assert 'includes("organization_admin")' not in script
-    assert 'values.status === "archived"' in script
-    assert "body.status = intendedStatus" in script
     assert 'organization-form' not in script
+    assert 'history.replaceState(null, ""' in script
 
 
 def test_organization_settings_has_a_dedicated_organizer_surface() -> None:

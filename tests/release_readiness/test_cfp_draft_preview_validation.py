@@ -92,15 +92,14 @@ def test_cfp_rich_text_editor_is_named_and_link_dialog_is_keyboard_safe() -> Non
     assert "pendingLinkRange.surroundContents(link)" in script
 
 
-def test_event_autosave_is_limited_to_new_or_draft_events() -> None:
-    page = (STATIC / "events_admin.html").read_text(encoding="utf-8")
-    script = (STATIC / "events_admin.js").read_text(encoding="utf-8")
+def test_event_editor_preserves_unsaved_work_only_for_recovery() -> None:
+    page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
+    script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
 
-    assert 'id="event-autosave-state"' in page
-    assert (
-        "const editingActive = Boolean(form.elements.event_id.value) && !state.editingDraft;"
-        in script
-    )
-    assert "Live event changes are not autosaved" in script
-    assert "Draft saved in this browser" in script
-    assert "state.userId" in script
+    assert 'id="save-state"' in page
+    assert "function preserveDraft()" in script
+    assert 'if (error.status === 401) { preserveDraft();' in script
+    assert "preserveDraft(); window.removeEventListener" in script
+    assert "function removeDraft()" in script
+    assert "removeDraft(); state.unsavedUploads.clear();" in script
+    assert "Draft saved in this browser" not in script

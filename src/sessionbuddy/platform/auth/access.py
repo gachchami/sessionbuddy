@@ -18,7 +18,7 @@ from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation
-from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext
+from sessionbuddy.platform.authorization import Permission, Persona, ResourceContext, ResourceGrant
 from sessionbuddy.platform.db.commands import AuditEvent, CommandBatch, IdempotencyRecord
 from sessionbuddy.platform.db.d1 import (
     D1Database,
@@ -35,6 +35,7 @@ from sessionbuddy.platform.storage import malware_scan_disabled
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
+from .branding_purge import PENDING_BRANDING_RETENTION_MS
 from .csrf import issue_csrf_token
 from .http import (
     authenticate_request,
@@ -208,8 +209,48 @@ async def admin_home_page(request: Request) -> Response:
 
 
 @access_router.get("/admin/home/assets/home.js", include_in_schema=False)
-async def admin_home_javascript() -> Response:
-    return Response(_asset("admin_home.js"), media_type="text/javascript")
+async def admin_home_javascript(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("admin_home.js"), media_type="text/javascript"
+    )
+
+
+@access_router.get("/admin/home/assets/home.css", include_in_schema=False)
+async def admin_home_stylesheet(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("admin_home.css"), media_type="text/css"
+    )
+
+
+@access_router.get("/app-shell/assets/activity-format.js", include_in_schema=False)
+async def activity_format_javascript(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("activity_format.js"), media_type="text/javascript"
+    )
+
+
+@access_router.get("/admin/events/new", include_in_schema=False)
+async def event_create_page(request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
+    return Response(
+        _asset("event_editor.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get("/admin/event-editor/assets/event-editor.js", include_in_schema=False)
+async def event_editor_javascript(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("event_editor.js"), media_type="text/javascript"
+    )
+
+
+@access_router.get("/admin/event-editor/assets/event-editor.css", include_in_schema=False)
+async def event_editor_stylesheet(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("event_editor.css"), media_type="text/css"
+    )
 
 
 @access_router.get("/admin/events/{event_id}", include_in_schema=False)
@@ -220,6 +261,17 @@ async def event_overview_page(event_id: str, request: Request) -> Response:
     await require_document_event(request, event_id, include_archived=True)
     return Response(
         _asset("event_overview.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@access_router.get("/admin/events/{event_id}/settings", include_in_schema=False)
+async def event_settings_page(event_id: str, request: Request) -> Response:
+    await require_document_persona(request, Persona.ORGANIZER)
+    await require_document_event(request, event_id, include_archived=True)
+    return Response(
+        _asset("event_editor.html"),
         media_type="text/html",
         headers={"Cache-Control": "no-store"},
     )
@@ -359,18 +411,12 @@ async def event_access_javascript(request: Request) -> Response:
 
 
 @access_router.get("/admin/events", include_in_schema=False)
-async def events_page(request: Request) -> Response:
-    await require_document_persona(request, Persona.ORGANIZER)
-    return Response(
-        _asset("events_admin.html"),
-        media_type="text/html",
+async def events_page() -> RedirectResponse:
+    return RedirectResponse(
+        "/admin",
+        status_code=302,
         headers={"Cache-Control": "no-store"},
     )
-
-
-@access_router.get("/admin/events/assets/events.js", include_in_schema=False)
-async def events_javascript() -> Response:
-    return Response(_asset("events_admin.js"), media_type="text/javascript")
 
 
 class BootstrapCreate(BaseModel):
@@ -2069,8 +2115,16 @@ async def list_events(
     authenticated = await authenticate_request(request)
     if authenticated.actor.active_persona is not Persona.ORGANIZER:
         raise HTTPException(status_code=403)
-    has_organization_access = organization_id in authenticated.actor.owned_resource_ids or bool(
-        authenticated.actor.resource_grants.get(organization_id)
+    organization_grants = authenticated.actor.resource_grants.get(
+        organization_id, frozenset()
+    )
+    has_organization_access = (
+        organization_id in authenticated.actor.owned_resource_ids
+        or bool(organization_grants)
+    )
+    manages_organization = (
+        organization_id in authenticated.actor.owned_resource_ids
+        or ResourceGrant.MANAGE in organization_grants
     )
     db = database(request)
     manages_event_in_organization = await _has_event_access_in_organization(
@@ -2099,14 +2153,18 @@ async def list_events(
     # function; every user-influenced value is bound as a parameter.
     conditions = ["e.organization_id=?"]
     binds: list[object] = [organization_id]
-    access_join = (
-        " JOIN owned_resources owned ON owned.id=e.id AND owned.resource_type='event'"
-        " LEFT JOIN resource_access_grants grant_access ON grant_access.resource_id=e.id"
-        " AND grant_access.user_id=? AND grant_access.status='active'"
-    )
-    binds.insert(0, authenticated.actor.user_id)
-    conditions.append("(owned.owner_user_id=? OR grant_access.permission IN ('edit','manage'))")
-    binds.append(authenticated.actor.user_id)
+    access_join = ""
+    if not manages_organization:
+        access_join = (
+            " JOIN owned_resources owned ON owned.id=e.id AND owned.resource_type='event'"
+            " LEFT JOIN resource_access_grants grant_access ON grant_access.resource_id=e.id"
+            " AND grant_access.user_id=? AND grant_access.status='active'"
+        )
+        binds.insert(0, authenticated.actor.user_id)
+        conditions.append(
+            "(owned.owner_user_id=? OR grant_access.permission IN ('edit','manage'))"
+        )
+        binds.append(authenticated.actor.user_id)
     if view == "active":
         conditions.append("e.status='active' AND e.ends_at_ms>=?")
         binds.append(now)
@@ -2985,9 +3043,16 @@ async def _require_event_branding_reference(
                WHERE organization_id=?1 AND kind=?2 AND asset_url=?3
                  AND status IN ('pending','attached')
                  AND (event_id IS NULL OR event_id=?4)
+                 AND (status='attached' OR created_at_ms>?5)
                LIMIT 1"""
         )
-        .bind(organization_id, kind, asset_url, event_id)
+        .bind(
+            organization_id,
+            kind,
+            asset_url,
+            event_id,
+            utc_now_ms() - PENDING_BRANDING_RETENTION_MS,
+        )
         .first()
     )
     if row is None:
@@ -3101,7 +3166,7 @@ async def public_event_branding_asset(asset_name: str, request: Request) -> Stre
     row = row_mapping(
         await database(request)
         .prepare(
-            """SELECT object_key,content_type FROM event_branding_assets
+            """SELECT object_key,content_type,status FROM event_branding_assets
                WHERE asset_url=?1 AND status IN ('pending','attached','retired') LIMIT 1"""
         )
         .bind(asset_url)
@@ -3112,10 +3177,15 @@ async def public_event_branding_asset(asset_name: str, request: Request) -> Stre
     stored = await _event_logo_bucket(request).get(str(row["object_key"]))
     if stored is None:
         raise HTTPException(status_code=404)
+    cache_control = (
+        "private, no-store"
+        if str(row["status"]) == "pending"
+        else "public, max-age=31536000, immutable"
+    )
     return StreamingResponse(
         _stream_event_logo(stored),
         media_type=expected_content_type,
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        headers={"Cache-Control": cache_control},
     )
 
 

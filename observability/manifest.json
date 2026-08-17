@@ -2312,6 +2312,18 @@
       "success_signal": "structured log event communication_delivery_dispatch, level info",
       "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)"
     },
+    "cron:scheduled:event-branding-purge": {
+      "alert_condition": "event_branding_pending_purge at level error (R2 delete failures)",
+      "dashboards": [
+        "release-health"
+      ],
+      "handler": "src/entry.py::Default.scheduled -> purge_pending_branding_assets",
+      "kind": "cron",
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#async-delay-or-failure",
+      "success_signal": "structured log event event_branding_pending_purge, level info",
+      "trigger": "cron */2 * * * * (wrangler.jsonc triggers.crons)"
+    },
     "cron:scheduled:speaker-pending-upload-purge": {
       "alert_condition": "speaker_pending_upload_purge at level error (R2 delete failures)",
       "dashboards": [
@@ -2400,6 +2412,9 @@
     },
     "/auth/verify": {
       "reason": "Magic-link confirmation and consumption flow; observed through the identity API entries and auth structured logs, not page web-vitals."
+    },
+    "/admin/events": {
+      "reason": "Compatibility alias: 302 to /admin; renders no measurable document."
     }
   },
   "pages": {
@@ -2475,14 +2490,14 @@
         "lcp_p75_ms": 2500
       }
     },
-    "/admin/events": {
+    "/admin/events/new": {
       "classification": "authenticated",
       "dashboards": [
         "release-health",
         "page-performance"
       ],
       "journeys": [
-        "manage-events"
+        "create-event"
       ],
       "owner": "identity",
       "runbook": "docs/debugging-runbook.md#page-regression",
@@ -2501,6 +2516,24 @@
       ],
       "journeys": [
         "event-overview"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#page-regression",
+      "telemetry_schema": "sessionbuddy.console.models.BrowserTelemetryPayload",
+      "web_vitals": {
+        "cls_p75_max": 0.1,
+        "inp_p75_ms": 200,
+        "lcp_p75_ms": 2500
+      }
+    },
+    "/admin/events/{event_id}/settings": {
+      "classification": "authenticated",
+      "dashboards": [
+        "release-health",
+        "page-performance"
+      ],
+      "journeys": [
+        "manage-event-settings"
       ],
       "owner": "identity",
       "runbook": "docs/debugging-runbook.md#page-regression",

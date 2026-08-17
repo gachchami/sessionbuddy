@@ -500,6 +500,19 @@ Magic-link sign-in shows a packaged CSP-safe confirmation page on GET, consumes
 the token only on POST, and restores the token if provisioning fails after
 consumption.
 
+Event branding uploads remain pending until an event saves their UUIDv4 asset
+URL. Pending assets are served with `private, no-store` and are removed after
+24 hours by the scheduled, per-organization purge; attached and retired public
+branding URLs remain immutable. The purge atomically claims an expired asset by
+deleting its still-pending database row before deleting R2, so a concurrent event
+save cannot attach a missing object. An R2 failure can leave an inaccessible
+orphan for storage reconciliation, but cannot break saved branding. The query
+uses the existing tenant-leading pending-asset index, and event saves reject
+pending URLs once the same 24-hour deadline has elapsed. Before attachment,
+possession of the unguessable URL is sufficient to fetch the otherwise uncached
+image; immediate deletion on editor Discard is a follow-up rather than a release
+requirement.
+
 Administration: organization administrators are now invitable (with
 organization-level permission required to create, resend, or revoke such
 invitations); events have a direct read endpoint, a paginated and
@@ -509,6 +522,15 @@ semantics that preserve status and the original archive timestamp across
 ordinary edits. Console entry points ("People", "Create event", event
 navigation, organization-admin invitations) render only with the exact backing
 permission for the selected organization or event.
+
+`/admin` is the canonical event switcher and operational ledger, with
+organization selection, server-backed filters/search/sort, cursor pagination,
+proposal and review attention links, publication state, and a manager-only
+Recent changes rail. Event creation and duplication use `/admin/events/new`;
+editing uses `/admin/events/{event_id}/settings`, including branding, email,
+three-way stale reconciliation, and explicit lifecycle controls. The former
+`/admin/events` document is a `302` compatibility alias to `/admin`, and its
+dialog-only asset bundle has been removed.
 
 Observability: `observability/manifest.json` now registers every API route,
 document route, and asynchronous handler (cron steps, queue consumers,

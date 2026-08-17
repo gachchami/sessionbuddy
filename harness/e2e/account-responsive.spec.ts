@@ -10,6 +10,7 @@ const organizationJavaScript = readFileSync(resolve(staticRoot, "organization_ad
 const apiClientJavaScript = readFileSync(resolve(staticRoot, "api_client.js"), "utf8");
 const appShellCss = readFileSync(resolve(staticRoot, "app_shell.css"), "utf8");
 const appShellJavaScript = readFileSync(resolve(staticRoot, "app_shell.js"), "utf8");
+const activityFormatJavaScript = readFileSync(resolve(staticRoot, "activity_format.js"), "utf8");
 const productCss = readFileSync(resolve(staticRoot, "product.css"), "utf8");
 
 async function serveAccountPage(page: import("@playwright/test").Page) {
@@ -21,6 +22,7 @@ async function serveAccountPage(page: import("@playwright/test").Page) {
   await page.route("**/app-shell/assets/app-shell.css*", (route) => route.fulfill({ contentType: "text/css", body: appShellCss }));
   await page.route("**/app-shell/assets/api-client.js*", (route) => route.fulfill({ contentType: "text/javascript", body: apiClientJavaScript }));
   await page.route("**/app-shell/assets/app-shell.js*", (route) => route.fulfill({ contentType: "text/javascript", body: appShellJavaScript }));
+  await page.route("**/app-shell/assets/activity-format.js*", (route) => route.fulfill({ contentType: "text/javascript", body: activityFormatJavaScript }));
   await page.route("**/account/assets/account.js*", (route) => route.fulfill({ contentType: "text/javascript", body: accountJavaScript }));
   await page.route("**/admin/organization/assets/organization.js*", (route) => route.fulfill({ contentType: "text/javascript", body: organizationJavaScript }));
 }

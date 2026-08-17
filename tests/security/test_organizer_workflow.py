@@ -478,6 +478,26 @@ async def test_organization_admin_is_invitable_and_shares_org_control(
                 json={**EVENT_PAYLOAD, "name": "Winter Summit"},
             )
             assert second_event.status_code == 201, second_event.text
+            listed = await co_owner.get(
+                f"/api/v1/admin/organizations/{organization_id}/events",
+                params={"limit": 1},
+            )
+            assert listed.status_code == 200, listed.text
+            first_page = listed.json()
+            assert len(first_page["data"]) == 1
+            assert first_page["next_cursor"]
+            second_page = await co_owner.get(
+                f"/api/v1/admin/organizations/{organization_id}/events",
+                params={"limit": 1, "cursor": first_page["next_cursor"]},
+            )
+            assert second_page.status_code == 200, second_page.text
+            assert {
+                event["id"] for event in first_page["data"] + second_page.json()["data"]
+            } == {event_id, second_event.json()["id"]}
+            foreign = await co_owner.get(
+                "/api/v1/admin/organizations/foreign-organization/events"
+            )
+            assert foreign.status_code == 404
     assert connection.execute(
         "SELECT COUNT(*) FROM organization_memberships WHERE role='organization_admin' "
         "AND status='active'"
@@ -573,19 +593,22 @@ async def test_single_event_read_denies_outsiders(
 def test_console_gates_privileged_entry_points_by_real_permission() -> None:
     static = PROJECT_ROOT / "src" / "sessionbuddy" / "static"
     shell = (static / "app_shell.js").read_text(encoding="utf-8")
-    events = (static / "events_admin.js").read_text(encoding="utf-8")
+    home = (static / "admin_home.js").read_text(encoding="utf-8")
+    editor = (static / "event_editor.js").read_text(encoding="utf-8")
     access = (static / "access_admin.js").read_text(encoding="utf-8")
 
     # People directory requires organization management; nav renders only then.
-    assert "function canManageOrganization(session)" in shell
+    assert "function managesAnyOrganization(session)" in shell
+    assert "function canManageOrganization(session, organizationId)" in shell
     assert shell.count('navLink("People", "/admin/people"') == 2
     # Event sub-nav uses the exact event authority carried by the session —
     # never authority over some unrelated resource.
     assert "administersEventDirectly(session, currentEventId)" in shell
     assert "(session.event_access || []).some" in shell
     # Create event tracks the selected organization's exact manage permission.
-    assert "state.adminOrganizationIds" in events
-    assert "updateCreateAccess(event.currentTarget.value)" in events
+    assert "canManageOrganization(state.organizationId)" in home
+    assert 'byId("new-event").hidden = !manager' in home
+    assert "canManageOrganization(state.session, org.id)" in editor
     # Event participation invitations never manufacture an event administrator
     # or generic event grant; organizers are managed at organization scope.
     assert 'invitation.role === "evaluator"' in access
@@ -1061,24 +1084,22 @@ def test_clients_respect_events_pagination() -> None:
     Home stays organization-level, and the directory resolves its event directly."""
     static = PROJECT_ROOT / "src" / "sessionbuddy" / "static"
     home = (static / "admin_home.js").read_text(encoding="utf-8")
-    events = (static / "events_admin.js").read_text(encoding="utf-8")
-    events_page = (static / "events_admin.html").read_text(encoding="utf-8")
     directory = (static / "speaker_directory.js").read_text(encoding="utf-8")
 
-    scripts = ((home, "admin_home"), (events, "events_admin"), (directory, "speaker_directory"))
+    scripts = ((home, "admin_home"), (directory, "speaker_directory"))
     for script, name in scripts:
         assert "listAllEvents" not in script, name
         assert "page < 40" not in script, name
 
-    # Events page: explicit user-driven pagination.
-    assert "const cursor = state.nextCursor" in events
-    assert "fetchEventsPage(state.organizationId, cursor)" in events
-    assert 'byId("load-more-events").hidden = !state.nextCursor' in events
-    assert 'id="load-more-events"' in events_page
-    assert '${events.length}${state.nextCursor ? "+" : ""}' in events
+    # Home is the consolidated event ledger with explicit user-driven pagination.
+    assert "await loadEventPage(state.nextCursor)" in home
+    assert 'byId("load-more-events").hidden = !state.nextCursor' in home
+    assert 'id="load-more-events"' in (
+        static / "admin_home.html"
+    ).read_text(encoding="utf-8")
+    assert '${state.events.length}${state.nextCursor ? "+" : ""}' in home
 
-    # Home: organization-level destinations only. Event operations are loaded
-    # after an organizer enters the Events workspace.
+    # Home avoids legacy aggregate scans and metrics.
     assert "/events?view=" not in home
     assert "/metrics" not in home
     assert "recent_speakers" not in home

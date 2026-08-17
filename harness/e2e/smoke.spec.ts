@@ -570,6 +570,7 @@ test.describe("administration empty states", () => {
 
   test("an administrator can start with an organization and no events", async ({ page }) => {
     let createdEvent: Record<string, unknown> | null = null;
+    const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     await page.route("**/api/v1/auth/session", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -608,25 +609,53 @@ test.describe("administration empty states", () => {
     await page.route("**/api/v1/admin/organizations/*/events**", async (route) => {
       if (route.request().method() === "POST") {
         createdEvent = route.request().postDataJSON();
-        await route.fulfill({ status: 201, contentType: "application/json", body: "{}" });
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: eventId,
+            organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            ...createdEvent,
+            status: "active",
+            version: 1,
+            proposal_count: 0,
+            pending_review_count: 0,
+            schedule_status: "not_started",
+            cfp_status: "not_started",
+          }),
+        });
         return;
       }
-      const data = createdEvent ? [{
-        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-        organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        ...createdEvent,
-        status: "draft",
-        version: 1,
-      }] : [];
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data }) });
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [], next_cursor: null }) });
     });
+    await page.route(`**/api/v1/admin/events/${eventId}`, async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: eventId,
+          organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          ...createdEvent,
+          status: "active",
+          version: 1,
+          proposal_count: 0,
+          pending_review_count: 0,
+          schedule_status: "not_started",
+          cfp_status: "not_started",
+        }),
+      });
+    });
+    await page.route("**/api/v1/admin/organizations/*/activities", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    }));
 
-    const response = await page.goto("/admin/events");
+    const response = await page.goto("/admin");
     expect(response?.ok()).toBeTruthy();
     await expect(page.getByText(/No events yet\./)).toBeVisible();
-    await page.getByRole("button", { name: "Create event" }).click();
-    await expect(page.getByRole("heading", { name: "Create an event" })).toBeVisible();
-    const eventDialog = page.getByRole("dialog", { name: "Create an event" });
+    await page.getByRole("link", { name: "Create event" }).click();
+    await expect(page).toHaveURL(/\/admin\/events\/new\?organization_id=/);
+    await expect(page.getByRole("heading", { name: "Create event" })).toBeVisible();
+    const eventEditor = page.locator("#event-editor-form");
     const eventName = page.getByRole("textbox", { name: "Event name" });
     await expect(eventName).toHaveValue("");
     await expect(eventName).not.toHaveAttribute("placeholder", /.+/);
@@ -638,43 +667,38 @@ test.describe("administration empty states", () => {
       "start_time",
       "end_date",
       "end_time",
+      "location",
       "description",
     ]) {
-      const field = eventDialog.locator(`[name="${fieldName}"]`);
-      // The marker lives inside the .field-label wrapper, not as a direct child.
-      const marker = eventDialog.locator(`label:has([name="${fieldName}"]) .required-marker`);
+      const field = eventEditor.locator(`[name="${fieldName}"]`);
       await expect(field).toHaveAttribute("required", "");
-      await expect(marker).toHaveText("*");
-      await expect(marker).toHaveCSS("color", "rgb(180, 35, 24)");
     }
     await expect(page.getByRole("combobox", { name: "Attendance format" })).toHaveValue("");
     const timeZone = page.getByLabel("Time zone");
     await expect(timeZone).not.toHaveValue("");
-    await expect(page.getByLabel("Start date")).toHaveValue("");
-    await expect(page.getByLabel("Start time")).toHaveValue("09:00");
-    await expect(page.getByLabel("End date")).toHaveValue("");
-    await expect(page.getByLabel("End time")).toHaveValue("17:00");
-    await page.getByLabel("Start date").fill("2026-09-12");
-    await page.getByLabel("Start date").dispatchEvent("change");
-    await expect(page.getByLabel("End date")).toHaveValue("2026-09-12");
-    await expect(page.getByRole("status").filter({ hasText: /2026|Sep/ })).toContainText(await timeZone.inputValue());
-    await expect(eventDialog.getByRole("button", { name: "Create active event" })).toBeEnabled();
+    await expect(eventEditor.locator('[name="start_date"]')).toHaveValue("");
+    await expect(eventEditor.locator('[name="start_time"]')).toHaveValue("09:00");
+    await expect(eventEditor.locator('[name="end_date"]')).toHaveValue("");
+    await expect(eventEditor.locator('[name="end_time"]')).toHaveValue("17:00");
+    await eventEditor.locator('[name="start_date"]').fill("2026-09-12");
+    await eventEditor.locator('[name="end_date"]').fill("2026-09-12");
+    await expect(page.locator("#date-time-preview")).toContainText(await timeZone.inputValue());
+    await expect(eventEditor.getByRole("button", { name: "Create active event" })).toBeEnabled();
     await timeZone.fill("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
     await page.getByRole("textbox", { name: "Location" }).fill("Rehearsal Hall, Pune");
     await page.getByRole("textbox", { name: /^Description/ }).fill("Timezone rehearsal event.");
+    await page.getByText("Email", { exact: true }).click();
     await page.getByRole("textbox", { name: "Sender name" }).fill("Program Team");
     await page.getByRole("textbox", { name: "Reply-to email" }).fill("program@example.test");
     await page.getByRole("combobox", { name: "Attendance format" }).selectOption("in_person");
     await page.getByText("Branding", { exact: true }).click();
     await page.getByRole("textbox", { name: "Event website" }).fill("http://example.test");
-    await eventDialog.getByRole("button", { name: "Create active event" }).click();
+    await eventEditor.getByRole("button", { name: "Create active event" }).click();
     expect(createdEvent).toBeNull();
+    await expect(page.getByRole("textbox", { name: "Event website" })).toHaveAttribute("aria-invalid", "true");
     await page.getByRole("textbox", { name: "Event website" }).fill("https://example.test");
-    await eventDialog.getByRole("button", { name: "Create active event" }).click();
-    // The dialog's live date preview is also role=status; target the page
-    // status message rather than whichever status happens to come first.
-    await expect(page.getByRole("status").filter({ hasText: "Event created." })).toBeVisible();
+    await eventEditor.getByRole("button", { name: "Create active event" }).click();
     expect(createdEvent).toMatchObject({
       name: "Timezone Rehearsal",
       starts_at_ms: Date.UTC(2026, 8, 12, 3, 30),
@@ -683,12 +707,13 @@ test.describe("administration empty states", () => {
       email_sender_name: "Program Team",
       email_reply_to: "program@example.test",
       website_url: "https://example.test",
+      status: "active",
     });
-    await page.getByRole("button", { name: "Edit", exact: true }).click();
-    await expect(page.getByLabel("Start date")).toHaveValue("2026-09-12");
-    await expect(page.getByLabel("Start time")).toHaveValue("09:00");
-    await expect(page.getByLabel("End date")).toHaveValue("2026-09-12");
-    await expect(page.getByLabel("End time")).toHaveValue("17:00");
+    await expect(page).toHaveURL(`/admin/events/${eventId}`);
+    await expect(page.getByRole("link", { name: "Settings", exact: true })).toHaveAttribute(
+      "href",
+      `/admin/events/${eventId}/settings`,
+    );
   });
 
   test("an invitation form survives its asynchronous request and resets", async ({ page }) => {
