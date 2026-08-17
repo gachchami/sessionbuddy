@@ -6,6 +6,7 @@ from tests.evaluation.test_round_selection_persistence import (
     _admin_user_id,
     _client,
     _create_round,
+    _key,
     _round_body,
     _setup,
     production_environment,  # noqa: F401 - pytest fixture
@@ -124,8 +125,16 @@ async def test_remove_hides_membership_and_add_reactivates_it(
 
         removed = await client.post(
             f"/api/v1/admin/evaluation-rounds/{round_id}/evaluators/{SAM_USER_ID}/remove",
-            headers={"origin": "https://test", "x-csrf-token": csrf},
-            json={},
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": _key("remove-membership"),
+            },
+            json={
+                "expected_version": connection.execute(
+                    "SELECT version FROM evaluation_rounds WHERE id=?", (round_id,)
+                ).fetchone()[0]
+            },
         )
         assert removed.status_code == 200, removed.text
         assert connection.execute(
@@ -138,8 +147,18 @@ async def test_remove_hides_membership_and_add_reactivates_it(
 
         added = await client.post(
             f"/api/v1/admin/evaluation-rounds/{round_id}/evaluators",
-            headers={"origin": "https://test", "x-csrf-token": csrf},
-            json={"evaluator_user_id": SAM_USER_ID, "submission_ids": [A]},
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": _key("restore-membership"),
+            },
+            json={
+                "evaluator_user_id": SAM_USER_ID,
+                "submission_ids": [A],
+                "expected_version": connection.execute(
+                    "SELECT version FROM evaluation_rounds WHERE id=?", (round_id,)
+                ).fetchone()[0],
+            },
         )
         assert added.status_code == 200, added.text
         assert connection.execute(

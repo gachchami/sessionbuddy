@@ -167,7 +167,11 @@ async def test_round_submission_replay_creates_one_assignment_and_email(
         )
         connection.commit()
         url = f"/api/v1/admin/evaluation-rounds/{round_id}/submissions"
-        payload = {"submission_ids": [added_submission]}
+        payload = {
+            "submission_ids": [added_submission],
+            # The round-level concurrency token; the seeded round starts at 1.
+            "expected_version": 1,
+        }
         headers = _headers(csrf, "round-submissions-idempotency-2026")
 
         assert (await client.post(url, headers=_headers(csrf), json=payload)).status_code == 400

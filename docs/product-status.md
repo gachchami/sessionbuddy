@@ -738,6 +738,23 @@ resolver table used by the distributor.
   the query-plan test continues to require the bounded unique-index lookup and
   rejects message or temporary-B-tree scans.
 
+## Evaluation round concurrency
+
+- Draft round reads expose a version token. Draft saves, proposal/reviewer
+  assignment changes, opening, and closing compare that token and abort their
+  complete write batch when another organizer wins the race; losing requests
+  leave no membership, assignment, audit, notification, or idempotency residue.
+- Draft saves and incremental reviewer changes are replay-safe under one
+  idempotency key. The organizer UI refreshes the round ledger after each
+  incremental proposal addition so the next action carries the replacement
+  version, and distinguishes a committed addition from a failed ledger refresh.
+- Existing rounds upgrade to version 1 through migration 0008 without changing
+  their lifecycle, membership, assignments, or tenant relationships. Starting
+  review now sends the required JSON mutation contract and refreshes the ledger
+  immediately after the transition.
+- Scorecard criteria explain when a semantic purpose controls their response
+  type and provide an explicit independent state that restores editing.
+
 ## Speaker operations feedback and task history
 
 - Event-message validation identifies the invalid merge token and lists only

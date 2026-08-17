@@ -508,7 +508,11 @@ async def test_refused_draft_assignment_update_is_atomic(
 
         response = await client.put(
             f"/api/v1/admin/events/{event_id}/evaluation-rounds/{ROUND_ID}/draft",
-            headers={"origin": "https://test", "x-csrf-token": csrf},
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "refused-draft-update".ljust(32, "0"),
+            },
             json={
                 "name": "This must not be saved",
                 "rating_min": 1,
@@ -521,6 +525,9 @@ async def test_refused_draft_assignment_update_is_atomic(
                 "assignment_strategy": "all",
                 "assignments": [],
                 "status": "draft",
+                "expected_version": connection.execute(
+                    "SELECT version FROM evaluation_rounds WHERE id=?", (ROUND_ID,)
+                ).fetchone()[0],
             },
         )
         assert response.status_code == 409, response.text

@@ -191,11 +191,18 @@ async def _create_round(client, csrf, event_id, body, *, label):
     )
 
 
-async def _open_round(client, csrf, round_id, *, label):
+def _round_version(connection, round_id):
+    """The round's current optimistic-concurrency token, read from the store."""
+    return connection.execute(
+        "SELECT version FROM evaluation_rounds WHERE id=?", (round_id,)
+    ).fetchone()[0]
+
+
+async def _open_round(client, csrf, connection, round_id, *, label):
     return await client.post(
         f"/api/v1/admin/evaluation-rounds/{round_id}/open",
         headers={"origin": "https://test", "x-csrf-token": csrf, "idempotency-key": _key(label)},
-        json={},
+        json={"expected_version": _round_version(connection, round_id)},
     )
 
 
@@ -244,7 +251,7 @@ async def test_opening_the_round_is_what_notifies_its_reviewers(
         assert created.status_code == 201, created.text
         round_id = created.json()["id"]
 
-        opened = await _open_round(client, csrf, round_id, label="open")
+        opened = await _open_round(client, csrf, connection, round_id, label="open")
         assert opened.status_code == 200, opened.text
 
     mail = _assignment_mail(connection)
@@ -290,7 +297,7 @@ async def test_an_open_round_still_notifies_when_the_assignments_are_made(
         assert mail[0][0] == SAM_EMAIL
         assert "assigned 2 proposals" in mail[0][2]
 
-        replayed = await _open_round(client, csrf, created.json()["id"], label="reopen")
+        replayed = await _open_round(client, csrf, connection, created.json()["id"], label="reopen")
         assert replayed.status_code == 200, replayed.text
 
     # Still one: an open round is not re-announced by asking to open it again.
@@ -333,13 +340,17 @@ async def test_a_reviewer_added_to_a_draft_hears_about_it_when_the_round_opens(
                 "x-csrf-token": csrf,
                 "idempotency-key": _key("widen"),
             },
-            json={"evaluator_user_id": SAM_USER_ID, "submission_ids": [A, B]},
+            json={
+                "evaluator_user_id": SAM_USER_ID,
+                "submission_ids": [A, B],
+                "expected_version": _round_version(connection, round_id),
+            },
         )
         assert widened.status_code == 200, widened.text
         # Adding to a draft is as silent as creating one.
         assert _assignment_mail(connection) == []
 
-        opened = await _open_round(client, csrf, round_id, label="open")
+        opened = await _open_round(client, csrf, connection, round_id, label="open")
         assert opened.status_code == 200, opened.text
 
     mail = _assignment_mail(connection)
@@ -391,8 +402,16 @@ async def test_incremental_open_round_assignments_share_one_hourly_notice(
         for label, submission_id in (("revive-a", A), ("add-b", B)):
             changed = await client.post(
                 f"/api/v1/admin/evaluation-rounds/{round_id}/evaluators",
-                headers={"origin": "https://test", "x-csrf-token": csrf},
-                json={"evaluator_user_id": SAM_USER_ID, "submission_ids": [submission_id]},
+                headers={
+                    "origin": "https://test",
+                    "x-csrf-token": csrf,
+                    "idempotency-key": _key(label),
+                },
+                json={
+                    "evaluator_user_id": SAM_USER_ID,
+                    "submission_ids": [submission_id],
+                    "expected_version": _round_version(connection, round_id),
+                },
             )
             assert changed.status_code == 200, (label, changed.text)
             assert changed.json()["assignment_count"] == 1

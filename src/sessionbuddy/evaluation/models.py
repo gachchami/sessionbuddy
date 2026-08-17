@@ -160,6 +160,41 @@ class EvaluationRoundCreate(BaseModel):
         return self
 
 
+class EvaluationRoundDraft(EvaluationRoundCreate):
+    """The stored configuration of one draft round, plus its version token.
+
+    Editors carry ``version`` unchanged into every mutation they submit; the
+    server refuses the mutation when another save has moved the round forward.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(ge=1)
+
+
+class EvaluationRoundDraftUpdate(EvaluationRoundCreate):
+    """A draft-save payload carrying the version its editor read.
+
+    ``expected_version`` is deliberately optional at the validation layer and
+    enforced in the route: an absent version is not a malformed document, it is
+    an editor too old to participate in the concurrency contract, and it gets
+    the same actionable 409 as an editor that lost a race rather than a 422
+    that reads as "fix your input".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class RoundOpenRequest(BaseModel):
+    """Body of the open-a-draft-round request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int | None = Field(default=None, ge=1)
+
+
 class RoundProposalView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -174,6 +209,7 @@ class EvaluationRoundView(BaseModel):
     event_id: str
     name: str
     status: Literal["draft", "open", "closed"]
+    version: int = Field(ge=1)
     review_opens_at_ms: int | None = Field(default=None, ge=0)
     review_closes_at_ms: int | None = Field(default=None, ge=0)
     assignment_count: int
@@ -293,6 +329,10 @@ class RoundEvaluatorAdd(BaseModel):
     # round" is the behaviour this change exists to remove; the UI preselects them instead,
     # so the common case stays one click while the payload stays explicit.
     submission_ids: list[str] = Field(min_length=1, max_length=100)
+    # The round-level optimistic-concurrency token. Optional here for the same
+    # reason as on the draft update: enforcement lives in the route so a missing
+    # token gets the actionable 409 rather than a validation 422.
+    expected_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def valid_submission_ids(self):
@@ -301,6 +341,14 @@ class RoundEvaluatorAdd(BaseModel):
         if len(set(self.submission_ids)) != len(self.submission_ids):
             raise ValueError("submission_ids must be unique")
         return self
+
+
+class RoundEvaluatorRemove(BaseModel):
+    """Body of the remove-a-reviewer request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class RoundEvaluatorChange(BaseModel):
@@ -315,6 +363,9 @@ class RoundSubmissionAdd(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     submission_ids: list[str] = Field(min_length=1, max_length=100)
+    # Round-level optimistic-concurrency token; enforced in the route so an
+    # absent token gets the actionable 409 rather than a validation 422.
+    expected_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def valid_submission_ids(self):
@@ -538,6 +589,9 @@ class EvaluationRoundResults(BaseModel):
     assigned_count: int
     completed_count: int
     average_rating: float | None
+    # The round-level optimistic-concurrency token. Every mutation this page
+    # offers sends it back; a 409 means another editor moved the round first.
+    version: int = Field(ge=1)
     criteria: list[EvaluationCriterion] = Field(default_factory=list)
     submissions: list[SubmissionEvaluationResult]
     submission_count: int = Field(ge=0)
@@ -559,6 +613,7 @@ class EvaluationRoundCloseRequest(BaseModel):
 
     force: bool = False
     reason: str = Field(default="", max_length=2000)
+    expected_version: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def valid_force(self):

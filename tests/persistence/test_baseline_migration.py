@@ -64,7 +64,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 116, "table": 81, "trigger": 110}
+        assert object_counts == {"index": 117, "table": 82, "trigger": 110}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
@@ -84,6 +84,92 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
             """SELECT sql FROM sqlite_master
                WHERE type='index' AND name='uq_evaluation_rounds_live_name'"""
         ).fetchone() is not None
+        assert connection.execute(
+            "SELECT version FROM evaluation_rounds LIMIT 0"
+        ).description is not None
+        assert connection.execute(
+            "SELECT id,round_id,applied_changes,created_at_ms "
+            "FROM evaluation_round_write_guards LIMIT 0"
+        ).description is not None
+    finally:
+        connection.close()
+
+
+def test_round_version_migration_upgrades_existing_rounds_without_losing_assignments() -> None:
+    """Upgrade the immediately preceding schema with live round data in place."""
+    migrations = sorted(BASELINE.parent.glob("*.sql"))
+    assert migrations[-1].name == "0008_evaluation_round_version_contract.sql"
+    connection = sqlite3.connect(":memory:")
+    connection.execute("PRAGMA foreign_keys = ON")
+    try:
+        for migration in migrations[:-1]:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        seed_platform(connection)
+        connection.execute(
+            "INSERT INTO user_roles VALUES ('user-a','reviewer','active',1000,1000,NULL,1)"
+        )
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms)
+               VALUES('legacy-reviewer-invitation','org-a','event-a',
+                      'speaker-a@example.test','speaker-a@example.test','evaluator','accepted',
+                      'user-a',9999999999999,1000,1000,1000)"""
+        )
+        for index, status in enumerate(("draft", "open", "closed"), start=1):
+            round_id = f"legacy-round-{status}"
+            connection.execute(
+                """INSERT INTO evaluation_rounds
+                   (id,organization_id,event_id,name,name_key,rubric_json,status,
+                    created_at_ms,updated_at_ms,closed_at_ms)
+                   VALUES(?,?,?,?,?,'{}',?,?,?,?)""",
+                (
+                    round_id,
+                    "org-a",
+                    "event-a",
+                    f"Legacy {status}",
+                    f"legacy {status}",
+                    status,
+                    1_000 + index,
+                    1_000 + index,
+                    1_000 + index if status == "closed" else None,
+                ),
+            )
+        connection.execute(
+            """INSERT INTO evaluation_round_submissions
+               (round_id,submission_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+               VALUES('legacy-round-draft','submission-a','org-a','event-a','active',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO evaluation_round_evaluators
+               (round_id,evaluator_user_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+               VALUES('legacy-round-draft','user-a','org-a','event-a','active',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO evaluation_assignments
+               (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,
+                status,created_at_ms,updated_at_ms)
+               VALUES('legacy-assignment','org-a','event-a','legacy-round-draft',
+                      'submission-a','user-a','assigned',1000,1000)"""
+        )
+        connection.commit()
+
+        connection.executescript(migrations[-1].read_text(encoding="utf-8"))
+
+        assert connection.execute(
+            "SELECT id,version FROM evaluation_rounds WHERE id LIKE 'legacy-round-%' ORDER BY id"
+        ).fetchall() == [
+            ("legacy-round-closed", 1),
+            ("legacy-round-draft", 1),
+            ("legacy-round-open", 1),
+        ]
+        assert tuple(
+            connection.execute(
+                "SELECT round_id,submission_id,evaluator_user_id,status "
+                "FROM evaluation_assignments WHERE id='legacy-assignment'"
+            ).fetchone()
+        ) == ("legacy-round-draft", "submission-a", "user-a", "assigned")
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         connection.close()
 

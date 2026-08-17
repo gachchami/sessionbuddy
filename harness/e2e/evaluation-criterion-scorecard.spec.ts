@@ -246,6 +246,26 @@ test.describe("scorecard criterion types", () => {
     });
   });
 
+  test("clearing a criterion purpose explains and unlocks its response type", async ({ page }) => {
+    await organizerPage(page);
+    await page.locator("#round-disclosure > summary").click();
+    const row = criterionRow(page, 0);
+    const purpose = row.locator('select[name="criterion_purpose"]');
+    const response = row.locator('select[name="criterion_type"]');
+    const hint = row.locator(".criterion-purpose-hint");
+
+    await purpose.selectOption("recommendation");
+    await expect(response).toBeDisabled();
+    await expect(response).toHaveValue("select");
+    await expect(hint).toContainText("sets Response to Dropdown and locks it");
+
+    await purpose.selectOption("");
+    await expect(response).toBeEnabled();
+    await expect(hint).toHaveText("Response type is editable while this criterion is independent.");
+    await response.selectOption("text");
+    await expect(response).toHaveValue("text");
+  });
+
   // Native constraint validation gates the submit EVENT, not just the submission: once a
   // control carries a custom validity message the browser refuses to fire submit, so
   // validateRound() -- the only code that recomputes those messages -- never runs again.

@@ -93,6 +93,9 @@ type RoundResults = {
   event_name: string;
   round_name: string;
   status: "draft" | "open" | "closed";
+  // Optimistic-concurrency token: sent back as expected_version on every
+  // mutation this page offers, refreshed by every successful load.
+  version: number;
   assigned_count: number;
   completed_count: number;
   average_rating: number | null;
@@ -956,6 +959,23 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     const recoveryScope = window.SessionBuddyApi.recoveryScope.round(roundId);
     if (window.SessionBuddyApi.redirectIfWorkspaceUnavailable(error, recoveryScope)) return;
     if (window.SessionBuddyApi.redirectIfDocumentAccessChanged(error, recoveryScope)) return;
+    if (
+      (error as { status?: number }).status === 409 &&
+      (error as { code?: string }).code === "round-version_conflict"
+    ) {
+      // The server refused this mutation because another editor moved the round
+      // first, and rolled its own work back. Nothing here was saved; reloading
+      // re-arms every action with the round's current version token.
+      setStatus(
+        "This round changed in another session while you were working. Reloading "
+          + "its current state — nothing from your last action was applied.",
+      );
+      void load(null, false).catch(() => {});
+      if (focusStatus) {
+        window.setTimeout(() => document.querySelector<HTMLElement>(".round-desk__status")?.focus());
+      }
+      return;
+    }
     setStatus(errorMessage(error));
     if (focusStatus) {
       window.setTimeout(() => document.querySelector<HTMLElement>(".round-desk__status")?.focus());
@@ -1233,6 +1253,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
           body: JSON.stringify({
             evaluator_user_id: evaluatorId,
             submission_ids: [submission.submission_id],
+            expected_version: results?.version,
           }),
         },
       );
@@ -1262,7 +1283,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
       {
         method: "POST",
         headers: mutationHeaders(csrf),
-        body: "{}",
+        body: JSON.stringify({ expected_version: results?.version }),
       },
     );
     await load();
@@ -1275,7 +1296,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     await api(`/api/v1/admin/evaluation-rounds/${roundId}/close`, {
       method: "POST",
       headers: mutationHeaders(csrf),
-      body: JSON.stringify({ force, reason }),
+      body: JSON.stringify({ force, reason, expected_version: results?.version }),
     });
     setShowForceClose(false);
     setForceCloseReason("");

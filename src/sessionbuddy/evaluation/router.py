@@ -50,6 +50,8 @@ from .models import (
     EvaluationRoundClosed,
     EvaluationRoundCloseRequest,
     EvaluationRoundCreate,
+    EvaluationRoundDraft,
+    EvaluationRoundDraftUpdate,
     EvaluationRoundList,
     EvaluationRoundResults,
     EvaluationRoundView,
@@ -64,6 +66,8 @@ from .models import (
     RoundAssignment,
     RoundEvaluatorAdd,
     RoundEvaluatorChange,
+    RoundEvaluatorRemove,
+    RoundOpenRequest,
     RoundSubmissionAdd,
     RoundSubmissionChange,
     SubmissionAnswerView,
@@ -299,6 +303,99 @@ def _key(value: str | None) -> str:
     if value is None or not 16 <= len(value) <= 255:
         raise HTTPException(status_code=400)
     return value
+
+
+# Every round mutation travels with the version its editor read. An absent
+# version is an unbuilt client, not a malformed document, so it gets the same
+# actionable refusal as a lost race instead of a validation 422.
+ROUND_VERSION_REQUIRED_DETAIL = (
+    "This request did not carry the round's current version. Reload the round "
+    "and try again."
+)
+ROUND_VERSION_CONFLICT_DETAIL = (
+    "This evaluation round changed while you were working. Reload it to see the "
+    "current state, then reapply your change; nothing from this request was saved."
+)
+
+
+def _round_version_headers() -> dict[str, str]:
+    # api_client.js folds this into error.code as "round-version_conflict", so
+    # callers can react to the class of conflict rather than parse prose.
+    return {"X-Conflict-Type": "round-version"}
+
+
+def _require_expected_version(expected: int | None, current: object) -> int:
+    """Fast-fail a mutation whose version diverged before any work is done.
+
+    The conditional UPDATE plus write guard later in the same batch remains the
+    real boundary -- this only spares the loser the wasted reads and gives both
+    failure shapes (absent and stale) one message each.
+    """
+    if expected is None:
+        raise HTTPException(
+            status_code=409,
+            detail=ROUND_VERSION_REQUIRED_DETAIL,
+            headers=_round_version_headers(),
+        )
+    if expected != int(current):
+        raise HTTPException(
+            status_code=409,
+            detail=ROUND_VERSION_CONFLICT_DETAIL,
+            headers=_round_version_headers(),
+        )
+    return expected
+
+
+def _round_write_guard(db, *, round_id: str, now: int):
+    """Turn the preceding conditional UPDATE's row count into a constraint.
+
+    changes() records what the immediately preceding statement in this batch
+    actually wrote. The CHECK (applied_changes = 1) aborts the WHOLE batch --
+    memberships, assignments, audit, notifications, idempotency -- when the
+    compare-and-set matched zero rows, so a losing request leaves no residue.
+    """
+    return db.prepare(
+        """INSERT INTO evaluation_round_write_guards
+           (id,round_id,applied_changes,created_at_ms) VALUES(?1,?2,changes(),?3)"""
+    ).bind(new_id(), round_id, now)
+
+
+async def _execute_round_mutation(
+    request: Request,
+    batch: CommandBatch,
+    db,
+    *,
+    round_id: str,
+    expected_version: int,
+) -> None:
+    """Run a round-mutation batch and translate a lost compare-and-set.
+
+    _execute collapses every persistence failure into a bare 409. For these
+    batches that failure is almost always the write guard firing, which means
+    something concrete: another organizer saved, opened or closed the round
+    first. Naming it beats "this information changed elsewhere".
+    """
+    try:
+        await _execute(request, batch)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        current_version = await (
+            db.prepare("SELECT version FROM evaluation_rounds WHERE id=?1 LIMIT 1")
+            .bind(round_id)
+            .first("version")
+        )
+        # Only call this an optimistic-concurrency conflict when the round
+        # actually moved. If the batch rolled back and the token is still
+        # current, preserve the generic persistence conflict instead of
+        # misreporting an unrelated constraint failure as another editor.
+        if current_version is None or int(current_version) == expected_version:
+            raise
+        raise HTTPException(
+            status_code=409,
+            detail=ROUND_VERSION_CONFLICT_DETAIL,
+            headers=_round_version_headers(),
+        ) from exc
 
 
 def _fingerprint(body) -> bytes:
@@ -1742,6 +1839,8 @@ async def create_evaluation_round(
         event_id=event_id,
         name=body.name,
         status=body.status,
+        # A new round starts the version contract at 1; every editor reads it here.
+        version=1,
         assignment_count=len(assignment_pairs),
         evaluator_count=len(body.evaluator_user_ids),
     )
@@ -1766,7 +1865,7 @@ async def get_current_evaluation_round(
     )
     row = row_mapping(
         await db.prepare(
-            """SELECT r.id, r.event_id, r.name, r.status,
+            """SELECT r.id, r.event_id, r.name, r.status, r.version,
                   (SELECT COUNT(*) FROM evaluation_assignments a
                     WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
                   (SELECT COUNT(*) FROM evaluation_round_evaluators e
@@ -1804,15 +1903,15 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
             # then reopens with its reviewers intact, which reads as data that was saved
             # and then lost. Revoked assignments are excluded so a removed reviewer stops
             # inflating the count the organizer is shown.
-            """SELECT r.id,r.event_id,r.name,r.status,
+            """SELECT r.id,r.event_id,r.name,r.status,r.version,
                       r.review_opens_at_ms,r.review_closes_at_ms,
                       (SELECT COUNT(*) FROM evaluation_assignments a
                         WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
                       (SELECT COUNT(*) FROM evaluation_round_evaluators e
                         WHERE e.round_id=r.id AND e.status='active') AS evaluator_count
-               FROM evaluation_rounds r
-               WHERE r.organization_id=?1 AND r.event_id=?2
-               ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 50"""
+                FROM evaluation_rounds r
+                WHERE r.organization_id=?1 AND r.event_id=?2
+                ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 50"""
         )
         .bind(organization_id, event_id)
         .all()
@@ -1854,10 +1953,12 @@ async def list_evaluation_rounds(event_id: str, request: Request) -> EvaluationR
 
 @evaluation_router.get(
     "/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft",
-    response_model=EvaluationRoundCreate,
+    response_model=EvaluationRoundDraft,
     tags=["evaluations"],
 )
-async def get_draft_evaluation_round(event_id: str, round_id: str, request: Request):
+async def get_draft_evaluation_round(
+    event_id: str, round_id: str, request: Request
+) -> EvaluationRoundDraft:
     db = _db(request)
     organization_id = await _event_organization_id(db, event_id)
     await require_permission(
@@ -1868,7 +1969,7 @@ async def get_draft_evaluation_round(event_id: str, round_id: str, request: Requ
     )
     row = row_mapping(
         await db.prepare(
-            """SELECT name,rubric_json,review_opens_at_ms,review_closes_at_ms
+            """SELECT name,rubric_json,review_opens_at_ms,review_closes_at_ms,version
            FROM evaluation_rounds WHERE id=?1 AND organization_id=?2
              AND event_id=?3 AND status='draft'"""
         )
@@ -1907,7 +2008,7 @@ async def get_draft_evaluation_round(event_id: str, round_id: str, request: Requ
         .bind(round_id, organization_id)
         .all()
     )
-    return EvaluationRoundCreate(
+    return EvaluationRoundDraft(
         name=str(row["name"]),
         rating_min=int(rubric["rating"]["min"]),
         rating_max=int(rubric["rating"]["max"]),
@@ -1929,17 +2030,25 @@ async def get_draft_evaluation_round(event_id: str, round_id: str, request: Requ
         ],
         assignment_strategy=str(rubric.get("assignment_strategy", "balanced")),
         status="draft",
+        # The concurrency token: carried unchanged into the draft update, whose
+        # compare-and-set refuses the save when it no longer matches.
+        version=int(row["version"]),
     )
 
 
 @evaluation_router.put(
     "/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft",
     response_model=EvaluationRoundView,
+    operation_id="updateDraftEvaluationRound",
     tags=["evaluations"],
 )
 async def update_draft_evaluation_round(
-    event_id: str, round_id: str, request: Request, body: EvaluationRoundCreate
-):
+    event_id: str,
+    round_id: str,
+    request: Request,
+    body: EvaluationRoundDraftUpdate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> EvaluationRoundView:
     if body.status != "draft":
         raise HTTPException(status_code=422, detail="Draft updates must remain draft")
     db = _db(request)
@@ -1950,16 +2059,59 @@ async def update_draft_evaluation_round(
         ResourceContext(organization_id, event_id),
         mutation=True,
     )
-    found = (
+    # The retry contract comes before the version contract: an exact replay of
+    # this very save must return the round it already produced, not a 409 for
+    # carrying the (now stale) version it legitimately read. A different key on
+    # a stale version still reaches the compare-and-set below and is refused.
+    key = _key(idempotency_key)
+    route = f"PUT /api/v1/admin/events/{event_id}/evaluation-rounds/{{round_id}}/draft"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"event_id": event_id, "round_id": round_id, "body": body.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    replay_scope = (
         await db.prepare(
-            """SELECT 1 AS found FROM evaluation_rounds WHERE id=?1 AND organization_id=?2
-           AND event_id=?3 AND status='draft'"""
+            """SELECT organization_id,event_id,status FROM evaluation_rounds
+               WHERE id=?1 LIMIT 1"""
         )
-        .bind(round_id, organization_id, event_id)
-        .first("found")
+        .bind(round_id)
+        .first()
     )
-    if found is None:
+    scope_row = row_mapping(replay_scope)
+    if scope_row is None:
         raise HTTPException(status_code=404)
+    if str(scope_row["organization_id"]) != organization_id or (
+        str(scope_row["event_id"]) != event_id
+    ):
+        # Not this event's round: indistinguishable from absent.
+        raise HTTPException(status_code=404)
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint,response_resource_id FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND organization_id=?4 AND event_id=?5 AND state='completed'"""
+        )
+        .bind(
+            auth.actor.user_id,
+            route,
+            hashlib.sha256(key.encode()).digest(),
+            organization_id,
+            event_id,
+        )
+        .first()
+    )
+    if replay is not None:
+        if _blob(replay["request_fingerprint"]) != fingerprint:
+            raise HTTPException(status_code=409)
+        return await _round_view(db, round_id)
+    if str(scope_row["status"]) != "draft":
+        raise HTTPException(
+            status_code=409,
+            detail="Only a draft round can be edited.",
+        )
     # A rename is a name write like any other. Excluding this round keeps a save that leaves
     # the name alone -- the common case -- from colliding with itself.
     await _reject_duplicate_round_name(
@@ -2089,43 +2241,70 @@ async def update_draft_evaluation_round(
     # validation -- not the round.
     stored = row_mapping(
         await db.prepare(
-            """SELECT name,rubric_json,review_opens_at_ms,review_closes_at_ms
+            """SELECT name,rubric_json,review_opens_at_ms,review_closes_at_ms,version
                FROM evaluation_rounds WHERE id=?1 LIMIT 1"""
         )
         .bind(round_id)
         .first()
     )
-    configuration_changed = stored is None or (
+    if stored is None:
+        # Existence was already proven above; this is unreachable except under a
+        # concurrent delete, which evaluation_rounds does not allow (RESTRICT).
+        raise HTTPException(status_code=404)
+    configuration_changed = (
         str(stored["name"]) != body.name
         or str(stored["rubric_json"]) != rubric_json
         or stored["review_opens_at_ms"] != body.review_opens_at_ms
         or stored["review_closes_at_ms"] != body.review_closes_at_ms
     )
+    # The optimistic-concurrency boundary, checked before any work is queued.
+    # The compare-and-set in the batch below remains the real gate for races
+    # that arrive after this read; refusing here spares the loser the wasted
+    # diff and gives both failure shapes one actionable sentence.
+    _require_expected_version(body.expected_version, stored["version"])
     if not diff.changed and not configuration_changed:
         # A repeated PUT writes nothing at all: no batch, no version bump, no audit record.
         # Bumping updated_at_ms here would churn optimistic concurrency for every other
-        # client holding a version, turning idempotency into a liveness bug.
+        # client holding a version, turning idempotency into a liveness bug. The version
+        # check above has already proved this caller saw the current round.
         return await _round_view(db, round_id)
 
     batch = CommandBatch(db)
-    if configuration_changed:
-        batch.add_statement(
-            db.prepare(
-                """UPDATE evaluation_rounds SET name=?1,name_key=?7,rubric_json=?2,
-               review_opens_at_ms=?3,review_closes_at_ms=?4,updated_at_ms=?5
-               WHERE id=?6 AND status='draft'"""
-            ).bind(
-                body.name,
-                rubric_json,
-                body.review_opens_at_ms,
-                body.review_closes_at_ms,
-                now,
-                round_id,
-                # Rewritten on every configuration save, so a row the migration backfilled
-                # with SQL's ASCII lower() picks up the exact key the moment it is edited.
-                _round_name_key(body.name),
-            )
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=organization_id,
+        event_id=event_id,
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch.begin_idempotency(record, now)
+    # The compare-and-set is unconditional: even a pure assignment reshuffle must
+    # carry it, because its write guard -- not the WHERE status alone -- is what
+    # stops children from being written onto a round that stopped being a draft,
+    # or onto a matrix another save already moved past this caller's read.
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_rounds SET name=?1,name_key=?8,rubric_json=?2,
+           review_opens_at_ms=?3,review_closes_at_ms=?4,updated_at_ms=?5,version=version+1
+           WHERE id=?6 AND status='draft' AND version=?7"""
+        ).bind(
+            body.name,
+            rubric_json,
+            body.review_opens_at_ms,
+            body.review_closes_at_ms,
+            now,
+            round_id,
+            # Validated against `stored` above; the UPDATE re-checks it inside the
+            # transaction because another writer may have moved between read and write.
+            body.expected_version,
+            # Rewritten on every configuration save, so a row the migration backfilled
+            # with SQL's ASCII lower() picks up the exact key the moment it is edited.
+            _round_name_key(body.name),
         )
+    )
+    batch.add_statement(_round_write_guard(db, round_id=round_id, now=now))
     # Ordered. Membership must exist before an assignment references it, and must outlive
     # the assignment on the way out -- the composite foreign keys make that mandatory.
     for submission_id in diff.activate_submissions:
@@ -2210,9 +2389,41 @@ async def update_draft_evaluation_round(
             },
         )
     )
-    await _execute_round_write(
-        request, batch, db, organization_id, event_id, body.name, exclude_round_id=round_id
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_round",
+        resource_id=round_id,
+        completed_at_ms=now,
     )
+    try:
+        await _execute_round_write(
+            request, batch, db, organization_id, event_id, body.name, exclude_round_id=round_id
+        )
+    except HTTPException as exc:
+        print("PROBE draft-put caught", exc.status_code, repr(exc.detail), flush=True)
+        if exc.status_code != 409 or exc.detail is not None:
+            # A 409 with detail is the duplicate-name guard speaking; anything
+            # else is not this endpoint's conflict to relabel.
+            raise
+        current_version = await (
+            db.prepare("SELECT version FROM evaluation_rounds WHERE id=?1 LIMIT 1")
+            .bind(round_id)
+            .first("version")
+        )
+        print("PROBE classify draft-put", exc.status_code, repr(exc.detail), "cur=", current_version, "exp=", body.expected_version, flush=True)
+        if current_version is None or int(current_version) == int(body.expected_version):
+            # The round did not move, so this was some other persistence
+            # conflict. Preserve the generic response rather than blaming a
+            # concurrent editor for an unrelated database failure.
+            raise
+        # The write guard fired: the draft moved (or stopped being a draft)
+        # between this editor's read and its write, and the batch rolled back.
+        raise HTTPException(
+            status_code=409,
+            detail=ROUND_VERSION_CONFLICT_DETAIL,
+            headers=_round_version_headers(),
+        ) from exc
     return await _round_view(db, round_id)
 
 
@@ -2294,11 +2505,12 @@ async def add_round_evaluator(
     round_id: str,
     body: RoundEvaluatorAdd,
     request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> RoundEvaluatorChange:
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT organization_id,event_id,status FROM evaluation_rounds
+            """SELECT organization_id,event_id,status,version FROM evaluation_rounds
                WHERE id=?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -2312,8 +2524,29 @@ async def add_round_evaluator(
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=True,
     )
+    key = _key(idempotency_key)
+    route = "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {"round_id": round_id, "body": body.model_dump()},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    replay_resource = await _idempotency_replay(
+        db, auth.actor.user_id, route, key, fingerprint
+    )
+    if replay_resource is not None:
+        try:
+            replayed = RoundEvaluatorChange.model_validate_json(replay_resource)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=409) from exc
+        if replayed.round_id != round_id or replayed.evaluator_user_id != body.evaluator_user_id:
+            raise HTTPException(status_code=409)
+        return replayed
     if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
+    _require_expected_version(body.expected_version, round_row["version"])
     reviewer = (
         await db.prepare(
             """SELECT 1 AS found FROM users u JOIN user_roles ur ON ur.user_id=u.id
@@ -2385,8 +2618,46 @@ async def add_round_evaluator(
     missing_ids = [
         submission_id for submission_id in submission_ids if submission_id not in existing_ids
     ]
+    already_active_member = any(
+        str(row["membership_status"]) == "active"
+        for row in result_rows(
+            await db.prepare(
+                """SELECT status AS membership_status FROM evaluation_round_evaluators
+                   WHERE round_id=?1 AND evaluator_user_id=?2 LIMIT 1"""
+            )
+            .bind(round_id, body.evaluator_user_id)
+            .all()
+        )
+    )
+    if not missing_ids and not revive_ids and already_active_member:
+        # Nothing to write: the reviewer already holds every requested pair and is
+        # an active member. Writing nothing also bumps nothing, so a concurrent
+        # editor's version token stays valid.
+        return RoundEvaluatorChange(
+            round_id=round_id, evaluator_user_id=body.evaluator_user_id, assignment_count=0
+        )
     now = utc_now_ms()
     batch = CommandBatch(db)
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch.begin_idempotency(record, now)
+    # The compare-and-set leads the batch and its guard immediately follows: if
+    # another save moved the round past this request's read, or it stopped being
+    # a draft, the CHECK (applied_changes = 1) rolls back everything below.
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_rounds SET updated_at_ms=?2,version=version+1
+               WHERE id=?1 AND status IN ('draft','open') AND version=?3"""
+        ).bind(round_id, now, body.expected_version)
+    )
+    batch.add_statement(_round_write_guard(db, round_id=round_id, now=now))
     # Membership before assignments: the composite foreign keys require it, and re-adding a
     # previously removed reviewer must restore them to the pool.
     batch.add_statement(
@@ -2447,6 +2718,18 @@ async def add_round_evaluator(
             },
         )
     )
+    result = RoundEvaluatorChange(
+        round_id=round_id,
+        evaluator_user_id=body.evaluator_user_id,
+        assignment_count=len(missing_ids) + len(revive_ids),
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_round_evaluator_change",
+        resource_id=result.model_dump_json(),
+        completed_at_ms=now,
+    )
     round_detail = row_mapping(
         await db.prepare(
             "SELECT name,review_closes_at_ms FROM evaluation_rounds WHERE id=?1 LIMIT 1"
@@ -2482,13 +2765,11 @@ async def add_round_evaluator(
         if round_row["status"] == "open"
         else []
     )
-    await batch.execute()
-    await publish_committed_messages(request, notification_ids)
-    return RoundEvaluatorChange(
-        round_id=round_id,
-        evaluator_user_id=body.evaluator_user_id,
-        assignment_count=len(missing_ids) + len(revive_ids),
+    await _execute_round_mutation(
+        request, batch, db, round_id=round_id, expected_version=int(body.expected_version)
     )
+    await publish_committed_messages(request, notification_ids)
+    return result
 
 
 @evaluation_router.post(
@@ -2506,7 +2787,8 @@ async def add_round_submissions(
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT organization_id,event_id,rubric_json,status,name,review_closes_at_ms
+            """SELECT organization_id,event_id,rubric_json,status,name,review_closes_at_ms,
+                      version
                FROM evaluation_rounds WHERE id=?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -2557,6 +2839,7 @@ async def add_round_submissions(
         return result
     if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
+    _require_expected_version(body.expected_version, round_row["version"])
     placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
     submissions = result_rows(
         await db.prepare(
@@ -2587,6 +2870,11 @@ async def add_round_submissions(
     new_submission_ids = [
         submission_id for submission_id in body.submission_ids if submission_id not in existing_ids
     ]
+    if not new_submission_ids:
+        # Every requested proposal is already in the round: nothing to write, so
+        # the version token stays valid and no idempotency residue is created.
+        # The answer is deterministic, so a retry computes it again for free.
+        return RoundSubmissionChange(round_id=round_id, submission_count=0, assignment_count=0)
     evaluator_ids = [
         str(row["evaluator_user_id"])
         for row in result_rows(
@@ -2620,6 +2908,17 @@ async def add_round_submissions(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    # The compare-and-set leads and its guard immediately follows, so a save
+    # that raced this one -- or an open/close that landed between read and
+    # write -- aborts the whole batch instead of adding proposals to a round
+    # that has already moved on.
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_rounds SET updated_at_ms=?2,version=version+1
+               WHERE id=?1 AND status IN ('draft','open') AND version=?3"""
+        ).bind(round_id, now, body.expected_version)
+    )
+    batch.add_statement(_round_write_guard(db, round_id=round_id, now=now))
     # Adding proposals to a live round adds them to its membership first -- the composite
     # foreign keys reject an assignment whose proposal the round does not yet know about.
     for submission_id in new_submission_ids:
@@ -2713,7 +3012,9 @@ async def add_round_submissions(
         resource_id=result.model_dump_json(),
         completed_at_ms=now,
     )
-    await _execute(request, batch)
+    await _execute_round_mutation(
+        request, batch, db, round_id=round_id, expected_version=int(body.expected_version)
+    )
     await publish_committed_messages(request, notification_ids)
     return result
 
@@ -2728,11 +3029,13 @@ async def remove_round_evaluator(
     round_id: str,
     evaluator_user_id: str,
     request: Request,
+    body: RoundEvaluatorRemove | None = None,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> RoundEvaluatorChange:
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT organization_id,event_id,status FROM evaluation_rounds
+            """SELECT organization_id,event_id,status,version FROM evaluation_rounds
                WHERE id=?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -2746,8 +3049,35 @@ async def remove_round_evaluator(
         ResourceContext(str(round_row["organization_id"]), str(round_row["event_id"])),
         mutation=True,
     )
+    key = _key(idempotency_key)
+    route = "POST /api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "round_id": round_id,
+                "evaluator_user_id": evaluator_user_id,
+                "body": body.model_dump() if body is not None else None,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    replay_resource = await _idempotency_replay(
+        db, auth.actor.user_id, route, key, fingerprint
+    )
+    if replay_resource is not None:
+        try:
+            replayed = RoundEvaluatorChange.model_validate_json(replay_resource)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=409) from exc
+        if replayed.round_id != round_id or replayed.evaluator_user_id != evaluator_user_id:
+            raise HTTPException(status_code=409)
+        return replayed
     if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
+    _require_expected_version(
+        body.expected_version if body is not None else None, round_row["version"]
+    )
     saved = int(
         await db.prepare(
             """SELECT COUNT(*) AS count_value FROM evaluations e
@@ -2789,6 +3119,26 @@ async def remove_round_evaluator(
     )
     now = utc_now_ms()
     batch = CommandBatch(db)
+    record = IdempotencyRecord(
+        principal_key=auth.actor.user_id,
+        organization_id=str(round_row["organization_id"]),
+        event_id=str(round_row["event_id"]),
+        route_key=route,
+        idempotency_key=key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 86_400_000,
+    )
+    batch.begin_idempotency(record, now)
+    # The compare-and-set leads and its guard immediately follows: a removal
+    # that raced a save, an open or a close must not revoke assignments on a
+    # round that has already moved past this request's read.
+    batch.add_statement(
+        db.prepare(
+            """UPDATE evaluation_rounds SET updated_at_ms=?2,version=version+1
+               WHERE id=?1 AND status IN ('draft','open') AND version=?3"""
+        ).bind(round_id, now, body.expected_version)
+    )
+    batch.add_statement(_round_write_guard(db, round_id=round_id, now=now))
     batch.add_statement(
         db.prepare(
             """UPDATE evaluation_assignments SET status='revoked', updated_at_ms=?3
@@ -2819,10 +3169,22 @@ async def remove_round_evaluator(
             metadata={"evaluator_user_id": evaluator_user_id, "assignment_count": active_count},
         )
     )
-    await batch.execute()
-    return RoundEvaluatorChange(
-        round_id=round_id, evaluator_user_id=evaluator_user_id, assignment_count=active_count
+    result = RoundEvaluatorChange(
+        round_id=round_id,
+        evaluator_user_id=evaluator_user_id,
+        assignment_count=active_count,
     )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="evaluation_round_evaluator_change",
+        resource_id=result.model_dump_json(),
+        completed_at_ms=now,
+    )
+    await _execute_round_mutation(
+        request, batch, db, round_id=round_id, expected_version=int(body.expected_version)
+    )
+    return result
 
 
 @evaluation_router.post(
@@ -3772,7 +4134,7 @@ async def get_round_results(
             request,
             db.prepare(
                 """SELECT r.id, r.organization_id, r.event_id, r.name, r.status,
-                          r.closed_at_ms,
+                          r.closed_at_ms, r.version,
                           r.rubric_json, e.name AS event_name
                    FROM evaluation_rounds r
                    JOIN events e ON e.id=r.event_id AND e.organization_id=r.organization_id
@@ -4066,6 +4428,8 @@ async def get_round_results(
         event_name=str(round_row["event_name"]),
         round_name=str(round_row["name"]),
         status=str(round_row["status"]),
+        # Every mutation this page offers sends it back as expected_version.
+        version=int(round_row["version"]),
         assigned_count=int(aggregate["assigned_count"] or 0),
         completed_count=int(aggregate["completed_count"] or 0),
         average_rating=(
@@ -4296,6 +4660,7 @@ async def export_round_reviews(round_id: str, request: Request) -> Response:
 async def open_evaluation_round(
     round_id: str,
     request: Request,
+    body: RoundOpenRequest | None = None,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EvaluationRoundView:
     """Promote a draft evaluation round to open.
@@ -4313,7 +4678,8 @@ async def open_evaluation_round(
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT id, organization_id, event_id, status, name, review_closes_at_ms
+            """SELECT id, organization_id, event_id, status, name, review_closes_at_ms,
+                      version
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -4328,9 +4694,19 @@ async def open_evaluation_round(
         mutation=True,
     )
     if round_row["status"] == "open":
+        # An open round is already what this request asks for. Answering from
+        # state rather than the idempotency ledger keeps retries working even
+        # after the record has expired.
         return await _round_view(db, round_id)
     if round_row["status"] != "draft":
         raise HTTPException(status_code=409, detail="Only a draft round can be opened.")
+    # Optional at the validation layer on purpose: a request with no JSON body
+    # at all must still reach the mutation guard and be refused there with the
+    # honest 403, not die earlier as a 422. A well-formed request without a
+    # version gets the actionable 409 below.
+    _require_expected_version(
+        body.expected_version if body is not None else None, round_row["version"]
+    )
     key = _key(idempotency_key)
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/open"
     fingerprint = hashlib.sha256(f"open:{round_id}".encode()).digest()
@@ -4424,12 +4800,19 @@ async def open_evaluation_round(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    # The compare-and-set leads and its guard immediately follows. Two
+    # organizers clicking Start review at once both pass the checks above; D1
+    # serializes their batches, and exactly one UPDATE matches. The loser's
+    # guard fires, its batch rolls back with no transition, no audit record,
+    # no queued notification and no idempotency row -- one opening, one mail.
     batch.add_statement(
         db.prepare(
-            """UPDATE evaluation_rounds SET status = 'open', updated_at_ms = ?1
-             WHERE id = ?2 AND status = 'draft'"""
-        ).bind(now, round_id)
+            """UPDATE evaluation_rounds SET status = 'open', updated_at_ms = ?1,
+              version = version + 1
+           WHERE id = ?2 AND status = 'draft' AND version = ?3"""
+        ).bind(now, round_id, body.expected_version)
     )
+    batch.add_statement(_round_write_guard(db, round_id=round_id, now=now))
     notification_ids = _queue_assignment_notifications(
         batch,
         db,
@@ -4476,7 +4859,9 @@ async def open_evaluation_round(
         resource_id=round_id,
         completed_at_ms=now,
     )
-    await _execute(request, batch)
+    await _execute_round_mutation(
+        request, batch, db, round_id=round_id, expected_version=int(body.expected_version)
+    )
     await publish_committed_messages(request, notification_ids)
     return await _round_view(db, round_id)
 
@@ -4496,7 +4881,7 @@ async def close_evaluation_round(
     db = _db(request)
     round_row = row_mapping(
         await db.prepare(
-            """SELECT id, organization_id, event_id, status
+            """SELECT id, organization_id, event_id, status, version
            FROM evaluation_rounds WHERE id = ?1 LIMIT 1"""
         )
         .bind(round_id)
@@ -4513,6 +4898,9 @@ async def close_evaluation_round(
     key = _key(idempotency_key)
     if round_row["status"] == "closed":
         return EvaluationRoundClosed(round_id=round_id)
+    # Checked after the closed short-circuit so a repeated close keeps answering
+    # "already closed" forever, but before any other work a stale editor did.
+    _require_expected_version(body.expected_version, round_row["version"])
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/close"
     fingerprint = _fingerprint(body)
     replay = await _idempotency_replay(db, auth.actor.user_id, route, key, fingerprint)
@@ -4552,12 +4940,17 @@ async def close_evaluation_round(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    # The compare-and-set leads and its guard immediately follows: a close that
+    # raced a draft save (or another lifecycle change) must not seal a round on
+    # the strength of facts this request read before losing the race.
     batch.add_statement(
         db.prepare(
             """UPDATE evaluation_rounds SET status = 'closed', closed_at_ms = ?1,
-             updated_at_ms = ?1 WHERE id = ?2 AND status IN ('draft','open')"""
-        ).bind(now, round_id)
+             updated_at_ms = ?1, version = version + 1
+           WHERE id = ?2 AND status IN ('draft','open') AND version = ?3"""
+        ).bind(now, round_id, body.expected_version)
     )
+    batch.add_statement(_round_write_guard(db, round_id=round_id, now=now))
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -4585,7 +4978,9 @@ async def close_evaluation_round(
         resource_id=round_id,
         completed_at_ms=now,
     )
-    await _execute(request, batch)
+    await _execute_round_mutation(
+        request, batch, db, round_id=round_id, expected_version=int(body.expected_version)
+    )
     return EvaluationRoundClosed(round_id=round_id)
 
 
@@ -5065,7 +5460,7 @@ async def _round_view(db, round_id: str) -> EvaluationRoundView:
             # Same rule as the round list: reviewers come from membership, assignments
             # exclude revoked pairs. Kept identical on purpose -- a round must not report
             # one set of numbers when it is created and another when it is listed.
-            """SELECT r.id, r.event_id, r.name, r.status,
+            """SELECT r.id, r.event_id, r.name, r.status, r.version,
                   r.review_opens_at_ms, r.review_closes_at_ms,
                   (SELECT COUNT(*) FROM evaluation_assignments a
                     WHERE a.round_id=r.id AND a.status!='revoked') AS assignment_count,
@@ -5163,6 +5558,7 @@ async def _execute(request: Request, batch: CommandBatch) -> None:
     try:
         await batch.execute()
     except PersistenceError as exc:
+        print("PROBE _execute PersistenceError -> 409", flush=True)
         raise HTTPException(status_code=409) from exc
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)

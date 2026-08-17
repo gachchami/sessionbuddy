@@ -39,8 +39,11 @@ const json = (body: unknown) => ({ contentType: "application/json", body: JSON.s
 
 type Saved = { method: string; body: Record<string, unknown> };
 
-async function organizerPage(page: import("@playwright/test").Page, options: { draft?: boolean } = {}) {
+async function organizerPage(page: import("@playwright/test").Page, options: { draft?: boolean; open?: boolean; failLedgerRefresh?: boolean } = {}) {
   const saves: Saved[] = [];
+  let draftOpened = false;
+  let openRoundVersion = 11;
+  let ledgerReads = 0;
   await page.addInitScript(() => {
     if (!crypto.randomUUID) {
       Object.defineProperty(crypto, "randomUUID", {
@@ -79,22 +82,29 @@ async function organizerPage(page: import("@playwright/test").Page, options: { d
           { submission_id: ALPHA, evaluator_user_id: REVIEWER },
           { submission_id: OFF_PAGE, evaluator_user_id: REVIEWER },
         ],
-        assignment_strategy: "balanced", status: "draft",
+        assignment_strategy: "balanced", status: "draft", version: 7,
       }));
     }
     const body = route.request().postDataJSON();
     saves.push({ method: "PUT", body });
     return route.fulfill(json({
       id: "round-draft", event_id: "event-a", name: body.name, status: "draft",
+      version: 8,
       assignment_count: body.assignments.length, evaluator_count: body.evaluator_user_ids.length,
       proposals: [],
     }));
   });
   await page.route("**/api/v1/admin/events/event-a/evaluation-rounds", async (route) => {
     if (route.request().method() === "GET") {
+      ledgerReads += 1;
+      if (options.failLedgerRefresh && ledgerReads > 1) {
+        return route.fulfill({ status: 503, ...json({ error: { code: "unavailable", message: "Try again." } }) });
+      }
       return route.fulfill(json({
-        data: options.draft
-          ? [{ id: "round-draft", event_id: "event-a", name: "Prepared review", status: "draft", assignment_count: 2, evaluator_count: 1, proposals: [] }]
+        data: options.open
+          ? [{ id: "round-open", event_id: "event-a", name: "Open review", status: "open", version: openRoundVersion, assignment_count: 1, evaluator_count: 1, proposals: [] }]
+          : options.draft
+          ? [{ id: "round-draft", event_id: "event-a", name: "Prepared review", status: draftOpened ? "open" : "draft", version: draftOpened ? 8 : 7, assignment_count: 2, evaluator_count: 1, proposals: [] }]
           : [],
       }));
     }
@@ -108,6 +118,28 @@ async function organizerPage(page: import("@playwright/test").Page, options: { d
         proposals: [],
       }),
     });
+  });
+  await page.route("**/api/v1/admin/evaluation-rounds/round-draft/open", async (route) => {
+    const body = route.request().postDataJSON();
+    saves.push({
+      method: "OPEN",
+      body: { ...body, content_type: await route.request().headerValue("content-type") },
+    });
+    draftOpened = true;
+    return route.fulfill(json({
+      id: "round-draft", event_id: "event-a", name: "Prepared review", status: "open",
+      version: 8, assignment_count: 2, evaluator_count: 1, proposals: [],
+    }));
+  });
+  await page.route("**/api/v1/admin/evaluation-rounds/round-open/submissions", async (route) => {
+    const body = route.request().postDataJSON();
+    saves.push({ method: "ADD", body });
+    openRoundVersion += 1;
+    return route.fulfill(json({
+      round_id: "round-open",
+      submission_count: 1,
+      assignment_count: 1,
+    }));
   });
 
   await page.goto("/admin/events/event-a/submissions");
@@ -190,11 +222,58 @@ test.describe("evaluation round assignment matrix", () => {
 
     expect(saves).toHaveLength(1);
     expect(saves[0].method).toBe("PUT");
+    expect(saves[0].body.expected_version).toBe(7);
     // Rebuilt from the rendered checkboxes alone, this payload used to arrive holding only
     // ALPHA -- and the round diff then deactivated the missing membership and revoked its
     // assignment, on a form the organizer had opened and saved without touching.
     expect(saves[0].body.submission_ids).toContain(OFF_PAGE);
     expect(saves[0].body.assignments).toContainEqual({ submission_id: OFF_PAGE, evaluator_user_id: REVIEWER });
+  });
+
+  test("Start review sends the guarded JSON contract and refreshes the ledger", async ({ page }) => {
+    const saves = await organizerPage(page, { draft: true });
+
+    await page.getByRole("button", { name: "Start review" }).click();
+
+    await expect(page.locator("#status")).toContainText("is now open");
+    const opened = saves.find((save) => save.method === "OPEN");
+    expect(opened?.body).toMatchObject({
+      expected_version: 7,
+      content_type: "application/json",
+    });
+    await expect(page.getByRole("button", { name: "Start review" })).toHaveCount(0);
+  });
+
+  test("two sequential proposal additions use the refreshed round version", async ({ page }) => {
+    const saves = await organizerPage(page, { open: true });
+    const alpha = page.getByRole("checkbox", { name: "Include Taming 40-Minute CI" });
+    const beta = page.getByRole("checkbox", { name: "Include Scaling Postgres" });
+
+    await alpha.check();
+    await page.getByRole("button", { name: "Add 1 selected proposal" }).click();
+    await expect.poll(() => saves.filter((save) => save.method === "ADD").length).toBe(1);
+    await alpha.uncheck();
+    await beta.check();
+    await page.getByRole("button", { name: "Add 1 selected proposal" }).click();
+    await expect.poll(() => saves.filter((save) => save.method === "ADD").length).toBe(2);
+
+    const additions = saves.filter((save) => save.method === "ADD");
+    expect(additions.map((save) => save.body.expected_version)).toEqual([11, 12]);
+    expect(additions.map((save) => save.body.submission_ids)).toEqual([[ALPHA], [BETA]]);
+  });
+
+  test("a committed addition with a failed refresh keeps its stale action disabled", async ({ page }) => {
+    await organizerPage(page, { open: true, failLedgerRefresh: true });
+    await page.getByRole("checkbox", { name: "Include Taming 40-Minute CI" }).check();
+    const add = page.getByRole("button", { name: "Add 1 selected proposal" });
+    await add.click();
+
+    await expect(page.locator("#status")).toContainText("1 proposal added");
+    await expect(page.locator("#status")).toContainText("Reload the page before adding more proposals");
+    await expect(add).toBeDisabled();
+    await page.getByRole("checkbox", { name: "Include Scaling Postgres" }).check();
+    await expect(page.getByRole("button", { name: "Add 2 selected proposals" })).toBeDisabled();
+    await expect(page.locator("#status")).not.toHaveClass(/error/);
   });
 
   test("round ledger exports confirm the filename and keep one quiet fallback line", async ({ page }) => {

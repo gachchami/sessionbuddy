@@ -14,7 +14,15 @@
   const match = location.pathname.match(/^\/admin\/events\/([^/]+)\/submissions$/);
   let eventId = "";
   try { eventId = match ? decodeURIComponent(match[1]) : ""; } catch (_) { eventId = ""; }
-  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null, draftOnly: false, editingRoundId: null, pairs: {},
+  const state = { csrf: "", userId: "", timeZone: "", submissions: [], evaluators: [], rounds: [], nextCursor: null, addRoundMutation: null, addRoundReloadRequired: false, draftOnly: false, editingRoundId: null, pairs: {},
+    // The version token read from GET .../draft, saved alongside the edit session.
+    // Every draft PUT sends it back as expected_version; the server refuses the
+    // save with an actionable 409 when another editor has moved the round since.
+    editingRoundVersion: null,
+    // One idempotency key per edit session: a retry of the same logical save
+    // replays instead of double-applying, and the server checks that exact
+    // replay BEFORE judging the version, so a retry never dies on its own age.
+    editingRoundKey: "",
     // roundSubmitInFlight serialises submits so a double-click cannot issue two POSTs
     // even if the disabled attribute is bypassed (Enter key, programmatic submit).
     // roundSaved/roundFormDirty gate the button after a save: resetting the form makes a
@@ -322,7 +330,7 @@
     byId("configure-round").disabled = count === 0;
     const addToRound = byId("add-selected-to-round");
     if (addToRound) {
-      addToRound.disabled = count === 0;
+      addToRound.disabled = count === 0 || state.addRoundReloadRequired;
       addToRound.textContent = count
         ? `Add ${count} selected proposal${count === 1 ? "" : "s"}`
         : "Select proposals to add";
@@ -531,9 +539,22 @@
       purposeLabel.textContent = "Use as";
       const purpose = document.createElement("select");
       purpose.name = "criterion_purpose";
-      [["", "Additional scorecard field"], ["recommendation", "Recommendation"], ["comment", "Reviewer comment"]]
+      // The independent option is named for what it does to Response, not just
+      // what the criterion is: choosing a purpose takes the response type over
+      // (Dropdown for Recommendation, Free text for Reviewer comment), and this
+      // option is the only way back. Saying so in the control itself is what
+      // makes the lock reversible instead of mysterious.
+      [["", "Independent criterion — response type editable"],
+       ["recommendation", "Recommendation"],
+       ["comment", "Reviewer comment"]]
         .forEach(([value, label]) => purpose.add(new Option(label, value)));
       purposeLabel.append(purpose);
+      // Announces what each "Use as" choice did to Response, including the
+      // programmatic changes made while restoring an edited draft. Without it
+      // the disabled Response select has no visible reason and no visible exit.
+      const purposeHint = document.createElement("p");
+      purposeHint.className = "help criterion-purpose-hint";
+      purposeHint.setAttribute("aria-live", "polite");
       const duplicateWarning = document.createElement("p");
       duplicateWarning.className = "help warning criterion-duplicate-warning";
       duplicateWarning.hidden = true;
@@ -562,6 +583,13 @@
         type.disabled = Boolean(purpose.value);
         if (purpose.value === "recommendation") required.checked = true;
         required.disabled = purpose.value === "recommendation";
+        purposeHint.textContent = purpose.value === "recommendation"
+          ? "“Recommendation” sets Response to Dropdown and locks it. Switch “Use as” "
+            + "back to “Independent criterion” to choose a different response type."
+          : purpose.value === "comment"
+            ? "“Reviewer comment” sets Response to Free text and locks it. Switch “Use as” "
+              + "back to “Independent criterion” to choose a different response type."
+            : "Response type is editable while this criterion is independent.";
         updateType();
       };
       type.addEventListener("change", updateType);
@@ -569,7 +597,7 @@
       options.addEventListener("input", syncPurposeControls);
       required.addEventListener("change", syncPurposeControls);
       row.querySelector('[name="criterion_label"]')?.addEventListener("input", () => updateCriterionWarning(row));
-      row.append(typeLabel, optionsLabel, requiredLabel, purposeLabel, duplicateWarning);
+      row.append(typeLabel, optionsLabel, requiredLabel, purposeLabel, purposeHint, duplicateWarning);
       updatePurpose();
     }
     if (row.querySelector("button")) return;
@@ -750,6 +778,11 @@
   async function editDraftRound(round) {
     const draft = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds/${encodeURIComponent(round.id)}/draft`);
     state.editingRoundId = round.id;
+    // Carry the version this editor read and fix one idempotency key for the
+    // whole edit session, so a retry of a timed-out save replays the original
+    // instead of racing itself.
+    state.editingRoundVersion = draft.version;
+    state.editingRoundKey = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
     const form = byId("round-form");
     for (const [name, value] of Object.entries({ name: draft.name, rating_min: draft.rating_min, rating_max: draft.rating_max, recommendations: draft.recommendations.join(", "), evaluator_guidance: draft.evaluator_guidance, assignment_strategy: draft.assignment_strategy })) form.elements[name].value = value;
     form.elements.blind_review.checked = draft.blind_review;
@@ -797,10 +830,24 @@
     renderEvaluatorChoices();
     byId("round-disclosure").open = true;
     byId("open-round").textContent = "Save draft changes";
+    // Editing is an explicit request to work on this draft, so the post-save
+    // gate that guards round CREATION must not sit on the save button here.
+    // With roundSaved still true from an earlier save this session, awaitingIntent
+    // kept "Save draft changes" disabled until some unrelated edit happened -- a
+    // dead end that read as the editor being broken. A no-op re-save of a loaded
+    // draft is harmless: the server diffs the request against what it stored and
+    // writes nothing.
+    state.roundSaved = false;
+    state.roundFormDirty = true;
+    updatePrerequisites();
     byId("round-disclosure").scrollIntoView({ block: "start" });
     updateSelectedCount();
   }
   function showRound(round) {
+    // A freshly rendered ledger carries the server's current version and can
+    // safely arm its add action. A failed refresh sets this back to true and
+    // selection changes must not accidentally re-enable the stale closure.
+    state.addRoundReloadRequired = false;
     const label = document.createElement("div");
     label.className = "current-round-actions__label";
     const eyebrow = document.createElement("span"); eyebrow.textContent = "Current round";
@@ -814,6 +861,7 @@
     add.type = "button";
     add.className = "secondary";
     add.id = "add-selected-to-round";
+    add.textContent = "Add selected proposals";
     add.addEventListener("click", async () => {
       const submissionIds = selectedSubmissionIds();
       if (!submissionIds.length) {
@@ -821,8 +869,9 @@
         return;
       }
       add.disabled = true;
+      let refreshFailed = false;
       try {
-        const payload = JSON.stringify({ submission_ids: submissionIds });
+        const payload = JSON.stringify({ submission_ids: submissionIds, expected_version: round.version });
         const fingerprint = `${round.id}:${payload}`;
         if (!state.addRoundMutation || state.addRoundMutation.fingerprint !== fingerprint) {
           state.addRoundMutation = {
@@ -839,11 +888,35 @@
         byId("status").textContent = result.submission_count
           ? `${result.submission_count} proposal${result.submission_count === 1 ? "" : "s"} added with ${result.assignment_count} review assignment${result.assignment_count === 1 ? "" : "s"}.`
           : "Every selected proposal is already in this round.";
+        // The mutation spends the version captured by this row. Rebuild the
+        // ledger immediately so a second addition uses the server's replacement
+        // token instead of deterministically conflicting with the first.
+        try {
+          await refreshRoundLedger();
+        } catch (_) {
+          // The add itself persisted; only the refresh failed. Reporting an
+          // error here would read as "the change did not land" -- exactly the
+          // disagreement between what happened and what was announced that this
+          // page exists to avoid. The next add would carry the spent version,
+          // so say what to do instead.
+          byId("status").textContent =
+            `${byId("status").textContent} Reload the page before adding more proposals `
+            + "so the next addition carries the round's current version.";
+          refreshFailed = true;
+          state.addRoundReloadRequired = true;
+        }
       } catch (error) {
-        byId("status").textContent = window.SessionBuddyApi.message(error);
+        byId("status").textContent = error?.status === 409
+          // A version conflict here means another organizer changed the round
+          // while this page sat open. Nothing was added; a reload re-arms the
+          // action with the round's current version.
+          ? `${window.SessionBuddyApi.message(error)} Reload this page and try again; nothing was added.`
+          : window.SessionBuddyApi.message(error);
         byId("status").classList.add("error");
       } finally {
-        add.disabled = false;
+        // A failed refresh leaves this closure holding a spent version. Keep
+        // the stale control inert until the instructed reload replaces it.
+        add.disabled = refreshFailed || state.addRoundReloadRequired;
       }
     });
     const actions = document.createElement("div");
@@ -871,21 +944,42 @@
   async function openDraftRound(round, button) {
     button.disabled = true;
     try {
+      // Content type and body are not decoration: the server's mutation guard
+      // rejects a cookie-authenticated write whose media type is not JSON with
+      // exactly the bare 403 this button used to produce -- before round logic
+      // ever ran, leaving the round in Draft. The body carries the version the
+      // ledger read, so opening races another save or another open atomically.
       const result = await api(`/api/v1/admin/evaluation-rounds/${encodeURIComponent(round.id)}/open`, {
         method: "POST",
-        headers: { "x-csrf-token": state.csrf, "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}` }
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": state.csrf,
+          "idempotency-key": `${crypto.randomUUID()}-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({ expected_version: round.version }),
       });
       byId("status").classList.remove("error");
       byId("status").textContent = `${result.name} is now open with ${result.assignment_count} assignments across ${result.evaluator_count} reviewers.`;
-      const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
-      renderRoundHistory(history.data);
-      const current = history.data.find((item) => item.status === "open") || null;
-      if (current) showRound(current);
+      await refreshRoundLedger();
     } catch (error) {
       byId("status").textContent = window.SessionBuddyApi.message(error);
       byId("status").classList.add("error");
-      button.disabled = false;
+      // A refused open (a race, a missing assignment) must not leave a dead
+      // button pointing at a stale version token. Re-rendering the ledger
+      // rebuilds every action against the state that actually exists; if even
+      // that read fails, hand control back so the organizer can retry.
+      try {
+        await refreshRoundLedger();
+      } catch (_) {
+        button.disabled = false;
+      }
     }
+  }
+  async function refreshRoundLedger() {
+    const history = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`);
+    renderRoundHistory(history.data);
+    const current = history.data.find((item) => item.status === "open") || null;
+    if (current) showRound(current);
   }
   function recordTelemetry(started, response) {
     const navigation = performance.getEntriesByType("navigation")[0];
@@ -1794,11 +1888,22 @@
       const editingRoundId = state.editingRoundId;
       const endpoint = editingRoundId ? `/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds/${encodeURIComponent(editingRoundId)}/draft` : `/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds`;
       const headers = { "content-type": "application/json", "x-csrf-token": state.csrf };
-      if (!editingRoundId) headers["idempotency-key"] = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+      // Both writes are idempotent. A create keys on this exact submit; an edit
+      // keys on the edit session opened by "Edit draft", so retrying a save that
+      // may have landed replays the original response instead of racing itself.
+      headers["idempotency-key"] = editingRoundId
+        ? state.editingRoundKey
+        : `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+      const payload = { name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), status: roundStatus, submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids"), assignments: roundAssignments() };
+      if (editingRoundId) {
+        // The concurrency token read when the draft was loaded. JSON.stringify
+        // drops it here for creates, whose contract does not carry one.
+        payload.expected_version = state.editingRoundVersion;
+      }
       const round = await api(endpoint, {
         method: editingRoundId ? "PUT" : "POST",
         headers,
-        body: JSON.stringify({ name: values.get("name"), rating_min: Number(values.get("rating_min")), rating_max: Number(values.get("rating_max")), recommendations, evaluator_guidance: values.get("evaluator_guidance"), comment_required: values.get("comment_required") === "on", criteria, blind_review: values.get("blind_review") === "on", review_opens_at_ms: reviewOpens, review_closes_at_ms: reviewCloses, assignment_strategy: values.get("assignment_strategy"), status: roundStatus, submission_ids: selectedSubmissionIds(), evaluator_user_ids: values.getAll("evaluator_user_ids"), assignments: roundAssignments() })
+        body: JSON.stringify(payload)
       });
       state.editingRoundId = null;
       byId("status").classList.remove("error");
@@ -1816,7 +1921,19 @@
       resetRoundForm();
       byId("status").focus();
     } catch (error) {
-      showRoundError(window.SessionBuddyApi.message(error));
+      const detail = window.SessionBuddyApi.message(error);
+      if (error?.status === 409) {
+        // A version conflict (or a refused matrix) must not look like the save
+        // half-happened, and must not throw away the organizer's unsaved work:
+        // the form keeps every selection, the message says what to do next, and
+        // "Edit draft" remains the deliberate way to load the saved version.
+        showRoundError(
+          `${detail} Your edits are still shown here and were not saved. `
+          + "Use “Edit draft” on the round below to reload what is stored.",
+        );
+      } else {
+        showRoundError(detail);
+      }
       button.disabled = false;
     } finally {
       state.roundSubmitInFlight = false;
@@ -1867,6 +1984,8 @@
   function resetRoundForm() {
     const form = byId("round-form");
     state.editingRoundId = null;
+    state.editingRoundVersion = null;
+    state.editingRoundKey = "";
     state.roundSaved = true;
     state.roundFormDirty = false;
     form.reset();

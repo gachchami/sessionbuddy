@@ -4246,6 +4246,18 @@
       "EvaluationRoundCloseRequest": {
         "additionalProperties": false,
         "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
           "force": {
             "default": false,
             "title": "Force",
@@ -4417,6 +4429,298 @@
         "title": "EvaluationRoundCreate",
         "type": "object"
       },
+      "EvaluationRoundDraft": {
+        "additionalProperties": false,
+        "description": "The stored configuration of one draft round, plus its version token.\n\nEditors carry ``version`` unchanged into every mutation they submit; the\nserver refuses the mutation when another save has moved the round forward.",
+        "properties": {
+          "assignment_strategy": {
+            "enum": [
+              "all",
+              "balanced"
+            ],
+            "title": "Assignment Strategy",
+            "type": "string"
+          },
+          "assignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RoundAssignment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignments"
+          },
+          "blind_review": {
+            "default": true,
+            "title": "Blind Review",
+            "type": "boolean"
+          },
+          "comment_required": {
+            "default": false,
+            "title": "Comment Required",
+            "type": "boolean"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationCriterion"
+            },
+            "maxItems": 8,
+            "title": "Criteria",
+            "type": "array"
+          },
+          "evaluator_guidance": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Evaluator Guidance",
+            "type": "string"
+          },
+          "evaluator_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Evaluator User Ids",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "rating_max": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Rating Max",
+            "type": "integer"
+          },
+          "rating_min": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Rating Min",
+            "type": "integer"
+          },
+          "recommendations": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "review_closes_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Closes At Ms"
+          },
+          "review_opens_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Opens At Ms"
+          },
+          "status": {
+            "default": "open",
+            "enum": [
+              "draft",
+              "open"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Submission Ids",
+            "type": "array"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "rating_min",
+          "rating_max",
+          "recommendations",
+          "assignment_strategy",
+          "version"
+        ],
+        "title": "EvaluationRoundDraft",
+        "type": "object"
+      },
+      "EvaluationRoundDraftUpdate": {
+        "additionalProperties": false,
+        "description": "A draft-save payload carrying the version its editor read.\n\n``expected_version`` is deliberately optional at the validation layer and\nenforced in the route: an absent version is not a malformed document, it is\nan editor too old to participate in the concurrency contract, and it gets\nthe same actionable 409 as an editor that lost a race rather than a 422\nthat reads as \"fix your input\".",
+        "properties": {
+          "assignment_strategy": {
+            "enum": [
+              "all",
+              "balanced"
+            ],
+            "title": "Assignment Strategy",
+            "type": "string"
+          },
+          "assignments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RoundAssignment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignments"
+          },
+          "blind_review": {
+            "default": true,
+            "title": "Blind Review",
+            "type": "boolean"
+          },
+          "comment_required": {
+            "default": false,
+            "title": "Comment Required",
+            "type": "boolean"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationCriterion"
+            },
+            "maxItems": 8,
+            "title": "Criteria",
+            "type": "array"
+          },
+          "evaluator_guidance": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Evaluator Guidance",
+            "type": "string"
+          },
+          "evaluator_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Evaluator User Ids",
+            "type": "array"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "rating_max": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Rating Max",
+            "type": "integer"
+          },
+          "rating_min": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Rating Min",
+            "type": "integer"
+          },
+          "recommendations": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "review_closes_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Closes At Ms"
+          },
+          "review_opens_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Opens At Ms"
+          },
+          "status": {
+            "default": "open",
+            "enum": [
+              "draft",
+              "open"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Submission Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "rating_min",
+          "rating_max",
+          "recommendations",
+          "assignment_strategy"
+        ],
+        "title": "EvaluationRoundDraftUpdate",
+        "type": "object"
+      },
       "EvaluationRoundList": {
         "additionalProperties": false,
         "properties": {
@@ -4531,6 +4835,11 @@
             },
             "title": "Submissions",
             "type": "array"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -4542,6 +4851,7 @@
           "assigned_count",
           "completed_count",
           "average_rating",
+          "version",
           "submissions",
           "submission_count",
           "evaluators",
@@ -4612,6 +4922,11 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -4619,6 +4934,7 @@
           "event_id",
           "name",
           "status",
+          "version",
           "assignment_count",
           "evaluator_count"
         ],
@@ -9797,6 +10113,18 @@
             "title": "Evaluator User Id",
             "type": "string"
           },
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
           "submission_ids": {
             "items": {
               "type": "string"
@@ -9839,6 +10167,46 @@
         "title": "RoundEvaluatorChange",
         "type": "object"
       },
+      "RoundEvaluatorRemove": {
+        "additionalProperties": false,
+        "description": "Body of the remove-a-reviewer request.",
+        "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "title": "RoundEvaluatorRemove",
+        "type": "object"
+      },
+      "RoundOpenRequest": {
+        "additionalProperties": false,
+        "description": "Body of the open-a-draft-round request.",
+        "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "title": "RoundOpenRequest",
+        "type": "object"
+      },
       "RoundProposalView": {
         "additionalProperties": false,
         "properties": {
@@ -9861,6 +10229,18 @@
       "RoundSubmissionAdd": {
         "additionalProperties": false,
         "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
           "submission_ids": {
             "items": {
               "type": "string"
@@ -13668,6 +14048,22 @@
               "title": "Round Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -13781,8 +14177,41 @@
               "title": "Evaluator User Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RoundEvaluatorRemove"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -13886,6 +14315,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RoundOpenRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -16458,7 +16904,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EvaluationRoundCreate"
+                  "$ref": "#/components/schemas/EvaluationRoundDraft"
                 }
               }
             },
@@ -16481,7 +16927,7 @@
         ]
       },
       "put": {
-        "operationId": "update_draft_evaluation_round_api_v1_admin_events__event_id__evaluation_rounds__round_id__draft_put",
+        "operationId": "updateDraftEvaluationRound",
         "parameters": [
           {
             "in": "path",
@@ -16500,13 +16946,29 @@
               "title": "Round Id",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EvaluationRoundCreate"
+                "$ref": "#/components/schemas/EvaluationRoundDraftUpdate"
               }
             }
           },

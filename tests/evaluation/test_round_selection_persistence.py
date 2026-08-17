@@ -169,11 +169,31 @@ def _key(label):
     return f"idempotency-{label}".ljust(32, "0")
 
 
+def _round_version(connection, round_id):
+    """The round's current optimistic-concurrency token, read from the store."""
+    return connection.execute(
+        "SELECT version FROM evaluation_rounds WHERE id=?", (round_id,)
+    ).fetchone()[0]
+
+
 async def _create_round(client, csrf, event_id, body, *, label):
     return await client.post(
         f"/api/v1/admin/events/{event_id}/evaluation-rounds",
         headers={"origin": "https://test", "x-csrf-token": csrf, "idempotency-key": _key(label)},
         json=body,
+    )
+
+
+async def _update_draft(client, csrf, connection, event_id, round_id, body):
+    """PUT the draft with the version token and idempotency key it requires."""
+    return await client.put(
+        f"/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft",
+        headers={
+            "origin": "https://test",
+            "x-csrf-token": csrf,
+            "idempotency-key": _key("draft-update"),
+        },
+        json={**body, "expected_version": _round_version(connection, round_id)},
     )
 
 
@@ -226,10 +246,8 @@ async def test_an_empty_matrix_cannot_erase_the_assignments_a_draft_already_has(
         round_id = created.json()["id"]
         assert created.json()["assignment_count"] == 2
 
-        refused = await client.put(
-            f"/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft",
-            headers={"origin": "https://test", "x-csrf-token": csrf},
-            json=_round_body(assignments=[]),
+        refused = await _update_draft(
+            client, csrf, connection, event_id, round_id, _round_body(assignments=[])
         )
 
         assert refused.status_code == 422, refused.text

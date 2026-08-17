@@ -263,13 +263,28 @@ async def test_a_draft_keeps_its_own_name_but_cannot_take_a_siblings(
         headers = {"origin": "https://test", "x-csrf-token": csrf}
         endpoint = f"/api/v1/admin/events/{event_id}/evaluation-rounds/{second_look_id}/draft"
 
+        def draft_headers(label):
+            return {
+                **headers,
+                "idempotency-key": _key(label),
+            }
+
+        def version():
+            return connection.execute(
+                "SELECT version FROM evaluation_rounds WHERE id=?", (second_look_id,)
+            ).fetchone()[0]
+
         unchanged = await client.put(
-            endpoint, headers=headers, json=_round_body("Second look", staffed=False)
+            endpoint,
+            headers=draft_headers("draft-unchanged"),
+            json={**_round_body("Second look", staffed=False), "expected_version": version()},
         )
         assert unchanged.status_code == 200, unchanged.text
 
         collision = await client.put(
-            endpoint, headers=headers, json=_round_body("  screening ", staffed=False)
+            endpoint,
+            headers=draft_headers("draft-collision"),
+            json={**_round_body("  screening ", staffed=False), "expected_version": version()},
         )
         assert collision.status_code == 409, collision.text
         # tuple(): the fixture connection uses sqlite3.Row, and a Row never
@@ -283,7 +298,9 @@ async def test_a_draft_keeps_its_own_name_but_cannot_take_a_siblings(
         ) == ("Second look", "second look")
 
         renamed = await client.put(
-            endpoint, headers=headers, json=_round_body("Second  Look", staffed=False)
+            endpoint,
+            headers=draft_headers("draft-rename"),
+            json={**_round_body("Second  Look", staffed=False), "expected_version": version()},
         )
         assert renamed.status_code == 200, renamed.text
         assert tuple(
