@@ -126,16 +126,8 @@ class GatedRoundWriteD1(SQLiteD1):
 
     async def batch(self, statements: list[_SQLiteStatement]):
         gated = any(self.cas_fragment in statement.sql for statement in statements)
-        print(
-            "BATCH gated=", gated,
-            "| cas-hit=", [s.sql[:70] for s in statements if self.cas_fragment in s.sql],
-            "| n=", len(statements),
-            "| all=", [s.sql[:38].replace(chr(10), ' ') for s in statements],
-            flush=True,
-        )
         if gated:
             await self.allow_batch.wait()
-            print("BATCH released", flush=True)
         return await super().batch(statements)
 
 
@@ -559,7 +551,6 @@ async def test_a_save_that_races_another_writer_aborts_inside_the_batch(
             lost = await asyncio.wait_for(losing, 10)
 
         assert lost.status_code == 409, lost.text
-        print("LOSERHEADERS", dict(lost.headers), "BODY", lost.text[:220], flush=True)
         assert lost.headers["x-conflict-type"] == "round-version"
 
     name = connection.execute(

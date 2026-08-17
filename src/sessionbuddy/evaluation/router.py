@@ -2401,21 +2401,20 @@ async def update_draft_evaluation_round(
             request, batch, db, organization_id, event_id, body.name, exclude_round_id=round_id
         )
     except HTTPException as exc:
-        print("PROBE draft-put caught", exc.status_code, repr(exc.detail), flush=True)
-        if exc.status_code != 409 or exc.detail is not None:
-            # A 409 with detail is the duplicate-name guard speaking; anything
-            # else is not this endpoint's conflict to relabel.
+        if exc.status_code != 409:
             raise
         current_version = await (
             db.prepare("SELECT version FROM evaluation_rounds WHERE id=?1 LIMIT 1")
             .bind(round_id)
             .first("version")
         )
-        print("PROBE classify draft-put", exc.status_code, repr(exc.detail), "cur=", current_version, "exp=", body.expected_version, flush=True)
         if current_version is None or int(current_version) == int(body.expected_version):
-            # The round did not move, so this was some other persistence
-            # conflict. Preserve the generic response rather than blaming a
-            # concurrent editor for an unrelated database failure.
+            # The round did not move, so this was not a lost race: the
+            # duplicate-name guard has already spoken where it applies, and any
+            # other persistence refusal keeps its generic response rather than
+            # blaming a concurrent editor. Note that detail cannot arbitrate
+            # here -- this FastAPI version defaults HTTPException.detail to
+            # "Conflict" instead of leaving it None.
             raise
         # The write guard fired: the draft moved (or stopped being a draft)
         # between this editor's read and its write, and the batch rolled back.
@@ -5558,7 +5557,6 @@ async def _execute(request: Request, batch: CommandBatch) -> None:
     try:
         await batch.execute()
     except PersistenceError as exc:
-        print("PROBE _execute PersistenceError -> 409", flush=True)
         raise HTTPException(status_code=409) from exc
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)
