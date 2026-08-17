@@ -44,6 +44,7 @@ const adminSubmissionsHtml = readFileSync(
 );
 const publicCfpHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.html"), "utf8");
 const publicCfpJavaScript = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.js"), "utf8");
+const publicEventMastheadJavaScript = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/public_event_masthead.js"), "utf8");
 const setupHtml = readFileSync(resolve(__dirname, "../../src/sessionbuddy/static/setup.html"), "utf8");
 const authLinkConfirmHtml = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/auth_link_confirm.html"),
@@ -57,8 +58,9 @@ const authLinkConfirmJavaScript = readFileSync(
 async function servePublicCfpPage(page: import("@playwright/test").Page, slug: string) {
   const selfContainedHtml = publicCfpHtml
     .replace(/<script src="\/app-shell\/assets\/api-client\.js\?v=\d+" defer><\/script>/, "")
+    .replace(/<script src="\/public\/assets\/event-masthead\.js\?v=[^"]+" defer><\/script>/, "")
     .replace(/<script src="\/product\/assets\/public-cfp\.js\?v=\d+" defer><\/script>/, "")
-    .replace("</body>", `<script>${apiClientJavaScript}</script><script>${publicCfpJavaScript}</script></body>`);
+    .replace("</body>", `<script>${apiClientJavaScript}</script><script>${publicEventMastheadJavaScript}</script><script>${publicCfpJavaScript}</script></body>`);
   await page.route(`**/cfp/mobile/${slug}`, (route) => route.fulfill({
     contentType: "text/html",
     body: selfContainedHtml,
@@ -871,8 +873,8 @@ test.describe("administration empty states", () => {
     await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Open Source Summit 2026" })).toBeVisible();
-    await expect(page.locator("#event-branding")).toBeVisible();
-    await expect(page.locator("#event-logo")).toHaveAttribute("alt", "Open Source Summit 2026 logo");
+    await expect(page.locator(".event-overview-public-preview .public-event-masthead__band")).toBeVisible();
+    await expect(page.locator(".event-overview-public-preview .public-event-masthead__mark img")).toHaveAttribute("alt", "Open Source Summit 2026 logo");
     const eventStatus = page.locator(".event-signal-list");
     await expect(eventStatus).toBeVisible();
     await expect(eventStatus.getByText("0 submitted", { exact: true })).toBeVisible();

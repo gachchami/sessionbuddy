@@ -65,6 +65,7 @@
   function setBusy(busy, message = "") { state.busy = busy; form.setAttribute("aria-busy", String(busy)); for (const control of form.querySelectorAll("button, input[type=file]")) if (!control.closest("dialog")) control.disabled = busy || (state.readOnly && control.type !== "hidden"); if (message) setStatus(message); updateDirty(); syncUploadButtons(); }
 
   function updatePreview() {
+    updateBrandPreview();
     const values = snapshot(); const zone = normalizeTimeZone(values.time_zone); byId("event-time-zone").textContent = validTimeZone(zone) ? zone : "the selected event time zone";
     const preview = byId("date-time-preview");
     if (!values.start_date || !values.end_date) { preview.textContent = "Choose a start and end date."; return; }
@@ -72,6 +73,17 @@
   }
   function updateImages() {
     for (const kind of ["logo", "cover"]) { const image = byId(`${kind}-preview`); const value = form.elements[kind === "logo" ? "logo_url" : "cover_image_url"].value; image.hidden = !value; if (value) image.src = value; else image.removeAttribute("src"); }
+    updateBrandPreview();
+  }
+  function updateBrandPreview() {
+    const values = snapshot();
+    // Admin controls do not consume --event-accent; public-page token remapping
+    // is deliberately scoped, so this custom property only paints the preview.
+    document.documentElement.style.setProperty("--event-accent", values.accent_color || "#3159d9");
+    window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
+      event: { id: state.event?.id || state.source?.id || "preview", name: values.name || "Event name", accentColor: values.accent_color, logoUrl: values.logo_url, coverUrl: values.cover_image_url },
+      active: null, embedded: false, navigation: false,
+    });
   }
 
   function validate(intendedStatus) {
@@ -195,8 +207,8 @@
 
   function beforeUnload(event) { if (!state.dirty || state.readOnly) return; event.preventDefault(); event.returnValue = ""; }
   window.addEventListener("beforeunload", beforeUnload);
-  form.addEventListener("input", (event) => { if (event.target.name === "time_zone" || event.target.type === "date" || event.target.type === "time") updatePreview(); updateDirty(); if (state.dirty) preserveDraft(); });
-  form.addEventListener("change", (event) => { if (event.target.name === "organization_id") state.organizationId = event.target.value; if (event.target.name === "start_date" && event.target.value && !form.elements.end_date.value) { form.elements.end_date.value = event.target.value; updatePreview(); } updateDirty(); });
+  form.addEventListener("input", (event) => { if (event.target.name === "time_zone" || event.target.type === "date" || event.target.type === "time") updatePreview(); else updateBrandPreview(); updateDirty(); if (state.dirty) preserveDraft(); });
+  form.addEventListener("change", (event) => { if (event.target.name === "organization_id") state.organizationId = event.target.value; if (event.target.name === "start_date" && event.target.value && !form.elements.end_date.value) { form.elements.end_date.value = event.target.value; updatePreview(); } updateBrandPreview(); updateDirty(); });
   form.addEventListener("submit", (event) => { event.preventDefault(); const status = event.submitter?.value === "draft" ? "draft" : state.mode === "edit" ? state.event.status : "active"; save(status); });
   form.addEventListener("keydown", (event) => { if (event.key !== "Enter" || event.target.matches("textarea, button")) return; event.preventDefault(); form.requestSubmit(state.mode === "duplicate" ? byId("save-draft") : byId("save-event")); });
   byId("discard-event").addEventListener("click", () => { applySnapshot(state.baseline); state.conflicts.clear(); state.unsavedUploads.clear(); for (const kind of ["logo", "cover"]) byId(`${kind}-status`).textContent = ""; renderConflicts(); removeDraft(); setStatus("Changes discarded."); updateDirty(); });

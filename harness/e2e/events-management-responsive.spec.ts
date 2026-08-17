@@ -119,6 +119,11 @@ test("the mobile event ledger leads to a usable routed editor and preserves a fa
   await page.getByLabel("Location").fill("Bengaluru");
   await page.getByLabel("Description").fill("A production AI engineering conference.");
   await page.getByText("Branding", { exact: true }).click();
+  const publicHeaderPreview = page.locator(".event-editor__public-preview");
+  await expect(publicHeaderPreview.locator(".public-event-masthead__name")).toHaveText("AIEngineer Summit 2027");
+  await expect(publicHeaderPreview.locator(".public-event-masthead__nav")).toHaveCount(0);
+  await page.getByLabel("Accent color").fill("#7847d6");
+  await expect(publicHeaderPreview.locator(".public-event-masthead__band")).toHaveCSS("min-height", "64px");
   await page.getByLabel("Event website").fill("https://aiengineer.example/summit-2027");
   await page.locator("#logo-file").setInputFiles({ name: "event-logo.png", mimeType: "image/png", buffer: Buffer.from("event-logo") });
   await page.getByRole("button", { name: "Upload logo" }).click();

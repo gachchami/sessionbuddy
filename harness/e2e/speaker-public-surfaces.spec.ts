@@ -6,6 +6,8 @@ const eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const staticRoot = resolve(__dirname, "../../src/sessionbuddy/static");
 const speakerGalleryHtml = readFileSync(resolve(staticRoot, "speaker_gallery.html"), "utf8");
 const speakerGalleryJs = readFileSync(resolve(staticRoot, "speaker_gallery.js"), "utf8");
+const mastheadJs = readFileSync(resolve(staticRoot, "public_event_masthead.js"), "utf8");
+const biographyDisclosureJs = readFileSync(resolve(staticRoot, "biography_disclosure.js"), "utf8");
 const apiClientJs = readFileSync(resolve(staticRoot, "api_client.js"), "utf8");
 const productCss = readFileSync(resolve(staticRoot, "product.css"), "utf8");
 
@@ -48,6 +50,10 @@ async function mount(page: Page, path: string) {
     route.fulfill({ contentType: "text/css", body: productCss }));
   await page.route("**/app-shell/assets/api-client.js*", (route) =>
     route.fulfill({ contentType: "text/javascript", body: apiClientJs }));
+  await page.route("**/public/assets/event-masthead.js*", (route) =>
+    route.fulfill({ contentType: "text/javascript", body: mastheadJs }));
+  await page.route("**/public/assets/biography-disclosure.js*", (route) =>
+    route.fulfill({ contentType: "text/javascript", body: biographyDisclosureJs }));
   await page.route("**/gallery/assets/gallery.js*", (route) =>
     route.fulfill({ contentType: "text/javascript", body: speakerGalleryJs }));
   await page.route(`**/api/v1/public/events/${eventId}/speakers`, (route) =>
@@ -76,7 +82,7 @@ test.describe("public speaker surfaces", () => {
   test("sorts by surname and differentiates the gallery without changing speaker facts", async ({ page }) => {
     await mount(page, `/events/${eventId}/gallery`);
 
-    await expect(page.getByRole("link", { name: "Speaker gallery" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("link", { name: "Gallery" })).toHaveAttribute("aria-current", "page");
     await expect(page.locator(".speaker-card h2")).toHaveText([
       "Cher",
       "García Márquez, Gabriel",
@@ -87,16 +93,17 @@ test.describe("public speaker surfaces", () => {
       "Ada Lovelace",
     ]);
     await expect(page.locator(".speaker-card").first()).toContainText("Research lead · Example Labs");
-    await expect(page.locator("#event-cover-fallback")).toBeVisible();
-    await expect(page.locator("#event-cover-monogram")).toHaveText("EX");
-    await expect(page.locator("#event-logo-fallback")).toHaveText("EX");
+    await expect(page.locator(".public-event-masthead__band")).toBeVisible();
+    await expect(page.locator(".public-event-masthead__mark")).toHaveText("ES");
+    await page.getByLabel("Find a speaker").fill("Hopper");
+    await expect(page.getByRole("link", { name: "List" })).toHaveAttribute("href", `/events/${eventId}/speakers?q=Hopper`);
   });
 
   test("expands long biographies in an accessible bounded profile dialog", async ({ page }) => {
     await mount(page, `/events/${eventId}/gallery`);
 
     const card = page.locator(".speaker-card").filter({ hasText: "García Márquez, Gabriel" });
-    const opener = card.getByRole("button", { name: "Meet the speaker" });
+    const opener = card.getByRole("button", { name: "View profile" });
     await opener.click();
 
     const dialog = page.getByRole("dialog", { name: "García Márquez, Gabriel" });

@@ -41,12 +41,7 @@
       toggle.type = "button";
       toggle.setAttribute("aria-controls", biography.id);
       toggle.setAttribute("aria-expanded", "false");
-      toggle.addEventListener("click", () => {
-        const expanded = toggle.getAttribute("aria-expanded") === "true";
-        toggle.setAttribute("aria-expanded", String(!expanded));
-        toggle.textContent = expanded ? "Show more" : "Show less";
-        biography.classList.toggle("is-collapsed", expanded);
-      });
+      window.SessionBuddyBiographyDisclosure.attach(biography, toggle);
       story.append(biography, toggle);
     }
     if (speaker.links?.length) {
@@ -78,9 +73,6 @@
     }
     content.replaceChildren(portrait, story);
     dialog.showModal();
-    const biography = byId("speaker-profile-biography");
-    const toggle = story.querySelector(".speaker-profile__bio-toggle");
-    if (biography && toggle) requestAnimationFrame(() => { toggle.hidden = biography.scrollHeight <= biography.clientHeight; });
   }
   function speakerCard(speaker) {
     const card = document.createElement("article"); card.className = "speaker-card";
@@ -92,12 +84,19 @@
     if (!galleryLayout && speaker.biography) body.append(make("p", speaker.biography, "speaker-bio"));
     if (speaker.sessions.length) {
       const list = document.createElement("ul"); list.className = "speaker-program-list";
-      speaker.sessions.slice(0, galleryLayout ? 1 : 2).forEach((session) => {
-        const item = document.createElement("li"); item.append(make("span", session.track_name || "Program", "speaker-program-list__track"), make("strong", session.title)); list.append(item);
+      const sessions = [...speaker.sessions].sort((left, right) => {
+        const leftStart = Number.isFinite(left.starts_at_ms) ? left.starts_at_ms : Number.MAX_SAFE_INTEGER;
+        const rightStart = Number.isFinite(right.starts_at_ms) ? right.starts_at_ms : Number.MAX_SAFE_INTEGER;
+        return leftStart - rightStart || collator.compare(normalizedName(left.title), normalizedName(right.title)) || collator.compare(String(left.id), String(right.id));
+      });
+      sessions.slice(0, galleryLayout ? 1 : 2).forEach((session) => {
+        const item = document.createElement("li");
+        const link = make("a", session.title); link.href = `/events/${encodeURIComponent(eventId)}/schedule?search=${encodeURIComponent(session.title)}`;
+        item.append(make("span", session.track_name || "Program", "speaker-program-list__track"), link); list.append(item);
       });
       body.append(list);
     }
-    const details = make("button", "Meet the speaker", "speaker-card__action secondary");
+    const details = make("button", "View profile", "speaker-card__action secondary");
     details.type = "button";
     details.addEventListener("click", () => openProfile(speaker, role));
     body.append(details);
@@ -105,29 +104,37 @@
   }
   function render() {
     const query = byId("speaker-search").value.trim().toLowerCase();
+    const visibleQuery = byId("speaker-search").value.trim();
+    const querySuffix = visibleQuery ? `?q=${encodeURIComponent(visibleQuery)}` : "";
+    byId("speaker-list-link").href = `/events/${encodeURIComponent(eventId)}/speakers${querySuffix}`;
+    byId("speaker-gallery-link").href = `/events/${encodeURIComponent(eventId)}/gallery${querySuffix}`;
     const speakers = query ? state.speakers.filter((speaker) => [speaker.display_name, speaker.job_title, speaker.company, speaker.biography, ...speaker.sessions.map((session) => session.title)].join(" ").toLowerCase().includes(query)) : state.speakers;
     byId("speaker-grid").replaceChildren(...speakers.map(speakerCard));
     byId("empty").hidden = speakers.length !== 0;
+    byId("speaker-search-label").hidden = state.speakers.length === 0;
     byId("status").textContent = query
       ? `${speakers.length} of ${state.speakers.length} speaker${state.speakers.length === 1 ? "" : "s"} shown`
-      : `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} on the published program`;
+      : state.speakers.length
+        ? `${speakers.length} speaker${speakers.length === 1 ? "" : "s"} announced`
+        : "No speakers announced yet";
   }
   async function load() {
     if (!eventId) throw new Error("Invalid speaker gallery link.");
     const body = await window.SessionBuddyApi.request(`/api/v1/public/events/${encodeURIComponent(eventId)}/speakers`);
     state.event = body.event;
-    document.documentElement.style.setProperty("--event-accent", body.event.accent_color || "#3159d9"); byId("event-name").textContent = body.event.name;
-    byId("schedule-link").href = `/events/${encodeURIComponent(eventId)}/schedule`;
-    byId("speaker-list-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
-    byId("speaker-gallery-link").href = `/events/${encodeURIComponent(eventId)}/gallery`;
+    document.documentElement.style.setProperty("--event-accent", body.event.accent_color || "#3159d9");
+    const query = new URLSearchParams(location.search).get("q") || "";
+    const querySuffix = query ? `?q=${encodeURIComponent(query)}` : "";
+    byId("speaker-list-link").href = `/events/${encodeURIComponent(eventId)}/speakers${querySuffix}`;
+    byId("speaker-gallery-link").href = `/events/${encodeURIComponent(eventId)}/gallery${querySuffix}`;
     byId(galleryLayout ? "speaker-gallery-link" : "speaker-list-link").setAttribute("aria-current", "page");
-    const monogram = normalizedName(body.event.name).slice(0, 2).toUpperCase() || "EV";
-    byId("event-cover-name").textContent = body.event.name;
-    byId("event-cover-monogram").textContent = monogram;
-    byId("event-logo-fallback").textContent = monogram;
-    if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; byId("event-logo-fallback").hidden = true; }
-    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; byId("event-cover-fallback").hidden = true; }
+    window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
+      event: { id: body.event.id, name: body.event.name, accentColor: body.event.accent_color, logoUrl: body.event.logo_url, coverUrl: body.event.cover_image_url },
+      active: "speakers",
+      embedded: document.body.classList.contains("embedded"),
+    });
     state.speakers = [...body.data].sort(compareSpeakers); render();
+    if (query) { byId("speaker-search").value = query; render(); }
     const requested = new URLSearchParams(location.search).get("speaker");
     const selected = state.speakers.find((speaker) => speaker.id === requested);
     if (selected) {

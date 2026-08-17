@@ -29,7 +29,7 @@ def test_api_docs_are_self_contained_and_csp_compatible() -> None:
         if key in {"href", "src"} and value is not None
     ]
     assert all(value.startswith("/") or value.startswith("#") for value in urls)
-    assert "/product/assets/product.css?v=79" in urls
+    assert "/product/assets/product.css?v=80" in urls
     assert "/docs/assets/api-docs.css?v=2" in urls
     assert "/app-shell/assets/api-client.js?v=8" in urls
     assert "/docs/assets/api-docs.js?v=2" in urls

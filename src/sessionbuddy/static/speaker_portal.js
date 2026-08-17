@@ -6,6 +6,7 @@
     // id, so the page can group submissions by event without refetching. The
     // "active" event is the one the proposal composer and uploads act on.
     portfolio: new Map(), eventOrder: [], activeEventId: "", resources: [],
+    expandedEventIds: new Set(),
     sessionEmail: "", sessionName: "",
     // Proposal composer: the published schema plus the files chosen for its
     // upload fields and the staged references already accepted for them.
@@ -13,6 +14,7 @@
     files: new Map(), uploaded: new Map(), applyConditions: () => {},
     closedCallForms: new Set()
   };
+  const COMPACT_EVENT_THRESHOLD = 8;
   const PROPOSAL_UPLOAD_TYPES = ["file", "image"];
   const uploadRules = {
     headshot: { max: 5 * 1024 * 1024, types: new Set(["image/jpeg", "image/png", "image/webp"]) },
@@ -1075,8 +1077,32 @@
     const { event, portal } = entry;
     const section = make("article", undefined, "event-group");
     section.dataset.eventId = event.id;
-    section.classList.toggle("is-active", event.id === state.activeEventId);
+    const active = event.id === state.activeEventId;
+    const expanded = active
+      || state.eventOrder.length <= COMPACT_EVENT_THRESHOLD
+      || state.expandedEventIds.has(event.id);
+    section.classList.toggle("is-active", active);
+    section.classList.toggle("is-collapsed", !expanded);
+    const accent = /^#[0-9a-f]{6}$/i.test(event.accent_color || "")
+      ? event.accent_color
+      : "#6d4aff";
+    section.style.setProperty("--event-group-accent", accent);
     const heading = make("header", undefined, "event-group__head");
+    const identity = make("div", undefined, "event-group__identity");
+    const mark = make("span", undefined, "event-group__mark");
+    const monogram = make("span", (event.name || "Event").trim().slice(0, 2).toUpperCase() || "EV", "event-group__monogram");
+    monogram.setAttribute("aria-hidden", "true");
+    mark.append(monogram);
+    if (event.logo_url) {
+      const logo = make("img", undefined, "event-group__logo");
+      logo.alt = "";
+      logo.hidden = true;
+      logo.addEventListener("load", () => { logo.hidden = false; monogram.hidden = true; }, { once: true });
+      logo.addEventListener("error", () => { logo.hidden = true; monogram.hidden = false; }, { once: true });
+      if (expanded) logo.src = event.logo_url;
+      else logo.dataset.src = event.logo_url;
+      mark.prepend(logo);
+    }
     const copy = make("div");
     const title = make("h3", event.name);
     title.id = `event-heading-${event.id}`;
@@ -1087,12 +1113,27 @@
     );
     copy.append(title, meta);
     const submissions = portal?.submissions || [];
-    heading.append(copy);
+    identity.append(mark, copy);
+    heading.append(identity);
+    if (!active && state.eventOrder.length > COMPACT_EVENT_THRESHOLD) {
+      const toggle = make("button", expanded ? "Collapse event" : "Open event", "secondary event-group__toggle");
+      toggle.type = "button";
+      toggle.setAttribute("aria-label", `${expanded ? "Collapse" : "Open"} ${event.name}`);
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.addEventListener("click", () => {
+        if (state.expandedEventIds.has(event.id)) state.expandedEventIds.delete(event.id);
+        else state.expandedEventIds.add(event.id);
+        renderPortfolio();
+      });
+      heading.append(toggle);
+    }
     section.setAttribute("aria-labelledby", title.id);
     section.append(heading);
+    if (!expanded) return section;
 
     if (!portal) {
-      section.append(make("p", "This event could not be loaded.", "empty"));
+      const unavailable = make("p", "This event could not be loaded.", "empty event-group__content");
+      section.append(unavailable);
       return section;
     }
 

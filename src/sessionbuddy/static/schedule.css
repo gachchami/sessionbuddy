@@ -5,8 +5,9 @@
 .event-cover-fallback { min-height: clamp(9rem,22vw,16rem); display: grid; align-content: end; gap: .35rem; margin: 0 0 1.25rem; padding: clamp(1.25rem,4vw,2.25rem); border-radius: .75rem; background: linear-gradient(135deg,color-mix(in srgb,var(--event-accent,#6d4aff) 88%,#172033),color-mix(in srgb,var(--event-accent,#6d4aff) 42%,#fff)); color: white; }
 .event-cover-fallback span { width: 3rem; height: 3rem; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.38); border-radius: .65rem; background: rgba(255,255,255,.14); font-size: .875rem; font-weight: 800; }
 .event-cover-fallback strong { max-inline-size: 24ch; font-size: clamp(1.35rem,3vw,2rem); line-height: 1.1; letter-spacing: -.03em; }
-.schedule-hero { margin-top: 1.5rem; padding: clamp(1.5rem,4vw,2.5rem); border: 1px solid #d9cff8; border-radius: 1.25rem; background: linear-gradient(135deg,#fff 25%,#eeeaff); box-shadow: 0 1.25rem 3.5rem rgba(109,74,255,.1); }
-.schedule-hero h1 { font-size: clamp(2.25rem,5vw,3.75rem); letter-spacing: -.055em; }
+.schedule-hero { margin: 2rem 0 1rem; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.schedule-hero h1 { margin: 0; font-size: clamp(2.25rem,5vw,3rem); letter-spacing: -.04em; }
+.schedule-hero .lede { margin: .45rem 0 0; }
 .event-logo-frame { min-width: 4rem; min-height: 4rem; display: grid; place-items: center; }
 .event-logo-frame > * { grid-area: 1 / 1; }
 .event-logo-frame #event-logo-fallback { width: 4rem; height: 4rem; display: grid; place-items: center; border-radius: .85rem; background: color-mix(in srgb,var(--event-accent,#6d4aff) 12%,white); color: color-mix(in srgb,var(--event-accent,#6d4aff) 78%,#182230); font-weight: 800; }

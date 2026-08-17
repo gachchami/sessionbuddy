@@ -20,7 +20,7 @@ def test_public_and_speaker_pages_have_distinct_layout_hooks() -> None:
         "speaker_gallery.html": (
             "speaker-gallery-page",
             "speaker-gallery-shell",
-            "gallery-hero",
+            "speaker-surface-heading",
         ),
         "schedule.html": ("schedule-page", "schedule-shell", "schedule-controls"),
     }

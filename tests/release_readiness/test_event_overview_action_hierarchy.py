@@ -44,20 +44,10 @@ def test_live_cfp_does_not_present_reviewing_as_an_organizer_next_step() -> None
     assert '`${selected.name} is ready.`' not in script
 
 
-def test_event_cover_is_top_anchored_in_a_stable_header_ratio() -> None:
+def test_event_overview_previews_the_shared_public_header() -> None:
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
     page = (STATIC / "event_overview.html").read_text(encoding="utf-8")
-
-    branding = stylesheet.split(
-        ".event-command-header .public-brand-preview__cover {", 1
-    )[1].split("}", 1)[0]
-    banner = stylesheet.split(".public-brand-preview__cover img {", 1)[1].split(
-        "}", 1
-    )[0]
-    assert "aspect-ratio: 4.5 / 1;" in branding
-    assert "object-position: center top;" in banner
-    assert 'class="event-command-header public-brand-preview__card"' in page
-    assert 'class="public-brand-preview__header"' in page
-    assert 'class="public-brand-preview__logo"' in page
-    assert 'class="public-brand-preview__cover"' in page
-    assert 'class="public-brand-preview__body"' in page
+    assert ".public-event-masthead__band" in stylesheet
+    assert "data-public-event-masthead" in page
+    assert "/public/assets/event-masthead.js" in page
+    assert 'class="event-command-header"' in page

@@ -4,19 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Submit a proposal · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=79">
+  <link rel="stylesheet" href="/product/assets/product.css?v=80">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/product/assets/public-cfp.js?v=30" defer></script>
+  <script src="/public/assets/event-masthead.js?v=6e2e83770ce8" defer></script>
+  <script src="/product/assets/public-cfp.js?v=31" defer></script>
 </head>
 <body class="public-body cfp-public-page">
   <a class="skip-link" href="#main">Skip to proposal form</a>
+  <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><span>SessionBuddy</span></a></div></header>
   <main id="main" class="shell page public-flow-shell" tabindex="-1">
-    <section id="event-public-header" class="public-brand-preview__card cfp-event-header" aria-labelledby="event-title">
-      <div class="public-brand-preview__header"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><b>SessionBuddy</b></a><span class="public-brand-preview__logo"><img id="event-logo" alt="" hidden><b id="event-monogram">EV</b></span></div>
-      <div class="public-brand-preview__cover"><img id="event-cover" alt="" hidden><span id="event-cover-empty">Event cover</span></div>
-      <div class="public-brand-preview__body"><h1 id="event-title">Event</h1><p id="event-dates"></p><p id="event-location"></p><p id="event-deadline" class="cfp-event-header__deadline" hidden></p><a id="event-website" target="_blank" rel="noopener" hidden></a></div>
+    <div data-public-event-masthead></div>
+    <section id="event-public-header" class="cfp-event-header cfp-event-facts" aria-label="Event details">
+      <div hidden><img id="event-logo" alt=""><b id="event-monogram">EV</b><img id="event-cover" alt=""><span id="event-cover-empty">Event cover</span><span id="event-title">Event</span></div>
+      <div class="public-brand-preview__body"><p id="event-dates"></p><p id="event-location"></p><p id="event-deadline" class="cfp-event-header__deadline" hidden></p><a id="event-website" target="_blank" rel="noopener noreferrer" hidden></a></div>
     </section>
-    <div class="page-heading public-event-hero"><div><p class="eyebrow">Call for Proposals</p><h2 id="title">Submit a proposal</h2><p id="welcome" class="lede">Loading the published form…</p></div></div>
+    <div class="page-heading public-event-hero"><div><h1 id="title">Call for Proposals</h1><p id="welcome" class="lede">Loading the published form…</p></div></div>
     <section id="cfp-brief" class="cfp-brief" aria-labelledby="cfp-brief-title" hidden><div class="cfp-brief__heading"><p class="eyebrow">About this call</p><h2 id="cfp-brief-title">What we’re looking for</h2></div><div id="cfp-brief-content" class="rich-description cfp-brief__content"></div></section>
     <div class="cfp-application-layout">
       <aside class="cfp-application-context" aria-label="Call details">

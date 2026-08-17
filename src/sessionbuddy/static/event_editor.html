@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event settings · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=79">
+  <link rel="stylesheet" href="/product/assets/product.css?v=80">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
-  <link rel="stylesheet" href="/admin/event-editor/assets/event-editor.css?v=1c7aea65a5c9">
+  <link rel="stylesheet" href="/admin/event-editor/assets/event-editor.css?v=82146f3482c6">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
-  <script src="/admin/event-editor/assets/event-editor.js?v=b16438f420f3" defer></script>
+  <script src="/public/assets/event-masthead.js?v=6e2e83770ce8" defer></script>
+  <script src="/admin/event-editor/assets/event-editor.js?v=7e59c5341029" defer></script>
 </head>
 <body class="app-body organizer-page event-editor-page">
   <a class="skip-link" href="#main">Skip to event settings</a>
@@ -67,6 +68,7 @@
           <details id="branding" class="event-editor__section event-editor__optional">
             <summary><span><strong>Branding</strong><small>Optional</small></span></summary>
             <div class="event-editor__optional-content">
+              <div class="event-editor__public-preview" aria-label="Public event header preview"><p class="field-label">Public event header preview</p><div data-public-event-masthead></div></div>
               <div class="form-grid"><label><span class="field-label">Accent color</span><input name="accent_color" type="color" value="#3159d9"></label><label><span class="field-label">Event website</span><input name="website_url" type="url" placeholder="https://…"></label></div>
               <input name="logo_url" type="hidden"><input name="cover_image_url" type="hidden">
               <div class="event-editor__uploads">

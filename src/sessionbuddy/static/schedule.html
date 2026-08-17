@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Event schedule · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=79"><link rel="stylesheet" href="/schedule/assets/schedule.css?v=11">
+  <link rel="stylesheet" href="/product/assets/product.css?v=80"><link rel="stylesheet" href="/schedule/assets/schedule.css?v=12">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/schedule/assets/schedule.js?v=11" defer></script>
+  <script src="/public/assets/event-masthead.js?v=6e2e83770ce8" defer></script>
+  <script src="/schedule/assets/schedule.js?v=12" defer></script>
 </head>
 <body class="public-body schedule-page">
   <a class="skip-link" href="#main">Skip to schedule</a>
-  <header id="site-header" class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><span>SessionBuddy</span></a><nav class="public-event-navigation" aria-label="Event pages"><a id="schedule-link" href="#" aria-current="page">Schedule</a><a id="speakers-link" href="#">Speakers</a></nav></div></header>
+  <header id="site-header" class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><span>SessionBuddy</span></a></div></header>
   <main id="main" class="shell page schedule-shell" tabindex="-1">
-    <img id="event-cover" class="event-cover-image" alt="" hidden>
-    <div id="event-cover-fallback" class="event-cover-fallback"><span id="event-cover-monogram" aria-hidden="true">EV</span><strong id="event-cover-name">Event program</strong></div>
-    <div class="page-heading public-event-hero schedule-hero"><div><p class="eyebrow">Published program</p><h1 id="title">Event schedule</h1><p id="timezone" class="lede">Loading…</p></div><div class="event-logo-frame"><img id="event-logo" class="event-logo" alt="" hidden><span id="event-logo-fallback" aria-hidden="true">EV</span></div></div>
+    <div data-public-event-masthead></div>
+    <div class="page-heading public-event-hero schedule-hero"><div><h1 id="title">Schedule</h1><p id="timezone" class="lede">Loading…</p></div></div>
     <section class="schedule-controls" aria-label="Find and filter sessions">
       <div id="status" class="status" role="status" aria-live="polite">Loading published sessions…</div><p id="results-summary" class="help"></p>
       <div class="schedule-discovery">

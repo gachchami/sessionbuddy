@@ -146,10 +146,10 @@ def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
     assert 'byId("speaker-profile")' in gallery
     assert "speaker.links" in gallery
     assert ".sort(compareSpeakers)" in gallery
-    assert 'make("button", "Show more"' in gallery
+    assert "SessionBuddyBiographyDisclosure.attach" in gallery
     assert 'aria-labelledby="speaker-profile-title"' in markup
-    assert 'id="event-cover-fallback"' in markup
-    assert 'id="event-logo-fallback"' in markup
+    assert "data-public-event-masthead" in markup
+    assert "/public/assets/event-masthead.js" in markup
     assert 'id="speaker-list-link"' in markup
     assert 'id="speaker-gallery-link"' in markup
 
@@ -364,13 +364,16 @@ def test_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> Non
 
 
 def test_public_event_pages_render_cover_images() -> None:
+    assert 'id="event-cover"' in (STATIC / "public_cfp.html").read_text()
+    assert "cover_image_url" in (STATIC / "public_cfp.js").read_text()
+    masthead = (STATIC / "public_event_masthead.js").read_text()
     for page_name, script_name in (
-        ("public_cfp.html", "public_cfp.js"),
         ("schedule.html", "schedule.js"),
         ("speaker_gallery.html", "speaker_gallery.js"),
     ):
-        assert 'id="event-cover"' in (STATIC / page_name).read_text()
+        assert "data-public-event-masthead" in (STATIC / page_name).read_text()
         assert "cover_image_url" in (STATIC / script_name).read_text()
+    assert "public-event-masthead__cover" in masthead
 
 
 def test_share_tools_do_not_inherit_the_workflow_progress_rail() -> None:

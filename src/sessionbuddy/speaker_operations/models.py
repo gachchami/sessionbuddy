@@ -71,6 +71,8 @@ class SpeakerEventView(BaseModel):
     starts_at_ms: int
     ends_at_ms: int
     time_zone: str
+    accent_color: str | None = None
+    logo_url: str | None = None
 
 
 class SpeakerOpenCallView(BaseModel):

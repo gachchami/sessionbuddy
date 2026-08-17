@@ -4,20 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=79">
+  <link rel="stylesheet" href="/product/assets/product.css?v=80">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=2797d02a9351" defer></script>
+  <script src="/public/assets/event-masthead.js?v=6e2e83770ce8" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=b6f032395cfb" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--event-overview is-loading">
   <a class="skip-link" href="#main">Skip to event overview</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <section id="event-public-header" class="event-command-header public-brand-preview__card" aria-labelledby="event-name">
-      <div class="public-brand-preview__header"><b>Event overview</b><span class="public-brand-preview__logo"><img id="event-logo" alt="" hidden><b id="event-monogram">EV</b></span></div>
-      <div id="event-branding" class="public-brand-preview__cover"><img id="event-banner" alt="" hidden><span id="event-cover-empty">Event cover</span></div>
-      <div class="public-brand-preview__body"><div class="event-command-header__content"><div class="event-command-header__copy"><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div><div id="event-actions" class="event-command-header__actions" hidden><a id="cfp-action" class="button event-command-header__primary" href="#">Manage CFP</a><a id="public-schedule" class="button secondary" href="#">View public event page</a></div></div></div>
+    <div class="event-overview-public-preview" aria-label="Public event header preview"><p class="field-label">Public event header</p><div data-public-event-masthead></div></div>
+    <section id="event-public-header" class="event-command-header" aria-labelledby="event-name">
+      <div class="event-command-header__content"><div class="event-command-header__copy"><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div><div id="event-actions" class="event-command-header__actions" hidden><a id="cfp-action" class="button event-command-header__primary" href="#">Manage CFP</a><a id="public-schedule" class="button secondary" href="#">View public event page</a></div></div>
     </section>
     <div id="status" class="status event-overview-status" role="status" aria-live="polite">Loading event…</div>
     <section class="event-overview-now organizer-callout">

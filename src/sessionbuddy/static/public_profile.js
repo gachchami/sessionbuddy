@@ -23,13 +23,7 @@
   function initializeBiography() {
     const biography = byId("profile-biography");
     const toggle = byId("profile-biography-toggle");
-    toggle.addEventListener("click", () => {
-      const expanded = toggle.getAttribute("aria-expanded") === "true";
-      toggle.setAttribute("aria-expanded", String(!expanded));
-      toggle.textContent = expanded ? "Show more" : "Show less";
-      biography.classList.toggle("is-collapsed", expanded);
-    });
-    requestAnimationFrame(() => { toggle.hidden = biography.scrollHeight <= biography.clientHeight; });
+    window.SessionBuddyBiographyDisclosure.attach(biography, toggle);
   }
 
   async function load() {

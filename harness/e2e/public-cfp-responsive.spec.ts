@@ -19,6 +19,10 @@ const publicCfpScript = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/public_cfp.js"),
   "utf8",
 );
+const publicEventMasthead = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/public_event_masthead.js"),
+  "utf8",
+);
 const registrationTemplate = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/auth_link_confirm.html"),
   "utf8",
@@ -26,8 +30,9 @@ const registrationTemplate = readFileSync(
 const publicCfpHtml = publicCfpTemplate
   .replace(/<link rel="stylesheet" href="\/product\/assets\/product\.css\?v=\d+">/, `<style>${productCss}</style>`)
   .replace(/<script src="\/app-shell\/assets\/api-client\.js\?v=\d+" defer><\/script>/, "")
+  .replace(/<script src="\/public\/assets\/event-masthead\.js\?v=[^"]+" defer><\/script>/, "")
   .replace(/<script src="\/product\/assets\/public-cfp\.js\?v=\d+" defer><\/script>/, "")
-  .replace("</body>", `<script>${apiClient}</script><script>${publicCfpScript}</script></body>`);
+  .replace("</body>", `<script>${apiClient}</script><script>${publicEventMasthead}</script><script>${publicCfpScript}</script></body>`);
 
 const pixel =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='900'%3E%3Crect width='1600' height='900' fill='%233159d9'/%3E%3C/svg%3E";
@@ -157,10 +162,10 @@ test.describe("public CFP responsive design", () => {
 
       await expect(page.locator("#status")).not.toHaveText("Loading…");
       expect(pageErrors).toEqual([]);
-      await expect(page.getByRole("heading", { name: "Responsive Conference 2026" })).toBeVisible();
+      await expect(page.locator(".public-event-masthead__name")).toHaveText("Responsive Conference 2026");
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-      await expect(page.locator("#event-logo")).toBeVisible();
-      await expect(page.locator("#event-cover")).toBeVisible();
+      await expect(page.locator(".public-event-masthead__mark img")).toBeVisible();
+      await expect(page.locator(".public-event-masthead__cover")).toBeVisible();
       // Signed out is a preview, not a gate: the questions render so a speaker
       // can read them before deciding to create an account.
       await expect(page.locator("#proposal-card")).toBeVisible();

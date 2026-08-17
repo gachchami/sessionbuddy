@@ -10420,6 +10420,17 @@
       "SpeakerEventView": {
         "additionalProperties": false,
         "properties": {
+          "accent_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accent Color"
+          },
           "ends_at_ms": {
             "title": "Ends At Ms",
             "type": "integer"
@@ -10427,6 +10438,17 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
           },
           "name": {
             "title": "Name",

@@ -90,6 +90,8 @@ ASSETS = {
     "event_workspace.js": "EVENT_WORKSPACE_JS",
     "speaker_gallery.html": "SPEAKER_GALLERY_HTML",
     "speaker_gallery.js": "SPEAKER_GALLERY_JS",
+    "public_event_masthead.js": "PUBLIC_EVENT_MASTHEAD_JS",
+    "biography_disclosure.js": "BIOGRAPHY_DISCLOSURE_JS",
 }
 BINARY_ASSETS = {
     "aie-new-york-2026.jpg": "AIE_NEW_YORK_2026_JPG",
@@ -135,6 +137,41 @@ CONTENT_ADDRESSED_ASSETS = (
     ("speaker_messages.html", "speaker_messages.js", "/admin/speakers/assets/messages.js"),
     ("app/index.html", "app/assets/reviews.js", "/app/assets/reviews.js"),
     ("app/index.html", "app/assets/reviews.css", "/app/assets/reviews.css"),
+    (
+        "speaker_gallery.html",
+        "public_event_masthead.js",
+        "/public/assets/event-masthead.js",
+    ),
+    (
+        "schedule.html",
+        "public_event_masthead.js",
+        "/public/assets/event-masthead.js",
+    ),
+    (
+        "public_cfp.html",
+        "public_event_masthead.js",
+        "/public/assets/event-masthead.js",
+    ),
+    (
+        "event_editor.html",
+        "public_event_masthead.js",
+        "/public/assets/event-masthead.js",
+    ),
+    (
+        "event_overview.html",
+        "public_event_masthead.js",
+        "/public/assets/event-masthead.js",
+    ),
+    (
+        "speaker_gallery.html",
+        "biography_disclosure.js",
+        "/public/assets/biography-disclosure.js",
+    ),
+    (
+        "public_profile.html",
+        "biography_disclosure.js",
+        "/public/assets/biography-disclosure.js",
+    ),
 )
 SHARED_ASSET_VERSIONS = {
     "/app-shell/assets/api-client.js": "8",

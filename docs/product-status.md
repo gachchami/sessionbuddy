@@ -224,15 +224,22 @@ batch key makes execution retryable without rotating links or resending email.
 Known limitation: an active recipient without a proposal title can still preview
 a message containing `submission.title` with an empty merge value; this remains
 tracked as an expected-failure regression until empty values are treated as unavailable.
-The public speaker list and gallery retain distinct widget routes while sharing
-stable List, Gallery, and Schedule navigation. Both speaker views sort by a
+The public speaker list and gallery retain distinct widget routes under one
+Speakers destination, with a subordinate List/Gallery view switch that preserves
+the current search and a shared compact event masthead with Schedule. Both views sort by a
 deterministic surname heuristic over the existing display name, preserve title
 and company facts, and render event cover/logo monogram fallbacks when uploaded
-branding is absent; embeds suppress that page masthead. Long biographies use the
+branding is absent; embeds suppress that page masthead. The list is a dense,
+session-led index while the gallery remains portrait-led. Long biographies use the
 same accessible Show more/Show less disclosure in the speaker dialog and public
 person profile, and the dialog is bounded, labelled, and returns focus to its
 opener when closed. Explicit given/family-name data remains a future profile-model
 improvement; no derived surname field has been added to the API.
+The multi-event speaker portal adds compact accent and logo/monogram identity to
+each event without loading cover imagery; portfolios above eight memberships
+defer inactive event detail until the speaker expands it. The speaker portal's
+event response therefore exposes additive nullable `accent_color` and `logo_url`
+fields; it does not perform a public branding fetch per membership.
 Post-acceptance
 participation is tracked independently from proposal selection, and organizers
 can persist awaiting-confirmation, confirmed, or declined status. Organizers can

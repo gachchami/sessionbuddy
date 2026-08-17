@@ -76,19 +76,11 @@
     const degraded = !speakersState.ok || !cfpStateResult.ok || !submissionsState.ok || !roundState.ok || agendaFailed;
     document.title = `${selected.name} · SessionBuddy`;
     byId("event-name").textContent = selected.name;
-    byId("event-monogram").textContent = selected.name.slice(0, 2).toUpperCase();
-    byId("event-public-header").style.setProperty("--event-preview-accent", accentColor);
-    if (bannerUrl) {
-      byId("event-banner").src = bannerUrl;
-      byId("event-banner").alt = `${selected.name} banner`;
-      byId("event-banner").hidden = false;
-      byId("event-cover-empty").hidden = true;
-    }
-    if (logoUrl) {
-      byId("event-logo").src = logoUrl;
-      byId("event-logo").alt = `${selected.name} logo`;
-      byId("event-logo").hidden = false;
-    }
+    document.documentElement.style.setProperty("--event-accent", accentColor);
+    window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
+      event: { id: selected.id, name: selected.name, accentColor, logoUrl, coverUrl: bannerUrl },
+      active: null, embedded: false,
+    });
     const mode = selected.delivery_mode.replace("_", " ");
     byId("event-summary").textContent = `${formatRange(selected)} · ${mode}${selected.location ? ` · ${selected.location}` : ""}`;
     byId("cfp-action").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;

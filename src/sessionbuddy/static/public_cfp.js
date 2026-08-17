@@ -158,8 +158,6 @@
     document.documentElement.style.setProperty("--event-accent", accent);
     const header = byId("event-public-header");
     header.style.setProperty("--event-preview-accent", accent);
-    header.classList.toggle("cfp-event-header--no-cover", !form.cover_image_url);
-    header.querySelector(".public-brand-preview__cover").hidden = !form.cover_image_url;
     byId("event-title").textContent = form.event_name || "Event";
     byId("event-monogram").textContent = (form.event_name || "EV").slice(0, 2).toUpperCase();
     if (form.event_starts_at_ms && form.event_ends_at_ms) {
@@ -878,6 +876,17 @@
       state.form = await api(`/api/v1/forms/${encodeURIComponent(slug)}`);
       byId("welcome").textContent = state.form.welcome_text;
       renderEventHeader(state.form);
+      window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
+        event: {
+          id: state.form.event_id,
+          name: state.form.event_name,
+          accentColor: state.form.accent_color,
+          logoUrl: state.form.logo_url,
+          coverUrl: state.form.cover_image_url,
+        },
+        active: null,
+        embedded: workspaceMode,
+      });
       renderCallBrief(state.form);
       renderImportantDates(state.form.important_dates);
       if (state.form.event_name) {
@@ -890,8 +899,6 @@
         byId("welcome").textContent = state.form.event_name;
         byId("welcome").hidden = false;
       }
-      if (state.form.logo_url) { byId("event-logo").src = state.form.logo_url; byId("event-logo").hidden = false; }
-      if (state.form.cover_image_url) { byId("event-cover").src = state.form.cover_image_url; byId("event-cover").alt = `${state.form.event_name} cover`; byId("event-cover").hidden = false; byId("event-cover-empty").hidden = true; }
       renderFields(state.form.fields || [], state.form.conditions || []);
       renderCallDetails(state.form);
       byId("co-speakers").hidden = (state.form.co_speaker_limit ?? 3) === 0;

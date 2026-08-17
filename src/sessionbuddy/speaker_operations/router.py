@@ -681,6 +681,7 @@ async def _speaker_row(request: Request, event_id: str | None = None):
                           p.id AS person_id, p.user_id, p.display_name, p.job_title,
                           p.company, p.biography, p.location, p.links_json, p.version,
                           e.name AS event_name, e.starts_at_ms, e.ends_at_ms, e.time_zone,
+                          e.accent_color, e.logo_url,
                           es.selection_status
                    FROM people p
                    JOIN event_speakers es
@@ -745,6 +746,7 @@ async def get_speaker_portal(
             request,
             db.prepare(
                 """SELECT e.id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,
+                          e.accent_color,e.logo_url,
                           es.organization_id,p.user_id
                    FROM people p
                    JOIN event_speakers es
@@ -872,6 +874,10 @@ async def get_speaker_portal(
             starts_at_ms=int(row["starts_at_ms"]),
             ends_at_ms=int(row["ends_at_ms"]),
             time_zone=str(row["time_zone"]),
+            accent_color=(
+                str(row["accent_color"]) if row.get("accent_color") is not None else None
+            ),
+            logo_url=str(row["logo_url"]) if row.get("logo_url") is not None else None,
         ),
         events=[
             SpeakerEventView(
@@ -880,6 +886,14 @@ async def get_speaker_portal(
                 starts_at_ms=int(event_row["starts_at_ms"]),
                 ends_at_ms=int(event_row["ends_at_ms"]),
                 time_zone=str(event_row["time_zone"]),
+                accent_color=(
+                    str(event_row["accent_color"])
+                    if event_row["accent_color"] is not None
+                    else None
+                ),
+                logo_url=(
+                    str(event_row["logo_url"]) if event_row["logo_url"] is not None else None
+                ),
             )
             for event_row in event_rows
         ],

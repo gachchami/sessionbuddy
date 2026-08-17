@@ -347,6 +347,26 @@ async def speaker_gallery_js() -> Response:
     return Response(_asset("speaker_gallery.js"), media_type="text/javascript")
 
 
+@competition_router.get(
+    "/public/assets/event-masthead.js", response_class=Response, include_in_schema=False
+)
+async def public_event_masthead_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("public_event_masthead.js"), media_type="text/javascript"
+    )
+
+
+@competition_router.get(
+    "/public/assets/biography-disclosure.js",
+    response_class=Response,
+    include_in_schema=False,
+)
+async def biography_disclosure_js(request: Request) -> Response:
+    return content_addressed_asset(
+        request, _asset("biography_disclosure.js"), media_type="text/javascript"
+    )
+
+
 def _resource(row) -> ResourceView:
     return ResourceView(
         id=str(row["id"]),

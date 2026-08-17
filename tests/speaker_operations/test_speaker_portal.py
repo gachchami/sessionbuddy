@@ -12,7 +12,7 @@ from sessionbuddy.platform.auth.http import AuthenticatedContext
 from sessionbuddy.platform.authorization import Actor, Persona
 from sessionbuddy.platform.db.types import utc_now_ms
 from sessionbuddy.speaker_operations import router as speaker_router
-from sessionbuddy.speaker_operations.models import UploadAuthorizationCreate
+from sessionbuddy.speaker_operations.models import SpeakerEventView, UploadAuthorizationCreate
 from sessionbuddy.speaker_operations.router import (
     _cursor,
     _next_cursor,
@@ -96,6 +96,29 @@ async def test_speaker_portal_api_fails_closed_without_database(client) -> None:
     response = await client.get("/api/v1/speaker/portal")
 
     assert response.status_code == 503
+
+
+def test_speaker_event_branding_is_optional_and_portal_ui_is_lazy() -> None:
+    event = SpeakerEventView(
+        id="event-a",
+        name="Event A",
+        starts_at_ms=1_700_000_000_000,
+        ends_at_ms=1_700_086_400_000,
+        time_zone="UTC",
+    )
+    assert event.accent_color is None
+    assert event.logo_url is None
+
+    static = Path(__file__).parents[2] / "src/sessionbuddy/static"
+    portal = (static / "speaker_portal.js").read_text()
+    styles = (static / "speaker.css").read_text()
+    assert 'expandedEventIds: new Set()' in portal
+    assert "const COMPACT_EVENT_THRESHOLD = 8;" in portal
+    assert 'logo.dataset.src = event.logo_url' in portal
+    assert 'section.classList.toggle("is-collapsed", !expanded)' in portal
+    assert "if (!expanded) return section;" in portal
+    assert "--event-group-accent" in styles
+    assert ".event-group.is-collapsed > :not(.event-group__head)" in styles
 
 
 def test_asset_history_maps_database_columns_to_public_contract() -> None:
@@ -394,6 +417,24 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
             return None
 
         async def all(self):
+            if "SELECT e.id,e.name" in self.query:
+                self.database.event_query = self.query
+                return {
+                    "results": [
+                        {
+                            "id": f"event-{index}",
+                            "name": f"Event {index}",
+                            "starts_at_ms": 1_700_000_000_000 + index,
+                            "ends_at_ms": 1_700_086_400_000 + index,
+                            "time_zone": "UTC",
+                            "accent_color": "#3159d9" if index == 0 else None,
+                            "logo_url": f"/branding/event-{index}/logo" if index == 0 else None,
+                            "organization_id": f"organization-{index % 2}",
+                            "user_id": "speaker-a",
+                        }
+                        for index in range(100)
+                    ]
+                }
             if "FROM submission_speakers" in self.query:
                 self.database.submission_query = self.query
                 return {"results": []}
@@ -415,6 +456,7 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
         notification_scope = None
         notification_query = ""
         submission_query = ""
+        event_query = ""
 
         def prepare(self, query):
             return Statement(self, query)
@@ -436,6 +478,8 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
         "starts_at_ms": 1_700_000_000_000,
         "ends_at_ms": 1_700_086_400_000,
         "time_zone": "America/New_York",
+        "accent_color": "#6d4aff",
+        "logo_url": "/branding/event-a/logo",
         "selection_status": "accepted",
     }
     authenticated = AuthenticatedContext(
@@ -446,7 +490,10 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
     async def speaker_row(_request, _event_id):
         return authenticated, row
 
-    async def allow(*_args, **_kwargs):
+    checked_scopes = []
+
+    async def allow(*args, **_kwargs):
+        checked_scopes.append(args[2])
         return None
 
     monkeypatch.setattr(speaker_router, "_speaker_row", speaker_row)
@@ -469,6 +516,18 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
     assert "deterministic_key NOT LIKE 'auth:%'" in database.notification_query
     assert "FROM submission_decision_corrections correction" in database.submission_query
     assert "ORDER BY correction.corrected_at_ms DESC" in database.submission_query
+    assert "e.accent_color,e.logo_url" in database.event_query
+    assert "e.organization_id=es.organization_id AND e.id=es.event_id" in database.event_query
+    assert len(result.events) == 100
+    assert result.event.accent_color == "#6d4aff"
+    assert result.event.logo_url == "/branding/event-a/logo"
+    assert result.events[0].accent_color == "#3159d9"
+    assert result.events[0].logo_url == "/branding/event-0/logo"
+    assert {
+        (scope.organization_id, scope.event_id)
+        for scope in checked_scopes
+        if scope.event_id and scope.event_id.startswith("event-")
+    } >= {("organization-0", "event-0"), ("organization-1", "event-1")}
     assert result.notifications[0].category == "announcement"
     assert result.notifications[0].body_text == "Bring your badge.\nBrief"
     assert result.notifications[0].links == ["https://safe.example/brief"]
