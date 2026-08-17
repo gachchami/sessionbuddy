@@ -57,8 +57,10 @@ bootstrap API; passwordless email links handle every subsequent sign-in.
 
 Key local URLs once set up:
 
-- `http://localhost:8787/admin` — organizer dashboard.
-- `http://localhost:8787/admin/events` — create and manage events.
+- `http://localhost:8787/admin` — organizer event ledger and recent changes.
+- `http://localhost:8787/admin/events/new` — create or duplicate an event.
+- `http://localhost:8787/admin/events/{event-id}/settings` — edit event details,
+  branding, and lifecycle.
 - `http://localhost:8787/admin/events/{event-id}/cfp` — build and publish the
   event's Call for Proposals.
 - `http://localhost:8787/cfp/{published-slug}` — the public proposal form; use
@@ -124,7 +126,7 @@ docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
 ```
 
 This creates a valid organization with no events; the administrator creates the
-first event from `/admin/events`. See
+first event from `/admin`. See
 [deployment configuration](docs/deployment-configuration.md) for Cloudflare
 variables, secrets, bindings (D1, R2, Queues/DLQs, Workflow, rate limiters),
 and the development malware-scan bypass (`MALWARE_SCAN_MODE`), which staging

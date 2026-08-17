@@ -23,7 +23,8 @@ For each page or workflow:
 - Sign-in supports password and magic-link paths without a role selector.
 - New sessions open the dashboard for the account's default role.
 - Signed-in users visiting `/` are routed to the active-role dashboard.
-- Organizer navigation contains Home, Events, and People.
+- Organizer navigation contains Home and People. Home is the event ledger;
+  event-specific destinations appear after opening an event.
 - The account menu shows identity, assigned roles only, Account settings, and Sign out.
 - Role switching occurs from the account menu and affects the current session only.
 - Organizer pages assume the user's assigned organization; no create-organization UI is exposed.
@@ -32,23 +33,23 @@ For each page or workflow:
 
 Approved direction:
 
-- AIEngineer organization identity;
-- four real metrics: Events, People, Sessions, and Proposals;
-- compact Upcoming events and Recent activity regions;
-- flat white/lavender hierarchy consistent with the approved reference;
-- shared top navigation and account role switcher;
-- no invented metrics and no create-organization workflow.
+- organization identity and an organization selector when more than one is
+  manageable;
+- Create event and the event ledger as the primary job;
+- a compact, manager-only Recent changes rail after the ledger;
+- quiet access to organization settings;
+- no separate global Events destination and no create-organization workflow.
 
-## Organizer Events
+## Organizer Home and events
 
-Approved `/admin/events` index:
+Approved `/admin` event ledger:
 
 - filter order: All, Active, Drafts, Past; All is the default;
 - server-backed search, sorting, cursor pagination, and race-safe responses;
 - event name is the single entry point to the event workspace;
-- Date, Status, CFP, and Actions are separate columns;
-- CFP contains one `Manage CFP` action and a quiet proposal count;
-- Edit remains visible; Duplicate is in an accessible More menu;
+- Date, Status, Program, and Actions are separate columns;
+- Program shows publication state and links only when attention is needed;
+- Settings and Duplicate remain visible secondary actions;
 - no inline link/status sentence;
 - mobile rows are structured cards without horizontal overflow.
 
@@ -138,7 +139,7 @@ Do not redesign Event workspace and CFP together.
 ### Event workspace continuation prompt
 
 > Continue from `docs/product-design-checkpoint.md`. Start a focused Event
-> workspace review by opening an event from `/admin/events`. Also read
+> workspace review by opening an event from `/admin`. Also read
 > `docs/rbac-redesign-handoff.md` for authorization rules. List validation and
 > runtime failures before implementation, verify desktop and mobile, and wait for
 > approval before moving to CFP.
@@ -146,6 +147,7 @@ Do not redesign Event workspace and CFP together.
 ### CFP continuation prompt
 
 > Continue from `docs/product-design-checkpoint.md`. Start the CFP workflow from
-> an event's `Manage CFP` action. Also read `docs/rbac-redesign-handoff.md` for
+> an event workspace's **CFP** navigation item or the Overview's primary CFP
+> action. Also read `docs/rbac-redesign-handoff.md` for
 > authorization rules. Assess setup, publication, public submission, submissions,
 > validation, and runtime failures before implementation.

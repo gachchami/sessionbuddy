@@ -198,5 +198,11 @@ Not blockers for the fix, but they turn a working feature into a frustrating one
 - **No attribution anywhere.** `created_by_user_id`, `decided_by_user_id`, `granted_by_user_id` are all written and essentially never returned — exactly one attribution field exists in any response model (`competition/models.py:158`). "Who changed this" is rhetorical with one organizer and the first question asked with three.
 - **`audit_events` is write-only.** One `INSERT` (`platform/db/commands.py:79`), no `SELECT`, no route — with indexes (`0001_baseline.sql:1298-1303`) built for queries nobody can issue. It's a ready-made org activity feed.
 - **No organizer-facing notifications at all.** All 14 `communication_messages` inserts are speaker- or reviewer-directed; the template `kind` enum (`0001_baseline.sql:354`) has no organizer kind. Nobody is told when a proposal arrives. Already broken solo; a coordination failure with a team.
-- **Conflict copy names no one.** `events_admin.js:942` ("so you do not overwrite someone else's work") is the only string in the entire frontend containing "someone else." The CFP editor branches on `error.code === "stale_conflict"`, which the server never emits (`api/app.py:316` maps all 409s to `"conflict"`), so two organizers editing one CFP get "The request conflicts with current state." `admin_submissions.js:217` has no 409 branch at all.
+- **Conflict recovery remains inconsistent outside Event settings.** The routed
+  Event settings editor now reconciles field-level conflicts with **Keep mine**
+  and **Use latest** choices (`event_editor.js`). The CFP editor still branches
+  on `error.code === "stale_conflict"`, which the server never emits
+  (`api/app.py` maps all 409s to `"conflict"`), so two organizers editing one CFP
+  get "The request conflicts with current state." `admin_submissions.js` has no
+  dedicated 409 branch at all.
 - **`organizations[0]` is assumed.** `admin_home.js:68` and `access.py:5147-5150` both take the first entry. Harmless while bootstrap guarantees one org; wrong the day someone is granted access to two.

@@ -94,7 +94,7 @@ obtain an invitation acceptance URL from an API response.
    the one Organizer needed by the eval: it owns the organization and has the
    Organizer persona, so do not create a second Organizer or an event-admin
    substitute.
-2. Open `/admin/events`, select **Create event**, fill the eval setup event, and
+2. Open `/admin`, select **Create event**, fill the eval setup event, and
    select **Create active event**. The setup screen does not create an event, and
    Speaker and Reviewer invitations are scoped to a specific event.
 3. Open the event and select **Team & access** in its sidebar. Select **Invite
