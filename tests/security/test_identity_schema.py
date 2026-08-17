@@ -40,11 +40,11 @@ def _seed_reviewer_invitation_scope(db: sqlite3.Connection) -> None:
     db.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,delivery_mode,
-            description,status,created_at_ms,updated_at_ms)
+            description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES('event','org','Event',10,20,'UTC','Online','virtual','Review event',
-                  'active',1,1),
+                  'active',1,1,'admin'),
                  ('other-event','other-org','Other',10,20,'UTC','Online','virtual',
-                  'Other event','active',1,1)"""
+                  'Other event','active',1,1,'admin')"""
     )
     db.execute(
         """INSERT INTO organization_memberships

@@ -226,9 +226,11 @@ async def test_branding_reference_cannot_cross_tenant_or_kind(
         connection.execute(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,logo_url,status,created_at_ms,updated_at_ms)
+                delivery_mode,description,logo_url,status,created_at_ms,updated_at_ms,
+                created_by_user_id)
                VALUES('foreign-event','org-b','Foreign',10,20,'UTC','Online','virtual',
-                      'Description',?,'active',1,1)""",
+                      'Description',?,'active',1,1,
+                      (SELECT id FROM users ORDER BY id LIMIT 1))""",
             (uploaded.asset_url,),
         )
 
@@ -278,9 +280,11 @@ async def test_public_branding_url_streams_only_a_registered_object(
     connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,cover_image_url,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,cover_image_url,status,created_at_ms,updated_at_ms,
+            created_by_user_id)
            VALUES('cache-event','org-a','Cache event',10,20,'UTC','Online','virtual',
-                  'Cache behavior',?,'active',2,2)""",
+                  'Cache behavior',?,'active',2,2,
+                  (SELECT id FROM users ORDER BY id LIMIT 1))""",
         (uploaded.asset_url,),
     )
     attached_response = await access.public_event_branding_asset(
@@ -319,8 +323,9 @@ async def test_pending_branding_purge_is_indexed_restartable_and_idempotent(
         connection.execute(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,status,created_at_ms,updated_at_ms)
-               VALUES(?,?,?,10,20,'UTC','Online','virtual','Purge guard','active',1,1)""",
+                delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
+               VALUES(?,?,?,10,20,'UTC','Online','virtual','Purge guard','active',1,1,
+                      (SELECT id FROM users ORDER BY id LIMIT 1))""",
             (event_id, organization_id, event_id),
         )
     rows = (

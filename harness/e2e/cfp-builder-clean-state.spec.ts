@@ -48,7 +48,7 @@ const session = {
   organization_id: organizationId,
   organization_name: "Clean State Org",
   organization_access: [{ organization_id: organizationId, permissions: ["owner"] }],
-  event_access: [{ event_id: eventId, permissions: ["owner"] }],
+  event_access: [{ event_id: eventId, assignments: [] }],
   event_id: eventId,
 };
 

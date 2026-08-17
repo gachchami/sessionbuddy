@@ -83,11 +83,16 @@ def _seed_form(connection: sqlite3.Connection) -> None:
         (now, now),
     )
     connection.execute(
+        """INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms)
+           VALUES('owner','owner@example.test','owner@example.test','active',?,?)""",
+        (now, now),
+    )
+    connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES('event','org','Event',9999999999999,9999999999999999,'UTC','Online',
-                  'virtual','Description','active',?,?)""",
+                  'virtual','Description','active',?,?, 'owner')""",
         (now, now),
     )
     connection.execute(
@@ -291,7 +296,9 @@ async def test_database_enforces_active_staging_quota(cfp_environment) -> None:
     connection, environment = cfp_environment
     async with _client(environment) as client:
         await _sign_in(client, connection, "speaker@example.test")
-    user_id = connection.execute("SELECT id FROM users").fetchone()[0]
+    user_id = connection.execute(
+        "SELECT id FROM users WHERE normalized_email='speaker@example.test'"
+    ).fetchone()[0]
     insert = """INSERT INTO cfp_staged_assets
         (id,organization_id,event_id,form_id,user_id,kind,object_key,
          original_filename,content_type,byte_size,checksum_sha256,
@@ -399,7 +406,8 @@ async def test_successful_submission_claims_staged_file_atomically(cfp_environme
     for table in ("people", "event_speakers", "organization_memberships", "event_memberships"):
         assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1, table  # noqa: S608
     assert connection.execute(
-        "SELECT status FROM event_memberships WHERE user_id=(SELECT id FROM users)"
+        "SELECT status FROM event_memberships WHERE user_id=(SELECT id FROM users "
+        "WHERE normalized_email='speaker@example.test')"
     ).fetchone()[0] == "active"
 
 
@@ -431,9 +439,9 @@ async def test_submission_idempotency_key_is_scoped_to_form(cfp_environment) -> 
     connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES('event-2','org','Second Event',9999999999999,9999999999999999,
-                  'UTC','Online','virtual','Description','active',?,?)""",
+                  'UTC','Online','virtual','Description','active',?,?, 'owner')""",
         (now, now),
     )
     connection.execute(
@@ -651,7 +659,9 @@ async def test_lost_concurrent_edit_cannot_claim_its_staged_file(cfp_environment
         )
 
     db = environment.DB
-    user_id = connection.execute("SELECT id FROM users").fetchone()[0]
+    user_id = connection.execute(
+        "SELECT id FROM users WHERE normalized_email='speaker@example.test'"
+    ).fetchone()[0]
     event_speaker_id = connection.execute(
         "SELECT event_speaker_id FROM submission_speakers WHERE role='primary'"
     ).fetchone()[0]
@@ -805,7 +815,9 @@ async def test_hourly_authorization_quota_counts_claimed_rows(cfp_environment) -
     connection, environment = cfp_environment
     async with _client(environment) as client:
         csrf = await _sign_in(client, connection, "speaker@example.test")
-        user_id = connection.execute("SELECT id FROM users").fetchone()[0]
+        user_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='speaker@example.test'"
+        ).fetchone()[0]
         now = utc_now_ms() - 60_000
         for index in range(MAX_STAGED_AUTHORIZATIONS_PER_HOUR):
             connection.execute(
@@ -1240,7 +1252,9 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         assert "Create your speaker account" in incomplete.text
         assert 'name="first_name"' in incomplete.text
         assert 'name="password_confirmation"' in incomplete.text
-        assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM users WHERE id!='owner'"
+        ).fetchone()[0] == 0
 
         confirmed = await client.post(
             "/auth/verify",

@@ -27,9 +27,9 @@ def db():
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
             delivery_mode,description,accent_color,status,version,created_at_ms,
-            updated_at_ms,archived_at_ms)
+            updated_at_ms,archived_at_ms,created_by_user_id)
            VALUES ('event','org','Event',1,2,'UTC','Online','virtual','Test event',NULL,
-                   'active',1,1,1,NULL)"""
+                   'active',1,1,1,NULL,'user')"""
     )
     return connection
 

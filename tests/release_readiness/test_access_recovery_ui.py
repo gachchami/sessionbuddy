@@ -10,7 +10,8 @@ def test_account_organizers_are_organization_scoped_and_cascade_to_events() -> N
     assert "Organization details and admins." in markup
     assert 'accessTitle.textContent = "Organizers"' in javascript
     assert "can manage every event in this organization" in javascript
-    assert 'permission.value = "manage"' in javascript
+    assert 'body: JSON.stringify({ email: values.email })' in javascript
+    assert 'permission.value = "manage"' not in javascript
     assert 'grant.textContent = "Add admin"' in javascript
     assert "data-organization-grant-create" in javascript
     assert "/access-grants`" in javascript
@@ -43,21 +44,11 @@ def test_reviewer_page_excludes_legacy_admin_and_resource_grant_controls() -> No
     assert 'method: "DELETE"' in javascript
 
 
-def test_account_owner_recovery_discovery_is_narrow_paginated_and_owner_only() -> None:
+def test_account_has_no_event_ownership_recovery_surface() -> None:
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
-    assert "Event ownership recovery" in javascript
-    assert "it does not grant you access to the event or its content" in javascript
-    assert "Event content and other access were not changed." in javascript
-    assert (
-        "/ownership-recovery/events?limit=50${suffix}`"
-        in javascript
-    )
-    assert "page.next_cursor" in javascript
-    assert "Load more recovery events" in javascript
-    assert "current_owner_user_id" in javascript
-    assert "current_owner_email" in javascript
-    assert 'loadOwnershipRecoveryEvents(organization.id, true)' in javascript
-    assert '.filter((item) => (item.permissions || []).includes("owner"))' in javascript
-    assert "Review ownership transfer" in javascript
-    assert "Confirm transfer" in javascript
+    assert "Event ownership recovery" not in javascript
+    assert "/ownership-recovery/events" not in javascript
+    assert "current_owner_user_id" not in javascript
+    assert "current_owner_email" not in javascript
+    assert "data-event-owner-transfer" not in javascript

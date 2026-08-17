@@ -1,6 +1,8 @@
 # Organization authority: containment cascade
 
-**Supersedes §5 of `org-collaborator-gap.md`**, which framed this as an open product call. It isn't. The intended model is settled:
+**Related record:** `org-collaborator-gap.md` defines the remaining
+organization-administrator provisioning gap. The authority model itself is
+settled:
 
 > Organization admins get access to **all events in the organizations they administer**. They do **not** get speaker or reviewer flows.
 
@@ -176,11 +178,8 @@ Either accept it and document those as intentionally reachable, or add `event_st
 
 ## 6. What this does *not* fix
 
-The cascade makes an org admin useful once they exist. It does not create one. The gap from `org-collaborator-gap.md` stands independently and is still the blocker:
-
-- `identity_invitations.event_id` is `NOT NULL` — an org-wide invitation is un-insertable without an event
-- no `POST /api/v1/admin/organizations/{id}/invitations`
-- the org grant form requires a pre-existing account and 404s otherwise, with error copy telling people to "sign in once," which `request_magic_link` makes impossible
-- `app_shell.js:108-139` bounces `view` and `edit` org grantees out of the console before any page renders
-
-Ship the invitation route and the shell fix together with this — the cascade alone still leaves you unable to add anyone to an organization with no events. Note that 4a makes the shell question sharper, not softer: if only `manage` cascades, then `manage` is the tier that means "co-organizer," and the console's existing `["owner","manage"]` gate becomes *correct* for org navigation. The remaining question is only what `view` and `edit` mean — and `view` still authorizes nothing anywhere in the policy while being the first option in both grant dropdowns.
+The cascade makes an organization administrator useful once they exist. It
+does not provision one. Organization `view` and `edit` grants and the
+event-administrator model are now retired; the independent remaining gap is an
+organization-scoped invitation workflow. `org-collaborator-gap.md` owns that
+contract.

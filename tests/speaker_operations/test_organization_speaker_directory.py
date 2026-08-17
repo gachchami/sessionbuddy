@@ -62,9 +62,9 @@ def directory_database() -> tuple[sqlite3.Connection, AsyncSqlite]:
         connection.execute(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,status,created_at_ms,updated_at_ms)
+                delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
                VALUES(?, 'org', ?, ?, ?, 'UTC','Online','virtual','Description',
-                      'active',1,1)""",
+                      'active',1,1,'admin')""",
             (f"event-{suffix}", name, starts, starts + 10),
         )
         connection.execute(
@@ -74,11 +74,7 @@ def directory_database() -> tuple[sqlite3.Connection, AsyncSqlite]:
                VALUES(?, 'org', ?, 'person','onboarding',1,1,1,1,?)""",
             (f"event-speaker-{suffix}", f"event-{suffix}", selection),
         )
-    for resource_id, resource_type in (
-        ("org", "organization"),
-        ("event-a", "event"),
-        ("event-b", "event"),
-    ):
+    for resource_id, resource_type in (("org", "organization"),):
         connection.execute(
             """INSERT INTO owned_resources
                (id,resource_type,created_by_user_id,owner_user_id,status,created_at_ms,updated_at_ms)
@@ -98,7 +94,7 @@ def allow_organization_admin(monkeypatch):
             Actor(
                 "admin",
                 active_persona=Persona.ORGANIZER,
-                owned_resource_ids=frozenset({"org", "event-a", "event-b"}),
+                owned_resource_ids=frozenset({"org"}),
                 organization_roles={"org": frozenset({Role.ORGANIZATION_ADMIN})},
             ),
             "session",
@@ -139,7 +135,7 @@ async def test_organization_directory_deduplicates_people_and_nests_events(
     assert owner.organization_roles == ["Organizer"]
 
 
-async def test_organization_directory_http_filters_people_and_participations_to_exact_events(
+async def test_organization_directory_http_uses_organization_authority_for_all_events(
     directory_database, allow_organization_admin
 ) -> None:
     connection, database = directory_database
@@ -166,9 +162,6 @@ async def test_organization_directory_http_filters_people_and_participations_to_
            VALUES('private-event-speaker','org','event-b','private-person','onboarding',
                   1,1,1,1,'accepted')"""
     )
-    connection.execute(
-        "UPDATE owned_resources SET owner_user_id='other-admin' WHERE resource_type='event'"
-    )
     connection.commit()
 
     application = FastAPI()
@@ -183,25 +176,13 @@ async def test_organization_directory_http_filters_people_and_participations_to_
     ) as client:
         organization_only = await client.get("/api/v1/admin/organizations/org/people")
         assert organization_only.status_code == 200
-        assert [item["email"] for item in organization_only.json()["data"]] == [
-            "admin@example.test"
-        ]
+        payload = organization_only.json()
 
-        connection.execute(
-            "UPDATE owned_resources SET owner_user_id='admin' WHERE id='event-a'"
-        )
-        connection.commit()
-        event_a_only = await client.get("/api/v1/admin/organizations/org/people")
-
-    assert event_a_only.status_code == 200
-    payload = event_a_only.json()
+    assert organization_only.status_code == 200
     speaker = next(item for item in payload["data"] if item["person_id"] == "person")
-    assert [item["event_id"] for item in speaker["participations"]] == [
-        "event-a"
-    ]
-    assert "event-b" not in event_a_only.text
-    assert "private-person@example.test" not in event_a_only.text
-    assert "Event B private biography" not in event_a_only.text
+    assert [item["event_id"] for item in speaker["participations"]] == ["event-b", "event-a"]
+    assert "private-person@example.test" in organization_only.text
+    assert "Event B private biography" in organization_only.text
 
 
 async def test_people_adds_only_exact_org_invited_reviewers(

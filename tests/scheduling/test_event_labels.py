@@ -255,17 +255,18 @@ async def test_event_labels_are_owned_assignable_and_public(
             connection.execute("SELECT status FROM events WHERE id=?", (event_id,)).fetchone()[0]
             == "active"
         )
-        assert (
-            connection.execute(
-                "SELECT status FROM owned_resources WHERE id=?", (event_id,)
-            ).fetchone()[0]
-            == "active"
-        )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM owned_resources WHERE id=?", (event_id,)
+        ).fetchone()[0] == 0
         session_after_archive = await client.get("/api/v1/auth/session")
         assert session_after_archive.status_code == 200, session_after_archive.text
+        session_payload = session_after_archive.json()
+        assert not any(
+            access["event_id"] == event_id for access in session_payload["event_access"]
+        )
         assert any(
-            access["event_id"] == event_id
-            for access in session_after_archive.json()["event_access"]
+            access["organization_id"] == organization_id
+            for access in session_payload["organization_access"]
         )
         archived_agenda = await client.get(f"/api/v1/admin/events/{event_id}/agenda")
         assert archived_agenda.status_code == 200, archived_agenda.text

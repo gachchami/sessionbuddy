@@ -109,7 +109,7 @@ test.describe("active role session contract", () => {
     const shell = page.locator("header[data-auth-shell]");
     await expect(page).toHaveURL(/\/account$/);
     await expect(shell.getByRole("alert")).toContainText(
-      "this session has no manageable organization or event",
+      "this session has no manageable organization",
     );
     await expect(shell.locator("a")).toHaveCount(0);
     await expect(shell.locator(".sb-account")).toHaveCount(0);
@@ -137,6 +137,8 @@ test.describe("active role session contract", () => {
 
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.locator("header[data-auth-shell]").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator("header[data-auth-shell]").getByRole("link", { name: "SessionBuddy" }))
+      .toHaveAttribute("href", "/admin");
     await expect(page.locator(".sb-account__identity")).toContainText("Organizer");
   });
 });

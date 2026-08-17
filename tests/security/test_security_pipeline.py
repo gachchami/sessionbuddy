@@ -52,7 +52,7 @@ async def test_verified_session_flows_into_tenant_authorization() -> None:
     actor = Actor(
         "user-a",
         active_persona=Persona.ORGANIZER,
-        owned_resource_ids=frozenset({"event-a"}),
+        owned_resource_ids=frozenset({"org-a"}),
     )
     result = await authenticate_session(
         cookie_value=sign_session_cookie(token, secret),

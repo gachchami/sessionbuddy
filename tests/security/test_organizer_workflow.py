@@ -1,5 +1,4 @@
-"""Multi-organizer workflow: a second event_admin and an invitable
-organization_admin, driven end to end over HTTP.
+"""Organization-admin workflows driven end to end over HTTP.
 
 Also covers the single-event read endpoint and the archived-status
 preservation contract on event updates.
@@ -91,10 +90,13 @@ async def test_event_creation_is_idempotent_and_rejects_key_reuse(
             "SELECT COUNT(*) FROM events WHERE id=?", (event_id,)
         ).fetchone()[0] == 1
         assert connection.execute(
-            "SELECT COUNT(*) FROM owned_resources WHERE id=? AND owner_user_id="
+            "SELECT COUNT(*) FROM events WHERE id=? AND created_by_user_id="
             "(SELECT id FROM users WHERE normalized_email='root@example.com')",
             (event_id,)
         ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM owned_resources WHERE id=?", (event_id,)
+        ).fetchone()[0] == 0
         assert connection.execute(
             "SELECT COUNT(*) FROM audit_events WHERE action='event.create' AND event_id=?",
             (event_id,),
@@ -124,7 +126,7 @@ async def test_event_creation_rejects_malformed_idempotency_key(
         assert response.json()["error"]["code"] == "invalid_request"
 
 
-async def test_exact_event_grants_can_be_created_updated_listed_and_revoked(
+async def test_exact_event_grant_api_is_retired(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -135,79 +137,34 @@ async def test_exact_event_grants_can_be_created_updated_listed_and_revoked(
             headers=_mutation(csrf), json=EVENT_PAYLOAD,
         )
         event_id = event.json()["id"]
-        now = int(time.time() * 1000)
-        connection.execute(
-            """INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms)
-               VALUES('grant-user','grantee@example.com','grantee@example.com','active',?,?)""",
-            (now, now),
-        )
-        connection.commit()
-
-        created = await root.post(
+        create = await root.post(
             f"/api/v1/admin/events/{event_id}/access-grants",
             headers=_mutation(csrf),
-            json={"email": "grantee@example.com", "permission": "view"},
+            json={"email": "grantee@example.com", "permission": "manage"},
         )
-        assert created.status_code == 201, created.text
-        assert created.json()["permission"] == "view"
         listed = await root.get(f"/api/v1/admin/events/{event_id}/access-grants")
-        assert [(row["email"], row["permission"]) for row in listed.json()["data"]] == [
-            ("root@example.com", "owner"), ("grantee@example.com", "view")
-        ]
-
-        updated = await root.patch(
+        update = await root.patch(
             f"/api/v1/admin/events/{event_id}/access-grants/grant-user",
             headers=_mutation(csrf), json={"permission": "manage"},
         )
-        assert updated.status_code == 200
-        assert updated.json()["permission"] == "manage"
-        assert connection.execute(
-            """SELECT permission FROM resource_access_grants
-               WHERE resource_id=? AND user_id='grant-user' AND status='active'""",
-            (event_id,),
-        ).fetchone()[0] == "manage"
-
-        owner_id = connection.execute(
-            "SELECT owner_user_id FROM owned_resources WHERE id=?", (event_id,)
-        ).fetchone()[0]
-        denied = await root.patch(
-            f"/api/v1/admin/events/{event_id}/access-grants/{owner_id}",
-            headers=_mutation(csrf), json={"permission": "view"},
-        )
-        assert denied.status_code == 409
-
-        revoked = await root.delete(
+        revoke = await root.delete(
             f"/api/v1/admin/events/{event_id}/access-grants/grant-user",
             headers={**_mutation(csrf), "content-type": "application/json"},
         )
-        assert revoked.status_code == 204, revoked.text
-        assert connection.execute(
-            """SELECT status FROM resource_access_grants
-               WHERE resource_id=? AND user_id='grant-user' AND permission='manage'""",
-            (event_id,),
-        ).fetchone()[0] == "revoked"
-        assert connection.execute(
-            """SELECT COUNT(*) FROM audit_events
-               WHERE event_id=? AND action LIKE 'resource_access_grant.%'""",
-            (event_id,),
-        ).fetchone()[0] == 3
+        assert [create.status_code, listed.status_code, update.status_code, revoke.status_code] == [
+            404,
+            404,
+            404,
+            404,
+        ]
 
 
-async def test_event_editor_cannot_promote_own_access_over_http(
+async def test_organization_grants_only_create_manage_authority(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
     async with _client(environment) as root:
         csrf, organization_id = await _bootstrap_admin(root, connection)
-        created = await root.post(
-            f"/api/v1/admin/organizations/{organization_id}/events",
-            headers=_mutation(csrf),
-            json=EVENT_PAYLOAD,
-        )
-        event_id = created.json()["id"]
-        owner_id = connection.execute(
-            "SELECT owner_user_id FROM owned_resources WHERE id=?", (event_id,)
-        ).fetchone()[0]
         now = int(time.time() * 1000)
         connection.execute(
             """INSERT INTO users
@@ -215,89 +172,26 @@ async def test_event_editor_cannot_promote_own_access_over_http(
                VALUES('editor-user','editor@example.com','editor@example.com','active',?,?)""",
             (now, now),
         )
-        connection.execute(
-            """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES('editor-member',?,'editor-user','member','active',?,?)""",
-            (organization_id, now, now),
-        )
-        connection.execute(
-            """INSERT INTO user_roles
-               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
-               VALUES('editor-user','organizer','active',?,?,1)""",
-            (now, now),
-        )
         connection.commit()
-        granted = await root.post(
-            f"/api/v1/admin/events/{event_id}/access-grants",
+        rejected = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/access-grants",
             headers=_mutation(csrf),
             json={"email": "editor@example.com", "permission": "edit"},
         )
+        assert rejected.status_code == 422
+        granted = await root.post(
+            f"/api/v1/admin/organizations/{organization_id}/access-grants",
+            headers=_mutation(csrf),
+            json={"email": "editor@example.com"},
+        )
         assert granted.status_code == 201, granted.text
-
-        async with _client(environment) as editor:
-            requested = await editor.post(
-                "/api/v1/auth/magic-links",
-                json={"email": "editor@example.com", "redirect_path": "/account"},
-            )
-            assert requested.status_code == 202
-            signed_in = await editor.post(
-                "/auth/verify",
-                data={"token": _token(connection, "editor@example.com")},
-                follow_redirects=False,
-            )
-            assert signed_in.status_code == 303
-            editor_session = (await editor.get("/api/v1/auth/session")).json()
-
-            denied_list = await editor.get(
-                f"/api/v1/admin/events/{event_id}/access-grants"
-            )
-            denied_patch = await editor.patch(
-                f"/api/v1/admin/events/{event_id}/access-grants/editor-user",
-                headers=_mutation(editor_session["csrf_token"]),
-                json={"permission": "manage"},
-            )
-            denied_invite = await editor.post(
-                f"/api/v1/admin/events/{event_id}/invitations",
-                headers=_mutation(editor_session["csrf_token"]),
-                json={"email": "editor@example.com", "role": "event_admin"},
-            )
-            # Exact-resource authorization failures are deliberately 404 so
-            # an editor cannot use access administration to enumerate scope.
-            assert (denied_list.status_code, denied_patch.status_code) == (404, 404)
-            assert denied_invite.status_code == 404
-            assert connection.execute(
-                """SELECT permission FROM resource_access_grants
-                   WHERE resource_id=? AND user_id='editor-user' AND status='active'""",
-                (event_id,),
-            ).fetchone()[0] == "edit"
-
-            invited = await root.post(
-                f"/api/v1/admin/events/{event_id}/invitations",
-                headers=_mutation(csrf),
-                json={"email": "editor@example.com", "role": "event_admin"},
-            )
-            assert invited.status_code == 201, invited.text
-            accepted = await editor.post(
-                "/auth/verify",
-                data={"token": _token(connection, "editor@example.com")},
-                follow_redirects=False,
-            )
-            assert accepted.status_code == 303, accepted.text
-
-            active_permissions = connection.execute(
-                """SELECT permission FROM resource_access_grants
-                   WHERE resource_id=? AND user_id='editor-user' AND status='active'
-                   ORDER BY permission""",
-                (event_id,),
-            ).fetchall()
-            assert [row[0] for row in active_permissions] == ["manage"]
-            assert connection.execute(
-                """SELECT granted_by_user_id FROM resource_access_grants
-                   WHERE resource_id=? AND user_id='editor-user'
-                     AND permission='manage' AND status='active'""",
-                (event_id,),
-            ).fetchone()[0] == owner_id
+        assert granted.json()["permission"] == "manage"
+        update = await root.patch(
+            f"/api/v1/admin/organizations/{organization_id}/access-grants/editor-user",
+            headers=_mutation(csrf),
+            json={"permission": "manage"},
+        )
+        assert update.status_code == 405
 
 
 async def test_draft_can_store_past_dates_but_active_creation_and_activation_cannot(
@@ -359,7 +253,7 @@ async def _accept_invitation(client, connection, email: str) -> dict[str, object
     return session.json()
 
 
-async def test_second_event_admin_can_manage_but_not_escalate(
+async def test_event_admin_invitation_role_is_rejected(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -371,77 +265,15 @@ async def test_second_event_admin_can_manage_but_not_escalate(
             json=EVENT_PAYLOAD,
         )
         assert created.status_code == 201, created.text
-        event = created.json()
         invited = await root.post(
-            f"/api/v1/admin/events/{event['id']}/invitations",
+            f"/api/v1/admin/events/{created.json()['id']}/invitations",
             headers=_mutation(csrf),
             json={"email": "helper@example.com", "role": "event_admin"},
         )
-        assert invited.status_code == 201, invited.text
-        assert "accept_url" not in invited.json()
-
-        async with _client(environment) as helper:
-            helper_session = await _accept_invitation(helper, connection, "helper@example.com")
-            assert helper_session["profile_complete"] is False
-            assert helper_session["event_access"] == [
-                {
-                    "organization_id": organization_id,
-                    "event_id": event["id"],
-                    "event_name": event["name"],
-                    "permissions": ["manage"],
-                    "assignments": [],
-                }
-            ]
-            assert helper_session["organization_access"] == []
-            account_page = await helper.get("/account", follow_redirects=False)
-            assert account_page.status_code == 200
-            assert 'data-auth-shell' in account_page.text
-            helper_csrf = helper_session["csrf_token"]
-
-            # The second organizer can read and manage the event directly.
-            single = await helper.get(f"/api/v1/admin/events/{event['id']}")
-            assert single.status_code == 200
-            assert single.json()["time_zone"] == "Asia/Kolkata"
-            updated = await helper.patch(
-                f"/api/v1/admin/events/{event['id']}",
-                headers=_mutation(helper_csrf),
-                json={**EVENT_PAYLOAD, "name": "Speaker Summit 2027", "version": 1},
-            )
-            assert updated.status_code == 200, updated.text
-            assert updated.json()["name"] == "Speaker Summit 2027"
-            assert updated.json()["status"] == "active"
-            speaker_invite = await helper.post(
-                f"/api/v1/admin/events/{event['id']}/invitations",
-                headers=_mutation(helper_csrf),
-                json={"email": "talent@example.com", "role": "speaker", "display_name": "Talent"},
-            )
-            assert speaker_invite.status_code == 201, speaker_invite.text
-
-            # ...but cannot create events or escalate anyone to org admin.
-            denied_create = await helper.post(
-                f"/api/v1/admin/organizations/{organization_id}/events",
-                headers=_mutation(helper_csrf),
-                json=EVENT_PAYLOAD,
-            )
-            assert denied_create.status_code == 404
-            denied_escalation = await helper.post(
-                f"/api/v1/admin/events/{event['id']}/invitations",
-                headers=_mutation(helper_csrf),
-                json={"email": "helper@example.com", "role": "organization_admin"},
-            )
-            assert denied_escalation.status_code == 404
-        members = await root.get(f"/api/v1/admin/events/{event['id']}/members")
-        assert all(member["role"] != "event_admin" for member in members.json()["data"])
+        assert invited.status_code == 422
         assert connection.execute(
-            """SELECT permission FROM resource_access_grants
-               WHERE resource_id=? AND user_id=(
-                 SELECT id FROM users WHERE normalized_email='helper@example.com'
-               ) AND status='active'""",
-            (event["id"],),
-        ).fetchone()["permission"] == "manage"
-    assert connection.execute(
-        "SELECT COUNT(*) FROM organization_memberships WHERE role='organization_admin'"
-    ).fetchone()[0] == 1
+            "SELECT COUNT(*) FROM identity_invitations WHERE role='event_admin'"
+        ).fetchone()[0] == 0
 
 
 async def test_organization_admin_is_invitable_and_shares_org_control(
@@ -601,10 +433,10 @@ def test_console_gates_privileged_entry_points_by_real_permission() -> None:
     assert "function managesAnyOrganization(session)" in shell
     assert "function canManageOrganization(session, organizationId)" in shell
     assert shell.count('navLink("People", "/admin/people"') == 2
-    # Event sub-nav uses the exact event authority carried by the session —
-    # never authority over some unrelated resource.
-    assert "administersEventDirectly(session, currentEventId)" in shell
-    assert "(session.event_access || []).some" in shell
+    # Event sub-nav comes only from organization authority; event_access is
+    # assignment context for speakers and reviewers.
+    assert "administersEventDirectly" not in shell
+    assert "organizerWorkspace && currentEventId && organizationNavigation" in shell
     # Create event tracks the selected organization's exact manage permission.
     assert "canManageOrganization(state.organizationId)" in home
     assert 'byId("new-event").hidden = !manager' in home
@@ -673,25 +505,16 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
         )
         connection.commit()
 
-        # An event admin later invites the same address as a speaker.
-        helper_invite = await root.post(
+        speaker_invite = await root.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=_mutation(csrf),
-            json={"email": "helper@example.com", "role": "event_admin"},
+            json={
+                "email": "former@example.com",
+                "role": "speaker",
+                "display_name": "Former Admin",
+            },
         )
-        assert helper_invite.status_code == 201, helper_invite.text
-        async with _client(environment) as helper:
-            helper_session = await _accept_invitation(helper, connection, "helper@example.com")
-            speaker_invite = await helper.post(
-                f"/api/v1/admin/events/{event_id}/invitations",
-                headers=_mutation(helper_session["csrf_token"]),
-                json={
-                    "email": "former@example.com",
-                    "role": "speaker",
-                    "display_name": "Former Admin",
-                },
-            )
-            assert speaker_invite.status_code == 201, speaker_invite.text
+        assert speaker_invite.status_code == 201, speaker_invite.text
         async with _client(environment) as former:
             session = await _accept_invitation(former, connection, "former@example.com")
             # Reactivated as a speaker only — the admin role did not return.
@@ -701,7 +524,6 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
                     "organization_id": organization_id,
                     "event_id": event_id,
                     "event_name": "Speaker Summit",
-                    "permissions": [],
                     "assignments": ["speaker"],
                 }
             ]
@@ -712,7 +534,7 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
     assert tuple(membership) == ("member", "active")
 
 
-async def test_event_admin_cannot_manage_org_admin_invitations(
+async def test_organization_admin_can_resend_and_revoke_org_admin_invitations(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -731,27 +553,6 @@ async def test_event_admin_cannot_manage_org_admin_invitations(
         )
         assert co_owner_invite.status_code == 201
         invitation_id = co_owner_invite.json()["id"]
-        helper_invite = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=_mutation(csrf),
-            json={"email": "helper@example.com", "role": "event_admin"},
-        )
-        assert helper_invite.status_code == 201, helper_invite.text
-        async with _client(environment) as helper:
-            helper_session = await _accept_invitation(helper, connection, "helper@example.com")
-            helper_headers = _mutation(helper_session["csrf_token"])
-            resent = await helper.post(
-                f"/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
-                headers={**helper_headers, "content-type": "application/json"},
-                json={},
-            )
-            assert resent.status_code == 404, resent.text
-            revoked = await helper.delete(
-                f"/api/v1/admin/events/{event_id}/invitations/{invitation_id}",
-                headers={**helper_headers, "content-type": "application/json"},
-            )
-            assert revoked.status_code == 404, revoked.text
-        # The organization admin still can.
         resent = await root.post(
             f"/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
             headers={**_mutation(csrf), "content-type": "application/json"},
@@ -932,22 +733,17 @@ def _seed_events(connection, count: int, *, start: int = 1_900_000_000_000) -> N
     for index in range(count):
         connection.execute(
             "INSERT INTO events(id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,"
-            "location,delivery_mode,description,status,created_at_ms,updated_at_ms) "
-            "VALUES(?,?,?,?,?,'UTC','Online','virtual','Seeded','active',1,1)",
+            "location,delivery_mode,description,status,created_at_ms,updated_at_ms,"
+            "created_by_user_id) "
+            "VALUES(?,?,?,?,?,'UTC','Online','virtual','Seeded','active',1,1,?)",
             (
                 f"seed-event-{index:03d}",
                 connection.execute("SELECT id FROM organizations").fetchone()[0],
                 f"Seeded event {index:03d}",
                 start + index * 60_000,
                 start + index * 60_000 + 1,
+                owner_user_id,
             ),
-        )
-        connection.execute(
-            "INSERT INTO owned_resources"
-            "(id,resource_type,created_by_user_id,owner_user_id,status,"
-            "created_at_ms,updated_at_ms) "
-            "VALUES(?,'event',?,?,'active',1,1)",
-            (f"seed-event-{index:03d}", owner_user_id, owner_user_id),
         )
     connection.commit()
 
@@ -1049,7 +845,7 @@ async def test_active_events_can_be_ordered_nearest_upcoming_first(
         assert crossed.status_code == 400
 
 
-async def test_events_list_filters_event_admins_in_sql(
+async def test_events_list_includes_all_events_for_organization_admins(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -1065,7 +861,7 @@ async def test_events_list_filters_event_admins_in_sql(
         invited = await root.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=_mutation(csrf),
-            json={"email": "helper@example.com", "role": "event_admin"},
+            json={"email": "helper@example.com", "role": "organization_admin"},
         )
         assert invited.status_code == 201, invited.text
         async with _client(environment) as helper:
@@ -1075,9 +871,8 @@ async def test_events_list_filters_event_admins_in_sql(
             )
             assert listed.status_code == 200
             body = listed.json()
-            # Only the administered event comes back — the seeded events are
-            # excluded by the SQL join, not by post-fetch filtering.
-            assert [event["id"] for event in body["data"]] == [event_id]
+            assert event_id in {event["id"] for event in body["data"]}
+            assert len(body["data"]) == 11
             assert body["next_cursor"] is None
 
 
@@ -1114,7 +909,7 @@ def test_clients_respect_events_pagination() -> None:
     assert "organizations/${encodeURIComponent" not in scoped_loader
 
 
-async def test_organization_metrics_are_aggregated_and_role_scoped(
+async def test_organization_metrics_are_aggregated_and_admin_scoped(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -1150,7 +945,7 @@ async def test_organization_metrics_are_aggregated_and_role_scoped(
         invited = await root.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=_mutation(csrf),
-            json={"email": "helper@example.com", "role": "event_admin"},
+            json={"email": "helper@example.com", "role": "organization_admin"},
         )
         assert invited.status_code == 201, invited.text
         async with _client(environment) as helper:
@@ -1159,8 +954,7 @@ async def test_organization_metrics_are_aggregated_and_role_scoped(
                 f"/api/v1/admin/organizations/{organization_id}/metrics"
             )
             assert scoped.status_code == 200
-            # Event admins see counts over the events they administer only.
-            assert scoped.json()["event_count"] == 1
+            assert scoped.json()["event_count"] == 56
             assert scoped.json()["speaker_count"] == 0
             assert scoped.json()["session_count"] == 0
             assert scoped.json()["proposal_count"] == 0
@@ -1183,17 +977,11 @@ def _seed_speaker_graph(connection) -> None:
     for suffix in ("a", "b"):
         connection.execute(
             "INSERT INTO events(id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,"
-            "location,delivery_mode,description,status,created_at_ms,updated_at_ms) "
-            "VALUES(?,?,?,?,?,'UTC','Online','virtual','D','active',?,?)",
+            "location,delivery_mode,description,status,created_at_ms,updated_at_ms,"
+            "created_by_user_id) "
+            "VALUES(?,?,?,?,?,'UTC','Online','virtual','D','active',?,?,?)",
             (f"spk-event-{suffix}", organization_id, f"Speaker event {suffix}",
-             1_910_000_000_000, 1_910_000_000_001, now, now),
-        )
-        connection.execute(
-            """INSERT INTO owned_resources
-               (id,resource_type,created_by_user_id,owner_user_id,status,
-                created_at_ms,updated_at_ms)
-               VALUES(?,'event',?,?,'active',?,?)""",
-            (f"spk-event-{suffix}", owner_user_id, owner_user_id, now, now),
+             1_910_000_000_000, 1_910_000_000_001, now, now, owner_user_id),
         )
     connection.execute(
         "INSERT INTO people(id,organization_id,display_name,created_at_ms,updated_at_ms) "

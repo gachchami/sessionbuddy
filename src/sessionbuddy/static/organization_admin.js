@@ -96,7 +96,7 @@
     const access = document.createElement("section");
     access.className = "organization-access-manager";
     access.dataset.organizationAccessId = organization.id;
-    access.innerHTML = `<div class="section-heading"><div><h4>Organizers</h4><p class="help">The owner and admins can manage every event in this organization.</p></div></div><form class="organization-grant-form" data-organization-grant-create="${organization.id}"><label>Account email<input name="email" type="email" autocomplete="email" maxlength="320" required></label><input name="permission" type="hidden" value="manage"><button type="submit">Add admin</button></form><p class="help organization-access-status" role="status" aria-live="polite"></p><ul class="item-list organizer-access-list organization-grant-list organization-admin-grid"><li>Loading organization access…</li></ul>`;
+    access.innerHTML = `<div class="section-heading"><div><h4>Organizers</h4><p class="help">The owner and admins can manage every event in this organization.</p></div></div><form class="organization-grant-form" data-organization-grant-create="${organization.id}"><label>Account email<input name="email" type="email" autocomplete="email" maxlength="320" required></label><button type="submit">Add admin</button></form><p class="help organization-access-status" role="status" aria-live="polite"></p><ul class="item-list organizer-access-list organization-grant-list organization-admin-grid"><li>Loading organization access…</li></ul>`;
     card.append(nameForm, access);
     if (isOwner) {
       const transfer = document.createElement("form");
@@ -164,7 +164,7 @@
       button.disabled = true;
       const email = form.elements.email.value.trim();
       try {
-        await api(`/api/v1/admin/organizations/${encodeURIComponent(form.dataset.organizationGrantCreate)}/access-grants`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token }, body: JSON.stringify({ email, permission: "manage" }) });
+        await api(`/api/v1/admin/organizations/${encodeURIComponent(form.dataset.organizationGrantCreate)}/access-grants`, { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token }, body: JSON.stringify({ email }) });
         form.reset(); await loadGrants(form.dataset.organizationGrantCreate); showStatus(`Organization organizer access granted to ${email}.`, "success");
       } catch (error) { showStatus(accessMessage(error, "Organization access could not be granted."), "error", true); }
       finally { button.disabled = false; }

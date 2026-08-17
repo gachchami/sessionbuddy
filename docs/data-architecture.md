@@ -1,8 +1,17 @@
 # Sessionbuddy data architecture
 
-Status: accepted platform foundation decision
-Scope: P0 persistence foundation only  
-Target: Python 3.13 on Cloudflare Workers, FastAPI/Pydantic, and Cloudflare D1 (SQLite semantics)
+**Purpose:** Define SessionBuddy's persistence boundaries, tenant keys, and
+schema invariants.
+
+**Status:** implemented
+
+**Authority:** The canonical baseline, ordered incremental migrations, and
+executable persistence and security tests outrank this design record.
+
+**Scope:** Platform persistence foundation
+
+**Target:** Python 3.13 on Cloudflare Workers, FastAPI/Pydantic, and Cloudflare
+D1 (SQLite semantics)
 
 ## 1. Goals and boundaries
 
@@ -55,11 +64,11 @@ UUIDv4 is the P0 choice because it is cryptographically random, opaque, availabl
 - Use optimistic concurrency on editable records through a nonnegative `version INTEGER` incremented by conditional updates (`WHERE id = ? AND version = ?`).
 
 `organization_memberships.role = 'member'` is an internal affiliation marker,
-not an application permission. It anchors event-scoped speakers, evaluators, and
-event administrators to the organization that owns their event, satisfying the
-tenant foreign-key boundary. It grants no UI or API capabilities and must not be
-presented as an assignable user role. `organization_admin` is the only
-organization-wide permission-bearing role.
+not an application permission. It anchors event-scoped participants to the
+organization that owns their event, satisfying the tenant foreign-key boundary.
+It grants no UI or API capabilities and must not be presented as an assignable
+user role. `organization_admin` is the only organization-wide
+permission-bearing role.
 
 ### 3.3 Naming and constraints
 
@@ -155,7 +164,7 @@ CREATE TABLE event_memberships (
   organization_id TEXT NOT NULL,
   event_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('event_admin', 'evaluator', 'speaker')),
+  role TEXT NOT NULL CHECK (role = 'speaker'),
   status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
   created_at_ms INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL,
@@ -168,7 +177,13 @@ CREATE TABLE event_memberships (
 );
 ```
 
-An organization membership represents the user's relationship to the tenant. Event memberships narrow access within that tenant. A role alone is not permission to a record: evaluators still require a later evaluation assignment, and speakers still require a later ownership/person link. Organization administrators receive event access through policy evaluation and do not require duplicated event membership rows.
+An organization membership represents the user's relationship to the tenant.
+Event memberships record speaker participation within that tenant. Reviewer
+eligibility comes from an accepted evaluator invitation and becomes access only
+through an evaluation assignment. A participation record alone is not
+permission to arbitrary event data. Organization administrators receive event
+access through policy evaluation and do not require duplicated event membership
+rows.
 
 ### 4.1 Authentication challenges and sessions
 

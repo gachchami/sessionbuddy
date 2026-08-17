@@ -48,9 +48,9 @@ def seed_event_platform(connection: sqlite3.Connection) -> None:
     connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES ('event-a','org-a','Event a',1000,2000,'UTC','Online','hybrid',
-                   'Test event','active',1000,1000)"""
+                   'Test event','active',1000,1000,'user-a')"""
     )
     connection.execute(
         """INSERT INTO event_memberships

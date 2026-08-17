@@ -21,7 +21,7 @@ const session = {
   active_role: "organizer",
   default_role: "organizer",
   organization_access: [{ organization_id: organizationId, organization_name: "Example Organization", permissions: ["owner"] }],
-  event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Example Event", permissions: ["owner"], assignments: [] }],
+  event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Example Event", assignments: [] }],
 };
 
 async function mockSession(page: Page, currentSession = session) {
@@ -106,7 +106,6 @@ test.describe("safe API and page failures", () => {
         organization_id: organizationId,
         event_id: eventId,
         event_name: "Example Event",
-        permissions: [],
         assignments: ["reviewer"],
       }],
     });

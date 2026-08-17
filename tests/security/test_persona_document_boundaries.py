@@ -592,7 +592,7 @@ async def test_event_document_uses_real_event_manage_policy(
     assert response.status_code == expected_status
 
 
-async def test_reviewer_access_document_matches_resource_access_manage_policy(
+async def test_organization_manager_can_open_reviewer_document(
     monkeypatch,
 ) -> None:
     async def edit_only_context(_request):
@@ -600,7 +600,7 @@ async def test_reviewer_access_document_matches_resource_access_manage_policy(
             actor=Actor(
                 "organizer-user",
                 active_persona=Persona.ORGANIZER,
-                resource_grants={"event-1": frozenset({ResourceGrant.EDIT})},
+                resource_grants={"organization-1": frozenset({ResourceGrant.MANAGE})},
             ),
             session_id="organizer-session",
         )
@@ -618,7 +618,7 @@ async def test_reviewer_access_document_matches_resource_access_manage_policy(
         )
 
     assert overview.status_code == 200
-    assert reviewers.status_code == 404
+    assert reviewers.status_code == 200
 
 
 async def test_reviewer_invitation_read_matches_archived_document_policy(

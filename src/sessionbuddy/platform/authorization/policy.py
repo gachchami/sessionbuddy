@@ -47,14 +47,6 @@ SPEAKER_PERMISSIONS = frozenset(
     }
 )
 
-# Kept as a compatibility export for callers/tests that enumerate the legacy
-# membership vocabulary. Administrative membership roles no longer authorize.
-ROLE_GRANTS = {
-    Role.ORGANIZATION_ADMIN: ORGANIZER_PERMISSIONS,
-    Role.EVENT_ADMIN: ORGANIZER_PERMISSIONS - {Permission.ORGANIZATION_MANAGE},
-    Role.SPEAKER: SPEAKER_PERMISSIONS,
-}
-
 OWNERSHIP_PERMISSIONS = SPEAKER_PERMISSIONS
 
 
@@ -62,7 +54,7 @@ def _resource_authority(
     actor: Actor, permission: Permission, context: ResourceContext
 ) -> bool:
     resource_id = context.authorization_resource_id
-    if resource_id in actor.owned_resource_ids:
+    if context.event_id is None and resource_id in actor.owned_resource_ids:
         return True
     grants = actor.resource_grants.get(resource_id, frozenset())
     # Organizer authority is organization-scoped. Owners and managers of an
@@ -76,12 +68,7 @@ def _resource_authority(
         )
         if ResourceGrant.MANAGE in organization_grants:
             return True
-    if permission in {
-        Permission.RESOURCE_ACCESS_MANAGE,
-        Permission.ORGANIZATION_MANAGE,
-    }:
-        return ResourceGrant.MANAGE in grants
-    return bool(grants & {ResourceGrant.EDIT, ResourceGrant.MANAGE})
+    return ResourceGrant.MANAGE in grants
 
 
 def authorize(

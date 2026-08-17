@@ -1,4 +1,4 @@
-"""Revoked exact-resource grants stay revoked after a fresh authentication."""
+"""Revoked organization authority stays revoked after fresh authentication."""
 
 from tests.security.test_organizer_workflow import (
     EVENT_PAYLOAD,
@@ -12,7 +12,7 @@ from tests.security.test_production_identity_flow import (
 from tests.security.test_resource_control_plane import _insert_user, _sign_in
 
 
-async def test_revoked_event_and_organization_grants_fail_after_reauthentication(
+async def test_revoked_organization_grant_fails_after_reauthentication(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -33,35 +33,22 @@ async def test_revoked_event_and_organization_grants_fail_after_reauthentication
         organization_grant = await owner.post(
             f"/api/v1/admin/organizations/{organization_id}/access-grants",
             headers=_mutation(owner_csrf),
-            json={"email": "revoked-manager@example.com", "permission": "manage"},
+            json={"email": "revoked-manager@example.com"},
         )
-        event_grant = await owner.post(
-            f"/api/v1/admin/events/{event_id}/access-grants",
-            headers=_mutation(owner_csrf),
-            json={"email": "revoked-manager@example.com", "permission": "manage"},
-        )
-        assert (organization_grant.status_code, event_grant.status_code) == (201, 201)
+        assert organization_grant.status_code == 201
 
         async with _client(environment) as delegate:
             initial = await _sign_in(
                 delegate, connection, "revoked-manager@example.com"
             )
             assert initial["organization_access"][0]["permissions"] == ["manage"]
-            assert initial["event_access"][0]["permissions"] == ["manage"]
 
             revoked_organization = await owner.delete(
                 f"/api/v1/admin/organizations/{organization_id}/access-grants/"
                 "revoked-manager",
                 headers={**_mutation(owner_csrf), "content-type": "application/json"},
             )
-            revoked_event = await owner.delete(
-                f"/api/v1/admin/events/{event_id}/access-grants/revoked-manager",
-                headers={**_mutation(owner_csrf), "content-type": "application/json"},
-            )
-            assert (revoked_organization.status_code, revoked_event.status_code) == (
-                204,
-                204,
-            )
+            assert revoked_organization.status_code == 204
             assert (await delegate.get("/api/v1/auth/session")).status_code == 401
 
             fresh = await _sign_in(
@@ -78,10 +65,7 @@ async def test_revoked_event_and_organization_grants_fail_after_reauthentication
                 404,
             )
 
-    assert [
-        tuple(row)
-        for row in connection.execute(
-            """SELECT resource_id,status FROM resource_access_grants
-               WHERE user_id='revoked-manager' ORDER BY resource_id"""
-        ).fetchall()
-    ] == sorted([(organization_id, "revoked"), (event_id, "revoked")])
+    assert tuple(connection.execute(
+        """SELECT resource_id,status FROM resource_access_grants
+           WHERE user_id='revoked-manager'"""
+    ).fetchone()) == (organization_id, "revoked")

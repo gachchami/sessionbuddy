@@ -77,9 +77,9 @@ def invitation_database() -> tuple[sqlite3.Connection, AsyncSqlite]:
     connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES('event','org','Event',?,?, 'UTC','Online','virtual','Description',
-                  'active',?,?)""",
+                  'active',?,?, 'owner')""",
         (now + 10_000_000, now + 20_000_000, now, now),
     )
     connection.execute(
@@ -586,13 +586,6 @@ async def test_accept_cannot_restore_revoked_organizer_authority(
            VALUES('former-org-admin','org','former-admin','organization_admin','revoked',?,?,?)""",
         (now, now, now),
     )
-    connection.execute(
-        """INSERT INTO event_memberships
-           (id,organization_id,event_id,user_id,role,status,revoked_at_ms,
-            created_at_ms,updated_at_ms)
-           VALUES('former-event-admin','org','event','former-admin','event_admin','revoked',?,?,?)""",
-        (now, now, now),
-    )
     seed_invitation(connection, token)
 
     accepted = await accept_co_speaker_invitation(token, request_for(database))
@@ -607,10 +600,7 @@ async def test_accept_cannot_restore_revoked_organizer_authority(
            WHERE organization_id='org' AND event_id='event' AND user_id='former-admin'
            ORDER BY role"""
     ).fetchall()
-    assert [tuple(row) for row in memberships] == [
-        ("event_admin", "revoked"),
-        ("speaker", "active"),
-    ]
+    assert [tuple(row) for row in memberships] == [("speaker", "active")]
 
 
 async def test_decline_consumes_token_without_creating_an_account(

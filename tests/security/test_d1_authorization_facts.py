@@ -171,7 +171,7 @@ def authorization_connection() -> sqlite3.Connection:
           user_id TEXT, organization_id TEXT, event_id TEXT, role TEXT, status TEXT
         );
         CREATE TABLE owned_resources (
-          id TEXT PRIMARY KEY, owner_user_id TEXT, status TEXT
+          id TEXT PRIMARY KEY, owner_user_id TEXT, status TEXT, resource_type TEXT
         );
         CREATE TABLE resource_access_grants (
           resource_id TEXT, user_id TEXT, permission TEXT, status TEXT
@@ -188,16 +188,16 @@ async def test_actor_facts_exclude_revoked_grants_and_archived_ownership() -> No
     connection = authorization_connection()
     try:
         connection.executemany(
-            "INSERT INTO owned_resources VALUES(?,?,?)",
+            "INSERT INTO owned_resources VALUES(?,?,?,?)",
             [
-                ("owned-active", "user-a", "active"),
-                ("owned-archived", "user-a", "archived"),
+                ("owned-active", "user-a", "active", "organization"),
+                ("owned-archived", "user-a", "archived", "organization"),
             ],
         )
         connection.executemany(
             "INSERT INTO resource_access_grants VALUES(?,?,?,?)",
             [
-                ("grant-active", "user-a", "edit", "active"),
+                ("grant-active", "user-a", "manage", "active"),
                 ("grant-revoked", "user-a", "manage", "revoked"),
             ],
         )
@@ -209,7 +209,7 @@ async def test_actor_facts_exclude_revoked_grants_and_archived_ownership() -> No
         assert actor is not None
         assert actor.owned_resource_ids == frozenset({"owned-active"})
         assert actor.resource_grants == {
-            "grant-active": frozenset({ResourceGrant.EDIT})
+            "grant-active": frozenset({ResourceGrant.MANAGE})
         }
     finally:
         connection.close()
@@ -219,11 +219,11 @@ async def test_actor_facts_do_not_silently_drop_resources_after_500() -> None:
     connection = authorization_connection()
     try:
         connection.executemany(
-            "INSERT INTO owned_resources VALUES(?,?, 'active')",
+            "INSERT INTO owned_resources VALUES(?,?, 'active','organization')",
             [(f"owned-{index:03}", "user-a") for index in range(501)],
         )
         connection.executemany(
-            "INSERT INTO resource_access_grants VALUES(?,?, 'view','active')",
+            "INSERT INTO resource_access_grants VALUES(?,?, 'manage','active')",
             [(f"grant-{index:03}", "user-a") for index in range(501)],
         )
 
@@ -235,6 +235,6 @@ async def test_actor_facts_do_not_silently_drop_resources_after_500() -> None:
         assert len(actor.owned_resource_ids) == 501
         assert len(actor.resource_grants) == 501
         assert "owned-500" in actor.owned_resource_ids
-        assert actor.resource_grants["grant-500"] == frozenset({ResourceGrant.VIEW})
+        assert actor.resource_grants["grant-500"] == frozenset({ResourceGrant.MANAGE})
     finally:
         connection.close()

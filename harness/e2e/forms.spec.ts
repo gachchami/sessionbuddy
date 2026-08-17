@@ -21,7 +21,7 @@ const organizerSession = {
   organization_id: organizationId,
   event_id: eventId,
   organization_access: [{ organization_id: organizationId, organization_name: "Example Events", permissions: ["owner"] }],
-  event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", permissions: ["owner"], assignments: [] }],
+  event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", assignments: [] }],
 };
 
 async function polyfillUuid(page: Page) {
@@ -165,7 +165,6 @@ test.describe("form validation and workflow wiring", () => {
         organization_id: organizationId,
         event_id: responsiveBuilderEventId,
         event_name: "Responsive Builder Conference",
-        permissions: ["owner"],
         assignments: [],
       }],
     };
@@ -542,7 +541,6 @@ test.describe("form validation and workflow wiring", () => {
         organization_id: organizationId,
         event_id: eventId,
         event_name: "Conference 2030",
-        permissions: [],
         assignments: ["reviewer"],
       }],
     });
@@ -904,7 +902,7 @@ test.describe("form validation and workflow wiring", () => {
 
   test("speaker custom task forms validate locally", async ({ page }) => {
     await polyfillUuid(page);
-    const speakerSession = { ...organizerSession, email: "speaker@example.com", account_roles: ["speaker"], active_role: "speaker", default_role: "speaker", organization_access: [], event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", permissions: [], assignments: ["speaker"] }] };
+    const speakerSession = { ...organizerSession, email: "speaker@example.com", account_roles: ["speaker"], active_role: "speaker", default_role: "speaker", organization_access: [], event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", assignments: ["speaker"] }] };
     await mockSession(page, speakerSession);
     let taskWrites = 0;
     let taskComplete = false;

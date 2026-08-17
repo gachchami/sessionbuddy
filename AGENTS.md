@@ -28,7 +28,9 @@ database. Never apply a changed baseline directly to an existing populated
 database.
 
 Schema changes after the current baseline must be delivered as ordered,
-incremental migrations. Incremental migrations must:
+incremental migrations in `migrations_baseline/`, the `migrations_dir`
+configured for every Worker environment. Add every new migration's SHA-256 to
+`migrations_baseline/checksums.sha256`. Incremental migrations must:
 
 - preserve existing tenant and application data;
 - add nullable columns or safe defaults before enforcing stricter constraints;
@@ -44,8 +46,29 @@ incremental migrations. Incremental migrations must:
 - include backup, validation, rollback, and recovery instructions;
 - never log, expose, or copy secrets into migration artifacts.
 
-Do not edit an already released incremental migration. Add a new migration for
-subsequent corrections.
+Do not edit an already released incremental migration or replace its recorded
+digest. Add a new migration and checksum entry for subsequent corrections.
+
+Before the first production deployment, the user may explicitly authorize a
+development-only baseline rebase when every affected database is disposable.
+The authorization must name the environments or databases in scope, confirm
+that none contains production, staging, or otherwise retained data, and
+authorize their reset. For that named scope, an agent may replace the baseline,
+remove the incremental files incorporated into it, regenerate
+`checksums.sha256`, and recreate those databases from empty. The agent must
+still:
+
+- preserve the previous migration chain in Git history;
+- prove that the previous baseline plus its incrementals and the proposed
+  baseline have equivalent schema and required seed semantics;
+- run the fresh-install, foreign-key, tenant-isolation, and critical-record
+  checks; and
+- run the complete release gate after the reset.
+
+This authorization cannot waive migration, backup, or rollback requirements
+for production, staging, or any database whose data must be retained. If the
+scope or disposability of a database is uncertain, stop and ask the user rather
+than resetting or rebasing it.
 
 The baseline may be periodically rebased to incorporate accumulated
 incremental migrations, but only during an explicitly planned maintenance
@@ -62,9 +85,11 @@ window. A baseline rebase requires:
 7. retention of the previous database or backup until post-release validation
    is complete.
 
-After a baseline rebase, archive the incorporated migration history according
-to the migration runner’s documented procedure. Never delete migration
-bookkeeping from a live database merely to make it resemble a fresh install.
+Outside the explicitly authorized disposable-development path above, retain
+incorporated migration files and their checksums until this repository contains
+and tests an archival procedure compatible with the configured D1 migration
+runner. Never delete migration files or live database bookkeeping merely to
+make an upgraded database resemble a fresh install.
 
 ## Working model
 

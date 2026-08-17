@@ -44,7 +44,6 @@ async function serve(page: import("@playwright/test").Page) {
       { id: "accepted", event_id: eventId, email: "reviewer@example.test", display_name: "Rina Reviewer", job_title: "Engineering Director", company: "Review Labs", role: "evaluator", status: "accepted" },
       { id: "pending", event_id: eventId, email: "pending@example.test", display_name: "Pat Pending", role: "evaluator", status: "pending" },
       { id: "speaker", event_id: eventId, email: "speaker@example.test", role: "speaker", status: "pending" },
-      { id: "legacy", event_id: eventId, email: "legacy@example.test", role: "event_admin", status: "accepted" },
     ] } });
   });
   return { postedRole: () => postedRole };
@@ -65,7 +64,6 @@ test.describe("event invitation RBAC", () => {
     await expect(page.getByText("reviewer@example.test")).toBeVisible();
     await expect(page.getByText("pending@example.test")).toBeVisible();
     await expect(page.getByText("speaker@example.test")).toHaveCount(0);
-    await expect(page.getByText("legacy@example.test")).toHaveCount(0);
     await expect(page.getByText("Resource access")).toHaveCount(0);
     await expect(page.getByText("Event ownership")).toHaveCount(0);
     expect((await new AxeBuilder({ page }).include("#main").analyze()).violations).toEqual([]);

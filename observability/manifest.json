@@ -13,19 +13,6 @@
         "p95_ms": 300
       }
     },
-    "DELETE /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
-      "benchmark": "identity-revoke-resource-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 400
-      }
-    },
     "DELETE /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
       "benchmark": "scheduling-unschedule-agenda-item",
       "dashboards": [
@@ -193,19 +180,6 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 500
-      }
-    },
-    "GET /api/v1/admin/events/{event_id}/access-grants": {
-      "benchmark": "identity-list-resource-access-grants",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 400
       }
     },
     "GET /api/v1/admin/events/{event_id}/agenda": {
@@ -532,19 +506,6 @@
     },
     "GET /api/v1/admin/organizations/{organization_id}/metrics": {
       "benchmark": "admin-organization-metrics",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 500
-      }
-    },
-    "GET /api/v1/admin/organizations/{organization_id}/ownership-recovery/events": {
-      "benchmark": "identity-list-ownership-recovery-events",
       "dashboards": [
         "release-health",
         "api-explorer"
@@ -1016,19 +977,6 @@
         "p95_ms": 500
       }
     },
-    "PATCH /api/v1/admin/events/{event_id}/access-grants/{user_id}": {
-      "benchmark": "identity-update-resource-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 500
-      }
-    },
     "PATCH /api/v1/admin/events/{event_id}/agenda/items/{item_id}": {
       "benchmark": "scheduling-move-agenda-item",
       "dashboards": [
@@ -1131,19 +1079,6 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 400
-      }
-    },
-    "PATCH /api/v1/admin/organizations/{organization_id}/access-grants/{user_id}": {
-      "benchmark": "identity-update-organization-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 500
       }
     },
     "PATCH /api/v1/forms/{slug}/submissions/{submission_id}": {
@@ -1287,19 +1222,6 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 300
-      }
-    },
-    "POST /api/v1/admin/events/{event_id}/access-grants": {
-      "benchmark": "identity-create-resource-access-grant",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 500
       }
     },
     "POST /api/v1/admin/events/{event_id}/agenda/auto-schedule": {
@@ -1639,19 +1561,6 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 2000
-      }
-    },
-    "POST /api/v1/admin/events/{event_id}/ownership-transfers": {
-      "benchmark": "identity-transfer-event-ownership",
-      "dashboards": [
-        "release-health",
-        "api-explorer"
-      ],
-      "owner": "identity",
-      "runbook": "docs/debugging-runbook.md#identity",
-      "slo": {
-        "error_rate_max": 0.001,
-        "p95_ms": 500
       }
     },
     "POST /api/v1/admin/events/{event_id}/resources": {

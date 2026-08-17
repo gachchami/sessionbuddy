@@ -49,12 +49,11 @@ def test_day_n_fixture_uses_personas_exact_grants_and_assignments() -> None:
 
     event_keys = {event["key"] for event in load("02-events.json")["events"]}
     ownership = accounts["resource_ownership"]
-    event_ownership = [item for item in ownership if item["resource_type"] == "event"]
-    assert {item["resource"] for item in event_ownership} == event_keys
+    assert not any(item["resource_type"] == "event" for item in ownership)
     assert all(item["created_by"] == "user-organizer-1" for item in ownership)
     assert all(item["owner"] == "user-organizer-1" for item in ownership)
     assert all(
-        grant["permission"] in {"view", "edit", "manage"}
+        grant["permission"] == "manage" and grant["resource_type"] == "organization"
         for grant in accounts["resource_grants"]
     )
     assert not any(

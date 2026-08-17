@@ -238,12 +238,15 @@ test.describe("public smoke checks", () => {
         account_roles: ["organizer"],
         active_role: "organizer",
         default_role: "organizer",
-        organization_access: [],
+        organization_access: [{
+          organization_id: "11111111-1111-4111-8111-111111111111",
+          organization_name: "Agent Platforms",
+          permissions: ["owner"],
+        }],
         event_access: [{
           organization_id: "11111111-1111-4111-8111-111111111111",
           event_id: eventId,
           event_name: "Agent Platforms Summit",
-          permissions: ["owner"],
           assignments: [],
         }],
       }),
@@ -296,12 +299,15 @@ test.describe("public smoke checks", () => {
         account_roles: ["organizer"],
         active_role: "organizer",
         default_role: "organizer",
-        organization_access: [],
+        organization_access: [{
+          organization_id: "11111111-1111-4111-8111-111111111111",
+          organization_name: "Agent Platforms",
+          permissions: ["owner"],
+        }],
         event_access: [{
           organization_id: "11111111-1111-4111-8111-111111111111",
           event_id: eventId,
           event_name: "Agent Platforms Summit",
-          permissions: ["owner"],
           assignments: [],
         }],
       }),
@@ -742,7 +748,6 @@ test.describe("administration empty states", () => {
             organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             event_id: eventId,
             event_name: "Example Event",
-            permissions: ["owner"],
             assignments: [],
           }],
         }),
@@ -857,7 +862,7 @@ test.describe("administration empty states", () => {
         display_name: "Admin User",
         account_roles: ["organizer"], active_role: "organizer", default_role: "organizer",
         organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", organization_name: "Open Source Summit", permissions: ["owner"] }],
-        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", permissions: ["owner"], assignments: [] }],
+        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "Open Source Summit 2026", assignments: [] }],
       })),
     }));
     await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Open Source Summit", status: "active", version: 1 }] }) }));
@@ -909,7 +914,7 @@ test.describe("administration empty states", () => {
           profile_complete: true, email: "admin@example.com", display_name: "Admin User",
         account_roles: ["organizer"], active_role: "organizer", default_role: "organizer",
         organization_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", organization_name: "Open Source Summit", permissions: ["owner"] }],
-        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "World Fair 2026", permissions: ["owner"], assignments: [] }],
+        event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "World Fair 2026", assignments: [] }],
       }),
     }));
     await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({
@@ -961,7 +966,7 @@ test.describe("administration empty states", () => {
             organization_name: "Example Organization",
             permissions: ["owner"],
           }],
-          event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "World Fair 2026", permissions: ["owner"], assignments: [] }],
+          event_access: [{ organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", event_id: eventId, event_name: "World Fair 2026", assignments: [] }],
         }),
       });
     });

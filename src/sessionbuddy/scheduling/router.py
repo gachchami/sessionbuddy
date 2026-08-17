@@ -259,9 +259,7 @@ async def _speaker_ids(db, organization_id: str, event_id: str, accepted_session
 
 def _can_manage_resource(actor, resource_id: str) -> bool:
     grants = actor.resource_grants.get(resource_id, frozenset())
-    return resource_id in actor.owned_resource_ids or bool(
-        grants & {ResourceGrant.EDIT, ResourceGrant.MANAGE}
-    )
+    return resource_id in actor.owned_resource_ids or ResourceGrant.MANAGE in grants
 
 
 def _can_manage_event(actor, event_id: str) -> bool:
@@ -1388,7 +1386,7 @@ async def update_event_label(
     if current is None:
         raise HTTPException(status_code=404)
     if body.status == "archived" or str(current["status"]) == "archived":
-        # Label lifecycle belongs to the event owner/managers. This prevents
+        # Label lifecycle belongs to organization administrators. This prevents
         # a departed label creator from orphaning an active label forever.
         auth = await require_permission(
             request,

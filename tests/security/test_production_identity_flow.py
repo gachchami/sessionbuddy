@@ -1097,15 +1097,8 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert event.json()["email_reply_to"] == "program@example.com"
         event_id = event.json()["id"]
         refreshed_session = (await admin.get("/api/v1/auth/session")).json()
-        assert refreshed_session["event_access"] == [
-            {
-                "organization_id": organization_id,
-                "event_id": event_id,
-                "event_name": "Speaker Summit",
-                "permissions": ["owner"],
-                "assignments": [],
-            }
-        ]
+        assert refreshed_session["organization_access"] == session["organization_access"]
+        assert refreshed_session["event_access"] == []
         assert (await admin.get(f"/api/v1/admin/events/{event_id}/agenda")).status_code == 404
         agenda_headers = {**mutation_headers, "idempotency-key": "agenda-setup-2026"}
         agenda = await admin.post(
@@ -1875,7 +1868,6 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
                     "organization_id": organization_id,
                     "event_id": event_id,
                     "event_name": "Speaker Summit",
-                    "permissions": [],
                     "assignments": ["reviewer"],
                 }
             ]
@@ -2177,12 +2169,11 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             headers=headers,
         )
         assert revoked.status_code == 204
-        assert (
-            await admin_again.delete(
-                f"/api/v1/admin/events/{event_id}/members/{session['user_id']}/roles/event_admin",
-                headers=headers,
-            )
-        ).status_code == 409
+        retired_role = await admin_again.delete(
+            f"/api/v1/admin/events/{event_id}/members/{session['user_id']}/roles/event_admin",
+            headers=headers,
+        )
+        assert retired_role.status_code == 422
 
     assert len(queue.messages) >= 3
     members = connection.execute(
@@ -2588,10 +2579,9 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
         assert legacy_cfp.headers["location"] == f"/cfp/{event_key}/admin-speaker"
         assert (await client.get(legacy_cfp.headers["location"])).status_code == 200
         cfp_session = (await client.get("/api/v1/auth/session")).json()
-        event_access = next(
-            access for access in cfp_session["event_access"] if access["event_id"] == event_id
+        assert not any(
+            access["event_id"] == event_id for access in cfp_session["event_access"]
         )
-        assert event_access["permissions"] == ["owner"]
         cfp_headers = {"origin": "https://test", "x-csrf-token": cfp_session["csrf_token"]}
         draft = await client.put(
             "/api/v1/forms/admin-speaker/draft",
@@ -2618,7 +2608,7 @@ async def test_existing_admin_becomes_speaker_only_after_submitting_cfp(
         event_access = next(
             access for access in cfp_session["event_access"] if access["event_id"] == event_id
         )
-        assert event_access["permissions"] == ["owner"]
+        assert "permissions" not in event_access
         assert event_access["assignments"] == ["speaker"]
         switched = await client.put(
             "/api/v1/session/active-role",

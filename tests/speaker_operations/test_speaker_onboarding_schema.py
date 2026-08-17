@@ -22,6 +22,9 @@ def db() -> sqlite3.Connection:
 
 def seed_platform(db: sqlite3.Connection) -> None:
     now = 1_000
+    event_has_creator = "created_by_user_id" in {
+        str(row[1]) for row in db.execute("PRAGMA table_info(events)")
+    }
     for suffix in ("a", "b"):
         db.execute(
             "INSERT INTO organizations (id,name,status,created_at_ms,updated_at_ms) "
@@ -45,13 +48,40 @@ def seed_platform(db: sqlite3.Connection) -> None:
             "VALUES (?,?,?,'member','active',?,?)",
             (f"org-member-{suffix}", f"org-{suffix}", f"user-{suffix}", now, now),
         )
-        db.execute(
-            "INSERT INTO events "
-            "(id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,"
-            "delivery_mode,description,status,created_at_ms,updated_at_ms) "
-            "VALUES (?,?,?,1000,2000,'UTC','Online','hybrid','Test event','active',?,?)",
-            (f"event-{suffix}", f"org-{suffix}", f"Event {suffix}", now, now),
+        event_columns = (
+            "id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,"
+            "delivery_mode,description,status,created_at_ms,updated_at_ms"
         )
+        event_values = "?,?,?,1000,2000,'UTC','Online','hybrid','Test event','active',?,?"
+        parameters: tuple[object, ...] = (
+            f"event-{suffix}",
+            f"org-{suffix}",
+            f"Event {suffix}",
+            now,
+            now,
+        )
+        if event_has_creator:
+            event_columns += ",created_by_user_id"
+            event_values += ",?"
+            parameters += (f"user-{suffix}",)
+        db.execute(
+            f"INSERT INTO events ({event_columns}) VALUES ({event_values})",  # noqa: S608
+            parameters,
+        )
+        if not event_has_creator:
+            db.execute(
+                """INSERT INTO owned_resources
+                   (id,resource_type,created_by_user_id,owner_user_id,status,version,
+                    created_at_ms,updated_at_ms)
+                   VALUES(?,'event',?,?,'active',1,?,?)""",
+                (
+                    f"event-{suffix}",
+                    f"user-{suffix}",
+                    f"user-{suffix}",
+                    now,
+                    now,
+                ),
+            )
         db.execute(
             "INSERT INTO event_memberships "
             "(id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms) "

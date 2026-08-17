@@ -253,12 +253,11 @@ def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
     assert "if (topbarOnlyWorkspace) {" in javascript
 
 
-def test_account_brand_uses_the_active_role_destination() -> None:
+def test_account_brand_wiring_uses_the_active_role_destination() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert "const activeDestination = roleDestination(active, session)" in javascript
-    assert 'const brand = link("", activeDestination)' in javascript
-    assert 'const accountBrand = link("", activeDestination)' in javascript
+    assert 'link("", activeDestination)' in javascript
     assert (
         'organizerWorkspace ? organizerDestination(session) : roles.has("speaker")'
         not in javascript
@@ -348,7 +347,7 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert "Platform status" not in primary_navigation
     assert "Speaker portal" not in hero_actions
     assert 'const label = "Open dashboard"' in javascript
-    assert 'if (managesAnyOrganization(session)) return "/admin"' in javascript
+    assert 'return managesAnyOrganization(session) ? "/admin" : null' in javascript
     assert 'return "/speaker"' in javascript
     assert 'return "/reviews"' in javascript
     assert 'choice.role === "speaker"' in javascript
@@ -394,24 +393,27 @@ def test_organizer_without_manageable_resources_has_no_account_fallback() -> Non
     organizer_destination = javascript.split("function organizerDestination(session)", 1)[1].split(
         "const roleDestination", 1
     )[0]
-    assert 'return "/admin"' in organizer_destination
-    assert "event.event_id" in organizer_destination
+    assert '? "/admin" : null' in organizer_destination
+    assert "event.event_id" not in organizer_destination
     assert 'return "/account"' not in organizer_destination
     assert " : null" in organizer_destination
 
     assert "const activeDestination = roleDestination(active, session)" in javascript
     assert "if (!activeDestination) {" in javascript
     assert 'renderSessionContractError("workspace")' in javascript
-    assert "this session has no manageable organization or event" in javascript
+    assert "this session has no manageable organization" in javascript
     assert "if (!dashboardDestination(session) && !rolelessNeutral) {" in javascript
 
 
-def test_exact_event_only_organizers_land_in_their_event_workspace() -> None:
+def test_organizer_destination_does_not_use_event_access() -> None:
     shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     overview = (STATIC / "event_overview.js").read_text(encoding="utf-8")
 
     assert "function organizerDestination(session)" in shell
-    assert "session.event_access || []" in shell
+    destination = shell.split("function organizerDestination(session)", 1)[1].split(
+        "const roleDestination", 1
+    )[0]
+    assert "event_access" not in destination
     assert "if (organizerWorkspace && !organizationWorkspace && !currentEventId)" in shell
     assert 'api("/api/v1/admin/organizations")' not in overview
     assert 'if (!organization) throw new Error("This event is not available' not in overview
@@ -491,16 +493,15 @@ def test_every_organizer_persona_reaches_a_navigable_workspace() -> None:
     # Organization links are gated on organization authority alone, so they
     # still render on the persona-neutral /account page.
     organization_gate = (
-        "const organizationNavigation = organizer && managesAnyOrganization(session);"
+        "const organizationNavigation = !onboardingLocked && organizer "
+        "&& managesAnyOrganization(session);"
     )
     assert organization_gate in javascript
     assert "if (organizationNavigation) {" in javascript
 
-    # An organizer whose authority is a set of exact event grants gets their
-    # granted events instead of an empty rail.
-    assert "if (organizer && !organizationNavigation) {" in javascript
-    assert "const grantedEvents = eventsWithContentAccess(session);" in javascript
-    assert '"Your events"' in javascript
+    # Retired event grants never manufacture organizer navigation.
+    assert "eventsWithContentAccess" not in javascript
+    assert '"Your events"' not in javascript
 
     # Portals come from every role on the account, not just the active one.
     assert "const accountRoles = new Set((session.account_roles || [])" in javascript
@@ -510,23 +511,17 @@ def test_every_organizer_persona_reaches_a_navigable_workspace() -> None:
     assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
 
 
-def test_event_navigation_matches_the_server_authority_split() -> None:
-    """`edit` earns the event workspace; only owner/manage earns Team & access."""
+def test_event_navigation_comes_only_from_organization_authority() -> None:
+    """Event assignments never manufacture organizer navigation."""
 
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    assert 'const CONTENT_PERMISSIONS = ["owner", "manage", "edit"];' in javascript
     assert 'const ADMIN_PERMISSIONS = ["owner", "manage"];' in javascript
 
-    # Content authority opens the event navigation.
-    assert "function worksInEventDirectly(session, eventId)" in javascript
-    assert "worksInEventDirectly(session, currentEventId) || organizationNavigation" in javascript
-
-    # Access administration is a separate, narrower test.
-    assert "function administersEventDirectly(session, eventId)" in javascript
-    assert "item.event_id === eventId && holds(item, ADMIN_PERMISSIONS)" in javascript
-    event_nav_call = "eventNav(currentEventId, administersEventDirectly(session, currentEventId))"
-    assert event_nav_call in javascript
+    assert "function worksInEventDirectly" not in javascript
+    assert "function administersEventDirectly" not in javascript
+    assert "organizerWorkspace && currentEventId && organizationNavigation" in javascript
+    assert "eventNav(currentEventId, true)" in javascript
 
 
 def test_event_navigation_does_not_duplicate_proposal_sections() -> None:
@@ -554,7 +549,8 @@ def test_sessionbuddy_access_helpers_are_exact_resource_scoped() -> None:
     assert "function canEditEvent(session, event)" in javascript
     assert "function canManageLifecycle(session, event)" in javascript
     assert "function canDuplicateEvent(session, event)" in javascript
-    assert "const direct = exactEventAccess(session, event);" in javascript
+    assert "exactEventAccess" not in javascript
+    assert javascript.count("return canManageOrganization(session, event?.organization_id);") == 3
     assert "window.SessionBuddyAccess = Object.freeze({" in javascript
 
 

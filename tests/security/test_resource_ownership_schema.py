@@ -24,40 +24,50 @@ def db() -> sqlite3.Connection:
 
 def test_creator_is_immutable_and_owner_does_not_need_a_grant(db: sqlite3.Connection) -> None:
     db.execute(
+        "INSERT INTO organizations(id,name,status,created_at_ms,updated_at_ms) "
+        "VALUES('organization','Organization','active',1,1)"
+    )
+    db.execute(
         """INSERT INTO owned_resources
            (id,resource_type,created_by_user_id,owner_user_id,status,created_at_ms,updated_at_ms)
-           VALUES('event','event','creator','creator','active',1,1)"""
+           VALUES('organization','organization','creator','creator','active',1,1)"""
     )
     with pytest.raises(sqlite3.IntegrityError, match="resource creator is immutable"):
-        db.execute("UPDATE owned_resources SET created_by_user_id='delegate' WHERE id='event'")
+        db.execute(
+            "UPDATE owned_resources SET created_by_user_id='delegate' WHERE id='organization'"
+        )
     with pytest.raises(sqlite3.IntegrityError, match="owner does not need"):
         db.execute(
             """INSERT INTO resource_access_grants
                (id,resource_id,user_id,permission,status,granted_by_user_id,
                 created_at_ms,updated_at_ms)
-               VALUES('redundant','event','creator','manage','active','creator',1,1)"""
+               VALUES('redundant','organization','creator','manage','active','creator',1,1)"""
         )
 
 
-def test_delegation_is_exact_to_one_resource(db: sqlite3.Connection) -> None:
-    for resource_id in ("event-a", "event-b"):
+def test_delegation_is_exact_to_one_organization(db: sqlite3.Connection) -> None:
+    for resource_id in ("organization-a", "organization-b"):
+        db.execute(
+            "INSERT INTO organizations(id,name,status,created_at_ms,updated_at_ms) "
+            "VALUES(?,?, 'active',1,1)",
+            (resource_id, resource_id),
+        )
         db.execute(
             """INSERT INTO owned_resources
                (id,resource_type,created_by_user_id,owner_user_id,status,
                 created_at_ms,updated_at_ms)
-               VALUES(?,'event','creator','creator','active',1,1)""",
+               VALUES(?,'organization','creator','creator','active',1,1)""",
             (resource_id,),
         )
     db.execute(
         """INSERT INTO resource_access_grants
            (id,resource_id,user_id,permission,status,granted_by_user_id,
             created_at_ms,updated_at_ms)
-           VALUES('grant','event-a','delegate','manage','active','creator',1,1)"""
+           VALUES('grant','organization-a','delegate','manage','active','creator',1,1)"""
     )
 
     accessible = db.execute(
         """SELECT resource_id FROM resource_access_grants
            WHERE user_id='delegate' AND status='active'"""
     ).fetchall()
-    assert accessible == [("event-a",)]
-
+    assert accessible == [("organization-a",)]

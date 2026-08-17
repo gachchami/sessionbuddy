@@ -64,7 +64,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 117, "table": 82, "trigger": 110}
+        assert object_counts == {"index": 117, "table": 82, "trigger": 120}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
@@ -98,11 +98,14 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
 def test_round_version_migration_upgrades_existing_rounds_without_losing_assignments() -> None:
     """Upgrade the immediately preceding schema with live round data in place."""
     migrations = sorted(BASELINE.parent.glob("*.sql"))
-    assert migrations[-1].name == "0008_evaluation_round_version_contract.sql"
+    round_migration = next(
+        item for item in migrations if item.name == "0008_evaluation_round_version_contract.sql"
+    )
+    round_index = migrations.index(round_migration)
     connection = sqlite3.connect(":memory:")
     connection.execute("PRAGMA foreign_keys = ON")
     try:
-        for migration in migrations[:-1]:
+        for migration in migrations[:round_index]:
             connection.executescript(migration.read_text(encoding="utf-8"))
         seed_platform(connection)
         connection.execute(
@@ -154,7 +157,7 @@ def test_round_version_migration_upgrades_existing_rounds_without_losing_assignm
         )
         connection.commit()
 
-        connection.executescript(migrations[-1].read_text(encoding="utf-8"))
+        connection.executescript(round_migration.read_text(encoding="utf-8"))
 
         assert connection.execute(
             "SELECT id,version FROM evaluation_rounds WHERE id LIKE 'legacy-round-%' ORDER BY id"
@@ -170,6 +173,239 @@ def test_round_version_migration_upgrades_existing_rounds_without_losing_assignm
             ).fetchone()
         ) == ("legacy-round-draft", "submission-a", "user-a", "assigned")
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()
+
+
+def test_event_administration_retirement_revokes_legacy_authority() -> None:
+    migrations = sorted(BASELINE.parent.glob("*.sql"))
+    retirement = migrations[-1]
+    assert retirement.name == "0009_retire_event_administration.sql"
+    connection = sqlite3.connect(":memory:")
+    connection.execute("PRAGMA foreign_keys = ON")
+    try:
+        for migration in migrations[:-1]:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        seed_platform(connection)
+        connection.execute(
+            "INSERT INTO user_roles VALUES ('user-a','organizer','active',1000,1000,NULL,1)"
+        )
+        connection.execute(
+            """INSERT INTO owned_resources
+               (id,resource_type,created_by_user_id,owner_user_id,status,version,
+                created_at_ms,updated_at_ms)
+               VALUES('org-a','organization','user-b','user-b','active',1,1000,1000),
+                     ('org-b','organization','user-a','user-a','active',1,1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO resource_ownership_transfers
+               (id,resource_id,from_user_id,to_user_id,transferred_by_user_id,
+                reason,transferred_at_ms)
+               VALUES('legacy-event-transfer','event-a','user-a','user-b','user-a',
+                      'Historical handoff',1000)"""
+        )
+        connection.execute(
+            """INSERT INTO audit_events
+               (id,organization_id,event_id,actor_user_id,actor_type,action,target_type,
+                target_id,result,correlation_id,metadata_json,occurred_at_ms)
+               VALUES('legacy-event-transfer-audit','org-a','event-a','user-a','user',
+                      'resource_ownership.transfer','event','event-a','succeeded','request-a',
+                      ?,1000)""",
+            (
+                '{"previous_owner_user_id":"user-a","new_owner_user_id":"user-b",'
+                '"grant_previous_owner_manage":false}',
+            ),
+        )
+        connection.execute(
+            "UPDATE owned_resources SET owner_user_id='user-b',version=version+1 "
+            "WHERE id='event-a'"
+        )
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms)
+               VALUES('legacy-admin-invite','org-a','event-a','speaker-a@example.test',
+                      'speaker-a@example.test','event_admin','pending','user-a',9999999999999,
+                      1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO authentication_challenges
+               (id,normalized_email,token_hash,purpose,provisioning_context,
+                redirect_path,expires_at_ms,created_at_ms,organization_id,event_id,
+                invitation_id)
+               VALUES('legacy-admin-challenge','speaker-a@example.test',X'01','sign_in',
+                      'invitation','/admin',9999999999999,1000,'org-a','event-a',
+                      'legacy-admin-invite')"""
+        )
+        connection.execute(
+            """INSERT INTO event_memberships
+               (id,organization_id,event_id,user_id,role,status,created_at_ms,updated_at_ms)
+               VALUES('legacy-admin-membership','org-a','event-a','user-a','event_admin',
+                      'active',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO resource_access_grants
+               (id,resource_id,user_id,permission,status,granted_by_user_id,
+                created_at_ms,updated_at_ms)
+               VALUES('legacy-event-manage','event-a','user-a','manage','active','user-a',1000,1000),
+                     ('legacy-org-edit','org-a','user-a','edit','active','user-a',1000,1000)"""
+        )
+        before_version = connection.execute(
+            "SELECT authorization_version FROM users WHERE id='user-a'"
+        ).fetchone()[0]
+        unaffected_owner_version = connection.execute(
+            "SELECT authorization_version FROM users WHERE id='user-b'"
+        ).fetchone()[0]
+
+        connection.executescript(retirement.read_text(encoding="utf-8"))
+
+        assert connection.execute(
+            "SELECT status FROM identity_invitations WHERE id='legacy-admin-invite'"
+        ).fetchone()[0] == "revoked"
+        assert connection.execute(
+            "SELECT consumed_at_ms FROM authentication_challenges "
+            "WHERE id='legacy-admin-challenge'"
+        ).fetchone()[0] > 1000
+        assert connection.execute(
+            "SELECT status FROM event_memberships WHERE id='legacy-admin-membership'"
+        ).fetchone()[0] == "revoked"
+        assert connection.execute(
+            "SELECT id,status FROM resource_access_grants ORDER BY id"
+        ).fetchall() == [
+            ("legacy-org-edit", "revoked"),
+        ]
+        assert connection.execute(
+            "SELECT authorization_version FROM users WHERE id='user-a'"
+        ).fetchone()[0] == before_version + 1
+        assert connection.execute(
+            "SELECT authorization_version FROM users WHERE id='user-b'"
+        ).fetchone()[0] == unaffected_owner_version
+        assert connection.execute(
+            "SELECT COUNT(*) FROM owned_resources WHERE resource_type='event'"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT id,created_by_user_id FROM events ORDER BY id"
+        ).fetchall() == [("event-a", "user-a"), ("event-b", "user-b")]
+        assert connection.execute(
+            "SELECT COUNT(*) FROM resource_ownership_transfers WHERE resource_id='event-a'"
+        ).fetchone() == (0,)
+        audit_metadata = connection.execute(
+            "SELECT metadata_json FROM audit_events WHERE id='legacy-event-transfer-audit'"
+        ).fetchone()[0]
+        assert '"reason":"Historical handoff"' in audit_metadata
+        with pytest.raises(sqlite3.IntegrityError, match="events are owned by their organization"):
+            connection.execute(
+                """INSERT INTO owned_resources
+                   (id,resource_type,created_by_user_id,owner_user_id,status,version,
+                    created_at_ms,updated_at_ms)
+                   VALUES('blocked-event-owner','event','user-a','user-a','active',1,1000,1000)"""
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="event_admin invitations are retired"):
+            connection.execute(
+                """INSERT INTO identity_invitations
+                   (id,organization_id,event_id,normalized_email,email,role,status,
+                    invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms)
+                   VALUES('blocked','org-a','event-a','blocked@example.test','blocked@example.test',
+                          'event_admin','pending','user-a',9999999999999,1000,1000)"""
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="event_admin invitations are retired"):
+            connection.execute(
+                "UPDATE identity_invitations SET status='pending' "
+                "WHERE id='legacy-admin-invite'"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="event_admin memberships are retired"):
+            connection.execute(
+                "UPDATE event_memberships SET status='active' "
+                "WHERE id='legacy-admin-membership'"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="only organization manage grants"):
+            connection.execute(
+                """INSERT INTO resource_access_grants
+                   (id,resource_id,user_id,permission,status,granted_by_user_id,
+                    created_at_ms,updated_at_ms)
+                   VALUES('blocked-grant','event-a','user-a','manage','active','user-a',1000,1000)"""
+            )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()
+
+
+def test_event_authority_retirement_refuses_to_invent_missing_creator_provenance() -> None:
+    migrations = sorted(BASELINE.parent.glob("*.sql"))
+    retirement = migrations[-1]
+    connection = sqlite3.connect(":memory:")
+    connection.execute("PRAGMA foreign_keys = ON")
+    try:
+        for migration in migrations[:-1]:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        seed_platform(connection)
+        connection.execute("DELETE FROM owned_resources WHERE resource_type='event'")
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.executescript(retirement.read_text(encoding="utf-8"))
+
+        assert connection.execute(
+            "SELECT COUNT(*) FROM owned_resources WHERE resource_type='event'"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM pragma_table_info('events') "
+            "WHERE name='created_by_user_id'"
+        ).fetchone() == (0,)
+
+        connection.execute(
+            """INSERT INTO owned_resources
+               (id,resource_type,created_by_user_id,owner_user_id,status,version,
+                created_at_ms,updated_at_ms)
+               SELECT event_row.id,'event','user-a','user-a','active',1,1000,1000
+               FROM events event_row"""
+        )
+        connection.executescript(retirement.read_text(encoding="utf-8"))
+        assert connection.execute(
+            "SELECT COUNT(*) FROM pragma_table_info('events') "
+            "WHERE name='created_by_user_id'"
+        ).fetchone() == (1,)
+    finally:
+        connection.close()
+
+
+def test_event_authority_retirement_refuses_to_delete_unaudited_transfer() -> None:
+    migrations = sorted(BASELINE.parent.glob("*.sql"))
+    retirement = migrations[-1]
+    connection = sqlite3.connect(":memory:")
+    connection.execute("PRAGMA foreign_keys = ON")
+    try:
+        for migration in migrations[:-1]:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        seed_platform(connection)
+        connection.execute(
+            """INSERT INTO resource_ownership_transfers
+               (id,resource_id,from_user_id,to_user_id,transferred_by_user_id,
+                reason,transferred_at_ms)
+               VALUES('unaudited-transfer','event-a','user-a','user-b','user-a',
+                      'Missing audit event',1000)"""
+        )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.executescript(retirement.read_text(encoding="utf-8"))
+
+        assert connection.execute(
+            "SELECT COUNT(*) FROM pragma_table_info('events') "
+            "WHERE name='created_by_user_id'"
+        ).fetchone() == (0,)
+        connection.execute(
+            """INSERT INTO audit_events
+               (id,organization_id,event_id,actor_user_id,actor_type,action,target_type,
+                target_id,result,correlation_id,metadata_json,occurred_at_ms)
+               VALUES('transfer-audit','org-a','event-a','user-a','user',
+                      'resource_ownership.transfer','event','event-a','succeeded','request-a',
+                      ?,1000)""",
+            ('{"previous_owner_user_id":"user-a","new_owner_user_id":"user-b"}',),
+        )
+        connection.executescript(retirement.read_text(encoding="utf-8"))
+        assert connection.execute(
+            "SELECT COUNT(*) FROM resource_ownership_transfers "
+            "WHERE id='unaudited-transfer'"
+        ).fetchone() == (0,)
     finally:
         connection.close()
 
@@ -258,6 +494,19 @@ def test_incremental_chain_preserves_and_explicitly_backfills_existing_rows() ->
                 title,destination_type,state,created_at_ms,updated_at_ms)
                VALUES('task-manual','org-a','event-a','speaker-a','submission-a','headshot',
                       'Conference guide portrait','headshot','open',1002,1002)"""
+        )
+        connection.execute(
+            """INSERT INTO owned_resources
+               (id,resource_type,created_by_user_id,owner_user_id,status,version,
+                created_at_ms,updated_at_ms)
+               SELECT id,'event',
+                      CASE organization_id WHEN 'org-a' THEN 'user-a' ELSE 'user-b' END,
+                      CASE organization_id WHEN 'org-a' THEN 'user-a' ELSE 'user-b' END,
+                      'active',1,created_at_ms,updated_at_ms
+               FROM events event_row
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM owned_resources owned WHERE owned.id=event_row.id
+               )"""
         )
 
         for migration in sorted(BASELINE.parent.glob("*.sql"))[1:]:

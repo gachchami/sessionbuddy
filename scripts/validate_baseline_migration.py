@@ -33,12 +33,15 @@ def validate_fresh_database(connection: sqlite3.Connection) -> None:
         raise ValueError("baseline does not create instance_setup_credentials")
 
     credential_rows = connection.execute(
-        "SELECT singleton_key,deployment_key FROM instance_setup_credentials"
+        "SELECT singleton_key,deployment_key,generated_at_ms "
+        "FROM instance_setup_credentials"
     ).fetchall()
     if (
         len(credential_rows) != 1
         or credential_rows[0][0] != "primary"
         or SETUP_KEY.fullmatch(str(credential_rows[0][1])) is None
+        or type(credential_rows[0][2]) is not int
+        or credential_rows[0][2] < 0
     ):
         raise ValueError("baseline must create exactly one valid setup credential")
 

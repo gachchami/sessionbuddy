@@ -1,6 +1,6 @@
 import pytest
 
-from sessionbuddy.platform.authorization.policy import authorize
+from sessionbuddy.platform.authorization.policy import ORGANIZER_PERMISSIONS, authorize
 from sessionbuddy.platform.authorization.types import (
     Actor,
     Permission,
@@ -56,7 +56,7 @@ def speaker(*, owner: str = "user-a", assigned: bool = True) -> tuple[Actor, Res
     ],
 )
 def test_organizer_owner_can_use_organizer_artifacts(permission: Permission) -> None:
-    assert authorize(organizer(EVENT), permission, ResourceContext(ORG, EVENT)).allowed
+    assert authorize(organizer(ORG), permission, ResourceContext(ORG, EVENT)).allowed
 
 
 def test_speaker_active_persona_cannot_use_owned_organizer_artifact() -> None:
@@ -80,31 +80,26 @@ def test_reviewer_active_persona_cannot_use_owned_organizer_artifact() -> None:
     assert not authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT)).allowed
 
 
-def test_organizer_requires_exact_resource_ownership_or_grant() -> None:
-    subject = organizer(EVENT)
+def test_organizer_requires_authority_over_the_event_organization() -> None:
+    subject = organizer(ORG)
     allowed = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
-    foreign = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, OTHER_EVENT))
+    foreign = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(OTHER_ORG, OTHER_EVENT))
     assert allowed.allowed
     assert (foreign.allowed, foreign.reason) == (False, "resource_access_required")
 
 
-def test_label_management_requires_the_exact_label_resource() -> None:
+def test_label_management_cascades_from_organization_authority() -> None:
     label_id = "label-a"
     context = ResourceContext(ORG, EVENT, resource_id=label_id)
-    denied = authorize(organizer(EVENT), Permission.LABEL_MANAGE, context)
+    assert authorize(organizer(ORG), Permission.LABEL_MANAGE, context).allowed
+    denied = authorize(organizer(OTHER_ORG), Permission.LABEL_MANAGE, context)
     assert (denied.allowed, denied.reason) == (False, "resource_access_required")
-    assert authorize(organizer(EVENT, label_id), Permission.LABEL_MANAGE, context).allowed
 
 
-@pytest.mark.parametrize("grant", [ResourceGrant.EDIT, ResourceGrant.MANAGE])
-def test_explicit_edit_or_manage_grant_authorizes_organizer(grant: ResourceGrant) -> None:
-    subject = organizer(grants={EVENT: frozenset({grant})})
-    assert authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT)).allowed
-
-
-def test_view_grant_does_not_authorize_mutating_organizer_permission() -> None:
-    subject = organizer(grants={EVENT: frozenset({ResourceGrant.VIEW})})
-    decision = authorize(subject, Permission.EVENT_MANAGE, ResourceContext(ORG, EVENT))
+def test_label_creator_does_not_gain_event_authority_from_legacy_ownership() -> None:
+    label_id = "label-a"
+    context = ResourceContext(ORG, EVENT, resource_id=label_id)
+    decision = authorize(organizer(label_id), Permission.LABEL_MANAGE, context)
     assert (decision.allowed, decision.reason) == (False, "resource_access_required")
 
 
@@ -112,35 +107,18 @@ def test_only_owner_or_manage_grant_can_delegate_resource_access() -> None:
     context = ResourceContext(ORG, EVENT)
 
     assert authorize(
-        organizer(EVENT), Permission.RESOURCE_ACCESS_MANAGE, context
+        organizer(ORG), Permission.RESOURCE_ACCESS_MANAGE, context
     ).allowed
     assert authorize(
-        organizer(grants={EVENT: frozenset({ResourceGrant.MANAGE})}),
+        organizer(grants={ORG: frozenset({ResourceGrant.MANAGE})}),
         Permission.RESOURCE_ACCESS_MANAGE,
         context,
     ).allowed
-    editor = authorize(
-        organizer(grants={EVENT: frozenset({ResourceGrant.EDIT})}),
-        Permission.RESOURCE_ACCESS_MANAGE,
-        context,
-    )
-    assert (editor.allowed, editor.reason) == (False, "resource_access_required")
-
-
-def test_organization_edit_grant_is_not_organization_management_authority() -> None:
-    context = ResourceContext(ORG)
-    editor = authorize(
-        organizer(grants={ORG: frozenset({ResourceGrant.EDIT})}),
-        Permission.ORGANIZATION_MANAGE,
-        context,
-    )
     manager = authorize(
         organizer(grants={ORG: frozenset({ResourceGrant.MANAGE})}),
         Permission.ORGANIZATION_MANAGE,
-        context,
+        ResourceContext(ORG),
     )
-
-    assert (editor.allowed, editor.reason) == (False, "resource_access_required")
     assert manager.allowed
 
 
@@ -151,12 +129,23 @@ def test_organization_ownership_cascades_to_every_event() -> None:
     assert event.allowed
 
 
-def test_organization_manage_grant_cascades_but_edit_does_not() -> None:
+def test_organization_manage_grant_cascades_to_event_operations() -> None:
     context = ResourceContext(ORG, EVENT)
     manager = organizer(grants={ORG: frozenset({ResourceGrant.MANAGE})})
-    editor = organizer(grants={ORG: frozenset({ResourceGrant.EDIT})})
     assert authorize(manager, Permission.EVENT_MANAGE, context).allowed
-    assert authorize(editor, Permission.EVENT_MANAGE, context).reason == "resource_access_required"
+
+
+@pytest.mark.parametrize("permission", sorted(Permission, key=lambda item: item.value))
+def test_organization_manage_grant_has_the_declared_permission_matrix(
+    permission: Permission,
+) -> None:
+    decision = authorize(
+        organizer(grants={ORG: frozenset({ResourceGrant.MANAGE})}),
+        permission,
+        ResourceContext(ORG),
+    )
+    expected = permission in ORGANIZER_PERMISSIONS
+    assert decision.allowed is expected
 
 
 def test_speaker_permissions_require_active_assignment_and_ownership() -> None:

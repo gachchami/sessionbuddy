@@ -97,7 +97,7 @@ class D1AuthorizationFacts:
                    ), ownership_facts AS (
                      SELECT p.user_id,p.user_status,p.active_persona,r.id AS resource_id
                      FROM principal p JOIN owned_resources r ON r.owner_user_id=p.user_id
-                     WHERE r.status='active'
+                     WHERE r.status='active' AND r.resource_type='organization'
                    ), grant_facts AS (
                      SELECT p.user_id,p.user_status,p.active_persona,g.resource_id,g.permission
                      FROM principal p JOIN resource_access_grants g ON g.user_id=p.user_id
@@ -143,18 +143,18 @@ class D1AuthorizationFacts:
         )
         resource_grants: dict[str, set[ResourceGrant]] = {}
         for row in rows:
-            if row["fact_type"] == "grant":
+            if row["fact_type"] == "grant" and str(row["permission"]) == "manage":
                 resource_grants.setdefault(str(row["resource_id"]), set()).add(
-                    ResourceGrant(str(row["permission"]))
+                    ResourceGrant.MANAGE
                 )
         event_roles: dict[tuple[str, str], set[Role]] = {}
         for row in rows:
             if row["fact_type"] != "event":
                 continue
+            if str(row["role"]) != "speaker":
+                continue
             key = (str(row["organization_id"]), str(row["event_id"]))
-            role = Role(str(row["role"]))
-            if role is Role.SPEAKER:
-                event_roles.setdefault(key, set()).add(role)
+            event_roles.setdefault(key, set()).add(Role.SPEAKER)
         return Actor(
             user_id=user_id,
             active=principal["user_status"] == "active",

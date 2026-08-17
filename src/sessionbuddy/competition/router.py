@@ -607,7 +607,7 @@ async def get_admin_speaker(
 async def list_organization_speakers(
     organization_id: str, request: Request
 ) -> OrganizationSpeakerList:
-    authenticated = await require_permission(
+    await require_permission(
         request,
         Permission.ORGANIZATION_MANAGE,
         ResourceContext(organization_id),
@@ -650,22 +650,9 @@ async def list_organization_speakers(
                LEFT JOIN users u ON u.id=p.user_id
                WHERE p.organization_id=?1 AND p.archived_at_ms IS NULL
                  AND e.status!='archived' AND es.status!='withdrawn'
-                 AND (
-                   EXISTS(SELECT 1 FROM owned_resources owned
-                     WHERE owned.id=es.event_id AND owned.resource_type='event'
-                       AND owned.status='active' AND owned.owner_user_id=?2)
-                   OR EXISTS(SELECT 1 FROM resource_access_grants grant_access
-                     JOIN owned_resources granted_resource
-                       ON granted_resource.id=grant_access.resource_id
-                      AND granted_resource.resource_type='event'
-                      AND granted_resource.status='active'
-                     WHERE grant_access.resource_id=es.event_id
-                       AND grant_access.user_id=?2 AND grant_access.status='active'
-                       AND grant_access.permission IN ('edit','manage'))
-                 )
                ORDER BY p.display_name,p.id,e.starts_at_ms DESC,e.id,es.id LIMIT 5000"""
         )
-        .bind(organization_id, authenticated.actor.user_id)
+        .bind(organization_id)
         .all()
     )
     people: dict[str, OrganizationSpeaker] = {}
@@ -911,10 +898,11 @@ async def _speaker_profile_page(
                 for row in participation_rows
                 if authenticated.actor.active_persona is Persona.ORGANIZER
                 and (
-                    str(row["event_id"]) in authenticated.actor.owned_resource_ids
-                    or bool(
-                        authenticated.actor.resource_grants.get(str(row["event_id"]), frozenset())
-                        & {ResourceGrant.EDIT, ResourceGrant.MANAGE}
+                    str(person["organization_id"])
+                    in authenticated.actor.owned_resource_ids
+                    or ResourceGrant.MANAGE
+                    in authenticated.actor.resource_grants.get(
+                        str(person["organization_id"]), frozenset()
                     )
                 )
             ),

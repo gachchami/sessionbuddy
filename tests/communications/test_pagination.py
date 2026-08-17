@@ -13,11 +13,15 @@ def seed_event(connection) -> None:
            VALUES ('org-a','Org a','active',1000,1000)"""
     )
     connection.execute(
+        """INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms)
+           VALUES('history-user','history@example.test','history@example.test','active',1000,1000)"""
+    )
+    connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES ('event-a','org-a','Event a',1000,2000,'UTC','Online','hybrid',
-                   'Test event','active',1000,1000)"""
+                   'Test event','active',1000,1000,(SELECT id FROM users ORDER BY id LIMIT 1))"""
     )
 
 
@@ -150,9 +154,9 @@ async def test_communication_history_rejects_tampered_and_cross_event_cursors() 
     connection.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES ('event-b','org-a','Event b',1000,2000,'UTC','Online','hybrid',
-                   'Test event','active',1000,1000)"""
+                   'Test event','active',1000,1000,(SELECT id FROM users ORDER BY id LIMIT 1))"""
     )
     for number in range(2):
         connection.execute(

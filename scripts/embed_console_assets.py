@@ -180,7 +180,7 @@ CONTENT_ADDRESSED_ASSETS = (
 )
 SHARED_ASSET_VERSIONS = {
     "/app-shell/assets/api-client.js": "8",
-    "/app-shell/assets/app-shell.js": "30",
+    "/app-shell/assets/app-shell.js": "32",
 }
 
 

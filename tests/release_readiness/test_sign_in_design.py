@@ -33,7 +33,7 @@ def test_sign_in_separates_account_access_from_demo_exploration() -> None:
     assert 'class="sign-in-story"' not in markup
     assert "Continue to SessionBuddy." in markup
     assert "Forgot your password?" in markup
-    assert "Your organization or event organizer will invite you." in markup
+    assert "An organization administrator will invite you." in markup
     assert 'class="sign-in-demo" data-demo-panel' in markup
     assert 'class="auth-role-note"' not in markup
     assert "Organizer" not in markup and "Reviewer" not in markup and "Speaker" not in markup

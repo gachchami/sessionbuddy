@@ -117,7 +117,6 @@ async function serveAgenda(page: Page) {
         organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         event_id: eventId,
         event_name: "Keyboard Conference",
-        permissions: ["owner"],
         assignments: [],
       }],
     }),

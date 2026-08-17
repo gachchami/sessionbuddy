@@ -30,6 +30,60 @@ async function serveAccountPage(page: import("@playwright/test").Page) {
 test.describe("account profile responsive design", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
 
+  for (const persona of ["reviewer", "speaker"] as const) {
+    test(`incomplete ${persona} onboarding has no workspace escape links`, async ({ page }) => {
+      await serveAccountPage(page);
+      const session = {
+        authenticated: true,
+        user_id: `${persona}-user`,
+        email: `${persona}@example.test`,
+        display_name: "New account",
+        profile_complete: false,
+        csrf_token: "browser-test-csrf",
+        account_roles: [persona],
+        active_role: persona,
+        default_role: persona,
+        organization_access: [],
+        event_access: [],
+      };
+      await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(session),
+      }));
+      await page.route("**/api/v1/account/profile", (route) => route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          email: session.email,
+          first_name: null,
+          last_name: null,
+          display_name: session.display_name,
+          job_title: null,
+          company: null,
+          time_zone: "UTC",
+          description: null,
+          website_url: null,
+          linkedin_url: null,
+          x_url: null,
+          roles: [persona],
+          headshot_url: null,
+          has_password: false,
+          profile_complete: false,
+          version: 1,
+        }),
+      }));
+
+      await page.goto("/account");
+
+      await expect(page.getByRole("heading", { name: "Complete your profile" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "SessionBuddy" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Speaker portal" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Calls for proposals" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "My reviews" })).toHaveCount(0);
+      await page.getByLabel("Account menu for New account").click();
+      await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    });
+  }
+
   test("profile stays aligned and usable at phone width", async ({ page }) => {
     await serveAccountPage(page);
     const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -84,10 +138,6 @@ test.describe("account profile responsive design", () => {
       body: JSON.stringify({
         data: [{ user_id: session.user_id, email: session.email, permission: "owner", status: "active" }],
       }),
-    }));
-    await page.route(`**/api/v1/admin/organizations/${organizationId}/ownership-recovery/events**`, (route) => route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ data: [], next_cursor: null }),
     }));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/account");
@@ -223,6 +273,7 @@ test.describe("account profile responsive design", () => {
       if (route.request().method() === "PATCH") {
         const profilePayload = route.request().postDataJSON() as Record<string, unknown>;
         savedProfile = profilePayload;
+        session.profile_complete = true;
         return route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({
@@ -251,21 +302,13 @@ test.describe("account profile responsive design", () => {
         data: [{ user_id: session.user_id, email: session.email, permission: "owner", status: "active" }],
       }),
     }));
-    await page.route(`**/api/v1/admin/organizations/${organizationId}/ownership-recovery/events**`, (route) => route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ data: [], next_cursor: null }),
-    }));
 
-    await page.goto("/account?onboarding=1&next=%2Fadmin");
+    await page.goto("/account");
 
-    await expect(page.locator("#workspace-navigation")).toHaveCount(1);
-    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" })).toBeVisible();
-    const workspaceNavigation = page.getByRole("navigation", { name: "Workspace navigation" });
-    if ((page.viewportSize()?.width || 0) <= 760) {
-      await expect(workspaceNavigation).toBeHidden();
-    } else {
-      await expect(workspaceNavigation).toBeVisible();
-    }
+    await expect(page.locator("#workspace-navigation")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "SessionBuddy" })).toHaveCount(0);
+    await expect(page.locator(".sb-topbar .sb-global-brand:not(a)")).toContainText("SessionBuddy");
+    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Speaker portal" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "My reviews" })).toHaveCount(0);
     await expect(page.getByLabel("First name")).toHaveValue("Devang");
@@ -293,6 +336,8 @@ test.describe("account profile responsive design", () => {
       last_name: "Hanushali",
       version: 1,
     });
+    await expect(page.locator(".sb-topbar").getByRole("link", { name: "SessionBuddy" }))
+      .toHaveAttribute("href", "/admin");
   });
 
   test("password configuration failure explains how to save the remaining profile", async ({ page }) => {
@@ -540,7 +585,7 @@ test.describe("account profile responsive design", () => {
       const body = request.postDataJSON() as Record<string, unknown> | null;
       mutations.push({ method, path, body });
       if (method === "POST") {
-        const created = { user_id: "new-user", email: body!.email, permission: body!.permission, status: "active" };
+        const created = { user_id: "new-user", email: body!.email, permission: "manage", status: "active" };
         grants = [...grants, created];
         return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(created) });
       }
@@ -600,7 +645,7 @@ test.describe("account profile responsive design", () => {
     await expect(page.getByText("new@example.test", { exact: true })).toBeVisible();
     expect(mutations[0]).toMatchObject({
       method: "POST",
-      body: { email: "new@example.test", permission: "manage" },
+      body: { email: "new@example.test" },
     });
 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
@@ -617,7 +662,7 @@ test.describe("account profile responsive design", () => {
     await expect(page.getByRole("heading", { name: "Event ownership recovery" })).toHaveCount(0);
   });
 
-  test("organization edit permission does not reveal access administration", async ({ page }) => {
+  test("a retired organization edit fact does not reveal access administration", async ({ page }) => {
     await serveAccountPage(page);
     const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     let organizationRequests = 0;

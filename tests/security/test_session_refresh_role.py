@@ -48,7 +48,7 @@ def refresh_database(*, active_role: str | None) -> tuple[sqlite3.Connection, SQ
           user_id TEXT, organization_id TEXT, event_id TEXT, role TEXT, status TEXT
         );
         CREATE TABLE owned_resources (
-          id TEXT PRIMARY KEY, owner_user_id TEXT, status TEXT
+          id TEXT PRIMARY KEY, owner_user_id TEXT, status TEXT, resource_type TEXT
         );
         CREATE TABLE resource_access_grants (
           resource_id TEXT, user_id TEXT, permission TEXT, status TEXT

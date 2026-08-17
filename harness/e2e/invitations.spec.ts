@@ -29,7 +29,6 @@ const sessionBody = JSON.stringify({
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     event_id: eventId,
     event_name: "Example Event",
-    permissions: ["owner"],
     assignments: [],
   }],
 });

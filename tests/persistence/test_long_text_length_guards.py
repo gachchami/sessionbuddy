@@ -18,6 +18,10 @@ def database() -> sqlite3.Connection:
         """INSERT INTO organizations(id,name,status,created_at_ms,updated_at_ms)
            VALUES('org-a','Organization A','active',1,1)"""
     )
+    connection.execute(
+        """INSERT INTO users(id,email,normalized_email,status,created_at_ms,updated_at_ms)
+           VALUES('user-a','creator@example.test','creator@example.test','active',1,1)"""
+    )
     yield connection
     connection.close()
 
@@ -26,9 +30,9 @@ def insert_event(database: sqlite3.Connection, description: str) -> None:
     database.execute(
         """INSERT INTO events
            (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-            delivery_mode,description,status,created_at_ms,updated_at_ms)
+            delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
            VALUES('event-a','org-a','Event A',10,20,'UTC','Online','virtual',
-                  ?,'active',1,1)""",
+                  ?,'active',1,1,'user-a')""",
         (description,),
     )
 

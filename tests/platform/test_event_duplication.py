@@ -399,9 +399,12 @@ async def test_duplicate_event_creates_only_safe_draft_setup(
     assert replayed.id == duplicated.id
     assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
     assert connection.execute(
-        "SELECT COUNT(*) FROM owned_resources WHERE id=? AND owner_user_id='user-a'",
+        "SELECT COUNT(*) FROM events WHERE id=? AND created_by_user_id='user-a'",
         (duplicated.id,),
     ).fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM owned_resources WHERE id=?", (duplicated.id,)
+    ).fetchone()[0] == 0
     copied_assets = connection.execute(
         """SELECT kind,status,event_id,asset_url FROM event_branding_assets
            WHERE event_id=? ORDER BY kind""",

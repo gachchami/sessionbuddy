@@ -32,7 +32,7 @@ function organizerSession() {
     event_access: [{
       event_id: eventId,
       event_name: "Example Event",
-      permissions: ["owner"],
+      assignments: [],
     }],
   };
 }

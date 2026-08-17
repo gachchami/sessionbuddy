@@ -16,7 +16,6 @@ const reviewerSession = JSON.stringify({
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     event_name: "Example Event",
-    permissions: [],
     assignments: ["reviewer"],
   }],
 });

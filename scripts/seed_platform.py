@@ -19,7 +19,7 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
     event_memberships = []
     authentication_challenges = []
     sessions = []
-    roles = ("event_admin", "evaluator", "speaker")
+    roles = ("evaluator", "speaker")
     for org_number in range(1, 3):
         org_id = stable_id(seed, f"org:{org_number}")
         organizations.append(
@@ -31,7 +31,7 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
                 "updated_at_ms": BASE_MS,
             }
         )
-        for role_number, role in enumerate(roles, 1):
+        for role in roles:
             user_id = stable_id(seed, f"user:{org_number}:{role}")
             users.append(
                 {
@@ -39,6 +39,7 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
                     "email": f"{role}.{org_number}@example.test",
                     "normalized_email": f"{role}.{org_number}@example.test",
                     "status": "active",
+                    "created_by_user_id": stable_id(seed, f"user:{org_number}:evaluator"),
                     "created_at_ms": BASE_MS,
                     "updated_at_ms": BASE_MS,
                 }
@@ -48,7 +49,7 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
                     "id": stable_id(seed, f"org-member:{org_number}:{role}"),
                     "organization_id": org_id,
                     "user_id": user_id,
-                    "role": "organization_admin" if role_number == 1 else "member",
+                    "role": "member",
                     "status": "active",
                     "created_at_ms": BASE_MS,
                     "updated_at_ms": BASE_MS,
@@ -111,7 +112,7 @@ def build_seed(seed: str = "foundation-v1") -> dict[str, list[dict[str, object]]
             (
                 {
                     "id": stable_id(seed, f"session:{org_number}:active"),
-                    "user_id": stable_id(seed, f"user:{org_number}:event_admin"),
+                    "user_id": stable_id(seed, f"user:{org_number}:evaluator"),
                     "token_hash": f"synthetic-active-{org_number}",
                     "csrf_secret_hash": "synthetic",
                     "authorization_version": 1,

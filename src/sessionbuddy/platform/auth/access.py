@@ -7,10 +7,10 @@ import re
 from email.headerregistry import Address
 from email.utils import parseaddr
 from html import escape
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -501,7 +501,7 @@ class GenericAccepted(BaseModel):
     accepted: bool = True
 
 
-InvitationRole = Literal["organization_admin", "event_admin", "evaluator", "speaker"]
+InvitationRole = Literal["organization_admin", "evaluator", "speaker"]
 
 
 class InvitationCreate(BaseModel):
@@ -603,7 +603,7 @@ class SpeakerInvitationImportResponse(BaseModel):
 class EventMemberView(BaseModel):
     user_id: str
     email: str
-    role: Literal["event_admin", "evaluator", "speaker"]
+    role: Literal["evaluator", "speaker"]
     status: Literal["active", "revoked"]
 
 
@@ -659,19 +659,6 @@ class EventView(BaseModel):
 
 class EventList(BaseModel):
     data: list[EventView]
-    next_cursor: str | None = None
-
-
-class OwnershipRecoveryEventView(BaseModel):
-    event_id: str
-    name: str
-    status: Literal["draft", "active", "archived"]
-    current_owner_user_id: str
-    current_owner_email: str
-
-
-class OwnershipRecoveryEventList(BaseModel):
-    data: list[OwnershipRecoveryEventView]
     next_cursor: str | None = None
 
 
@@ -817,14 +804,13 @@ class DefaultRoleUpdate(BaseModel):
 class SessionOrganizationAccess(BaseModel):
     organization_id: str
     organization_name: str
-    permissions: list[Literal["owner", "view", "edit", "manage"]]
+    permissions: list[Literal["owner", "manage"]]
 
 
 class SessionEventAccess(BaseModel):
     organization_id: str
     event_id: str
     event_name: str
-    permissions: list[Literal["owner", "view", "edit", "manage"]] = Field(default_factory=list)
     assignments: list[Literal["reviewer", "speaker"]] = Field(default_factory=list)
 
 
@@ -832,19 +818,12 @@ class ResourceGrantCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str = Field(min_length=3, max_length=320)
-    permission: Literal["view", "edit", "manage"]
-
-
-class ResourceGrantUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    permission: Literal["view", "edit", "manage"]
 
 
 class ResourceGrantView(BaseModel):
     user_id: str
     email: str
-    permission: Literal["owner", "view", "edit", "manage"]
+    permission: Literal["owner", "manage"]
     status: Literal["active"] = "active"
 
 
@@ -866,23 +845,6 @@ class OrganizationActivityView(BaseModel):
 
 class OrganizationActivityList(BaseModel):
     data: list[OrganizationActivityView]
-
-
-class EventOwnershipTransferCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    email: str = Field(min_length=3, max_length=320)
-    reason: str | None = Field(default=None, max_length=1000)
-    grant_previous_owner_manage: bool = False
-
-
-class EventOwnershipTransferView(BaseModel):
-    transfer_id: str
-    event_id: str
-    previous_owner_user_id: str
-    new_owner_user_id: str
-    previous_owner_permission: Literal["manage"] | None = None
-    transferred_at_ms: int
 
 
 class OrganizationOwnershipTransferCreate(BaseModel):
@@ -1169,8 +1131,8 @@ async def bootstrap_tenant(
             db.prepare(
                 """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-                delivery_mode,description,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'active',?10,?10)"""
+                delivery_mode,description,status,created_at_ms,updated_at_ms,created_by_user_id)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'active',?10,?10,?11)"""
             ).bind(
                 event_id,
                 organization_id,
@@ -1182,15 +1144,8 @@ async def bootstrap_tenant(
                 body.event_delivery_mode,
                 body.event_description,
                 now,
+                user_id,
             )
-        )
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO owned_resources
-                   (id,resource_type,created_by_user_id,owner_user_id,status,
-                    created_at_ms,updated_at_ms)
-                   VALUES(?1,'event',?2,?2,'active',?3,?3)"""
-            ).bind(event_id, user_id, now)
         )
     batch.audit(
         AuditEvent(
@@ -2089,24 +2044,6 @@ EVENT_LIST_VIEWS = frozenset({"all", "active", "draft", "past"})
 EVENT_LIST_ORDERS = frozenset({"recent", "upcoming"})
 
 
-async def _has_event_access_in_organization(db, user_id: str, organization_id: str) -> bool:
-    row = row_mapping(
-        await db.prepare(
-            """SELECT 1 AS found FROM events e
-               JOIN owned_resources owned ON owned.id=e.id AND owned.resource_type='event'
-               LEFT JOIN resource_access_grants grant_access
-                 ON grant_access.resource_id=e.id AND grant_access.user_id=?1
-                AND grant_access.status='active'
-               WHERE e.organization_id=?2
-                 AND (owned.owner_user_id=?1
-                      OR grant_access.permission IN ('edit','manage'))
-               LIMIT 1"""
-        )
-        .bind(user_id, organization_id)
-        .first()
-    )
-    return row is not None
-
 
 @access_router.get(
     "/api/v1/admin/organizations/{organization_id}/events",
@@ -2128,19 +2065,12 @@ async def list_events(
     organization_grants = authenticated.actor.resource_grants.get(
         organization_id, frozenset()
     )
-    has_organization_access = (
-        organization_id in authenticated.actor.owned_resource_ids
-        or bool(organization_grants)
-    )
     manages_organization = (
         organization_id in authenticated.actor.owned_resource_ids
         or ResourceGrant.MANAGE in organization_grants
     )
     db = database(request)
-    manages_event_in_organization = await _has_event_access_in_organization(
-        db, authenticated.actor.user_id, organization_id
-    )
-    if not has_organization_access and not manages_event_in_organization:
+    if not manages_organization:
         raise HTTPException(status_code=404)
     if view not in EVENT_LIST_VIEWS:
         raise HTTPException(status_code=422)
@@ -2164,17 +2094,6 @@ async def list_events(
     conditions = ["e.organization_id=?"]
     binds: list[object] = [organization_id]
     access_join = ""
-    if not manages_organization:
-        access_join = (
-            " JOIN owned_resources owned ON owned.id=e.id AND owned.resource_type='event'"
-            " LEFT JOIN resource_access_grants grant_access ON grant_access.resource_id=e.id"
-            " AND grant_access.user_id=? AND grant_access.status='active'"
-        )
-        binds.insert(0, authenticated.actor.user_id)
-        conditions.append(
-            "(owned.owner_user_id=? OR grant_access.permission IN ('edit','manage'))"
-        )
-        binds.append(authenticated.actor.user_id)
     if view == "active":
         conditions.append("e.status='active' AND e.ends_at_ms>=?")
         binds.append(now)
@@ -2307,7 +2226,7 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
     """Lightweight aggregate counts for dashboards instead of paging every
     event and fanning out per-event requests.
 
-    Counts include only events the active organizer owns or can explicitly manage."""
+    Organization owners and admins see organization-wide counts."""
     authenticated = await authenticate_request(request)
     if authenticated.actor.active_persona is not Persona.ORGANIZER:
         raise HTTPException(status_code=403)
@@ -2315,10 +2234,7 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
         authenticated.actor.resource_grants.get(organization_id)
     )
     db = database(request)
-    manages_event_in_organization = await _has_event_access_in_organization(
-        db, authenticated.actor.user_id, organization_id
-    )
-    if not has_organization_access and not manages_event_in_organization:
+    if not has_organization_access:
         raise HTTPException(status_code=404)
     # The proposal-attachment probe correlates on (organization, event,
     # event_speaker) so it rides idx_submission_speakers_speaker instead of
@@ -2332,46 +2248,45 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
         " WHERE participant.organization_id=es.organization_id"
         " AND participant.event_id=es.event_id AND participant.event_speaker_id=es.id))"
     )
-    if False:  # pragma: no cover - retained temporarily while legacy SQL is removed
-        event_count = await (
-            db.prepare("SELECT COUNT(*) AS total FROM events WHERE organization_id=?1")
-            .bind(organization_id)
-            .first("total")
+    event_count = await (
+        db.prepare("SELECT COUNT(*) AS total FROM events WHERE organization_id=?1")
+        .bind(organization_id)
+        .first("total")
+    )
+    speaker_count = await (
+        db.prepare(
+            "SELECT COUNT(DISTINCT es.person_id) AS total FROM event_speakers es "  # noqa: S608, E501
+            f"WHERE es.organization_id=?1 AND {has_proposal}"
         )
-        speaker_count = await (
-            db.prepare(
-                "SELECT COUNT(DISTINCT es.person_id) AS total FROM event_speakers es "  # noqa: S608, E501
-                f"WHERE es.organization_id=?1 AND {has_proposal}"
-            )
-            .bind(organization_id)
-            .first("total")
+        .bind(organization_id)
+        .first("total")
+    )
+    session_count = await (
+        db.prepare("SELECT COUNT(*) AS total FROM accepted_sessions WHERE organization_id=?1")
+        .bind(organization_id)
+        .first("total")
+    )
+    proposal_count = await (
+        db.prepare(
+            "SELECT COUNT(*) AS total FROM submissions "
+            "WHERE organization_id=?1 AND status='submitted'"
         )
-        session_count = await (
-            db.prepare("SELECT COUNT(*) AS total FROM accepted_sessions WHERE organization_id=?1")
-            .bind(organization_id)
-            .first("total")
+        .bind(organization_id)
+        .first("total")
+    )
+    pending_review_count = await (
+        db.prepare(
+            "SELECT COUNT(DISTINCT ea.submission_id) AS total "
+            "FROM evaluation_rounds er "
+            "JOIN evaluation_assignments ea ON ea.round_id=er.id "
+            "AND ea.status='assigned' "
+            "WHERE er.organization_id=?1"
         )
-        proposal_count = await (
-            db.prepare(
-                "SELECT COUNT(*) AS total FROM submissions "
-                "WHERE organization_id=?1 AND status='submitted'"
-            )
-            .bind(organization_id)
-            .first("total")
-        )
-        pending_review_count = await (
-            db.prepare(
-                "SELECT COUNT(DISTINCT ea.submission_id) AS total "
-                "FROM evaluation_rounds er "
-                "JOIN evaluation_assignments ea ON ea.round_id=er.id "
-                "AND ea.status='assigned' "
-                "WHERE er.organization_id=?1"
-            )
-            .bind(organization_id)
-            .first("total")
-        )
-        recent_rows = result_rows(
-            await db.prepare(
+        .bind(organization_id)
+        .first("total")
+    )
+    recent_rows = result_rows(
+        await db.prepare(
                 "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
                 "e.name AS event_name,es.selection_status,"
                 "COALESCE("
@@ -2399,116 +2314,10 @@ async def organization_metrics(organization_id: str, request: Request) -> Organi
                 "JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id "
                 f"WHERE es.organization_id=?1 AND {has_proposal} "
                 "ORDER BY es.last_activity_at_ms DESC,es.id DESC LIMIT 6"
-            )
-            .bind(organization_id)
-            .all()
         )
-    else:
-        membership_join = (
-            "JOIN owned_resources owned ON owned.id=es.event_id "
-            "LEFT JOIN resource_access_grants grant_access ON grant_access.resource_id=es.event_id"
-            " AND grant_access.user_id=?2 AND grant_access.status='active' "
-        )
-        event_count = await (
-            db.prepare(
-                """SELECT COUNT(*) AS total FROM events e
-                   JOIN owned_resources owned ON owned.id=e.id
-                   LEFT JOIN resource_access_grants grant_access
-                    ON grant_access.resource_id=e.id AND grant_access.user_id=?2
-                    AND grant_access.status='active'
-                   WHERE e.organization_id=?1
-                    AND (owned.owner_user_id=?2 OR grant_access.permission IN ('edit','manage'))"""
-            )
-            .bind(organization_id, authenticated.actor.user_id)
-            .first("total")
-        )
-        speaker_count = await (
-            db.prepare(
-                "SELECT COUNT(DISTINCT es.person_id) AS total FROM event_speakers es "  # noqa: S608, E501
-                f"{membership_join}"
-                f"WHERE es.organization_id=?1 AND {has_proposal}"
-                " AND (owned.owner_user_id=?2 OR grant_access.permission IN ('edit','manage'))"
-            )
-            .bind(organization_id, authenticated.actor.user_id)
-            .first("total")
-        )
-        session_count = await (
-            db.prepare(
-                "SELECT COUNT(*) AS total FROM accepted_sessions ac "
-                "JOIN owned_resources owned ON owned.id=ac.event_id "
-                "LEFT JOIN resource_access_grants grant_access "
-                "ON grant_access.resource_id=ac.event_id "
-                "AND grant_access.user_id=?2 AND grant_access.status='active' "
-                "WHERE ac.organization_id=?1 AND (owned.owner_user_id=?2 "
-                "OR grant_access.permission IN ('edit','manage'))"
-            )
-            .bind(organization_id, authenticated.actor.user_id)
-            .first("total")
-        )
-        proposal_count = await (
-            db.prepare(
-                "SELECT COUNT(*) AS total FROM submissions s "
-                "JOIN owned_resources owned ON owned.id=s.event_id "
-                "LEFT JOIN resource_access_grants grant_access "
-                "ON grant_access.resource_id=s.event_id "
-                "AND grant_access.user_id=?2 AND grant_access.status='active' "
-                "WHERE s.organization_id=?1 AND s.status='submitted' "
-                "AND (owned.owner_user_id=?2 OR grant_access.permission IN ('edit','manage'))"
-            )
-            .bind(organization_id, authenticated.actor.user_id)
-            .first("total")
-        )
-        pending_review_count = await (
-            db.prepare(
-                "SELECT COUNT(DISTINCT ea.submission_id) AS total "
-                "FROM evaluation_rounds er "
-                "JOIN evaluation_assignments ea ON ea.round_id=er.id "
-                "AND ea.status='assigned' "
-                "JOIN owned_resources owned ON owned.id=er.event_id "
-                "LEFT JOIN resource_access_grants grant_access "
-                "ON grant_access.resource_id=er.event_id "
-                "AND grant_access.user_id=?2 AND grant_access.status='active' "
-                "WHERE er.organization_id=?1 AND (owned.owner_user_id=?2 "
-                "OR grant_access.permission IN ('edit','manage'))"
-            )
-            .bind(organization_id, authenticated.actor.user_id)
-            .first("total")
-        )
-        recent_rows = result_rows(
-            await db.prepare(
-                "SELECT p.id AS person_id,p.display_name,e.id AS event_id,"  # noqa: S608
-                "e.name AS event_name,es.selection_status,"
-                "COALESCE("
-                "(SELECT ac.organizer_title FROM accepted_sessions ac"
-                " JOIN accepted_session_participants participant"
-                " ON participant.accepted_session_id=ac.id"
-                " WHERE participant.event_speaker_id=es.id"
-                " AND ac.source_type='organizer_created'"
-                " ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),"
-                # Prefer the ACCEPTED submission; fall back to the newest one.
-                "(SELECT s.proposal_title FROM submission_speakers ss"
-                " JOIN submissions s ON s.id=ss.submission_id"
-                " JOIN accepted_sessions ac ON ac.organization_id=s.organization_id"
-                " AND ac.event_id=s.event_id AND ac.submission_id=s.id"
-                " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
-                " AND ss.event_speaker_id=es.id"
-                " ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),"
-                "(SELECT s.proposal_title FROM submission_speakers ss"
-                " JOIN submissions s ON s.id=ss.submission_id"
-                " WHERE ss.organization_id=es.organization_id AND ss.event_id=es.event_id"
-                " AND ss.event_speaker_id=es.id"
-                " ORDER BY s.submitted_at_ms DESC LIMIT 1),'No proposal') AS proposal_title "
-                "FROM event_speakers es "
-                f"{membership_join}"
-                "JOIN people p ON p.organization_id=es.organization_id AND p.id=es.person_id "
-                "JOIN events e ON e.organization_id=es.organization_id AND e.id=es.event_id "
-                f"WHERE es.organization_id=?1 AND {has_proposal} "
-                "AND (owned.owner_user_id=?2 OR grant_access.permission IN ('edit','manage')) "
-                "ORDER BY es.last_activity_at_ms DESC,es.id DESC LIMIT 6"
-            )
-            .bind(organization_id, authenticated.actor.user_id)
-            .all()
-        )
+        .bind(organization_id)
+        .all()
+    )
     return OrganizationMetricsView(
         organization_id=organization_id,
         event_count=int(event_count or 0),
@@ -2813,9 +2622,9 @@ async def duplicate_event(
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                 delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                 email_sender_name,email_reply_to,status,draft_starts_at_ms,draft_ends_at_ms,
-                draft_delivery_mode,created_at_ms,updated_at_ms)
+                draft_delivery_mode,created_at_ms,updated_at_ms,created_by_user_id)
                SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
-                      ?17,?18,?19,?20,?16,?16
+                      ?17,?18,?19,?20,?16,?16,?23
                WHERE EXISTS(SELECT 1 FROM events source
                             WHERE source.id=?21 AND source.organization_id=?2
                               AND source.version=?22)"""
@@ -2842,15 +2651,8 @@ async def duplicate_event(
             draft_delivery,
             event_id,
             body.source_version,
+            authenticated.actor.user_id,
         )
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO owned_resources
-               (id,resource_type,created_by_user_id,owner_user_id,status,
-                created_at_ms,updated_at_ms)
-               VALUES(?1,'event',?2,?2,'active',?3,?3)"""
-        ).bind(duplicated_event_id, authenticated.actor.user_id, now)
     )
     batch.audit(
         AuditEvent(
@@ -3636,9 +3438,9 @@ async def create_event(
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                 delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
                 email_sender_name,email_reply_to,status,draft_starts_at_ms,draft_ends_at_ms,
-                draft_delivery_mode,created_at_ms,updated_at_ms)
+                draft_delivery_mode,created_at_ms,updated_at_ms,created_by_user_id)
                VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,
-                      ?17,?18,?19,?20,?20)"""
+                      ?17,?18,?19,?20,?20,?21)"""
         ).bind(
             event_id,
             organization_id,
@@ -3660,15 +3462,8 @@ async def create_event(
             draft_end,
             draft_delivery,
             now,
+            authenticated.actor.user_id,
         )
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO owned_resources
-               (id,resource_type,created_by_user_id,owner_user_id,status,
-                created_at_ms,updated_at_ms)
-               VALUES(?1,'event',?2,?2,'active',?3,?3)"""
-        ).bind(event_id, authenticated.actor.user_id, now)
     )
     batch.audit(
         AuditEvent(
@@ -3856,204 +3651,6 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
     return EventView(**row)
 
 
-@access_router.get(
-    "/api/v1/admin/events/{event_id}/access-grants",
-    response_model=ResourceGrantList,
-    tags=["administration"],
-)
-async def list_event_access_grants(event_id: str, request: Request) -> ResourceGrantList:
-    db, _organization_id, _authenticated = await _managed_event(
-        request, event_id, mutation=False, include_archived=True
-    )
-    result = await (
-        db.prepare(
-            """SELECT u.id AS user_id,u.email,'owner' AS permission,'active' AS status,0 AS rank
-               FROM owned_resources r JOIN users u ON u.id=r.owner_user_id
-               WHERE r.id=?1 AND r.resource_type='event' AND r.status='active'
-               UNION ALL
-               SELECT u.id,u.email,g.permission,g.status,1 AS rank
-               FROM resource_access_grants g JOIN users u ON u.id=g.user_id
-               WHERE g.resource_id=?1 AND g.status='active'
-               ORDER BY rank,email,permission"""
-        )
-        .bind(event_id)
-        .all()
-    )
-    return ResourceGrantList(data=[ResourceGrantView(**row) for row in result_rows(result)])
-
-
-async def _write_event_grant(
-    event_id: str,
-    user_id: str,
-    permission: str,
-    request: Request,
-) -> ResourceGrantView:
-    db, organization_id, authenticated = await _managed_event(
-        request, event_id, mutation=True, include_archived=True
-    )
-    target = row_mapping(
-        await db.prepare(
-            """SELECT u.id,u.email,r.owner_user_id FROM users u
-               JOIN owned_resources r ON r.id=?1 AND r.resource_type='event'
-               WHERE u.id=?2 AND u.status='active' LIMIT 1"""
-        )
-        .bind(event_id, user_id)
-        .first()
-    )
-    if target is None:
-        raise HTTPException(status_code=404)
-    if str(target["owner_user_id"]) == user_id:
-        raise HTTPException(status_code=409, detail="The resource owner already has full access")
-    now = utc_now_ms()
-    batch = CommandBatch(db)
-    batch.add_statement(
-        db.prepare(
-            """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
-                 revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
-               WHERE resource_id=?3 AND user_id=?4 AND status='active' AND permission!=?5"""
-        ).bind(now, authenticated.actor.user_id, event_id, user_id, permission)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO resource_access_grants
-               (id,resource_id,user_id,permission,status,granted_by_user_id,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,'active',?5,?6,?6)
-               ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET status='active',
-                 granted_by_user_id=excluded.granted_by_user_id,revoked_at_ms=NULL,
-                 revoked_by_user_id=NULL,version=version+1,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), event_id, user_id, permission, authenticated.actor.user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO user_roles(user_id,role,status,created_at_ms,updated_at_ms,is_default)
-               VALUES(?1,'organizer','active',?2,?2,
-                 CASE WHEN EXISTS(SELECT 1 FROM user_roles
-                                  WHERE user_id=?1 AND status='active') THEN 0 ELSE 1 END)
-               ON CONFLICT(user_id,role) DO UPDATE SET status='active',revoked_at_ms=NULL,
-                 is_default=CASE WHEN NOT EXISTS(
-                   SELECT 1 FROM user_roles other
-                   WHERE other.user_id=?1 AND other.status='active'
-                     AND other.role!='organizer'
-                 ) THEN 1 ELSE user_roles.is_default END,
-                 updated_at_ms=excluded.updated_at_ms"""
-        ).bind(user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE users SET authorization_version=authorization_version+1,
-               updated_at_ms=?1 WHERE id=?2"""
-        ).bind(now, user_id)
-    )
-    batch.audit(
-        AuditEvent(
-            actor_type="user",
-            actor_user_id=authenticated.actor.user_id,
-            action="resource_access_grant.upsert",
-            target_type="event",
-            target_id=event_id,
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            organization_id=organization_id,
-            event_id=event_id,
-            metadata={"grantee_user_id": user_id, "permission": permission},
-        )
-    )
-    await batch.execute()
-    return ResourceGrantView(
-        user_id=user_id, email=str(target["email"]), permission=permission, status="active"
-    )
-
-
-@access_router.post(
-    "/api/v1/admin/events/{event_id}/access-grants",
-    response_model=ResourceGrantView,
-    status_code=201,
-    tags=["administration"],
-)
-async def create_event_access_grant(
-    event_id: str, body: ResourceGrantCreate, request: Request
-) -> ResourceGrantView:
-    db = database(request)
-    # Authenticate and authorize before resolving the email so this endpoint
-    # cannot be used to enumerate accounts.
-    await _managed_event(request, event_id, mutation=True, include_archived=True)
-    _email_value, normalized = _email(body.email)
-    user_id = (
-        await db.prepare(
-            "SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1"
-        )
-        .bind(normalized)
-        .first("id")
-    )
-    if user_id is None:
-        raise HTTPException(status_code=404, detail="No active account uses that email address")
-    return await _write_event_grant(event_id, str(user_id), body.permission, request)
-
-
-@access_router.patch(
-    "/api/v1/admin/events/{event_id}/access-grants/{user_id}",
-    response_model=ResourceGrantView,
-    tags=["administration"],
-)
-async def update_event_access_grant(
-    event_id: str, user_id: str, body: ResourceGrantUpdate, request: Request
-) -> ResourceGrantView:
-    return await _write_event_grant(event_id, user_id, body.permission, request)
-
-
-@access_router.delete(
-    "/api/v1/admin/events/{event_id}/access-grants/{user_id}",
-    status_code=204,
-    tags=["administration"],
-)
-async def revoke_event_access_grant(event_id: str, user_id: str, request: Request) -> Response:
-    db, organization_id, authenticated = await _managed_event(
-        request, event_id, mutation=True, include_archived=True
-    )
-    owner_id = (
-        await db.prepare(
-            "SELECT owner_user_id FROM owned_resources WHERE id=?1 AND resource_type='event'"
-        )
-        .bind(event_id)
-        .first("owner_user_id")
-    )
-    if owner_id is not None and str(owner_id) == user_id:
-        raise HTTPException(status_code=409, detail="Resource ownership cannot be revoked")
-    now = utc_now_ms()
-    batch = CommandBatch(db)
-    batch.add_statement(
-        db.prepare(
-            """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
-                 revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
-               WHERE resource_id=?3 AND user_id=?4 AND status='active'"""
-        ).bind(now, authenticated.actor.user_id, event_id, user_id)
-    )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE users SET authorization_version=authorization_version+1,
-               updated_at_ms=?1 WHERE id=?2"""
-        ).bind(now, user_id)
-    )
-    batch.audit(
-        AuditEvent(
-            actor_type="user",
-            actor_user_id=authenticated.actor.user_id,
-            action="resource_access_grant.revoke",
-            target_type="event",
-            target_id=event_id,
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            organization_id=organization_id,
-            event_id=event_id,
-            metadata={"grantee_user_id": user_id},
-        )
-    )
-    await batch.execute()
-    return Response(status_code=204)
-
-
 @access_router.post(
     "/api/v1/admin/events/{event_id}/invitations",
     response_model=InvitationIssued,
@@ -4080,8 +3677,8 @@ async def create_invitation(
         mutation=True,
     )
     if body.role == "organization_admin":
-        # An event_admin must not be able to escalate anyone (including
-        # themselves) to organization-wide administration.
+        # Organization administration can only be delegated by an existing
+        # organization authority; event-scoped administration is unsupported.
         await require_permission(
             request,
             Permission.RESOURCE_ACCESS_MANAGE,
@@ -4689,9 +4286,13 @@ async def _append_invitation_link(
     destination = {
         "speaker": "/speaker",
         "evaluator": "/account?onboarding=1&next=/reviews",
-        "event_admin": "/admin",
         "organization_admin": "/admin",
-    }[role]
+    }.get(str(role))
+    if destination is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This invitation role is no longer supported",
+        )
     db = database(request)
     # Bind the challenge to a user id only when that user currently holds an
     # ACTIVE membership in this organization: the challenge-scope integrity
@@ -4864,6 +4465,11 @@ async def resend_invitation(
     )
     if row is None:
         raise HTTPException(status_code=404)
+    if str(row["role"]) not in {"organization_admin", "evaluator", "speaker"}:
+        raise HTTPException(
+            status_code=409,
+            detail="This invitation role is no longer supported",
+        )
     if str(row["role"]) == "organization_admin":
         # Only organization admins may keep an org-admin invitation alive.
         await require_permission(
@@ -4872,7 +4478,7 @@ async def resend_invitation(
             ResourceContext(organization_id),
             mutation=True,
         )
-    role: InvitationRole = row["role"]
+    role = cast(InvitationRole, str(row["role"]))
     access_url = await _issue_invitation_link(
         request,
         invitation_id=invitation_id,
@@ -5028,7 +4634,7 @@ async def list_event_members(event_id: str, request: Request) -> EventMemberList
 async def revoke_event_member(
     event_id: str,
     user_id: str,
-    role: Literal["event_admin", "evaluator", "speaker"],
+    role: Literal["evaluator", "speaker"],
     request: Request,
 ) -> Response:
     db, organization_id, authenticated = await _managed_event(request, event_id, mutation=True)
@@ -5133,7 +4739,7 @@ async def list_organization_access_grants(
                UNION ALL
                SELECT u.id,u.email,g.permission,g.status,1 AS rank
                FROM resource_access_grants g JOIN users u ON u.id=g.user_id
-               WHERE g.resource_id=?1 AND g.status='active'
+               WHERE g.resource_id=?1 AND g.status='active' AND g.permission='manage'
                ORDER BY rank,email,permission"""
         )
         .bind(organization_id)
@@ -5368,7 +4974,6 @@ async def _upsert_organization_access_grant(
     organization_id: str,
     owner_user_id: str,
     user_id: str,
-    permission: Literal["view", "edit", "manage"],
     authenticated,
     request: Request,
 ) -> ResourceGrantView:
@@ -5415,13 +5020,12 @@ async def _upsert_organization_access_grant(
         db.prepare(
             """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
                  revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
-               WHERE resource_id=?3 AND user_id=?4 AND status='active' AND permission!=?5"""
+               WHERE resource_id=?3 AND user_id=?4 AND status='active' AND permission!='manage'"""
         ).bind(
             now,
             authenticated.actor.user_id,
             organization_id,
             user_id,
-            permission,
         )
     )
     batch.add_statement(
@@ -5429,7 +5033,7 @@ async def _upsert_organization_access_grant(
             """INSERT INTO resource_access_grants
                (id,resource_id,user_id,permission,status,granted_by_user_id,
                 created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,'active',?5,?6,?6)
+               VALUES(?1,?2,?3,'manage','active',?4,?5,?5)
                ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET status='active',
                  granted_by_user_id=excluded.granted_by_user_id,revoked_at_ms=NULL,
                  revoked_by_user_id=NULL,version=version+1,
@@ -5438,7 +5042,6 @@ async def _upsert_organization_access_grant(
             new_id(),
             organization_id,
             user_id,
-            permission,
             authenticated.actor.user_id,
             now,
         )
@@ -5460,14 +5063,14 @@ async def _upsert_organization_access_grant(
             correlation_id=request.state.request_id,
             occurred_at_ms=now,
             organization_id=organization_id,
-            metadata={"grantee_user_id": user_id, "permission": permission},
+            metadata={"grantee_user_id": user_id, "permission": "manage"},
         )
     )
     await batch.execute()
     return ResourceGrantView(
         user_id=user_id,
         email=str(target["email"]),
-        permission=permission,
+        permission="manage",
         status="active",
     )
 
@@ -5499,32 +5102,6 @@ async def create_organization_access_grant(
         organization_id=organization_id,
         owner_user_id=owner_user_id,
         user_id=str(user_id),
-        permission=body.permission,
-        authenticated=authenticated,
-        request=request,
-    )
-
-
-@access_router.patch(
-    "/api/v1/admin/organizations/{organization_id}/access-grants/{user_id}",
-    response_model=ResourceGrantView,
-    tags=["administration"],
-)
-async def update_organization_access_grant(
-    organization_id: str,
-    user_id: str,
-    body: ResourceGrantUpdate,
-    request: Request,
-) -> ResourceGrantView:
-    db, owner_user_id, authenticated = await _organization_access_control_context(
-        request, organization_id, mutation=True
-    )
-    return await _upsert_organization_access_grant(
-        db=db,
-        organization_id=organization_id,
-        owner_user_id=owner_user_id,
-        user_id=user_id,
-        permission=body.permission,
         authenticated=authenticated,
         request=request,
     )
@@ -5584,293 +5161,6 @@ async def revoke_organization_access_grant(
     )
     await batch.execute()
     return Response(status_code=204)
-
-
-@access_router.get(
-    "/api/v1/admin/organizations/{organization_id}/ownership-recovery/events",
-    response_model=OwnershipRecoveryEventList,
-    tags=["administration"],
-)
-async def list_ownership_recovery_events(
-    organization_id: str,
-    request: Request,
-    cursor: str | None = Query(default=None, max_length=512),
-    limit: int = Query(default=EVENTS_PAGE_LIMIT, ge=1, le=EVENTS_PAGE_LIMIT),
-) -> OwnershipRecoveryEventList:
-    """Expose a minimal event index to the exact organization owner only.
-
-    This is a recovery control plane and deliberately does not authorize the
-    caller to read any of the returned events through ordinary event APIs.
-    """
-    authenticated = await authenticate_request(request)
-    if authenticated.actor.active_persona is not Persona.ORGANIZER:
-        raise HTTPException(status_code=403)
-    db = database(request)
-    is_exact_owner = await (
-        db.prepare(
-            """SELECT 1 FROM organizations o
-               JOIN owned_resources owned
-                 ON owned.id=o.id AND owned.resource_type='organization'
-                AND owned.status='active'
-               WHERE o.id=?1 AND owned.owner_user_id=?2 LIMIT 1"""
-        )
-        .bind(organization_id, authenticated.actor.user_id)
-        .first()
-    )
-    if is_exact_owner is None:
-        raise HTTPException(status_code=404)
-    decoded_cursor = _events_cursor(
-        request,
-        cursor,
-        organization_id=organization_id,
-        view="ownership-recovery",
-        search="",
-        order="recent",
-    )
-    after_created_at_ms, after_id = decoded_cursor if decoded_cursor else (None, None)
-    rows = result_rows(
-        await db.prepare(
-            """SELECT e.id AS event_id,e.name,e.status,
-                          owned.owner_user_id AS current_owner_user_id,
-                          owner.email AS current_owner_email,e.created_at_ms
-                   FROM events e
-                   JOIN owned_resources owned
-                     ON owned.id=e.id AND owned.resource_type='event'
-                    AND owned.status='active'
-                   JOIN users owner ON owner.id=owned.owner_user_id
-                   WHERE e.organization_id=?1
-                     AND (?2 IS NULL OR e.created_at_ms<?2
-                          OR (e.created_at_ms=?2 AND e.id<?3))
-                   ORDER BY e.created_at_ms DESC,e.id DESC LIMIT ?4"""
-        )
-        .bind(organization_id, after_created_at_ms, after_id, limit + 1)
-        .all()
-    )
-    page = rows[:limit]
-    events = [
-        OwnershipRecoveryEventView(
-            event_id=str(row["event_id"]),
-            name=str(row["name"]),
-            status=row["status"],
-            current_owner_user_id=str(row["current_owner_user_id"]),
-            current_owner_email=str(row["current_owner_email"]),
-        )
-        for row in page
-    ]
-    next_cursor = None
-    if len(rows) > limit and page:
-        next_cursor = _events_next_cursor(
-            request,
-            organization_id=organization_id,
-            view="ownership-recovery",
-            search="",
-            order="recent",
-            starts_at_ms=int(page[-1]["created_at_ms"]),
-            row_id=str(page[-1]["event_id"]),
-        )
-    return OwnershipRecoveryEventList(data=events, next_cursor=next_cursor)
-
-
-async def _event_ownership_control_context(request: Request, event_id: str):
-    authenticated = await authenticate_request(request)
-    guard_mutation(request, authenticated.session_id)
-    if authenticated.actor.active_persona is not Persona.ORGANIZER:
-        raise HTTPException(status_code=403)
-    db = database(request)
-    scope = row_mapping(
-        await db.prepare(
-            """SELECT e.organization_id,event_owner.owner_user_id,
-                      event_owner.version AS ownership_version,
-                      organization_owner.owner_user_id AS organization_owner_user_id
-               FROM events e
-               JOIN owned_resources event_owner
-                 ON event_owner.id=e.id AND event_owner.resource_type='event'
-                AND event_owner.status='active'
-               JOIN owned_resources organization_owner
-                 ON organization_owner.id=e.organization_id
-                AND organization_owner.resource_type='organization'
-                AND organization_owner.status='active'
-               WHERE e.id=?1 LIMIT 1"""
-        )
-        .bind(event_id)
-        .first()
-    )
-    if scope is None or authenticated.actor.user_id not in {
-        str(scope["owner_user_id"]),
-        str(scope["organization_owner_user_id"]),
-    }:
-        raise HTTPException(status_code=404)
-    return db, scope, authenticated
-
-
-@access_router.post(
-    "/api/v1/admin/events/{event_id}/ownership-transfers",
-    response_model=EventOwnershipTransferView,
-    status_code=201,
-    tags=["administration"],
-)
-async def transfer_event_ownership(
-    event_id: str, body: EventOwnershipTransferCreate, request: Request
-) -> EventOwnershipTransferView:
-    db, scope, authenticated = await _event_ownership_control_context(request, event_id)
-    _target_email, normalized = _email(body.email)
-    target = row_mapping(
-        await db.prepare(
-            "SELECT id FROM users WHERE normalized_email=?1 AND status='active' LIMIT 1"
-        )
-        .bind(normalized)
-        .first()
-    )
-    if target is None:
-        raise HTTPException(status_code=404)
-    previous_owner_user_id = str(scope["owner_user_id"])
-    new_owner_user_id = str(target["id"])
-    if new_owner_user_id == previous_owner_user_id:
-        raise HTTPException(status_code=409, detail="The account already owns this event")
-    organization_id = str(scope["organization_id"])
-    ownership_version = int(scope["ownership_version"])
-    now, transfer_id = utc_now_ms(), new_id()
-    batch = CommandBatch(db)
-    # The ownership trigger forbids grants for an owner, so target grants must
-    # be removed before the owner row changes.
-    batch.add_statement(
-        db.prepare(
-            """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
-                 revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
-               WHERE resource_id=?3 AND user_id=?4 AND status='active'"""
-        ).bind(now, authenticated.actor.user_id, event_id, new_owner_user_id)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'member','active',?4,?4)
-               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,
-                 role=CASE WHEN organization_memberships.status='revoked'
-                      THEN 'member' ELSE organization_memberships.role END,
-                 version=version+1,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), organization_id, new_owner_user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO user_roles
-               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
-               VALUES(?1,'organizer','active',?2,?2,
-                 CASE WHEN EXISTS(SELECT 1 FROM user_roles
-                                  WHERE user_id=?1 AND status='active') THEN 0 ELSE 1 END)
-               ON CONFLICT(user_id,role) DO UPDATE SET status='active',revoked_at_ms=NULL,
-                 is_default=CASE WHEN NOT EXISTS(
-                   SELECT 1 FROM user_roles other
-                   WHERE other.user_id=?1 AND other.status='active'
-                     AND other.role!='organizer'
-                 ) THEN 1 ELSE user_roles.is_default END,
-                 updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_owner_user_id, now)
-    )
-    # A concurrent transfer must abort the whole D1 batch rather than leave
-    # provisioning or grant changes behind. A stale owner/version deliberately
-    # resolves to NULL, violating the NOT NULL owner column and rolling back.
-    batch.add_statement(
-        db.prepare(
-            """UPDATE owned_resources SET
-                 owner_user_id=CASE
-                   WHEN owner_user_id=?1 AND version=?2 AND status='active' THEN ?3
-                   ELSE NULL
-                 END,
-                 version=version+1,updated_at_ms=?4
-               WHERE id=?5 AND resource_type='event'"""
-        ).bind(
-            previous_owner_user_id,
-            ownership_version,
-            new_owner_user_id,
-            now,
-            event_id,
-        )
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO resource_ownership_transfers
-               (id,resource_id,from_user_id,to_user_id,transferred_by_user_id,
-                reason,transferred_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7)"""
-        ).bind(
-            transfer_id,
-            event_id,
-            previous_owner_user_id,
-            new_owner_user_id,
-            authenticated.actor.user_id,
-            body.reason or None,
-            now,
-        )
-    )
-    # A previous owner keeps no exact event authority by default. When the
-    # caller explicitly opts in, restore exactly one manage grant after the
-    # ownership row has changed.
-    batch.add_statement(
-        db.prepare(
-            """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
-                 revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
-               WHERE resource_id=?3 AND user_id=?4 AND status='active'"""
-        ).bind(now, authenticated.actor.user_id, event_id, previous_owner_user_id)
-    )
-    if body.grant_previous_owner_manage:
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO resource_access_grants
-                   (id,resource_id,user_id,permission,status,granted_by_user_id,
-                    created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,'manage','active',?4,?5,?5)
-                   ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET
-                     status='active',granted_by_user_id=excluded.granted_by_user_id,
-                     revoked_at_ms=NULL,revoked_by_user_id=NULL,version=version+1,
-                     updated_at_ms=excluded.updated_at_ms"""
-            ).bind(
-                new_id(),
-                event_id,
-                previous_owner_user_id,
-                authenticated.actor.user_id,
-                now,
-            )
-        )
-    for changed_user_id in (previous_owner_user_id, new_owner_user_id):
-        batch.add_statement(
-            db.prepare(
-                """UPDATE users SET authorization_version=authorization_version+1,
-                   updated_at_ms=?1 WHERE id=?2"""
-            ).bind(now, changed_user_id)
-        )
-    batch.audit(
-        AuditEvent(
-            actor_type="user",
-            actor_user_id=authenticated.actor.user_id,
-            action="resource_ownership.transfer",
-            target_type="event",
-            target_id=event_id,
-            result="succeeded",
-            correlation_id=request.state.request_id,
-            occurred_at_ms=now,
-            organization_id=organization_id,
-            event_id=event_id,
-            metadata={
-                "previous_owner_user_id": previous_owner_user_id,
-                "new_owner_user_id": new_owner_user_id,
-                "grant_previous_owner_manage": body.grant_previous_owner_manage,
-            },
-        )
-    )
-    try:
-        await batch.execute()
-    except PersistenceError as exc:
-        raise HTTPException(status_code=409, detail="Event ownership changed; reload") from exc
-    return EventOwnershipTransferView(
-        transfer_id=transfer_id,
-        event_id=event_id,
-        previous_owner_user_id=previous_owner_user_id,
-        new_owner_user_id=new_owner_user_id,
-        previous_owner_permission="manage" if body.grant_previous_owner_manage else None,
-        transferred_at_ms=now,
-    )
 
 
 @access_router.post(
@@ -6221,6 +5511,12 @@ async def _finish_magic_link_sign_in(
         )
         if invitation is None:
             raise HTTPException(status_code=404)
+        invitation_role = str(invitation["role"])
+        if invitation_role not in {"organization_admin", "evaluator", "speaker"}:
+            raise HTTPException(
+                status_code=409,
+                detail="This invitation role is no longer supported",
+            )
         existing_user = row_mapping(
             await db.prepare("SELECT id FROM users WHERE normalized_email=?1 LIMIT 1")
             .bind(invitation["normalized_email"])
@@ -6256,7 +5552,7 @@ async def _finish_magic_link_sign_in(
                        updated_at_ms=?2 WHERE id=?3"""
                 ).bind(str(invitation["display_name"]).strip(), now, user_id)
             )
-        if invitation["role"] in {"organization_admin", "event_admin"}:
+        if invitation_role == "organization_admin":
             # Keep a non-authorizing affiliation row for legacy composite
             # foreign keys. Administrative authority is the exact resource
             # grant below, never this membership.
@@ -6270,11 +5566,7 @@ async def _finish_magic_link_sign_in(
                      version=version+1,updated_at_ms=excluded.updated_at_ms"""
                 ).bind(new_id(), invitation["organization_id"], user_id, now)
             )
-            resource_id = (
-                invitation["organization_id"]
-                if invitation["role"] == "organization_admin"
-                else invitation["event_id"]
-            )
+            resource_id = invitation["organization_id"]
             # An administrative invitation replaces the invitee's exact-
             # resource access level. Do not leave an older view/edit row
             # active beside the new manage grant.
@@ -6340,10 +5632,14 @@ async def _finish_magic_link_sign_in(
             )
         persona = {
             "organization_admin": "organizer",
-            "event_admin": "organizer",
             "evaluator": "reviewer",
             "speaker": "speaker",
-        }[str(invitation["role"])]
+        }.get(invitation_role)
+        if persona is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This invitation role is no longer supported",
+            )
         invited_persona = persona
         batch.add_statement(
             db.prepare(
@@ -6967,15 +6263,17 @@ async def current_session(request: Request) -> CurrentSession:
         await db.prepare(
             """SELECT r.id,r.resource_type,
                       CASE WHEN r.owner_user_id=?1 THEN 'owner' ELSE g.permission END AS permission,
-                      o.name AS organization_name,e.name AS event_name,e.organization_id
+                      o.name AS organization_name
                FROM owned_resources r
                LEFT JOIN resource_access_grants g
                  ON g.resource_id=r.id AND g.user_id=?1 AND g.status='active'
+                AND g.permission='manage' AND r.resource_type='organization'
                LEFT JOIN organizations o ON r.resource_type='organization' AND o.id=r.id
-               LEFT JOIN events e ON r.resource_type='event' AND e.id=r.id
-               WHERE r.status='active' AND (r.owner_user_id=?1 OR g.id IS NOT NULL)
-                 AND r.resource_type IN ('organization','event')
-               ORDER BY r.resource_type,r.id"""
+               WHERE r.status='active' AND (
+                 r.owner_user_id=?1 OR g.id IS NOT NULL
+               )
+                 AND r.resource_type='organization'
+               ORDER BY r.id"""
         )
         .bind(authenticated.actor.user_id)
         .all()
@@ -7005,8 +6303,9 @@ async def current_session(request: Request) -> CurrentSession:
     events_by_id: dict[str, dict[str, object]] = {}
     for item in access_rows:
         resource_id = str(item["id"])
-        target = organizations_by_id if item["resource_type"] == "organization" else events_by_id
-        target.setdefault(resource_id, {"row": item, "permissions": []})["permissions"].append(
+        organizations_by_id.setdefault(resource_id, {"row": item, "permissions": []})[
+            "permissions"
+        ].append(
             str(item["permission"])
         )
     for item in assignment_rows:
@@ -7019,7 +6318,6 @@ async def current_session(request: Request) -> CurrentSession:
                     "organization_id": item["organization_id"],
                     "event_name": item["event_name"],
                 },
-                "permissions": [],
             },
         )
         event_entry.setdefault("assignments", []).append(str(item["assignment"]))
@@ -7036,7 +6334,6 @@ async def current_session(request: Request) -> CurrentSession:
             organization_id=str(value["row"]["organization_id"]),
             event_id=resource_id,
             event_name=str(value["row"].get("event_name") or "Event"),
-            permissions=sorted(set(value["permissions"])),
             assignments=sorted(set(value.get("assignments", []))),
         )
         for resource_id, value in events_by_id.items()

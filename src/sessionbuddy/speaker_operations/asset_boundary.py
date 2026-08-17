@@ -23,7 +23,7 @@ class AssetAccessScope:
     event_id: str
     actor_user_id: str
     event_speaker_id: str | None = None
-    event_admin: bool = False
+    organizer_access: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +77,7 @@ class AssetRepository:
                    WHERE a.organization_id = ?1 AND a.event_id = ?2 AND a.id = ?3
                      AND v.scan_state IN ('clean','superseded')
                      AND ((?4 IS NULL AND v.is_current=1) OR v.id=?4)"""
-        if not scope.event_admin:
+        if not scope.organizer_access:
             if scope.event_speaker_id is None:
                 return None
             query = """SELECT v.id, v.object_key, v.original_filename, v.content_type,
@@ -135,7 +135,7 @@ class AssetRepository:
                 scope.event_id,
                 scope.actor_user_id,
                 asset.version_id,
-                "admin_download" if scope.event_admin else "speaker_download",
+                "admin_download" if scope.organizer_access else "speaker_download",
                 sha256(token.encode()).digest(),
                 now_ms + ttl_ms,
                 now_ms,

@@ -174,7 +174,6 @@ test.describe("MVP experience accessibility", () => {
             organization_id: "11111111-1111-4111-8111-111111111111",
             event_id: "22222222-2222-4222-8222-222222222222",
             event_name: "Example Event",
-            permissions: speaker ? [] : ["owner"],
             assignments: speaker ? ["speaker"] : [],
           }],
         };

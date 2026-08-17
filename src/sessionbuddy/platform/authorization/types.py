@@ -4,7 +4,6 @@ from enum import StrEnum
 
 class Role(StrEnum):
     ORGANIZATION_ADMIN = "organization_admin"
-    EVENT_ADMIN = "event_admin"
     SPEAKER = "speaker"
 
 
@@ -15,8 +14,6 @@ class Persona(StrEnum):
 
 
 class ResourceGrant(StrEnum):
-    VIEW = "view"
-    EDIT = "edit"
     MANAGE = "manage"
 
 

@@ -20,7 +20,7 @@ const sessionBody = JSON.stringify({
   active_role: "organizer",
   default_role: "organizer",
   organization_access: [{ organization_id: orgId, organization_name: "Example Organization", permissions: ["owner"] }],
-  event_access: [{ organization_id: orgId, event_id: eventId, event_name: "Example Event", permissions: ["owner"], assignments: [] }],
+  event_access: [{ organization_id: orgId, event_id: eventId, event_name: "Example Event", assignments: [] }],
 });
 const speakerTarget = {
   event_speaker_id: "speaker-1",

@@ -5757,7 +5757,6 @@
           },
           "role": {
             "enum": [
-              "event_admin",
               "evaluator",
               "speaker"
             ],
@@ -5784,84 +5783,6 @@
           "status"
         ],
         "title": "EventMemberView",
-        "type": "object"
-      },
-      "EventOwnershipTransferCreate": {
-        "additionalProperties": false,
-        "properties": {
-          "email": {
-            "maxLength": 320,
-            "minLength": 3,
-            "title": "Email",
-            "type": "string"
-          },
-          "grant_previous_owner_manage": {
-            "default": false,
-            "title": "Grant Previous Owner Manage",
-            "type": "boolean"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          }
-        },
-        "required": [
-          "email"
-        ],
-        "title": "EventOwnershipTransferCreate",
-        "type": "object"
-      },
-      "EventOwnershipTransferView": {
-        "properties": {
-          "event_id": {
-            "title": "Event Id",
-            "type": "string"
-          },
-          "new_owner_user_id": {
-            "title": "New Owner User Id",
-            "type": "string"
-          },
-          "previous_owner_permission": {
-            "anyOf": [
-              {
-                "const": "manage",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Previous Owner Permission"
-          },
-          "previous_owner_user_id": {
-            "title": "Previous Owner User Id",
-            "type": "string"
-          },
-          "transfer_id": {
-            "title": "Transfer Id",
-            "type": "string"
-          },
-          "transferred_at_ms": {
-            "title": "Transferred At Ms",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "transfer_id",
-          "event_id",
-          "previous_owner_user_id",
-          "new_owner_user_id",
-          "transferred_at_ms"
-        ],
-        "title": "EventOwnershipTransferView",
         "type": "object"
       },
       "EventSpeakerRestore": {
@@ -7266,7 +7187,6 @@
           "role": {
             "enum": [
               "organization_admin",
-              "event_admin",
               "evaluator",
               "speaker"
             ],
@@ -7322,7 +7242,6 @@
           "role": {
             "enum": [
               "organization_admin",
-              "event_admin",
               "evaluator",
               "speaker"
             ],
@@ -7404,7 +7323,6 @@
           "role": {
             "enum": [
               "organization_admin",
-              "event_admin",
               "evaluator",
               "speaker"
             ],
@@ -8332,71 +8250,6 @@
           "data"
         ],
         "title": "OwnedSubmissionList",
-        "type": "object"
-      },
-      "OwnershipRecoveryEventList": {
-        "properties": {
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/OwnershipRecoveryEventView"
-            },
-            "title": "Data",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "data"
-        ],
-        "title": "OwnershipRecoveryEventList",
-        "type": "object"
-      },
-      "OwnershipRecoveryEventView": {
-        "properties": {
-          "current_owner_email": {
-            "title": "Current Owner Email",
-            "type": "string"
-          },
-          "current_owner_user_id": {
-            "title": "Current Owner User Id",
-            "type": "string"
-          },
-          "event_id": {
-            "title": "Event Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "draft",
-              "active",
-              "archived"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "event_id",
-          "name",
-          "status",
-          "current_owner_user_id",
-          "current_owner_email"
-        ],
-        "title": "OwnershipRecoveryEventView",
         "type": "object"
       },
       "PasswordSignIn": {
@@ -9892,20 +9745,10 @@
             "minLength": 3,
             "title": "Email",
             "type": "string"
-          },
-          "permission": {
-            "enum": [
-              "view",
-              "edit",
-              "manage"
-            ],
-            "title": "Permission",
-            "type": "string"
           }
         },
         "required": [
-          "email",
-          "permission"
+          "email"
         ],
         "title": "ResourceGrantCreate",
         "type": "object"
@@ -9926,25 +9769,6 @@
         "title": "ResourceGrantList",
         "type": "object"
       },
-      "ResourceGrantUpdate": {
-        "additionalProperties": false,
-        "properties": {
-          "permission": {
-            "enum": [
-              "view",
-              "edit",
-              "manage"
-            ],
-            "title": "Permission",
-            "type": "string"
-          }
-        },
-        "required": [
-          "permission"
-        ],
-        "title": "ResourceGrantUpdate",
-        "type": "object"
-      },
       "ResourceGrantView": {
         "properties": {
           "email": {
@@ -9954,8 +9778,6 @@
           "permission": {
             "enum": [
               "owner",
-              "view",
-              "edit",
               "manage"
             ],
             "title": "Permission",
@@ -10587,19 +10409,6 @@
           "organization_id": {
             "title": "Organization Id",
             "type": "string"
-          },
-          "permissions": {
-            "items": {
-              "enum": [
-                "owner",
-                "view",
-                "edit",
-                "manage"
-              ],
-              "type": "string"
-            },
-            "title": "Permissions",
-            "type": "array"
           }
         },
         "required": [
@@ -10675,8 +10484,6 @@
             "items": {
               "enum": [
                 "owner",
-                "view",
-                "edit",
                 "manage"
               ],
               "type": "string"
@@ -14734,201 +14541,6 @@
         ]
       }
     },
-    "/api/v1/admin/events/{event_id}/access-grants": {
-      "get": {
-        "operationId": "list_event_access_grants_api_v1_admin_events__event_id__access_grants_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "title": "Event Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResourceGrantList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Event Access Grants",
-        "tags": [
-          "administration"
-        ]
-      },
-      "post": {
-        "operationId": "create_event_access_grant_api_v1_admin_events__event_id__access_grants_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "title": "Event Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResourceGrantCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResourceGrantView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Event Access Grant",
-        "tags": [
-          "administration"
-        ]
-      }
-    },
-    "/api/v1/admin/events/{event_id}/access-grants/{user_id}": {
-      "delete": {
-        "operationId": "revoke_event_access_grant_api_v1_admin_events__event_id__access_grants__user_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "title": "Event Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Revoke Event Access Grant",
-        "tags": [
-          "administration"
-        ]
-      },
-      "patch": {
-        "operationId": "update_event_access_grant_api_v1_admin_events__event_id__access_grants__user_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "title": "Event Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResourceGrantUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResourceGrantView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Event Access Grant",
-        "tags": [
-          "administration"
-        ]
-      }
-    },
     "/api/v1/admin/events/{event_id}/agenda": {
       "get": {
         "operationId": "get_admin_agenda_api_v1_admin_events__event_id__agenda_get",
@@ -17582,7 +17194,6 @@
             "required": true,
             "schema": {
               "enum": [
-                "event_admin",
                 "evaluator",
                 "speaker"
               ],
@@ -17719,58 +17330,6 @@
         "summary": "Get Admin Onboarding Dashboard",
         "tags": [
           "speaker-onboarding"
-        ]
-      }
-    },
-    "/api/v1/admin/events/{event_id}/ownership-transfers": {
-      "post": {
-        "operationId": "transfer_event_ownership_api_v1_admin_events__event_id__ownership_transfers_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "event_id",
-            "required": true,
-            "schema": {
-              "title": "Event Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EventOwnershipTransferCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EventOwnershipTransferView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Transfer Event Ownership",
-        "tags": [
-          "administration"
         ]
       }
     },
@@ -19464,65 +19023,6 @@
         "tags": [
           "administration"
         ]
-      },
-      "patch": {
-        "operationId": "update_organization_access_grant_api_v1_admin_organizations__organization_id__access_grants__user_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "user_id",
-            "required": true,
-            "schema": {
-              "title": "User Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResourceGrantUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResourceGrantView"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Organization Access Grant",
-        "tags": [
-          "administration"
-        ]
       }
     },
     "/api/v1/admin/organizations/{organization_id}/activities": {
@@ -19788,7 +19288,7 @@
     },
     "/api/v1/admin/organizations/{organization_id}/metrics": {
       "get": {
-        "description": "Lightweight aggregate counts for dashboards instead of paging every\nevent and fanning out per-event requests.\n\nCounts include only events the active organizer owns or can explicitly manage.",
+        "description": "Lightweight aggregate counts for dashboards instead of paging every\nevent and fanning out per-event requests.\n\nOrganization owners and admins see organization-wide counts.",
         "operationId": "organization_metrics_api_v1_admin_organizations__organization_id__metrics_get",
         "parameters": [
           {
@@ -19824,78 +19324,6 @@
           }
         },
         "summary": "Organization Metrics",
-        "tags": [
-          "administration"
-        ]
-      }
-    },
-    "/api/v1/admin/organizations/{organization_id}/ownership-recovery/events": {
-      "get": {
-        "description": "Expose a minimal event index to the exact organization owner only.\n\nThis is a recovery control plane and deliberately does not authorize the\ncaller to read any of the returned events through ordinary event APIs.",
-        "operationId": "list_ownership_recovery_events_api_v1_admin_organizations__organization_id__ownership_recovery_events_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization_id",
-            "required": true,
-            "schema": {
-              "title": "Organization Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 512,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 50,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OwnershipRecoveryEventList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Ownership Recovery Events",
         "tags": [
           "administration"
         ]
