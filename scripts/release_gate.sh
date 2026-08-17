@@ -40,6 +40,8 @@ release_compose run --rm --no-deps worker npm run frontend:check
 release_compose run --rm --no-deps worker npm run frontend:build
 release_compose run --rm --no-deps worker npm run fixtures:check-assets
 release_compose run --rm --no-deps worker uv run python scripts/embed_console_assets.py --check
+release_compose run --rm --no-deps worker uv run python \
+  scripts/render_private_cloudflare_config.py --check
 release_compose run --rm --no-deps worker uv run ruff check .
 release_compose run --rm --no-deps worker uv run pytest -q
 release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
@@ -73,7 +75,7 @@ release_compose run --rm e2e sh -lc \
    --output-path=.local/lighthouse/engine-room-mobile.json \
    --chrome-flags='--headless --no-sandbox --disable-dev-shm-usage' --quiet"
 release_compose run --rm --no-deps worker uv run pywrangler deploy \
-  --env dev --dry-run --outdir "/workspace/$RELEASE_GATE_STATE/package-dry-run"
+  --dry-run --outdir "/workspace/$RELEASE_GATE_STATE/package-dry-run"
 release_compose run --rm --no-deps worker uv run python \
   scripts/validate_worker_package.py "/workspace/$RELEASE_GATE_STATE/package-dry-run"
 

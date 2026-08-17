@@ -70,7 +70,8 @@ and a Wrangler deployment dry run. It does not deploy or mutate remote resources
 After an authorized development deployment, run the read-only remote audit:
 
 ```bash
-docker compose run --rm --no-deps worker npm run worker:preflight:dev
+docker compose run --rm --no-deps worker \
+  uv run python scripts/cloudflare_preflight.py --config "$MAIN_CONFIG"
 ```
 
 The accepted 2026-08-09 rehearsal reported 23 passing deployment checks and zero

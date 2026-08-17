@@ -9,19 +9,50 @@ from scripts import bootstrap_cloudflare, setup_key
 from scripts.bootstrap_cloudflare import bootstrap_payload, timestamp_ms
 from scripts.cloudflare_preflight import (
     CORE_SECRETS,
+    CommandResult,
     load_environment,
     parse_organization_count,
     r2_cors_ready,
+    remote_checks,
+    require_remote_environment,
     run_command,
     secret_checks,
     static_configuration_checks,
+)
+from scripts.render_private_cloudflare_config import (
+    DEMO_USER_ID_VALUES,
+    load_jsonc,
+    main_config,
 )
 
 ROOT = Path(__file__).parents[2]
 
 
+def _rendered_development_config() -> tuple[dict, dict[str, str]]:
+    base = load_jsonc(ROOT / "wrangler.jsonc")
+    values = {
+        "WORKER_NAME": "sessionbuddy-development-test",
+        "D1_DATABASE_NAME": "sessionbuddy-development-test",
+        "D1_DATABASE_ID": "11111111-1111-4111-8111-111111111111",
+        "R2_BUCKET_NAME": "sessionbuddy-assets-development",
+        "ASSET_SCAN_QUEUE": "asset-scans",
+        "ASSET_SCAN_DLQ": "asset-scans-dlq",
+        "COMMUNICATION_QUEUE": "communications",
+        "COMMUNICATION_DLQ": "communications-dlq",
+        "REMINDER_WORKFLOW": "reminders",
+        "PUBLIC_BASE_URL": "https://development.sessionbuddy.test",
+        "CLOUDFLARE_ACCOUNT_ID": "account-test",
+        "APP_VERSION": "test-version",
+        "RATE_LIMIT_NAMESPACE_BASE": "2000",
+        **DEMO_USER_ID_VALUES,
+        "RESEND_FROM_ADDRESS": "SessionBuddy <events@example.test>",
+    }
+    environment = main_config(base, values)
+    return environment, environment["vars"]
+
+
 def test_development_cloudflare_config_has_no_deployment_failures() -> None:
-    environment, variables = load_environment(ROOT / "wrangler.jsonc", "dev")
+    environment, variables = _rendered_development_config()
     checks = static_configuration_checks(environment, variables)
     rate_limits = {
         binding["name"]: binding["simple"] for binding in environment["ratelimits"]
@@ -51,7 +82,7 @@ def test_development_cloudflare_config_has_no_deployment_failures() -> None:
 
 
 def test_deployed_development_can_explicitly_disable_scanning() -> None:
-    environment, variables = load_environment(ROOT / "wrangler.jsonc", "dev")
+    environment, variables = _rendered_development_config()
     variables["MALWARE_SCAN_MODE"] = "disabled"
     checks = static_configuration_checks(environment, variables)
 
@@ -61,8 +92,7 @@ def test_deployed_development_can_explicitly_disable_scanning() -> None:
 
 
 def test_staging_cannot_inherit_the_development_scanner_bypass() -> None:
-    environment, variables = load_environment(ROOT / "wrangler.jsonc", "dev")
-    environment["vars"]["APP_ENV"] = "staging"
+    environment, variables = _rendered_development_config()
     variables["APP_ENV"] = "staging"
     variables["MALWARE_SCAN_MODE"] = "disabled"
     checks = static_configuration_checks(environment, variables)
@@ -172,8 +202,8 @@ def test_preflight_keeps_successful_json_stdout_separate_from_warnings(monkeypat
 
 
 def test_preflight_requires_exact_r2_browser_upload_cors() -> None:
-    origin = "https://sessionbuddy-development.shiny-cloud-dd47.workers.dev"
-    output = """allowed_origins:  https://sessionbuddy-development.shiny-cloud-dd47.workers.dev
+    origin = "https://development.sessionbuddy.test"
+    output = """allowed_origins:  https://development.sessionbuddy.test
 allowed_methods:  PUT
 allowed_headers:  Content-Type
 exposed_headers:  ETag
@@ -184,13 +214,122 @@ exposed_headers:  ETag
     assert not r2_cors_ready(wrong_method, origin)
 
 
+def test_preflight_loads_only_a_flat_concrete_config(tmp_path: Path) -> None:
+    config = tmp_path / "target.jsonc"
+    config.write_text('{"vars":{"APP_ENV":"development"}}', encoding="utf-8")
+
+    environment, variables = load_environment(config)
+
+    assert environment["vars"] == variables
+    config.write_text('{"env":{"dev":{"vars":{}}}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="without Wrangler environments"):
+        load_environment(config)
+    config.write_text('{"env":{},"vars":{"APP_ENV":"development"}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="without Wrangler environments"):
+        load_environment(config)
+
+
+@pytest.mark.parametrize("app_env", ["local", "", "developmnt", "preview"])
+def test_preflight_rejects_unknown_or_non_remote_environment(app_env: str) -> None:
+    with pytest.raises(ValueError, match="development, staging, or production"):
+        require_remote_environment({"APP_ENV": app_env})
+
+
+@pytest.mark.parametrize("app_env", ["development", "staging", "production"])
+def test_preflight_accepts_an_explicit_remote_environment(app_env: str) -> None:
+    require_remote_environment({"APP_ENV": app_env})
+
+
+def test_preflight_binds_every_remote_wrangler_command_to_selected_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = Path("target.private.jsonc")
+    environment, variables = _rendered_development_config()
+    commands: list[list[str]] = []
+
+    def fake_command(arguments: list[str]) -> CommandResult:
+        commands.append(arguments)
+        joined = " ".join(arguments)
+        if "whoami" in joined:
+            return CommandResult(0, "logged in")
+        if "migrations list" in joined:
+            return CommandResult(0, "No migrations to apply")
+        if "d1 execute" in joined:
+            return CommandResult(0, '[{"results":[{"organization_count":1}]}]')
+        if "cors list" in joined:
+            return CommandResult(
+                0,
+                "allowed_origins: https://development.sessionbuddy.test\n"
+                "allowed_methods: PUT\nallowed_headers: Content-Type\n"
+                "exposed_headers: ETag\nmax_age_seconds: 3600",
+            )
+        if "secret list" in joined:
+            return CommandResult(0, "[]")
+        return CommandResult(0, "")
+
+    monkeypatch.setattr("scripts.cloudflare_preflight.run_command", fake_command)
+    monkeypatch.setattr(
+        "scripts.cloudflare_preflight.request_status",
+        lambda url: (401, "") if url.endswith("/api/v1/auth/session") else (200, '{"status":"ok"}'),
+    )
+
+    remote_checks(config, environment, variables)
+
+    wrangler_commands = [command for command in commands if "whoami" not in command]
+    assert wrangler_commands
+    assert all("--config" in command for command in wrangler_commands)
+    assert all("--env" not in command for command in wrangler_commands)
+
+
+def test_pre_mutation_preflight_can_report_reviewed_migrations_as_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment, variables = _rendered_development_config()
+
+    def fake_command(arguments: list[str]) -> CommandResult:
+        joined = " ".join(arguments)
+        if "whoami" in joined:
+            return CommandResult(0, "logged in")
+        if "migrations list" in joined:
+            return CommandResult(0, "0009_reviewed_change.sql")
+        if "d1 execute" in joined:
+            return CommandResult(0, '[{"results":[{"organization_count":1}]}]')
+        if "cors list" in joined:
+            return CommandResult(
+                0,
+                "allowed_origins: https://development.sessionbuddy.test\n"
+                "allowed_methods: PUT\nallowed_headers: Content-Type\n"
+                "exposed_headers: ETag\nmax_age_seconds: 3600",
+            )
+        if "secret list" in joined:
+            return CommandResult(0, "[]")
+        return CommandResult(0, "")
+
+    monkeypatch.setattr("scripts.cloudflare_preflight.run_command", fake_command)
+    monkeypatch.setattr(
+        "scripts.cloudflare_preflight.request_status",
+        lambda url: (401, "") if url.endswith("/api/v1/auth/session") else (200, '{"status":"ok"}'),
+    )
+
+    checks, _, _ = remote_checks(
+        Path("target.private.jsonc"),
+        environment,
+        variables,
+        allow_pending_migrations=True,
+    )
+
+    migrations = next(check for check in checks if check.label == "D1 migrations")
+    assert migrations.state == "PENDING"
+    assert "explicitly allowed" in migrations.detail
+
+
 def test_bootstrap_command_uses_migration_key_without_printing_it(monkeypatch, capsys) -> None:
     deployment_key = "a" * 64
     supplied_keys: list[str] = []
     monkeypatch.setattr(
         bootstrap_cloudflare,
         "load_environment",
-        lambda _path, _environment: (
+        lambda _path: (
             {},
             {"PUBLIC_BASE_URL": "https://sessionbuddy.test.workers.dev"},
         ),
@@ -198,7 +337,7 @@ def test_bootstrap_command_uses_migration_key_without_printing_it(monkeypatch, c
     monkeypatch.setattr(
         bootstrap_cloudflare,
         "read_setup_key",
-        lambda _environment: deployment_key,
+        lambda _config: deployment_key,
     )
     monkeypatch.setattr(
         bootstrap_cloudflare,
@@ -216,6 +355,8 @@ def test_bootstrap_command_uses_migration_key_without_printing_it(monkeypatch, c
         "sys.argv",
         [
             "bootstrap_cloudflare.py",
+            "--config",
+            "target.private.jsonc",
             "--organization-name",
             "Example Events",
             "--admin-name",
@@ -236,11 +377,12 @@ def test_setup_key_commands_parse_only_valid_d1_keys(monkeypatch) -> None:
     monkeypatch.setattr(
         setup_key,
         "_execute",
-        lambda _environment, sql, local=False: (
+        lambda _config, sql, local=False: (
             operations.append(sql) or [{"results": [{"deployment_key": generated}]}]
         ),
     )
 
-    assert setup_key.read_setup_key("dev") == generated
-    assert setup_key.regenerate_setup_key("dev") == generated
+    config = Path("target.private.jsonc")
+    assert setup_key.read_setup_key(config) == generated
+    assert setup_key.regenerate_setup_key(config) == generated
     assert operations == [setup_key.READ_KEY_SQL, setup_key.REGENERATE_KEY_SQL]

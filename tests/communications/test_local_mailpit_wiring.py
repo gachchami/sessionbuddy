@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,11 +27,12 @@ def test_local_compose_exposes_https_without_changing_worker_http_port() -> None
 
 
 def test_mailpit_is_configured_only_in_local_worker_vars() -> None:
-    config = (ROOT / "wrangler.jsonc").read_text()
-    local_vars, deployed = config.split('"env":', 1)
+    config = json.loads((ROOT / "wrangler.jsonc").read_text())
+    renderer = (ROOT / "scripts" / "render_private_cloudflare_config.py").read_text()
 
-    assert '"MAILPIT_API_URL": "http://mailpit:8025"' in local_vars
-    assert "MAILPIT_API_URL" not in deployed
+    assert config["vars"]["MAILPIT_API_URL"] == "http://mailpit:8025"
+    assert "env" not in config
+    assert "MAILPIT_API_URL" not in renderer
 
 
 def test_queue_consumer_requires_explicit_local_environment_for_mailpit() -> None:

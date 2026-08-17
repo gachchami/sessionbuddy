@@ -85,10 +85,11 @@ environment's `vars` block, and reports whether every configured persona is
 usable — active account, active role, and whether it still has a password
 credential for ordinary sign-in.
 
-Against a deployed database, name the wrangler environment and the tenant:
+Against a deployed database, name the concrete private config and tenant:
 
 ```sh
-uv run python scripts/seed_demo_accounts.py --env dev --organization-id <id>
+uv run python scripts/seed_demo_accounts.py \
+  --config wrangler.dev1.private.jsonc --organization-id <id>
 ```
 
 When the deployed environment's password pepper is intentionally unavailable,
@@ -110,8 +111,8 @@ For a private Wrangler configuration or a target-specific pepper file, pass
 them explicitly without copying either into source control:
 
 ```sh
-uv run python scripts/seed_demo_accounts.py --env dev2 \
-  --config .cloudflare-private/dev2/wrangler.rendered.jsonc \
+uv run python scripts/seed_demo_accounts.py \
+  --config wrangler.dev2.private.jsonc \
   --pepper-file .cloudflare-private/dev2/password-pepper.secret \
   --organization-id <id>
 ```

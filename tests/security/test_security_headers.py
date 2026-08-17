@@ -2,7 +2,7 @@ from sessionbuddy.security import content_security_policy
 
 
 class _Environment:
-    CLOUDFLARE_ACCOUNT_ID = "11b5e48aa7648b805e4602b5e980beb2"
+    CLOUDFLARE_ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
 
 
 def test_csp_allows_only_the_configured_account_r2_endpoint() -> None:
@@ -10,7 +10,7 @@ def test_csp_allows_only_the_configured_account_r2_endpoint() -> None:
 
     expected = (
         "connect-src 'self' "
-        "https://11b5e48aa7648b805e4602b5e980beb2.r2.cloudflarestorage.com"
+        "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com"
     )
     assert expected in policy
     assert "object-src 'none'" in policy

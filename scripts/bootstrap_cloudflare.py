@@ -107,8 +107,7 @@ def post_bootstrap(base_url: str, token: str, payload: dict[str, str | int]) -> 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env", default="dev", help="Wrangler environment name")
-    parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "wrangler.jsonc")
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--organization-name", required=True)
     parser.add_argument("--admin-name", help="Legacy combined administrator name")
     parser.add_argument("--admin-first-name")
@@ -131,12 +130,12 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     try:
-        _, variables = load_environment(arguments.config, arguments.env)
+        _, variables = load_environment(arguments.config)
         base_url = variables.get("PUBLIC_BASE_URL", "").rstrip("/")
         if not base_url.startswith("https://") or ".example." in base_url:
             raise ValueError("the selected environment needs an exact HTTPS PUBLIC_BASE_URL")
         payload = bootstrap_payload(arguments)
-        token = read_setup_key(arguments.env)
+        token = read_setup_key(arguments.config)
     except (OSError, SetupKeyError, ValueError, json.JSONDecodeError) as error:
         print(f"Bootstrap input error: {error}", file=sys.stderr)
         return 1

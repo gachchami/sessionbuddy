@@ -16,8 +16,10 @@ from pathlib import Path
 
 try:
     from scripts.cloudflare_preflight import load_environment
+    from scripts.render_private_cloudflare_config import load_manifest
 except ModuleNotFoundError:  # Direct execution from scripts/.
     from cloudflare_preflight import load_environment
+    from render_private_cloudflare_config import load_manifest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CANONICAL_BASELINE = PROJECT_ROOT / "migrations_baseline" / "0001_baseline.sql"
@@ -84,10 +86,6 @@ BOOTSTRAP_TABLES = (
     ),
     ("instance_setup", "singleton_key='primary'"),
 )
-WRANGLER_CONFIGS = (
-    PROJECT_ROOT / "wrangler.jsonc",
-    PROJECT_ROOT / "wrangler.activity.jsonc",
-)
 
 
 class ResetError(RuntimeError):
@@ -131,19 +129,18 @@ def run_wrangler(arguments: list[str], *, timeout: int = 180) -> subprocess.Comp
     )
 
 
-def d1_target_arguments(environment_name: str, *, local: bool) -> list[str]:
-    if local:
-        return ["--local"]
-    return ["--remote", "--env", environment_name]
+def d1_target_arguments(config: Path, *, local: bool) -> list[str]:
+    target = "--local" if local else "--remote"
+    return [target, "--config", str(config)]
 
 
-def execute_sql(environment_name: str, sql: str, *, local: bool = False) -> list[dict]:
+def execute_sql(config: Path, sql: str, *, local: bool = False) -> list[dict]:
     result = run_wrangler(
         [
             "d1",
             "execute",
             "DB",
-            *d1_target_arguments(environment_name, local=local),
+            *d1_target_arguments(config, local=local),
             "--command",
             sql,
             "--json",
@@ -292,19 +289,13 @@ def deletion_order(
     return list(reversed(parent_first))
 
 
-def validate_configuration(
-    config: Path, environment_name: str, *, local: bool = False
-) -> str:
-    if local:
-        document = json.loads(config.read_text(encoding="utf-8"))
-        environment = document
-        variables = document.get("vars", {})
-        if variables.get("APP_ENV") not in {"local", "development"}:
-            raise ResetError("local reset requires APP_ENV to be 'local' or 'development'")
-    else:
-        environment, variables = load_environment(config, environment_name)
-        if variables.get("APP_ENV") != "development":
-            raise ResetError("remote reset requires APP_ENV to be exactly 'development'")
+def validate_configuration(config: Path, *, local: bool = False) -> str:
+    environment, variables = load_environment(config)
+    allowed = {"local", "development"} if local else {"development"}
+    if variables.get("APP_ENV") not in allowed:
+        target = "local" if local else "remote"
+        expected = " or ".join(sorted(allowed))
+        raise ResetError(f"{target} reset requires APP_ENV to be {expected}")
     databases = [
         item
         for item in environment.get("d1_databases", [])
@@ -473,8 +464,39 @@ def replace_database_ids(paths: tuple[Path, ...], old_id: str, new_id: str) -> N
         path.write_text(source.replace(old_id, new_id), encoding="utf-8")
 
 
-def configured_database_id(config: Path, environment_name: str) -> str:
-    environment, _ = load_environment(config, environment_name)
+def validate_remote_rebind_sources(
+    configs: tuple[Path, ...], old_id: str, database_name: str
+) -> None:
+    sources = {path: path.read_text(encoding="utf-8") for path in configs}
+    invalid = [path.name for path, source in sources.items() if source.count(old_id) != 1]
+    if invalid:
+        raise ResetError(
+            "expected exactly one selected database id before reset in: "
+            + ", ".join(invalid)
+        )
+    for config in configs[:2]:
+        environment, _ = load_environment(config)
+        bindings = [
+            item
+            for item in environment.get("d1_databases", [])
+            if item.get("binding") == "DB"
+        ]
+        expected = {"database_name": database_name, "database_id": old_id}
+        mismatched = len(bindings) != 1 or any(
+            bindings[0].get(key) != value for key, value in expected.items()
+        )
+        if mismatched:
+            raise ResetError(f"{config.name} does not identify the selected D1 database")
+    manifest = load_manifest(configs[-1])
+    if (
+        manifest.get("D1_DATABASE_NAME") != database_name
+        or manifest.get("D1_DATABASE_ID") != old_id
+    ):
+        raise ResetError(f"{configs[-1].name} does not identify the selected D1 database")
+
+
+def configured_database_id(config: Path) -> str:
+    environment, _ = load_environment(config)
     bindings = [
         item
         for item in environment.get("d1_databases", [])
@@ -511,32 +533,56 @@ def recreate_remote_database(
     old_id: str,
     *,
     location: str,
+    configs: tuple[Path, ...],
 ) -> str:
-    run_checked(["d1", "delete", database_name, "--skip-confirmation"], timeout=300)
-    run_checked(["d1", "create", database_name, "--location", location], timeout=300)
-    payload = json.loads(run_checked(["d1", "list", "--json"], timeout=180))
+    validate_remote_rebind_sources(configs, old_id, database_name)
+    selected_config = configs[0]
+    run_checked(
+        [
+            "d1",
+            "delete",
+            database_name,
+            "--skip-confirmation",
+            "--config",
+            str(selected_config),
+        ],
+        timeout=300,
+    )
+    run_checked(
+        [
+            "d1",
+            "create",
+            database_name,
+            "--location",
+            location,
+            "--config",
+            str(selected_config),
+        ],
+        timeout=300,
+    )
+    payload = json.loads(
+        run_checked(["d1", "list", "--json", "--config", str(selected_config)], timeout=180)
+    )
     matches = [item for item in payload if item.get("name") == database_name]
     if len(matches) != 1 or not matches[0].get("uuid"):
         raise ResetError("could not resolve the recreated D1 database id")
     new_id = str(matches[0]["uuid"])
     if new_id == old_id:
         raise ResetError("recreated D1 unexpectedly retained its previous id")
-    replace_database_ids(WRANGLER_CONFIGS, old_id, new_id)
+    replace_database_ids(configs, old_id, new_id)
     return new_id
 
 
-def deploy_workers(environment_name: str) -> None:
+def deploy_workers(main_config: Path, activity_config: Path) -> None:
     commands = (
-        ["uv", "run", "pywrangler", "deploy", "--env", environment_name],
+        ["uv", "run", "pywrangler", "deploy", "--config", str(main_config)],
         [
             "uv",
             "run",
             "pywrangler",
             "deploy",
             "--config",
-            "wrangler.activity.jsonc",
-            "--env",
-            environment_name,
+            str(activity_config),
         ],
     )
     environment = {**os.environ, "CI": "1", "NO_COLOR": "1"}
@@ -603,7 +649,9 @@ def verify_fresh_reset(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env", default="dev", help="Wrangler environment name")
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--activity-config", type=Path)
+    parser.add_argument("--manifest", type=Path)
     parser.add_argument(
         "--local",
         action="store_true",
@@ -620,53 +668,62 @@ def main() -> int:
         help="must exactly match the configured D1 database name",
     )
     arguments = parser.parse_args()
+    if arguments.local:
+        main_config = arguments.config or PROJECT_ROOT / "wrangler.jsonc"
+        activity_config = arguments.activity_config or PROJECT_ROOT / "wrangler.activity.jsonc"
+    else:
+        if (
+            arguments.config is None
+            or arguments.activity_config is None
+            or arguments.manifest is None
+        ):
+            parser.error("remote reset requires --config, --activity-config, and --manifest")
+        main_config = arguments.config
+        activity_config = arguments.activity_config
     try:
         # Fail before reading or mutating D1 unless the immutable baseline is
         # followed only by a well-formed ordered migration ledger.
         assert_canonical_baseline_layout()
-        database_name = validate_configuration(
-            PROJECT_ROOT / "wrangler.jsonc", arguments.env, local=arguments.local
-        )
+        database_name = validate_configuration(main_config, local=arguments.local)
         if arguments.confirm != database_name:
             raise ResetError(f"pass --confirm {database_name} to authorize the destructive reset")
-        shape = assert_bootstrap_shape(arguments.env, local=arguments.local)
-        schema = read_schema(arguments.env, local=arguments.local)
+        shape = assert_bootstrap_shape(main_config, local=arguments.local)
+        schema = read_schema(main_config, local=arguments.local)
         if arguments.local:
             assert_local_workers_stopped()
-        backup = export_backup(arguments.env, database_name, local=arguments.local)
+        backup = export_backup(main_config, database_name, local=arguments.local)
         backup_digest = hashlib.sha256(backup.read_bytes()).hexdigest()
         bootstrap, bootstrap_digest = write_bootstrap_bundle(
-            arguments.env, database_name, local=arguments.local
+            main_config, database_name, local=arguments.local
         )
         if arguments.local:
             execute_sql(
-                arguments.env,
+                main_config,
                 drop_local_schema_sql(schema),
                 local=True,
             )
         else:
-            old_id = configured_database_id(
-                PROJECT_ROOT / "wrangler.jsonc", arguments.env
-            )
+            old_id = configured_database_id(main_config)
             recreate_remote_database(
                 database_name,
                 old_id,
                 location=arguments.location,
+                configs=(main_config, activity_config, arguments.manifest),
             )
-        apply_baseline(arguments.env, local=arguments.local)
+        apply_baseline(main_config, local=arguments.local)
         execute_sql(
-            arguments.env,
+            main_config,
             "DELETE FROM instance_setup_credentials",
             local=arguments.local,
         )
-        restore_bootstrap(arguments.env, bootstrap, local=arguments.local)
+        restore_bootstrap(main_config, bootstrap, local=arguments.local)
         verify_fresh_reset(
-            arguments.env,
+            main_config,
             int(shape["bootstrapped_at_ms"]),
             local=arguments.local,
         )
         if not arguments.local:
-            deploy_workers(arguments.env)
+            deploy_workers(main_config, activity_config)
     except (
         OSError,
         ValueError,

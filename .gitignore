@@ -230,6 +230,7 @@ charts/*/tmpcharts/
 *.tgz
 
 # Infrastructure tooling
+r2-cors.*.private.json
 .terraform/
 *.tfstate
 *.tfstate.*

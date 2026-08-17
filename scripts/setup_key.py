@@ -38,8 +38,8 @@ class SetupKeyError(RuntimeError):
     """An operator-safe setup-key management failure."""
 
 
-def _execute(environment_name: str, sql: str, *, local: bool = False) -> list[dict]:
-    target = ["--local"] if local else ["--remote", "--env", environment_name]
+def _execute(config: Path, sql: str, *, local: bool = False) -> list[dict]:
+    target = ["--local"] if local else ["--remote"]
     environment = {**os.environ, "CI": "1", "NO_COLOR": "1"}
     result = subprocess.run(  # noqa: S603 - arguments are assembled by this trusted CLI
         [
@@ -49,6 +49,8 @@ def _execute(environment_name: str, sql: str, *, local: bool = False) -> list[di
             "execute",
             "DB",
             *target,
+            "--config",
+            str(config),
             "--command",
             sql,
             "--json",
@@ -84,19 +86,19 @@ def _key_from_payload(payload: list[dict]) -> str:
     return key
 
 
-def read_setup_key(environment_name: str, *, local: bool = False) -> str:
+def read_setup_key(config: Path, *, local: bool = False) -> str:
     """Read the setup key without printing it."""
-    return _key_from_payload(_execute(environment_name, READ_KEY_SQL, local=local))
+    return _key_from_payload(_execute(config, READ_KEY_SQL, local=local))
 
 
-def regenerate_setup_key(environment_name: str, *, local: bool = False) -> str:
+def regenerate_setup_key(config: Path, *, local: bool = False) -> str:
     """Atomically replace and return the setup key while setup remains incomplete."""
-    return _key_from_payload(_execute(environment_name, REGENERATE_KEY_SQL, local=local))
+    return _key_from_payload(_execute(config, REGENERATE_KEY_SQL, local=local))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env", default="dev", help="Wrangler environment name")
+    parser.add_argument("--config", type=Path)
     parser.add_argument("--local", action="store_true", help="manage the local D1 database")
     parser.add_argument(
         "--regenerate",
@@ -104,9 +106,13 @@ def main() -> int:
         help="invalidate the current key and generate a replacement",
     )
     arguments = parser.parse_args()
+    if arguments.config is None:
+        if not arguments.local:
+            parser.error("--config is required for remote setup-key access")
+        arguments.config = PROJECT_ROOT / "wrangler.jsonc"
     try:
         operation = regenerate_setup_key if arguments.regenerate else read_setup_key
-        key = operation(arguments.env, local=arguments.local)
+        key = operation(arguments.config, local=arguments.local)
     except SetupKeyError as error:
         print(str(error), file=sys.stderr)
         return 1

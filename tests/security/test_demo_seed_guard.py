@@ -45,11 +45,7 @@ def _variables(**overrides) -> dict[str, str]:
     return values
 
 
-DEMO_IDS = {
-    "DEMO_ORGANIZER_USER_ID": "a",
-    "DEMO_REVIEWER_USER_ID": "b",
-    "DEMO_SPEAKER_USER_ID": "c",
-}
+DEMO_IDS = dict(preflight.DEMO_USER_ID_VALUES)
 
 
 @pytest.mark.parametrize("app_env", ["production", "staging", "preview", "demo", "", "unknown"])
@@ -96,11 +92,78 @@ def test_preflight_passes_when_demo_login_is_absent() -> None:
     assert _check_state(checks, "demo sign-in") == "PASS"
 
 
+def test_preflight_rejects_demo_login_for_an_arbitrary_user() -> None:
+    checks = preflight.static_configuration_checks(
+        {},
+        _variables(
+            APP_ENV="development",
+            DEMO_LOGIN_ENABLED="true",
+            MALWARE_SCAN_MODE="disabled",
+            **{**DEMO_IDS, "DEMO_SPEAKER_USER_ID": "arbitrary-user"},
+        ),
+    )
+
+    assert _check_state(checks, "demo sign-in") == "FAIL"
+
+
 def test_seed_identifiers_are_deterministic() -> None:
     assert seed.ORGANIZER_USER_ID == seed.stable_id("user:demo-organizer")
     assert seed.REVIEWER_USER_ID == seed.stable_id("user:demo-reviewer")
     assert seed.SPEAKER_USER_ID == seed.stable_id("user:demo-speaker")
     assert seed.ORGANIZER_USER_ID != seed.ORGANIZER_GRANT_ID
+
+
+def test_demo_config_variables_match_the_seed_owned_personas() -> None:
+    expected = {
+        variable: seed.DEMO_USER_IDS[role]
+        for role, variable in seed.DEMO_USER_ID_VARIABLES.items()
+    }
+
+    stable = {
+        "DEMO_ORGANIZER_USER_ID": seed.stable_id("user:demo-organizer"),
+        "DEMO_REVIEWER_USER_ID": seed.stable_id("user:demo-reviewer"),
+        "DEMO_SPEAKER_USER_ID": seed.stable_id("user:demo-speaker"),
+    }
+    _, variables = preflight.load_environment(PROJECT_ROOT / "wrangler.jsonc")
+
+    assert expected == stable
+    assert {name: variables[name] for name in stable} == stable
+
+
+def test_seed_guard_uses_selected_config_instead_of_process_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DEMO_LOGIN_ENABLED", "false")
+    monkeypatch.setattr(
+        seed,
+        "execute_sql",
+        lambda _environment, _sql, local: [{"results": [{"reachable": 1}]}],
+    )
+
+    seed.assert_demo_login_enabled(
+        "",
+        {"APP_ENV": "development", "DEMO_LOGIN_ENABLED": "true"},
+        local=False,
+    )
+
+
+def test_seed_guard_rejects_a_config_that_disables_demo_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEMO_LOGIN_ENABLED", "true")
+    monkeypatch.setattr(
+        seed,
+        "execute_sql",
+        lambda _environment, _sql, local: [{"results": [{"reachable": 1}]}],
+    )
+
+    with pytest.raises(seed.SeedError, match="selected config"):
+        seed.assert_demo_login_enabled(
+            "",
+            {"APP_ENV": "development", "DEMO_LOGIN_ENABLED": "false"},
+            local=False,
+        )
 
 
 def test_seed_statements_are_idempotent_upserts() -> None:

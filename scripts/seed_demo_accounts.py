@@ -14,8 +14,7 @@ Usage::
 
     python scripts/seed_demo_accounts.py --local --create-credentials
     python scripts/seed_demo_accounts.py --local --reset
-    python scripts/seed_demo_accounts.py --env dev --organization-id <id>
-    python scripts/seed_demo_accounts.py --env dev2 --config <private-config> \
+    python scripts/seed_demo_accounts.py --config <private-config> \
         --pepper-file <private-pepper>
     python scripts/seed_demo_accounts.py --local --verify-only
 """
@@ -36,6 +35,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 from uuid import NAMESPACE_URL, uuid5
+
+try:
+    from scripts.cloudflare_preflight import load_environment
+except ModuleNotFoundError:  # Direct execution from scripts/.
+    from cloudflare_preflight import load_environment
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,7 +120,8 @@ def run_wrangler(arguments: list[str], *, timeout: int = 180) -> subprocess.Comp
 
 
 def d1_target(environment_name: str, *, local: bool) -> list[str]:
-    return ["--local"] if local else ["--remote", "--env", environment_name]
+    del environment_name
+    return ["--local"] if local else ["--remote"]
 
 
 def execute_sql(environment_name: str, sql: str, *, local: bool) -> list[dict]:
@@ -325,21 +330,23 @@ def provision_runtime_credentials(base_url: str, credentials: dict[str, dict[str
         print(f"  ok  {role}: password rotated through {parsed.netloc}")
 
 
-def assert_demo_login_enabled(environment_name: str, *, local: bool) -> None:
+def assert_demo_login_enabled(
+    environment_name: str, variables: dict[str, str], *, local: bool
+) -> None:
     """Only seed where the runtime environment and capability both permit it."""
     payload = execute_sql(environment_name, "SELECT 1 AS reachable", local=local)
     if not rows(payload):
         raise SeedError("could not reach the target database")
-    app_env = os.environ.get("APP_ENV", "local" if local else "development").strip().lower()
+    app_env = variables.get("APP_ENV", "").strip().lower()
     if app_env not in ALLOWED_ENVIRONMENTS:
         raise SeedError(
             f"refusing to seed demo identities with APP_ENV={app_env!r}; "
             "only local and development are supported"
         )
-    if os.environ.get("DEMO_LOGIN_ENABLED", "").strip().lower() != "true":
+    if variables.get("DEMO_LOGIN_ENABLED", "").strip().lower() != "true":
         raise SeedError(
-            "refusing to seed demo identities: set DEMO_LOGIN_ENABLED=true for the "
-            "target environment first, so seeding and sign-in agree on one switch"
+            "refusing to seed demo identities: the selected config must set "
+            "DEMO_LOGIN_ENABLED=true so seeding and sign-in agree on one switch"
         )
 
 
@@ -609,7 +616,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--local", action="store_true", help="seed the local D1 database")
-    target.add_argument("--env", dest="environment", help="wrangler environment name, e.g. dev")
+    target.add_argument(
+        "--config",
+        type=Path,
+        help="ignored concrete Wrangler config for one remote target",
+    )
     target.add_argument(
         "--app-url",
         help="rotate existing remote demo passwords through the gated application endpoint",
@@ -641,11 +652,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="read PASSWORD_PEPPER from this private file instead of the environment",
     )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        help="Wrangler config to use (for example the ignored Dev2 config)",
-    )
     return parser.parse_args()
 
 
@@ -653,8 +659,10 @@ def main() -> int:
     global WRANGLER_CONFIG  # noqa: PLW0603 - one CLI invocation owns one config
     args = parse_args()
     WRANGLER_CONFIG = args.config.resolve() if args.config is not None else None
-    environment_name = "" if args.local else str(args.environment or "")
+    environment_name = ""
     try:
+        selected_config = WRANGLER_CONFIG or PROJECT_ROOT / "wrangler.jsonc"
+        _, target_variables = load_environment(selected_config)
         credentials_path = args.credentials_file.resolve()
         if args.create_credentials and not credentials_path.exists():
             create_credentials_file(credentials_path)
@@ -662,7 +670,9 @@ def main() -> int:
         if args.app_url:
             provision_runtime_credentials(args.app_url, load_credentials(credentials_path))
             return 0
-        assert_demo_login_enabled(environment_name, local=args.local)
+        assert_demo_login_enabled(
+            environment_name, target_variables, local=args.local
+        )
         organization_id = resolve_organization(
             environment_name, local=args.local, requested=args.organization_id
         )
@@ -674,7 +684,7 @@ def main() -> int:
                     "provide a 32+ byte PASSWORD_PEPPER through the environment or --pepper-file"
                 )
             persona_ids = {
-                role: os.environ.get(variable, "").strip() or DEMO_USER_IDS[role]
+                role: target_variables.get(variable, "").strip()
                 for role, variable in DEMO_USER_ID_VARIABLES.items()
             }
             missing = [role for role, user_id in persona_ids.items() if not user_id]

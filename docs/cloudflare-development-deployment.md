@@ -1,10 +1,10 @@
 # Deploying SessionBuddy to the Cloudflare development environment
 
-This runbook describes the checked-in `dev` deployment only. It deploys the
-main SessionBuddy Worker and the independent activity-projection Worker to the
-isolated Cloudflare development resources configured in
-[`wrangler.jsonc`](../wrangler.jsonc) and
-[`wrangler.activity.jsonc`](../wrangler.activity.jsonc).
+This runbook deploys either `dev1` or `dev2` using the same workflow. The
+checked-in [`wrangler.jsonc`](../wrangler.jsonc) and
+[`wrangler.activity.jsonc`](../wrangler.activity.jsonc) are local-development
+templates only. Concrete Cloudflare resources are rendered from an ignored
+target manifest; no deployment command may default to a target.
 
 Run all commands from the repository root:
 
@@ -15,26 +15,32 @@ cd /Users/superman/playground/projects/sessionbuddy
 This procedure changes remote Cloudflare resources. It is separate from the
 non-deploying local release gate and requires explicit deployment authority.
 
-## 1. Development deployment inventory
+## 1. Select and render one deployment target
 
-The checked-in `dev` environment currently targets:
+```sh
+TARGET=dev1 # or dev2; required
+test -f ".local/deployments/$TARGET.local"
+docker compose run --rm --no-deps worker \
+  uv run python scripts/render_private_cloudflare_config.py \
+  --manifest ".local/deployments/$TARGET.local" \
+  --main-output "wrangler.$TARGET.private.jsonc" \
+  --activity-output "wrangler.activity.$TARGET.private.jsonc" \
+  --cors-output "r2-cors.$TARGET.private.json"
+MAIN_CONFIG="wrangler.$TARGET.private.jsonc"
+ACTIVITY_CONFIG="wrangler.activity.$TARGET.private.jsonc"
+CORS_CONFIG="r2-cors.$TARGET.private.json"
+PUBLIC_BASE_URL=$(docker compose run --rm --no-deps worker \
+  uv run python -c 'import json,sys; print(json.load(open(sys.argv[1]))["vars"]["PUBLIC_BASE_URL"])' \
+  "$MAIN_CONFIG")
+R2_BUCKET_NAME=$(docker compose run --rm --no-deps worker \
+  uv run python -c 'import json,sys; print(json.load(open(sys.argv[1]))["vars"]["R2_BUCKET_NAME"])' \
+  "$MAIN_CONFIG")
+```
 
-| Resource | Development value |
-| --- | --- |
-| Main Worker | `sessionbuddy-development` |
-| Activity Worker | `sessionbuddy-activity-development` |
-| Public origin | `https://sessionbuddy-development.shiny-cloud-dd47.workers.dev` |
-| D1 database | `sessionbuddy-development-clean` |
-| D1 database ID | `84c13579-447f-4794-b3d3-674af424c17a` |
-| R2 bucket | `sessionbuddy-assets-development` |
-| Reminder Workflow | `sessionbuddy-reminders-development` |
-| Activity queue | `sessionbuddy-activity-development` |
-| Activity dead-letter queue | `sessionbuddy-activity-development-dlq` |
-
-The main Worker also binds the asset-scan and communication queues and their
-dead-letter queues as declared in `wrangler.jsonc`. Rate-limit bindings,
-scheduled triggers, Workers AI, D1, R2, Queue, and Workflow configuration are
-part of the checked-in Wrangler files and must be reviewed as release inputs.
+Read the rendered configs and record the main Worker, activity Worker, public
+origin, D1 name and UUID, R2 bucket, queues/DLQs, Workflow, rate-limit namespace
+IDs, and target commit. Compare the D1 UUID with `wrangler versions view` for
+the currently deployed main Worker. Abort before backup if any identity differs.
 
 The development environment intentionally sets:
 
@@ -50,10 +56,10 @@ Do not copy it to preview, staging, production, or an unknown environment.
 ## 2. Required local prerequisites
 
 - Docker Engine with Docker Compose.
-- Authorization to deploy to the Cloudflare account referenced by
-  `wrangler.jsonc`.
+- Authorization to deploy to the Cloudflare account referenced by the selected
+  private manifest.
 - Existing development D1, R2, Queue/DLQ, Workflow, rate-limit, and Workers AI
-  resources matching the checked-in bindings.
+  resources matching the selected rendered configs.
 - An active verified Resend sender when real email delivery is required.
 - No unreviewed change to `migrations_baseline/0001_baseline.sql` on a
   data-bearing development database.
@@ -93,19 +99,19 @@ Set each secret interactively for the main Worker:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put SESSION_HMAC_KEY --env dev
+  npx wrangler secret put SESSION_HMAC_KEY --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put CSRF_HMAC_KEY --env dev
+  npx wrangler secret put CSRF_HMAC_KEY --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put RATE_LIMIT_HMAC_KEY --env dev
+  npx wrangler secret put RATE_LIMIT_HMAC_KEY --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put UPLOAD_HMAC_KEY --env dev
+  npx wrangler secret put UPLOAD_HMAC_KEY --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put RESEND_API_KEY --env dev
+  npx wrangler secret put RESEND_API_KEY --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put R2_ACCESS_KEY_ID --env dev
+  npx wrangler secret put R2_ACCESS_KEY_ID --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npx wrangler secret put R2_SECRET_ACCESS_KEY --env dev
+  npx wrangler secret put R2_SECRET_ACCESS_KEY --config "$MAIN_CONFIG"
 ```
 
 Each HMAC value must be independent and contain at least 32 bytes of random
@@ -117,7 +123,7 @@ List secret names without revealing their values:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler secret list --env dev
+  npx wrangler secret list --config "$MAIN_CONFIG"
 ```
 
 Secret installation is an initialization/rotation step, not something to repeat
@@ -164,13 +170,13 @@ Validate both Worker packages before changing remote state:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  uv run pywrangler deploy --env dev --dry-run \
+  uv run pywrangler deploy --config "$MAIN_CONFIG" --dry-run \
   --outdir /workspace/.local/package-dry-run-main
 ```
 
 ```sh
 docker compose run --rm --no-deps worker \
-  uv run pywrangler deploy --config wrangler.activity.jsonc --env dev \
+  uv run pywrangler deploy --config "$ACTIVITY_CONFIG" \
   --dry-run --outdir /workspace/.local/package-dry-run-activity
 ```
 
@@ -184,6 +190,21 @@ docker compose run --rm --no-deps worker \
 
 These commands build deployment packages but do not deploy them.
 
+Before any remote mutation, run the deployment-only preflight against the
+selected config:
+
+```sh
+docker compose run --rm --no-deps worker \
+  uv run python scripts/cloudflare_preflight.py \
+  --config "$MAIN_CONFIG" --deployment-only --allow-pending-migrations
+```
+
+Stop here on every `FAIL`. This validates the selected account/resource
+identity, static configuration, remote migration state, queues, secrets, R2
+policy, and currently deployed origin before migrations, CORS, or deployment
+can change that target. A deliberately fresh target may retain documented
+`PENDING` activation items.
+
 ## 8. Apply D1 migrations safely
 
 `migrations_baseline/0001_baseline.sql` is immutable. Later numbered migrations
@@ -193,7 +214,7 @@ Before applying it, inspect the remote migration state:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler d1 migrations list DB --remote --env dev
+  npx wrangler d1 migrations list DB --remote --config "$MAIN_CONFIG"
 ```
 
 If `0001_baseline.sql` changed, stop: do not run it against that database. For a
@@ -204,23 +225,27 @@ For a new database, or when the checked-in baseline is unchanged and Wrangler
 reports the expected migration state, apply it with:
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:migrate:dev
+docker compose run --rm --no-deps worker uv run pywrangler d1 migrations apply DB --remote --config "$MAIN_CONFIG"
 ```
 
 Confirm that nothing remains pending:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler d1 migrations list DB --remote --env dev
+  npx wrangler d1 migrations list DB --remote --config "$MAIN_CONFIG"
 ```
 
 ## 9. Apply development R2 CORS
 
-The checked-in policy permits browser `PUT` uploads only from the exact
-development Worker origin, permits `Content-Type`, and exposes `ETag`.
+The rendered private policy permits browser `PUT` uploads only from the exact
+selected Worker origin, permits `Content-Type`, and exposes `ETag`. Read
+`R2_BUCKET_NAME` from `MAIN_CONFIG`, verify it against the selected manifest,
+then apply the generated policy:
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:r2-cors:dev
+docker compose run --rm --no-deps worker \
+  npx wrangler r2 bucket cors set "$R2_BUCKET_NAME" \
+  --file "$CORS_CONFIG" --config "$MAIN_CONFIG" --force
 ```
 
 Do not replace the exact origin with `*` for authenticated speaker uploads.
@@ -231,25 +256,27 @@ Deploy the activity projector first so the independent consumer is available
 before the main application emits new activity work:
 
 ```sh
-docker compose run --rm --no-deps worker npm run activity:deploy:dev
+docker compose run --rm --no-deps worker uv run pywrangler deploy --config "$ACTIVITY_CONFIG"
 ```
 
 Then deploy the main Worker:
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:deploy:dev
+docker compose run --rm --no-deps worker uv run pywrangler deploy --config "$MAIN_CONFIG"
 ```
 
 These are the first commands in this procedure that publish application code.
 
-## 11. Run deployment preflight
+## 11. Rerun deployment preflight
 
-The deployment-only preflight is read-only. It checks configuration, bindings,
-remote migration state, Worker reachability, secrets inventory, queues, R2
-CORS, and the deployed origin without changing them.
+Rerun the same read-only deployment preflight after both Workers deploy. It
+checks that the selected bindings, migration state, Worker reachability,
+secrets inventory, queues, R2 CORS, and deployed origin still agree.
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:preflight:dev
+docker compose run --rm --no-deps worker \
+  uv run python scripts/cloudflare_preflight.py \
+  --config "$MAIN_CONFIG" --deployment-only
 ```
 
 Resolve every `FAIL` before continuing. `PENDING` activation items can be
@@ -259,26 +286,17 @@ expected only on an intentionally fresh environment.
 
 Skip this section when the environment is already bootstrapped.
 
-The D1 baseline generates a one-time setup key. For an interactive setup,
-retrieve it in a private terminal:
+The D1 baseline generates a one-time setup key. Read it only through the
+selected config:
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:setup-key:dev
+docker compose run --rm --no-deps worker \
+  uv run python scripts/setup_key.py --config "$MAIN_CONFIG"
 ```
 
 Open the deployed `/setup` page, enter that key, then provide the organization
 and initial administrator details. Successful setup permanently consumes the
 key.
-
-For controlled non-interactive automation, use:
-
-```sh
-docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
-  --organization-name "Example Events" \
-  --admin-first-name "Example" \
-  --admin-last-name "Administrator" \
-  --admin-email "admin@example.com"
-```
 
 Replace every example value. The bootstrap command reads the setup key without
 printing it and refuses to create a second organization. It intentionally does
@@ -286,9 +304,11 @@ not create a sample event.
 
 ## 13. Run the strict activation preflight
 
+Run the strict activation checks against the selected origin and bindings:
+
 ```sh
 docker compose run --rm --no-deps worker \
-  npm run worker:activation:preflight:dev
+  uv run python scripts/cloudflare_preflight.py --config "$MAIN_CONFIG"
 ```
 
 Do not call the environment fully activated until this reports zero failed and
@@ -300,8 +320,7 @@ credentials, R2 CORS, remote bindings, and completed bootstrap state.
 Confirm the public health route first:
 
 ```sh
-curl --fail --silent \
-  https://sessionbuddy-development.shiny-cloud-dd47.workers.dev/health
+curl --fail --silent "${PUBLIC_BASE_URL}/health"
 ```
 
 Then verify these user journeys against the development origin:
@@ -322,15 +341,11 @@ or provider responses into logs or deployment notes.
 
 ### Reset eval-created development data
 
-To return an already bootstrapped development environment to a clean eval
-state while retaining its sole administrator, organization, membership,
-organizer role, profile, password credential, and completed setup marker, run:
-
-```sh
-docker compose run --rm --no-deps worker \
-  npm run worker:reset-data:dev -- \
-  --confirm sessionbuddy-development-clean
-```
+The remote reset helper is not target-aware and must not be used with private
+rendered configs. A reset requires a separate reviewed procedure that resolves
+the exact D1 UUID from `MAIN_CONFIG`, takes and checksums a backup, rehearses
+recovery, and verifies the retained bootstrap records. Never infer the target
+from a `dev` label.
 
 To reset the equivalent Wrangler-managed local D1 state, with the same backup,
 confirmation, bootstrap-shape, and post-reset verification safeguards, run:
@@ -366,13 +381,9 @@ generated unused setup credential, restores the bootstrap bundle, and verifies
 that all operational tables are empty. It leaves local R2, rate-limit, workflow,
 and secret state alone.
 
-Remote reset deletes and recreates the development D1 in APAC by default
-(`--location` can override the location hint), updates the exact old UUID once
-in both `wrangler.jsonc` and `wrangler.activity.jsonc`, applies and verifies the
-baseline, restores and verifies the bootstrap bundle, and deploys both Workers
-so neither continues using the deleted binding. A failure after remote deletion
-is intentionally loud: use the printed full backup and bootstrap bundle to
-complete the roll-forward; never point either Worker back to the deleted UUID.
+Remote reset must never edit tracked Wrangler templates. It must update the
+selected ignored manifest, re-render both private configs, and deploy both
+Workers so neither continues using a deleted binding.
 
 This is destructive for event, CFP, proposal, evaluation, speaker, scheduling,
 audit, activity, invitation, and session data. It does not rotate application
@@ -384,21 +395,21 @@ Stream main Worker logs:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler tail sessionbuddy-development --format json
+  npx wrangler tail --config "$MAIN_CONFIG" --format json
 ```
 
 Stream activity Worker logs in a second terminal:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler tail sessionbuddy-activity-development --format json
+  npx wrangler tail --config "$ACTIVITY_CONFIG" --format json
 ```
 
 Inspect deployed versions before any rollback:
 
 ```sh
 docker compose run --rm --no-deps worker \
-  npx wrangler versions list --env dev
+  npx wrangler versions list --config "$MAIN_CONFIG"
 ```
 
 Rollback is a separate destructive production-control decision. Confirm the
@@ -427,27 +438,30 @@ docker compose run --rm --no-deps worker \
   npm run worker:migrations:baseline:check
 git diff --check
 docker compose run --rm --no-deps worker \
-  uv run pywrangler deploy --env dev --dry-run \
+  uv run pywrangler deploy --config "$MAIN_CONFIG" --dry-run \
   --outdir /workspace/.local/package-dry-run-main
 docker compose run --rm --no-deps worker \
-  uv run pywrangler deploy --config wrangler.activity.jsonc --env dev \
+  uv run pywrangler deploy --config "$ACTIVITY_CONFIG" \
   --dry-run --outdir /workspace/.local/package-dry-run-activity
 docker compose run --rm --no-deps worker \
   uv run python scripts/validate_worker_package.py \
   /workspace/.local/package-dry-run-main
 docker compose run --rm --no-deps worker \
-  npx wrangler d1 migrations list DB --remote --env dev
-docker compose run --rm --no-deps worker npm run worker:migrate:dev
+  uv run python scripts/cloudflare_preflight.py --config "$MAIN_CONFIG" \
+  --deployment-only --allow-pending-migrations
 docker compose run --rm --no-deps worker \
-  npx wrangler d1 migrations list DB --remote --env dev
-docker compose run --rm --no-deps worker npm run worker:r2-cors:dev
-docker compose run --rm --no-deps worker npm run activity:deploy:dev
-docker compose run --rm --no-deps worker npm run worker:deploy:dev
-docker compose run --rm --no-deps worker npm run worker:preflight:dev
+  npx wrangler d1 migrations list DB --remote --config "$MAIN_CONFIG"
+docker compose run --rm --no-deps worker uv run pywrangler d1 migrations apply DB --remote --config "$MAIN_CONFIG"
 docker compose run --rm --no-deps worker \
-  npm run worker:activation:preflight:dev
-curl --fail --silent \
-  https://sessionbuddy-development.shiny-cloud-dd47.workers.dev/health
+  npx wrangler d1 migrations list DB --remote --config "$MAIN_CONFIG"
+docker compose run --rm --no-deps worker \
+  npx wrangler r2 bucket cors set "$R2_BUCKET_NAME" \
+  --file "$CORS_CONFIG" --config "$MAIN_CONFIG" --force
+docker compose run --rm --no-deps worker uv run pywrangler deploy --config "$ACTIVITY_CONFIG"
+docker compose run --rm --no-deps worker uv run pywrangler deploy --config "$MAIN_CONFIG"
+docker compose run --rm --no-deps worker \
+  uv run python scripts/cloudflare_preflight.py --config "$MAIN_CONFIG" --deployment-only
+curl --fail --silent "${PUBLIC_BASE_URL}/health"
 ```
 
 Re-run the focused authenticated smoke journeys after the health check. Record

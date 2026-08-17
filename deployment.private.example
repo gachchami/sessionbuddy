@@ -1,0 +1,21 @@
+# Copy to .local/deployments/dev1.local or dev2.local and fill with private values.
+WORKER_NAME=<worker-name>
+ACTIVITY_WORKER_NAME=<activity-worker-name>
+D1_DATABASE_NAME=<database-name>
+D1_DATABASE_ID=<database-uuid>
+R2_BUCKET_NAME=<bucket-name>
+ASSET_SCAN_QUEUE=<queue-name>
+ASSET_SCAN_DLQ=<queue-dlq-name>
+COMMUNICATION_QUEUE=<queue-name>
+COMMUNICATION_DLQ=<queue-dlq-name>
+REMINDER_WORKFLOW=<workflow-name>
+ACTIVITY_QUEUE=<activity-queue-name>
+ACTIVITY_DLQ=<activity-dlq-name>
+PUBLIC_BASE_URL=https://<worker-hostname>
+CLOUDFLARE_ACCOUNT_ID=<account-id>
+APP_VERSION=<environment-version-label>
+RATE_LIMIT_NAMESPACE_BASE=<reserved-base-integer>
+DEMO_ORGANIZER_USER_ID=c2c12e5e-2cea-5d9a-bf7f-dc5dc012e2b4
+DEMO_REVIEWER_USER_ID=f88610c7-3a09-5804-987d-6588993d2e78
+DEMO_SPEAKER_USER_ID=c05e0af4-f1ed-5cec-8540-426a38979046
+RESEND_FROM_ADDRESS=SessionBuddy <sender@example.com>

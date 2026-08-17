@@ -51,8 +51,17 @@ def test_reset_refuses_a_missing_canonical_baseline(tmp_path: Path) -> None:
 
 
 def test_reset_target_arguments_keep_local_and_remote_explicit() -> None:
-    assert d1_target_arguments("dev", local=True) == ["--local"]
-    assert d1_target_arguments("dev", local=False) == ["--remote", "--env", "dev"]
+    config = Path("target.private.jsonc")
+    assert d1_target_arguments(config, local=True) == [
+        "--local",
+        "--config",
+        "target.private.jsonc",
+    ]
+    assert d1_target_arguments(config, local=False) == [
+        "--remote",
+        "--config",
+        "target.private.jsonc",
+    ]
 
 
 def test_local_reset_refuses_a_running_worker(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,31 +129,146 @@ def test_remote_recreation_rebinds_both_workers(
 ) -> None:
     old_id = "11111111-1111-4111-8111-111111111111"
     new_id = "22222222-2222-4222-8222-222222222222"
-    configs = (tmp_path / "main.jsonc", tmp_path / "activity.jsonc")
-    for config in configs:
-        config.write_text(f'{{"database_id":"{old_id}"}}', encoding="utf-8")
+    configs = (
+        tmp_path / "main.jsonc",
+        tmp_path / "activity.jsonc",
+        tmp_path / "target.local",
+    )
+    for config in configs[:2]:
+        config.write_text(
+            json.dumps(
+                {
+                    "d1_databases": [
+                        {
+                            "binding": "DB",
+                            "database_name": "sessionbuddy-development-clean",
+                            "database_id": old_id,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+    configs[2].write_text(
+        f"D1_DATABASE_NAME=sessionbuddy-development-clean\nD1_DATABASE_ID={old_id}\n",
+        encoding="utf-8",
+    )
     calls: list[list[str]] = []
 
     def fake_run(arguments: list[str], *, timeout: int = 300) -> str:
         del timeout
         calls.append(arguments)
-        if arguments == ["d1", "list", "--json"]:
+        if arguments[:3] == ["d1", "list", "--json"]:
             return json.dumps(
                 [{"name": "sessionbuddy-development-clean", "uuid": new_id}]
             )
         return ""
 
-    monkeypatch.setattr(reset_module, "WRANGLER_CONFIGS", configs)
     monkeypatch.setattr(reset_module, "run_checked", fake_run)
 
     assert reset_module.recreate_remote_database(
-        "sessionbuddy-development-clean", old_id, location="apac"
+        "sessionbuddy-development-clean", old_id, location="apac", configs=configs
     ) == new_id
     assert calls[:2] == [
-        ["d1", "delete", "sessionbuddy-development-clean", "--skip-confirmation"],
-        ["d1", "create", "sessionbuddy-development-clean", "--location", "apac"],
+        [
+            "d1",
+            "delete",
+            "sessionbuddy-development-clean",
+            "--skip-confirmation",
+            "--config",
+            str(configs[0]),
+        ],
+        [
+            "d1",
+            "create",
+            "sessionbuddy-development-clean",
+            "--location",
+            "apac",
+            "--config",
+            str(configs[0]),
+        ],
     ]
     assert all(new_id in config.read_text(encoding="utf-8") for config in configs)
+
+
+def test_remote_recreation_validates_every_identity_before_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    old_id = "11111111-1111-4111-8111-111111111111"
+    configs = (tmp_path / "main.jsonc", tmp_path / "activity.jsonc", tmp_path / "target.local")
+    for config in configs[:2]:
+        config.write_text(
+            json.dumps(
+                {
+                    "d1_databases": [
+                        {
+                            "binding": "DB",
+                            "database_name": "selected-database",
+                            "database_id": old_id,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+    configs[2].write_text(
+        "D1_DATABASE_NAME=selected-database\nD1_DATABASE_ID=stale-id\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        reset_module,
+        "run_checked",
+        lambda arguments, timeout=300: calls.append(arguments) or "",
+    )
+
+    with pytest.raises(ResetError, match="before reset"):
+        reset_module.recreate_remote_database(
+            "selected-database", old_id, location="apac", configs=configs
+        )
+
+    assert calls == []
+
+
+def test_remote_recreation_rejects_a_stale_manifest_database_name_before_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    old_id = "11111111-1111-4111-8111-111111111111"
+    configs = (tmp_path / "main.jsonc", tmp_path / "activity.jsonc", tmp_path / "target.local")
+    for config in configs[:2]:
+        config.write_text(
+            json.dumps(
+                {
+                    "d1_databases": [
+                        {
+                            "binding": "DB",
+                            "database_name": "selected-database",
+                            "database_id": old_id,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+    configs[2].write_text(
+        f"D1_DATABASE_NAME=other-database\nD1_DATABASE_ID={old_id}\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        reset_module,
+        "run_checked",
+        lambda arguments, timeout=300: calls.append(arguments) or "",
+    )
+
+    with pytest.raises(ResetError, match="does not identify"):
+        reset_module.recreate_remote_database(
+            "selected-database", old_id, location="apac", configs=configs
+        )
+
+    assert calls == []
 
 
 def test_bootstrap_bundle_restores_complete_credential_with_explicit_columns(
@@ -225,7 +349,7 @@ def test_deletion_order_rejects_cycles() -> None:
         deletion_order(schema, set())
 
 
-def test_repository_wrangler_configs_share_the_dev_database() -> None:
+def test_repository_wrangler_templates_share_only_the_local_database() -> None:
     root = Path(__file__).resolve().parents[2]
     main = (root / "wrangler.jsonc").read_text(encoding="utf-8")
     activity = (root / "wrangler.activity.jsonc").read_text(encoding="utf-8")
@@ -234,5 +358,4 @@ def test_repository_wrangler_configs_share_the_dev_database() -> None:
     main_ids = re.findall(database_id_pattern, main)
     activity_ids = re.findall(database_id_pattern, activity)
 
-    assert main_ids[-1] == activity_ids[-1]
-    assert main_ids[-1] != "00000000-0000-0000-0000-000000000000"
+    assert main_ids[-1] == activity_ids[-1] == "00000000-0000-0000-0000-000000000000"

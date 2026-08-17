@@ -1,10 +1,42 @@
 # Deployment configuration
 
-SessionBuddy keeps public deployment settings in `wrangler.jsonc` and secrets in Cloudflare's encrypted Worker secret store. The initial administrator email is not an environment variable: it is supplied once to the guarded bootstrap API and then stored as a verified user.
+SessionBuddy keeps only local-development templates in `wrangler.jsonc` and
+`wrangler.activity.jsonc`. Concrete deployed resource names, UUIDs, account
+identifiers, origins, and sender configuration belong in ignored private
+manifests under `.local/deployments/`. API credentials remain in Cloudflare's
+encrypted Worker secret store and never belong in either manifest or Wrangler
+file. The initial administrator email is supplied once to the guarded bootstrap
+API and then stored as a verified user.
+
+Copy [`deployment.private.example`](../deployment.private.example) to either
+`.local/deployments/dev1.local` or `.local/deployments/dev2.local`, fill every
+value, and render concrete ignored configs:
+
+```sh
+TARGET=dev1 # or dev2; never default this value
+docker compose run --rm --no-deps worker \
+  uv run python scripts/render_private_cloudflare_config.py \
+  --manifest ".local/deployments/$TARGET.local" \
+  --main-output "wrangler.$TARGET.private.jsonc" \
+  --activity-output "wrangler.activity.$TARGET.private.jsonc" \
+  --cors-output "r2-cors.$TARGET.private.json"
+```
+
+Set these for the rest of the workflow:
+
+```sh
+MAIN_CONFIG="wrangler.$TARGET.private.jsonc"
+ACTIVITY_CONFIG="wrangler.activity.$TARGET.private.jsonc"
+CORS_CONFIG="r2-cors.$TARGET.private.json"
+```
+
+Before any backup, migration, or deployment, inspect both rendered files and
+compare their Worker names and D1 UUID with the currently deployed Worker's
+bindings. Stop on any mismatch. Never use a generic `--env dev` deployment.
 
 ## Required settings
 
-Set these non-secret values under the target Wrangler environment:
+Set these non-secret but private deployment values in the target manifest:
 
 - `APP_ENV`: `development`, `staging`, or `production`.
 - `PUBLIC_BASE_URL`: the exact HTTPS origin used in email links.
@@ -32,10 +64,11 @@ recipient each minute regardless of source address, while
 `MAGIC_LINK_SOURCE_RATE_LIMITER` permits ten requests per source each minute
 regardless of recipient. Password sign-in continues to use `AUTH_RATE_LIMITER`.
 
-Install secrets through the Docker-managed Wrangler environment (change `dev` for another environment):
+Install secrets through the selected rendered main config:
 
 ```sh
-docker compose run --rm --no-deps worker npx wrangler secret put NAME --env dev
+docker compose run --rm --no-deps worker \
+  npx wrangler secret put NAME --config "$MAIN_CONFIG"
 ```
 
 - `SESSION_HMAC_KEY`, `CSRF_HMAC_KEY`, `RATE_LIMIT_HMAC_KEY`, and `UPLOAD_HMAC_KEY`: independent random values of at least 32 bytes.
@@ -50,11 +83,12 @@ When creating or editing an event, they can set an optional sender display name
 and reply-to email. Event messages combine that identity with the site's verified
 sending address; blank event fields inherit the site defaults.
 
-Never put real secrets or the administrator email in `wrangler.jsonc`, and never commit `.dev.vars`.
+Never put real deployment identifiers, secrets, or the administrator email in
+tracked Wrangler files, and never commit `.dev.vars`, `.local/deployments/`, or
+rendered `*.private.jsonc` files.
 
-The development environment currently uses the operator-owned verified address
-`notifications@mail.noneli.com`. Keep its Resend domain verification active, or
-replace `RESEND_FROM_ADDRESS` with another address on a verified domain.
+Keep the selected manifest's Resend domain verification active, or replace
+`RESEND_FROM_ADDRESS` with another address on a verified domain.
 
 ## Initial administrator bootstrap
 
@@ -68,7 +102,7 @@ chain inside Docker after every schema change:
 docker compose run --rm --no-deps worker npm run worker:migrations:baseline:check
 ```
 
-`wrangler.jsonc` points every database at the ordered ledger in
+Every rendered Wrangler config points its database at the ordered ledger in
 `migrations_baseline/`. Released migration files are runtime inputs and must not
 be edited or removed. `migrations_baseline/checksums.sha256` pins every released
 migration and CI rejects changed, missing, or unrecorded files. Existing
@@ -81,35 +115,22 @@ counts, and the new schema objects. Rollback means restoring that verified
 backup to the previous application version; do not reverse a partially applied
 schema with ad-hoc SQL. Keep the backup until post-release validation completes.
 
-Applying the D1 baseline creates a random 256-bit, instance-specific
-setup key. Retrieve it in a private terminal without putting it in source or chat:
+Applying the D1 baseline creates a random 256-bit, instance-specific setup key.
+Retrieve or rotate the private setup key only through the selected target config:
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:setup-key:dev
+docker compose run --rm --no-deps worker \
+  uv run python scripts/setup_key.py --config "$MAIN_CONFIG"
 ```
 
 Open `/setup`, enter that same key, and provide the organization name plus the
 administrator's first name, last name, and email. The setup creates no sample events or
 speakers. To invalidate a key before setup and generate a replacement:
 
-```sh
-docker compose run --rm --no-deps worker npm run worker:setup-key:dev -- --regenerate
-```
-
 Retrieval and regeneration are refused after setup completes. Successful setup
 deletes the key in the same D1 transaction, and database triggers prevent another
 key from being inserted or rotated while the permanent completion marker exists.
 The key is never returned by the Worker API.
-
-For non-interactive automation, the guarded command remains available:
-
-```sh
-docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
-  --organization-name "Example Events" \
-  --admin-first-name "Example" \
-  --admin-last-name "Administrator" \
-  --admin-email "admin@example.com"
-```
 
 The endpoint refuses a second organization. The command reads the migration-generated
 key without printing it. Browser setup requests the administrator's first magic
@@ -130,40 +151,23 @@ so concurrent setup attempts cannot both succeed. It is independent of business
 records: deleting or archiving organizations does not reopen first-time setup.
 The database rejects changing or deleting this marker through normal SQL.
 
-## Development deployment with scanning disabled
+## Private development deployments with scanning disabled
 
-The checked-in `dev` environment explicitly sets `APP_ENV=development` and
+Each private development manifest renders `APP_ENV=development` and
 `MALWARE_SCAN_MODE=disabled`, so development uploads bypass malware scanning.
 This is an accepted risk for the isolated development Worker and must never be
 copied into preview, staging, or production. Those environments require a real,
 reachable scanner endpoint and `SCANNER_HMAC_KEY`.
 
-Confirm `PUBLIC_BASE_URL` and `ALLOWED_ORIGINS` contain the exact Worker origin,
-then run:
+Confirm the rendered `PUBLIC_BASE_URL`, `ALLOWED_ORIGINS`, Worker name, and D1
+UUID are the exact selected target, then run the target-specific workflow in
+[`cloudflare-development-deployment.md`](cloudflare-development-deployment.md).
 
-```sh
-docker compose run --rm --no-deps worker npm run frontend:check
-docker compose run --rm --no-deps worker npm run frontend:build
-docker compose run --rm --no-deps worker uv run python scripts/embed_console_assets.py
-docker compose run --rm --no-deps worker npm run worker:migrate:dev
-docker compose run --rm --no-deps worker npm run worker:r2-cors:dev
-docker compose run --rm --no-deps worker npm run worker:deploy:dev
-docker compose run --rm --no-deps worker npm run worker:preflight:dev
-```
-
-`worker:preflight:dev` is read-only and passes when deployment/configuration is
-sound even if provider activation is pending. Run the strict inventory with:
-
-```sh
-docker compose run --rm --no-deps worker npm run worker:activation:preflight:dev
-```
-
-That command remains non-zero until verified email delivery, direct R2 upload
-credentials, and initial bootstrap are ready. After activation, check a delivered
+The target-specific runbook contains the release checks, backup, migration,
+deployment, and validation commands. After activation, check a delivered
 passwordless sign-in, a CFP draft/submission, an invitation, and an R2 upload.
 The code intentionally does not invent or commit provider/account values.
 
-The checked-in `r2-cors.dev.json` policy allows only browser `PUT` uploads from
-the exact development Worker origin with `Content-Type`, and exposes only
-`ETag`. Keep each environment's origin-specific policy separate; do not use a
-wildcard origin for authenticated speaker uploads.
+The renderer emits a private R2 policy that allows browser `PUT` uploads only
+from the selected Worker's exact origin with `Content-Type`, and exposes only
+`ETag`. Never use a wildcard origin for authenticated speaker uploads.

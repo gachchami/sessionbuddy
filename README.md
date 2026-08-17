@@ -106,27 +106,18 @@ Authenticate Wrangler without exposing host credentials to the container:
 docker compose run --rm --no-deps worker npx wrangler login --device --browser=false
 ```
 
-Then migrate, deploy, and verify:
+Then follow the target-explicit runbook. It renders ignored Wrangler configs
+from `.local/deployments/dev1.local` or `.local/deployments/dev2.local`; the
+tracked Wrangler files never select a remote deployment:
 
-```bash
-docker compose run --rm --no-deps worker npm run worker:migrate:dev
-docker compose run --rm --no-deps worker npm run worker:deploy:dev
-docker compose run --rm --no-deps worker npm run worker:preflight:dev
-```
+[`docs/cloudflare-development-deployment.md`](docs/cloudflare-development-deployment.md)
 
-The deployment preflight is read-only. The stricter
-`worker:activation:preflight:dev` command remains non-zero until email, direct
-R2 upload credentials, and the initial bootstrap are complete. Perform the
-one-time bootstrap without exposing or retaining its token:
+Deployment and activation validation remain separate: deployment checks prove
+the selected bindings and code are sound; activation checks also require email,
+direct R2 upload credentials, and the one-time bootstrap.
 
-```bash
-docker compose run --rm --no-deps worker npm run worker:bootstrap:dev -- \
-  --organization-name "Example Events" \
-  --admin-email "admin@example.com"
-```
-
-This creates a valid organization with no events; the administrator creates the
-first event from `/admin`. See
+The one-time setup creates a valid organization with no events; the
+administrator creates the first event from `/admin`. See
 [deployment configuration](docs/deployment-configuration.md) for Cloudflare
 variables, secrets, bindings (D1, R2, Queues/DLQs, Workflow, rate limiters),
 and the development malware-scan bypass (`MALWARE_SCAN_MODE`), which staging

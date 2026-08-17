@@ -39,35 +39,5 @@
       }
     ]
   },
-  "vars": {"APP_ENV": "local"},
-  "env": {
-    "dev": {
-      "name": "sessionbuddy-activity-development",
-      "triggers": {"crons": ["* * * * *"]},
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "sessionbuddy-development-clean-20260819",
-          "database_id": "4bf9af0a-1899-47d0-a534-5e353f63fddc",
-          "migrations_dir": "migrations_baseline"
-        }
-      ],
-      "queues": {
-        "producers": [
-          {"binding": "ACTIVITY_QUEUE", "queue": "sessionbuddy-activity-development"}
-        ],
-        "consumers": [
-          {
-            "queue": "sessionbuddy-activity-development",
-            "max_batch_size": 25,
-            "max_batch_timeout": 5,
-            "max_retries": 5,
-            "dead_letter_queue": "sessionbuddy-activity-development-dlq"
-          }
-        ]
-      },
-      "limits": {"cpu_ms": 5000},
-      "vars": {"APP_ENV": "development"}
-    }
-  }
+  "vars": {"APP_ENV": "local"}
 }

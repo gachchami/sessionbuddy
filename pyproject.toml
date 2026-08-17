@@ -12,6 +12,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "httpx>=0.28,<1",
+  "pyjson5>=2,<3",
   "pytest>=8,<10",
   "pytest-asyncio>=1,<2",
   "ruff>=0.12,<1",

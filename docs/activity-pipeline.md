@@ -331,30 +331,27 @@ git diff --check
 Migration validation must confirm that the chain starts with `0001`, applies in
 order, preserves foreign keys, and leaves no migration on a repeat run.
 
-### 11.2 Verify Cloudflare authentication and inventory
+### 11.2 Select the target and verify Cloudflare inventory
+
+Select `dev1` or `dev2` and render `MAIN_CONFIG` and `ACTIVITY_CONFIG` as
+documented in
+[`cloudflare-development-deployment.md`](cloudflare-development-deployment.md).
 
 ```sh
 docker compose run --rm --no-deps worker npx wrangler whoami
 docker compose run --rm --no-deps worker npx wrangler queues list
 ```
 
-The development account must contain:
-
-- `sessionbuddy-activity-development`;
-- `sessionbuddy-activity-development-dlq`.
-
-Create a missing queue once:
-
-```sh
-docker compose run --rm --no-deps worker \
-  npx wrangler queues create sessionbuddy-activity-development
-docker compose run --rm --no-deps worker \
-  npx wrangler queues create sessionbuddy-activity-development-dlq
-```
+The account must contain every queue and DLQ named by the selected rendered
+configs. Read those names from the configs; do not infer them from the target
+label or copy them from another environment. Create a missing queue once using
+the exact reviewed name.
 
 Do not recreate queues that already exist.
 
 ### 11.3 Back up development D1
+
+Never substitute a generic Wrangler environment name.
 
 1. Export the existing development D1 database into ignored `.local/backups/`.
 2. Verify the export is non-empty, contains schema statements, and record its
@@ -369,8 +366,8 @@ local.
 ### 11.4 Apply the migration chain and prove the repeat no-op
 
 ```sh
-docker compose run --rm --no-deps worker npm run worker:migrate:dev
-docker compose run --rm --no-deps worker npm run worker:migrate:dev
+docker compose run --rm --no-deps worker uv run pywrangler d1 migrations apply DB --remote --config "$MAIN_CONFIG"
+docker compose run --rm --no-deps worker uv run pywrangler d1 migrations apply DB --remote --config "$MAIN_CONFIG"
 ```
 
 The first command applies only migrations absent from the D1 ledger. The second
@@ -381,9 +378,9 @@ and the expected migration ledger before continuing.
 
 ```sh
 docker compose run --rm --no-deps worker \
-  uv run pywrangler deploy --env dev --dry-run
+  uv run pywrangler deploy --config "$MAIN_CONFIG" --dry-run
 docker compose run --rm --no-deps worker \
-  uv run pywrangler deploy --config wrangler.activity.jsonc --env dev --dry-run
+  uv run pywrangler deploy --config "$ACTIVITY_CONFIG" --dry-run
 ```
 
 Inspect both packages for fixture, local-state, credential, and test-artifact
@@ -392,8 +389,8 @@ leakage before deployment.
 ### 11.6 Deploy the activity Worker, then the main Worker
 
 ```sh
-docker compose run --rm --no-deps worker npm run activity:deploy:dev
-docker compose run --rm --no-deps worker npm run worker:deploy:dev
+docker compose run --rm --no-deps worker uv run pywrangler deploy --config "$ACTIVITY_CONFIG"
+docker compose run --rm --no-deps worker uv run pywrangler deploy --config "$MAIN_CONFIG"
 ```
 
 Deploying the activity Worker first attaches its cron and queue consumer before
@@ -406,14 +403,10 @@ versions.
 
 ### 11.7 Bootstrap and verify development
 
-Run deployment preflight before bootstrap, complete the guarded `/setup` flow,
-then run the strict activation preflight:
-
-```sh
-docker compose run --rm --no-deps worker npm run worker:preflight:dev
-docker compose run --rm --no-deps worker npm run worker:setup-key:dev
-docker compose run --rm --no-deps worker npm run worker:activation:preflight:dev
-```
+Use the target-explicit procedure in
+[`cloudflare-development-deployment.md`](cloudflare-development-deployment.md).
+The legacy `:dev` preflight, setup-key, and activation shortcuts are not
+target-aware and must not be used with private rendered configs.
 
 After setup, perform one safe organization or event update. Confirm:
 

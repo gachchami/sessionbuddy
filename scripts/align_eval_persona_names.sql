@@ -12,7 +12,7 @@
 -- Apply locally:
 --   uv run pywrangler d1 execute DB --local --file scripts/align_eval_persona_names.sql
 -- Apply to the development worker:
---   uv run pywrangler d1 execute DB --remote --env dev --file scripts/align_eval_persona_names.sql
+--   uv run pywrangler d1 execute DB --remote --config <private-config> --file scripts/align_eval_persona_names.sql
 
 UPDATE users
    SET display_name = 'Sam Whitfield',

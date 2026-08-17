@@ -5,7 +5,7 @@ set -eu
 # and image names. Credentials stay in the eval kit's ignored .env/.auth paths
 # or in an explicitly configured local authentication volume.
 
-target_url="${SBEK_TARGET_URL:-https://sessionbuddy-development.shiny-cloud-dd47.workers.dev}"
+target_url="${SBEK_TARGET_URL:-}"
 eval_root="${SBEK_ROOT:-}"
 auth_volume="${SBEK_CLAUDE_AUTH_VOLUME:-sessionbuddy-claude-auth}"
 dependencies_volume="${SBEK_NODE_MODULES_VOLUME:-sessionbuddy-sbek-node-modules-v2}"
@@ -13,6 +13,11 @@ store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"
 playwright_image="${SBEK_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.62.1-noble}"
 provider="${SBEK_PROVIDER:-anthropic-api}"
 openrouter_key_file="${SBEK_OPENROUTER_KEY_FILE:-$(pwd)/.local/openrouter_api_key}"
+
+if [ -z "$target_url" ]; then
+  echo "Set SBEK_TARGET_URL to the exact deployment under evaluation." >&2
+  exit 2
+fi
 
 if [ -z "$eval_root" ]; then
   for candidate in /private/tmp/sessionbuddy-evals.*/repo; do

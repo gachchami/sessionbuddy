@@ -14,6 +14,11 @@ from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+try:
+    from scripts.render_private_cloudflare_config import DEMO_USER_ID_VALUES, load_jsonc
+except ModuleNotFoundError:  # Direct execution from scripts/.
+    from render_private_cloudflare_config import DEMO_USER_ID_VALUES, load_jsonc
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 NPX = shutil.which("npx") or "/usr/local/bin/npx"
 CORE_SECRETS = {
@@ -56,13 +61,22 @@ def run_command(arguments: list[str]) -> CommandResult:
     return CommandResult(result.returncode, output)
 
 
-def load_environment(path: Path, environment_name: str) -> tuple[dict, dict[str, str]]:
-    config = json.loads(path.read_text(encoding="utf-8"))
-    environment = config.get("env", {}).get(environment_name)
-    if environment is None:
-        raise ValueError(f"Wrangler environment {environment_name!r} does not exist")
-    variables = {**config.get("vars", {}), **environment.get("vars", {})}
-    return environment, variables
+def load_environment(path: Path) -> tuple[dict, dict[str, str]]:
+    """Load one concrete Wrangler target; deployed configs must be flat."""
+    config = load_jsonc(path)
+    if "env" in config:
+        raise ValueError("use a rendered target config without Wrangler environments")
+    variables = config.get("vars", {})
+    return config, variables
+
+
+def require_remote_environment(variables: dict[str, str]) -> None:
+    """Refuse the tracked local template as a remote audit target."""
+    app_environment = variables.get("APP_ENV", "").strip().lower()
+    if app_environment not in {"development", "staging", "production"}:
+        raise ValueError(
+            "remote preflight requires APP_ENV to be development, staging, or production"
+        )
 
 
 def configured_queue_names(environment: dict) -> set[str]:
@@ -106,10 +120,9 @@ def static_configuration_checks(environment: dict, variables: dict[str, str]) ->
     # Demo sign-in mints a session without a credential. Match the runtime's
     # explicit environment allowlist so copied configuration fails closed.
     demo_login = variables.get("DEMO_LOGIN_ENABLED", "").strip().lower()
-    demo_identities = [
-        variables.get(name, "").strip()
-        for name in ("DEMO_ORGANIZER_USER_ID", "DEMO_REVIEWER_USER_ID", "DEMO_SPEAKER_USER_ID")
-    ]
+    demo_identities = {
+        name: variables.get(name, "").strip() for name in DEMO_USER_ID_VALUES
+    }
     if demo_login == "true" and app_environment not in {"local", "development"}:
         checks.append(
             Check(
@@ -119,12 +132,20 @@ def static_configuration_checks(environment: dict, variables: dict[str, str]) ->
                 f"got {app_environment or 'an unnamed environment'}",
             )
         )
-    elif demo_login == "true" and not all(demo_identities):
+    elif demo_login == "true" and not all(demo_identities.values()):
         checks.append(
             Check(
                 "FAIL",
                 "demo sign-in",
                 "every DEMO_*_USER_ID must be set when demo login is enabled",
+            )
+        )
+    elif demo_login == "true" and demo_identities != DEMO_USER_ID_VALUES:
+        checks.append(
+            Check(
+                "FAIL",
+                "demo sign-in",
+                "DEMO_*_USER_ID values must match the seed-owned demo personas",
             )
         )
     elif demo_login == "true":
@@ -246,9 +267,11 @@ def r2_cors_ready(output: str, public_origin: str) -> bool:
 
 
 def remote_checks(
-    environment_name: str,
+    config_path: Path,
     environment: dict,
     variables: dict[str, str],
+    *,
+    allow_pending_migrations: bool = False,
 ) -> tuple[list[Check], int, set[str]]:
     checks: list[Check] = []
     whoami = run_command([NPX, "wrangler", "whoami"])
@@ -261,16 +284,36 @@ def remote_checks(
     )
 
     migrations = run_command(
-        [NPX, "wrangler", "d1", "migrations", "list", "DB", "--remote", "--env", environment_name]
+        [
+            NPX,
+            "wrangler",
+            "d1",
+            "migrations",
+            "list",
+            "DB",
+            "--remote",
+            "--config",
+            str(config_path),
+        ]
     )
     migrations_ready = migrations.returncode == 0 and "No migrations to apply" in migrations.output
+    migrations_pending = migrations.returncode == 0 and not migrations_ready
+    migration_state: Literal["PASS", "PENDING", "FAIL"] = (
+        "PASS"
+        if migrations_ready
+        else "PENDING"
+        if migrations_pending and allow_pending_migrations
+        else "FAIL"
+    )
     checks.append(
         Check(
-            "PASS" if migrations_ready else "FAIL",
+            migration_state,
             "D1 migrations",
             (
                 "no pending migrations"
                 if migrations_ready
+                else "pending migrations explicitly allowed before reviewed migration application"
+                if migration_state == "PENDING"
                 else "migration check failed or migrations pending"
             ),
         )
@@ -284,8 +327,8 @@ def remote_checks(
             "execute",
             "DB",
             "--remote",
-            "--env",
-            environment_name,
+            "--config",
+            str(config_path),
             "--command",
             "SELECT COUNT(*) AS organization_count FROM organizations",
             "--json",
@@ -308,7 +351,9 @@ def remote_checks(
     )
 
     r2_name = variables.get("R2_BUCKET_NAME", "")
-    r2 = run_command([NPX, "wrangler", "r2", "bucket", "info", r2_name])
+    r2 = run_command(
+        [NPX, "wrangler", "r2", "bucket", "info", r2_name, "--config", str(config_path)]
+    )
     checks.append(
         Check(
             "PASS" if r2_name and r2.returncode == 0 else "FAIL",
@@ -318,7 +363,19 @@ def remote_checks(
     )
 
     base_url = variables.get("PUBLIC_BASE_URL", "").rstrip("/")
-    r2_cors = run_command([NPX, "wrangler", "r2", "bucket", "cors", "list", r2_name])
+    r2_cors = run_command(
+        [
+            NPX,
+            "wrangler",
+            "r2",
+            "bucket",
+            "cors",
+            "list",
+            r2_name,
+            "--config",
+            str(config_path),
+        ]
+    )
     cors_ready = r2_cors.returncode == 0 and r2_cors_ready(r2_cors.output, base_url)
     checks.append(
         Check(
@@ -333,7 +390,7 @@ def remote_checks(
     )
 
     queue_names = configured_queue_names(environment)
-    queues = run_command([NPX, "wrangler", "queues", "list"])
+    queues = run_command([NPX, "wrangler", "queues", "list", "--config", str(config_path)])
     missing_queues = sorted(name for name in queue_names if name not in queues.output)
     checks.append(
         Check(
@@ -348,7 +405,16 @@ def remote_checks(
     )
 
     secrets = run_command(
-        [NPX, "wrangler", "secret", "list", "--env", environment_name, "--format", "json"]
+        [
+            NPX,
+            "wrangler",
+            "secret",
+            "list",
+            "--config",
+            str(config_path),
+            "--format",
+            "json",
+        ]
     )
     try:
         secret_names = {str(item["name"]) for item in json.loads(secrets.output)}
@@ -410,21 +476,33 @@ def print_report(checks: list[Check]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env", default="dev", help="Wrangler environment name")
-    parser.add_argument("--config", type=Path, default=PROJECT_ROOT / "wrangler.jsonc")
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument(
         "--deployment-only",
         action="store_true",
         help="return success when only provider/bootstrap activation remains",
     )
+    parser.add_argument(
+        "--allow-pending-migrations",
+        action="store_true",
+        help="permit a successful pending-migration listing during pre-mutation review",
+    )
     arguments = parser.parse_args()
+    if arguments.allow_pending_migrations and not arguments.deployment_only:
+        parser.error("--allow-pending-migrations requires --deployment-only")
     try:
-        environment, variables = load_environment(arguments.config, arguments.env)
+        environment, variables = load_environment(arguments.config)
+        require_remote_environment(variables)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"FAIL configuration: {error}", file=sys.stderr)
         return 1
     checks = static_configuration_checks(environment, variables)
-    remote, organization_count, secret_names = remote_checks(arguments.env, environment, variables)
+    remote, organization_count, secret_names = remote_checks(
+        arguments.config,
+        environment,
+        variables,
+        allow_pending_migrations=arguments.allow_pending_migrations,
+    )
     checks.extend(remote)
     checks.extend(secret_checks(secret_names, organization_count))
     print_report(checks)
