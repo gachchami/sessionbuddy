@@ -9,7 +9,7 @@ const workspaceHtml = source("public_cfp.html")
   .replace(/<link rel="stylesheet" href="\/product\/assets\/product\.css\?v=\d+">/, `<style>${source("product.css")}</style>`)
   .replace(/<script src="\/app-shell\/assets\/api-client\.js\?v=\d+" defer><\/script>/, "")
   .replace(/<script src="\/product\/assets\/public-cfp\.js\?v=\d+" defer><\/script>/, "")
-  .replace("</body>", `<script>${source("api_client.js")}</script><script>${source("public_cfp.js")}</script></body>`);
+  .replace("</body>", `<script>${source("api_client.js")}</script><script>${source("public_event_masthead.js")}</script><script>${source("public_cfp.js")}</script></body>`);
 
 const form = {
   id: "form-devflow", event_id: "event-devflow", event_name: "DevFlow 2027",

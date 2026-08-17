@@ -186,19 +186,34 @@
     }
     state.model = body; document.body.classList.toggle("embedded", embedded);
     if (location.pathname.endsWith("/itinerary")) state.view = "mine";
-    if (sessionsOnly) document.querySelector(".schedule-filters").hidden = true;
+    const hasPublishedSchedule = Boolean(body.revision);
+    document.querySelector(".schedule-discovery").hidden = !hasPublishedSchedule;
+    document.querySelector(".schedule-filters").hidden = sessionsOnly || !hasPublishedSchedule;
+    byId("results-summary").hidden = !hasPublishedSchedule;
     const eventName = body.event.name;
     const monogram = eventName.trim().slice(0, 2).toUpperCase() || "EV";
     byId("title").textContent = sessionsOnly ? "Sessions" : "Schedule";
-    byId("timezone").textContent = body.revision
-      ? `Times shown in ${body.event.time_zone}. Published revision ${body.revision.revision_number}.`
-      : `Times will be shown in ${body.event.time_zone}.`;
+    const timezone = byId("timezone");
+    if (body.revision) {
+      let timezoneName = body.event.time_zone;
+      try {
+        timezoneName = new Intl.DateTimeFormat(undefined, {
+          timeZone: body.event.time_zone,
+          timeZoneName: "long",
+        }).formatToParts(new Date()).find((part) => part.type === "timeZoneName")?.value || timezoneName;
+      } catch (_) { /* Keep the configured label when Intl cannot resolve it. */ }
+      timezone.textContent = `All session times use ${timezoneName}.`;
+      timezone.hidden = false;
+    } else {
+      timezone.textContent = "";
+      timezone.hidden = true;
+    }
     byId("status").textContent = body.revision
       ? `${body.items.length} published session${body.items.length === 1 ? "" : "s"}.`
-      : "The organizer has not published the schedule yet.";
+      : "Schedule coming soon.";
     if (body.event.accent_color) document.documentElement.style.setProperty("--event-accent", body.event.accent_color);
     window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
-      event: { id: body.event.id, name: eventName, accentColor: body.event.accent_color, logoUrl: body.event.logo_url, coverUrl: body.event.cover_image_url },
+      event: { id: body.event.id, name: eventName, accentColor: body.event.accent_color, logoUrl: body.event.logo_url, coverUrl: body.event.cover_image_url, cfpUrl: body.event.cfp_url },
       active: "schedule", embedded,
     });
     populateDiscovery(); saveItinerary(); render();

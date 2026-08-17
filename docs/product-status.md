@@ -747,3 +747,21 @@ resolver table used by the distributor.
 - The collapsed account disclosure removes its menu from layout, so hidden
   account actions cannot be discovered or hit-tested over unrelated page
   content by browsers or accessibility tooling.
+
+## Public event surfaces
+
+- CFP, schedule, speaker gallery, and event-preview headers use one shared
+  masthead renderer. Cover images retain the requested 8:3 ratio everywhere;
+  CFP remains a focused submission task without schedule or speaker tabs. The
+  public event navigation links back to its published call for proposals.
+- The public CFP, schedule, speaker gallery, and person profile now share a
+  quieter editorial hierarchy: a white canvas, bounded reading measures,
+  consistent display and body roles, and event color reserved for emphasis.
+- Published schedules describe the event time zone by its human-readable name
+  beside the schedule controls instead of exposing an IANA identifier in the
+  page introduction.
+- The People directory links names to published profiles and explicitly marks
+  accounts whose public profile is off.
+- Profile photo is the canonical person image. Account provides one upload with
+  explicit size guidance, and public profiles, speaker cards, galleries, and
+  previews use non-distorting, face-biased crops from that source.

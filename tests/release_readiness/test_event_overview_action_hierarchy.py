@@ -12,12 +12,18 @@ def test_overview_keeps_cfp_prominent_and_links_each_status_row() -> None:
     assert 'id="primary-action"' not in page
     assert 'byId("primary-action")' not in script
     assert 'id="next-step-action" class="button"' in page
-    assert 'id="cfp-action" class="button event-command-header__primary"' in page
+    assert (
+        'id="cfp-action" class="button event-command-header__primary" '
+        'href="#" hidden>Edit CFP</a>' in page
+    )
     assert 'id="cfp-link"' in page
+    assert 'id="edit-event" class="button secondary"' in page
     assert 'id="public-schedule" class="button secondary"' in page
     assert 'byId("next-step").hidden = cfpPublished' in script
     assert 'byId("cfp-link").href' in script
     assert 'byId("cfp-action").href' in script
+    assert 'byId("cfp-action").hidden = !cfpPublished' in script
+    assert 'byId("edit-event").href' in script
 
 
 def test_overview_defers_navigation_to_the_horizontal_event_bar() -> None:
@@ -44,10 +50,11 @@ def test_live_cfp_does_not_present_reviewing_as_an_organizer_next_step() -> None
     assert '`${selected.name} is ready.`' not in script
 
 
-def test_event_overview_previews_the_shared_public_header() -> None:
-    stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
+def test_event_overview_keeps_public_brand_preview_in_event_settings() -> None:
     page = (STATIC / "event_overview.html").read_text(encoding="utf-8")
-    assert ".public-event-masthead__band" in stylesheet
-    assert "data-public-event-masthead" in page
-    assert "/public/assets/event-masthead.js" in page
+    editor = (STATIC / "event_editor.html").read_text(encoding="utf-8")
+    assert "data-public-event-masthead" not in page
+    assert "/public/assets/event-masthead.js" not in page
+    assert "data-public-event-masthead" in editor
+    assert "/public/assets/event-masthead.js" in editor
     assert 'class="event-command-header"' in page

@@ -95,7 +95,7 @@ for (const viewport of [
     await expect(row.getByRole("link", { name: "3 proposals" })).toHaveAttribute("href", "/admin/events/event-1/submissions");
     await expect(row.getByRole("link", { name: "2 awaiting reviews" })).toHaveAttribute("href", "/admin/events/event-1/submissions#rounds-title");
     await expect(row.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/events/event-1/settings");
-    await expect(row.getByRole("link", { name: "Duplicate" })).toHaveAttribute("href", "/admin/events/new?source=event-1");
+    await expect(row.getByRole("link", { name: "Clone" })).toHaveAttribute("href", "/admin/events/new?source=event-1");
     await expect(page.getByRole("link", { name: "Open", exact: true })).toHaveCount(0);
     await expect(page.getByText("CFP published · offline", { exact: true })).toBeVisible();
     await expect(page.getByText("Schedule published · offline", { exact: true })).toBeVisible();
@@ -140,6 +140,6 @@ test("Organizer Home omits manager actions and activity for an event editor", as
   await expect(page.getByRole("link", { name: "Skip to recent changes" })).toBeHidden();
   await expect(page.getByRole("link", { name: "Create event" })).toBeHidden();
   await expect(page.getByRole("link", { name: "Organization settings" })).toBeHidden();
-  await expect(page.getByRole("link", { name: "Duplicate" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Clone" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
 });

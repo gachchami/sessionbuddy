@@ -14,6 +14,7 @@ from sessionbuddy.agenda import (
     ScheduleSpeaker,
     queue_calendar_changes,
 )
+from sessionbuddy.cfp.availability import public_form_path
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.platform.auth.http import (
@@ -2660,7 +2661,10 @@ async def get_public_schedule(
     event = row_mapping(
         await db.prepare(
             """SELECT id,organization_id,name,time_zone,accent_color,logo_url,
-                      cover_image_url,website_url
+                      cover_image_url,website_url,
+                      (SELECT slug FROM call_for_speaker_forms
+                       WHERE event_id=events.id AND status='published'
+                       ORDER BY version DESC,published_at_ms DESC,id DESC LIMIT 1) AS cfp_slug
                FROM events WHERE id=?1 AND status='active' LIMIT 1"""
         )
         .bind(event_id)
@@ -2684,6 +2688,11 @@ async def get_public_schedule(
                 ),
                 website_url=(
                     str(event["website_url"]) if event["website_url"] is not None else None
+                ),
+                cfp_url=(
+                    public_form_path(str(event["id"]), str(event["cfp_slug"]))
+                    if event["cfp_slug"] is not None
+                    else None
                 ),
             ),
             revision=None,
@@ -2750,6 +2759,11 @@ async def get_public_schedule(
                 str(event["cover_image_url"]) if event["cover_image_url"] is not None else None
             ),
             website_url=(str(event["website_url"]) if event["website_url"] is not None else None),
+            cfp_url=(
+                public_form_path(str(event["id"]), str(event["cfp_slug"]))
+                if event["cfp_slug"] is not None
+                else None
+            ),
         ),
         revision=ScheduleRevisionView(
             id=str(revision["id"]),

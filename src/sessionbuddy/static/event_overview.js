@@ -61,8 +61,6 @@
       open: "Accepting proposals",
       closed: "Closed to new proposals"
     }[cfpState] || "Accepting proposals";
-    const bannerUrl = cfp.published_form?.cover_image_url || "";
-    const logoUrl = cfp.published_form?.logo_url || "";
     const accentColor = cfp.published_form?.accent_color || "#3159d9";
     const submissionCount = submissionsState.ok
       ? Number(submissionsState.value.total ?? submissionsState.value.data.length)
@@ -77,13 +75,11 @@
     document.title = `${selected.name} · SessionBuddy`;
     byId("event-name").textContent = selected.name;
     document.documentElement.style.setProperty("--event-accent", accentColor);
-    window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
-      event: { id: selected.id, name: selected.name, accentColor, logoUrl, coverUrl: bannerUrl },
-      active: null, embedded: false,
-    });
     const mode = selected.delivery_mode.replace("_", " ");
     byId("event-summary").textContent = `${formatRange(selected)} · ${mode}${selected.location ? ` · ${selected.location}` : ""}`;
+    byId("edit-event").href = `/admin/events/${encodeURIComponent(eventId)}/settings`;
     byId("cfp-action").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
+    byId("cfp-action").hidden = !cfpPublished;
     byId("public-schedule").href = `/events/${encodeURIComponent(eventId)}/schedule`;
     const prefix = `/admin/events/${encodeURIComponent(eventId)}`;
     byId("proposals-link").href = `${prefix}/submissions`;
@@ -101,10 +97,15 @@
     byId("agenda-note").textContent = agendaFailed ? "Unavailable" : agendaPublished ? "Published" : agendaMissing ? "Not started" : "Draft";
     byId("cfp-state").textContent = cfpStateResult.ok ? (cfpPublished ? cfpStateLabel : "Draft") : "Unavailable";
     byId("cfp-note").textContent = cfpStateResult.ok ? (cfpPublished ? cfpStateNote : "Publish before sharing") : "Refresh to try again";
+    byId("proposals-link").closest(".event-signal").classList.toggle("event-signal--unavailable", !submissionsState.ok);
+    byId("speakers-link").closest(".event-signal").classList.toggle("event-signal--unavailable", !speakersState.ok);
+    byId("agenda-link").closest(".event-signal").classList.toggle("event-signal--unavailable", agendaFailed);
+    byId("cfp-link").closest(".event-signal").classList.toggle("event-signal--unavailable", !cfpStateResult.ok);
     document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
       ? "Some program information is unavailable. Refresh to try again."
       : "";
+    byId("status").classList.toggle("event-overview-status--warning", degraded);
   }
 
   initialize().catch((error) => {

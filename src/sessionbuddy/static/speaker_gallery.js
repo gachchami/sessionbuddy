@@ -129,7 +129,7 @@
     byId("speaker-gallery-link").href = `/events/${encodeURIComponent(eventId)}/gallery${querySuffix}`;
     byId(galleryLayout ? "speaker-gallery-link" : "speaker-list-link").setAttribute("aria-current", "page");
     window.SessionBuddyPublicEventMasthead.render(document.querySelector("[data-public-event-masthead]"), {
-      event: { id: body.event.id, name: body.event.name, accentColor: body.event.accent_color, logoUrl: body.event.logo_url, coverUrl: body.event.cover_image_url },
+      event: { id: body.event.id, name: body.event.name, accentColor: body.event.accent_color, logoUrl: body.event.logo_url, coverUrl: body.event.cover_image_url, cfpUrl: body.event.cfp_url },
       active: "speakers",
       embedded: document.body.classList.contains("embedded"),
     });

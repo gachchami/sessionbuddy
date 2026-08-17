@@ -32,6 +32,7 @@ const pageHtml = read("admin_programs.html")
     "</body>",
     `<script>${read("api_client.js")}</script>`
       + `<script>${read("app_shell.js")}</script>`
+      + `<script>${read("public_event_masthead.js")}</script>`
       + `<script>${read("admin_programs.js")}</script></body>`,
   );
 

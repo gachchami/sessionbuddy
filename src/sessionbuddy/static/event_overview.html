@@ -4,24 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=81">
+  <link rel="stylesheet" href="/product/assets/product.css?v=85">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
-  <script src="/public/assets/event-masthead.js?v=6e2e83770ce8" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=b6f032395cfb" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=8b02cd8d42ee" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--event-overview is-loading">
   <a class="skip-link" href="#main">Skip to event overview</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page organizer-main" tabindex="-1">
-    <div class="event-overview-public-preview" aria-label="Public event header preview"><p class="field-label">Public event header</p><div data-public-event-masthead></div></div>
     <section id="event-public-header" class="event-command-header" aria-labelledby="event-name">
-      <div class="event-command-header__content"><div class="event-command-header__copy"><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div><div id="event-actions" class="event-command-header__actions" hidden><a id="cfp-action" class="button event-command-header__primary" href="#">Manage CFP</a><a id="public-schedule" class="button secondary" href="#">View public event page</a></div></div>
+      <div class="event-command-header__content"><div class="event-command-header__copy"><h1 id="event-name"><span class="skeleton-text">Loading event</span></h1><p id="event-summary" class="lede"></p></div><div id="event-actions" class="event-command-header__actions" hidden><a id="edit-event" class="button secondary" href="#">Edit event</a><a id="cfp-action" class="button event-command-header__primary" href="#" hidden>Edit CFP</a><a id="public-schedule" class="button secondary" href="#">Public event page</a></div></div>
     </section>
     <div id="status" class="status event-overview-status" role="status" aria-live="polite">Loading event…</div>
     <section class="event-overview-now organizer-callout">
-      <div id="next-step" class="event-next-step" aria-labelledby="next-step-title"><p class="eyebrow">Up next</p><h2 id="next-step-title">Publish your proposal form</h2><p id="next-step-summary" class="result">Finish the form so speakers can start submitting proposals.</p><a id="next-step-action" class="button" href="#">Finish form</a></div>
+      <div id="next-step" class="event-next-step" aria-labelledby="next-step-title"><p class="eyebrow">Up next</p><h2 id="next-step-title">Open your call for proposals</h2><p id="next-step-summary" class="result">Create and publish the proposal form speakers will use.</p><a id="next-step-action" class="button" href="#">Set up CFP</a></div>
       <dl class="event-signal-list organizer-metrics" aria-label="Event status">
         <div class="event-signal event-signal--proposals"><dt><a id="proposals-link" href="#">Proposals</a></dt><dd id="proposal-count">—</dd><small id="proposal-note">Loading</small></div>
         <div class="event-signal event-signal--speakers"><dt><a id="speakers-link" href="#">Speakers</a></dt><dd id="speaker-count">—</dd><small id="speaker-note">Loading</small></div>

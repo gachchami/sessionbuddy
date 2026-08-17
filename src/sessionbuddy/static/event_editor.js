@@ -157,7 +157,7 @@
       if (error.status === 401) { preserveDraft(); window.SessionBuddyApi.redirectIfSignedOut(error); return null; }
       if (error.status === 403 || (error.status === 404 && state.mode === "edit")) { setReadOnly(); return null; }
       if (error.status === 409 && state.mode === "edit") { setStatus("Someone else saved this event while you were editing.", true); try { await reconcile(); } catch (reloadError) { setStatus(window.SessionBuddyApi.message(reloadError), true, true); } return null; }
-      if (error.status === 409 && state.mode === "duplicate") { setStatus("The source event changed. Reload to duplicate the latest version.", true, true); byId("reload-source").hidden = false; return null; }
+      if (error.status === 409 && state.mode === "duplicate") { setStatus("The source event changed. Reload to clone its latest version.", true, true); byId("reload-source").hidden = false; return null; }
       if (error.status === 409) { setStatus("Event creation is still being processed. Try again to safely check the same request.", true, true); return null; }
       window.SessionBuddyApi.showValidationErrors?.(form, error); const message = window.SessionBuddyApi.message(error); setStatus(error.status === 422 && /invalid event (logo|cover) asset/i.test(message) ? "Upload the image again, then save the event." : message, true, true); return null;
     } finally { setBusy(false); }
@@ -175,7 +175,7 @@
     const sourceId = new URLSearchParams(location.search).get("source"); const eventId = editorEventId(); state.mode = eventId ? "edit" : sourceId ? "duplicate" : "create";
     byId("lifecycle").hidden = state.mode !== "edit"; byId("save-draft").hidden = state.mode === "edit"; byId("back-to-event").hidden = state.mode !== "edit";
     if (state.mode === "create") { document.title = "Create event · SessionBuddy"; byId("page-title").textContent = "Create event"; byId("page-lede").textContent = "Drafts stay private. An active event is eligible to publish its call for proposals and schedule; each is published separately."; byId("save-draft").textContent = "Save draft"; byId("save-event").textContent = "Create active event"; }
-    if (state.mode === "duplicate") { document.title = "Duplicate event · SessionBuddy"; byId("page-title").textContent = "Duplicate event"; byId("page-lede").textContent = "Review the copied setup before creating a separate event."; byId("duplicate-context").hidden = false; byId("save-draft").className = ""; byId("save-event").className = "secondary"; byId("save-event").textContent = "Create active event"; byId("save-draft").textContent = "Save draft"; byId("save-draft").parentElement.insertBefore(byId("save-event"), byId("save-draft")); }
+    if (state.mode === "duplicate") { document.title = "Clone event · SessionBuddy"; byId("page-title").textContent = "Clone event"; byId("page-lede").textContent = "Review the copied setup before creating a separate event."; byId("duplicate-context").hidden = false; byId("save-draft").className = ""; byId("save-event").className = "secondary"; byId("save-event").textContent = "Create active event"; byId("save-draft").textContent = "Save draft"; byId("save-draft").parentElement.insertBefore(byId("save-event"), byId("save-draft")); }
   }
 
   async function initialize() {
@@ -188,7 +188,7 @@
       state.organizationId = state.event.organization_id; values = eventSnapshot(state.event); byId("page-title").textContent = state.event.name; byId("back-to-event").href = `/admin/events/${encodeURIComponent(state.event.id)}`; byId("duplicate-event").href = `/admin/events/new?source=${encodeURIComponent(state.event.id)}`;
     } else if (state.mode === "duplicate") {
       const sourceId = new URLSearchParams(location.search).get("source");
-      try { state.source = await api(`/api/v1/admin/events/${encodeURIComponent(sourceId)}`); } catch (error) { if ([403, 404].includes(error.status)) { setUnavailable("Event unavailable", "That event is no longer available to duplicate."); return; } throw error; }
+      try { state.source = await api(`/api/v1/admin/events/${encodeURIComponent(sourceId)}`); } catch (error) { if ([403, 404].includes(error.status)) { setUnavailable("Event unavailable", "That event is no longer available to clone."); return; } throw error; }
       state.organizationId = state.source.organization_id; values = eventSnapshot(state.source); values.name = `${state.source.name} copy`; values.logo_url = ""; values.cover_image_url = ""; byId("source-name").textContent = state.source.name; byId("source-date").textContent = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: state.source.time_zone }).format(new Date(state.source.starts_at_ms)); byId("source-link").href = `/admin/events/${encodeURIComponent(state.source.id)}`;
       if (state.source.logo_url) { byId("logo-status").textContent = "Will be copied to the new event."; byId("logo-preview").src = state.source.logo_url; byId("logo-preview").hidden = false; } if (state.source.cover_image_url) { byId("cover-status").textContent = "Will be copied to the new event."; byId("cover-preview").src = state.source.cover_image_url; byId("cover-preview").hidden = false; }
     } else {

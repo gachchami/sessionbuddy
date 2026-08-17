@@ -91,13 +91,16 @@ def test_event_branding_uploads_have_live_preview_and_save_boundary() -> None:
         assert f'id="{preview_id}"' in page
     assert 'id="upload-logo"' in page
     assert 'id="upload-cover"' in page
+    assert "Recommended: 512 × 512 px (1:1)" in page
+    assert "Recommended: 1600 × 600 px (8:3)" in page
     assert "function updateImages()" in script
     assert "state.unsavedUploads.add(kind)" in script
     assert '"Upload complete · Save changes to use this image."' in script
     assert "state.unsavedUploads.clear()" in script
     assert ".event-editor__cover-preview:not([hidden])" in styles
-    assert "aspect-ratio: 16 / 9" in styles
-    assert "max-inline-size: 10rem" in styles
+    assert "aspect-ratio: 1" in styles
+    assert "aspect-ratio: 8 / 3" in styles
+    assert "inline-size: 6rem" in styles
 
 
 def test_home_is_the_event_index_and_editor_is_the_management_destination() -> None:

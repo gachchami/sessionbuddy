@@ -6,7 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
-from sessionbuddy.cfp.availability import form_availability
+from sessionbuddy.cfp.availability import form_availability, public_form_path
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_degradation
@@ -264,7 +264,10 @@ async def _managed_event(request: Request, event_id: str, *, mutation: bool):
         await _db(request)
         .prepare(
             """SELECT id,organization_id,name,time_zone,accent_color,logo_url,
-                      cover_image_url,website_url
+                      cover_image_url,website_url,
+                      (SELECT slug FROM call_for_speaker_forms
+                       WHERE event_id=events.id AND status='published'
+                       ORDER BY version DESC,published_at_ms DESC,id DESC LIMIT 1) AS cfp_slug
                FROM events WHERE id=?1 AND status!='archived' LIMIT 1"""
         )
         .bind(event_id)
@@ -2281,7 +2284,10 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         await _db(request)
         .prepare(
             """SELECT id,organization_id,name,time_zone,accent_color,logo_url,
-                      cover_image_url,website_url
+                      cover_image_url,website_url,
+                      (SELECT slug FROM call_for_speaker_forms
+                       WHERE event_id=events.id AND status='published'
+                       ORDER BY version DESC,published_at_ms DESC,id DESC LIMIT 1) AS cfp_slug
                FROM events WHERE id=?1 AND status='active' LIMIT 1"""
         )
         .bind(event_id)
@@ -2377,6 +2383,11 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
             "logo_url": str(event["logo_url"]) if event["logo_url"] else None,
             "cover_image_url": str(event["cover_image_url"]) if event["cover_image_url"] else None,
             "website_url": str(event["website_url"]) if event["website_url"] else None,
+            "cfp_url": (
+                public_form_path(event_id, str(event["cfp_slug"]))
+                if event["cfp_slug"] is not None
+                else None
+            ),
         },
         data=data,
     )

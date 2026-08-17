@@ -21,11 +21,15 @@ const programsScript = readFileSync(
   resolve(__dirname, "../../src/sessionbuddy/static/admin_programs.js"),
   "utf8",
 );
+const mastheadScript = readFileSync(
+  resolve(__dirname, "../../src/sessionbuddy/static/public_event_masthead.js"),
+  "utf8",
+);
 const pageHtml = template
   .replace(/<link rel="stylesheet" href="\/product\/assets\/product\.css\?v=\d+">/, `<style>${productCss}</style>`)
   .replace(/<link rel="stylesheet" href="\/app-shell\/assets\/app-shell\.css\?v=\d+">/, "")
   .replace(/<script[^>]+src="[^"]+"[^>]*><\/script>/g, "")
-  .replace("</body>", `<script>${apiClient}</script><script>${programsScript}</script></body>`);
+  .replace("</body>", `<script>${apiClient}</script><script>${mastheadScript}</script><script>${programsScript}</script></body>`);
 
 async function serveBuilder(page: Page) {
   await page.route(`**/admin/events/${eventId}/cfp`, (route) => route.fulfill({
@@ -173,15 +177,16 @@ test.describe("CFP rich text accessibility", () => {
     await expect(page.locator('[name="description_html"] + .character-counter')).not.toHaveText(/^0 of/);
     await page.getByRole("button", { name: "Preview form", exact: true }).click();
     const preview = page.locator("#cfp-selection-preview");
+    await preview.locator(".cfp-brief").evaluate((details: HTMLDetailsElement) => { details.open = true; });
     await expect(preview.locator("strong", { hasText: "Bring a practical lesson" })).toBeVisible();
     await expect(preview.locator("li", { hasText: "Include concrete examples" })).toBeVisible();
     await expect(preview.getByRole("img", { name: "Accessible Conference logo" })).toBeVisible();
-    await expect(preview.getByRole("img", { name: "Accessible Conference cover" })).toBeVisible();
-    await expect(preview.locator(".cfp-preview-brand")).toHaveCSS("border-top-color", "rgb(109, 74, 255)");
+    await expect(preview.locator(".public-event-masthead__cover")).toBeVisible();
+    await expect(preview.locator(".public-event-masthead__nav")).toHaveCount(0);
     const geometry = await preview.evaluate((node) => {
       const content = node.querySelector<HTMLElement>(".cfp-preview-content")!;
       const description = node.querySelector<HTMLElement>(".cfp-preview-description")!;
-      const cover = node.querySelector<HTMLElement>(".cfp-preview-brand__cover")!;
+      const cover = node.querySelector<HTMLElement>(".public-event-masthead__band")!;
       const coverBounds = cover.getBoundingClientRect();
       return {
         contentFits: content.scrollWidth <= content.clientWidth + 1,
@@ -194,9 +199,9 @@ test.describe("CFP rich text accessibility", () => {
     expect(geometry.contentFits).toBe(true);
     expect(geometry.descriptionFits).toBe(true);
     expect(geometry.descriptionFontSize).toBe(16);
-    // The draft preview uses the same wide event-cover crop as the published
-    // CFP instead of a taller, misleading card-only composition.
-    expect(geometry.coverRatio).toBeCloseTo(3, 1);
+    // The draft preview uses the same 8:3 banner crop as every published event
+    // surface instead of a taller, misleading card-only composition.
+    expect(geometry.coverRatio).toBeCloseTo(8 / 3, 1);
     expect(geometry.previewOverflowY).toBe("visible");
   });
 });

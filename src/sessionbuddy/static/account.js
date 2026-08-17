@@ -14,7 +14,7 @@
   let session;
   let version;
   let selectedHeadshot;
-  let previewObjectUrl;
+  let selectedHeadshotContentType;
   let inferredNameDraft = false;
   const query = new URLSearchParams(location.search);
   const organizationMode = location.pathname === "/admin/organization";
@@ -41,6 +41,17 @@
     }
   }
 
+  function profilePhotoContentType(file) {
+    const declaredType = String(file?.type || "").toLowerCase();
+    if (declaredType === "image/jpeg" || declaredType === "image/jpg") return "image/jpeg";
+    if (declaredType === "image/png" || declaredType === "image/webp") return declaredType;
+    const extension = String(file?.name || "").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+    if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+    if (extension === "png") return "image/png";
+    if (extension === "webp") return "image/webp";
+    return "";
+  }
+
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
 
   function showStatus(message, kind = "", focus = false) {
@@ -55,6 +66,27 @@
     const button = byId("save-profile");
     button.dataset.state = state;
     button.textContent = state === "saving" ? "Saving…" : state === "saved" ? "✓ Saved" : "Save profile";
+  }
+
+  function showProfilePhoto(src, alt, {
+    removable = true,
+    errorMessage = "",
+    errorKind = "error",
+    focusOnError = true,
+  } = {}) {
+    const image = byId("headshot-preview");
+    const fallback = byId("headshot-fallback");
+    image.hidden = true;
+    fallback.hidden = false;
+    image.alt = alt;
+    image.onload = () => { image.hidden = false; fallback.hidden = true; };
+    image.onerror = () => {
+      image.hidden = true;
+      fallback.hidden = false;
+      if (errorMessage) showStatus(errorMessage, errorKind, focusOnError);
+    };
+    image.src = src;
+    byId("remove-headshot").hidden = !removable;
   }
 
   function setProfile(profile) {
@@ -90,14 +122,17 @@
     const initials = `${firstName[0] || ""}${lastName[0] || ""}`.toUpperCase() || "SB";
     byId("headshot-fallback").textContent = initials;
     if (profile.headshot_url) {
-      byId("headshot-preview").src = `${profile.headshot_url}?v=${profile.version}`;
       const headshotOwner = `${firstName} ${lastName}`.trim() || profile.display_name?.trim();
-      byId("headshot-preview").alt = headshotOwner ? `Current headshot for ${headshotOwner}` : "Current profile headshot";
-      byId("headshot-preview").hidden = false;
-      byId("headshot-fallback").hidden = true;
-      byId("remove-headshot").hidden = false;
+      showProfilePhoto(
+        `${profile.headshot_url}?v=${profile.version}`,
+        headshotOwner ? `Current profile photo for ${headshotOwner}` : "Current profile photo",
+      );
     } else {
-      byId("headshot-preview").hidden = true;
+      const image = byId("headshot-preview");
+      image.onload = null;
+      image.onerror = null;
+      image.removeAttribute("src");
+      image.hidden = true;
       byId("headshot-fallback").hidden = false;
       byId("remove-headshot").hidden = true;
     }
@@ -693,12 +728,37 @@
   byId("headshot-input").addEventListener("change", (event) => {
     selectedHeadshot = event.target.files?.[0];
     if (!selectedHeadshot) return;
-    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
-    previewObjectUrl = URL.createObjectURL(selectedHeadshot);
-    byId("headshot-preview").src = previewObjectUrl;
-    byId("headshot-preview").alt = "Selected headshot preview (uploads when you save)";
-    byId("headshot-preview").hidden = false;
-    byId("headshot-fallback").hidden = true;
+    selectedHeadshotContentType = profilePhotoContentType(selectedHeadshot);
+    if (!selectedHeadshotContentType) {
+      selectedHeadshot = undefined;
+      selectedHeadshotContentType = undefined;
+      event.target.value = "";
+      showStatus("That file type is not supported. Choose a JPG, JPEG, PNG, or WebP image.", "error", true);
+      return;
+    }
+    if (selectedHeadshot.size <= 0 || selectedHeadshot.size > 5 * 1024 * 1024) {
+      selectedHeadshot = undefined;
+      selectedHeadshotContentType = undefined;
+      event.target.value = "";
+      showStatus("The profile photo must be larger than 0 bytes and no larger than 5 MB.", "error", true);
+      return;
+    }
+    const previewSelection = selectedHeadshot;
+    const previewReader = new FileReader();
+    previewReader.onload = () => {
+      if (selectedHeadshot !== previewSelection || typeof previewReader.result !== "string") return;
+      showProfilePhoto(previewReader.result, "Selected profile photo preview; uploads when you save", {
+        removable: false,
+        errorMessage: "This image file could not be decoded. Export it as a standard JPEG, PNG, or WebP and try again.",
+      });
+    };
+    previewReader.onerror = () => {
+      if (selectedHeadshot === previewSelection) {
+        showStatus("This image could not be read. Choose the file again or export a new copy.", "error", true);
+      }
+    };
+    previewReader.readAsDataURL(previewSelection);
+    showStatus(`Profile photo selected: ${selectedHeadshot.name}. Choose Save profile to upload it.`);
     setProfileSaveState("idle");
     byId("save-profile").disabled = false;
   });
@@ -844,10 +904,11 @@
         showStatus("Saving your headshot…");
         await api("/api/v1/account/headshot", {
           method: "PUT",
-          headers: { "content-type": selectedHeadshot.type, "x-csrf-token": session.csrf_token },
+          headers: { "content-type": selectedHeadshotContentType, "x-csrf-token": session.csrf_token },
           body: selectedHeadshot
         });
         selectedHeadshot = undefined;
+        selectedHeadshotContentType = undefined;
         byId("headshot-input").value = "";
         profile = await api("/api/v1/account/profile");
       }

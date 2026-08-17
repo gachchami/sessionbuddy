@@ -1529,13 +1529,13 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert own_profile.json()["email"] == "speaker@example.com"
 
         async with _client(environment, origin=None) as anonymous:
-            private_profile = await anonymous.get(
+            default_public_profile = await anonymous.get(
                 f"/api/v1/public/people/{speaker_session['user_id']}"
             )
-            assert private_profile.status_code == 404
+            assert default_public_profile.status_code == 200
 
         account = (await speaker.get("/api/v1/account/profile")).json()
-        assert account["public_profile_enabled"] is False
+        assert account["public_profile_enabled"] is True
         enabled = await speaker.patch(
             "/api/v1/account/profile",
             headers=speaker_headers,

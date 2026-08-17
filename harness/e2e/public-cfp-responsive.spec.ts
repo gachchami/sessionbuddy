@@ -166,6 +166,11 @@ test.describe("public CFP responsive design", () => {
       await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
       await expect(page.locator(".public-event-masthead__mark img")).toBeVisible();
       await expect(page.locator(".public-event-masthead__cover")).toBeVisible();
+      const coverRatio = await page.locator(".public-event-masthead__band").evaluate((band) => {
+        const bounds = band.getBoundingClientRect();
+        return bounds.width / bounds.height;
+      });
+      expect(coverRatio).toBeCloseTo(8 / 3, 1);
       // Signed out is a preview, not a gate: the questions render so a speaker
       // can read them before deciding to create an account.
       await expect(page.locator("#proposal-card")).toBeVisible();
@@ -176,7 +181,7 @@ test.describe("public CFP responsive design", () => {
       await expect(page.locator("#field-proposal_title")).toBeVisible();
       const signup = page.getByRole("button", { name: "Email me a signup link" });
       await expect(signup).toHaveAttribute("aria-describedby", "cfp-signup-help");
-      await expect(page.locator("#cfp-signup-help")).toHaveText("We’ll email a one-time link to create your account and sign you in.");
+      await expect(page.locator("#cfp-signup-help")).toHaveText("The link creates your account and signs you in.");
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await expectWithinViewport(page, "#event-public-header", width);
       await expectWithinViewport(page, "#sign-in-card", width);

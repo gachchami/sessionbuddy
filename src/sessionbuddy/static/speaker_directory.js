@@ -122,12 +122,14 @@
       profileLink.textContent = item.display_name;
       profileLink.setAttribute("aria-label", `Edit ${item.display_name}'s speaker details`);
       heading.append(profileLink);
-    } else if (item.user_id && item.public_profile_enabled) {
-      const profileLink = document.createElement("a");
-      profileLink.href = `/people/${encodeURIComponent(item.user_id)}`;
-      profileLink.textContent = item.display_name;
-      profileLink.setAttribute("aria-label", `View ${item.display_name}'s public profile`);
-      heading.append(profileLink);
+    } else if (item.person_id) {
+      const profileButton = document.createElement("button");
+      profileButton.type = "button";
+      profileButton.className = "text-link people-profile-link";
+      profileButton.textContent = item.display_name;
+      profileButton.setAttribute("aria-label", `View ${item.display_name}'s person profile`);
+      profileButton.addEventListener("click", () => showProfile(item));
+      heading.append(profileButton);
     } else {
       heading.textContent = item.display_name;
     }
@@ -135,6 +137,19 @@
     detail.textContent = [item.job_title, item.company].filter(Boolean).join(" · ");
     identity.append(heading);
     if (detail.textContent) identity.append(detail);
+    if (item.user_id && item.public_profile_enabled) {
+      const publicProfileLink = document.createElement("a");
+      publicProfileLink.className = "people-public-profile-link";
+      publicProfileLink.href = `/people/${encodeURIComponent(item.user_id)}`;
+      publicProfileLink.textContent = "View public profile";
+      publicProfileLink.setAttribute("aria-label", `View ${item.display_name}'s public profile`);
+      identity.append(publicProfileLink);
+    } else if (item.user_id) {
+      const profileState = document.createElement("small");
+      profileState.className = "people-profile-state";
+      profileState.textContent = "Public profile off";
+      identity.append(profileState);
+    }
     person.append(initials, identity);
 
     const cell = (text, className = "", label = "") => {
@@ -189,7 +204,7 @@
         : "No people yet. People appear here when they join an organization or event.";
       list.append(empty);
     }
-    byId("speaker-count").textContent = String(speakers.length);
+    byId("speaker-count").textContent = `${speakers.length} ${speakers.length === 1 ? "person" : "people"}`;
     byId("speaker-count").setAttribute("aria-label", `${speakers.length} of ${allSpeakers.length} people shown`);
   }
 

@@ -46,7 +46,9 @@ def test_invited_and_registered_speakers_are_eligible_for_custom_tasks() -> None
 def test_organizer_can_create_constrained_file_request_tasks() -> None:
     javascript = source("speaker_content.js")
     html = source("speaker_content.html")
-    assert '<option value="headshot">Headshot upload</option>' in html
+    account_html = source("account.html")
+    assert '<option value="headshot">' not in html
+    assert "Profile photo" in account_html
     assert '<option value="slides">Slides upload</option>' in html
     assert '<option value="supporting_document">Supporting document upload</option>' in html
     assert 'name="upload_enabled"' in html

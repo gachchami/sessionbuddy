@@ -27,7 +27,7 @@ def test_home_has_visible_low_density_event_actions() -> None:
     assert 'href="/admin/organization"' in page
     assert "name.href = `/admin/events/${encodeURIComponent(event.id)}`" in script
     assert 'settings.textContent = "Settings"' in script
-    assert 'duplicate.textContent = "Duplicate"' in script
+    assert 'duplicate.textContent = "Clone"' in script
     assert 'textContent = "Open"' not in script
     assert "/metrics" not in script
 

@@ -201,7 +201,7 @@ def test_event_branding_uses_a_validated_logo_upload() -> None:
     assert "/event-assets/${kind}`" in script
     assert 'upload(kind)' in script
     assert 'name="cover_file" type="file"' in page
-    assert "16:9 · PNG, JPG, or WebP · 2 MB" in page
+    assert "Recommended: 1600 × 600 px (8:3) · PNG, JPG, or WebP · 2 MB" in page
     assert 'byId(`upload-${kind}`).addEventListener("click", () => upload(kind))' in script
 
 
@@ -421,6 +421,8 @@ def test_public_schedule_export_reports_success() -> None:
     assert "schedule-search" in script
     assert "sessionsOnly" in script
     assert "`${visible.length} of ${source.length} session" in script
+    assert "Times will be shown in" not in script
+    assert "All session times use ${timezoneName}." in script
 
 
 def test_cfp_signed_in_email_help_is_not_duplicated() -> None:
@@ -444,6 +446,30 @@ def test_public_pages_use_the_current_sessionbuddy_mark() -> None:
         page = (STATIC / page_name).read_text()
         assert current_mark in page, page_name
         assert legacy_mark not in page, page_name
+
+
+def test_event_header_has_one_renderer_for_previews_and_public_pages() -> None:
+    consumers = (
+        "admin_programs.html",
+        "event_editor.html",
+        "public_cfp.html",
+        "schedule.html",
+        "speaker_gallery.html",
+    )
+    for page_name in consumers:
+        page = (STATIC / page_name).read_text()
+        assert "/public/assets/event-masthead.js" in page, page_name
+
+    cfp_builder = (STATIC / "admin_programs.js").read_text()
+    assert "SessionBuddyPublicEventMasthead.render" in cfp_builder
+    assert "cfp-preview-brand__cover" not in cfp_builder
+    assert "public-brand-preview__card" not in cfp_builder
+
+    cfp_public = (STATIC / "public_cfp.js").read_text()
+    assert "navigation: false" in cfp_public
+
+    styles = (STATIC / "product.css").read_text()
+    assert ".cfp-public-page .public-event-masthead__band" not in styles
 
 
 def test_document_recovery_scopes_use_shared_builders() -> None:

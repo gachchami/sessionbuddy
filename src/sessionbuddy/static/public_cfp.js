@@ -151,6 +151,7 @@
     const welcomeRepeatsBrief = welcomeText.length > 240 && briefText.startsWith(welcomeText);
     byId("welcome").hidden = !workspaceMode && welcomeRepeatsBrief;
     section.hidden = !briefText || briefText === welcomeText;
+    section.open = briefText.length <= 900;
   }
 
   function renderEventHeader(form) {
@@ -160,6 +161,7 @@
     header.style.setProperty("--event-preview-accent", accent);
     byId("event-title").textContent = form.event_name || "Event";
     byId("event-monogram").textContent = (form.event_name || "EV").slice(0, 2).toUpperCase();
+    let dateLabel = "";
     if (form.event_starts_at_ms && form.event_ends_at_ms) {
       const start = new Date(form.event_starts_at_ms);
       const end = new Date(form.event_ends_at_ms);
@@ -168,10 +170,14 @@
       const sameYear = year(start) === year(end);
       const startLabel = start.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone, ...(sameYear ? {} : { year: "numeric" }) });
       const endLabel = end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone });
-      byId("event-dates").textContent = `${startLabel} – ${endLabel}`;
+      dateLabel = `${startLabel} – ${endLabel}`;
     }
     const delivery = String(form.event_delivery_mode || "").replaceAll("_", " ");
-    byId("event-location").textContent = [form.event_location, delivery].filter(Boolean).join(" · ");
+    window.SessionBuddyPublicEventMasthead.renderFacts(header.querySelector("[data-public-event-facts]"), [
+      { id: "event-dates", icon: "date", label: "When", value: dateLabel },
+      { id: "event-location", icon: "location", label: "Where", value: form.event_location || "Online" },
+      { id: "event-format", icon: "format", label: "Format", value: delivery ? delivery.replace(/^./, (letter) => letter.toUpperCase()) : "Event session" },
+    ]);
     try {
       const website = new URL(form.event_website_url || "");
       if (["https:", "http:"].includes(website.protocol)) {
@@ -886,6 +892,7 @@
         },
         active: null,
         embedded: workspaceMode,
+        navigation: false,
       });
       renderCallBrief(state.form);
       renderImportantDates(state.form.important_dates);

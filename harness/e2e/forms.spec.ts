@@ -831,8 +831,6 @@ test.describe("form validation and workflow wiring", () => {
     expect(taskPayloads[0]).toMatchObject({ task_type: "custom", upload_enabled: false });
 
     await task.locator(`input[name="event_speaker_id"][value="${assignmentId}"]`).check();
-    await task.getByLabel("Request type").selectOption("headshot");
-    await expect(task.locator("#task-purpose-note")).toContainText("one open headshot request at a time");
     await task.getByLabel("Request type").selectOption("slides");
     await expect(task.locator("#task-purpose-note")).toBeHidden();
     await task.getByLabel("Task title").fill("Upload slides");

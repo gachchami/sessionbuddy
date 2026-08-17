@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=81">
+  <link rel="stylesheet" href="/product/assets/product.css?v=85">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
@@ -21,7 +21,7 @@
       <form id="profile-form">
         <section class="account-headshot" aria-labelledby="headshot-title">
           <div class="account-headshot__preview"><img id="headshot-preview" alt="" hidden><span id="headshot-fallback" aria-hidden="true">UZ</span></div>
-          <div><h3 id="headshot-title">Headshot</h3><p class="help">A square JPG, PNG, or WebP works best. Maximum 5 MB. A chosen image is uploaded when you save your profile.</p>
+          <div><h3 id="headshot-title">Profile photo</h3><p class="help">Use a square JPG, PNG, or WebP. 1200 × 1200 px is recommended; use at least 600 × 600 px. Maximum 5 MB. Keep your face near the upper center so the photo crops well across profiles and event pages. A chosen image is uploaded when you save your profile.</p>
             <div class="actions"><label class="button secondary account-headshot__choose">Choose image<input id="headshot-input" type="file" accept="image/jpeg,image/png,image/webp"></label><button id="remove-headshot" class="secondary" type="button" hidden>Remove</button></div>
           </div>
         </section>
@@ -42,7 +42,7 @@
         </div></fieldset>
         <label class="account-profile-visibility">
           <input name="public_profile_enabled" type="checkbox">
-          <span><strong>Public profile</strong><small>Allow anyone with your profile link to see your name, biography, profile links, and headshot.</small></span>
+          <span><strong>Public profile</strong><small>Allow anyone with your profile link to see your name, biography, profile links, and profile photo.</small></span>
         </label>
         <fieldset class="account-password-fields">
           <legend id="password-legend">Create a password <span class="optional">Optional</span></legend>

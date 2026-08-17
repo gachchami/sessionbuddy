@@ -1475,10 +1475,12 @@
       state.nextCursor = result.next_cursor || null;
       const body = byId("submissions");
       body.replaceChildren();
+      document.querySelector(".proposal-selection-actions").hidden = !result.data.length;
       if (!result.data.length) {
         const row = document.createElement("tr");
         const cell = document.createElement("td");
         cell.colSpan = 5;
+        cell.className = "workflow-empty-state";
         cell.textContent = "No proposals yet.";
         row.append(cell);
         body.append(row);

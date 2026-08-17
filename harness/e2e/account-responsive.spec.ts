@@ -436,6 +436,7 @@ test.describe("account profile responsive design", () => {
       version: 1,
     };
     let headshotCsrf = "";
+    let headshotContentType = "";
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({ json: session }));
     await page.route("**/api/v1/account/profile", (route) => {
       if (route.request().method() === "PATCH") {
@@ -447,20 +448,25 @@ test.describe("account profile responsive design", () => {
     });
     await page.route("**/api/v1/account/headshot", (route) => {
       headshotCsrf = route.request().headers()["x-csrf-token"] || "";
+      headshotContentType = route.request().headers()["content-type"] || "";
       return route.fulfill({ json: { stored: true } });
     });
 
     await page.goto("/account");
     await page.getByLabel("Choose image").setInputFiles({
-      name: "headshot.png",
-      mimeType: "image/png",
-      buffer: Buffer.from("89504e470d0a1a0a", "hex"),
+      name: "headshot.jpeg",
+      mimeType: "image/jpg",
+      buffer: readFileSync(resolve(staticRoot, "aie-new-york-2026.jpg")),
     });
+    await expect(page.locator("#headshot-preview")).toBeVisible();
+    await expect(page.getByRole("status")).toContainText("Profile photo selected: headshot.jpeg");
+    await expect(page.getByRole("button", { name: "Save profile" })).toBeEnabled();
     await page.getByLabel("New password", { exact: true }).fill("a strong private passphrase");
     await page.getByLabel("Confirm new password").fill("a strong private passphrase");
     await page.getByRole("button", { name: "Save profile" }).click();
 
     await expect.poll(() => headshotCsrf).toBe("replacement-csrf");
+    expect(headshotContentType).toBe("image/jpeg");
     await expect(page.getByRole("status")).toContainText(
       "Profile and password saved. Your other sessions were signed out.",
     );

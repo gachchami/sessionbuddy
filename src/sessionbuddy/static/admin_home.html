@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Home · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=81">
+  <link rel="stylesheet" href="/product/assets/product.css?v=85">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
-  <link rel="stylesheet" href="/admin/home/assets/home.css?v=8c5aab8925dc">
+  <link rel="stylesheet" href="/admin/home/assets/home.css?v=f7d8d6da3701">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
   <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/home/assets/home.js?v=2acf2d97edb1" defer></script>
+  <script src="/admin/home/assets/home.js?v=a9cfaa0bb6e9" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--home">
   <a class="skip-link" href="#events">Skip to events</a>
@@ -39,10 +39,13 @@
         </div>
         <div class="organizer-home-toolbar">
           <div class="organizer-home-filters" aria-label="Filter events">
-            <button type="button" class="organizer-home-filter" data-event-filter="all" aria-pressed="true">All</button>
-            <button type="button" class="organizer-home-filter" data-event-filter="active" aria-pressed="false">Active</button>
-            <button type="button" class="organizer-home-filter" data-event-filter="draft" aria-pressed="false">Drafts</button>
-            <button type="button" class="organizer-home-filter" data-event-filter="past" aria-pressed="false">Past</button>
+            <span class="organizer-home-filter-label">Status</span>
+            <div class="organizer-home-filter-options">
+              <button type="button" class="organizer-home-filter" data-event-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="organizer-home-filter" data-event-filter="active" aria-pressed="false">Active</button>
+              <button type="button" class="organizer-home-filter" data-event-filter="draft" aria-pressed="false">Drafts</button>
+              <button type="button" class="organizer-home-filter" data-event-filter="past" aria-pressed="false">Past</button>
+            </div>
           </div>
           <form id="event-search-form" class="organizer-home-search" role="search">
             <label for="event-search">Search</label>

@@ -535,10 +535,12 @@ async def test_event_branding_matrix_is_consistent_across_public_views(
     assert public_schedule.event.logo_url == expected["logo"]
     assert public_schedule.event.cover_image_url == expected["cover"]
     assert public_schedule.event.website_url == website_url
+    assert public_schedule.event.cfp_url == f"/cfp/{created.id.replace('-', '')[:6]}/{slug}"
 
     public_gallery = await public_speakers(
         created.id, branding_request(database, bucket, b"")
     )
+    assert public_gallery.event["cfp_url"] == f"/cfp/{created.id.replace('-', '')[:6]}/{slug}"
     assert public_gallery.event["logo_url"] == expected["logo"]
     assert public_gallery.event["cover_image_url"] == expected["cover"]
     assert public_gallery.event["website_url"] == website_url

@@ -22,7 +22,7 @@
   // reads this instead.
   const identityFieldKeys = ["speaker_name", "speaker_email"];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
-  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventAccentColor: "#3159d9", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventLocation: "", eventDeliveryMode: "", eventAccentColor: "#3159d9", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -1628,6 +1628,8 @@
       if (!currentEvent?.time_zone) throw new Error("The event time zone could not be loaded.");
       state.eventStatus = currentEvent.status;
       state.eventTimeZone = currentEvent.time_zone;
+      state.eventLocation = currentEvent.location || "";
+      state.eventDeliveryMode = String(currentEvent.delivery_mode || "").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
       state.eventAccentColor = currentEvent.accent_color || "#3159d9";
       state.eventLogoUrl = currentEvent.logo_url || "";
       state.eventCoverUrl = currentEvent.cover_image_url || "";
@@ -1859,45 +1861,30 @@
     const header = document.createElement("header");
     header.className = "public-event-hero";
     const brand = make("div");
-    brand.className = "public-brand-preview__card cfp-event-header cfp-preview-brand";
-    if (!state.eventCoverUrl) brand.classList.add("cfp-event-header--no-cover");
-    brand.style.setProperty("--event-preview-accent", state.eventAccentColor);
-    const brandBar = make("div");
-    brandBar.className = "public-brand-preview__header cfp-preview-brand__bar";
-    const product = make("span");
-    product.className = "brand";
-    const productMark = make("img");
-    productMark.className = "brand-mark";
-    productMark.src = "/landing/assets/sessionbuddy-favicon.svg";
-    productMark.alt = "";
-    product.append(productMark, make("strong", "SessionBuddy"));
-    brandBar.append(product);
-    if (state.eventLogoUrl) {
-      const logo = make("img");
-      logo.className = "public-brand-preview__logo cfp-preview-brand__logo";
-      logo.src = state.eventLogoUrl;
-      logo.alt = `${state.eventName || "Event"} logo`;
-      brandBar.append(logo);
-    } else {
-      const monogram = make("span", (state.eventName || "EV").slice(0, 2).toUpperCase());
-      monogram.className = "cfp-preview-brand__monogram";
-      monogram.setAttribute("aria-hidden", "true");
-      brandBar.append(monogram);
-    }
-    const cover = make("div");
-    cover.className = "public-brand-preview__cover cfp-preview-brand__cover";
-    if (state.eventCoverUrl) {
-      const image = make("img");
-      image.src = state.eventCoverUrl;
-      image.alt = `${state.eventName || "Event"} cover`;
-      cover.append(image);
-    }
-    const brandBody = make("div");
-    brandBody.className = "public-brand-preview__body";
-    brandBody.append(make("h1", state.eventName || "Event"));
-    brand.append(brandBar);
-    if (state.eventCoverUrl) brand.append(cover);
-    brand.append(brandBody);
+    brand.className = "cfp-preview-masthead";
+    brand.dataset.publicEventMasthead = "";
+    window.SessionBuddyPublicEventMasthead.render(brand, {
+      event: {
+        id: state.context?.event_id || "preview",
+        name: state.eventName || "Event",
+        accentColor: state.eventAccentColor,
+        logoUrl: state.eventLogoUrl,
+        coverUrl: state.eventCoverUrl,
+      },
+      active: null,
+      embedded: false,
+      navigation: false,
+    });
+    const facts = make("div");
+    facts.className = "cfp-preview-event-facts";
+    const previewStart = state.eventStartsAtMs
+      ? new Date(state.eventStartsAtMs).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: state.eventTimeZone || "UTC" })
+      : "Date to be announced";
+    window.SessionBuddyPublicEventMasthead.renderFacts(facts, [
+      { icon: "date", label: "When", value: previewStart },
+      { icon: "location", label: "Where", value: state.eventLocation || "Location to be announced" },
+      { icon: "format", label: "Format", value: state.eventDeliveryMode || "Event session" },
+    ]);
     const title = document.createElement("h2");
     title.textContent = "Submit a proposal";
     const welcome = document.createElement("div");
@@ -1905,11 +1892,13 @@
     welcome.textContent = String(values.welcome_text || "").trim() || "Introduce the call and invite speakers to submit.";
     header.append(title, welcome);
 
-    const brief = make("section");
+    const brief = make("details");
     brief.className = "cfp-brief";
-    const briefHeading = make("div");
-    briefHeading.className = "cfp-brief__heading";
-    briefHeading.append(make("h2", "What we’re looking for"));
+    const briefHeading = make("summary");
+    const briefTitle = make("span", "What we’re looking for");
+    briefTitle.setAttribute("role", "heading");
+    briefTitle.setAttribute("aria-level", "2");
+    briefHeading.append(briefTitle, make("span", "Read full details", "cfp-brief__toggle"));
     const description = document.createElement("div");
     description.className = "cfp-preview-description rich-description cfp-brief__content";
     const descriptionEditor = byId("cfp-description-editor");
@@ -1924,8 +1913,9 @@
     const previewWelcome = welcome.textContent.replace(/\s+/g, " ").trim();
     const previewDescription = description.textContent.replace(/\s+/g, " ").trim();
     welcome.hidden = previewWelcome.length > 240 && previewDescription.startsWith(previewWelcome);
+    brief.open = previewDescription.length <= 900;
     brief.append(briefHeading, description);
-    content.append(brand);
+    content.append(brand, facts);
     if (state.selectedOutline === "confirmation") {
       content.append(header, brief);
       renderConfirmationPreview(content, values);

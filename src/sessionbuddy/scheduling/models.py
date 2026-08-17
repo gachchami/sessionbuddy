@@ -343,6 +343,7 @@ class PublicScheduleEventView(ScheduleEventView):
     logo_url: str | None
     cover_image_url: str | None
     website_url: str | None
+    cfp_url: str | None = None
 
 
 class PublicScheduleItemView(ScheduleItemView):

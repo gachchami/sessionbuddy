@@ -873,8 +873,8 @@ test.describe("administration empty states", () => {
     await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Event navigation" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Open Source Summit 2026" })).toBeVisible();
-    await expect(page.locator(".event-overview-public-preview .public-event-masthead__band")).toBeVisible();
-    await expect(page.locator(".event-overview-public-preview .public-event-masthead__mark img")).toHaveAttribute("alt", "Open Source Summit 2026 logo");
+    await expect(page.getByRole("link", { name: "Edit event" })).toHaveAttribute("href", `/admin/events/${eventId}/settings`);
+    await expect(page.locator(".event-overview-public-preview")).toHaveCount(0);
     const eventStatus = page.locator(".event-signal-list");
     await expect(eventStatus).toBeVisible();
     await expect(eventStatus.getByText("0 submitted", { exact: true })).toBeVisible();

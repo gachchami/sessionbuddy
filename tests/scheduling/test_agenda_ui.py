@@ -168,7 +168,7 @@ def test_read_only_schedule_has_staff_speaker_views_and_empty_error_states() -> 
         assert f'data-view="{view}"' in html
     assert "/api/v1/events/${encodeURIComponent(eventId)}/schedule" in javascript
     assert 'id="empty"' in html
-    assert "The organizer has not published the schedule yet." in javascript
+    assert "Schedule coming soon." in javascript
     assert ".catch((error)" in javascript
     assert 'id="download-calendar"' in html
     assert "BEGIN:VCALENDAR" in javascript

@@ -74,6 +74,8 @@ def test_people_rows_link_activated_users_to_public_profiles() -> None:
     assert "const profileMatch = location.pathname.match" in script
     assert "`/people/${encodeURIComponent(item.user_id)}`" in script
     assert "item.user_id && item.public_profile_enabled" in script
+    assert 'publicProfileLink.textContent = "View public profile"' in script
+    assert 'publicProfileLink.className = "people-public-profile-link"' in script
     assert "Profile details not added" not in script
     assert "if (detail.textContent) identity.append(detail);" in script
     assert "View ${item.display_name}'s public profile" in script

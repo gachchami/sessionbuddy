@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Profile · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=81">
+  <link rel="stylesheet" href="/product/assets/product.css?v=85">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/public/assets/biography-disclosure.js?v=b4a25d2ddfb3" defer></script>
   <script src="/people/assets/profile.js?v=3" defer></script>
@@ -20,14 +20,12 @@
   <main id="main" class="shell public-profile-shell" tabindex="-1">
     <div id="profile-status" class="status" role="status" aria-live="polite">Loading profile…</div>
     <article id="public-profile" class="public-profile-card" hidden aria-labelledby="profile-name">
-      <div class="public-profile-card__rail" aria-hidden="true"></div>
       <div class="public-profile-card__identity">
         <div class="public-profile-card__portrait">
           <img id="profile-headshot" alt="" hidden>
           <span id="profile-monogram" aria-hidden="true">?</span>
         </div>
         <div>
-          <p class="public-profile-card__credential">SessionBuddy identity</p>
           <h1 id="profile-name"></h1>
           <p id="profile-role" class="public-profile-card__role"></p>
         </div>
@@ -38,7 +36,6 @@
         <button id="profile-biography-toggle" class="biography-toggle text-link" type="button" aria-controls="profile-biography" aria-expanded="false">Show more</button>
       </section>
       <nav id="profile-links" class="public-profile-links" aria-label="Profile links" hidden></nav>
-      <footer class="public-profile-card__footer"><span>Community profile</span><span aria-hidden="true">SB</span></footer>
     </article>
     <section id="profile-missing" class="card" hidden>
       <h1>Profile not available</h1>

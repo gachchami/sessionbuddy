@@ -1478,8 +1478,9 @@ async def _respond_to_co_speaker_invitation(
             batch.add_statement(
                 db.prepare(
                     """INSERT INTO users
-                       (id,email,normalized_email,status,email_verified_at_ms,created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,?3,'active',?4,?4,?4)"""
+                       (id,email,normalized_email,status,email_verified_at_ms,
+                        public_profile_enabled,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?3,'active',?4,1,?4,?4)"""
                 ).bind(user_id, row["email"], row["normalized_email"], now)
             )
         batch.add_statement(

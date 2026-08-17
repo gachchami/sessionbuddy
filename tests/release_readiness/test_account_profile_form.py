@@ -74,7 +74,7 @@ def test_headshot_has_preview_upload_and_remove_controls() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
-    assert 'URL.createObjectURL(selectedHeadshot)' in javascript
+    assert "previewReader.readAsDataURL(previewSelection)" in javascript
     assert 'method: "PUT"' in javascript
     assert 'method: "DELETE"' in javascript
     assert '"/api/v1/account/headshot"' in javascript

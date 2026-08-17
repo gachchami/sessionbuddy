@@ -167,7 +167,7 @@
       const duplicate = document.createElement("a");
       duplicate.className = "organizer-home-event-action";
       duplicate.href = `/admin/events/new?source=${encodeURIComponent(event.id)}`;
-      duplicate.textContent = "Duplicate";
+      duplicate.textContent = "Clone";
       actions.append(duplicate);
     }
     row.append(identity, date, where, program, actions);

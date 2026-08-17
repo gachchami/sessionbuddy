@@ -163,7 +163,7 @@ CONTENT_ADDRESSED_ASSETS = (
         "/public/assets/event-masthead.js",
     ),
     (
-        "event_overview.html",
+        "admin_programs.html",
         "public_event_masthead.js",
         "/public/assets/event-masthead.js",
     ),

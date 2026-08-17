@@ -6140,14 +6140,15 @@ async def _finish_magic_link_sign_in(
                 db.prepare(
                     """INSERT INTO users
                    (id,email,normalized_email,display_name,status,email_verified_at_ms,
-                    created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,NULLIF(?4,''),'active',?5,?5,?5)"""
+                    public_profile_enabled,created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,NULLIF(?4,''),'active',?5,?6,?5,?5)"""
                 ).bind(
                     user_id,
                     invitation["email"],
                     invitation["normalized_email"],
                     str(invitation["display_name"] or "").strip(),
                     now,
+                    int(invitation["role"] == "speaker"),
                 )
             )
         elif str(invitation["display_name"] or "").strip():
@@ -6425,8 +6426,9 @@ async def _finish_magic_link_sign_in(
                     db.prepare(
                         """INSERT INTO users
                        (id,email,normalized_email,status,email_verified_at_ms,first_name,last_name,
-                        display_name,job_title,company,profile_completed_at_ms,created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,?2,'active',?3,?4,?5,?6,?7,?8,?3,?3,?3)"""
+                        display_name,job_title,company,public_profile_enabled,
+                        profile_completed_at_ms,created_at_ms,updated_at_ms)
+                       VALUES(?1,?2,?2,'active',?3,?4,?5,?6,?7,?8,1,?3,?3,?3)"""
                     ).bind(
                         user_id,
                         challenge["normalized_email"],
