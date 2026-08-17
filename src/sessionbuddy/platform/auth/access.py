@@ -411,9 +411,12 @@ async def event_access_javascript(request: Request) -> Response:
 
 
 @access_router.get("/admin/events", include_in_schema=False)
-async def events_page() -> RedirectResponse:
+async def events_page(request: Request) -> RedirectResponse:
+    destination = "/admin"
+    if request.url.query:
+        destination = f"{destination}?{request.url.query}"
     return RedirectResponse(
-        "/admin",
+        destination,
         status_code=302,
         headers={"Cache-Control": "no-store"},
     )

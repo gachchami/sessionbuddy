@@ -240,11 +240,15 @@ async def test_events_alias_redirects_without_authentication_or_persona_lookup(
         transport=ASGITransport(app=local_app), base_url="http://test"
     ) as client:
         response = await client.get(
-            "/admin/events", headers={"accept": "text/html"}, follow_redirects=False
+            "/admin/events?organization_id=org-2&view=draft&q=summit&order=recent",
+            headers={"accept": "text/html"},
+            follow_redirects=False,
         )
 
     assert response.status_code == 302
-    assert response.headers["location"] == "/admin"
+    assert response.headers["location"] == (
+        "/admin?organization_id=org-2&view=draft&q=summit&order=recent"
+    )
     assert response.headers["cache-control"] == "no-store"
     assert response.text == ""
 
