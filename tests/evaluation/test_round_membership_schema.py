@@ -42,8 +42,8 @@ def db():
          created_at_ms,updated_at_ms)
          VALUES('oma','org','adm','organization_admin','active',1,1,1)""")
     x("""INSERT INTO events(id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
-         delivery_mode,description,status,version,created_at_ms,updated_at_ms)
-         VALUES('ev','org','E',1,2,'UTC','P','hybrid','d','active',1,1,1)""")
+         delivery_mode,description,status,version,created_at_ms,updated_at_ms,created_by_user_id)
+         VALUES('ev','org','E',1,2,'UTC','P','hybrid','d','active',1,1,1,'adm')""")
     x("""INSERT INTO call_for_speaker_forms(id,organization_id,event_id,version,slug,welcome_text,
          schema_json,status,published_at_ms,created_at_ms,updated_at_ms,success_title,success_message,
          redirect_to_portal,confirmation_subject,confirmation_body)

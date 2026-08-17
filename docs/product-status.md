@@ -475,11 +475,11 @@ and its assets fail closed with 404 outside local, development, and preview.
 
 Resource authorization treats access delegation as an organization-level,
 manage-only operation. Administrative invitation acceptance establishes that
-same authority. Migration 0009 revokes historical event-admin memberships,
-invitations and their unconsumed sign-in links, deletes event grants, revokes
-inert organization view/edit grants, preserves audited transfer reasons, and
-removes the retired event-ownership rows after moving creator provenance onto
-the event. D1
+same authority. The canonical baseline permits only this authority model:
+event-admin memberships and invitations, event grants, organization view/edit
+grants, and event-ownership rows cannot be created. Event creator provenance
+is stored directly on the event, while ownership-transfer history remains in
+the audit log. D1
 authorization facts exclude retired and revoked facts and archived ownership,
 and no longer silently truncate ownership or grants after 500 rows. The account
 shell keeps incomplete profiles on `/account`, renders the brand as
@@ -689,13 +689,13 @@ resolver table used by the distributor.
 - A closed round keeps its name in the history and releases it for reuse, and a
   different event is a separate namespace.
 - The rule is enforced twice, deliberately. The application compares real names
-  with Python `casefold()` and returns the actionable 409; `0005` adds
+  with Python `casefold()` and returns the actionable 409; the baseline stores
   `evaluation_rounds.name_key` plus the partial unique index
   `uq_evaluation_rounds_live_name`, which makes the refusal atomic when two
   organizers submit at the same instant and both reads report the name free.
-- The `0005` backfill uses SQLite `lower()`, which is ASCII-only, so a
-  pre-existing row with non-ASCII case carries an approximate key until its next
-  draft save rewrites it. The application guard covers that window.
+- Historical upgrades used SQLite `lower()` for their backfill, which is
+  ASCII-only. The application guard and subsequent draft saves use Python
+  `casefold()` for the authoritative comparison.
 - Historical duplicates among live rounds are renamed rather than deleted or
   left outside the index. The oldest row by `(created_at_ms, id)` keeps its
   name; every other row is suffixed with its own id. A rank suffix such as
@@ -751,8 +751,8 @@ resolver table used by the distributor.
   idempotency key. The organizer UI refreshes the round ledger after each
   incremental proposal addition so the next action carries the replacement
   version, and distinguishes a committed addition from a failed ledger refresh.
-- Existing rounds upgrade to version 1 through migration 0008 without changing
-  their lifecycle, membership, assignments, or tenant relationships. Starting
+- Existing rounds upgraded to version 1 without changing their lifecycle,
+  membership, assignments, or tenant relationships. Starting
   review now sends the required JSON mutation contract and refreshes the ledger
   immediately after the transition.
 - Scorecard criteria explain when a semantic purpose controls their response
