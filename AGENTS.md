@@ -76,6 +76,114 @@ bookkeeping from a live database merely to make it resemble a fresh install.
 - Do not create branches, commits, deployments, paid resources, or external
   messages unless the user has authorized that action.
 
+## Workspace conduct
+
+The checkout is a shared working directory, not scratch space. These rules
+govern agent conduct; they do not describe the current application
+architecture.
+
+- Inspect the current worktree before editing and re-check it during long
+  tasks. Files may change while another agent or the user is working.
+- Treat existing modifications and untracked files as someone else's work
+  unless their ownership is established. Preserve them and avoid overlapping
+  edits.
+- Never use `git stash`, `git reset`, `git checkout --`, or `git clean` to make
+  the tree convenient unless the user explicitly authorizes that exact action.
+- Prefer read-only Git commands while investigating. Do not run Git mutations
+  concurrently with another process in the same worktree.
+- Never delete another process's Git lock. It may belong to an active process;
+  report it and wait for its owner to finish. If this task created a stale lock,
+  first prove that its owning process has ended before removing it.
+- Do not leave archives, patch bundles, backup copies, throwaway scripts,
+  caches, or generated operating-system files in the checkout. Gitignored
+  directories are not general-purpose dumping grounds.
+- Put necessary temporary work outside the checkout. Use `.local/` only for
+  local evidence and manifests explicitly assigned there by repository tooling
+  or runbooks, including benchmark, Lighthouse, and deployment evidence.
+- Before finishing, remove artifacts created solely for the task. If removal
+  is impossible, report every remaining path exactly.
+- Verify changes in this checkout with the checked-in toolchain. Do not copy or
+  mirror the repository elsewhere to manufacture verification evidence.
+- If a required check cannot run, name the skipped check and the actual reason.
+
+## Review discipline
+
+- Establish what is being reviewed before drawing conclusions. For a commit,
+  inspect the committed blob with `git show <sha>:<path>` and inspect its diff;
+  `cat`, `sed`, editors, and ordinary file reads show the live worktree instead.
+  For uncommitted work, inspect the live worktree and state that it may move
+  underneath the review.
+- Separate observed facts, inferences, resolved findings, and remaining risks.
+  Do not present a hypothesis as a reproduced defect.
+- Re-read files after unexpected movement in HEAD or the worktree. Do not
+  attribute another task's in-flight edits to the change under review.
+- Verify framework and runtime behavior rather than arbitrating from assumed
+  defaults. Cloudflare Workerd, D1, Pyodide, FastAPI, browser, and test-double
+  behavior may differ from local intuition.
+- Test the test: confirm that a regression test reaches the behavior it names,
+  fails when the defect is restored, and does not pass from string presence,
+  an inert fake, or an unreachable branch.
+- Prefer assertions that identify routes, states, or outcomes over unexplained
+  event counts and other brittle magic numbers.
+- Review generated artifacts and served assets when they are part of the
+  runtime contract; source changes alone are not proof of deployed behavior.
+
+## Design and design documents
+
+- Design for people using plain language, obvious next actions, progressive
+  disclosure, accessible semantics, and truthful system state. Do not expose
+  implementation machinery merely because it exists.
+- A durable tracked design document must declare its purpose, lifecycle status
+  (`proposal`, `approved`, `in-progress`, `implemented`, `superseded`, or
+  `archived`), and authority. It must use a stable descriptive filename and
+  must not depend on dates, commit hashes, worktree state, delivery schedules,
+  or another agent's conversation to remain understandable.
+- Keep durable decisions separate from current observations, implementation
+  steps, and historical evidence. Coalesce lasting product constraints into the
+  appropriate design, contract, test, or product-status document instead of
+  retaining a chronological review log in the repository.
+- A task brief is temporary execution guidance, not a design record. It must
+  begin by inspecting the current tree and must not claim that recorded file
+  locations, implementation status, or verification results remain current.
+- Do not put mutable stash references, dirty-worktree instructions, absolute
+  machine paths, environment-specific target URLs, or conversational context
+  into portable task instructions.
+- Task briefs must state scope, non-goals, owned files or capabilities,
+  dependencies, forbidden actions, acceptance criteria, verification commands,
+  and stop conditions.
+- Before following any historical design, verify the current tree, schema,
+  routes, tests, and product status. Stop and report when the requested outcome
+  is already implemented or the recorded contract has drifted.
+- Repository instructions, current schema and API contracts, and executable
+  tests outrank historical plans. More specific instructions may add context
+  but may not weaken security, tenant isolation, migration, or release rules.
+
+## Code quality
+
+- Keep one authoritative normalization or derivation point for a concept.
+  Repeated near-identical rules must be extracted or guarded by tests that
+  prevent their behavior from drifting.
+- Validate the content and semantics that make an operation safe, not merely
+  the presence or shape of an argument.
+- Fail closed at authorization, tenant, configuration, and persistence
+  boundaries. Degraded UX must not silently broaden access or claim a write
+  succeeded when persistence is uncertain.
+- Before an irreversible operation, validate every identity, source, target,
+  authorization fact, and configuration input needed to make it safe. Perform
+  that validation before invoking the destructive dependency, and test that no
+  destructive call occurs when preflight validation rejects the operation.
+- Place error handling and observability at the layer that can still see the
+  failure before completion is emitted. Preserve actionable structured errors
+  without logging sensitive content.
+- Use distinct stable error or telemetry codes for causes that require
+  different operator or user responses.
+- Declare every runtime and tooling dependency in the repository's supported
+  dependency system. Do not rely on packages installed incidentally on a host.
+- Prefer the smallest coherent change. Do not include formatter churn,
+  generated-file noise, or unrelated cleanup in a functional change.
+- Comments should record invariants, non-obvious constraints, and reasons that
+  prevent recurrence. Do not preserve stale line references or restate code.
+
 ## Container-first development
 
 Run project tooling in the checked-in Docker Compose environment. Do not rely on

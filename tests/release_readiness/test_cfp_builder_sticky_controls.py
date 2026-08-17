@@ -1,7 +1,7 @@
 """The CFP builder must keep controls reachable without nested scrollports.
 
-An SBek eval scenario burned its whole turn budget scrolling the CFP builder to
-relocate the publish and availability controls (`claude/ux-evidence-log.md`).
+An automated browser scenario could not reach the CFP builder's publish and
+availability controls because scrolling moved them behind inert sticky chrome.
 The page already declared `position: sticky` on those controls, but an
 `overflow: hidden` on the `.cfp-builder` ancestor made it their nearest
 scrollport, and that box never scrolls -- so every sticky rule inside the
@@ -10,8 +10,7 @@ builder was inert and the controls scrolled away with the form.
 The current design removes the competing builder scrollport and keeps its
 controls in normal flow. Shell offsets remain derived from the chrome height.
 
-A later eval run found the sibling of that defect one level down
-(`claude/ux-evidence-log.md`, 2026-08-16): the "Session format" system-field row
+A sibling defect existed one level down: the "Session format" system-field row
 and its reorder buttons sat behind the sticky chrome, and scrolling them into
 view did not recover them. Two causes, both pinned below. `.question-card`
 carried the same `overflow: hidden` that had disabled `.cfp-builder`, which made

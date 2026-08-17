@@ -6,7 +6,7 @@ import { resolve } from "node:path";
  * An eval agent could not operate the CFP builder's "Session format" row: the
  * row and its reorder buttons sat behind the sticky chrome, clicks aimed at
  * them were intercepted, and scrolling them into view did not help because the
- * chrome kept covering the same band (`claude/ux-evidence-log.md`, 2026-08-16).
+ * chrome kept covering the same band.
  *
  * Two causes. `.question-card` carried `overflow: hidden`, which made each card
  * the scrollport `scrollIntoView` resolves against, so the target's
