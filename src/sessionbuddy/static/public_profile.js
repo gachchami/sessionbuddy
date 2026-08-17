@@ -20,6 +20,18 @@
     container.append(anchor);
   }
 
+  function initializeBiography() {
+    const biography = byId("profile-biography");
+    const toggle = byId("profile-biography-toggle");
+    toggle.addEventListener("click", () => {
+      const expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      toggle.textContent = expanded ? "Show more" : "Show less";
+      biography.classList.toggle("is-collapsed", expanded);
+    });
+    requestAnimationFrame(() => { toggle.hidden = biography.scrollHeight <= biography.clientHeight; });
+  }
+
   async function load() {
     if (!userId) throw Object.assign(new Error("missing profile"), { status: 404 });
     const profile = await window.SessionBuddyApi.request(`/api/v1/public/people/${encodeURIComponent(userId)}`);
@@ -30,6 +42,7 @@
     if (profile.biography) {
       byId("profile-biography").textContent = profile.biography;
       byId("profile-about").hidden = false;
+      initializeBiography();
     }
     if (profile.headshot_url) {
       const headshot = byId("profile-headshot");

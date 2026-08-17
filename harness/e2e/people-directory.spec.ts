@@ -122,7 +122,10 @@ test.describe("platform People directory", () => {
         display_name: "Riley Chen",
         job_title: "Principal Engineer",
         company: "Orbit Systems",
-        biography: "Builds reliable systems for humans and agents.",
+        biography: Array.from(
+          { length: 18 },
+          (_, index) => `Chapter ${index + 1} covers reliable systems for humans and agents.`,
+        ).join("\n\n"),
         website_url: "https://riley.example.test",
         linkedin_url: "https://www.linkedin.com/in/riley-chen",
         x_url: null,
@@ -134,7 +137,12 @@ test.describe("platform People directory", () => {
     await expect(page).toHaveURL(/\/people\/user-riley$/);
     await expect(page.getByRole("heading", { name: "Riley Chen" })).toBeVisible();
     await expect(page.getByText("Principal Engineer · Orbit Systems")).toBeVisible();
-    await expect(page.getByText("Builds reliable systems for humans and agents.")).toBeVisible();
+    const biographyToggle = page.locator("#profile-biography-toggle");
+    await expect(biographyToggle).toHaveAccessibleName("Show more");
+    await expect(biographyToggle).toHaveAttribute("aria-expanded", "false");
+    await biographyToggle.click();
+    await expect(biographyToggle).toHaveAccessibleName("Show less");
+    await expect(biographyToggle).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("link", { name: "https://riley.example.test" })).toBeVisible();
     await expect(page.getByRole("link", { name: "https://www.linkedin.com/in/riley-chen" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Website", exact: true })).toHaveCount(0);

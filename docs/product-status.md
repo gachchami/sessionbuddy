@@ -224,6 +224,15 @@ batch key makes execution retryable without rotating links or resending email.
 Known limitation: an active recipient without a proposal title can still preview
 a message containing `submission.title` with an empty merge value; this remains
 tracked as an expected-failure regression until empty values are treated as unavailable.
+The public speaker list and gallery retain distinct widget routes while sharing
+stable List, Gallery, and Schedule navigation. Both speaker views sort by a
+deterministic surname heuristic over the existing display name, preserve title
+and company facts, and render event cover/logo monogram fallbacks when uploaded
+branding is absent; embeds suppress that page masthead. Long biographies use the
+same accessible Show more/Show less disclosure in the speaker dialog and public
+person profile, and the dialog is bounded, labelled, and returns focus to its
+opener when closed. Explicit given/family-name data remains a future profile-model
+improvement; no derived surname field has been added to the API.
 Post-acceptance
 participation is tracked independently from proposal selection, and organizers
 can persist awaiting-confirmation, confirmed, or declined status. Organizers can

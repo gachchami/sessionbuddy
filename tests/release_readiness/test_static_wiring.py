@@ -140,10 +140,18 @@ def test_browser_api_parsing_is_centralized() -> None:
 
 def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
     gallery = (STATIC / "speaker_gallery.js").read_text()
+    markup = (STATIC / "speaker_gallery.html").read_text()
     assert 'dataset.layout = galleryLayout ? "gallery" : "directory"' in gallery
     assert 'byId("speaker-search").addEventListener("input", render)' in gallery
     assert 'byId("speaker-profile")' in gallery
     assert "speaker.links" in gallery
+    assert ".sort(compareSpeakers)" in gallery
+    assert 'make("button", "Show more"' in gallery
+    assert 'aria-labelledby="speaker-profile-title"' in markup
+    assert 'id="event-cover-fallback"' in markup
+    assert 'id="event-logo-fallback"' in markup
+    assert 'id="speaker-list-link"' in markup
+    assert 'id="speaker-gallery-link"' in markup
 
 
 def test_custom_speaker_task_retries_reuse_idempotency_keys() -> None:

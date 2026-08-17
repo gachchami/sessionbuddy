@@ -4,20 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Speakers · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=78">
+  <link rel="stylesheet" href="/product/assets/product.css?v=79">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/gallery/assets/gallery.js?v=3" defer></script>
+  <script src="/gallery/assets/gallery.js?v=4" defer></script>
 </head>
 <body class="public-body speaker-gallery-page" data-layout="directory">
   <a class="skip-link" href="#main">Skip to speakers</a>
-  <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><span>SessionBuddy</span></a><nav aria-label="Event program"><a id="directory-link" class="text-link" href="#">Speaker gallery</a> <a id="schedule-link" class="text-link" href="#">View schedule</a></nav></div></header>
+  <header class="public-header"><div class="shell app-header__inner"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><span>SessionBuddy</span></a><nav class="public-event-navigation" aria-label="Event pages"><a id="speaker-list-link" href="#">Speaker list</a><a id="speaker-gallery-link" href="#">Speaker gallery</a><a id="schedule-link" href="#">Schedule</a></nav></div></header>
   <main id="main" class="shell page speaker-gallery-shell" tabindex="-1">
-    <img id="event-cover" class="event-cover-image" alt="" hidden>
-    <div class="page-heading public-event-hero gallery-hero"><div><p class="eyebrow">Voices on the program</p><h1 id="event-name">Event speakers</h1><p class="lede">Meet the people bringing the program to life.</p></div><img id="event-logo" class="event-logo" alt="" hidden></div>
+    <div class="gallery-event-branding">
+      <img id="event-cover" class="event-cover-image" alt="" hidden>
+      <div id="event-cover-fallback" class="event-cover-fallback gallery-cover-fallback"><span id="event-cover-monogram" aria-hidden="true">EV</span><strong id="event-cover-name">Event program</strong></div>
+      <div class="page-heading public-event-hero gallery-hero"><div><p class="eyebrow">Voices on the program</p><h1 id="event-name">Event speakers</h1><p class="lede">Meet the people bringing the program to life.</p></div><div class="event-logo-frame"><img id="event-logo" class="event-logo" alt="" hidden><span id="event-logo-fallback" aria-hidden="true">EV</span></div></div>
+    </div>
     <section class="gallery-toolbar" aria-label="Find speakers"><div><p class="eyebrow">Speaker index</p><p id="status" class="gallery-count" role="status" aria-live="polite">Loading the accepted speaker lineup…</p></div><label id="speaker-search-label">Find a speaker<input id="speaker-search" type="search" placeholder="Name, company, session, or topic"></label></section>
     <section id="speaker-grid" class="speaker-gallery" aria-label="Accepted speakers"></section>
     <section id="empty" class="empty-state" hidden><strong>The lineup is being prepared.</strong><p>Accepted speakers will appear here as the program is finalized.</p></section>
-    <dialog id="speaker-profile" class="speaker-profile-dialog"><form method="dialog"><button class="speaker-profile-dialog__close secondary" aria-label="Close speaker profile">×</button></form><div id="speaker-profile-content"></div></dialog>
+    <dialog id="speaker-profile" class="speaker-profile-dialog" aria-labelledby="speaker-profile-title"><form method="dialog"><button class="speaker-profile-dialog__close secondary" aria-label="Close speaker profile">Close</button></form><div id="speaker-profile-content"></div></dialog>
   </main>
 </body>
 </html>

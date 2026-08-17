@@ -8,6 +8,22 @@
   const byId = (id) => document.getElementById(id);
   const state = { speakers: [], event: null };
   const make = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
+  const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+  const suffixes = new Set(["jr", "sr", "ii", "iii", "iv"]);
+  function normalizedName(value) { return String(value || "").trim().replace(/\s+/g, " "); }
+  function surnameFrom(value) {
+    const name = normalizedName(value);
+    const comma = name.indexOf(",");
+    if (comma > 0) return name.slice(0, comma).trim();
+    const parts = name.split(" ").filter(Boolean);
+    if (parts.length > 1 && suffixes.has(parts.at(-1).replace(/\./g, "").toLowerCase())) parts.pop();
+    return parts.at(-1) || "";
+  }
+  function compareSpeakers(left, right) {
+    return collator.compare(surnameFrom(left.display_name), surnameFrom(right.display_name))
+      || collator.compare(normalizedName(left.display_name), normalizedName(right.display_name))
+      || collator.compare(String(left.id), String(right.id));
+  }
   function openProfile(speaker, role) {
     const dialog = byId("speaker-profile");
     const content = byId("speaker-profile-content");
@@ -15,9 +31,24 @@
     if (speaker.headshot_url) { const image = document.createElement("img"); image.src = speaker.headshot_url; image.alt = ""; portrait.append(image); }
     else portrait.append(make("span", speaker.display_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(), "speaker-initials"));
     const story = make("div", undefined, "speaker-profile__story");
-    story.append(make("p", "Speaker profile", "eyebrow"), make("h2", speaker.display_name));
+    const title = make("h2", speaker.display_name); title.id = "speaker-profile-title";
+    story.append(make("p", "Speaker profile", "eyebrow"), title);
     if (role) story.append(make("p", role, "speaker-profile__role"));
-    if (speaker.biography) story.append(make("p", speaker.biography, "speaker-profile__bio"));
+    if (speaker.biography) {
+      const biography = make("p", speaker.biography, "speaker-profile__bio biography-copy is-collapsed");
+      biography.id = "speaker-profile-biography";
+      const toggle = make("button", "Show more", "speaker-profile__bio-toggle biography-toggle text-link");
+      toggle.type = "button";
+      toggle.setAttribute("aria-controls", biography.id);
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.addEventListener("click", () => {
+        const expanded = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", String(!expanded));
+        toggle.textContent = expanded ? "Show more" : "Show less";
+        biography.classList.toggle("is-collapsed", expanded);
+      });
+      story.append(biography, toggle);
+    }
     if (speaker.links?.length) {
       const links = make("p", undefined, "speaker-links");
       speaker.links.forEach((value, index) => {
@@ -47,6 +78,9 @@
     }
     content.replaceChildren(portrait, story);
     dialog.showModal();
+    const biography = byId("speaker-profile-biography");
+    const toggle = story.querySelector(".speaker-profile__bio-toggle");
+    if (biography && toggle) requestAnimationFrame(() => { toggle.hidden = biography.scrollHeight <= biography.clientHeight; });
   }
   function speakerCard(speaker) {
     const card = document.createElement("article"); card.className = "speaker-card";
@@ -84,11 +118,16 @@
     state.event = body.event;
     document.documentElement.style.setProperty("--event-accent", body.event.accent_color || "#3159d9"); byId("event-name").textContent = body.event.name;
     byId("schedule-link").href = `/events/${encodeURIComponent(eventId)}/schedule`;
-    byId("directory-link").href = `/events/${encodeURIComponent(eventId)}/${galleryLayout ? "speakers" : "gallery"}`;
-    byId("directory-link").textContent = galleryLayout ? "Speaker directory" : "Speaker gallery";
-    if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; }
-    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; }
-    state.speakers = [...body.data].sort((left, right) => left.display_name.localeCompare(right.display_name)); render();
+    byId("speaker-list-link").href = `/events/${encodeURIComponent(eventId)}/speakers`;
+    byId("speaker-gallery-link").href = `/events/${encodeURIComponent(eventId)}/gallery`;
+    byId(galleryLayout ? "speaker-gallery-link" : "speaker-list-link").setAttribute("aria-current", "page");
+    const monogram = normalizedName(body.event.name).slice(0, 2).toUpperCase() || "EV";
+    byId("event-cover-name").textContent = body.event.name;
+    byId("event-cover-monogram").textContent = monogram;
+    byId("event-logo-fallback").textContent = monogram;
+    if (body.event.logo_url) { byId("event-logo").src = body.event.logo_url; byId("event-logo").alt = `${body.event.name} logo`; byId("event-logo").hidden = false; byId("event-logo-fallback").hidden = true; }
+    if (body.event.cover_image_url) { byId("event-cover").src = body.event.cover_image_url; byId("event-cover").alt = `${body.event.name} cover`; byId("event-cover").hidden = false; byId("event-cover-fallback").hidden = true; }
+    state.speakers = [...body.data].sort(compareSpeakers); render();
     const requested = new URLSearchParams(location.search).get("speaker");
     const selected = state.speakers.find((speaker) => speaker.id === requested);
     if (selected) {

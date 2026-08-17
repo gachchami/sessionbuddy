@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Profile · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=78">
+  <link rel="stylesheet" href="/product/assets/product.css?v=79">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/people/assets/profile.js?v=1" defer></script>
+  <script src="/people/assets/profile.js?v=2" defer></script>
 </head>
 <body class="public-body public-profile-page">
   <a class="skip-link" href="#main">Skip to profile</a>
@@ -33,7 +33,8 @@
       </div>
       <section id="profile-about" class="public-profile-card__about" aria-labelledby="profile-about-title" hidden>
         <h2 id="profile-about-title">About</h2>
-        <p id="profile-biography"></p>
+        <p id="profile-biography" class="biography-copy is-collapsed"></p>
+        <button id="profile-biography-toggle" class="biography-toggle text-link" type="button" aria-controls="profile-biography" aria-expanded="false">Show more</button>
       </section>
       <nav id="profile-links" class="public-profile-links" aria-label="Profile links" hidden></nav>
       <footer class="public-profile-card__footer"><span>Community profile</span><span aria-hidden="true">SB</span></footer>
