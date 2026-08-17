@@ -55,12 +55,14 @@ from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
 from .availability import FormAvailability, form_availability, public_event_key
 from .models import (
+    DEFAULT_FORM_FIELDS,
     AcceptedSubmissionParticipantsUpdate,
     AdminPublishedFormView,
     CfpWorkspaceView,
     CoSpeakerInvitationCreated,
     CoSpeakerInvitationView,
     CoSpeakerView,
+    FormDraftSave,
     FormPublish,
     FormRoutingRule,
     FormUpdate,
@@ -708,13 +710,177 @@ async def get_cfp_workspace(event_id: str, request: Request) -> CfpWorkspaceView
         "id",
     )
     published_form = await _form_by_id(db, str(form_id)) if form_id is not None else None
+    draft_form_id = await _timed_first(
+        request,
+        db.prepare(
+            """SELECT id FROM call_for_speaker_forms
+               WHERE organization_id=?1 AND event_id=?2 AND status='draft'
+               ORDER BY version DESC,updated_at_ms DESC,id DESC LIMIT 1"""
+        ).bind(organization_id, event_id),
+        "id",
+    )
+    draft_form = await _form_by_id(db, str(draft_form_id)) if draft_form_id is not None else None
     return CfpWorkspaceView(
         organization_id=organization_id,
         event_id=event_id,
         event_name=str(event["name"]),
         event_starts_at_ms=int(event["starts_at_ms"]),
         published_form=published_form,
+        draft_form=draft_form,
     )
+
+
+@cfp_router.put(
+    "/api/v1/admin/events/{event_id}/cfp/draft",
+    response_model=AdminPublishedFormView,
+    operation_id="saveCallForSpeakersDraft",
+    tags=["forms"],
+)
+async def save_form_draft(
+    event_id: str, request: Request, body: FormDraftSave
+) -> AdminPublishedFormView:
+    db = _db(request)
+    event = row_mapping(
+        await db.prepare(
+            """SELECT organization_id FROM events
+               WHERE id=?1 AND status!='archived' LIMIT 1"""
+        ).bind(event_id).first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    auth = await require_permission(
+        request,
+        Permission.FORM_MANAGE,
+        ResourceContext(str(event["organization_id"]), event_id),
+        mutation=True,
+    )
+    current = row_mapping(
+        await db.prepare(
+            """SELECT id,version FROM call_for_speaker_forms
+               WHERE organization_id=?1 AND event_id=?2 AND status='draft'
+               ORDER BY version DESC,updated_at_ms DESC,id DESC LIMIT 1"""
+        ).bind(event["organization_id"], event_id).first()
+    )
+    if current is not None and body.version != int(current["version"]):
+        raise HTTPException(status_code=409, headers={"X-Conflict-Type": "stale"})
+    if current is None and body.version is not None:
+        raise HTTPException(status_code=409, headers={"X-Conflict-Type": "stale"})
+    now = utc_now_ms()
+    form_id = str(current["id"]) if current is not None else new_id()
+    latest_version = int(
+        await db.prepare(
+            """SELECT COALESCE(MAX(version),0) AS latest_version
+               FROM call_for_speaker_forms
+               WHERE organization_id=?1 AND event_id=?2"""
+        ).bind(event["organization_id"], event_id).first("latest_version")
+        or 0
+    )
+    version = max(int(current["version"]) if current is not None else 0, latest_version) + 1
+    builder_state = json.loads(json.dumps(body.builder_state)) if body.builder_state else {
+        "values": {
+            "slug": body.slug,
+            "welcome_text": body.welcome_text,
+            "description_html": body.description_html,
+            "opens_at": "",
+            "closes_at": "",
+            "submission_limit": body.submission_limit,
+            "co_speaker_limit": body.co_speaker_limit,
+            "success_title": body.success_title,
+            "success_message": body.success_message,
+            "confirmation_subject": body.confirmation_subject,
+            "confirmation_body": body.confirmation_body,
+            "redirect_to_portal": body.redirect_to_portal,
+        },
+        "fields": list(body.fields),
+        "conditions": list(body.conditions),
+        "routing_rules": list(body.routing_rules),
+        "important_dates": list(body.important_dates),
+    }
+    raw_values = builder_state.get("values")
+    if isinstance(raw_values, dict):
+        # The raw editor snapshot is durable but never trusted as HTML. Keep
+        # the nested value aligned with the model-sanitized top-level field so
+        # cross-device restore cannot turn a draft into stored XSS.
+        raw_values["description_html"] = body.description_html
+    schema_json = json.dumps(
+        {
+            # Draft slugs are intent, not a public route. The table's released
+            # global slug uniqueness means storing the intended public slug in
+            # the slug column would collide with this event's published form or
+            # another organizer's private draft. Keep the intent in the private
+            # schema until the atomic publish replaces this draft.
+            "draft_slug": body.slug,
+            "draft_welcome_text": body.welcome_text,
+            "builder_state": builder_state,
+            # Draft editor state may be intentionally incomplete. Keep the
+            # typed projection valid so workspace reads never fail after the
+            # raw state commits; publish performs the strict validation later.
+            "fields": [field.model_dump() for field in DEFAULT_FORM_FIELDS],
+            "conditions": [],
+            "routing_rules": [],
+            "co_speaker_limit": body.co_speaker_limit,
+            "description_html": body.description_html,
+            "important_dates": [],
+        },
+        separators=(",", ":"),
+    )
+    values = (
+        form_id, event["organization_id"], event_id, version, f"draft-{event_id}",
+        body.welcome_text or "Untitled CFP draft", schema_json, body.opens_at_ms,
+        body.closes_at_ms, body.submission_limit, body.success_title or "Proposal received",
+        body.success_message or "Draft confirmation message", int(body.redirect_to_portal),
+        body.confirmation_subject or "Draft confirmation subject",
+        body.confirmation_body or "Draft confirmation body", now,
+    )
+    batch = CommandBatch(db)
+    if current is None:
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO call_for_speaker_forms
+                   (id,organization_id,event_id,version,slug,welcome_text,schema_json,
+                    opens_at_ms,closes_at_ms,submission_limit,success_title,success_message,
+                    redirect_to_portal,confirmation_subject,confirmation_body,status,
+                    created_at_ms,updated_at_ms)
+                   VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
+                          'draft',?16,?16)"""
+            ).bind(*values)
+        )
+    else:
+        batch.add_statement(
+            db.prepare(
+                """UPDATE call_for_speaker_forms SET version=?1,slug=?2,welcome_text=?3,
+                   schema_json=?4,opens_at_ms=?5,closes_at_ms=?6,submission_limit=?7,
+                   success_title=?8,success_message=?9,redirect_to_portal=?10,
+                   confirmation_subject=?11,confirmation_body=?12,updated_at_ms=?13
+                   WHERE id=?14 AND status='draft' AND version=?15"""
+            ).bind(version, f"draft-{event_id}", body.welcome_text or "Untitled CFP draft",
+                   schema_json, body.opens_at_ms, body.closes_at_ms,
+                   body.submission_limit, body.success_title or "Proposal received",
+                   body.success_message or "Draft confirmation message",
+                   int(body.redirect_to_portal),
+                   body.confirmation_subject or "Draft confirmation subject",
+                   body.confirmation_body or "Draft confirmation body",
+                   now, form_id, current["version"])
+        )
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO cfp_form_write_guards
+                   (id,form_id,applied_changes,created_at_ms)
+                   VALUES(?1,?2,changes(),?3)"""
+            ).bind(new_id(), form_id, now)
+        )
+    batch.audit(
+        AuditEvent(
+            actor_type="user", actor_user_id=auth.actor.user_id,
+            action="form.draft.save", target_type="call_for_speaker_form",
+            target_id=form_id, result="succeeded",
+            correlation_id=request.state.request_id, occurred_at_ms=now,
+            organization_id=str(event["organization_id"]), event_id=event_id,
+            metadata={"version": version},
+        )
+    )
+    await _execute(request, batch, conflict_type="stale")
+    return await _form_by_id(db, form_id)
 
 
 def _validate_cfp_deadline(closes_at_ms: int | None, event_starts_at_ms: int) -> None:
@@ -803,6 +969,24 @@ async def publish_form(
     )
     batch = CommandBatch(db)
     batch.begin_idempotency(record, now)
+    # A private builder draft owns the same public slug. Remove it in the same
+    # atomic batch before inserting the published record so the global slug
+    # uniqueness constraint cannot turn a successful draft workflow into a 409.
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM cfp_form_write_guards
+               WHERE form_id IN (
+                 SELECT id FROM call_for_speaker_forms
+                 WHERE organization_id=?1 AND event_id=?2 AND status='draft'
+               )"""
+        ).bind(event["organization_id"], event_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM call_for_speaker_forms
+               WHERE organization_id=?1 AND event_id=?2 AND status='draft'"""
+        ).bind(event["organization_id"], event_id)
+    )
     batch.add_statement(
         db.prepare(
             """INSERT INTO call_for_speaker_forms
@@ -937,6 +1121,24 @@ async def update_published_form(
         separators=(",", ":"),
     )
     batch = CommandBatch(db)
+    # The private draft may already own the live form's next version. Remove
+    # it first inside the same atomic batch; a failed optimistic update below
+    # rolls these deletes back through the write-guard constraint.
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM cfp_form_write_guards
+               WHERE form_id IN (
+                 SELECT id FROM call_for_speaker_forms
+                 WHERE organization_id=?1 AND event_id=?2 AND status='draft'
+               )"""
+        ).bind(current["organization_id"], event_id)
+    )
+    batch.add_statement(
+        db.prepare(
+            """DELETE FROM call_for_speaker_forms
+               WHERE organization_id=?1 AND event_id=?2 AND status='draft'"""
+        ).bind(current["organization_id"], event_id)
+    )
     batch.add_statement(
         db.prepare(
             """UPDATE call_for_speaker_forms
@@ -3392,12 +3594,15 @@ async def list_submissions(
     )
 
 
-async def _execute(request: Request, batch: CommandBatch) -> None:
+async def _execute(
+    request: Request, batch: CommandBatch, *, conflict_type: str | None = None
+) -> None:
     started = perf_counter()
     try:
         await batch.execute()
     except PersistenceError as exc:
-        raise HTTPException(status_code=409) from exc
+        headers = {"X-Conflict-Type": conflict_type} if conflict_type else None
+        raise HTTPException(status_code=409, headers=headers) from exc
     finally:
         record_timing(request, "db", (perf_counter() - started) * 1000)
 
@@ -3422,10 +3627,10 @@ def _blob(value: object) -> bytes:
 async def _form_by_id(db, form_id: str) -> AdminPublishedFormView:
     row = row_mapping(
         await db.prepare(
-            """SELECT f.id,f.event_id,f.version,f.slug,f.welcome_text,
+            """SELECT f.id,f.event_id,f.version,f.slug,f.welcome_text,f.status,
                       f.schema_json,f.opens_at_ms,f.closes_at_ms,f.submission_limit,
                       f.success_title,f.success_message,f.redirect_to_portal,
-                      f.confirmation_subject,f.confirmation_body,
+                      f.confirmation_subject,f.confirmation_body,f.updated_at_ms,
                       e.name AS event_name,e.starts_at_ms AS event_starts_at_ms,
                       e.ends_at_ms AS event_ends_at_ms,e.time_zone AS event_time_zone,
                       e.location AS event_location,e.delivery_mode AS event_delivery_mode,
@@ -3444,11 +3649,32 @@ async def _form_by_id(db, form_id: str) -> AdminPublishedFormView:
         raise HTTPException(status_code=404)
     confirmation_subject = row.pop("confirmation_subject")
     confirmation_body = row.pop("confirmation_body")
+    updated_at_ms = int(row.pop("updated_at_ms"))
+    status = row.pop("status")
+    builder_state = None
+    if status == "draft":
+        try:
+            draft_schema = json.loads(str(row["schema_json"]))
+        except (TypeError, ValueError):
+            draft_schema = {}
+        intended_slug = draft_schema.pop("draft_slug", None)
+        intended_welcome = draft_schema.pop("draft_welcome_text", None)
+        candidate_builder_state = draft_schema.pop("builder_state", None)
+        if isinstance(candidate_builder_state, dict):
+            builder_state = candidate_builder_state
+        if isinstance(intended_slug, str) and intended_slug:
+            row["slug"] = intended_slug
+        if isinstance(intended_welcome, str):
+            row["welcome_text"] = intended_welcome
+        row["schema_json"] = json.dumps(draft_schema, separators=(",", ":"))
     return AdminPublishedFormView.model_validate(
         _published_form_view(row, utc_now_ms()).model_dump()
         | {
             "confirmation_subject": confirmation_subject,
             "confirmation_body": confirmation_body,
+            "status": status,
+            "updated_at_ms": updated_at_ms,
+            "builder_state": builder_state,
         }
     )
 

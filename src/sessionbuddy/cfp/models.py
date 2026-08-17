@@ -1,3 +1,4 @@
+import json
 from email.headerregistry import Address
 from html import escape
 from html.parser import HTMLParser
@@ -123,6 +124,19 @@ DEFAULT_FORM_FIELDS = (
     FormFieldDefinition(key="proposal_title", type="text", label="Proposal title", required=True),
     FormFieldDefinition(
         key="proposal_abstract", type="textarea", label="Proposal abstract", required=True
+    ),
+    FormFieldDefinition(
+        key="speaker_biography",
+        type="textarea",
+        label="Speaker biography",
+        help_text="A short biography for the event website and speaker introductions.",
+    ),
+    FormFieldDefinition(
+        key="reviewer_notes",
+        type="textarea",
+        label="Notes for reviewers",
+        help_text="Optional context for the review team. This is not published.",
+        blind_visible=True,
     ),
 )
 
@@ -279,6 +293,48 @@ class FormUpdate(FormPublish):
     version: int = Field(ge=1)
 
 
+class FormDraftSave(BaseModel):
+    """Bounded raw editor state; publish-only schema rules intentionally do not apply."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    slug: str = Field(default="draft", max_length=80)
+    welcome_text: str = Field(default="", max_length=1000)
+    description_html: str | None = Field(default=None, max_length=10_000)
+    important_dates: tuple[dict[str, object], ...] = Field(default=(), max_length=12)
+    fields: tuple[dict[str, object], ...] = Field(default=(), max_length=100)
+    conditions: tuple[dict[str, object], ...] = Field(default=(), max_length=200)
+    routing_rules: tuple[dict[str, object], ...] = Field(default=(), max_length=200)
+    opens_at_ms: int | None = Field(default=None, ge=0)
+    closes_at_ms: int | None = Field(default=None, ge=0)
+    submission_limit: int | None = Field(default=None, ge=1, le=1_000_000)
+    co_speaker_limit: int = Field(default=3, ge=0, le=10)
+    success_title: str = Field(default="Proposal received", max_length=200)
+    success_message: str = Field(default="", max_length=2000)
+    redirect_to_portal: bool = True
+    confirmation_subject: str = Field(default="We received your proposal", max_length=200)
+    confirmation_body: str = Field(default="", max_length=4000)
+    version: int | None = Field(default=None, ge=1)
+    builder_state: dict[str, object] | None = None
+
+    @field_validator("description_html", mode="before")
+    @classmethod
+    def sanitize_draft_description(cls, value: object) -> str | None:
+        return _sanitize_rich_text(str(value)) if value is not None else None
+
+    @field_validator("builder_state")
+    @classmethod
+    def bound_builder_state(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        if value is not None and len(json.dumps(value, separators=(",", ":"))) > 100_000:
+            raise ValueError("builder_state must not exceed 100000 serialized characters")
+        return value
+
+    @model_validator(mode="after")
+    def bound_raw_draft(self) -> "FormDraftSave":
+        if len(json.dumps(self.model_dump(), separators=(",", ":"))) > 120_000:
+            raise ValueError("draft payload must not exceed 120000 serialized characters")
+        return self
+
+
 class PublishedFormView(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -321,8 +377,11 @@ class PublishedFormView(BaseModel):
 
 
 class AdminPublishedFormView(PublishedFormView):
+    status: Literal["draft", "published", "closed"] = "published"
     confirmation_subject: str = Field(min_length=1, max_length=200)
     confirmation_body: str = Field(min_length=1, max_length=4000)
+    updated_at_ms: int = Field(ge=0)
+    builder_state: dict[str, object] | None = None
 
 
 class CfpWorkspaceView(BaseModel):
@@ -332,6 +391,7 @@ class CfpWorkspaceView(BaseModel):
     event_name: str
     event_starts_at_ms: int
     published_form: AdminPublishedFormView | None = None
+    draft_form: AdminPublishedFormView | None = None
 
 
 class CoSpeakerInput(BaseModel):

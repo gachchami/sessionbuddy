@@ -376,11 +376,11 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
             eyebrow="Access denied",
             heading="This page is not available for your active role.",
             message=(
-                "Open your active workspace. If another role has access, "
-                "switch roles from the account menu."
+                "Use Roles and Access on your account page to switch to a role "
+                "that can open this workspace."
             ),
-            primary_label="Open active workspace",
-            primary_href="/",
+            primary_label="Open account and switch role",
+            primary_href="/account",
         )
     if isinstance(exception, StaleCursorError):
         return _error_response(

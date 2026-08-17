@@ -1439,6 +1439,19 @@
         "p95_ms": 300
       }
     },
+    "PUT /api/v1/admin/events/{event_id}/cfp/draft": {
+      "benchmark": "cfp-save-form-draft",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "program-management",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
     "POST /api/v1/admin/events/{event_id}/communications/dispatch-local": {
       "benchmark": "speaker-operations-local-delivery",
       "dashboards": [

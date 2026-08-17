@@ -86,6 +86,7 @@ function publishedForm(version: number, overrides: Record<string, unknown> = {})
 
 async function serveBuilder(page: Page) {
   let live = publishedForm(1);
+  let draft: ReturnType<typeof publishedForm> | null = null;
   let updates = 0;
   await page.route("**/api/v1/**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
   await page.route(`**/admin/events/${eventId}/cfp`, (route) => route.fulfill({ contentType: "text/html", body: pageHtml }));
@@ -99,13 +100,56 @@ async function serveBuilder(page: Page) {
     }
     return route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ organization_id: organizationId, event_id: eventId, event_name: "Clean State Conference", event_starts_at_ms: Date.UTC(2030, 5, 1, 9), published_form: live }),
+      body: JSON.stringify({ organization_id: organizationId, event_id: eventId, event_name: "Clean State Conference", event_starts_at_ms: Date.UTC(2030, 5, 1, 9), published_form: live, draft_form: draft }),
     });
+  });
+  await page.route(`**/api/v1/admin/events/${eventId}/cfp/draft`, (route) => {
+    const body = route.request().postDataJSON();
+    draft = publishedForm((draft?.version || 0) + 1, { ...body, id: "draft-1", status: "draft" });
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify(draft) });
   });
   await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: eventId, status: "active", time_zone: "UTC" }) }));
   await page.route(`**/api/v1/admin/events/${eventId}/agenda/tracks`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
-  return { updateCount: () => updates };
+  return { updateCount: () => updates, draft: () => draft };
 }
+
+test("an organizer draft is saved to the account and restored over the live form", async ({ page }) => {
+  const server = await serveBuilder(page);
+  await page.goto(`/admin/events/${eventId}/cfp`);
+  await page.getByRole("button", { name: "Confirmation", exact: true }).click();
+  await page.locator("#publish-form").getByLabel("Success heading").fill("Continue on another device");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.locator("#status")).toHaveText("Draft saved. You can continue on another device.");
+  expect(server.draft()?.success_title).toBe("Continue on another device");
+
+  await page.reload();
+  await expect(page.locator("#cfp-autosave-state")).toHaveText("Draft restored from your account");
+  await page.getByRole("button", { name: "Confirmation", exact: true }).click();
+  await expect(page.locator("#publish-form").getByLabel("Success heading")).toHaveValue("Continue on another device");
+});
+
+test("unfinished custom configuration survives an account draft", async ({ page }) => {
+  const server = await serveBuilder(page);
+  await page.goto(`/admin/events/${eventId}/cfp`);
+  await page.locator('.cfp-outline-item[data-selection="custom"]').click();
+  await page.getByRole("button", { name: "+ Add custom question", exact: true }).click();
+  const question = page.locator(".question-card[data-index]").last();
+  await question.getByLabel("Answer format").selectOption("select");
+  await question.getByLabel("Answer choices").fill("Only choice, Only choice");
+  // Routing is not part of the compact outline; invoke the shipped control so
+  // the draft still covers a half-configured rule without changing navigation.
+  await page.locator("#add-routing").evaluate((button: HTMLButtonElement) => button.click());
+
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.locator("#status")).toHaveText("Draft saved. You can continue on another device.");
+  expect(server.draft()?.builder_state).toBeTruthy();
+
+  await page.reload();
+  await page.locator('.cfp-outline-item[data-selection="custom"]').click();
+  await expect(page.locator(".question-card[data-index]").last().getByLabel("Answer choices"))
+    .toHaveValue("Only choice, Only choice");
+  await expect(page.locator("#routing-rules .routing-rule")).toHaveCount(1);
+});
 
 test("a published CFP opens clean and says so, and the outline is usable after every save", async ({ page }) => {
   const server = await serveBuilder(page);

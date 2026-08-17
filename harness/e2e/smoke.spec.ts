@@ -686,7 +686,7 @@ test.describe("administration empty states", () => {
     await eventEditor.locator('[name="end_date"]').fill("2026-09-12");
     await expect(page.locator("#date-time-preview")).toContainText(await timeZone.inputValue());
     await expect(eventEditor.getByRole("button", { name: "Create active event" })).toBeEnabled();
-    await timeZone.fill("Asia/Kolkata");
+  await timeZone.selectOption("Asia/Kolkata");
     await page.getByRole("textbox", { name: "Event name" }).fill("Timezone Rehearsal");
     await page.getByRole("textbox", { name: "Location" }).fill("Rehearsal Hall, Pune");
     await page.getByRole("textbox", { name: /^Description/ }).fill("Timezone rehearsal event.");

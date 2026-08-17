@@ -776,6 +776,17 @@
             "title": "Availability State",
             "type": "string"
           },
+          "builder_state": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builder State"
+          },
           "closes_at_ms": {
             "anyOf": [
               {
@@ -1001,6 +1012,16 @@
             "title": "Slug",
             "type": "string"
           },
+          "status": {
+            "default": "published",
+            "enum": [
+              "draft",
+              "published",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
           "submission_limit": {
             "anyOf": [
               {
@@ -1027,6 +1048,11 @@
             "title": "Success Title",
             "type": "string"
           },
+          "updated_at_ms": {
+            "minimum": 0.0,
+            "title": "Updated At Ms",
+            "type": "integer"
+          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -1044,7 +1070,8 @@
           "welcome_text",
           "fields",
           "confirmation_subject",
-          "confirmation_body"
+          "confirmation_body",
+          "updated_at_ms"
         ],
         "title": "AdminPublishedFormView",
         "type": "object"
@@ -2861,6 +2888,16 @@
       "CfpWorkspaceView": {
         "additionalProperties": false,
         "properties": {
+          "draft_form": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminPublishedFormView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "event_id": {
             "title": "Event Id",
             "type": "string"
@@ -3481,12 +3518,26 @@
             "type": "string"
           },
           "default_email_address": {
-            "title": "Default Email Address",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Email Address"
           },
           "default_email_sender_name": {
-            "title": "Default Email Sender Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Email Sender Name"
           },
           "default_role": {
             "anyOf": [
@@ -3580,8 +3631,6 @@
           "user_id",
           "email",
           "csrf_token",
-          "default_email_sender_name",
-          "default_email_address",
           "active_role"
         ],
         "title": "CurrentSession",
@@ -4897,17 +4946,24 @@
             "title": "Cover Image Url"
           },
           "delivery_mode": {
-            "enum": [
-              "in_person",
-              "virtual",
-              "hybrid"
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Delivery Mode",
-            "type": "string"
+            "title": "Delivery Mode"
           },
           "description": {
+            "default": "",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Description",
             "type": "string"
           },
@@ -4936,13 +4992,20 @@
             "title": "Email Sender Name"
           },
           "ends_at_ms": {
-            "minimum": 0.0,
-            "title": "Ends At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At Ms"
           },
           "location": {
+            "default": "",
             "maxLength": 500,
-            "minLength": 1,
             "title": "Location",
             "type": "string"
           },
@@ -4965,9 +5028,16 @@
             "type": "string"
           },
           "starts_at_ms": {
-            "minimum": 0.0,
-            "title": "Starts At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At Ms"
           },
           "status": {
             "default": "active",
@@ -4999,12 +5069,7 @@
         },
         "required": [
           "name",
-          "starts_at_ms",
-          "ends_at_ms",
-          "time_zone",
-          "location",
-          "delivery_mode",
-          "description"
+          "time_zone"
         ],
         "title": "EventCreateRequest",
         "type": "object"
@@ -5038,17 +5103,24 @@
             "title": "Cover Image Url"
           },
           "delivery_mode": {
-            "enum": [
-              "in_person",
-              "virtual",
-              "hybrid"
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Delivery Mode",
-            "type": "string"
+            "title": "Delivery Mode"
           },
           "description": {
+            "default": "",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Description",
             "type": "string"
           },
@@ -5077,13 +5149,20 @@
             "title": "Email Sender Name"
           },
           "ends_at_ms": {
-            "minimum": 0.0,
-            "title": "Ends At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At Ms"
           },
           "location": {
+            "default": "",
             "maxLength": 500,
-            "minLength": 1,
             "title": "Location",
             "type": "string"
           },
@@ -5121,9 +5200,16 @@
             "type": "integer"
           },
           "starts_at_ms": {
-            "minimum": 0.0,
-            "title": "Starts At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At Ms"
           },
           "status": {
             "default": "draft",
@@ -5155,12 +5241,7 @@
         },
         "required": [
           "name",
-          "starts_at_ms",
-          "ends_at_ms",
           "time_zone",
-          "location",
-          "delivery_mode",
-          "description",
           "source_version"
         ],
         "title": "EventDuplicateCreate",
@@ -5594,17 +5675,24 @@
             "title": "Cover Image Url"
           },
           "delivery_mode": {
-            "enum": [
-              "in_person",
-              "virtual",
-              "hybrid"
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Delivery Mode",
-            "type": "string"
+            "title": "Delivery Mode"
           },
           "description": {
+            "default": "",
             "maxLength": 2000,
-            "minLength": 1,
             "title": "Description",
             "type": "string"
           },
@@ -5633,13 +5721,20 @@
             "title": "Email Sender Name"
           },
           "ends_at_ms": {
-            "minimum": 0.0,
-            "title": "Ends At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At Ms"
           },
           "location": {
+            "default": "",
             "maxLength": 500,
-            "minLength": 1,
             "title": "Location",
             "type": "string"
           },
@@ -5662,9 +5757,16 @@
             "type": "string"
           },
           "starts_at_ms": {
-            "minimum": 0.0,
-            "title": "Starts At Ms",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At Ms"
           },
           "status": {
             "anyOf": [
@@ -5708,12 +5810,7 @@
         },
         "required": [
           "name",
-          "starts_at_ms",
-          "ends_at_ms",
           "time_zone",
-          "location",
-          "delivery_mode",
-          "description",
           "version"
         ],
         "title": "EventUpdate",
@@ -5766,6 +5863,44 @@
           "description": {
             "title": "Description",
             "type": "string"
+          },
+          "draft_delivery_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "in_person",
+                  "virtual",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Delivery Mode"
+          },
+          "draft_ends_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Ends At Ms"
+          },
+          "draft_starts_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Starts At Ms"
           },
           "email_reply_to": {
             "anyOf": [
@@ -5929,6 +6064,170 @@
           "target_key"
         ],
         "title": "FormCondition",
+        "type": "object"
+      },
+      "FormDraftSave": {
+        "additionalProperties": false,
+        "description": "Bounded raw editor state; publish-only schema rules intentionally do not apply.",
+        "properties": {
+          "builder_state": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Builder State"
+          },
+          "closes_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closes At Ms"
+          },
+          "co_speaker_limit": {
+            "default": 3,
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Co Speaker Limit",
+            "type": "integer"
+          },
+          "conditions": {
+            "default": [],
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "confirmation_body": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Confirmation Body",
+            "type": "string"
+          },
+          "confirmation_subject": {
+            "default": "We received your proposal",
+            "maxLength": 200,
+            "title": "Confirmation Subject",
+            "type": "string"
+          },
+          "description_html": {
+            "anyOf": [
+              {
+                "maxLength": 10000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Html"
+          },
+          "fields": {
+            "default": [],
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 100,
+            "title": "Fields",
+            "type": "array"
+          },
+          "important_dates": {
+            "default": [],
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 12,
+            "title": "Important Dates",
+            "type": "array"
+          },
+          "opens_at_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opens At Ms"
+          },
+          "redirect_to_portal": {
+            "default": true,
+            "title": "Redirect To Portal",
+            "type": "boolean"
+          },
+          "routing_rules": {
+            "default": [],
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 200,
+            "title": "Routing Rules",
+            "type": "array"
+          },
+          "slug": {
+            "default": "draft",
+            "maxLength": 80,
+            "title": "Slug",
+            "type": "string"
+          },
+          "submission_limit": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Limit"
+          },
+          "success_message": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Success Message",
+            "type": "string"
+          },
+          "success_title": {
+            "default": "Proposal received",
+            "maxLength": 200,
+            "title": "Success Title",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "welcome_text": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Welcome Text",
+            "type": "string"
+          }
+        },
+        "title": "FormDraftSave",
         "type": "object"
       },
       "FormFieldDefinition": {
@@ -6100,6 +6399,26 @@
                 "label": "Proposal abstract",
                 "placeholder": "",
                 "required": true,
+                "type": "textarea"
+              },
+              {
+                "blind_visible": false,
+                "choices": [],
+                "help_text": "A short biography for the event website and speaker introductions.",
+                "key": "speaker_biography",
+                "label": "Speaker biography",
+                "placeholder": "",
+                "required": false,
+                "type": "textarea"
+              },
+              {
+                "blind_visible": true,
+                "choices": [],
+                "help_text": "Optional context for the review team. This is not published.",
+                "key": "reviewer_notes",
+                "label": "Notes for reviewers",
+                "placeholder": "",
+                "required": false,
                 "type": "textarea"
               }
             ],
@@ -6362,6 +6681,26 @@
                 "label": "Proposal abstract",
                 "placeholder": "",
                 "required": true,
+                "type": "textarea"
+              },
+              {
+                "blind_visible": false,
+                "choices": [],
+                "help_text": "A short biography for the event website and speaker introductions.",
+                "key": "speaker_biography",
+                "label": "Speaker biography",
+                "placeholder": "",
+                "required": false,
+                "type": "textarea"
+              },
+              {
+                "blind_visible": true,
+                "choices": [],
+                "help_text": "Optional context for the review team. This is not published.",
+                "key": "reviewer_notes",
+                "label": "Notes for reviewers",
+                "placeholder": "",
+                "required": false,
                 "type": "textarea"
               }
             ],
@@ -15298,6 +15637,58 @@
           }
         },
         "summary": "Update Published Form",
+        "tags": [
+          "forms"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/cfp/draft": {
+      "put": {
+        "operationId": "saveCallForSpeakersDraft",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormDraftSave"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPublishedFormView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Form Draft",
         "tags": [
           "forms"
         ]

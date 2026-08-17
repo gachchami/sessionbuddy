@@ -15,14 +15,16 @@
       choices: ["Keynote (45 min)", "Talk (30 min)", "Lightning Talk (10 min)", "Workshop (120 min)", "Panel (45 min)"]
     },
     { key: "track", type: "select", label: "Track", required: false, choices: [] },
-    { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] }
+    { key: "proposal_description", type: "textarea", label: "Full description", required: false, choices: [] },
+    { key: "speaker_biography", type: "textarea", label: "Speaker biography", help_text: "A short biography for the event website and speaker introductions.", required: false, choices: [] },
+    { key: "reviewer_notes", type: "textarea", label: "Notes for reviewers", help_text: "Optional context for the review team. This is not published.", required: false, blind_visible: true, choices: [] }
   ];
   // Account-backed identity fields. They are never editable in the builder and
   // never reorderable, so every predicate that used to name the pair by hand
   // reads this instead.
   const identityFieldKeys = ["speaker_name", "speaker_email"];
   const proposalFieldKeys = new Set(["proposal_title", "proposal_abstract", ...standardProposalFields.map((field) => field.key)]);
-  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventLocation: "", eventDeliveryMode: "", eventAccentColor: "#3159d9", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
+  const state = { context: null, csrf: null, userId: "", eventName: "", eventStatus: "", eventStartsAtMs: null, eventTimeZone: "", eventLocation: "", eventDeliveryMode: "", eventAccentColor: "#3159d9", eventLogoUrl: "", eventCoverUrl: "", eventTracks: [], publishedForm: null, serverDraft: null, availabilityTimer: null, editing: false, dirty: false, draftTimer: null, previewFrame: null, previewOpen: false, fieldOrderOpen: false, fieldUndo: null, fieldFeedbackTimer: null, selectedOutline: "basics", collapsedFieldKeys: new Set(), fields: structuredClone([...coreFields, ...standardProposalFields]), routingRules: [], importantDates: [] };
   const byId = (id) => document.getElementById(id);
   const jsonHeaders = () => ({ "content-type": "application/json" });
   const admin = () => ({ ...jsonHeaders(), "x-csrf-token": state.csrf });
@@ -113,6 +115,7 @@
   }
 
   async function loadEventTracks(eventId) {
+    byId("manage-event-tracks").href = `/admin/events/${encodeURIComponent(eventId)}/agenda`;
     try {
       const response = await api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda/tracks`);
       state.eventTracks = (response.data || []).map((track) => track.name);
@@ -1275,7 +1278,7 @@
     const values = Object.fromEntries([...new FormData(form)].filter(([, value]) => typeof value === "string"));
     values.redirect_to_portal = form.elements.redirect_to_portal.checked;
     const schema = readFields();
-    return { values, fields: schema.fields, conditions: schema.conditions, routing_rules: readRoutingRules(), important_dates: readImportantDates(), form_version: state.publishedForm?.version ?? null, saved_at_ms: Date.now() };
+    return { values, fields: schema.fields, conditions: schema.conditions, routing_rules: readRoutingRules(), important_dates: readImportantDates(), form_version: state.publishedForm?.version ?? null, server_draft_version: state.serverDraft?.version ?? null, saved_at_ms: Date.now() };
   }
 
   function saveLocalDraft() {
@@ -1311,6 +1314,14 @@
     try {
       const draft = JSON.parse(raw);
       if (state.publishedForm && draft.form_version !== state.publishedForm.version) {
+        sessionStorage.removeItem(draftKey());
+        return false;
+      }
+      if (
+        state.serverDraft
+        && (draft.server_draft_version !== state.serverDraft.version
+          || Number(draft.saved_at_ms || 0) <= state.serverDraft.updated_at_ms)
+      ) {
         sessionStorage.removeItem(draftKey());
         return false;
       }
@@ -1629,7 +1640,10 @@
       state.eventStatus = currentEvent.status;
       state.eventTimeZone = currentEvent.time_zone;
       state.eventLocation = currentEvent.location || "";
-      state.eventDeliveryMode = String(currentEvent.delivery_mode || "").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+      const logicalDeliveryMode = currentEvent.status === "draft"
+        ? currentEvent.draft_delivery_mode
+        : currentEvent.delivery_mode;
+      state.eventDeliveryMode = String(logicalDeliveryMode || "").replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
       state.eventAccentColor = currentEvent.accent_color || "#3159d9";
       state.eventLogoUrl = currentEvent.logo_url || "";
       state.eventCoverUrl = currentEvent.cover_image_url || "";
@@ -1637,8 +1651,39 @@
       byId("change-event-time-zone").href = `/admin/events/${encodeURIComponent(eventId)}/settings#date-time`;
       await loadEventTracks(eventId);
       state.publishedForm = workspace.published_form;
+      state.serverDraft = workspace.draft_form;
       state.editing = true;
-      if (state.publishedForm) {
+      if (state.serverDraft) {
+        loadPublishedSettings({
+          ...state.serverDraft,
+          welcome_text: state.serverDraft.welcome_text
+        });
+        const saved = state.serverDraft.builder_state;
+        if (saved && typeof saved === "object") {
+          const form = byId("publish-form");
+          Object.entries(saved.values || {}).forEach(([name, value]) => {
+            const field = form.elements[name];
+            if (!field) return;
+            if (field.type === "checkbox") field.checked = Boolean(value);
+            else field.value = String(value ?? "");
+          });
+          setRichText(byId("cfp-description-editor"), saved.values?.description_html, saved.values?.welcome_text);
+          syncDescription();
+          if (Array.isArray(saved.fields)) state.fields = saved.fields.map((field) => ({ ...field }));
+          state.routingRules = Array.isArray(saved.routing_rules) ? saved.routing_rules : [];
+          state.importantDates = Array.isArray(saved.important_dates) ? saved.important_dates : [];
+          renderFields();
+          renderRoutingRules();
+          renderImportantDates();
+        }
+        // A server draft layered over a live CFP is intentionally unpublished
+        // work. Preserve that distinction through renderWorkspace instead of
+        // letting the live-form clean-state copy overwrite the restore notice.
+        state.dirty = Boolean(state.publishedForm);
+        byId("cfp-autosave-state").textContent = "Draft restored from your account";
+        restoreLocalDraft();
+      }
+      else if (state.publishedForm) {
         loadPublishedSettings(state.publishedForm);
         restoreLocalDraft();
       }
@@ -1655,6 +1700,7 @@
       renderFields();
       syncAvailabilityLimits(byId("publish-form"));
       renderWorkspace();
+      byId("save-cfp-draft").disabled = false;
       setStatus("");
     } catch (error) {
       if (error.status === 401) {
@@ -1669,6 +1715,87 @@
       setStatus(window.SessionBuddyApi.message(error), true);
     }
   }
+
+  function builderPayload({ draft = false } = {}) {
+    const formElement = byId("publish-form");
+    syncDescription();
+    const values = Object.fromEntries(new FormData(formElement));
+    const schema = readFields();
+    const rawRules = readRoutingRules();
+    const importantDates = readImportantDates();
+    let fields = schema.fields;
+    let conditions = schema.conditions;
+    let routingRules = rawRules;
+    let builderState = null;
+    if (draft) {
+      builderState = {
+        values: Object.fromEntries([...new FormData(formElement)].filter(([, value]) => typeof value === "string")),
+        fields: state.fields.map((field) => ({ ...field })),
+        conditions: schema.conditions,
+        routing_rules: rawRules,
+        important_dates: importantDates
+      };
+      const seen = new Set();
+      fields = schema.fields.filter((field) => {
+        if (!/^[a-z][a-z0-9_]*$/.test(field.key) || !field.label || seen.has(field.key)) return false;
+        if (["select", "multiselect"].includes(field.type)) {
+          const minimum = field.key === "track" ? 1 : 2;
+          if ((field.choices || []).length < minimum) return false;
+        }
+        seen.add(field.key);
+        return true;
+      });
+      const retained = new Set(fields.map((field) => field.key));
+      conditions = schema.conditions.filter((condition) => retained.has(condition.source_key) && retained.has(condition.target_key));
+      routingRules = rawRules.filter((rule) => retained.has(rule.source_key) && (rule.category || rule.track || rule.review_queue));
+    }
+    const payload = {
+      slug: values.slug,
+      welcome_text: values.welcome_text || (draft ? "" : values.welcome_text),
+      description_html: values.description_html || null,
+      important_dates: importantDates,
+      fields,
+      conditions,
+      routing_rules: routingRules,
+      opens_at_ms: toEpoch(values.opens_at),
+      closes_at_ms: toEpoch(values.closes_at),
+      submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
+      co_speaker_limit: Number(values.co_speaker_limit),
+      success_title: values.success_title,
+      success_message: values.success_message,
+      redirect_to_portal: formElement.elements.redirect_to_portal.checked,
+      confirmation_subject: values.confirmation_subject,
+      confirmation_body: values.confirmation_body,
+      ...(draft ? { builder_state: builderState } : {})
+    };
+    return payload;
+  }
+
+  byId("save-cfp-draft").addEventListener("click", async () => {
+    const button = byId("save-cfp-draft");
+    button.disabled = true;
+    button.textContent = "Saving…";
+    try {
+      const payload = builderPayload({ draft: true });
+      if (state.serverDraft) payload.version = state.serverDraft.version;
+      state.serverDraft = await api(
+        `/api/v1/admin/events/${encodeURIComponent(state.context.event_id)}/cfp/draft`,
+        { method: "PUT", headers: admin(), body: JSON.stringify(payload) }
+      );
+      discardLocalDraft();
+      state.dirty = false;
+      byId("cfp-autosave-state").textContent = "Draft saved to your account";
+      setStatus("Draft saved. You can continue on another device.", "success");
+    } catch (error) {
+      const message = error.code === "stale_conflict"
+        ? "This draft changed on another device. Reload before saving again."
+        : window.SessionBuddyApi.message(error);
+      setStatus(message, true);
+    } finally {
+      button.disabled = !state.context;
+      button.textContent = "Save draft";
+    }
+  });
 
   byId("publish-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1692,26 +1819,7 @@
       submitButton.textContent = updating ? "Saving…" : "Publishing…";
       byId("publish-action-label").textContent = updating ? "Saving changes" : "Publishing CFP";
       byId("publish-result").textContent = "Please wait while the form is updated.";
-      const values = Object.fromEntries(new FormData(formElement));
-      const schema = readFields();
-      const routingRules = readRoutingRules();
-      const payload = {
-        slug: values.slug,
-        welcome_text: values.welcome_text,
-        description_html: values.description_html || null,
-        important_dates: readImportantDates(),
-        ...schema,
-        routing_rules: routingRules,
-        opens_at_ms: toEpoch(values.opens_at),
-        closes_at_ms: toEpoch(values.closes_at),
-        submission_limit: values.submission_limit ? Number(values.submission_limit) : null,
-        co_speaker_limit: Number(values.co_speaker_limit),
-        success_title: values.success_title,
-        success_message: values.success_message,
-        redirect_to_portal: formElement.elements.redirect_to_portal.checked
-      };
-      payload.confirmation_subject = values.confirmation_subject;
-      payload.confirmation_body = values.confirmation_body;
+      const payload = builderPayload();
       if (updating) payload.version = state.publishedForm.version;
       const form = await api(
         updating
@@ -1724,6 +1832,7 @@
         }
       );
       state.publishedForm = form;
+      state.serverDraft = null;
       state.editing = false;
       state.dirty = false;
       // A field edit may still have a queued autosave. Cancel it before

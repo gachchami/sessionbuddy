@@ -28,6 +28,10 @@ def test_event_editor_discloses_and_converts_in_the_event_time_zone() -> None:
     assert 'id="event-time-zone-context"' in page
     assert 'id="event-time-zone"' in page
     assert page.count('aria-describedby="event-time-zone-context"') == 5
+    assert '<select name="time_zone"' in page
+    assert 'list="event-time-zones"' not in page
+    assert "Intl.supportedValuesOf" in script
+    assert 'api("/api/v1/account/profile")' in script
     assert "zonedDateTimeToMillis" in script
     assert "formatToParts(new Date(timestamp))" in script
     assert "new Date(values.start" not in script

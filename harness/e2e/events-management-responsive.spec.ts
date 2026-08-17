@@ -50,6 +50,7 @@ function eventFixture(index = 0) {
 
 async function mockIdentity(page: Page) {
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(session) }));
+  await page.route("**/api/v1/account/profile", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ time_zone: "America/Los_Angeles" }) }));
   await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(organizations) }));
   await page.route(`**/api/v1/admin/organizations/${organizationId}/activities`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
 }
@@ -112,7 +113,8 @@ test("the mobile event ledger leads to a usable routed editor and preserves a fa
   expect(editorGeometry.scrollWidth).toBeLessThanOrEqual(Math.ceil(editorGeometry.width));
 
   await page.getByLabel("Event name").fill("AIEngineer Summit 2027");
-  await page.getByLabel("Time zone").fill("Asia/Kolkata");
+  await expect(page.getByLabel("Time zone")).toHaveValue("America/Los_Angeles");
+  await page.getByLabel("Time zone").selectOption("Asia/Kolkata");
   await page.getByLabel("Attendance format").selectOption("hybrid");
   await page.locator('input[name="start_date"]').fill("2027-10-12");
   await page.locator('input[name="end_date"]').fill("2027-10-13");

@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import re
@@ -65,6 +66,36 @@ class SQLiteD1:
             self.connection.rollback()
             raise
         return results
+
+
+class GatedCfpDraftD1(SQLiteD1):
+    """Pause one draft save after its version preflight but before its batch."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        super().__init__(connection)
+        self.draft_read = asyncio.Event()
+        self.allow_batch = asyncio.Event()
+
+    def prepare(self, sql: str) -> SQLiteStatement:
+        statement = super().prepare(sql)
+        if "status='draft'" in sql and "SELECT id,version" in sql:
+            original_first = statement.first
+
+            async def first(column: str | None = None):
+                result = await original_first(column)
+                self.draft_read.set()
+                return result
+
+            statement.first = first
+        return statement
+
+    async def batch(self, statements: list[SQLiteStatement]):
+        if any(
+            "UPDATE call_for_speaker_forms SET version=" in statement.sql
+            for statement in statements
+        ):
+            await self.allow_batch.wait()
+        return await super().batch(statements)
 
 
 class AllowingRateLimiter:
@@ -542,8 +573,8 @@ async def test_first_run_setup_creates_named_admin_and_profile_is_editable(
         session = (await client.get("/api/v1/auth/session")).json()
         assert session["display_name"] == "Asha Rao"
         assert session["profile_complete"] is False
-        assert session["default_email_sender_name"] == "SessionBuddy"
-        assert session["default_email_address"] == "events@example.test"
+        assert session["default_email_sender_name"] is None
+        assert session["default_email_address"] is None
         profile = (await client.get("/api/v1/account/profile")).json()
         assert profile["email"] == "asha@example.com"
         assert profile["version"] == 1
@@ -1186,6 +1217,105 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert draft_workspace.status_code == 200
         assert draft_workspace.json()["event_name"] == "Speaker Summit"
         assert draft_workspace.json()["published_form"] is None
+        saved_builder_draft = await admin.put(
+            f"/api/v1/admin/events/{event_id}/cfp/draft",
+            headers=mutation_headers,
+            json={
+                "slug": "speaker-summit",
+                "welcome_text": "",
+                "description_html": "<p>Safe description</p><script>alert(1)</script>",
+                "builder_state": {
+                    "values": {
+                        "description_html": '<img src="x" onerror="alert(2)">'
+                    }
+                },
+                "confirmation_subject": "Speaker Summit received your proposal",
+                "confirmation_body": "Thank you for proposing a session to Speaker Summit.",
+            },
+        )
+        assert saved_builder_draft.status_code == 200
+        assert saved_builder_draft.json()["status"] == "draft"
+        assert saved_builder_draft.json()["slug"] == "speaker-summit"
+        restored_markup = saved_builder_draft.json()["builder_state"]["values"][
+            "description_html"
+        ]
+        assert "onerror" not in restored_markup
+        assert "<script" not in restored_markup
+        assert "Safe description" in restored_markup
+        saved_draft_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
+        assert saved_draft_workspace.json()["draft_form"]["version"] == 1
+        assert saved_draft_workspace.json()["draft_form"]["slug"] == "speaker-summit"
+        updated_builder_draft = await admin.put(
+            f"/api/v1/admin/events/{event_id}/cfp/draft",
+            headers=mutation_headers,
+            json={
+                "slug": "speaker-summit",
+                "welcome_text": "Share your session when the CFP opens.",
+                "confirmation_subject": "Speaker Summit received your proposal",
+                "confirmation_body": "Thank you for proposing a session to Speaker Summit.",
+                "version": 1,
+            },
+        )
+        assert updated_builder_draft.status_code == 200
+        assert updated_builder_draft.json()["version"] == 2
+
+        gated_environment = SimpleNamespace(**vars(environment))
+        gated_environment.DB = GatedCfpDraftD1(connection)
+        async with _client(gated_environment) as second_tab:
+            for cookie in admin.cookies.jar:
+                second_tab.cookies.set(cookie.name, cookie.value, domain=cookie.domain)
+            losing_save = asyncio.create_task(
+                second_tab.put(
+                    f"/api/v1/admin/events/{event_id}/cfp/draft",
+                    headers=mutation_headers,
+                    json={
+                        "slug": "speaker-summit",
+                        "welcome_text": "Second tab edit",
+                        "version": 2,
+                    },
+                )
+            )
+            await asyncio.wait_for(gated_environment.DB.draft_read.wait(), 10)
+            winning_save = await admin.put(
+                f"/api/v1/admin/events/{event_id}/cfp/draft",
+                headers=mutation_headers,
+                json={
+                    "slug": "speaker-summit",
+                    "welcome_text": "First tab edit",
+                    "version": 2,
+                },
+            )
+            assert winning_save.status_code == 200
+            gated_environment.DB.allow_batch.set()
+            losing_response = await asyncio.wait_for(losing_save, 10)
+            assert losing_response.status_code == 409
+            assert losing_response.headers["x-conflict-type"] == "stale"
+
+        raced_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
+        assert raced_workspace.json()["draft_form"]["version"] == 3
+        assert raced_workspace.json()["draft_form"]["welcome_text"] == "First tab edit"
+        assert connection.execute(
+            """SELECT COUNT(*) FROM audit_events
+               WHERE event_id=? AND action='form.draft.save'""",
+            (event_id,),
+        ).fetchone()[0] == 3
+        assert connection.execute(
+            """SELECT COUNT(*) FROM cfp_form_write_guards g
+               JOIN call_for_speaker_forms f ON f.id=g.form_id
+               WHERE f.event_id=? AND f.status='draft'""",
+            (event_id,),
+        ).fetchone()[0] == 2
+        stale_builder_draft = await admin.put(
+            f"/api/v1/admin/events/{event_id}/cfp/draft",
+            headers=mutation_headers,
+            json={
+                "slug": "speaker-summit",
+                "welcome_text": "Stale edit",
+                "version": 2,
+            },
+        )
+        assert stale_builder_draft.status_code == 409
+        assert stale_builder_draft.headers["x-conflict-type"] == "stale"
         draft_publish = await admin.post(
             f"/api/v1/admin/events/{event_id}/cfp/publish",
             headers={**mutation_headers, "idempotency-key": "draft-publish-integration-2026"},
@@ -1201,7 +1331,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert draft_publish.json()["error"]["code"] == "conflict"
         assert connection.execute(
                 "SELECT COUNT(*) FROM call_for_speaker_forms WHERE event_id=?", (event_id,)
-        ).fetchone()[0] == 0
+        ).fetchone()[0] == 1
 
         activated = await admin.patch(
             f"/api/v1/admin/events/{event_id}",
@@ -1238,6 +1368,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert live_workspace.status_code == 200
         assert live_workspace.json()["organization_id"] == organization_id
         assert live_workspace.json()["event_id"] == event_id
+        assert live_workspace.json()["draft_form"] is None
         assert live_workspace.json()["published_form"]["slug"] == "speaker-summit"
         assert live_workspace.json()["published_form"]["confirmation_subject"] == (
             "Speaker Summit received your proposal"
@@ -1250,6 +1381,18 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
         assert "confirmation_subject" not in public_form.json()
         assert "confirmation_body" not in public_form.json()
         published_form = live_workspace.json()["published_form"]
+        layered_builder_draft = await admin.put(
+            f"/api/v1/admin/events/{event_id}/cfp/draft",
+            headers=mutation_headers,
+            json={
+                "slug": published_form["slug"],
+                "welcome_text": "A private revision of the live CFP.",
+                "confirmation_subject": "Draft revision subject",
+                "confirmation_body": "Draft revision body",
+            },
+        )
+        assert layered_builder_draft.status_code == 200
+        assert layered_builder_draft.json()["version"] == published_form["version"] + 1
         update_payload = {
             "version": published_form["version"],
             "slug": published_form["slug"],
@@ -1279,6 +1422,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             "Thank you. The revised program team message is saved."
         )
         reloaded_workspace = await admin.get(f"/api/v1/admin/events/{event_id}/cfp")
+        assert reloaded_workspace.json()["draft_form"] is None
         assert reloaded_workspace.json()["published_form"]["confirmation_subject"] == (
             "Your revised proposal was received"
         )

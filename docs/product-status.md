@@ -77,8 +77,8 @@ an inline, non-blocking warning as soon as the title field loses focus; speaker
 and organizer rows include submission date and receipt identity for
 disambiguation. The advisory title lookup is owner-scoped and searches the full
 form history rather than relying on the 25-item recent-proposal list. Additional
-participants can be identified as co-speakers,
-co-authors, moderators, panelists, or another participant role; the selected role
+participants can be identified as co-speakers, co-authors, moderators, panelists,
+or another participant role; the selected role
 is preserved through review, invitation acceptance, and later proposal edits. New
 forms allow three additional participants by default while organizers retain an
 explicit per-form limit. Accepted proposals keep their answers immutable but expose
@@ -89,6 +89,16 @@ proposal before review begins; withdrawal is audited, repeat-safe, excluded from
 review assignment, and read-only in the speaker portal. CFP-scoped sign-in grants the
 speaker role for that event even when the email already belongs to an administrator,
 and organizers can inspect the complete proposal, routing, and custom answers.
+
+Event and CFP setup now support intentionally incomplete private drafts. Event
+creation and cloning use a selectable IANA time zone, prefer the organizer's
+account time zone for a new event, and keep location, description, format, and
+dates optional until activation. The database still rejects incomplete active
+events. Organizer CFP drafts are versioned on the server and follow the organizer
+across browsers; browser storage remains only crash recovery. The standard proposal
+schema includes optional speaker biography and reviewer-only notes, and the builder
+links directly to the event's Agenda track configuration rather than implying that
+tracks are configured in a separate product.
 
 The published CFP page shows the proposal form to a visitor who is not signed
 in. Every field, its conditional display, and its client validation already

@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event settings · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=85">
+  <link rel="stylesheet" href="/product/assets/product.css?v=86">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <link rel="stylesheet" href="/admin/event-editor/assets/event-editor.css?v=2f26921637c1">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
   <script src="/public/assets/event-masthead.js?v=89ffbe0accd6" defer></script>
-  <script src="/admin/event-editor/assets/event-editor.js?v=f688b628d9cb" defer></script>
+  <script src="/admin/event-editor/assets/event-editor.js?v=a460f40ac9f6" defer></script>
 </head>
 <body class="app-body organizer-page event-editor-page">
   <a class="skip-link" href="#main">Skip to event settings</a>
@@ -41,7 +41,6 @@
     </div>
 
     <form id="event-editor-form" class="event-editor__form" aria-describedby="editor-status" novalidate hidden>
-      <datalist id="event-time-zone-options"></datalist>
       <div class="event-editor__layout">
         <div class="event-editor__main">
           <section id="general" class="event-editor__section" aria-labelledby="general-title">
@@ -57,7 +56,7 @@
 
           <section id="date-time" class="event-editor__section" aria-labelledby="date-time-title">
             <h2 id="date-time-title">Date and time</h2>
-            <label><span class="field-label">Time zone</span><input name="time_zone" list="event-time-zone-options" maxlength="100" required autocomplete="off" aria-describedby="event-time-zone-context"><small id="event-time-zone-context">Dates and times use <strong id="event-time-zone">the event time zone</strong>.</small></label>
+            <label><span class="field-label">Time zone</span><select name="time_zone" required aria-describedby="event-time-zone-context"></select><small id="event-time-zone-context">Choose the event’s local time zone. Dates and deadlines use <strong id="event-time-zone">this time zone</strong>.</small></label>
             <div class="event-editor__date-grid">
               <fieldset><legend>Starts</legend><label><span class="field-label">Date</span><input name="start_date" type="date" required aria-describedby="event-time-zone-context"></label><label><span class="field-label">Time</span><input name="start_time" type="time" step="900" value="09:00" required aria-describedby="event-time-zone-context"></label></fieldset>
               <fieldset><legend>Ends</legend><label><span class="field-label">Date</span><input name="end_date" type="date" required aria-describedby="event-time-zone-context"></label><label><span class="field-label">Time</span><input name="end_time" type="time" step="900" value="17:00" required aria-describedby="event-time-zone-context"></label></fieldset>

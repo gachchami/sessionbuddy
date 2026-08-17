@@ -93,10 +93,9 @@ async def test_organizer_session_cannot_load_persona_documents_or_their_shells(
         client.cookies.set("sessionbuddy-local", "organizer-session-cookie")
         response = await client.get(path, headers={"accept": "text/html"})
 
-    assert response.status_code == 303
-    assert response.headers["location"] == "/admin"
+    assert response.status_code == 403
+    assert "This page is not available for your active role." in response.text
     assert response.headers["cache-control"] == "no-store"
-    assert response.text == ""
 
 
 @pytest.mark.parametrize("path", ["/speaker", "/reviews"])
@@ -271,12 +270,9 @@ async def test_non_organizer_session_cannot_load_admin_document_shells(
         client.cookies.set("sessionbuddy-local", f"{persona.value}-session-cookie")
         response = await client.get(path, headers={"accept": "text/html"})
 
-    assert response.status_code == 303
-    assert response.headers["location"] == (
-        "/speaker" if persona is Persona.SPEAKER else "/reviews"
-    )
+    assert response.status_code == 403
+    assert "This page is not available for your active role." in response.text
     assert response.headers["cache-control"] == "no-store"
-    assert response.text == ""
 
 
 @pytest.mark.parametrize("path", ADMIN_DOCUMENT_PATHS)

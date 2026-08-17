@@ -9,10 +9,13 @@
 
   function formatRange(event) {
     try {
+      const startValue = event.status === "draft" ? event.draft_starts_at_ms : event.starts_at_ms;
+      const endValue = event.status === "draft" ? event.draft_ends_at_ms : event.ends_at_ms;
+      if (startValue == null) return "Dates not set";
       const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: event.time_zone });
       const time = new Intl.DateTimeFormat(undefined, { timeStyle: "short", timeZone: event.time_zone });
-      const start = new Date(event.starts_at_ms);
-      const end = new Date(event.ends_at_ms);
+      const start = new Date(startValue);
+      const end = new Date(endValue ?? startValue);
       const startDate = date.format(start);
       const endDate = date.format(end);
       return startDate === endDate
@@ -75,8 +78,11 @@
     document.title = `${selected.name} · SessionBuddy`;
     byId("event-name").textContent = selected.name;
     document.documentElement.style.setProperty("--event-accent", accentColor);
-    const mode = selected.delivery_mode.replace("_", " ");
-    byId("event-summary").textContent = `${formatRange(selected)} · ${mode}${selected.location ? ` · ${selected.location}` : ""}`;
+    const delivery = selected.status === "draft" ? selected.draft_delivery_mode : selected.delivery_mode;
+    const summaryParts = [formatRange(selected)];
+    if (delivery) summaryParts.push(delivery.replace("_", " "));
+    if (selected.location) summaryParts.push(selected.location);
+    byId("event-summary").textContent = summaryParts.join(" · ");
     byId("edit-event").href = `/admin/events/${encodeURIComponent(eventId)}/settings`;
     byId("cfp-action").href = `/admin/events/${encodeURIComponent(eventId)}/cfp`;
     byId("cfp-action").hidden = !cfpPublished;

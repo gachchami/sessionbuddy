@@ -115,7 +115,7 @@ def test_shell_paints_from_the_cached_session_and_revalidates_in_the_background(
     assert "activeRole(cached)" in usable
     assert "dashboardDestination(cached)" in usable
     assert "clearCachedSession();" in usable
-    assert "function applySession(session)" in javascript
+    assert "function applySession(session, { authoritative = true } = {})" in javascript
     assert "const cached = shell ? usableCachedSession() : null;" in javascript
 
     # The fresh response reconciles: identical means done, different means

@@ -12,6 +12,7 @@ from sessionbuddy.api.app import app
 from sessionbuddy.cfp import router as cfp_routes
 from sessionbuddy.cfp.models import (
     CoSpeakerInput,
+    FormDraftSave,
     FormFieldDefinition,
     FormPublish,
     PrivateSubmissionView,
@@ -381,6 +382,11 @@ def test_form_co_speaker_limit_defaults_to_three_and_is_enforced() -> None:
     form = FormPublish(slug="speaker-limit", welcome_text="Welcome")
     assert form.co_speaker_limit == 3
 
+    fields = {field.key: field for field in form.fields}
+    assert fields["speaker_biography"].label == "Speaker biography"
+    assert fields["reviewer_notes"].label == "Notes for reviewers"
+    assert fields["reviewer_notes"].blind_visible is True
+
     submission = SubmissionCreate(
         speaker_name="Primary",
         speaker_email="primary@example.test",
@@ -397,6 +403,29 @@ def test_form_co_speaker_limit_defaults_to_three_and_is_enforced() -> None:
             submission,
         )
     assert exc_info.value.status_code == 422
+
+
+def test_private_cfp_draft_allows_an_unwritten_description() -> None:
+    draft = FormDraftSave(
+        slug="",
+        welcome_text="",
+        success_title="",
+        success_message="",
+        confirmation_subject="",
+        confirmation_body="",
+        fields=(
+            {"key": "duplicate", "type": "select", "choices": ["Same", "Same"]},
+        ),
+        routing_rules=({"source_key": "missing"},),
+    )
+
+    assert draft.welcome_text == ""
+    assert draft.success_title == ""
+    assert draft.fields[0]["choices"] == ["Same", "Same"]
+    assert draft.version is None
+
+    with pytest.raises(ValidationError):
+        FormPublish.model_validate(draft.model_dump(exclude={"version", "builder_state"}))
 
 
 def test_additional_participant_roles_are_bounded() -> None:

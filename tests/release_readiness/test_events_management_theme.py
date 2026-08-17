@@ -46,6 +46,9 @@ def test_event_editor_keeps_runtime_failures_with_the_form() -> None:
     assert 'id="email-default"' in page
     assert "state.session.default_email_sender_name" in script
     assert "state.session.default_email_address" in script
+    assert 'state.session.default_email_sender_name || "SessionBuddy"' in script
+    assert "No default sender address is configured for this installation." in script
+    assert "events@example.test" not in script
     assert 'id="conflict-panel"' in page
     assert 'mine.textContent = "Keep mine"' in script
     assert 'latest.textContent = "Use latest"' in script

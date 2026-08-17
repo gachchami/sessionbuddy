@@ -47,6 +47,8 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     assert "Use a unique field key." in script
     assert "A question cannot depend on itself." in script
     assert "circular dependency" in script
+    assert 'currentEvent.status === "draft"' in script
+    assert "currentEvent.draft_delivery_mode" in script
 
 
 def test_cfp_drafts_and_unsaved_live_edits_have_browser_recovery() -> None:

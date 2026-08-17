@@ -141,7 +141,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert 'name="end_time" type="time" step="900" value="17:00"' in text
     assert 'id="date-time-preview"' in text
     assert 'delivery_mode: ""' in javascript
-    assert 'intendedStatus === "active" && endsAt <= Date.now()' in javascript
+    assert 'intendedStatus === "active" && (endsAt == null || endsAt <= Date.now())' in javascript
     assert "Update the event dates before activating." in javascript
     assert '["Asia/Calcutta", "Asia/Kolkata"]' in javascript
     assert "zonedDateTimeToMillis" in javascript

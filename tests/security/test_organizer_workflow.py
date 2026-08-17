@@ -1003,7 +1003,9 @@ async def test_active_events_can_be_ordered_nearest_upcoming_first(
             "WHERE id IN ('seed-event-000','seed-event-001')"
         )
         connection.execute(
-            "UPDATE events SET status='draft' WHERE id='seed-event-002'"
+            """UPDATE events SET status='draft',draft_starts_at_ms=starts_at_ms,
+                      draft_ends_at_ms=ends_at_ms,draft_delivery_mode=delivery_mode
+               WHERE id='seed-event-002'"""
         )
         connection.execute(
             "UPDATE events SET status='archived',archived_at_ms=2 "

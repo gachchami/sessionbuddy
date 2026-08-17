@@ -986,6 +986,35 @@
     shell.replaceChildren(inner);
   }
 
+  function renderPersonaAccessDenied(requiredPersona, session) {
+    if (!shell) return;
+    clearCachedSession();
+    document.body.classList.remove("sb-shell-authenticated", "sb-shell-single", "sb-shell-global");
+    document.body.classList.add("sb-shell-guest");
+    const inner = make("div", undefined, "sb-guest-header__inner");
+    const identity = make("span", undefined, "sb-app-brand");
+    identity.append(brandMark(), make("span", "SessionBuddy"));
+    const message = make("span", `This page requires the ${requiredPersona} role. Your current role is ${session.active_role}.`, "sb-session-contract-error");
+    message.setAttribute("role", "alert");
+    const actions = make("span", undefined, "sb-guest-header__actions");
+    const account = link("Switch role", `/account?next=${encodeURIComponent(location.pathname + location.search)}`);
+    account.className = "sb-guest-sign-in";
+    const workspace = link("Open current workspace", dashboardDestination(session) || "/");
+    workspace.className = "sb-guest-sign-in";
+    actions.append(account, workspace);
+    inner.append(identity, message, actions);
+    shell.className = "sb-guest-header";
+    shell.replaceChildren(inner);
+    const main = document.querySelector("main");
+    if (main) {
+      main.replaceChildren();
+      const panel = make("section", undefined, "card unavailable-state");
+      panel.setAttribute("role", "alert");
+      panel.append(make("h1", "You do not have access in this role"), make("p", `Switch to the ${requiredPersona} role to open this page, or return to your current workspace.`), account.cloneNode(true), document.createTextNode(" "), workspace.cloneNode(true));
+      main.append(panel);
+    }
+  }
+
   function renderLandingSessionContractError() {
     if (landingAccount) {
       const error = make("span", "Account access unavailable", "sb-landing-account-error");
@@ -1003,17 +1032,19 @@
   // on screen, false when the session failed its contract or the page is
   // navigating away. Shared by the instant cached paint and the fresh
   // response, so the two can never route differently.
-  function applySession(session) {
+  function applySession(session, { authoritative = true } = {}) {
     const missingActiveRole = session.active_role === null
       || session.active_role === undefined || session.active_role === "";
     const rolelessNeutral = missingActiveRole && isPersonaNeutralPath();
     if (!activeRole(session) && !rolelessNeutral) {
+      if (!authoritative) return null;
       clearCachedSession();
       renderSessionContractError();
       renderLandingSessionContractError();
       return false;
     }
     if (!dashboardDestination(session) && !rolelessNeutral) {
+      if (!authoritative) return null;
       clearCachedSession();
       renderSessionContractError("workspace");
       renderLandingSessionContractError();
@@ -1022,9 +1053,11 @@
     const requiredPersona = personaForCurrentPath();
     const active = activeRole(session);
     if (requiredPersona && active?.role !== requiredPersona) {
-      const destination = dashboardDestination(session);
-      if (destination) location.replace(destination);
-      else renderSessionContractError("workspace");
+      // Cached identity is only an optimistic paint hint. A role may have
+      // changed in another tab or during a replacement sign-in, so only the
+      // authoritative session response may deny this document.
+      if (!authoritative) return null;
+      renderPersonaAccessDenied(requiredPersona, session);
       return false;
     }
     window.SessionBuddyShellSession = session;
@@ -1032,6 +1065,7 @@
     // dashboard hops no longer flash an intermediate page on the way through.
     if (!rolelessNeutral) writeCachedSession(session);
     if (!session.profile_complete && location.pathname !== "/account") {
+      if (!authoritative) return null;
       const next = `${location.pathname}${location.search}${location.hash}`;
       location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);
       return false;
@@ -1056,10 +1090,11 @@
     // and let the fetch below confirm or correct.
     const cached = shell ? usableCachedSession() : null;
     if (cached) {
-      shellPaintedFromCache = applySession(cached);
+      const cachedResult = applySession(cached, { authoritative: false });
+      shellPaintedFromCache = cachedResult === true;
       // A cached apply that navigates away hands the decision to the
       // destination page, which revalidates on arrival.
-      if (!shellPaintedFromCache) return;
+      if (cachedResult === false) return;
     }
     let session;
     try {

@@ -114,4 +114,29 @@ test.describe("active role session contract", () => {
     await expect(shell.locator("a")).toHaveCount(0);
     await expect(shell.locator(".sb-account")).toHaveCount(0);
   });
+
+  test("a stale reviewer cache cannot deny an organizer document", async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem("sessionbuddy:shell-session", JSON.stringify({
+        stored_at: Date.now(),
+        session: {
+          email: "multi-role@example.test",
+          display_name: "Multi Role",
+          organization_name: "Example Organization",
+          active_role: "reviewer",
+          account_roles: ["organizer", "reviewer"],
+          profile_complete: true,
+          organization_access: [{ permissions: ["owner"] }],
+          event_access: [],
+        },
+      }));
+    });
+    await mockAccount(page, "organizer");
+
+    await page.goto("/admin");
+
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.locator("header[data-auth-shell]").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".sb-account__identity")).toContainText("Organizer");
+  });
 });

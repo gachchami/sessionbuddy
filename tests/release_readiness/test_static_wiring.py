@@ -356,8 +356,8 @@ def test_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> Non
 
     assert "editor.elements.confirmation_subject.value = form.confirmation_subject" in script
     assert "editor.elements.confirmation_body.value = form.confirmation_body" in script
-    assert "payload.confirmation_subject = values.confirmation_subject" in script
-    assert "payload.confirmation_body = values.confirmation_body" in script
+    assert "confirmation_subject: values.confirmation_subject" in script
+    assert "confirmation_body: values.confirmation_body" in script
     slug_update = script.split('byId("save-url-header").addEventListener', 1)[1]
     assert "confirmation_subject: current.confirmation_subject" in slug_update
     assert "confirmation_body: current.confirmation_body" in slug_update

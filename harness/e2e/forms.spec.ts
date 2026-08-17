@@ -64,10 +64,20 @@ test.describe("form validation and workflow wiring", () => {
       body: JSON.stringify({ data: [{ id: organizationId, name: organizationName, status: "active", version: 1 }] }),
     }));
     await page.route(`**/api/v1/admin/organizations/${organizationId}`, async (route) => {
-      organizationWrites += 1;
-      organizationName = route.request().postDataJSON().name;
+      if (route.request().method() === "PATCH") {
+        organizationWrites += 1;
+        organizationName = route.request().postDataJSON().name;
+      }
       await route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: organizationId, name: organizationName, status: "active", version: 2 }) });
     });
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/access-grants`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    }));
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/activities`, (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    }));
     let profileWrites = 0;
     let profile = { email: "admin@example.com", display_name: "Admin User", first_name: "Admin", last_name: "User", job_title: null, company: null, time_zone: "UTC", description: null, website_url: null, linkedin_url: null, x_url: null, version: 1 };
     await page.route("**/api/v1/account/profile", async (route) => {
@@ -78,11 +88,14 @@ test.describe("form validation and workflow wiring", () => {
       await route.fulfill({ contentType: "application/json", body: JSON.stringify(profile) });
     });
     await page.goto("/admin/organization");
+    await expect(page.locator("#organization-activity")).toBeVisible();
     const organizationForm = page.locator("#organization-settings form").first();
-    await organizationForm.getByLabel("Organization name").fill("");
+    const organizationNameInput = organizationForm.getByLabel("Organization name");
+    await organizationNameInput.fill("");
+    await expect(organizationNameInput).toHaveValue("");
     await organizationForm.getByRole("button", { name: "Save organization" }).click();
     expect(organizationWrites).toBe(0);
-    await organizationForm.getByLabel("Organization name").fill("Updated Events");
+    await organizationNameInput.fill("Updated Events");
     await organizationForm.getByRole("button", { name: "Save organization" }).click();
     await expect.poll(() => organizationWrites).toBe(1);
 

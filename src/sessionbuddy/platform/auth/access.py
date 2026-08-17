@@ -637,6 +637,9 @@ class EventView(BaseModel):
     time_zone: str
     location: str
     delivery_mode: Literal["in_person", "virtual", "hybrid"]
+    draft_starts_at_ms: int | None = None
+    draft_ends_at_ms: int | None = None
+    draft_delivery_mode: Literal["in_person", "virtual", "hybrid"] | None = None
     description: str
     accent_color: str | None = None
     logo_url: str | None = None
@@ -690,12 +693,12 @@ class EventBrandingAssetView(BaseModel):
 class EventCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=200)
-    starts_at_ms: int = Field(ge=0)
-    ends_at_ms: int = Field(ge=0)
+    starts_at_ms: int | None = Field(default=None, ge=0)
+    ends_at_ms: int | None = Field(default=None, ge=0)
     time_zone: str = Field(min_length=1, max_length=100)
-    location: str = Field(min_length=1, max_length=500)
-    delivery_mode: Literal["in_person", "virtual", "hybrid"]
-    description: str = Field(min_length=1, max_length=2000)
+    location: str = Field(default="", max_length=500)
+    delivery_mode: Literal["in_person", "virtual", "hybrid"] | None = None
+    description: str = Field(default="", max_length=2000)
     accent_color: str | None = Field(default="#3159d9", pattern=r"^#[0-9A-Fa-f]{6}$")
     logo_url: str | None = Field(default=None, max_length=2000)
     cover_image_url: str | None = Field(default=None, max_length=2000)
@@ -749,7 +752,11 @@ class EventCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_event_times(self) -> "EventCreate":
-        if self.ends_at_ms <= self.starts_at_ms:
+        if (
+            self.starts_at_ms is not None
+            and self.ends_at_ms is not None
+            and self.ends_at_ms <= self.starts_at_ms
+        ):
             raise ValueError("event end must be after its start")
         return self
 
@@ -900,8 +907,8 @@ class CurrentSession(BaseModel):
     display_name: str | None = None
     profile_complete: bool = False
     csrf_token: str
-    default_email_sender_name: str
-    default_email_address: str
+    default_email_sender_name: str | None = None
+    default_email_address: str | None = None
     account_roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(default_factory=list)
     active_role: Literal["organizer", "reviewer", "speaker"]
     default_role: Literal["organizer", "reviewer", "speaker"] | None = None
@@ -2174,7 +2181,7 @@ async def list_events(
     elif view == "draft":
         conditions.append("e.status='draft'")
     elif view == "past":
-        conditions.append("(e.ends_at_ms<? OR e.status='archived')")
+        conditions.append("((e.status='active' AND e.ends_at_ms<?) OR e.status='archived')")
         binds.append(now)
     if search:
         escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -2195,7 +2202,7 @@ async def list_events(
         "SELECT e.id,e.organization_id,e.name,e.starts_at_ms,e.ends_at_ms,e.time_zone,"  # noqa: S608, E501
         "e.location,e.delivery_mode,e.description,e.accent_color,e.logo_url,"
         "e.cover_image_url,e.website_url,e.email_sender_name,e.email_reply_to,"
-        "e.status,e.version,"
+        "e.status,e.version,e.draft_starts_at_ms,e.draft_ends_at_ms,e.draft_delivery_mode,"
         "(SELECT COUNT(*) FROM submissions s WHERE s.organization_id=e.organization_id "
         "AND s.event_id=e.id AND s.status='submitted') AS proposal_count,"
         "(SELECT COUNT(DISTINCT ea.submission_id) FROM evaluation_rounds er "
@@ -2543,7 +2550,8 @@ async def get_event(event_id: str, request: Request) -> EventView:
         .prepare(
             """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                       delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
-                      email_sender_name,email_reply_to,status,version,
+                      email_sender_name,email_reply_to,status,version,draft_starts_at_ms,
+                      draft_ends_at_ms,draft_delivery_mode,
                       (SELECT COUNT(*) FROM submissions s
                        WHERE s.organization_id=events.organization_id
                          AND s.event_id=events.id AND s.status='submitted') AS proposal_count,
@@ -2611,9 +2619,16 @@ async def duplicate_event(
 ) -> EventView:
     """Copy safe event setup into a new draft; operational records never cross over."""
     db, now = database(request), utc_now_ms()
-    _validate_event_times(body.starts_at_ms, body.ends_at_ms)
+    (
+        stored_start,
+        stored_end,
+        stored_delivery,
+        draft_start,
+        draft_end,
+        draft_delivery,
+    ) = _event_storage_values(body, body.status)
     if body.status == "active":
-        _validate_event_can_activate(body.ends_at_ms, now)
+        _validate_event_can_activate(stored_end, now)
     source_scope = row_mapping(
         await db.prepare("SELECT id,organization_id FROM events WHERE id=?1 LIMIT 1")
         .bind(event_id)
@@ -2689,7 +2704,8 @@ async def duplicate_event(
                 """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,
                           location,delivery_mode,description,accent_color,logo_url,
                           cover_image_url,website_url,email_sender_name,email_reply_to,
-                          status,version
+                          status,version,draft_starts_at_ms,draft_ends_at_ms,
+                          draft_delivery_mode
                    FROM events WHERE id=?1 AND organization_id=?2 LIMIT 1"""
             )
             .bind(str(replay["response_resource_id"]), organization_id)
@@ -2796,21 +2812,22 @@ async def duplicate_event(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                 delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
-                email_sender_name,email_reply_to,status,created_at_ms,updated_at_ms)
+                email_sender_name,email_reply_to,status,draft_starts_at_ms,draft_ends_at_ms,
+                draft_delivery_mode,created_at_ms,updated_at_ms)
                SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
-                      ?17,?16,?16
+                      ?17,?18,?19,?20,?16,?16
                WHERE EXISTS(SELECT 1 FROM events source
-                            WHERE source.id=?18 AND source.organization_id=?2
-                              AND source.version=?19)"""
+                            WHERE source.id=?21 AND source.organization_id=?2
+                              AND source.version=?22)"""
         ).bind(
             duplicated_event_id,
             organization_id,
             duplicate_name,
-            body.starts_at_ms,
-            body.ends_at_ms,
+            stored_start,
+            stored_end,
             body.time_zone,
             body.location,
-            body.delivery_mode,
+            stored_delivery,
             body.description,
             body.accent_color,
             logo_url,
@@ -2820,6 +2837,9 @@ async def duplicate_event(
             body.email_reply_to,
             now,
             body.status,
+            draft_start,
+            draft_end,
+            draft_delivery,
             event_id,
             body.source_version,
         )
@@ -2875,11 +2895,14 @@ async def duplicate_event(
         id=duplicated_event_id,
         organization_id=organization_id,
         name=duplicate_name,
-        starts_at_ms=body.starts_at_ms,
-        ends_at_ms=body.ends_at_ms,
+        starts_at_ms=stored_start,
+        ends_at_ms=stored_end,
         time_zone=body.time_zone,
         location=body.location,
-        delivery_mode=body.delivery_mode,
+        delivery_mode=stored_delivery,
+        draft_starts_at_ms=draft_start,
+        draft_ends_at_ms=draft_end,
+        draft_delivery_mode=draft_delivery,
         description=body.description,
         accent_color=body.accent_color,
         logo_url=logo_url,
@@ -2892,9 +2915,52 @@ async def duplicate_event(
     )
 
 
-def _validate_event_times(starts_at_ms: int, ends_at_ms: int) -> None:
-    if ends_at_ms <= starts_at_ms:
+def _validate_event_times(starts_at_ms: int | None, ends_at_ms: int | None) -> None:
+    if starts_at_ms is not None and ends_at_ms is not None and ends_at_ms <= starts_at_ms:
         raise HTTPException(status_code=422)
+
+
+def _event_storage_values(
+    body: EventCreate, status: str
+) -> tuple[int, int, str, int | None, int | None, str | None]:
+    """Keep incomplete draft input without weakening the released event columns."""
+    _validate_event_times(body.starts_at_ms, body.ends_at_ms)
+    if status != "draft" and (
+        body.starts_at_ms is None
+        or body.ends_at_ms is None
+        or body.delivery_mode is None
+        or not body.location
+        or not body.description
+        or body.starts_at_ms < 0
+    ):
+        raise HTTPException(status_code=422, detail="complete the event details before activating")
+    if status == "draft":
+        complete_details = (
+            body.starts_at_ms is not None
+            and body.ends_at_ms is not None
+            and body.delivery_mode is not None
+            and bool(body.location)
+            and bool(body.description)
+        )
+        stored_start = body.starts_at_ms if complete_details else 0
+        stored_end = body.ends_at_ms if complete_details else 1
+        stored_delivery = body.delivery_mode if complete_details else "in_person"
+        return (
+            stored_start,
+            stored_end,
+            stored_delivery,
+            body.starts_at_ms,
+            body.ends_at_ms,
+            body.delivery_mode,
+        )
+    return (
+        body.starts_at_ms,
+        body.ends_at_ms,
+        body.delivery_mode,
+        None,
+        None,
+        None,
+    )
 
 
 def _validate_event_can_activate(ends_at_ms: int, now_ms: int) -> None:
@@ -3457,8 +3523,15 @@ async def create_event(
     request: Request,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> EventView:
-    _validate_event_times(body.starts_at_ms, body.ends_at_ms)
     requested_status: Literal["draft", "active"] = getattr(body, "status", "active")
+    (
+        stored_start,
+        stored_end,
+        stored_delivery,
+        draft_start,
+        draft_end,
+        draft_delivery,
+    ) = _event_storage_values(body, requested_status)
     authenticated = await require_permission(
         request,
         Permission.ORGANIZATION_MANAGE,
@@ -3520,7 +3593,8 @@ async def create_event(
                     """SELECT id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,
                               location,delivery_mode,description,accent_color,logo_url,
                               cover_image_url,website_url,email_sender_name,email_reply_to,
-                              status,version
+                              status,version,draft_starts_at_ms,draft_ends_at_ms,
+                              draft_delivery_mode
                        FROM events WHERE id=?1 AND organization_id=?2 LIMIT 1"""
                 )
                 .bind(str(replay["response_resource_id"]), organization_id)
@@ -3552,7 +3626,7 @@ async def create_event(
             asset_url=body.cover_image_url,
         )
     if requested_status == "active":
-        _validate_event_can_activate(body.ends_at_ms, now)
+        _validate_event_can_activate(stored_end, now)
     batch = CommandBatch(db)
     if record is not None:
         batch.begin_idempotency(record, now)
@@ -3561,17 +3635,19 @@ async def create_event(
             """INSERT INTO events
                (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                 delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
-                email_sender_name,email_reply_to,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?17)"""
+                email_sender_name,email_reply_to,status,draft_starts_at_ms,draft_ends_at_ms,
+                draft_delivery_mode,created_at_ms,updated_at_ms)
+               VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,
+                      ?17,?18,?19,?20,?20)"""
         ).bind(
             event_id,
             organization_id,
             body.name,
-            body.starts_at_ms,
-            body.ends_at_ms,
+            stored_start,
+            stored_end,
             body.time_zone,
             body.location,
-            body.delivery_mode,
+            stored_delivery,
             body.description,
             body.accent_color,
             body.logo_url,
@@ -3580,6 +3656,9 @@ async def create_event(
             body.email_sender_name,
             body.email_reply_to,
             requested_status,
+            draft_start,
+            draft_end,
+            draft_delivery,
             now,
         )
     )
@@ -3627,7 +3706,13 @@ async def create_event(
         organization_id=organization_id,
         status=requested_status,
         version=1,
-        **body.model_dump(exclude={"status"}),
+        starts_at_ms=stored_start,
+        ends_at_ms=stored_end,
+        delivery_mode=stored_delivery,
+        draft_starts_at_ms=draft_start,
+        draft_ends_at_ms=draft_end,
+        draft_delivery_mode=draft_delivery,
+        **body.model_dump(exclude={"status", "starts_at_ms", "ends_at_ms", "delivery_mode"}),
     )
 
 
@@ -3637,7 +3722,6 @@ async def create_event(
     tags=["administration"],
 )
 async def update_event(event_id: str, body: EventUpdate, request: Request) -> EventView:
-    _validate_event_times(body.starts_at_ms, body.ends_at_ms)
     db = database(request)
     event = row_mapping(
         await db.prepare(
@@ -3656,6 +3740,14 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         mutation=True,
     )
     resolved_status = body.status if body.status is not None else str(event["status"])
+    (
+        stored_start,
+        stored_end,
+        stored_delivery,
+        draft_start,
+        draft_end,
+        draft_delivery,
+    ) = _event_storage_values(body, resolved_status)
     current_status = str(event["status"])
     if resolved_status != current_status and "archived" in {
         resolved_status,
@@ -3671,7 +3763,7 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
         )
     now = utc_now_ms()
     if resolved_status == "active" and current_status != "active":
-        _validate_event_can_activate(body.ends_at_ms, now)
+        _validate_event_can_activate(stored_end, now)
     current_logo_url = str(event["logo_url"]) if event["logo_url"] is not None else None
     logo_url = body.logo_url if "logo_url" in body.model_fields_set else current_logo_url
     if logo_url != current_logo_url and logo_url is not None:
@@ -3709,19 +3801,21 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             """UPDATE events SET name=?1,starts_at_ms=?2,ends_at_ms=?3,time_zone=?4,
                location=?5,delivery_mode=?6,description=?7,accent_color=?8,logo_url=?9,
                cover_image_url=?10,website_url=?11,email_sender_name=?12,email_reply_to=?13,status=?14,
-               archived_at_ms=?15,version=version+1,updated_at_ms=?16
-               WHERE id=?17 AND version=?18
+               archived_at_ms=?15,draft_starts_at_ms=?16,draft_ends_at_ms=?17,
+               draft_delivery_mode=?18,version=version+1,updated_at_ms=?19
+               WHERE id=?20 AND version=?21
                RETURNING id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
                          delivery_mode,description,accent_color,logo_url,cover_image_url,website_url,
-                         email_sender_name,email_reply_to,status,version"""
+                         email_sender_name,email_reply_to,status,version,draft_starts_at_ms,
+                         draft_ends_at_ms,draft_delivery_mode"""
         )
         .bind(
             body.name,
-            body.starts_at_ms,
-            body.ends_at_ms,
+            stored_start,
+            stored_end,
             body.time_zone,
             body.location,
-            body.delivery_mode,
+            stored_delivery,
             body.description,
             body.accent_color,
             logo_url,
@@ -3731,6 +3825,9 @@ async def update_event(event_id: str, body: EventUpdate, request: Request) -> Ev
             body.email_reply_to,
             resolved_status,
             archived_at_ms,
+            draft_start,
+            draft_end,
+            draft_delivery,
             now,
             event_id,
             body.version,
@@ -6947,9 +7044,7 @@ async def current_session(request: Request) -> CurrentSession:
     organization_id = organization_access[0].organization_id if organization_access else None
     organization_name = organization_access[0].organization_name if organization_access else None
     event_scope = event_access[0] if event_access else None
-    configured_sender = str(
-        getattr(environment(request), "RESEND_FROM_ADDRESS", "SessionBuddy <events@example.test>")
-    )
+    configured_sender = str(getattr(environment(request), "RESEND_FROM_ADDRESS", "") or "")
     default_sender_name, default_email_address = parseaddr(configured_sender)
     return CurrentSession(
         user_id=authenticated.actor.user_id,
@@ -6957,8 +7052,8 @@ async def current_session(request: Request) -> CurrentSession:
         display_name=str(user["display_name"]) if user["display_name"] is not None else None,
         profile_complete=bool(user["profile_complete"]),
         csrf_token=issue_csrf_token(authenticated.session_id, secret(request, "CSRF_HMAC_KEY")),
-        default_email_sender_name=default_sender_name or "SessionBuddy",
-        default_email_address=default_email_address or "events@example.test",
+        default_email_sender_name=default_sender_name or None,
+        default_email_address=default_email_address or None,
         account_roles=account_roles,
         active_role=active_role,
         default_role=default_role,

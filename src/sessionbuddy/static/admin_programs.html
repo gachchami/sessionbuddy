@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Call for Proposals · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=85">
+  <link rel="stylesheet" href="/product/assets/product.css?v=86">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
   <script src="/public/assets/event-masthead.js?v=89ffbe0accd6" defer></script>
-  <script src="/product/assets/admin-programs.js?v=8f55b5e31b8d" defer></script>
+  <script src="/product/assets/admin-programs.js?v=6085b3736805" defer></script>
 </head>
 <body class="app-body cfp-page workflow-page workflow-page--cfp">
   <a class="skip-link" href="#main">Skip to CFP setup</a>
@@ -53,7 +53,7 @@
     <section id="publish-settings" class="cfp-builder workflow-stage" aria-labelledby="cfp-builder-title">
       <div class="cfp-builder__heading">
         <div><h2 id="cfp-builder-title" tabindex="-1">Build your proposal form</h2><div class="cfp-builder__statusline"><strong id="publish-action-label">Draft</strong><span id="publish-result" class="result">Complete the form, then publish it.</span></div></div>
-        <div id="cfp-editor-actions" class="cfp-editor-actions"><div class="cfp-builder__state"><span id="cfp-autosave-state" class="draft-state" role="status" aria-live="polite"></span><span id="published-note" class="badge success" hidden>Published</span></div><div class="actions"><button id="cancel-cfp-edit" type="button" class="secondary" hidden>Discard changes</button><button id="publish-cfp-action" type="submit" form="publish-form" disabled>Publish CFP</button></div></div>
+        <div id="cfp-editor-actions" class="cfp-editor-actions"><div class="cfp-builder__state"><span id="cfp-autosave-state" class="draft-state" role="status" aria-live="polite"></span><span id="published-note" class="badge success" hidden>Published</span></div><div class="actions"><button id="cancel-cfp-edit" type="button" class="secondary" hidden>Discard changes</button><button id="save-cfp-draft" type="button" class="secondary" disabled>Save draft</button><button id="publish-cfp-action" type="submit" form="publish-form" disabled>Publish CFP</button></div></div>
       </div>
       <section id="cfp-readiness" class="cfp-readiness" aria-labelledby="cfp-readiness-title">
         <div class="cfp-readiness__summary"><strong id="cfp-readiness-title">Readiness</strong><span id="cfp-readiness-count">Checking…</span></div>
@@ -84,7 +84,8 @@
           </section>
           <section id="cfp-questions" class="cfp-editor-section workflow-step">
             <div class="cfp-editor-section__heading"><div><h3>Questions</h3><p>Collect speaker and proposal information.</p></div></div>
-            <div class="cfp-profile-note"><strong>Speaker identity comes from the registered profile</strong><span>Name, email, biography, photo, and organization are not configured here.</span></div>
+            <div class="cfp-profile-note"><strong>Account identity and proposal answers stay separate</strong><span>Name and email identify the speaker account. Biography can be collected for this event; photo and organization remain in the speaker profile.</span></div>
+            <p id="track-configuration-note" class="help">Session formats are configured here. Event tracks are shared with the schedule and are managed in <a id="manage-event-tracks" href="/admin">Agenda</a>.</p>
             <div class="cfp-question-actions"><button id="toggle-field-order" type="button" class="secondary" aria-expanded="false" aria-controls="field-order-panel">Reorder questions</button><button id="add-field" type="button" class="secondary">+ Add custom question</button></div><section id="field-order-panel" class="field-order-panel" aria-labelledby="field-order-title" hidden><div><h4 id="field-order-title">Question order</h4></div><div id="field-order-list" class="field-order-list"></div></section><div id="cfp-reorder-feedback" class="cfp-reorder-feedback" role="status" aria-live="polite" hidden><span id="cfp-reorder-message"></span><button id="undo-field-move" type="button" class="tertiary">Undo</button></div><div id="form-fields"></div><div id="cfp-custom-empty" class="cfp-custom-empty" hidden><strong>No custom questions yet</strong><span>Add one for information beyond the standard proposal fields.</span></div>
           </section>
           <section id="cfp-co-speakers" class="cfp-editor-section workflow-step"><div class="cfp-editor-section__heading"><div><h3>Additional participants</h3></div></div><div class="cfp-profile-note"><strong>Additional participants are optional and join by invitation</strong><span>Speakers, co-authors, moderators, and panelists accept an invitation and complete their own registered profile.</span></div><label class="cfp-short-field">Maximum additional participants<input name="co_speaker_limit" type="number" value="3" min="0" max="10" required><small>Allows panels and workshops by default. Set 0 to disable additional participants.</small></label></section>

@@ -64,7 +64,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 116, "table": 81, "trigger": 106}
+        assert object_counts == {"index": 116, "table": 81, "trigger": 110}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
@@ -92,6 +92,27 @@ def test_incremental_chain_preserves_and_explicitly_backfills_existing_rows() ->
     connection = apply_baseline()
     try:
         seed_platform(connection)
+        connection.execute(
+            """INSERT INTO events
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms)
+               VALUES('legacy-draft-event','org-a','Existing draft',2000,3000,'UTC',
+                      'Existing venue','hybrid','Existing description','draft',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO events
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms)
+               VALUES('legacy-epoch-active','org-a','Epoch active',0,1,'UTC',
+                      'Existing venue','hybrid','Existing description','active',1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO events
+               (id,organization_id,name,starts_at_ms,ends_at_ms,time_zone,location,
+                delivery_mode,description,status,created_at_ms,updated_at_ms,archived_at_ms)
+               VALUES('legacy-epoch-archived','org-a','Epoch archived',0,1,'UTC',
+                      'Existing venue','hybrid','Existing description','archived',1000,1000,1000)"""
+        )
         add_speaker(connection, "a")
         link_submission_speaker(connection, "a")
         connection.execute(
@@ -181,6 +202,55 @@ def test_incremental_chain_preserves_and_explicitly_backfills_existing_rows() ->
             ("legacy-decision-message", "Existing decision subject", None),
             ("legacy-manual-message", "Existing manual subject", None),
         ]
+        assert connection.execute(
+            """SELECT draft_starts_at_ms,draft_ends_at_ms,draft_delivery_mode
+               FROM events WHERE id='legacy-draft-event'"""
+        ).fetchone() == (2000, 3000, "hybrid")
+        # A complete draft must mirror the released projection; this update is
+        # rejected before its invalid time range could become observable.
+        with pytest.raises(sqlite3.IntegrityError, match="draft storage projection mismatch"):
+            connection.execute(
+                """UPDATE events SET starts_at_ms=0,ends_at_ms=1,delivery_mode='in_person',
+                          draft_starts_at_ms=2000,draft_ends_at_ms=1000
+                   WHERE id='legacy-draft-event'"""
+            )
+        connection.execute(
+            """UPDATE events SET description='Updated active description'
+               WHERE id='legacy-epoch-active'"""
+        )
+        connection.execute(
+            """UPDATE events SET description='Updated archived description'
+               WHERE id='legacy-epoch-archived'"""
+        )
+        assert connection.execute(
+            """SELECT id,starts_at_ms,description FROM events
+               WHERE id LIKE 'legacy-epoch-%' ORDER BY id"""
+        ).fetchall() == [
+            ("legacy-epoch-active", 0, "Updated active description"),
+            ("legacy-epoch-archived", 0, "Updated archived description"),
+        ]
+        with pytest.raises(sqlite3.IntegrityError, match="event details are incomplete"):
+            connection.execute(
+                """UPDATE events SET status='active',archived_at_ms=NULL
+                   WHERE id='legacy-epoch-archived'"""
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="event draft end must be after start"):
+            connection.execute(
+                """UPDATE events SET starts_at_ms=0,ends_at_ms=1,delivery_mode='in_person',
+                          draft_starts_at_ms=-1,draft_ends_at_ms=NULL,
+                          draft_delivery_mode=NULL
+                   WHERE id='legacy-draft-event'"""
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="draft storage projection mismatch"):
+            connection.execute(
+                """UPDATE events SET draft_ends_at_ms=NULL
+                   WHERE id='legacy-draft-event'"""
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="draft storage projection mismatch"):
+            connection.execute(
+                """UPDATE events SET location=''
+                   WHERE id='legacy-draft-event'"""
+            )
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         connection.close()

@@ -72,16 +72,20 @@
   }
 
   function formatDate(event) {
+    const startValue = event.status === "draft" ? event.draft_starts_at_ms : event.starts_at_ms;
+    const endValue = event.status === "draft" ? event.draft_ends_at_ms : event.ends_at_ms;
+    if (startValue == null) return "Dates not set";
     const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: event.time_zone || "UTC" });
-    const start = new Date(event.starts_at_ms);
-    const end = new Date(event.ends_at_ms || event.starts_at_ms);
+    const start = new Date(startValue);
+    const end = new Date(endValue ?? startValue);
     return typeof formatter.formatRange === "function" && start.getTime() !== end.getTime()
       ? formatter.formatRange(start, end)
       : formatter.format(start);
   }
 
   function isoDate(event) {
-    return new Date(event.starts_at_ms).toISOString();
+    const startValue = event.status === "draft" ? event.draft_starts_at_ms : event.starts_at_ms;
+    return startValue == null ? "" : new Date(startValue).toISOString();
   }
 
   function cell(headerId, label, className = "") {
@@ -139,7 +143,8 @@
 
     const date = cell("event-column-date", "Date", "organizer-home-event-date");
     const time = document.createElement("time");
-    time.dateTime = isoDate(event);
+    const machineDate = isoDate(event);
+    if (machineDate) time.dateTime = machineDate;
     time.textContent = formatDate(event);
     date.append(time);
 

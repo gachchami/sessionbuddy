@@ -1,3 +1,4 @@
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -72,7 +73,256 @@ async def test_create_event_accepts_active_and_draft_with_idempotent_replay(
         "create-draft-event-0001",
     )
     assert draft.status == "draft"
-    assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
+    epoch_active = await access.create_event(
+        "org-a",
+        active_body.model_copy(
+            update={"name": "Epoch active event", "starts_at_ms": 0}
+        ),
+        branding_request(database, bucket, b""),
+        "create-epoch-active-event-0001",
+    )
+    assert epoch_active.starts_at_ms == 0
+    assert epoch_active.status == "active"
+    assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 3
+
+
+async def test_incomplete_event_details_are_private_draft_only(
+    branding_database, allow_organization_admin
+) -> None:
+    connection, database = branding_database
+    bucket = Bucket()
+    partial_start = utc_now_ms() + 86_400_000
+    incomplete = access.EventCreateRequest(
+        name="Early planning",
+        starts_at_ms=partial_start,
+        ends_at_ms=None,
+        time_zone="America/Los_Angeles",
+        delivery_mode=None,
+        status="draft",
+    )
+    saved = await access.create_event(
+        "org-a",
+        incomplete,
+        branding_request(database, bucket, b""),
+        "create-incomplete-draft-0001",
+    )
+    assert saved.status == "draft"
+    assert saved.location == ""
+    assert saved.description == ""
+    assert saved.draft_starts_at_ms == partial_start
+    assert saved.draft_ends_at_ms is None
+    assert saved.draft_delivery_mode is None
+    draft_page = await access.list_events(
+        "org-a", branding_request(database, bucket, b""), view="draft"
+    )
+    past_page = await access.list_events(
+        "org-a", branding_request(database, bucket, b""), view="past"
+    )
+    assert saved.id in {event.id for event in draft_page.data}
+    assert saved.id not in {event.id for event in past_page.data}
+    stored = connection.execute(
+        """SELECT starts_at_ms,ends_at_ms,delivery_mode,draft_starts_at_ms,
+                  draft_ends_at_ms,draft_delivery_mode FROM events WHERE id=?""",
+        (saved.id,),
+    ).fetchone()
+    assert tuple(stored) == (
+        0,
+        1,
+        "in_person",
+        partial_start,
+        None,
+        None,
+    )
+
+    # Even a writer that clears the private projection cannot launder the
+    # unmistakable physical sentinel into an active event.
+    with pytest.raises(sqlite3.IntegrityError, match="event details are incomplete"):
+        connection.execute(
+            """UPDATE events SET status='active',location='San Francisco',
+                      description='Planning in progress',draft_starts_at_ms=NULL,
+                      draft_ends_at_ms=NULL,draft_delivery_mode=NULL,
+                      delivery_mode='virtual'
+               WHERE id=?""",
+            (saved.id,),
+        )
+
+    replayed = await access.create_event(
+        "org-a",
+        incomplete,
+        branding_request(database, bucket, b""),
+        "create-incomplete-draft-0001",
+    )
+    assert replayed.draft_starts_at_ms == partial_start
+    assert replayed.draft_ends_at_ms is None
+    assert replayed.draft_delivery_mode is None
+
+    updated = await access.update_event(
+        saved.id,
+        access.EventUpdate(
+            **{
+                **incomplete.model_dump(exclude={"status"}),
+                "starts_at_ms": None,
+                "ends_at_ms": partial_start + 86_400_000,
+                "delivery_mode": "virtual",
+                "version": saved.version,
+                "status": "draft",
+            }
+        ),
+        branding_request(database, bucket, b""),
+    )
+    assert updated.draft_starts_at_ms is None
+    assert updated.draft_ends_at_ms == partial_start + 86_400_000
+    assert updated.draft_delivery_mode == "virtual"
+
+    with pytest.raises(HTTPException) as exc_info:
+        await access.create_event(
+            "org-a",
+            incomplete.model_copy(update={"status": "active"}),
+            branding_request(database, bucket, b""),
+            "create-incomplete-active-0001",
+        )
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "complete the event details before activating"
+
+    text_incomplete = access.EventCreateRequest(
+        name="Schedule before copy",
+        starts_at_ms=partial_start,
+        ends_at_ms=partial_start + 86_400_000,
+        time_zone="America/Los_Angeles",
+        location="",
+        delivery_mode="hybrid",
+        description="",
+        status="draft",
+    )
+    text_draft = await access.create_event(
+        "org-a",
+        text_incomplete,
+        branding_request(database, bucket, b""),
+        "create-text-incomplete-draft-0001",
+    )
+    assert tuple(
+        connection.execute(
+            "SELECT starts_at_ms,ends_at_ms,delivery_mode FROM events WHERE id=?",
+            (text_draft.id,),
+        ).fetchone()
+    ) == (0, 1, "in_person")
+    with pytest.raises(sqlite3.IntegrityError, match="event details are incomplete"):
+        connection.execute(
+            """UPDATE events SET status='active',location='San Francisco',
+                      description='Now complete',draft_starts_at_ms=NULL,
+                      draft_ends_at_ms=NULL,draft_delivery_mode=NULL
+               WHERE id=?""",
+            (text_draft.id,),
+        )
+
+    activated = await access.update_event(
+        text_draft.id,
+        access.EventUpdate(
+            **{
+                **text_incomplete.model_dump(exclude={"status"}),
+                "location": "San Francisco",
+                "description": "Now complete",
+                "version": text_draft.version,
+                "status": "active",
+            }
+        ),
+        branding_request(database, bucket, b""),
+    )
+    assert activated.status == "active"
+    assert activated.starts_at_ms == partial_start
+    assert activated.ends_at_ms == partial_start + 86_400_000
+    assert activated.delivery_mode == "hybrid"
+    assert activated.draft_starts_at_ms is None
+
+
+async def test_complete_draft_can_be_activated_without_reauthoring_details(
+    branding_database, allow_organization_admin
+) -> None:
+    connection, database = branding_database
+    bucket = Bucket()
+    complete = create_body(name="Complete private draft", status="draft")
+    draft = await access.create_event(
+        "org-a",
+        complete,
+        branding_request(database, bucket, b""),
+        "create-complete-draft-0001",
+    )
+    assert tuple(
+        connection.execute(
+            """SELECT starts_at_ms=draft_starts_at_ms,
+                      ends_at_ms=draft_ends_at_ms,
+                      delivery_mode=draft_delivery_mode
+               FROM events WHERE id=?""",
+            (draft.id,),
+        ).fetchone()
+    ) == (1, 1, 1)
+
+    activated = await access.update_event(
+        draft.id,
+        access.EventUpdate(
+            **{
+                **complete.model_dump(exclude={"status"}),
+                "version": draft.version,
+                "status": "active",
+            }
+        ),
+        branding_request(database, bucket, b""),
+    )
+    assert activated.status == "active"
+    assert activated.draft_starts_at_ms is None
+    assert activated.draft_ends_at_ms is None
+    assert activated.draft_delivery_mode is None
+
+
+async def test_incomplete_clone_cannot_be_created_active(
+    branding_database, allow_organization_admin
+) -> None:
+    _, database = branding_database
+    bucket = Bucket()
+    source = await access.create_event(
+        "org-a",
+        create_body(name="Source event"),
+        branding_request(database, bucket, b""),
+        "create-clone-source-0001",
+    )
+    partial_start = utc_now_ms() + 259_200_000
+    partial_clone = access.EventDuplicateCreate(
+        **{
+            **duplicate_body(source, name="Partial copy").model_dump(),
+            "starts_at_ms": partial_start,
+            "ends_at_ms": None,
+            "delivery_mode": None,
+            "status": "draft",
+        }
+    )
+    saved_partial = await access.duplicate_event(
+        source.id,
+        partial_clone,
+        branding_request(database, bucket, b""),
+        "duplicate-partial-draft-0001",
+    )
+    assert saved_partial.draft_starts_at_ms == partial_start
+    assert saved_partial.draft_ends_at_ms is None
+    assert saved_partial.draft_delivery_mode is None
+    incomplete_clone = access.EventDuplicateCreate(
+        **{
+            **duplicate_body(source, name="Incomplete copy").model_dump(),
+            "starts_at_ms": 0,
+            "ends_at_ms": 1,
+            "location": "",
+            "description": "",
+            "status": "active",
+        }
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await access.duplicate_event(
+            source.id,
+            incomplete_clone,
+            branding_request(database, bucket, b""),
+            "duplicate-incomplete-active-0001",
+        )
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "complete the event details before activating"
 
 
 async def test_duplicate_event_creates_only_safe_draft_setup(

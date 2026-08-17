@@ -89,7 +89,7 @@ def test_event_description_cap_matches_request_models_and_database(
             event_delivery_mode="virtual",
             event_description="x" * 2001,
         )
-    with pytest.raises(sqlite3.IntegrityError, match="event location and description"):
+    with pytest.raises(sqlite3.IntegrityError, match="event details are incomplete or invalid"):
         database.execute("UPDATE events SET description=? WHERE id='event-a'", ("x" * 2001,))
 
 
