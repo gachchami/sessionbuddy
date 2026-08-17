@@ -6,7 +6,7 @@ import pytest
 from route_inventory import document_routes
 
 from sessionbuddy.api.app import app
-from sessionbuddy.observability import record_integrity_signal, record_timing
+from sessionbuddy.observability import record_failure, record_integrity_signal, record_timing
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -87,6 +87,42 @@ def test_integrity_signal_sanitizes_drift_without_changing_control_flow(capsys) 
     assert event["cursor_contract"] == "other"
     assert event["field"] == "other"
     assert event["constraint"] == "other"
+
+
+def test_failure_evidence_groups_the_stack_without_logging_the_message() -> None:
+    request = SimpleNamespace(state=SimpleNamespace())
+    try:
+        raise RuntimeError("private proposal content must not reach telemetry")
+    except RuntimeError as exception:
+        record_failure(request, exception)
+
+    assert request.state.failure["exception_type"] == "RuntimeError"
+    assert request.state.failure["location"].endswith(
+        ":test_failure_evidence_groups_the_stack_without_logging_the_message"
+    )
+    assert len(request.state.failure["fingerprint"]) == 16
+    assert "private proposal" not in json.dumps(request.state.failure)
+
+
+def test_failure_fingerprint_disambiguates_same_named_modules() -> None:
+    def evidence(filename: str) -> dict[str, str]:
+        request = SimpleNamespace(state=SimpleNamespace())
+        try:
+            # Synthetic code objects let the test prove two deployed router.py
+            # modules do not collapse without importing either application module.
+            exec(  # noqa: S102 - fixed test source, never user-controlled
+                compile("raise RuntimeError('private')", filename, "exec"), {}
+            )
+        except RuntimeError as exception:
+            record_failure(request, exception)
+        return request.state.failure
+
+    evaluation = evidence("/workspace/src/sessionbuddy/evaluation/router.py")
+    scheduling = evidence("/workspace/src/sessionbuddy/scheduling/router.py")
+
+    assert evaluation["location"].startswith("sessionbuddy/evaluation/router.py:")
+    assert scheduling["location"].startswith("sessionbuddy/scheduling/router.py:")
+    assert evaluation["fingerprint"] != scheduling["fingerprint"]
 
 
 def test_every_document_route_is_registered_or_explicitly_excluded() -> None:

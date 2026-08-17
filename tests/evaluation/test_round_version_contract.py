@@ -25,6 +25,7 @@ What is pinned:
 """
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -217,6 +218,7 @@ async def test_a_bodyless_open_is_refused_by_the_mutation_guard_and_the_correct_
 
 async def test_missing_version_tokens_get_an_actionable_409_not_a_silent_write(
     production_environment,  # noqa: F811 - pytest fixture
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An unbuilt client must be told to reload, not guessed a version."""
     connection, _queue, environment = production_environment
@@ -272,6 +274,22 @@ async def test_missing_version_tokens_get_an_actionable_409_not_a_silent_write(
             json={"force": True, "reason": "Not without a version token."},
         )
         assert close_without_version.status_code == 409
+
+    absent_version_events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"event":"http.request.completed"' in line
+        and '"conflicts":["evaluation_round_version_absent"]' in line
+    ]
+    assert {event["route"] for event in absent_version_events} == {
+        "/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft",
+        "/api/v1/admin/evaluation-rounds/{round_id}/open",
+        "/api/v1/admin/evaluation-rounds/{round_id}/evaluators",
+        "/api/v1/admin/evaluation-rounds/{round_id}/submissions",
+        "/api/v1/admin/evaluation-rounds/{round_id}/evaluators/{evaluator_user_id}/remove",
+        "/api/v1/admin/evaluation-rounds/{round_id}/close",
+    }
+    assert all(event["status_class"] == "4xx" for event in absent_version_events)
 
     # Nothing moved: same name, same version, no audit trail for the refusals.
     row = connection.execute(
@@ -423,6 +441,7 @@ async def test_the_write_guard_rolls_back_every_statement_after_a_lost_cas(
 
 async def test_two_concurrent_open_requests_emit_one_audit_and_notification(
     production_environment,  # noqa: F811 - pytest fixture
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Different keys may race, but only one open lands -- the loser gets the 409.
 
@@ -468,6 +487,18 @@ async def test_two_concurrent_open_requests_emit_one_audit_and_notification(
 
         assert refused.status_code == 409, refused.text
         assert refused.headers["x-conflict-type"] == "round-version"
+
+    completion_events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"event":"http.request.completed"' in line
+    ]
+    assert any(
+        event.get("conflicts") == ["evaluation_round_version"]
+        and event["route"] == "/api/v1/admin/evaluation-rounds/{round_id}/open"
+        and event["status_class"] == "4xx"
+        for event in completion_events
+    )
 
     assert tuple(
         connection.execute(

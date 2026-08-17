@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, Response
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
-from sessionbuddy.observability import record_degradation, record_timing
+from sessionbuddy.observability import record_conflict, record_degradation, record_timing
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     require_document_persona,
@@ -324,7 +324,7 @@ def _round_version_headers() -> dict[str, str]:
     return {"X-Conflict-Type": "round-version"}
 
 
-def _require_expected_version(expected: int | None, current: object) -> int:
+def _require_expected_version(request: Request, expected: int | None, current: object) -> int:
     """Fast-fail a mutation whose version diverged before any work is done.
 
     The conditional UPDATE plus write guard later in the same batch remains the
@@ -332,12 +332,14 @@ def _require_expected_version(expected: int | None, current: object) -> int:
     failure shapes (absent and stale) one message each.
     """
     if expected is None:
+        record_conflict(request, "evaluation_round_version_absent")
         raise HTTPException(
             status_code=409,
             detail=ROUND_VERSION_REQUIRED_DETAIL,
             headers=_round_version_headers(),
         )
     if expected != int(current):
+        record_conflict(request, "evaluation_round_version")
         raise HTTPException(
             status_code=409,
             detail=ROUND_VERSION_CONFLICT_DETAIL,
@@ -391,6 +393,7 @@ async def _execute_round_mutation(
         # misreporting an unrelated constraint failure as another editor.
         if current_version is None or int(current_version) == expected_version:
             raise
+        record_conflict(request, "evaluation_round_version")
         raise HTTPException(
             status_code=409,
             detail=ROUND_VERSION_CONFLICT_DETAIL,
@@ -2261,7 +2264,7 @@ async def update_draft_evaluation_round(
     # The compare-and-set in the batch below remains the real gate for races
     # that arrive after this read; refusing here spares the loser the wasted
     # diff and gives both failure shapes one actionable sentence.
-    _require_expected_version(body.expected_version, stored["version"])
+    _require_expected_version(request, body.expected_version, stored["version"])
     if not diff.changed and not configuration_changed:
         # A repeated PUT writes nothing at all: no batch, no version bump, no audit record.
         # Bumping updated_at_ms here would churn optimistic concurrency for every other
@@ -2418,6 +2421,7 @@ async def update_draft_evaluation_round(
             raise
         # The write guard fired: the draft moved (or stopped being a draft)
         # between this editor's read and its write, and the batch rolled back.
+        record_conflict(request, "evaluation_round_version")
         raise HTTPException(
             status_code=409,
             detail=ROUND_VERSION_CONFLICT_DETAIL,
@@ -2545,7 +2549,7 @@ async def add_round_evaluator(
         return replayed
     if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
-    _require_expected_version(body.expected_version, round_row["version"])
+    _require_expected_version(request, body.expected_version, round_row["version"])
     reviewer = (
         await db.prepare(
             """SELECT 1 AS found FROM users u JOIN user_roles ur ON ur.user_id=u.id
@@ -2838,7 +2842,7 @@ async def add_round_submissions(
         return result
     if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
-    _require_expected_version(body.expected_version, round_row["version"])
+    _require_expected_version(request, body.expected_version, round_row["version"])
     placeholders = ",".join(f"?{index + 3}" for index in range(len(body.submission_ids)))
     submissions = result_rows(
         await db.prepare(
@@ -3075,7 +3079,7 @@ async def remove_round_evaluator(
     if round_row["status"] not in ("draft", "open"):
         raise HTTPException(status_code=409)
     _require_expected_version(
-        body.expected_version if body is not None else None, round_row["version"]
+        request, body.expected_version if body is not None else None, round_row["version"]
     )
     saved = int(
         await db.prepare(
@@ -4704,7 +4708,7 @@ async def open_evaluation_round(
     # honest 403, not die earlier as a 422. A well-formed request without a
     # version gets the actionable 409 below.
     _require_expected_version(
-        body.expected_version if body is not None else None, round_row["version"]
+        request, body.expected_version if body is not None else None, round_row["version"]
     )
     key = _key(idempotency_key)
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/open"
@@ -4899,7 +4903,7 @@ async def close_evaluation_round(
         return EvaluationRoundClosed(round_id=round_id)
     # Checked after the closed short-circuit so a repeated close keeps answering
     # "already closed" forever, but before any other work a stale editor did.
-    _require_expected_version(body.expected_version, round_row["version"])
+    _require_expected_version(request, body.expected_version, round_row["version"])
     route = "POST /api/v1/admin/evaluation-rounds/{round_id}/close"
     fingerprint = _fingerprint(body)
     replay = await _idempotency_replay(db, auth.actor.user_id, route, key, fingerprint)

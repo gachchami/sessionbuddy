@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import time
 import uuid
 from typing import Any
@@ -24,6 +26,10 @@ SAFE_DEGRADATIONS = (
     "speaker_import_row_failed",
     "speaker_profile_audit_failed",
     "speaker_restore_audit_failed",
+)
+SAFE_CONFLICTS = (
+    "evaluation_round_version",
+    "evaluation_round_version_absent",
 )
 SAFE_INTEGRITY_SIGNALS = ("sessionbuddy.signed_cursor.shape_failure",)
 SAFE_CURSOR_CONTRACTS = (
@@ -63,6 +69,64 @@ def record_degradation(request: Request, code: str) -> None:
         request.state.degradations = degradations
     if code not in degradations:
         degradations.append(code)
+
+
+def record_conflict(request: Request, code: str) -> None:
+    """Attach one bounded conflict class to durable request telemetry.
+
+    Expected optimistic-concurrency refusals are not degradations and must not
+    create audit rows: the whole point is that the losing write leaves no
+    database residue. Recording an allowlisted class on the request completion
+    event makes the refusal searchable in Workers Logs by route and request ID
+    without exposing tenant IDs, version values, payloads, or idempotency keys.
+    """
+    if code not in SAFE_CONFLICTS:
+        raise ValueError(f"Unsupported conflict code: {code}")
+    conflicts: list[str] | None = getattr(request.state, "conflicts", None)
+    if conflicts is None:
+        conflicts = []
+        request.state.conflicts = conflicts
+    if code not in conflicts:
+        conflicts.append(code)
+
+
+def record_failure(request: Request, exception: Exception) -> None:
+    """Attach privacy-safe failure evidence to the completion event.
+
+    Exception messages can contain SQL, form values, provider responses, or
+    other tenant data, so they never enter telemetry. The exception class,
+    final code location, and a stable stack fingerprint are enough to group a
+    500 and find the responsible source while the request ID connects it to
+    the user-visible reference.
+    """
+    frames: list[tuple[str, int, str]] = []
+    traceback = exception.__traceback__
+    while traceback is not None:
+        code = traceback.tb_frame.f_code
+        frames.append((_safe_code_path(code.co_filename), traceback.tb_lineno, code.co_name))
+        traceback = traceback.tb_next
+    exception_type = type(exception).__name__
+    fingerprint_input = "|".join(
+        [exception_type, *(f"{filename}:{line}:{function}" for filename, line, function in frames)]
+    )
+    location = (
+        f"{frames[-1][0]}:{frames[-1][1]}:{frames[-1][2]}" if frames else "unavailable"
+    )
+    request.state.failure = {
+        "exception_type": exception_type[:128],
+        "location": location[:256],
+        "fingerprint": hashlib.sha256(fingerprint_input.encode()).hexdigest()[:16],
+    }
+
+
+def _safe_code_path(filename: str) -> str:
+    """Return a disambiguating source path without its host-specific prefix."""
+    normalized = filename.replace("\\", "/")
+    for marker in ("sessionbuddy/", "scripts/", "tests/"):
+        index = normalized.find(marker)
+        if index >= 0:
+            return normalized[index:][:192]
+    return os.path.basename(normalized)[:192]
 
 
 def record_integrity_signal(
@@ -125,6 +189,8 @@ class RequestObservabilityMiddleware:
         request.state.request_started_ns = started_ns
         request.state.timings = {}
         request.state.degradations = []
+        request.state.conflicts = []
+        request.state.failure = None
         status_code = 500
 
         async def send_with_observability(message: Message) -> None:
@@ -142,13 +208,22 @@ class RequestObservabilityMiddleware:
 
         try:
             await self.app(scope, receive, send_with_observability)
+        except Exception as exception:
+            # Starlette's ServerErrorMiddleware owns the application-level
+            # catch-all handler outside user middleware. Capture here, before
+            # our finally emits, then re-raise so the normal 500 response and
+            # user-facing request reference remain unchanged.
+            record_failure(request, exception)
+            raise
         finally:
             total_ms = (time.perf_counter_ns() - started_ns) / 1_000_000
             timings: dict[str, float] = request.state.timings
             degradations: list[str] = request.state.degradations
+            conflicts: list[str] = request.state.conflicts
+            failure: dict[str, str] | None = request.state.failure
             if status_code >= 500:
                 level = "error"
-            elif degradations:
+            elif degradations or conflicts:
                 level = "warning"
             else:
                 level = "info"
@@ -166,6 +241,10 @@ class RequestObservabilityMiddleware:
             # historical shape for log-based dashboards and tests.
             if degradations:
                 event["degradations"] = sorted(degradations)
+            if conflicts:
+                event["conflicts"] = sorted(conflicts)
+            if failure:
+                event["failure"] = failure
             # Python Workers reliably retain stdout/stderr in Workers Logs.
             # Logging's default warning threshold can otherwise suppress these
             # completion records and make a user-facing reference unsearchable.

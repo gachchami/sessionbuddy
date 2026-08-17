@@ -9,7 +9,7 @@ from starlette.requests import Request
 
 import sessionbuddy.observability as observability_module
 import sessionbuddy.security as security_module
-from sessionbuddy.observability import RequestObservabilityMiddleware, record_timing
+from sessionbuddy.observability import RequestObservabilityMiddleware, record_failure, record_timing
 from sessionbuddy.security import SecurityHeadersMiddleware
 
 
@@ -147,6 +147,44 @@ async def test_unhandled_failure_still_emits_exactly_one_completion(
     assert events[0]["request_id"] == "unhandled-request"
     assert events[0]["route"] == "/api/v1/unhandled"
     assert events[0]["status_class"] == "5xx"
+    assert events[0]["failure"]["exception_type"] == "RuntimeError"
+    assert events[0]["failure"]["location"].endswith(":raising_app")
+    assert len(events[0]["failure"]["fingerprint"]) == 16
+    assert "synthetic downstream failure" not in json.dumps(events[0])
+
+
+async def test_handled_500_completion_carries_safe_failure_evidence(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def handled_failure_app(scope, receive, send) -> None:
+        request = Request(scope, receive=receive)
+        scope["route"] = SimpleNamespace(path="/api/v1/handled-failure")
+        try:
+            raise RuntimeError("private response body must not reach telemetry")
+        except RuntimeError as exception:
+            record_failure(request, exception)
+        await send({"type": "http.response.start", "status": 500, "headers": []})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    application = RequestObservabilityMiddleware(handled_failure_app)
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/v1/handled-failure", headers={"x-request-id": "failure-reference"}
+        )
+
+    event = next(
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"event":"http.request.completed"' in line
+    )
+    assert response.status_code == 500
+    assert event["request_id"] == "failure-reference"
+    assert event["failure"]["exception_type"] == "RuntimeError"
+    assert event["failure"]["location"].endswith(":handled_failure_app")
+    assert len(event["failure"]["fingerprint"]) == 16
+    assert "private response body" not in json.dumps(event)
 
 
 async def test_embed_response_remains_frameable_without_x_frame_options() -> None:

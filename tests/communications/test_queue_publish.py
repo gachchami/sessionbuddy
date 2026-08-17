@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.observability import (
     RequestObservabilityMiddleware,
+    record_conflict,
     record_degradation,
 )
 
@@ -85,6 +86,13 @@ def test_degradation_codes_come_from_a_fixed_allowlist() -> None:
         record_degradation(request, "tenant-secret")
 
 
+def test_conflict_codes_come_from_a_fixed_allowlist() -> None:
+    request = SimpleNamespace(state=SimpleNamespace())
+
+    with pytest.raises(ValueError, match="Unsupported conflict code"):
+        record_conflict(request, "tenant-secret")
+
+
 async def test_completion_event_reports_degradations_only_when_present(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -114,6 +122,41 @@ async def test_completion_event_reports_degradations_only_when_present(
     # Healthy requests keep their exact historical shape: no key at all.
     assert events[1]["level"] == "info"
     assert "degradations" not in events[1]
+
+
+async def test_completion_event_reports_safe_conflicts_without_payload_data(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def conflicted_app(scope, _receive, send) -> None:
+        scope["route"] = SimpleNamespace(path="/api/v1/admin/evaluation-rounds/{round_id}/open")
+        record_conflict(Request(scope), "evaluation_round_version")
+        await send({"type": "http.response.start", "status": 409, "headers": []})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    application = RequestObservabilityMiddleware(conflicted_app)
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/v1/admin/evaluation-rounds/round-secret/open")
+
+    event = next(
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"event":"http.request.completed"' in line
+    )
+    assert response.status_code == 409
+    assert event["level"] == "warning"
+    assert event["conflicts"] == ["evaluation_round_version"]
+    assert event["route"] == "/api/v1/admin/evaluation-rounds/{round_id}/open"
+    assert "round-secret" not in json.dumps(event)
+
+
+def test_missing_version_has_a_distinct_allowlisted_conflict_class() -> None:
+    request = SimpleNamespace(state=SimpleNamespace())
+
+    record_conflict(request, "evaluation_round_version_absent")
+
+    assert request.state.conflicts == ["evaluation_round_version_absent"]
 
 
 def test_request_handlers_publish_only_through_the_shared_helper() -> None:
