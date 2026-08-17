@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>People · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=80">
+  <link rel="stylesheet" href="/product/assets/product.css?v=81">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=30" defer></script>
   <script src="/admin/people/assets/search.js?v=1" defer></script>
-  <script src="/admin/people/assets/people.js?v=1ff0cf0f03da" defer></script>
+  <script src="/public/assets/biography-disclosure.js?v=b4a25d2ddfb3" defer></script>
+  <script src="/admin/people/assets/people.js?v=847aa6c892f4" defer></script>
 </head>
 <body class="app-body speaker-directory-page speaker-workspace-page">
   <a class="skip-link" href="#main">Skip to people</a>
@@ -27,26 +28,36 @@
     </div>
     <div data-speaker-hub-tabs></div>
     <div id="status" class="status status-compact" role="status" aria-live="polite">Loading…</div>
-    <section id="speaker-detail" class="card speaker-profile-editor" hidden aria-labelledby="speaker-name">
-      <p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p>
-      <div id="speaker-profile-view" class="speaker-profile-view" hidden>
-        <p id="speaker-role" class="lede"></p>
-        <p id="speaker-location" class="muted"></p>
-        <div><h3>About</h3><p id="speaker-biography"></p></div>
-        <div><h3>Links</h3><div id="speaker-links" class="actions"></div></div>
-        <div><h3>Events and proposals</h3><ul id="speaker-events" class="speaker-participations"></ul></div>
+    <section id="speaker-detail" class="speaker-profile-editor" hidden aria-labelledby="speaker-name">
+      <header class="speaker-detail-heading">
+        <div><p id="speaker-event" class="eyebrow"></p><h2 id="speaker-name"></h2><p id="speaker-proposal" class="lede"></p></div>
+        <div id="speaker-detail-mode" class="speaker-detail-mode" role="group" aria-label="Speaker detail view">
+          <button id="speaker-summary-tab" class="secondary" type="button" aria-pressed="true">Summary</button>
+          <button id="speaker-edit-tab" class="secondary" type="button" aria-pressed="false">Edit</button>
+        </div>
+      </header>
+      <div id="speaker-profile-view" class="speaker-profile-view">
+        <section class="speaker-summary-primary" aria-labelledby="speaker-about-title">
+          <p id="speaker-role" class="lede"></p>
+          <p id="speaker-location" class="muted"></p>
+          <div><h3 id="speaker-about-title">About</h3><p id="speaker-biography" class="biography-copy is-collapsed"></p><button id="speaker-biography-toggle" class="text-button biography-toggle" type="button" aria-controls="speaker-biography" aria-expanded="false">Show more</button></div>
+          <div id="speaker-links-section"><h3>Links</h3><div id="speaker-links" class="actions"></div></div>
+        </section>
+        <section class="speaker-summary-participations" aria-labelledby="speaker-events-title"><h3 id="speaker-events-title">Events and proposals</h3><ul id="speaker-events" class="speaker-participations"></ul></section>
       </div>
-      <form id="speaker-form"><input name="version" type="hidden"><input name="participation_version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label id="speaker-confirmation-field">Participation status<select name="confirmation_status"><option value="pending">Awaiting confirmation</option><option value="confirmed">Confirmed</option><option value="declined">Declined</option></select></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">Full http:// or https:// URLs, one per line</span><textarea name="links" rows="3" maxlength="20009" placeholder="https://example.com"></textarea></label></div><label>Organization biography <span class="optional">Leave blank to inherit the account biography</span><textarea name="biography_override" rows="6" maxlength="5000"></textarea></label><p id="speaker-biography-source" class="help"></p><button>Save speaker details</button></form>
-      <form id="speaker-headshot-form" class="account-headshot" hidden>
-        <div class="account-headshot__preview"><img id="speaker-headshot-preview" alt="" hidden><span id="speaker-headshot-fallback" aria-hidden="true">SP</span></div>
-        <div><h3>Headshot</h3><p class="help">Upload a JPG, PNG, or WebP for this speaker. Maximum 5 MB; it is scanned before use.</p><div class="actions"><label class="button secondary account-headshot__choose">Choose image<input name="headshot" type="file" accept="image/jpeg,image/png,image/webp" required></label><button type="submit">Save headshot</button></div><p id="speaker-headshot-status" class="status status-compact" role="status"></p></div>
-      </form>
-      <form id="speaker-organizer-notes" hidden>
-        <div class="section-heading"><div><h3>Organizer notes</h3><p class="help">Add event-specific fields such as travel, logistics, accessibility, or hospitality details. These notes are organizer-only.</p></div><button id="add-speaker-note" class="secondary" type="button">Add field</button></div>
-        <input name="version" type="hidden">
-        <div id="speaker-note-fields"></div>
-        <button type="submit">Save organizer notes</button>
-      </form>
+      <div id="speaker-edit-view" class="speaker-edit-view" hidden>
+        <section class="speaker-edit-section" aria-labelledby="speaker-details-title"><h3 id="speaker-details-title">Speaker details</h3><form id="speaker-form"><input name="version" type="hidden"><input name="participation_version" type="hidden"><div class="form-grid"><label>Name<input name="display_name" maxlength="200" required></label><label>Email<input name="email" type="email" readonly></label><label id="speaker-confirmation-field">Participation status<select name="confirmation_status"><option value="pending">Awaiting confirmation</option><option value="confirmed">Confirmed</option><option value="declined">Declined</option></select></label><label>Job title<input name="job_title" maxlength="200"></label><label>Company<input name="company" maxlength="200"></label><label>Location<input name="location" maxlength="300"></label><label>Links <span class="optional">Full http:// or https:// URLs, one per line</span><textarea name="links" rows="3" maxlength="20009" placeholder="https://example.com"></textarea></label></div><label>Organization biography <span class="optional">Leave blank to inherit the account biography</span><textarea name="biography_override" rows="6" maxlength="5000"></textarea></label><p id="speaker-biography-source" class="help"></p><button>Save speaker details</button></form></section>
+        <section class="speaker-edit-section" aria-labelledby="speaker-headshot-title"><form id="speaker-headshot-form" class="account-headshot" hidden>
+          <div class="account-headshot__preview"><img id="speaker-headshot-preview" alt="" hidden><span id="speaker-headshot-fallback" aria-hidden="true">SP</span></div>
+          <div><h3 id="speaker-headshot-title">Headshot</h3><p class="help">JPG, PNG, or WebP. Maximum 5 MB.</p><div class="actions"><label class="button secondary account-headshot__choose">Choose image<input name="headshot" type="file" accept="image/jpeg,image/png,image/webp" required></label><button type="submit">Save headshot</button></div><p id="speaker-headshot-status" class="status status-compact" role="status"></p></div>
+        </form></section>
+        <section class="speaker-edit-section" aria-labelledby="speaker-notes-title"><form id="speaker-organizer-notes" hidden>
+          <div class="section-heading"><div><h3 id="speaker-notes-title">Organizer notes</h3><p class="help">Private event details for travel, logistics, accessibility, or hospitality. These notes are organizer-only.</p></div><button id="add-speaker-note" class="secondary" type="button">Add field</button></div>
+          <input name="version" type="hidden">
+          <div id="speaker-note-fields"></div>
+          <button type="submit">Save organizer notes</button>
+        </form></section>
+      </div>
       <div class="actions"><button id="restore-speaker" class="secondary" type="button" hidden>Restore speaker participation</button><a id="speaker-onboarding" class="button" href="#">Open onboarding</a><a id="speaker-directory" class="button secondary" href="/admin/people">Back to people</a></div>
     </section>
     <section id="speaker-directory-results" class="directory-section directory-section--primary speaker-directory-results" aria-labelledby="directory-title">

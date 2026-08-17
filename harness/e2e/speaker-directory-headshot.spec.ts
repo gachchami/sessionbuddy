@@ -8,7 +8,7 @@ const pageHtml = readFileSync(resolve(root, "speaker_directory.html"), "utf8")
   .replace(/<link[^>]+>/g, "")
   .replace(/<script[^>]+><\/script>/g, "")
   .replace("</head>", `<style>${readFileSync(resolve(root, "product.css"), "utf8")}</style></head>`)
-  .replace("</body>", `<script>${readFileSync(resolve(root, "api_client.js"), "utf8")}</script><script>${readFileSync(resolve(root, "speaker_directory.js"), "utf8")}</script></body>`);
+  .replace("</body>", `<script>${readFileSync(resolve(root, "api_client.js"), "utf8")}</script><script>${readFileSync(resolve(root, "biography_disclosure.js"), "utf8")}</script><script>${readFileSync(resolve(root, "speaker_directory.js"), "utf8")}</script></body>`);
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 for (const width of [1280, 390]) {
@@ -32,6 +32,9 @@ for (const width of [1280, 390]) {
     });
 
     await page.goto("/admin/events/event-a/speakers/es-a");
+    await expect(page.locator("#speaker-profile-view")).toBeVisible();
+    await expect(page.locator("#speaker-edit-view")).toBeHidden();
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     const form = page.locator("#speaker-headshot-form");
     await expect(form).toBeVisible();
     await form.locator('input[type="file"]').setInputFiles({ name: "speaker.png", mimeType: "image/png", buffer: Buffer.from("png") });
@@ -76,6 +79,7 @@ test("speaker profile validation is form-scoped and identifies the invalid link"
   });
 
   await page.goto("/admin/events/event-a/speakers/es-a");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   const form = page.locator("#speaker-form");
   const links = form.locator('[name="links"]');
   await links.fill("@priyabuilds");

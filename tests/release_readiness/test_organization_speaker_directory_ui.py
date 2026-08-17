@@ -58,9 +58,11 @@ def test_only_an_explicit_event_route_changes_the_directory_context() -> None:
 def test_each_reusable_profile_exposes_all_matching_event_participations() -> None:
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
-    assert "profile.participations.map((participation)" in script
+    assert "renderSpeakerSummary(profile, profile.participations || [])" in script
+    assert "participations.map((participation)" in script
     assert "eventLink.textContent = participation.event_name" in script
-    assert "`${participation.selection_status} · ${participation.proposal_title}`" in script
+    assert "participation.selection_status," in script
+    assert "participation.proposal_title," in script
     assert "known.has(part.event_speaker_id)" in script
 
 
@@ -85,6 +87,8 @@ def test_event_speaker_edit_route_remains_separate_from_public_profiles() -> Non
     assert "const profileMatch = location.pathname.match" in script
     assert "`/api/v1/speaker-profiles/${encodeURIComponent(selectedPersonId)}`" in script
     assert 'form.hidden = !profile.can_edit;' in script
+    assert 'setSpeakerDetailMode("summary")' in script
+    assert 'byId("speaker-edit-tab").hidden = !profile.can_edit;' in script
     legacy_redirect = (
         "location.replace(`/speakers/"
         "${encodeURIComponent(selection.person.person_id)}`)"
@@ -92,6 +96,21 @@ def test_event_speaker_edit_route_remains_separate_from_public_profiles() -> Non
     assert legacy_redirect not in script
     assert "Edit ${item.display_name}'s speaker details" in script
     assert "showSpeakerDetail(selection.person, selection.participation)" in script
+
+
+def test_speaker_detail_distills_summary_from_explicit_editing() -> None:
+    page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
+    script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
+
+    assert 'id="speaker-detail-mode" class="speaker-detail-mode" role="group"' in page
+    assert 'id="speaker-summary-tab"' in page
+    assert 'id="speaker-edit-tab"' in page
+    assert 'id="speaker-edit-view" class="speaker-edit-view" hidden' in page
+    assert 'id="speaker-biography-toggle"' in page
+    assert '/public/assets/biography-disclosure.js' in page
+    assert 'function setSpeakerDetailMode(mode' in script
+    assert 'function renderSpeakerSummary(person, participations = [])' in script
+    assert 'setSpeakerDetailMode("summary")' in script
 
 
 def test_event_speaker_profile_supports_private_configurable_organizer_notes() -> None:

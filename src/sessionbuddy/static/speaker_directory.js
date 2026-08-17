@@ -28,6 +28,7 @@
   let eventDirectoryContext = null;
   let speakerImportRows = null;
   let speakerImportBatchKey = "";
+  let detachBiographyDisclosure = () => {};
 
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
   function idempotencyKey() {
@@ -392,6 +393,62 @@
     preview.src = `${endpoint}?v=${encodeURIComponent(cacheKey)}`;
   }
 
+  function setSpeakerDetailMode(mode, { focus = false } = {}) {
+    const editing = mode === "edit";
+    byId("speaker-profile-view").hidden = editing;
+    byId("speaker-edit-view").hidden = !editing;
+    byId("speaker-summary-tab").setAttribute("aria-pressed", String(!editing));
+    byId("speaker-edit-tab").setAttribute("aria-pressed", String(editing));
+    if (focus) {
+      const target = editing
+        ? byId("speaker-form").elements.display_name
+        : byId("speaker-summary-tab");
+      target?.focus();
+    }
+  }
+
+  function renderSpeakerSummary(person, participations = []) {
+    byId("speaker-role").textContent = [person.job_title, person.company].filter(Boolean).join(" · ") || "Speaker";
+    byId("speaker-location").textContent = person.location || "";
+    const biography = byId("speaker-biography");
+    const biographyToggle = byId("speaker-biography-toggle");
+    detachBiographyDisclosure();
+    biography.textContent = person.biography || "Biography not added yet.";
+    biography.classList.add("is-collapsed");
+    biographyToggle.hidden = false;
+    biographyToggle.textContent = "Show more";
+    biographyToggle.setAttribute("aria-expanded", "false");
+    detachBiographyDisclosure = window.SessionBuddyBiographyDisclosure?.attach(biography, biographyToggle) || (() => {});
+    const links = (person.links || []).map((url) => {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener noreferrer";
+      try { anchor.textContent = new URL(url).hostname; }
+      catch (_) { anchor.textContent = url; }
+      return anchor;
+    });
+    byId("speaker-links").replaceChildren(...links);
+    byId("speaker-links-section").hidden = links.length === 0;
+    const participationNodes = participations.map((participation) => {
+      const item = document.createElement("li");
+      const eventLink = document.createElement("a");
+      eventLink.href = participation.event_id
+        ? `/admin/events/${encodeURIComponent(participation.event_id)}`
+        : "#";
+      eventLink.textContent = participation.event_name || selectedSpeaker?.event?.name || "Event";
+      const detail = document.createElement("span");
+      detail.textContent = [
+        participation.selection_status,
+        participation.proposal_title,
+      ].filter(Boolean).join(" · ");
+      item.append(eventLink, detail);
+      return item;
+    });
+    byId("speaker-events").replaceChildren(...participationNodes);
+    byId("speaker-events").parentElement.hidden = participationNodes.length === 0;
+  }
+
   function showSpeakerDetail(person, participation) {
     selectedSpeaker = {
       ...person,
@@ -411,7 +468,10 @@
     byId("speaker-event").textContent = `${person.organization_name} · ${participation.event_name} · ${participation.confirmation_status.replaceAll("_", " ")}`;
     byId("speaker-name").textContent = person.display_name;
     byId("speaker-proposal").textContent = participation.proposal_title;
+    byId("speaker-proposal").hidden = !participation.proposal_title;
+    renderSpeakerSummary(person, [participation]);
     const form = byId("speaker-form");
+    form.hidden = false;
     ["display_name", "email", "job_title", "company", "location", "version", "participation_version"].forEach((name) => {
       form.elements[name].value = person[name] ?? "";
     });
@@ -441,6 +501,10 @@
     } else {
       byId("speaker-organizer-notes").hidden = true;
     }
+    byId("speaker-edit-tab").hidden = false;
+    byId("speaker-onboarding").hidden = false;
+    byId("speaker-directory").hidden = false;
+    setSpeakerDetailMode("summary");
     document.title = `${person.display_name} · SessionBuddy`;
   }
 
@@ -454,37 +518,16 @@
     byId("speaker-event").textContent = "Speaker profile";
     byId("speaker-name").textContent = profile.display_name;
     byId("speaker-proposal").hidden = true;
-    byId("speaker-profile-view").hidden = false;
-    byId("speaker-role").textContent = [profile.job_title, profile.company].filter(Boolean).join(" · ") || "Speaker";
-    byId("speaker-location").textContent = profile.location || "";
-    byId("speaker-biography").textContent = profile.biography || "Biography not added yet.";
-    const links = (profile.links || []).map((url) => {
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.textContent = new URL(url).hostname;
-      return anchor;
-    });
-    byId("speaker-links").replaceChildren(...links);
-    byId("speaker-links").parentElement.hidden = links.length === 0;
-    const participationNodes = profile.participations.map((participation) => {
-      const item = document.createElement("li");
-      const eventLink = document.createElement("a");
-      eventLink.href = `/admin/events/${encodeURIComponent(participation.event_id)}`;
-      eventLink.textContent = participation.event_name;
-      const detail = document.createElement("span");
-      detail.textContent = `${participation.selection_status} · ${participation.proposal_title}`;
-      item.append(eventLink, detail);
-      return item;
-    });
-    byId("speaker-events").replaceChildren(...participationNodes);
+    renderSpeakerSummary(profile, profile.participations || []);
     const form = byId("speaker-form");
     form.hidden = !profile.can_edit;
     byId("speaker-confirmation-field").hidden = true;
     byId("speaker-onboarding").hidden = true;
     byId("restore-speaker").hidden = true;
     byId("speaker-directory").hidden = !sessionHasOrganizerAccess;
+    byId("speaker-headshot-form").hidden = true;
+    byId("speaker-organizer-notes").hidden = true;
+    byId("speaker-edit-tab").hidden = !profile.can_edit;
     if (profile.can_edit) {
       ["display_name", "email", "job_title", "company", "location", "version"].forEach((name) => {
         form.elements[name].value = profile[name] ?? "";
@@ -497,7 +540,8 @@
       form.elements.links.value = (profile.links || []).join("\n");
       window.SessionBuddyApi.refreshCharacterCounters(form);
     }
-    byId("status").textContent = profile.can_edit ? "This is your profile. You can edit it below." : "Speaker profile";
+    setSpeakerDetailMode("summary");
+    byId("status").textContent = "";
     document.title = `${profile.display_name} · SessionBuddy`;
   }
 
@@ -555,6 +599,13 @@
     byId("status").textContent = "";
     renderDirectory();
   }
+
+  byId("speaker-summary-tab").addEventListener("click", () => {
+    setSpeakerDetailMode("summary", { focus: true });
+  });
+  byId("speaker-edit-tab").addEventListener("click", () => {
+    setSpeakerDetailMode("edit", { focus: true });
+  });
 
   byId("speaker-filters").addEventListener("input", () => {
     renderDirectory();

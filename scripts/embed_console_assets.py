@@ -134,6 +134,11 @@ CONTENT_ADDRESSED_ASSETS = (
         "/admin/speaker-content/assets/speaker-content.js",
     ),
     ("speaker_directory.html", "speaker_directory.js", "/admin/people/assets/people.js"),
+    (
+        "speaker_directory.html",
+        "biography_disclosure.js",
+        "/public/assets/biography-disclosure.js",
+    ),
     ("speaker_messages.html", "speaker_messages.js", "/admin/speakers/assets/messages.js"),
     ("app/index.html", "app/assets/reviews.js", "/app/assets/reviews.js"),
     ("app/index.html", "app/assets/reviews.css", "/app/assets/reviews.css"),

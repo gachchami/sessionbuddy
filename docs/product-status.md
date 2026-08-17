@@ -437,6 +437,12 @@ only for events the caller can manage exactly. Event duplication additionally
 requires exact source-event management before private branding references are
 read or copied.
 
+Organizer speaker details now open in a compact Summary mode that keeps identity,
+biography, links, and event participation scannable. A permission-aware Edit mode
+contains profile fields, headshot management, and organizer-only notes; successful
+profile saves return to Summary. Long biographies use the same accessible
+Show more / Show less disclosure as public speaker profiles.
+
 The resource control plane now includes exact organization `view`, `edit`, and
 `manage` grant CRUD, authoritative owner rows, exact-owner-only audited
 organization ownership transfer to an existing organization admin, audited event ownership transfer, and
