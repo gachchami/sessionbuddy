@@ -114,6 +114,37 @@ test.describe("demo persona access", () => {
     }))).toEqual({ shell: null, recovery: null });
   });
 
+  test("password sign-in checks the authoritative session before following a stale workspace", async ({ page }) => {
+    await withDemoMode(page, false);
+    await page.route("**/api/v1/auth/password/sign-in", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        user_id: "revoked-manager",
+        csrf_token: "fresh-csrf",
+        redirect_path: "/admin",
+      }),
+    }));
+    await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        workspace_state: "organizer_authority_missing",
+        workspace_path: null,
+      }),
+    }));
+    await page.route("**/account?workspace=recovery", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Account recovery</title><h1>Choose an available workspace</h1>",
+    }));
+
+    await page.goto("/sign-in?redirect=%2Fadmin");
+    await page.getByLabel("Email address").fill("revoked-manager@example.test");
+    await page.locator("#sign-in-password").fill("private recovery password");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+
+    await page.waitForURL("**/account?workspace=recovery");
+    await expect(page.getByRole("heading", { name: "Choose an available workspace" })).toBeVisible();
+  });
+
   test("only the clicked control enters a loading state", async ({ page }) => {
     await withDemoMode(page, true);
     let release: () => void = () => {};

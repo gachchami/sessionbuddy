@@ -5467,12 +5467,6 @@ async def password_sign_in(
     default_role = await _default_account_role(db, str(credential["id"]))
     if default_role is None:
         raise HTTPException(status_code=403)
-    workspace_contract = await user_workspace_contract(
-        db, user_id=str(credential["id"]), active_role=default_role
-    )
-    if workspace_contract is None:
-        raise HTTPException(status_code=403)
-    workspace_path = workspace_contract.resolution.path or "/account?workspace=recovery"
     batch = CommandBatch(db)
     established = establish_session(
         batch=batch,
@@ -5517,6 +5511,17 @@ async def password_sign_in(
     )
     results = await batch.execute()
     await _confirm_session_established(results, established, db)
+    # Resolve the workspace after the session-write batch, matching magic-link
+    # completion and giving D1 the strongest read-after-write ordering this
+    # request can establish. The browser still confirms the resulting session
+    # before following a role-scoped path because an authority change may have
+    # been committed by another D1 session.
+    workspace_contract = await user_workspace_contract(
+        db, user_id=str(credential["id"]), active_role=default_role
+    )
+    if workspace_contract is None:
+        raise HTTPException(status_code=403)
+    workspace_path = workspace_contract.resolution.path or "/account?workspace=recovery"
     _set_session_cookie(response, request, session_token)
     return SessionCreated(
         user_id=str(credential["id"]),

@@ -432,7 +432,14 @@ authoritative response; cached identity can paint chrome but cannot activate a
 workspace link. Invalid or authority-less personas can still open the
 persona-neutral Account document, where a recovery notice keeps profile editing,
 usable-role switching, and sign-out available without a protected workspace link
-or an Account self-loop. An
+or an Account self-loop. Revoking live organization authority bumps the user's
+authorization version and terminates the stale session; after normal
+reauthentication, the authoritative workspace resolver overrides any stale
+`/admin` redirect and lands the still-authority-less organizer on
+`/account?workspace=recovery`. Password sign-in resolves that destination after
+its primary session-write batch, and the browser confirms the newly established
+session before following a role-scoped redirect. If that confirmation fails, it
+routes through `/` for server resolution instead of trusting the protected path. An
 authenticated account with no active role remains valid and resolves to the
 persona-neutral `/calls` directory.
 

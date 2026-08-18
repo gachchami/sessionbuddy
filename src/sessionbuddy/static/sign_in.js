@@ -70,7 +70,22 @@
         body: JSON.stringify({ email: address, password: password.value, redirect_path: redirect })
       });
       window.SessionBuddyApi.prepareForSessionReplacement();
-      location.assign(session.redirect_path || redirect);
+      // The sign-in response and the next document request can reach different
+      // D1 replicas immediately after an authority change. Confirm the freshly
+      // created session before following a role-scoped redirect so a stale
+      // grant projection cannot send the browser back into a revoked workspace.
+      let destination = session.redirect_path || redirect;
+      try {
+        const authoritative = await window.SessionBuddyApi.request("/api/v1/auth/session");
+        const recovery = authoritative.workspace_state === "active_role_invalid"
+          || authoritative.workspace_state === "organizer_authority_missing";
+        if (recovery) destination = "/account?workspace=recovery";
+      } catch (_) {
+        // The cookie is already established. Let the server resolve `/`
+        // instead of claiming sign-in failed or trusting a possibly stale path.
+        destination = "/";
+      }
+      location.assign(destination);
     } catch (error) {
       showStatus(error.status === 401
         ? "Email or password is incorrect. Try again or request a sign-in link."
