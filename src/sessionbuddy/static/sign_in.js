@@ -77,8 +77,7 @@
       let destination = session.redirect_path || redirect;
       try {
         const authoritative = await window.SessionBuddyApi.request("/api/v1/auth/session");
-        const recovery = authoritative.workspace_state === "active_role_invalid"
-          || authoritative.workspace_state === "organizer_authority_missing";
+        const recovery = authoritative.workspace_path === null;
         if (recovery) destination = "/account?workspace=recovery";
       } catch (_) {
         // The cookie is already established. Let the server resolve `/`

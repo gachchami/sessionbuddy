@@ -439,7 +439,11 @@ reauthentication, the authoritative workspace resolver overrides any stale
 `/account?workspace=recovery`. Password sign-in resolves that destination after
 its primary session-write batch, and the browser confirms the newly established
 session before following a role-scoped redirect. If that confirmation fails, it
-routes through `/` for server resolution instead of trusting the protected path. An
+routes through `/` for server resolution instead of trusting the protected path.
+Magic-link completion also resolves after its session write but returns a server
+303 rather than running the browser confirmation step; the email round trip makes
+replica lag unlikely, and the protected-page shell remains the deliberate
+backstop, rendering recovery actions if a stale redirect reaches `/admin`. An
 authenticated account with no active role remains valid and resolves to the
 persona-neutral `/calls` directory.
 
