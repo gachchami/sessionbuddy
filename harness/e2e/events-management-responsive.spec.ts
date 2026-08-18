@@ -20,7 +20,7 @@ const session = {
   event_access: [],
 };
 
-const organizations = { data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1 }] };
+const organizations = { data: [{ id: organizationId, name: "AIEngineer", status: "active", version: 1, event_count: 12, pending_review_count: 0 }] };
 
 function eventFixture(index = 0) {
   return {
@@ -92,12 +92,19 @@ test("the mobile event ledger leads to a usable routed editor and preserves a fa
   });
 
   await page.goto("/admin");
-  await expect(page.getByRole("heading", { name: "Events", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Organizer workspace", exact: true })).toBeVisible();
   await expect(page.locator(".organizer-home-event-row")).toHaveCount(12);
   const firstEvent = page.locator('.organizer-home-event-row[data-event-id="event-0"]');
   await expect(firstEvent.getByRole("link", { name: "AIEngineer Event 1", exact: true })).toHaveAttribute("href", "/admin/events/event-0");
-  await expect(firstEvent.getByRole("link", { name: "1 proposal" })).toHaveAttribute("href", "/admin/events/event-0/submissions");
-  await expect(firstEvent.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/events/event-0/settings");
+  await expect(firstEvent.getByText("CFP open · 1 proposal", { exact: true })).toBeVisible();
+  await expect(firstEvent.getByText("Agenda live · 0 speakers", { exact: true })).toBeVisible();
+  await expect(firstEvent.getByRole("link", { name: "Manage CFP", exact: true })).toHaveAttribute("href", "/admin/events/event-0/cfp");
+  await expect(firstEvent.getByRole("link", { name: "Agenda live · 0 speakers — view public agenda for AIEngineer Event 1" })).toHaveAttribute("href", "/events/event-0/schedule");
+  await expect(firstEvent.getByRole("link", { name: "Manage agenda", exact: true })).toHaveAttribute("href", "/admin/events/event-0/agenda");
+  await expect(firstEvent.getByRole("link", { name: "Speakers", exact: true })).toHaveAttribute("href", "/admin/events/event-0/speakers");
+  await expect(firstEvent.getByRole("link", { name: "Reviewers", exact: true })).toHaveAttribute("href", "/admin/events/event-0/reviewers");
+  await expect(firstEvent.getByRole("link", { name: "Manage", exact: true })).toHaveAttribute("href", "/admin/events/event-0/settings");
+  await expect(firstEvent.getByRole("link", { name: "Clone" })).toHaveAttribute("href", "/admin/events/new?source=event-0");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
   await page.getByRole("link", { name: "Create event" }).click();
@@ -153,10 +160,10 @@ test("a slower older event search cannot replace a newer response", async ({ pag
   await search.fill("older");
   await page.waitForTimeout(350);
   await search.fill("newer");
-  await expect(page.getByRole("link", { name: "Newer result" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Newer result", exact: true })).toBeVisible();
   await page.waitForTimeout(500);
-  await expect(page.getByRole("link", { name: "Older result" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Newer result" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Older result", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Newer result", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/q=newer/);
 });
 

@@ -491,6 +491,19 @@
         "p95_ms": 500
       }
     },
+    "GET /api/v1/admin/events/{event_id}/activities": {
+      "benchmark": "event-activity",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "platform",
+      "runbook": "docs/debugging-runbook.md#api-regression",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
+      }
+    },
     "GET /api/v1/admin/organizations/{organization_id}/events": {
       "benchmark": "admin-list-events",
       "dashboards": [

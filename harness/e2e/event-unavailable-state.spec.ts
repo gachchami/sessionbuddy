@@ -10,7 +10,7 @@ function pageSource(html: string, script: string) {
   return readFileSync(resolve(root, html), "utf8")
     .replace(/<link[^>]+>/g, "")
     .replace(/<script[^>]+><\/script>/g, "")
-    .replace("</body>", `<script>${readFileSync(resolve(root, "api_client.js"), "utf8")}</script><script>${readFileSync(resolve(root, script), "utf8")}</script></body>`);
+    .replace("</body>", `<script>${readFileSync(resolve(root, "api_client.js"), "utf8")}</script><script>${readFileSync(resolve(root, "activity_format.js"), "utf8")}</script><script>${readFileSync(resolve(root, script), "utf8")}</script></body>`);
 }
 
 function eventUnavailablePage() {
@@ -79,6 +79,53 @@ test("archived event overview renders context when operational APIs are unavaila
   await expect(page.getByRole("heading", { name: "Archived Summit" })).toBeVisible();
   await expect(page.getByText("Some program information is unavailable. Refresh to try again.")).toBeVisible();
   await expect(page.getByText("The event could not be loaded. Try again.")).toHaveCount(0);
+});
+
+test("event overview renders recent activity as a table", async ({ page }) => {
+  const html = pageSource("event_overview.html", "event_overview.js");
+  await page.route(/^http:\/\/worker:8787\/admin\/events\/activity-event$/, (route) => route.fulfill({
+    contentType: "text/html",
+    body: html,
+  }));
+  await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(session) }));
+  await page.route("**/api/v1/admin/events/activity-event/**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: [] }),
+  }));
+  await page.route("**/api/v1/admin/events/activity-event/activities", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: [{
+      activity_id: "activity-1",
+      actor_name: "Dana Demo",
+      operation: "update",
+      resource_type: "call_for_speaker_form",
+      resource_id: "public-cfp-reference",
+      subject_name: "CFP for Activity Summit",
+      event_id: "activity-event",
+      occurred_at_ms: Date.now() - 60_000,
+    }] }),
+  }));
+  await page.route("**/api/v1/admin/events/activity-event", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      id: "activity-event",
+      name: "Activity Summit",
+      time_zone: "UTC",
+      starts_at_ms: 1_900_000_000_000,
+      ends_at_ms: 1_900_003_600_000,
+      delivery_mode: "in_person",
+      location: "Test Hall",
+      status: "active",
+    }),
+  }));
+
+  await page.goto("/admin/events/activity-event");
+  await expect(page.getByRole("heading", { name: "Event activity" })).toBeVisible();
+  const table = page.getByRole("table");
+  await expect(table.getByRole("columnheader", { name: "When" })).toBeVisible();
+  await expect(table.getByText("Dana Demo updated call for proposals CFP for Activity Summit")).toBeVisible();
+  await expect(table.getByText("call for proposals", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 recent event change.")).toBeVisible();
 });
 
 test("archived reviewer access is maintenance-only", async ({ page }) => {

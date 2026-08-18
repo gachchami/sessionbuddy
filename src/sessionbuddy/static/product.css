@@ -42,10 +42,12 @@
   --type-card-title: 1.125rem;
   --type-body: 1rem;
   --type-body-compact: .875rem;
+  --type-body-dense: .8125rem;
   --type-meta: .75rem;
   --measure-prose: 65ch;
   --measure-form: 48rem;
   --measure-work: 76rem;
+  --measure-work-wide: 105rem;
   --measure-table: 90rem;
   --layout-gutter: clamp(1rem, 3vw, 2rem);
   --layout-gutter-total: clamp(2rem, 6vw, 4rem);
@@ -1151,7 +1153,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .workflow-empty-state { background: linear-gradient(135deg, #fbfaff, #f5f8ff); }
 .is-loading .workflow-stage, .is-loading .organizer-metrics, .is-loading .organizer-callout, .is-loading .organizer-section--workflow { visibility: hidden; }
 .organizer-page--event-overview { background: #f8f9fc; }
-.organizer-page--event-overview .organizer-main { width: min(78rem, calc(100% - 2.5rem)); }
+.organizer-page--event-overview .organizer-main { width: min(var(--measure-work-wide), calc(100% - clamp(1.75rem,3vw,3.5rem))); }
 .event-command-header { margin-top: .75rem; padding: 1.5rem 0; border-bottom: 1px solid var(--line); }
 .event-command-header__content { width: 100%; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 2rem; }
 .event-command-header__copy { min-width: 0; }

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from sessionbuddy.cfp.availability import public_form_path
 from sessionbuddy.communications.queue_publish import publish_committed_messages
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
@@ -220,6 +221,15 @@ async def admin_home_javascript(request: Request) -> Response:
 async def admin_home_stylesheet(request: Request) -> Response:
     return content_addressed_asset(
         request, _asset("admin_home.css"), media_type="text/css"
+    )
+
+
+@access_router.get("/admin/home/assets/dm-sans.woff2", include_in_schema=False)
+async def admin_home_font() -> Response:
+    return Response(
+        embedded_assets.DM_SANS_LATIN_WGHT_NORMAL_WOFF2,
+        media_type="font/woff2",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 
 
@@ -617,6 +627,8 @@ class OrganizationView(BaseModel):
     name: str
     status: Literal["active", "archived"]
     version: int
+    event_count: int = Field(default=0, ge=0)
+    pending_review_count: int = Field(default=0, ge=0)
 
 
 class OrganizationList(BaseModel):
@@ -651,11 +663,13 @@ class EventView(BaseModel):
     status: Literal["draft", "active", "archived"]
     version: int
     proposal_count: int = Field(default=0, ge=0)
+    speaker_count: int = Field(default=0, ge=0)
     pending_review_count: int = Field(default=0, ge=0)
     schedule_status: Literal["not_started", "draft", "ready", "published", "updates_pending"] = (
         "not_started"
     )
     cfp_status: Literal["not_started", "draft", "published", "closed"] = "not_started"
+    cfp_public_path: str | None = None
 
 
 class EventList(BaseModel):
@@ -1005,6 +1019,70 @@ def _email(value: str) -> tuple[str, str]:
     if not separator or not local or "." not in domain or domain.startswith("."):
         raise HTTPException(status_code=422)
     return display, normalized
+
+
+_ACTIVITY_PROJECTION_SQL = """SELECT a.id AS activity_id,
+                  CASE
+                    WHEN a.actor_type='system' THEN 'SessionBuddy'
+                    WHEN u.id IS NULL THEN 'Unknown account'
+                    ELSE COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name),''),
+                                  NULLIF(u.display_name,''),'Account user')
+                  END AS actor_name,
+                  a.actor_id,a.operation,a.resource_type,a.resource_id,
+                  r.event_id,a.occurred_at_ms,
+                  CASE resource_entity.entity_type
+                    WHEN 'organization' THEN (
+                      SELECT o.name FROM organizations o
+                      WHERE o.id=resource_entity.internal_id AND o.id=?1 LIMIT 1)
+                    WHEN 'event' THEN (
+                      SELECT e.name FROM events e WHERE e.id=resource_entity.internal_id
+                      AND e.organization_id=?1 LIMIT 1)
+                    WHEN 'proposal' THEN (
+                      SELECT s.proposal_title FROM submissions s
+                      WHERE s.id=resource_entity.internal_id
+                      AND s.organization_id=?1 LIMIT 1)
+                    WHEN 'invitation' THEN (
+                      SELECT COALESCE(NULLIF(i.display_name,''),
+                                      REPLACE(i.role,'_',' ') || ' invitation')
+                      FROM identity_invitations i WHERE i.id=resource_entity.internal_id
+                      AND i.organization_id=?1 LIMIT 1)
+                    WHEN 'call_for_speaker_form' THEN (
+                      SELECT 'CFP for ' || e.name FROM call_for_speaker_forms f
+                      JOIN events e ON e.id=f.event_id AND e.organization_id=f.organization_id
+                      WHERE f.id=resource_entity.internal_id
+                      AND f.organization_id=?1 LIMIT 1)
+                    WHEN 'evaluation_round' THEN (
+                      SELECT er.name FROM evaluation_rounds er
+                      WHERE er.id=resource_entity.internal_id
+                      AND er.organization_id=?1 LIMIT 1)
+                    WHEN 'event_speaker' THEN (
+                      SELECT pe.display_name FROM event_speakers es
+                      JOIN people pe ON pe.id=es.person_id
+                        AND pe.organization_id=es.organization_id
+                      WHERE es.id=resource_entity.internal_id
+                      AND es.organization_id=?1 LIMIT 1)
+                    WHEN 'accepted_session' THEN (
+                      SELECT COALESCE(s.proposal_title,ac.organizer_title)
+                      FROM accepted_sessions ac
+                      LEFT JOIN submissions s ON s.id=ac.submission_id
+                        AND s.organization_id=ac.organization_id
+                        AND s.event_id=ac.event_id
+                      WHERE ac.id=resource_entity.internal_id
+                      AND ac.organization_id=?1 LIMIT 1)
+                    WHEN 'speaker_task' THEN (
+                      SELECT st.title FROM speaker_tasks st
+                      WHERE st.id=resource_entity.internal_id
+                      AND st.organization_id=?1 LIMIT 1)
+                    ELSE NULL
+                  END AS subject_name
+           FROM organization_activity p
+           JOIN activities a ON a.id=p.activity_id
+           LEFT JOIN activity_routing r ON r.activity_id=a.id
+           LEFT JOIN activity_entities actor_entity
+             ON actor_entity.public_id=a.actor_id
+           LEFT JOIN users u ON u.id=actor_entity.internal_id
+           LEFT JOIN activity_entities resource_entity
+             ON resource_entity.public_id=a.resource_id"""
 
 
 @access_router.get(
@@ -1986,7 +2064,18 @@ async def list_organizations(request: Request) -> OrganizationList:
         result = await (
             db.prepare(
                 # Placeholder-only interpolation; every value is bound.
-                f"SELECT id,name,status,version FROM organizations WHERE id IN ({placeholders})"  # noqa: S608, E501
+                f"""SELECT o.id,o.name,o.status,o.version,
+                    (SELECT COUNT(*) FROM events e
+                     WHERE e.organization_id=o.id) AS event_count,
+                    (SELECT COUNT(DISTINCT ea.submission_id)
+                     FROM evaluation_rounds er
+                     JOIN evaluation_assignments ea ON ea.round_id=er.id
+                       AND ea.status='assigned'
+                     JOIN submissions ps ON ps.id=ea.submission_id
+                       AND ps.status='submitted'
+                     WHERE er.organization_id=o.id
+                       AND er.status='open') AS pending_review_count
+                    FROM organizations o WHERE o.id IN ({placeholders})"""  # noqa: S608, E501
             )
             .bind(*ordered_ids)
             .all()
@@ -2125,6 +2214,9 @@ async def list_events(
         "e.status,e.version,e.draft_starts_at_ms,e.draft_ends_at_ms,e.draft_delivery_mode,"
         "(SELECT COUNT(*) FROM submissions s WHERE s.organization_id=e.organization_id "
         "AND s.event_id=e.id AND s.status='submitted') AS proposal_count,"
+        "(SELECT COUNT(*) FROM event_speakers es WHERE es.organization_id=e.organization_id "
+        "AND es.event_id=e.id AND es.status!='withdrawn' "
+        "AND es.selection_status='accepted') AS speaker_count,"
         "(SELECT COUNT(DISTINCT ea.submission_id) FROM evaluation_rounds er "
         "JOIN evaluation_assignments ea ON ea.round_id=er.id AND ea.status='assigned' "
         "JOIN submissions ps ON ps.id=ea.submission_id AND ps.status='submitted' "
@@ -2151,14 +2243,27 @@ async def list_events(
         "AND sr.status='draft') THEN 'draft' ELSE 'not_started' END AS schedule_status,"
         "COALESCE((SELECT f.status FROM call_for_speaker_forms f "
         "WHERE f.organization_id=e.organization_id AND f.event_id=e.id "
-        "ORDER BY f.version DESC,f.updated_at_ms DESC LIMIT 1),'not_started') AS cfp_status "
+        "ORDER BY f.version DESC,f.updated_at_ms DESC LIMIT 1),'not_started') AS cfp_status,"
+        "(SELECT f.slug FROM call_for_speaker_forms f "
+        "WHERE f.organization_id=e.organization_id AND f.event_id=e.id "
+        "AND f.status='published' ORDER BY f.version DESC,f.updated_at_ms DESC "
+        "LIMIT 1) AS cfp_slug "
         "FROM events e"
         f"{access_join} WHERE {' AND '.join(conditions)} "
         f"ORDER BY e.starts_at_ms {'ASC' if order == 'upcoming' else 'DESC'},"
         f"e.id {'ASC' if order == 'upcoming' else 'DESC'} LIMIT ?"
     ).bind(*binds)
     rows = result_rows(await statement.all())
-    events = [EventView(**row) for row in rows[:page_limit]]
+    events = []
+    for raw_row in rows[:page_limit]:
+        row = dict(raw_row)
+        cfp_slug = row.pop("cfp_slug", None)
+        row["cfp_public_path"] = (
+            public_form_path(str(row["id"]), str(cfp_slug))
+            if cfp_slug is not None
+            else None
+        )
+        events.append(EventView(**row))
     next_cursor = None
     if len(rows) > page_limit and events:
         next_cursor = _events_next_cursor(
@@ -4764,72 +4869,49 @@ async def list_organization_activity(
     )
     result = (
         await db.prepare(
-            """SELECT a.id AS activity_id,
-                  CASE
-                    WHEN a.actor_type='system' THEN 'SessionBuddy'
-                    WHEN u.id IS NULL THEN 'Unknown account'
-                    ELSE COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name),''),
-                                  NULLIF(u.display_name,''),'Account user')
-                  END AS actor_name,
-                  a.actor_id,a.operation,a.resource_type,a.resource_id,
-                  r.event_id,a.occurred_at_ms,
-                  CASE resource_entity.entity_type
-                    WHEN 'organization' THEN (
-                      SELECT o.name FROM organizations o
-                      WHERE o.id=resource_entity.internal_id AND o.id=?1 LIMIT 1)
-                    WHEN 'event' THEN (
-                      SELECT e.name FROM events e WHERE e.id=resource_entity.internal_id
-                      AND e.organization_id=?1 LIMIT 1)
-                    WHEN 'proposal' THEN (
-                      SELECT s.proposal_title FROM submissions s
-                      WHERE s.id=resource_entity.internal_id
-                      AND s.organization_id=?1 LIMIT 1)
-                    WHEN 'invitation' THEN (
-                      SELECT COALESCE(NULLIF(i.display_name,''),
-                                      REPLACE(i.role,'_',' ') || ' invitation')
-                      FROM identity_invitations i WHERE i.id=resource_entity.internal_id
-                      AND i.organization_id=?1 LIMIT 1)
-                    WHEN 'call_for_speaker_form' THEN (
-                      SELECT 'CFP for ' || e.name FROM call_for_speaker_forms f
-                      JOIN events e ON e.id=f.event_id AND e.organization_id=f.organization_id
-                      WHERE f.id=resource_entity.internal_id
-                      AND f.organization_id=?1 LIMIT 1)
-                    WHEN 'evaluation_round' THEN (
-                      SELECT er.name FROM evaluation_rounds er
-                      WHERE er.id=resource_entity.internal_id
-                      AND er.organization_id=?1 LIMIT 1)
-                    WHEN 'event_speaker' THEN (
-                      SELECT pe.display_name FROM event_speakers es
-                      JOIN people pe ON pe.id=es.person_id
-                        AND pe.organization_id=es.organization_id
-                      WHERE es.id=resource_entity.internal_id
-                      AND es.organization_id=?1 LIMIT 1)
-                    WHEN 'accepted_session' THEN (
-                      SELECT COALESCE(s.proposal_title,ac.organizer_title)
-                      FROM accepted_sessions ac
-                      LEFT JOIN submissions s ON s.id=ac.submission_id
-                        AND s.organization_id=ac.organization_id
-                        AND s.event_id=ac.event_id
-                      WHERE ac.id=resource_entity.internal_id
-                      AND ac.organization_id=?1 LIMIT 1)
-                    WHEN 'speaker_task' THEN (
-                      SELECT st.title FROM speaker_tasks st
-                      WHERE st.id=resource_entity.internal_id
-                      AND st.organization_id=?1 LIMIT 1)
-                    ELSE NULL
-                  END AS subject_name
-           FROM organization_activity p
-           JOIN activities a ON a.id=p.activity_id
-           LEFT JOIN activity_routing r ON r.activity_id=a.id
-           LEFT JOIN activity_entities actor_entity
-             ON actor_entity.public_id=a.actor_id
-           LEFT JOIN users u ON u.id=actor_entity.internal_id
-           LEFT JOIN activity_entities resource_entity
-             ON resource_entity.public_id=a.resource_id
-           WHERE p.organization_id=?1
-           ORDER BY p.occurred_at_ms DESC,p.activity_id DESC LIMIT 30"""
+            f"""{_ACTIVITY_PROJECTION_SQL}
+           WHERE p.organization_id=?1 AND a.operation!='read'
+           ORDER BY p.occurred_at_ms DESC,p.activity_id DESC LIMIT 30"""  # noqa: S608
         )
         .bind(organization_id)
+        .all()
+    )
+    return OrganizationActivityList(
+        data=[OrganizationActivityView(**row) for row in result_rows(result)]
+    )
+
+
+@access_router.get(
+    "/api/v1/admin/events/{event_id}/activities",
+    response_model=OrganizationActivityList,
+    tags=["administration"],
+)
+async def list_event_activity(
+    event_id: str, request: Request
+) -> OrganizationActivityList:
+    event = row_mapping(
+        await database(request)
+        .prepare("SELECT organization_id FROM events WHERE id=?1 LIMIT 1")
+        .bind(event_id)
+        .first()
+    )
+    if event is None:
+        raise HTTPException(status_code=404)
+    organization_id = str(event["organization_id"])
+    await require_permission(
+        request,
+        Permission.EVENT_MANAGE,
+        ResourceContext(organization_id, event_id),
+        mutation=False,
+    )
+    result = await (
+        database(request)
+        .prepare(
+            f"""{_ACTIVITY_PROJECTION_SQL}
+               WHERE p.organization_id=?1 AND r.event_id=?2 AND a.operation!='read'
+               ORDER BY p.occurred_at_ms DESC,p.activity_id DESC LIMIT 30"""  # noqa: S608
+        )
+        .bind(organization_id, event_id)
         .all()
     )
     return OrganizationActivityList(

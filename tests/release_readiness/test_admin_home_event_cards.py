@@ -26,7 +26,7 @@ def test_source_wiring_home_has_visible_low_density_event_actions() -> None:
     assert 'href="/admin/events/new"' in page
     assert 'href="/admin/organization"' in page
     assert "name.href = `/admin/events/${encodeURIComponent(event.id)}`" in script
-    assert 'settings.textContent = "Settings"' in script
+    assert 'settings.textContent = "Manage"' in script
     assert 'duplicate.textContent = "Clone"' in script
     assert 'textContent = "Open"' not in script
     assert "/metrics" not in script
@@ -82,7 +82,7 @@ def test_source_wiring_home_recent_changes_is_manager_only_and_uses_shared_forma
     assert "/app-shell/assets/activity-format.js?v=" in page
     assert "if (!canManage)" in script
     assert "slot.replaceChildren();" in script
-    assert 'activity.operation !== "read"' in script
+    assert 'activity.operation !== "read"' not in script
     assert ".slice(0, 8)" in script
     assert "window.SessionBuddyActivityFormat.sentence(activity)" in script
     assert "No recent changes." in script

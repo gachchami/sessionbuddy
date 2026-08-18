@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_home_uses_an_operational_event_management_layout() -> None:
+def test_source_wiring_home_uses_the_event_management_layout() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
     styles = (STATIC / "admin_home.css").read_text(encoding="utf-8")
@@ -20,7 +20,12 @@ def test_home_uses_an_operational_event_management_layout() -> None:
     assert "const requestId = cursor ? state.eventsRequestId : ++state.eventsRequestId" in script
     assert "if (requestId !== state.eventsRequestId) return false" in script
     assert 'params.set("order", state.order)' in script
-    assert "event.proposal_count" in script
+    assert 'readinessLabel(cfpLabel' in script
+    assert 'readinessLabel(agendaLabel' in script
+    assert 'eventLink("Manage CFP", `/admin/events/${eventId}/cfp`)' in script
+    assert 'eventLink("Manage agenda", `/admin/events/${eventId}/agenda`)' in script
+    assert 'eventLink("Speakers", `/admin/events/${eventId}/speakers`)' in script
+    assert 'eventLink("Reviewers", `/admin/events/${eventId}/reviewers`)' in script
     assert "name.href = `/admin/events/${encodeURIComponent(event.id)}`" in script
     assert "settings.href = `/admin/events/${encodeURIComponent(event.id)}/settings`" in script
     assert "duplicate.href = `/admin/events/new?source=${encodeURIComponent(event.id)}`" in script

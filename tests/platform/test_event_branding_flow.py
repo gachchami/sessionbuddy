@@ -528,6 +528,7 @@ async def test_event_branding_matrix_is_consistent_across_public_views(
     )
     refreshed_event = next(item for item in refreshed_events.data if item.id == created.id)
     assert refreshed_event.cfp_status == "published"
+    assert refreshed_event.cfp_public_path == f"/cfp/{created.id.replace('-', '')[:6]}/{slug}"
     published_form = await get_form(slug, branding_request(database, bucket, b""))
     assert published_form.logo_url == expected["logo"]
     assert published_form.cover_image_url == expected["cover"]

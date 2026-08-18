@@ -637,7 +637,7 @@
     const scheduleIsValid = (!Number.isFinite(opens) || !Number.isFinite(closes) || closes > opens)
       && (!Number.isFinite(closes) || !state.eventStartsAtMs || closes < state.eventStartsAtMs);
     return [
-      { label: "Event is active", ready: state.eventStatus === "active", action: true },
+      { label: state.eventStatus === "active" ? "Event is active" : "Activate the event", ready: state.eventStatus === "active", action: true },
       { label: "Description is complete", ready: Boolean(description), selection: "basics" },
       { label: "Confirmation messages are complete", ready: requiredCopy, selection: "confirmation" },
       { label: Number.isFinite(opens) ? "Opening time is scheduled" : "Form opens immediately when published", ready: scheduleIsValid, selection: "availability" },

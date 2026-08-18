@@ -4,11 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=86">
+  <link rel="stylesheet" href="/product/assets/product.css?v=87">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=32" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=11b7d3e428a7" defer></script>
+  <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=b3f4e3edee5e" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--event-overview is-loading">
   <a class="skip-link" href="#main">Skip to event overview</a>
@@ -26,6 +27,16 @@
         <div class="event-signal event-signal--agenda"><dt><a id="agenda-link" href="#">Agenda</a></dt><dd id="agenda-count">—</dd><small id="agenda-note">Loading</small></div>
         <div class="event-signal event-signal--cfp"><dt><a id="cfp-link" href="#">CFP</a></dt><dd id="cfp-state">—</dd><small id="cfp-note">Loading</small></div>
       </dl>
+    </section>
+    <section id="event-activity" class="organizer-section" aria-labelledby="event-activity-title">
+      <div class="section-heading"><div><h2 id="event-activity-title">Event activity</h2><p class="section-summary">Recent changes to this event, its proposals, reviews, speakers, and program.</p></div></div>
+      <p id="event-activity-state" class="help" role="status" aria-live="polite">Loading event activity…</p>
+      <div id="event-activity-table" class="table-scroll" hidden>
+        <table>
+          <thead><tr><th scope="col">When</th><th scope="col">Change</th><th scope="col">Area</th></tr></thead>
+          <tbody id="event-activity-rows"></tbody>
+        </table>
+      </div>
     </section>
   </main>
 </body>

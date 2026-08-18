@@ -1322,7 +1322,7 @@
     } catch (error) {
       status(
         error.status === 401
-          ? "Sign in as an event administrator to edit this agenda."
+          ? "Sign in as an organization administrator to edit this agenda."
           : "Agenda unavailable. Try again.",
         true,
       );

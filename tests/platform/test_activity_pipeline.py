@@ -8,7 +8,7 @@ from sessionbuddy.platform.activity import (
     distribute_activity,
 )
 from sessionbuddy.platform.db.commands import ActivityRecord, AuditEvent, CommandBatch
-from tests.security.test_organizer_workflow import _bootstrap_admin
+from tests.security.test_organizer_workflow import EVENT_PAYLOAD, _bootstrap_admin, _mutation
 from tests.security.test_production_identity_flow import (
     CapturingQueue,
     _client,
@@ -249,12 +249,45 @@ async def test_distribution_guard_rejects_a_lost_claim(
         )
 
 
-async def test_organization_activity_endpoint_is_tenant_scoped_and_safe(
+async def test_activity_endpoints_are_tenant_scoped_and_safe(
     production_environment,  # noqa: F811
 ) -> None:
     connection, _communication_queue, environment = production_environment
     async with _client(environment) as owner:
-        _csrf, organization_id = await _bootstrap_admin(owner, connection)
+        csrf, organization_id = await _bootstrap_admin(owner, connection)
+        events_url = f"/api/v1/admin/organizations/{organization_id}/events"
+        first_event = await owner.post(
+            events_url,
+            headers={**_mutation(csrf), "idempotency-key": "activity-event-one"},
+            json={**EVENT_PAYLOAD, "name": "Activity Summit"},
+        )
+        second_event = await owner.post(
+            events_url,
+            headers={**_mutation(csrf), "idempotency-key": "activity-event-two"},
+            json={**EVENT_PAYLOAD, "name": "Other Summit"},
+        )
+        assert first_event.status_code == 201, first_event.text
+        assert second_event.status_code == 201, second_event.text
+        first_event_id = first_event.json()["id"]
+        second_event_id = second_event.json()["id"]
+        owner_user_id = connection.execute(
+            "SELECT owner_user_id FROM owned_resources WHERE id=?", (organization_id,)
+        ).fetchone()[0]
+        read_batch = CommandBatch(environment.DB)
+        read_batch.activity(
+            ActivityRecord(
+                id="A999999",
+                actor_type="user",
+                actor_id=owner_user_id,
+                operation="read",
+                resource_type="event",
+                resource_id=first_event_id,
+                organization_id=organization_id,
+                event_id=first_event_id,
+                occurred_at_ms=int(time.time() * 1000),
+            )
+        )
+        await read_batch.execute()
         queue = CapturingQueue()
         now = int(time.time() * 1000)
         await dispatch_pending_activities(environment.DB, queue, now, limit=100)
@@ -266,6 +299,7 @@ async def test_organization_activity_endpoint_is_tenant_scoped_and_safe(
         assert response.status_code == 200
         activities = response.json()["data"]
         assert activities
+        assert all(item["operation"] != "read" for item in activities)
         assert set(activities[0]) == {
             "activity_id",
             "actor_id",
@@ -283,6 +317,22 @@ async def test_organization_activity_endpoint_is_tenant_scoped_and_safe(
         assert organization_activity["subject_name"] == "Summit Events"
         assert "metadata" not in response.text
         assert "email" not in response.text
+        event_response = await owner.get(
+            f"/api/v1/admin/events/{first_event_id}/activities"
+        )
+        assert event_response.status_code == 200
+        event_activities = event_response.json()["data"]
+        assert event_activities
+        assert {item["event_id"] for item in event_activities} == {first_event_id}
+        assert any(
+            item["resource_type"] == "event"
+            and item["subject_name"] == "Activity Summit"
+            for item in event_activities
+        )
+        assert all(item["event_id"] != second_event_id for item in event_activities)
         assert (
             await owner.get("/api/v1/admin/organizations/foreign/activities")
+        ).status_code == 404
+        assert (
+            await owner.get("/api/v1/admin/events/foreign/activities")
         ).status_code == 404

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Home · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=86">
+  <title>Organizer workspace · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=87">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
-  <link rel="stylesheet" href="/admin/home/assets/home.css?v=b069cad5f593">
+  <link rel="stylesheet" href="/admin/home/assets/home.css?v=6e917edc9590">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=32" defer></script>
   <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/home/assets/home.js?v=7a09bd9e8763" defer></script>
+  <script src="/admin/home/assets/home.js?v=80d273e68e54" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--home">
   <a class="skip-link" href="#events">Skip to events</a>
@@ -18,24 +18,38 @@
   <main id="main" class="shell page organizer-main" tabindex="-1">
     <header class="organizer-home-heading">
       <div class="organizer-home-heading__identity">
-        <h1 id="organization-name">Loading organization…</h1>
-        <label id="organization-picker-label" class="organizer-home-organization-picker" hidden>
-          <span>Organization</span>
-          <select id="organization-picker"></select>
-        </label>
+        <h1>Organizer workspace</h1>
+        <p id="workspace-summary">Loading your organizations…</p>
       </div>
-      <div class="actions organizer-home-actions">
+      <div class="actions organizer-home-page-actions">
         <a id="organization-settings" class="button secondary" href="/admin/organization">Organization settings</a>
         <a id="new-event" class="button" href="/admin/events/new" hidden>Create event</a>
       </div>
+      <label id="organization-picker-label" class="organizer-home-organization-picker" hidden>
+        <span>Switch organization</span>
+        <select id="organization-picker"></select>
+      </label>
     </header>
     <p id="status" class="status status-compact organizer-home-status" role="status" aria-live="polite">Loading your workspace…</p>
 
     <div class="organizer-home-grid">
+      <aside id="organization-rail" class="organizer-home-organizations" aria-labelledby="organizations-title" hidden>
+        <form id="organization-search-form" class="organizer-home-organization-search" role="search">
+          <label for="organization-search">Find organization</label>
+          <input id="organization-search" type="search" maxlength="100" autocomplete="off" placeholder="Find organization">
+        </form>
+        <div class="organizer-home-organizations__heading">
+          <h2 id="organizations-title">All organizations</h2>
+          <span id="organization-count" class="organizer-home-count"></span>
+        </div>
+        <nav id="organization-list" class="organizer-home-organization-list" aria-label="Organizations"></nav>
+      </aside>
       <section id="events" class="organizer-home-events" aria-labelledby="events-title" tabindex="-1">
         <div class="organizer-home-events__heading">
-          <h2 id="events-title" tabindex="-1">Events</h2>
-          <span id="event-count" class="organizer-home-count" aria-live="polite"></span>
+          <div class="organizer-home-events__identity">
+            <h2 id="events-title" tabindex="-1">Loading organization…</h2>
+            <p><span id="event-count" class="organizer-home-count" aria-live="polite"></span></p>
+          </div>
         </div>
         <div class="organizer-home-toolbar">
           <div class="organizer-home-filters" aria-label="Filter events">
@@ -63,9 +77,9 @@
           <div class="organizer-home-table__header" role="rowgroup">
             <div role="row">
               <span id="event-column-event" role="columnheader">Event</span>
-              <span id="event-column-date" role="columnheader">Date</span>
-              <span id="event-column-where" role="columnheader">Where</span>
-              <span id="event-column-program" role="columnheader">Program</span>
+              <span id="event-column-status" role="columnheader">Location</span>
+              <span id="event-column-date" role="columnheader">Dates</span>
+              <span id="event-column-program" role="columnheader">Links</span>
               <span id="event-column-actions" role="columnheader">Actions</span>
             </div>
           </div>

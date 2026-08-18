@@ -6066,6 +6066,17 @@
             ],
             "title": "Accent Color"
           },
+          "cfp_public_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfp Public Path"
+          },
           "cfp_status": {
             "default": "not_started",
             "enum": [
@@ -6215,6 +6226,12 @@
             ],
             "title": "Schedule Status",
             "type": "string"
+          },
+          "speaker_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Speaker Count",
+            "type": "integer"
           },
           "starts_at_ms": {
             "title": "Starts At Ms",
@@ -8160,6 +8177,12 @@
       },
       "OrganizationView": {
         "properties": {
+          "event_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Event Count",
+            "type": "integer"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -8167,6 +8190,12 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "pending_review_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Pending Review Count",
+            "type": "integer"
           },
           "status": {
             "enum": [
@@ -14544,6 +14573,48 @@
           }
         },
         "summary": "Update Event",
+        "tags": [
+          "administration"
+        ]
+      }
+    },
+    "/api/v1/admin/events/{event_id}/activities": {
+      "get": {
+        "operationId": "list_event_activity_api_v1_admin_events__event_id__activities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationActivityList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Event Activity",
         "tags": [
           "administration"
         ]

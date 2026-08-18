@@ -12,17 +12,28 @@ const events = [
     id: "event-1", organization_id: organizationId, name: "Spring Summit",
     starts_at_ms: 1772323200000, ends_at_ms: 1772409600000, time_zone: "UTC",
     location: "Convention Center", delivery_mode: "hybrid", status: "active",
-    proposal_count: 3, pending_review_count: 2, cfp_status: "published", schedule_status: "ready",
+    proposal_count: 3, speaker_count: 10, pending_review_count: 2, cfp_status: "published",
+    cfp_public_path: "/cfp/event1/spring-summit", schedule_status: "published",
   },
   {
     id: "event-2", organization_id: organizationId, name: "Private Planning Day",
     starts_at_ms: 1780272000000, ends_at_ms: 1780358400000, time_zone: "UTC",
     location: "", delivery_mode: "virtual", status: "draft",
-    proposal_count: 0, pending_review_count: 0, cfp_status: "published", schedule_status: "published",
+    proposal_count: 0, speaker_count: 0, pending_review_count: 0, cfp_status: "published",
+    cfp_public_path: "/cfp/event2/private-planning-day", schedule_status: "published",
   },
 ];
+const secondOrganizationEvent = {
+  ...events[0],
+  id: "design-event-1",
+  organization_id: secondOrganizationId,
+  name: "Design Systems Assembly",
+  location: "Studio Two",
+  proposal_count: 7,
+  speaker_count: 4,
+};
 
-async function serveHome(page: Page, manager = true) {
+async function serveHome(page: Page) {
   await page.route(/\/admin(?:\?.*)?$/, (route) => route.fulfill({ contentType: "text/html", body: source("admin_home.html") }));
   for (const [pattern, file, contentType] of [
     ["**/product/assets/product.css*", "product.css", "text/css"],
@@ -41,30 +52,33 @@ async function serveHome(page: Page, manager = true) {
       authenticated: true, user_id: "user", email: "organizer@example.com", display_name: "User Zero",
       profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
       default_role: "organizer", organization_id: organizationId, organization_name: "Open Source Summit",
-      organization_access: manager
-        ? [{ organization_id: organizationId, organization_name: "Open Source Summit", permissions: ["owner"] }]
-        : [],
-      event_access: manager ? [] : [{ organization_id: organizationId, event_id: "event-1", event_name: "Spring Summit", permissions: ["edit"], assignments: [] }],
+      organization_access: [
+          { organization_id: organizationId, organization_name: "Open Source Summit", permissions: ["owner"] },
+          { organization_id: secondOrganizationId, organization_name: "Design Systems Guild", permissions: ["manage"] },
+        ],
+      event_access: [],
     }),
   }));
   await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({ data: [
-      { id: organizationId, name: "Open Source Summit", status: "active", version: 1 },
-      ...(manager ? [{ id: secondOrganizationId, name: "Design Systems Guild", status: "active", version: 1 }] : []),
+      { id: organizationId, name: "Open Source Summit", status: "active", version: 1, event_count: 2, pending_review_count: 2 },
+      { id: secondOrganizationId, name: "Design Systems Guild", status: "active", version: 1, event_count: 1, pending_review_count: 1 },
     ] }),
   }));
-  await page.route("**/api/v1/admin/organizations/*/activities", (route) => route.fulfill({
-    contentType: "application/json",
-    body: JSON.stringify({ data: [
-      { activity_id: "read", actor_name: "Alex", operation: "read", resource_type: "event", resource_id: "opaque", subject_name: "Hidden read", occurred_at_ms: Date.now() - 1_000 },
-      { activity_id: "change", actor_name: "Alex", operation: "update", resource_type: "event", resource_id: "opaque", subject_name: "Spring Summit", occurred_at_ms: Date.now() - 60_000 },
-    ] }),
-  }));
+  await page.route("**/api/v1/admin/organizations/*/activities", (route) => {
+    const isSecondOrganization = route.request().url().includes(secondOrganizationId);
+    return route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [
+        { activity_id: "change", actor_name: isSecondOrganization ? "Priya" : "Alex", operation: "update", resource_type: "event", resource_id: "opaque", subject_name: isSecondOrganization ? "Design Systems Assembly" : "Spring Summit", occurred_at_ms: Date.now() - 60_000 },
+      ] }),
+    });
+  });
 }
 
 for (const viewport of [
-  { name: "desktop", width: 1280, height: 800 },
+  { name: "desktop", width: 1320, height: 800 },
   { name: "mobile", width: 390, height: 844 },
 ]) {
   test(`Organizer Home renders the semantic ledger and activity at ${viewport.name}`, async ({ page }) => {
@@ -74,31 +88,75 @@ for (const viewport of [
     await page.route("**/api/v1/admin/organizations/*/events**", (route) => {
       eventRequests += 1;
       const url = new URL(route.request().url());
+      const isSecondOrganization = url.pathname.includes(secondOrganizationId);
       const secondPage = url.searchParams.has("cursor");
       return route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify(secondPage
+        body: JSON.stringify(isSecondOrganization
+          ? { data: [secondOrganizationEvent], next_cursor: null }
+          : secondPage
           ? { data: [{ ...events[0], id: "event-3", name: "Autumn Forum" }], next_cursor: null }
           : { data: events, next_cursor: "page-2" }),
       });
     });
 
     await page.goto("/admin?view=active&order=recent&q=summit");
-    await expect(page.getByRole("heading", { name: "Open Source Summit", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Organizer workspace", exact: true })).toBeVisible();
+    if (viewport.name === "desktop") {
+      await expect(page.getByRole("navigation", { name: "Organizations" })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Organizations" }).getByRole("button").filter({ hasText: "Open Source Summit" })).toHaveAttribute("aria-current", "page");
+      await expect(page.getByLabel("Switch organization")).toBeHidden();
+    } else {
+      await expect(page.getByRole("navigation", { name: "Organizations" })).toBeHidden();
+      await expect(page.getByLabel("Switch organization")).toBeVisible();
+      await expect(page.getByLabel("Switch organization")).toHaveValue(organizationId);
+    }
     await expect(page.getByRole("button", { name: "Active" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("searchbox", { name: "Search" })).toHaveValue("summit");
     await expect(page.getByLabel("Sort")).toHaveValue("recent");
     await expect(page.getByRole("link", { name: "Create event" })).toHaveAttribute("href", `/admin/events/new?organization_id=${organizationId}`);
 
     const row = page.getByRole("row").filter({ hasText: "Spring Summit" });
-    await expect(row.getByRole("link", { name: "Spring Summit" })).toHaveAttribute("href", "/admin/events/event-1");
-    await expect(row.getByRole("link", { name: "3 proposals" })).toHaveAttribute("href", "/admin/events/event-1/submissions");
-    await expect(row.getByRole("link", { name: "2 awaiting reviews" })).toHaveAttribute("href", "/admin/events/event-1/submissions#rounds-title");
-    await expect(row.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin/events/event-1/settings");
+    await expect(row.getByRole("link", { name: "Spring Summit", exact: true })).toHaveAttribute("href", "/admin/events/event-1");
+    await expect(row.getByText("CFP open · 3 proposals", { exact: true })).toBeVisible();
+    await expect(row.getByText("Agenda live · 10 speakers", { exact: true })).toBeVisible();
+    await expect(row.getByRole("link", { name: "CFP open · 3 proposals — view public CFP for Spring Summit" })).toHaveAttribute("href", "/cfp/event1/spring-summit");
+    await expect(row.getByRole("link", { name: "Agenda live · 10 speakers — view public agenda for Spring Summit" })).toHaveAttribute("href", "/events/event-1/schedule");
+    await expect(row.getByRole("link", { name: "Manage CFP", exact: true })).toHaveAttribute("href", "/admin/events/event-1/cfp");
+    await expect(row.getByRole("link", { name: "Manage agenda", exact: true })).toHaveAttribute("href", "/admin/events/event-1/agenda");
+    await expect(row.getByRole("link", { name: "Speakers", exact: true })).toHaveAttribute("href", "/admin/events/event-1/speakers");
+    await expect(row.getByRole("link", { name: "Reviewers", exact: true })).toHaveAttribute("href", "/admin/events/event-1/reviewers");
+    await expect(row.getByRole("link", { name: "Manage", exact: true })).toHaveAttribute("href", "/admin/events/event-1/settings");
     await expect(row.getByRole("link", { name: "Clone" })).toHaveAttribute("href", "/admin/events/new?source=event-1");
     await expect(page.getByRole("link", { name: "Open", exact: true })).toHaveCount(0);
-    await expect(page.getByText("CFP published · offline", { exact: true })).toBeVisible();
-    await expect(page.getByText("Schedule published · offline", { exact: true })).toBeVisible();
+    const draftRow = page.getByRole("row").filter({ hasText: "Private Planning Day" });
+    await expect(draftRow.getByText("CFP not configured", { exact: true })).toBeVisible();
+    await expect(draftRow.getByText("Agenda not built", { exact: true })).toBeVisible();
+    await expect(draftRow.getByRole("link", { name: "Manage CFP", exact: true })).toHaveAttribute("href", "/admin/events/event-2/cfp");
+    await expect(draftRow.getByRole("link", { name: "Manage agenda", exact: true })).toHaveAttribute("href", "/admin/events/event-2/agenda");
+    if (viewport.name === "mobile") {
+      const sortBox = await page.getByLabel("Sort").boundingBox();
+      expect(sortBox?.width).toBeLessThan(150);
+      const titleBox = await row.getByRole("link", { name: "Spring Summit", exact: true }).boundingBox();
+      const settingsBox = await row.getByRole("link", { name: "Manage", exact: true }).boundingBox();
+      expect(Math.abs((titleBox?.y ?? 0) - (settingsBox?.y ?? 0))).toBeLessThan(16);
+      const dateBox = await row.locator(".organizer-home-event-date").boundingBox();
+      const locationBox = await row.locator(".organizer-home-event-state").boundingBox();
+      expect(Math.abs((dateBox?.y ?? 0) - (locationBox?.y ?? 0))).toBeLessThan(16);
+      await page.getByLabel("Switch organization").selectOption(secondOrganizationId);
+      await expect(page.locator("#events-title")).toHaveText("Design Systems Guild");
+      await expect(page).toHaveURL(new RegExp(`organization_id=${secondOrganizationId}`));
+      await expect(page.getByRole("link", { name: "Create event in Design Systems Guild" })).toHaveAttribute("href", `/admin/events/new?organization_id=${secondOrganizationId}`);
+      await expect(page.getByRole("link", { name: "Design Systems Assembly", exact: true })).toHaveAttribute("href", "/admin/events/design-event-1");
+      await expect(page.getByRole("link", { name: "Spring Summit", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("row").filter({ hasText: "Design Systems Assembly" }).getByRole("link", { name: "Manage", exact: true })).toHaveAttribute("href", "/admin/events/design-event-1/settings");
+      await expect(page.getByRole("row").filter({ hasText: "Design Systems Assembly" }).getByRole("link", { name: "Clone" })).toHaveAttribute("href", "/admin/events/new?source=design-event-1");
+      await expect(page.getByRole("complementary", { name: "Recent changes" })).toContainText("Priya updated event Design Systems Assembly");
+      await expect(page.getByRole("complementary", { name: "Recent changes" })).not.toContainText("Spring Summit");
+      await page.getByLabel("Switch organization").selectOption(organizationId);
+      await expect(page.getByRole("link", { name: "Spring Summit", exact: true })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Design Systems Assembly", exact: true })).toHaveCount(0);
+    }
 
     const order = await page.locator("#events, #recent-changes, #event-pagination").evaluateAll((nodes) => nodes.map((node) => node.id));
     expect(order).toEqual(["events", "recent-changes", "event-pagination"]);
@@ -114,10 +172,15 @@ for (const viewport of [
       await expect(cells.nth(index)).toHaveAttribute("aria-labelledby", /^event-column-/);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if (viewport.name === "desktop") {
+      const tableWidths = await page.locator("#event-table").evaluate((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }));
+      expect(tableWidths.scroll).toBeLessThanOrEqual(tableWidths.client);
+    }
 
+    const requestsBeforeLoadMore = eventRequests;
     await page.getByRole("button", { name: "Load more" }).click();
-    await expect(page.getByRole("link", { name: "Autumn Forum" })).toBeVisible();
-    expect(eventRequests).toBe(2);
+    await expect(page.getByRole("link", { name: "Autumn Forum", exact: true })).toBeVisible();
+    expect(eventRequests).toBe(requestsBeforeLoadMore + 1);
   });
 }
 
@@ -132,14 +195,55 @@ test("Organizer Home keeps the single-column DOM at 200% zoom width", async ({ p
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(640);
 });
 
-test("Organizer Home omits manager actions and activity for an event editor", async ({ page }) => {
-  await serveHome(page, false);
-  await page.route("**/api/v1/admin/organizations/*/events**", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [events[0]], next_cursor: null }) }));
+test("Organizer Home updates the Create label when the viewport changes", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await serveHome(page);
+  await page.route("**/api/v1/admin/organizations/*/events**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: events, next_cursor: null }),
+  }));
   await page.goto("/admin");
-  await expect(page.locator("#recent-changes")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Skip to recent changes" })).toBeHidden();
-  await expect(page.getByRole("link", { name: "Create event" })).toBeHidden();
-  await expect(page.getByRole("link", { name: "Organization settings" })).toBeHidden();
-  await expect(page.getByRole("link", { name: "Clone" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Settings" })).toBeVisible();
+  const create = page.locator("#new-event");
+  await expect(create).toHaveText("Create event in Open Source Summit");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(create).toHaveText("Create event");
+  await expect(create).toHaveAttribute("aria-label", "Create event in Open Source Summit");
+});
+
+test("Organizer Home keeps 10 organizations and 50 events operable without hiding Manage", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await serveHome(page);
+  const organizations = Array.from({ length: 10 }, (_, index) => ({
+    id: index === 0 ? organizationId : `organization-${index}`,
+    name: index === 0 ? "Open Source Summit" : `Organization ${index + 1}`,
+    status: "active",
+    version: 1,
+    event_count: 5,
+    pending_review_count: index % 3,
+  }));
+  const manyEvents = Array.from({ length: 50 }, (_, index) => ({
+    ...events[index % events.length],
+    id: `event-${index + 1}`,
+    name: `Event ${String(index + 1).padStart(2, "0")}`,
+  }));
+  await page.route("**/api/v1/admin/organizations", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: organizations }),
+  }));
+  await page.route("**/api/v1/admin/organizations/*/events**", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ data: manyEvents, next_cursor: null }),
+  }));
+
+  await page.goto("/admin");
+  await expect(page.getByRole("navigation", { name: "Organizations" }).getByRole("button")).toHaveCount(10);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel("Switch organization")).toBeVisible();
+  await expect(page.getByLabel("Switch organization").locator("option")).toHaveCount(10);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole("row").filter({ hasText: "Event 50" }).getByRole("link", { name: "Manage", exact: true })).toBeVisible();
+  await expect(page.getByRole("row")).toHaveCount(51);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
+  const tableWidths = await page.locator("#event-table").evaluate((node) => ({ client: node.clientWidth, scroll: node.scrollWidth }));
+  expect(tableWidths.scroll).toBeLessThanOrEqual(tableWidths.client);
 });

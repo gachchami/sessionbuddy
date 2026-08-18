@@ -24,6 +24,40 @@
     } catch (_) { return "Event dates unavailable"; }
   }
 
+  function renderEventActivity(result) {
+    const state = byId("event-activity-state");
+    const table = byId("event-activity-table");
+    const activities = result.ok && Array.isArray(result.value?.data) ? result.value.data : [];
+    if (!result.ok) {
+      state.textContent = "Event activity is temporarily unavailable. Refresh to try again.";
+      state.classList.add("error");
+      return;
+    }
+    if (!activities.length) {
+      state.textContent = "No event changes have been recorded yet.";
+      return;
+    }
+    const rows = activities.slice(0, 8).map((activity) => {
+      const row = document.createElement("tr");
+      const when = document.createElement("td");
+      const time = document.createElement("time");
+      const occurredAt = new Date(Number(activity.occurred_at_ms));
+      time.dateTime = occurredAt.toISOString();
+      time.title = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(occurredAt);
+      time.textContent = window.SessionBuddyActivityFormat.relativeTime(activity.occurred_at_ms);
+      when.append(time);
+      const change = document.createElement("td");
+      change.textContent = window.SessionBuddyActivityFormat.sentence(activity);
+      const area = document.createElement("td");
+      area.textContent = window.SessionBuddyActivityFormat.resourceLabel(activity.resource_type);
+      row.append(when, change, area);
+      return row;
+    });
+    byId("event-activity-rows").replaceChildren(...rows);
+    state.textContent = `${activities.length} recent event change${activities.length === 1 ? "" : "s"}.`;
+    table.hidden = false;
+  }
+
   async function initialize() {
     if (!eventId) {
       document.body.classList.remove("is-loading");
@@ -43,12 +77,13 @@
     const settle = (promise) => promise
       .then((value) => ({ ok: true, value }))
       .catch((error) => ({ ok: false, status: Number(error && error.status) || 0 }));
-    const [speakersState, cfpStateResult, submissionsState, roundState, agendaState] = await Promise.all([
+    const [speakersState, cfpStateResult, submissionsState, roundState, agendaState, activityState] = await Promise.all([
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/speaker-targets`)),
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/cfp`)),
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/submissions`)),
       settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/evaluation-rounds/current`)),
-      settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda`))
+      settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/agenda`)),
+      settle(api(`/api/v1/admin/events/${encodeURIComponent(eventId)}/activities`))
     ]);
     const speakers = speakersState.ok ? speakersState.value.data : [];
     const cfp = cfpStateResult.ok ? cfpStateResult.value : {};
@@ -74,7 +109,7 @@
     const agenda = agendaState.ok ? agendaState.value : null;
     const agendaItems = agenda && Array.isArray(agenda.items) ? agenda.items.length : 0;
     const agendaPublished = Boolean(agenda && agenda.revision && agenda.revision.status === "published");
-    const degraded = !speakersState.ok || !cfpStateResult.ok || !submissionsState.ok || !roundState.ok || agendaFailed;
+    const degraded = !speakersState.ok || !cfpStateResult.ok || !submissionsState.ok || !roundState.ok || agendaFailed || !activityState.ok;
     document.title = `${selected.name} · SessionBuddy`;
     byId("event-name").textContent = selected.name;
     document.documentElement.style.setProperty("--event-accent", accentColor);
@@ -107,6 +142,7 @@
     byId("speakers-link").closest(".event-signal").classList.toggle("event-signal--unavailable", !speakersState.ok);
     byId("agenda-link").closest(".event-signal").classList.toggle("event-signal--unavailable", agendaFailed);
     byId("cfp-link").closest(".event-signal").classList.toggle("event-signal--unavailable", !cfpStateResult.ok);
+    renderEventActivity(activityState);
     document.body.classList.remove("is-loading");
     byId("status").textContent = degraded
       ? "Some program information is unavailable. Refresh to try again."

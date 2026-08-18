@@ -430,18 +430,6 @@ actionable recovery when password configuration is temporarily unavailable.
 Persona-neutral account pages with no real destinations use a topbar-only shell
 instead of an empty navigation column.
 
-An Organizer with only an exact-event grant now lands in that event workspace,
-sees event navigation without organization-wide navigation, and can load the
-event overview even when the organization list is intentionally unavailable.
-Other event workspaces remain denied, and switching the same account to Speaker
-continues to block all organizer APIs and pages.
-
-Destructive administration is separated from ordinary editing. Event editors
-cannot archive or restore events, rooms, or tracks; exact managers and owners
-retain recovery access to archived-event grants. Label archive and restore are
-likewise event-manage actions, so a manager can recover labels created by a
-revoked editor without receiving unrelated label-edit ownership.
-
 Organization speaker-directory reads expose people and per-event participation
 only for events the caller can manage exactly. Event duplication additionally
 requires exact source-event management before private branding references are
@@ -515,11 +503,21 @@ that role's dashboard. Authenticated role switching now updates
 on browser storage. A role switch remains an account-persona choice only and does
 not grant organization or event resource access.
 
-Organizer Home now assumes one assigned organization and opens directly into its
-overview using existing organization, metrics, events, and speaker APIs. It adds
-no organization-creation API or control. The page shows organization context,
-permission-gated event creation, real summary metrics, event cards, and recent
-speaker activity, with a dedicated 390 by 844 responsive browser regression.
+Organizer Home is a multi-organization event workspace. A persistent organization
+rail on wide screens and a replacement selector on narrow screens scope event
+creation, settings, search, filtering, and activity without hiding the current
+tenant. Its dense event ledger supports 50-row pages and keeps event Settings
+reachable at every breakpoint. Each row presents lifecycle, CFP, agenda, proposal,
+and speaker state alongside direct links to the event workspace, CFP, agenda,
+speakers, reviewers, settings, and duplication when authorized. The responsive
+browser contract covers desktop, 390 by 844 mobile, 200% zoom width, ten
+organizations, and a full 50-event page. Organization context remains visible for
+single-organization accounts so the same switching model scales without changing
+the page structure as more organizations are added.
+
+The event overview includes a tenant-scoped activity table for recent successful
+changes to that event and its proposals, reviews, speakers, CFP, and agenda. Event
+managers can read this history without receiving organization-wide activity access.
 
 
 ## Updates — 2026-08-13

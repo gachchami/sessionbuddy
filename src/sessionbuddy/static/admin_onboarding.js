@@ -349,7 +349,7 @@
       connectInvalidations();
       startPolling();
     } catch (error) {
-      setStatus(error.status === 401 ? "Sign in as an event administrator to continue." : "We couldn’t verify your admin session.", true);
+      setStatus(error.status === 401 ? "Sign in as an organization administrator to continue." : "We couldn’t verify your admin session.", true);
       setConnection("stale", "Access unavailable");
     }
   }

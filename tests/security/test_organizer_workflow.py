@@ -966,6 +966,122 @@ async def test_organization_metrics_are_aggregated_and_admin_scoped(
         assert denied.status_code == 401
 
 
+async def test_organization_pending_reviews_equal_the_sum_of_event_rows(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as owner:
+        csrf, organization_id = await _bootstrap_admin(owner, connection)
+        created = await owner.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=_mutation(csrf),
+            json=EVENT_PAYLOAD,
+        )
+        assert created.status_code == 201, created.text
+        event_id = created.json()["id"]
+        evaluator_user_id = connection.execute(
+            "SELECT owner_user_id FROM owned_resources WHERE id=?", (organization_id,)
+        ).fetchone()[0]
+        evaluator_email = connection.execute(
+            "SELECT normalized_email FROM users WHERE id=?", (evaluator_user_id,)
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES(?,'reviewer','active',1000,1000,0)""",
+            (evaluator_user_id,),
+        )
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,accepted_at_ms,created_at_ms,updated_at_ms)
+               VALUES('count-invitation',?,?,?,?, 'evaluator','accepted',?,9999999999999,
+                      1000,1000,1000)""",
+            (organization_id, event_id, evaluator_email, evaluator_email, evaluator_user_id),
+        )
+        connection.execute(
+            """INSERT INTO call_for_speaker_forms
+               (id,organization_id,event_id,version,slug,welcome_text,schema_json,status,
+                published_at_ms,created_at_ms,updated_at_ms)
+               VALUES('count-form',?,?,1,'count-form','Welcome','{"fields":[]}',
+                      'published',1000,1000,1000)""",
+            (organization_id, event_id),
+        )
+        cases = (
+            ("valid", "submitted", "open", None),
+            ("closed", "submitted", "closed", 1001),
+            ("withdrawn", "withdrawn", "open", None),
+        )
+        for suffix, submission_status, round_status, closed_at_ms in cases:
+            submission_id = f"count-sub-{suffix}"
+            round_id = "count-round-closed" if round_status == "closed" else "count-round-open"
+            connection.execute(
+                """INSERT INTO submissions
+                   (id,organization_id,event_id,form_id,public_session_id,proposal_title,
+                    proposal_abstract,speaker_name,speaker_email,status,submitted_at_ms,
+                    created_at_ms,updated_at_ms,answers_json,version)
+                   VALUES(?,?,?,'count-form',?,?,'Abstract','Speaker','speaker@example.test',
+                          ?,1000,1000,1000,'{}',1)""",
+                (
+                    submission_id,
+                    organization_id,
+                    event_id,
+                    f"public-{suffix}",
+                    suffix,
+                    submission_status,
+                ),
+            )
+            if connection.execute(
+                "SELECT 1 FROM evaluation_rounds WHERE id=?", (round_id,)
+            ).fetchone() is None:
+                connection.execute(
+                    """INSERT INTO evaluation_rounds
+                       (id,organization_id,event_id,name,rubric_json,status,created_at_ms,
+                        updated_at_ms,closed_at_ms)
+                       VALUES(?,?,?,?,'{}',?,1000,1000,?)""",
+                    (round_id, organization_id, event_id, suffix, round_status, closed_at_ms),
+                )
+                connection.execute(
+                    """INSERT INTO evaluation_round_evaluators
+                       (round_id,evaluator_user_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+                       VALUES(?,?,?,?,'active',1000,1000)""",
+                    (round_id, evaluator_user_id, organization_id, event_id),
+                )
+            connection.execute(
+                """INSERT INTO evaluation_round_submissions
+                   (round_id,submission_id,organization_id,event_id,status,created_at_ms,updated_at_ms)
+                   VALUES(?,?,?,?,'active',1000,1000)""",
+                (round_id, submission_id, organization_id, event_id),
+            )
+            connection.execute(
+                """INSERT INTO evaluation_assignments
+                   (id,organization_id,event_id,round_id,submission_id,evaluator_user_id,
+                    status,created_at_ms,updated_at_ms)
+                   VALUES(?,?,?,?,?,?,'assigned',1000,1000)""",
+                (f"count-assignment-{suffix}", organization_id, event_id, round_id,
+                 submission_id, evaluator_user_id),
+            )
+        connection.commit()
+
+        organizations = (await owner.get("/api/v1/admin/organizations")).json()["data"]
+        events = (await owner.get(
+            f"/api/v1/admin/organizations/{organization_id}/events"
+        )).json()["data"]
+        assert organizations[0]["pending_review_count"] == 1
+        assert sum(event["pending_review_count"] for event in events) == 1
+
+        connection.execute(
+            "UPDATE submissions SET status='withdrawn' WHERE id='count-sub-valid'"
+        )
+        connection.commit()
+        organizations = (await owner.get("/api/v1/admin/organizations")).json()["data"]
+        events = (await owner.get(
+            f"/api/v1/admin/organizations/{organization_id}/events"
+        )).json()["data"]
+        assert organizations[0]["pending_review_count"] == 0
+        assert sum(event["pending_review_count"] for event in events) == 0
+
+
 def _seed_speaker_graph(connection) -> None:
     """One person speaking (with proposals) at two events, one person without
     any proposal: unique-people count must be exactly 1."""

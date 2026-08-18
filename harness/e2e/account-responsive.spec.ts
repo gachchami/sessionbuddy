@@ -80,7 +80,7 @@ test.describe("account profile responsive design", () => {
       await expect(page.getByRole("link", { name: "Calls for proposals" })).toHaveCount(0);
       await expect(page.getByRole("link", { name: "My reviews" })).toHaveCount(0);
       await page.getByLabel("Account menu for New account").click();
-      await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     });
   }
 
@@ -222,7 +222,7 @@ test.describe("account profile responsive design", () => {
     await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
     await expect(page.getByText("Temporarily unavailable")).toHaveCount(0);
     await page.getByLabel("Account menu for Admin User").click();
-    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
     expect(sessionRequests).toBeGreaterThanOrEqual(2);
   });
 

@@ -47,7 +47,7 @@ def test_organizer_pages_mark_major_surfaces_and_generated_cards() -> None:
     assert "organizer-panel--results" in source("admin_onboarding.html")
 
     scripts_and_hooks = {
-        "admin_home.js": "organization-name",
+        "admin_home.js": "events-title",
         "event_editor.js": "event-editor-form",
         "event_overview.js": "event-name",
         "access_admin.js": "reviewer-row-actions",

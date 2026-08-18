@@ -10,6 +10,7 @@ in `assets/logo/README.md`, then update the stylesheets to match. Adding a
 one-off value to a component is the failure mode this guards against.
 """
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -19,7 +20,7 @@ ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 STYLESHEETS = sorted(STATIC.glob("*.css")) + sorted((STATIC / "app" / "assets").glob("*.css"))
 
-SCALE_PX = frozenset({12, 14, 16, 18, 22, 28, 36, 48})
+SCALE_PX = frozenset({12, 13, 14, 16, 18, 22, 28, 36, 48})
 WEIGHTS = frozenset({"400", "500", "600", "700", "800"})
 MINIMUM_PX = 12
 # iOS Safari zooms the viewport when a focusable text field is smaller than
@@ -88,26 +89,37 @@ def test_text_inputs_are_at_least_sixteen_pixels(path: Path) -> None:
     )
 
 
+def test_source_wiring_dense_admin_controls_keep_mobile_zoom_safe() -> None:
+    stylesheet = (STATIC / "admin_home.css").read_text(encoding="utf-8")
+
+    assert "--home-control-font-size:1rem" in stylesheet
+    assert "@media (min-width:64.01rem)" in stylesheet
+    assert ".organizer-page--home { --home-control-font-size:.875rem; }" in stylesheet
+    assert "font-size:var(--home-control-font-size)" in stylesheet
+
+
 def test_no_stylesheet_names_a_font_the_project_does_not_ship() -> None:
     """A font named in CSS but never loaded silently falls back per platform.
 
-    The project ships no @font-face and no font files, so every family named in
-    a font stack must be one the operating system already provides. Inter was
-    named in two stylesheets for months and never once rendered.
+    A named webfont must have both a bundled font file and an @font-face
+    declaration. Inter was named in two stylesheets for months and never once
+    rendered.
     """
-    bundled = any(
-        "@font-face" in path.read_text(encoding="utf-8") for path in STYLESHEETS
-    )
+    styles = {path: path.read_text(encoding="utf-8") for path in STYLESHEETS}
     webfonts = list(STATIC.rglob("*.woff2")) + list(STATIC.rglob("*.woff"))
-    if bundled or webfonts:
-        pytest.skip("the project now ships a webfont; update this test to match")
+    if any("DM Sans" in css for css in styles.values()):
+        assert webfonts, "DM Sans is named but no webfont file is bundled"
+        assert any(
+            "@font-face" in css and 'font-family:"DM Sans"' in css
+            for css in styles.values()
+        ), "DM Sans is named but has no @font-face declaration"
 
     named = {"Inter", "Manrope", "Roboto Flex", "Satoshi", "Geist"}
     offenders = {
         path.name: sorted(
             font
             for font in named
-            if re.search(rf"\b{font}\b", path.read_text(encoding="utf-8"))
+            if re.search(rf"\b{font}\b", styles[path])
         )
         for path in STYLESHEETS
     }
@@ -116,3 +128,13 @@ def test_no_stylesheet_names_a_font_the_project_does_not_ship() -> None:
         f"these stylesheets name fonts that are never loaded: {offenders}. "
         "Either ship the font or remove it from the stack."
     )
+
+
+def test_source_wiring_home_font_is_content_addressed() -> None:
+    stylesheet = (STATIC / "admin_home.css").read_text(encoding="utf-8")
+    font = STATIC / "fonts" / "dm-sans-latin-wght-normal.woff2"
+    expected_digest = hashlib.sha256(font.read_bytes()).hexdigest()[:12]
+    match = re.search(r"dm-sans\.woff2\?v=([a-f0-9]{12})", stylesheet)
+
+    assert match is not None
+    assert match.group(1) == expected_digest

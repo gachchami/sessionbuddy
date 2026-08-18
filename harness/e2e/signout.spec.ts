@@ -137,7 +137,7 @@ test.describe("account sign-out", () => {
 
     await page.goto("/admin/events");
     await page.locator("summary[aria-label='Account menu for Admin User']").click();
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
 
     await expect(page).toHaveURL(/\/$/);
     expect(logoutAttempts).toBe(1);
@@ -164,7 +164,7 @@ test.describe("account sign-out", () => {
 
     await page.goto("/admin/events");
     await page.locator("summary[aria-label='Account menu for Admin User']").click();
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
 
     // The failure re-enables the control with an explicit retry affordance
     // and never navigates away from the canonical Home page.

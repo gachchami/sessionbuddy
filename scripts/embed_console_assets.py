@@ -96,6 +96,7 @@ ASSETS = {
 BINARY_ASSETS = {
     "aie-new-york-2026.jpg": "AIE_NEW_YORK_2026_JPG",
     "aie-code-sf-2026.jpg": "AIE_CODE_SF_2026_JPG",
+    "fonts/dm-sans-latin-wght-normal.woff2": "DM_SANS_LATIN_WGHT_NORMAL_WOFF2",
 }
 
 CONTENT_ADDRESSED_ASSETS = (
@@ -108,6 +109,11 @@ CONTENT_ADDRESSED_ASSETS = (
     ),
     (
         "organization_admin.html",
+        "activity_format.js",
+        "/app-shell/assets/activity-format.js",
+    ),
+    (
+        "event_overview.html",
         "activity_format.js",
         "/app-shell/assets/activity-format.js",
     ),
@@ -178,6 +184,13 @@ CONTENT_ADDRESSED_ASSETS = (
         "/public/assets/biography-disclosure.js",
     ),
 )
+CONTENT_ADDRESSED_CSS_ASSETS = (
+    (
+        "admin_home.css",
+        "fonts/dm-sans-latin-wght-normal.woff2",
+        "/admin/home/assets/dm-sans.woff2",
+    ),
+)
 SHARED_ASSET_VERSIONS = {
     "/app-shell/assets/api-client.js": "8",
     "/app-shell/assets/app-shell.js": "32",
@@ -196,7 +209,31 @@ def _versioned_html(filename: str, content: str) -> str:
     return content
 
 
+def _versioned_css(filename: str, content: str) -> str:
+    for css_name, asset_name, asset_path in CONTENT_ADDRESSED_CSS_ASSETS:
+        if css_name != filename:
+            continue
+        digest = hashlib.sha256((STATIC / asset_name).read_bytes()).hexdigest()[:12]
+        pattern = re.escape(asset_path) + r"(?:\?v=[A-Za-z0-9._-]+)?"
+        content, count = re.subn(pattern, f"{asset_path}?v={digest}", content)
+        if count != 1:
+            raise RuntimeError(f"expected one {asset_path} reference in {css_name}; found {count}")
+    return content
+
+
 def sync_content_addresses(*, check: bool) -> None:
+    for css_name, _, _ in CONTENT_ADDRESSED_CSS_ASSETS:
+        path = STATIC / css_name
+        current = path.read_text(encoding="utf-8")
+        expected = _versioned_css(css_name, current)
+        if current == expected:
+            continue
+        if check:
+            raise SystemExit(
+                f"{path} has stale asset identities; run this script without --check"
+            )
+        path.write_text(expected, encoding="utf-8")
+
     html_paths = {STATIC / item[0] for item in CONTENT_ADDRESSED_ASSETS}
     html_paths.update(STATIC.rglob("*.html"))
     html_paths.add(ROOT / "frontend" / "index.html")

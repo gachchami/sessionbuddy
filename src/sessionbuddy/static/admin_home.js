@@ -5,11 +5,14 @@
 
   const byId = (id) => document.getElementById(id);
   const api = (path, options = {}) => window.SessionBuddyApi.request(path, options);
+  const compactCreateLabel = matchMedia("(max-width: 32rem)");
   const VALID_VIEWS = new Set(["all", "active", "draft", "past"]);
   const VALID_ORDERS = new Set(["upcoming", "recent"]);
   const state = {
     session: null,
     organizations: [],
+    organizationMetrics: new Map(),
+    organizationQuery: "",
     organizationId: "",
     events: [],
     nextCursor: null,
@@ -97,19 +100,25 @@
     return node;
   }
 
-  function countLink(event, count, noun, suffix = "") {
-    if (!count) return null;
+  function readinessLabel(label, tone = "neutral", href = "", accessibleLabel = "") {
+    const node = document.createElement(href ? "a" : "span");
+    node.className = `organizer-home-readiness organizer-home-readiness--${tone}${href ? " organizer-home-readiness--link" : ""}`;
+    if (href) node.href = href;
+    if (accessibleLabel) node.setAttribute("aria-label", accessibleLabel);
+    node.textContent = label;
+    return node;
+  }
+
+  function eventLink(label, href) {
     const link = document.createElement("a");
-    link.href = `/admin/events/${encodeURIComponent(event.id)}/submissions${suffix}`;
-    link.textContent = `${count} ${noun}${count === 1 ? "" : "s"}`;
+    link.className = "organizer-home-event-link";
+    link.href = href;
+    link.textContent = label;
     return link;
   }
 
-  function programState(label, status, isPublic, isOffline) {
-    const node = document.createElement("span");
-    node.className = `organizer-home-program-state${isPublic ? " organizer-home-program-state--public" : ""}${status === "draft" || status === "ready" || status === "updates_pending" ? " organizer-home-program-state--pending" : ""}${isOffline ? " organizer-home-program-state--offline" : ""}`;
-    node.textContent = `${label}${isOffline ? " · offline" : ""}`;
-    return node;
+  function eventStatusLabel(event) {
+    return event.status === "active" ? "Active" : event.status === "draft" ? "Draft" : "Archived";
   }
 
   function eventRow(event) {
@@ -126,56 +135,78 @@
     name.href = `/admin/events/${encodeURIComponent(event.id)}`;
     name.textContent = event.name;
     nameLine.append(name);
-    if (event.status !== "active") {
-      const status = document.createElement("span");
-      status.className = `organizer-home-event-status organizer-home-event-status--${event.status}`;
-      status.textContent = event.status === "draft" ? "Draft" : "Archived";
-      nameLine.append(status);
-    }
     identity.append(nameLine);
-    const attention = document.createElement("div");
-    attention.className = "organizer-home-event-attention";
-    const proposals = countLink(event, Number(event.proposal_count || 0), "proposal");
-    const reviews = countLink(event, Number(event.pending_review_count || 0), "awaiting review", "#rounds-title");
-    if (proposals) attention.append(proposals);
-    if (reviews) attention.append(reviews);
-    if (attention.childElementCount) identity.append(attention);
+    const labels = document.createElement("div");
+    labels.className = "organizer-home-event-labels";
+    const eventId = encodeURIComponent(event.id);
 
-    const date = cell("event-column-date", "Date", "organizer-home-event-date");
+    const statusCell = cell("event-column-status", "Location", "organizer-home-event-state");
+    statusCell.textContent = event.location || (event.delivery_mode === "virtual" ? "Online" : "Not set");
+    const status = document.createElement("span");
+    status.className = `organizer-home-event-status organizer-home-event-status--${event.status}`;
+    status.textContent = eventStatusLabel(event);
+    labels.append(status);
+
+    const date = cell("event-column-date", "Dates", "organizer-home-event-date");
     const time = document.createElement("time");
     const machineDate = isoDate(event);
     if (machineDate) time.dateTime = machineDate;
     time.textContent = formatDate(event);
     date.append(time);
 
-    const where = cell("event-column-where", "Where", "organizer-home-event-where");
-    where.textContent = event.location || (event.delivery_mode === "virtual" ? "Online" : "Not set");
-
-    const program = cell("event-column-program", "Program", "organizer-home-event-program");
-    const inactive = event.status !== "active";
-    const cfpLabels = { not_started: "CFP not set", draft: "CFP draft", published: "CFP published", closed: "CFP closed" };
-    const scheduleLabels = { not_started: "No schedule", draft: "Schedule draft", ready: "Schedule ready", published: "Schedule published", updates_pending: "Schedule update ready" };
+    const program = cell("event-column-program", "Links", "organizer-home-event-program");
     const cfpStatus = event.cfp_status || "not_started";
     const scheduleStatus = event.schedule_status || "not_started";
-    program.append(
-      programState(cfpLabels[cfpStatus] || "CFP not set", cfpStatus, ["published", "closed"].includes(cfpStatus) && !inactive, inactive && ["published", "closed"].includes(cfpStatus)),
-      programState(scheduleLabels[scheduleStatus] || "No schedule", scheduleStatus, ["published", "updates_pending"].includes(scheduleStatus) && !inactive, inactive && ["published", "updates_pending"].includes(scheduleStatus)),
+    const publicCfpHref = event.status === "active" && event.cfp_public_path && ["published", "closed"].includes(cfpStatus)
+      ? event.cfp_public_path
+      : "";
+    const publicAgendaHref = event.status === "active" && ["published", "updates_pending"].includes(scheduleStatus)
+      ? `/events/${eventId}/schedule`
+      : "";
+    if (event.status === "archived") {
+      labels.append(readinessLabel("CFP archived"), readinessLabel("Agenda archived"));
+    } else {
+      const proposalCount = Number(event.proposal_count || 0);
+      const speakerCount = Number(event.speaker_count || 0);
+      const cfpReady = event.status === "active" && ["published", "closed"].includes(cfpStatus);
+      const agendaReady = event.status === "active" && ["ready", "published", "updates_pending"].includes(scheduleStatus);
+      const cfpLabel = cfpReady
+        ? `CFP ${cfpStatus === "closed" ? "closed" : "open"} · ${proposalCount} proposal${proposalCount === 1 ? "" : "s"}`
+        : "CFP not configured";
+      const agendaLabel = agendaReady
+        ? `Agenda ${scheduleStatus === "published" ? "live" : "ready"} · ${speakerCount} speaker${speakerCount === 1 ? "" : "s"}`
+        : "Agenda not built";
+      labels.append(
+        readinessLabel(cfpLabel, cfpReady ? "ready" : "warning", publicCfpHref, publicCfpHref ? `${cfpLabel} — view public CFP for ${event.name}` : ""),
+        readinessLabel(agendaLabel, agendaReady ? "ready" : "warning", publicAgendaHref, publicAgendaHref ? `${agendaLabel} — view public agenda for ${event.name}` : ""),
+      );
+    }
+    identity.append(labels);
+    const links = document.createElement("nav");
+    links.className = "organizer-home-event-links";
+    links.setAttribute("aria-label", `${event.name} management`);
+    links.append(
+      eventLink("Manage CFP", `/admin/events/${eventId}/cfp`),
+      eventLink("Manage agenda", `/admin/events/${eventId}/agenda`),
+      eventLink("Speakers", `/admin/events/${eventId}/speakers`),
+      eventLink("Reviewers", `/admin/events/${eventId}/reviewers`),
     );
+    program.append(links);
 
     const actions = cell("event-column-actions", "Actions", "organizer-home-event-actions");
     const settings = document.createElement("a");
     settings.className = "organizer-home-event-action";
     settings.href = `/admin/events/${encodeURIComponent(event.id)}/settings`;
-    settings.textContent = "Settings";
+    settings.textContent = "Manage";
     actions.append(settings);
     if (canDuplicateEvent(event)) {
       const duplicate = document.createElement("a");
-      duplicate.className = "organizer-home-event-action";
+      duplicate.className = "organizer-home-event-action organizer-home-event-action--clone";
       duplicate.href = `/admin/events/new?source=${encodeURIComponent(event.id)}`;
       duplicate.textContent = "Clone";
       actions.append(duplicate);
     }
-    row.append(identity, date, where, program, actions);
+    row.append(identity, statusCell, date, program, actions);
     return row;
   }
 
@@ -192,7 +223,8 @@
         ? `No events match “${state.query}”.`
         : state.view === "all" ? "No events yet. Create your first event." : `No ${state.view === "draft" ? "draft" : state.view} events.`;
     }
-    byId("event-count").textContent = `${state.events.length}${state.nextCursor ? "+" : ""}`;
+    const countLabel = state.events.length === 1 ? "event" : "events";
+    byId("event-count").textContent = `${state.events.length}${state.nextCursor ? "+" : ""} ${countLabel}`;
     byId("event-count").setAttribute("aria-label", `${state.events.length}${state.nextCursor ? " or more" : ""} events shown`);
     byId("load-more-events").hidden = !state.nextCursor;
   }
@@ -211,7 +243,7 @@
     state.events = cursor ? [...state.events, ...result.data] : result.data;
     state.nextCursor = result.next_cursor;
     renderEvents();
-    if (announce) setStatus(`${state.events.length}${state.nextCursor ? " or more" : ""} events for ${byId("organization-name").textContent}.`);
+    if (announce) setStatus(`${state.events.length}${state.nextCursor ? " or more" : ""} events for ${byId("events-title").textContent}.`);
     else setStatus("");
     return true;
   }
@@ -237,7 +269,7 @@
     aside.className = "organizer-home-changes";
     aside.setAttribute("aria-labelledby", "recent-changes-title");
     aside.tabIndex = -1;
-    aside.innerHTML = `<div class="organizer-home-changes__heading"><h2 id="recent-changes-title">Recent changes</h2><a href="/admin/organization#organization-activity">See all changes</a></div><p class="organizer-home-changes-state" role="status">Loading recent changes…</p>`;
+    aside.innerHTML = `<div class="organizer-home-changes__heading"><h2 id="recent-changes-title">Recent changes</h2><a href="/admin/organization#organization-activity">See all</a></div><p class="organizer-home-changes-state" role="status">Loading recent changes…</p>`;
     return aside;
   }
 
@@ -270,7 +302,7 @@
     try {
       const result = await api(`/api/v1/admin/organizations/${encodeURIComponent(state.organizationId)}/activities`);
       if (requestId !== state.activityRequestId) return;
-      const activities = result.data.filter((activity) => activity.operation !== "read").slice(0, 8);
+      const activities = result.data.slice(0, 8);
       if (!activities.length) {
         aside.querySelector(".organizer-home-changes-state").textContent = "No recent changes.";
         return;
@@ -305,12 +337,22 @@
 
   function syncOrganizationHeader() {
     const organization = selectedOrganization();
-    byId("organization-name").textContent = organization?.name || state.session.organization_name || "Events";
+    const organizationName = organization?.name || state.session.organization_name || "Events";
+    byId("events-title").textContent = organizationName;
     const manager = canManageOrganization(state.organizationId);
     byId("new-event").hidden = !manager;
     byId("new-event").href = `/admin/events/new?organization_id=${encodeURIComponent(state.organizationId)}`;
+    byId("new-event").setAttribute("aria-label", `Create event in ${organizationName}`);
+    byId("new-event").textContent = compactCreateLabel.matches ? "Create event" : `Create event in ${organizationName}`;
     byId("organization-settings").hidden = !manager;
+    byId("organization-settings").setAttribute("aria-label", `Organization settings for ${organizationName}`);
     byId("organization-picker").value = state.organizationId;
+    document.querySelectorAll("[data-organization-id]").forEach((button) => {
+      const selected = button.dataset.organizationId === state.organizationId;
+      button.classList.toggle("organizer-home-organization-option--selected", selected);
+      if (selected) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
   }
 
   async function switchOrganization(organizationId, announce = false) {
@@ -323,10 +365,41 @@
     if (announce) byId("events-title").focus({ preventScroll: true });
   }
 
+  function renderOrganizationList() {
+    const query = state.organizationQuery.toLocaleLowerCase();
+    const organizations = state.organizations.filter((organization) => organization.name.toLocaleLowerCase().includes(query));
+    byId("organization-list").replaceChildren(...organizations.map((organization) => {
+      const metric = state.organizationMetrics.get(organization.id);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "organizer-home-organization-option";
+      button.dataset.organizationId = organization.id;
+      const name = document.createElement("span");
+      name.textContent = organization.name;
+      const counts = document.createElement("span");
+      counts.className = "organizer-home-organization-option__counts";
+      if (metric?.pending_review_count) {
+        const attention = document.createElement("span");
+        attention.className = "organizer-home-organization-attention";
+        attention.textContent = String(metric.pending_review_count);
+        attention.setAttribute("aria-label", `${metric.pending_review_count} proposals awaiting review`);
+        counts.append(attention);
+      }
+      const events = document.createElement("span");
+      events.textContent = metric ? String(metric.event_count) : "–";
+      events.setAttribute("aria-label", metric ? `${metric.event_count} events` : "Event count unavailable");
+      counts.append(events);
+      button.append(name, counts);
+      return button;
+    }));
+    syncOrganizationHeader();
+  }
+
   async function loadDashboard() {
     const organizations = (await api("/api/v1/admin/organizations")).data;
     if (!organizations.length) throw new Error("Your organization workspace is not available yet. Please try again or contact an administrator.");
     state.organizations = organizations;
+    state.organizationMetrics = new Map(organizations.map((organization) => [organization.id, organization]));
     const validIds = new Set(organizations.map((organization) => organization.id));
     if (!validIds.has(state.organizationId)) {
       state.organizationId = validIds.has(state.session.organization_id) ? state.session.organization_id : organizations[0].id;
@@ -338,7 +411,16 @@
       option.textContent = organization.name;
       return option;
     }));
-    byId("organization-picker-label").hidden = organizations.length < 2;
+    document.body.classList.add("organizer-page--multi-organization");
+    // The compact picker replaces the desktop rail. Keep it populated even for
+    // one organization so responsive layouts never erase organization context.
+    byId("organization-picker-label").hidden = false;
+    byId("organization-rail").hidden = false;
+    byId("organization-count").textContent = String(organizations.length);
+    const totalEvents = organizations.reduce((total, organization) => total + organization.event_count, 0);
+    const totalAttention = organizations.reduce((total, organization) => total + organization.pending_review_count, 0);
+    byId("workspace-summary").textContent = `${organizations.length} organization${organizations.length === 1 ? "" : "s"} · ${totalEvents} event${totalEvents === 1 ? "" : "s"} · ${totalAttention} review item${totalAttention === 1 ? "" : "s"} need attention`;
+    renderOrganizationList();
     syncControls();
     await switchOrganization(state.organizationId);
   }
@@ -370,7 +452,15 @@
   });
 
   byId("organization-picker").addEventListener("change", (event) => switchOrganization(event.currentTarget.value, true));
-
+  byId("organization-search").addEventListener("input", (event) => {
+    state.organizationQuery = event.currentTarget.value.trim().slice(0, 100);
+    renderOrganizationList();
+  });
+  byId("organization-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-organization-id]");
+    if (button && button.dataset.organizationId !== state.organizationId) switchOrganization(button.dataset.organizationId, true);
+  });
+  compactCreateLabel.addEventListener("change", syncOrganizationHeader);
   byId("load-more-events").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
