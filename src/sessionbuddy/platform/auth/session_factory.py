@@ -30,15 +30,8 @@ def valid_redirect(value: str) -> bool:
     return value.startswith("/") and not value.startswith("//") and "\\" not in value
 
 
-def role_destination(role: str | None) -> str:
-    destination = ROLE_DESTINATIONS.get(role or "")
-    if destination is None:
-        raise HTTPException(status_code=403)
-    return destination
-
-
-def role_compatible_redirect(redirect_path: str, role: str) -> str:
-    """Keep role-scoped workspaces from leaking across sign-in personas."""
+def workspace_compatible_redirect(redirect_path: str, workspace_path: str) -> str:
+    """Keep role-scoped documents from leaking across authoritative workspaces."""
     requested_role = next(
         (
             candidate
@@ -47,9 +40,10 @@ def role_compatible_redirect(redirect_path: str, role: str) -> str:
         ),
         None,
     )
-    if requested_role is not None and requested_role != role:
-        return role_destination(role)
-    return role_destination(role) if redirect_path == "/" else redirect_path
+    requested_path = ROLE_DESTINATIONS.get(requested_role or "")
+    if requested_path is not None and requested_path != workspace_path:
+        return workspace_path
+    return workspace_path if redirect_path == "/" else redirect_path
 
 
 def deployed_environment(request: Request) -> bool:

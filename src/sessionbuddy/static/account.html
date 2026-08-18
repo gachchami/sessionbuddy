@@ -4,17 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Account · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=88">
-  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
+  <link rel="stylesheet" href="/product/assets/product.css?v=90">
+  <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=27">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=32" defer></script>
-  <script src="/account/assets/account.js?v=15" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=34" defer></script>
+  <script src="/account/assets/account.js?v=16" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
   <header data-auth-shell></header>
   <main id="main" class="shell page account-page organizer-main" tabindex="-1">
     <div id="account-context-heading" class="page-heading page-heading--compact account-context-heading" hidden><div><h1 id="account-title">Account</h1><p id="account-summary" class="sr-only">Profile details and access.</p></div></div>
+    <section id="workspace-recovery" class="account-recovery-notice" aria-labelledby="workspace-recovery-title" hidden>
+      <h2 id="workspace-recovery-title">Choose an available workspace</h2>
+      <p id="workspace-recovery-copy">Your current role no longer opens a workspace. You can still update your account here, choose another available role from the account menu, or sign out.</p>
+    </section>
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
     <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title" hidden>
       <div class="account-profile-heading"><div><h2 id="profile-title">Profile</h2></div><div id="profile-roles" class="account-role-list"></div></div>

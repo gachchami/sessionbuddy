@@ -27,12 +27,6 @@ _USER_ID_VARIABLES: dict[DemoRole, str] = {
     "speaker": "DEMO_SPEAKER_USER_ID",
 }
 
-_DESTINATIONS: dict[DemoRole, str] = {
-    "organizer": "/admin",
-    "reviewer": "/reviews",
-    "speaker": "/speaker",
-}
-
 _DESCRIPTIONS: dict[DemoRole, str] = {
     "organizer": "Manage the event, proposals, speakers, and agenda.",
     "reviewer": "Score the proposals assigned to you.",
@@ -52,7 +46,6 @@ class DemoPersona:
     user_id: str
     label: str
     description: str
-    destination: str
 
 
 def demo_login_enabled(environment) -> bool:
@@ -78,7 +71,6 @@ def configured_personas(environment) -> tuple[DemoPersona, ...]:
                 user_id=user_id,
                 label=_LABELS[role],
                 description=_DESCRIPTIONS[role],
-                destination=_DESTINATIONS[role],
             )
         )
     return tuple(personas)

@@ -6,6 +6,7 @@ from scripts.audit_rule_chokepoints import (
     advisory_literal_clusters,
     canonical_constant_findings,
     declaration_findings,
+    derived_rule_inventory_findings,
     mechanical_findings,
     persisted_enum_findings,
     session_mock_findings,
@@ -78,6 +79,56 @@ def writer_six(db):
     findings = writer_inventory_findings(tmp_path, registered)
     assert [finding.code for finding in findings] == ["unregistered_writer"]
     assert "writer_six" in findings[0].message
+
+
+def test_derived_rule_inventory_is_calibrated_to_manages_organization(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "src/sessionbuddy/access.py"
+    registered_source = '''def list_events(actor):
+    manages_organization = actor.is_owner or actor.can_manage
+    return manages_organization
+
+def current_session(access):
+    manages_organization = bool(access)
+    return manages_organization
+
+def user_workspace_contract(db):
+    query = "SELECT EXISTS (SELECT 1) AS manages_organization"
+    return query
+'''
+    write(path, registered_source)
+    config = {
+        "derived_rule_inventories": [
+            {
+                "id": "manages_organization",
+                "symbol": "manages_organization",
+                "user_path": "Organizer navigation and route access can contradict each other.",
+                "sites": [
+                    "src/sessionbuddy/access.py:list_events",
+                    "src/sessionbuddy/access.py:current_session",
+                    "src/sessionbuddy/access.py:user_workspace_contract",
+                ],
+            }
+        ]
+    }
+    assert derived_rule_inventory_findings(tmp_path, config) == []
+
+    write(
+        path,
+        registered_source
+        + '''
+def fourth_reconstruction(actor):
+    return resolve_workspace(manages_organization=bool(actor.authority))
+''',
+    )
+
+    findings = derived_rule_inventory_findings(tmp_path, config)
+
+    assert [finding.code for finding in findings] == [
+        "unregistered_derived_rule_site"
+    ]
+    assert "fourth_reconstruction" in findings[0].message
 
 
 def test_session_mock_detector_reads_allowed_fields_from_openapi(tmp_path: Path) -> None:

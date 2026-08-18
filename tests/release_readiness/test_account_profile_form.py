@@ -70,6 +70,17 @@ def test_source_wiring_profile_access_section_selects_a_default_account_role() -
     assert ".default-role-list { grid-template-columns: 1fr; }" in stylesheet
 
 
+def test_source_wiring_account_consumes_workspace_recovery_destination() -> None:
+    markup = (STATIC / "account.html").read_text(encoding="utf-8")
+    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+
+    assert 'id="workspace-recovery"' in markup
+    assert 'query.get("workspace") === "recovery"' in javascript
+    assert 'session.workspace_state === "active_role_invalid"' in javascript
+    assert 'session.workspace_state === "organizer_authority_missing"' in javascript
+    assert "renderWorkspaceRecovery(session);" in javascript
+
+
 def test_source_wiring_headshot_has_preview_upload_and_remove_controls() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")

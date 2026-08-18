@@ -11,6 +11,9 @@ const reviewerSession = JSON.stringify({
   account_roles: ["reviewer"],
   active_role: "reviewer",
   default_role: "reviewer",
+  workspace_state: "ready",
+  workspace_path: "/reviews",
+  usable_personas: [{ role: "reviewer", workspace_state: "ready", workspace_path: "/reviews" }],
   organization_access: [],
   event_access: [{
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

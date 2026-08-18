@@ -19,6 +19,12 @@ test.describe("persona and resource boundary", () => {
         account_roles: ["organizer", "speaker"],
         active_role: "organizer",
         default_role: "organizer",
+        workspace_state: "ready",
+        workspace_path: "/admin",
+        usable_personas: [
+          { role: "organizer", workspace_state: "ready", workspace_path: "/admin" },
+          { role: "speaker", workspace_state: "ready", workspace_path: "/speaker" },
+        ],
         organization_id: organizationId,
         organization_name: "AI Engineer",
         event_id: eventId,
@@ -82,6 +88,11 @@ test.describe("persona and resource boundary", () => {
         account_roles: ["organizer", "speaker"],
         active_role: "organizer",
         default_role: "organizer",
+        workspace_state: "organizer_authority_missing",
+        workspace_path: null,
+        usable_personas: [
+          { role: "speaker", workspace_state: "ready", workspace_path: "/speaker" },
+        ],
         organization_id: null,
         organization_name: null,
         event_id: eventId,
@@ -111,7 +122,9 @@ test.describe("persona and resource boundary", () => {
     }));
     await page.goto("/account");
     await expect(page).toHaveURL("/account");
-    await expect(page.getByText(/no manageable organization/i)).toBeVisible();
-    await expect(page.locator(".sb-account summary")).toHaveCount(0);
+    await expect(page.getByText(/no longer manages an organization/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: "Home" })).toHaveCount(0);
+    await page.getByLabel("Account menu for Event Only").click();
+    await expect(page.getByRole("radio", { name: "Speaker" })).toBeVisible();
   });
 });

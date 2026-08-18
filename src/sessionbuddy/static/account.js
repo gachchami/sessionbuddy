@@ -23,7 +23,21 @@
     document.querySelector(".organizer-section--account-access").hidden = false;
   }
   const onboarding = query.get("onboarding") === "1";
+  const workspaceRecoveryRequested = query.get("workspace") === "recovery";
   const nextPath = query.get("next") || "";
+
+  function renderWorkspaceRecovery(session) {
+    const recoveryState = session.workspace_state === "active_role_invalid"
+      || session.workspace_state === "organizer_authority_missing";
+    if (!recoveryState) return;
+    const notice = byId("workspace-recovery");
+    const copy = byId("workspace-recovery-copy");
+    copy.textContent = session.workspace_state === "organizer_authority_missing"
+      ? "Your organizer role no longer manages an organization. You can still update your account here, choose another available role from the account menu, or sign out."
+      : "Your current role is no longer available. You can still update your account here, choose another available role from the account menu, or sign out.";
+    if (workspaceRecoveryRequested) notice.dataset.destination = "server-recovery";
+    notice.hidden = false;
+  }
 
   function validTimeZone(value) {
     if (!value) return true;
@@ -448,6 +462,7 @@
 
   async function initialize() {
     [session] = await Promise.all([api("/api/v1/auth/session"), api("/api/v1/account/profile").then(setProfile)]);
+    renderWorkspaceRecovery(session);
     if (organizationMode) {
       byId("account-context-heading").hidden = false;
       document.title = "Organization settings · SessionBuddy";

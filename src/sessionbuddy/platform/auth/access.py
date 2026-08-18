@@ -55,10 +55,11 @@ from .passwords import PasswordPolicyError, hash_password, verify_password
 from .session_factory import confirm_session_established as _confirm_session_established
 from .session_factory import establish_session, establish_session_with_current_authorization_version
 from .session_factory import revoke_session as _revoke_session
-from .session_factory import role_compatible_redirect as _role_compatible_redirect
 from .session_factory import set_session_cookie as _set_session_cookie
 from .session_factory import valid_redirect as _valid_redirect
+from .session_factory import workspace_compatible_redirect as _workspace_compatible_redirect
 from .tokens import generate_token, hash_token, normalize_email
+from .workspace import WorkspaceState, resolve_workspace, usable_personas, user_workspace_contract
 
 access_router = APIRouter()
 
@@ -877,6 +878,12 @@ class OrganizationOwnershipTransferView(BaseModel):
     transferred_at_ms: int
 
 
+class SessionPersonaWorkspace(BaseModel):
+    role: Literal["organizer", "reviewer", "speaker"]
+    workspace_state: WorkspaceState
+    workspace_path: str
+
+
 class CurrentSession(BaseModel):
     authenticated: bool = True
     user_id: str
@@ -887,13 +894,16 @@ class CurrentSession(BaseModel):
     default_email_sender_name: str | None = None
     default_email_address: str | None = None
     account_roles: list[Literal["organizer", "reviewer", "speaker"]] = Field(default_factory=list)
-    active_role: Literal["organizer", "reviewer", "speaker"]
+    active_role: Literal["organizer", "reviewer", "speaker"] | None = None
     default_role: Literal["organizer", "reviewer", "speaker"] | None = None
     organization_id: str | None = None
     organization_name: str | None = None
     event_id: str | None = None
     organization_access: list[SessionOrganizationAccess] = Field(default_factory=list)
     event_access: list[SessionEventAccess] = Field(default_factory=list)
+    workspace_state: WorkspaceState
+    workspace_path: str | None = None
+    usable_personas: list[SessionPersonaWorkspace] = Field(default_factory=list)
 
 
 async def _default_account_role(db, user_id: str) -> str | None:
@@ -5457,6 +5467,12 @@ async def password_sign_in(
     default_role = await _default_account_role(db, str(credential["id"]))
     if default_role is None:
         raise HTTPException(status_code=403)
+    workspace_contract = await user_workspace_contract(
+        db, user_id=str(credential["id"]), active_role=default_role
+    )
+    if workspace_contract is None:
+        raise HTTPException(status_code=403)
+    workspace_path = workspace_contract.resolution.path or "/account?workspace=recovery"
     batch = CommandBatch(db)
     established = establish_session(
         batch=batch,
@@ -5505,7 +5521,9 @@ async def password_sign_in(
     return SessionCreated(
         user_id=str(credential["id"]),
         csrf_token=csrf,
-        redirect_path=_role_compatible_redirect(body.redirect_path, default_role),
+        redirect_path=_workspace_compatible_redirect(
+            body.redirect_path, workspace_path
+        ),
     )
 
 
@@ -6019,11 +6037,19 @@ async def _finish_magic_link_sign_in(
     )
     results = await session_batch.execute()
     await _confirm_session_established(results, established, db)
+    workspace_contract = await user_workspace_contract(
+        db, user_id=str(user_id), active_role=session_role
+    )
+    if workspace_contract is None:
+        raise HTTPException(status_code=403)
+    workspace_path = workspace_contract.resolution.path or "/account?workspace=recovery"
     _set_session_cookie(response, request, established.session_token)
     return SessionCreated(
         user_id=str(user_id),
         csrf_token=established.csrf_token,
-        redirect_path=_role_compatible_redirect(str(challenge["redirect_path"]), session_role),
+        redirect_path=_workspace_compatible_redirect(
+            str(challenge["redirect_path"]), workspace_path
+        ),
     )
 
 
@@ -6337,9 +6363,7 @@ async def current_session(request: Request) -> CurrentSession:
         .first()
     )
     account_roles = [str(item["role"]) for item in account_role_rows]
-    if active_role_row is None:
-        raise HTTPException(status_code=403)
-    active_role = str(active_role_row["role"])
+    active_role = str(active_role_row["role"]) if active_role_row is not None else None
     default_role = next(
         (str(item["role"]) for item in account_role_rows if bool(item["is_default"])),
         None,
@@ -6426,6 +6450,26 @@ async def current_session(request: Request) -> CurrentSession:
     organization_id = organization_access[0].organization_id if organization_access else None
     organization_name = organization_access[0].organization_name if organization_access else None
     event_scope = event_access[0] if event_access else None
+    manages_organization = bool(organization_access)
+    workspace = resolve_workspace(
+        active_role=active_role,
+        account_roles=account_roles,
+        profile_complete=bool(user["profile_complete"]),
+        manages_organization=manages_organization,
+    )
+    personas = [
+        SessionPersonaWorkspace(
+            role=role,
+            workspace_state=resolution.state,
+            workspace_path=resolution.path,
+        )
+        for role, resolution in usable_personas(
+            account_roles=account_roles,
+            profile_complete=bool(user["profile_complete"]),
+            manages_organization=manages_organization,
+        )
+        if resolution.path is not None
+    ]
     configured_sender = str(getattr(environment(request), "RESEND_FROM_ADDRESS", "") or "")
     default_sender_name, default_email_address = parseaddr(configured_sender)
     return CurrentSession(
@@ -6444,6 +6488,9 @@ async def current_session(request: Request) -> CurrentSession:
         event_id=event_scope.event_id if event_scope is not None else None,
         organization_access=organization_access,
         event_access=event_access,
+        workspace_state=workspace.state,
+        workspace_path=workspace.path,
+        usable_personas=personas,
     )
 
 
@@ -6456,16 +6503,21 @@ async def update_active_role(body: ActiveRoleUpdate, request: Request) -> Curren
     authenticated = await authenticate_request(request)
     guard_mutation(request, authenticated.session_id)
     db, now = database(request), utc_now_ms()
-    assigned = row_mapping(
-        await db.prepare(
-            """SELECT role FROM user_roles
-               WHERE user_id=?1 AND role=?2 AND status='active' LIMIT 1"""
-        )
-        .bind(authenticated.actor.user_id, body.role)
-        .first()
+    requested_contract = await user_workspace_contract(
+        db,
+        user_id=authenticated.actor.user_id,
+        active_role=body.role,
     )
-    if assigned is None:
+    if (
+        requested_contract is None
+        or requested_contract.resolution.state == "active_role_invalid"
+    ):
         raise HTTPException(status_code=403)
+    if requested_contract.resolution.path is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This role does not currently have an available workspace.",
+        )
     await (
         db.prepare(
             """INSERT INTO session_active_roles(session_id,user_id,role,selected_at_ms)

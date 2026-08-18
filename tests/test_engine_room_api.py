@@ -71,7 +71,12 @@ async def test_authenticated_root_redirects_to_active_role_dashboard(
     destination: str,
 ) -> None:
     async def session(_request):
-        return SimpleNamespace(profile_complete=True, active_role=active_role)
+        return SimpleNamespace(
+            profile_complete=True,
+            active_role=active_role,
+            workspace_state="ready",
+            workspace_path=destination,
+        )
 
     monkeypatch.setattr(api_app_module, "current_access_session", session)
     client.cookies.set("sessionbuddy-local", "test-session")
@@ -87,14 +92,19 @@ async def test_incomplete_profile_root_redirects_to_account_onboarding(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def session(_request):
-        return SimpleNamespace(profile_complete=False, active_role="organizer")
+        return SimpleNamespace(
+            profile_complete=False,
+            active_role="organizer",
+            workspace_state="profile_incomplete",
+            workspace_path="/account",
+        )
 
     monkeypatch.setattr(api_app_module, "current_access_session", session)
     client.cookies.set("sessionbuddy-local", "test-session")
     response = await client.get("/", follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/account?onboarding=1&next=%2F"
+    assert response.headers["location"] == "/account"
 
 
 @pytest.mark.parametrize(
@@ -106,16 +116,19 @@ async def test_incomplete_profile_root_redirects_to_account_onboarding(
         ("unknown-role", False),
     ],
 )
-async def test_missing_role_has_discovery_fallback_but_unknown_role_fails_closed(
+async def test_missing_role_uses_discovery_and_unknown_role_uses_neutral_recovery(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     active_role: str | None,
     profile_complete: bool,
 ) -> None:
     async def session(_request):
+        workspace_state = "roleless" if active_role is None else "active_role_invalid"
         return SimpleNamespace(
             profile_complete=profile_complete,
             active_role=active_role,
+            workspace_state=workspace_state,
+            workspace_path="/calls" if active_role is None else None,
             default_role="speaker",
             organization_access=[],
             event_access=[SimpleNamespace(roles=["speaker"])],
@@ -125,14 +138,10 @@ async def test_missing_role_has_discovery_fallback_but_unknown_role_fails_closed
     client.cookies.set("sessionbuddy-local", "test-session")
     response = await client.get("/", follow_redirects=False)
 
-    if active_role == "unknown-role":
-        assert response.status_code == 403
-        assert "location" not in response.headers
-    else:
-        assert response.status_code == 303
-        assert response.headers["location"] == (
-            "/calls" if profile_complete else "/account?onboarding=1&next=%2F"
-        )
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        "/calls" if active_role is None else "/account?workspace=recovery"
+    )
 
 
 async def test_landing_page_styles_are_embedded(client: AsyncClient) -> None:

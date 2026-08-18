@@ -27,7 +27,6 @@ from sessionbuddy.platform.auth.access import (
 )
 from sessionbuddy.platform.auth.demo_router import demo_router
 from sessionbuddy.platform.auth.http import session_cookie_value
-from sessionbuddy.platform.auth.redirects import ROLE_DESTINATIONS
 from sessionbuddy.platform.signed_cursors import StaleCursorError
 from sessionbuddy.platform.upload_contracts import UploadPolicyError
 from sessionbuddy.scheduling import scheduling_router
@@ -112,13 +111,12 @@ async def api_documentation_javascript(request: Request) -> Response:
 
 
 def _session_home_destination(session) -> str:
-    active_role = getattr(session, "active_role", None)
-    if active_role is None or active_role == "":
-        return "/calls"
-    destination = ROLE_DESTINATIONS.get(active_role)
-    if destination is None:
-        raise HTTPException(status_code=403)
-    return destination
+    destination = getattr(session, "workspace_path", None)
+    if destination is not None:
+        return str(destination)
+    # The account document is persona-neutral and owns recovery actions. A
+    # null workspace must never be guessed into a protected role document.
+    return "/account?workspace=recovery"
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -140,8 +138,6 @@ async def root(request: Request) -> Response:
                 raise
         else:
             destination = _session_home_destination(session)
-            if not session.profile_complete:
-                destination = "/account?onboarding=1&next=%2F"
             return RedirectResponse(
                 destination,
                 status_code=303,

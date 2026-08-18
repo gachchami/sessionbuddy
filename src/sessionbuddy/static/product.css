@@ -705,6 +705,9 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .speaker-directory-page .directory-hero h1, .event-overview-heading h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 700; letter-spacing: -.045em; }
 .account-context-heading { margin-bottom: 1rem; padding: .4rem 0 .8rem; border-bottom: 1px solid #e4e1ec; }
 .account-context-heading .lede { margin-top: .15rem; font-size: 1rem; }
+.account-recovery-notice { max-width: 52rem; margin: 0 0 1.25rem; padding: .9rem 1rem; border: 1px solid var(--status-warning-border); border-radius: .65rem; background: var(--status-warning-surface); color: var(--status-warning-text); }
+.account-recovery-notice h2 { margin: 0; color: inherit; font-size: 1rem; }
+.account-recovery-notice p { max-width: 70ch; margin: .25rem 0 0; color: inherit; font-size: .875rem; line-height: 1.5; }
 .speaker-directory-page .directory-hero--minimal { align-items: center; margin-bottom: .35rem; padding-bottom: .85rem; border-bottom: 1px solid #e4e1ec; }
 .speaker-directory-page .directory-hero--minimal h1 { font-family: inherit; font-weight: 700; }
 .speaker-directory-page .directory-hero--minimal .lede { margin-top: .2rem; font-size: 1rem; }
@@ -1179,7 +1182,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="
 .event-signal-list dt a { color: inherit; text-decoration: none; }
 .event-signal-list dt a:hover { color: #5b35d5; text-decoration: underline; }
 .event-signal-list dd { margin: 0; color: var(--text-primary); font-size: 1.125rem; font-weight: 700; letter-spacing: -.02em; }
-.event-signal-list small { color: var(--text-muted); font-size: .75rem; }
+.event-signal-list small { color: var(--text-muted); font-size: .75rem; font-weight: 400; letter-spacing: normal; }
 .event-signal--unavailable dd { color: var(--status-warning-text); font-size: 1rem; }
 .event-activity-card { margin-top: 1.25rem; overflow: hidden; border: 1px solid var(--border-default); border-radius: .7rem; background: var(--surface); }
 .event-activity-card__heading { padding: 1rem 1.15rem .8rem; border-bottom: 1px solid var(--border-default); }

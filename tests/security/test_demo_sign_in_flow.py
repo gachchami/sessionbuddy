@@ -118,6 +118,19 @@ def _seed_identity(connection: sqlite3.Connection, user_id: str, role: str, emai
            VALUES(?,?,1,'active',1,1)""",
         (user_id, hash_password(DEMO_PASSWORD, b"p" * 32)),
     )
+    if role == "organizer":
+        organization_id = "20000000-0000-4000-8000-000000000001"
+        connection.execute(
+            """INSERT INTO organizations(id,name,status,created_at_ms,updated_at_ms)
+               VALUES(?,'Demo Organization','active',1,1)""",
+            (organization_id,),
+        )
+        connection.execute(
+            """INSERT INTO owned_resources
+               (id,resource_type,created_by_user_id,owner_user_id,status,created_at_ms,updated_at_ms)
+               VALUES(?,'organization',?,?,'active',1,1)""",
+            (organization_id, user_id, user_id),
+        )
     connection.commit()
 
 

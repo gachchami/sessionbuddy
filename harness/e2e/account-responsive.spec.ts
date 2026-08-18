@@ -13,6 +13,18 @@ const appShellJavaScript = readFileSync(resolve(staticRoot, "app_shell.js"), "ut
 const activityFormatJavaScript = readFileSync(resolve(staticRoot, "activity_format.js"), "utf8");
 const productCss = readFileSync(resolve(staticRoot, "product.css"), "utf8");
 
+const workspaceContract = (
+  role: "organizer" | "reviewer" | "speaker",
+  workspaceState: string,
+  workspacePath: string | null,
+) => ({
+  workspace_state: workspaceState,
+  workspace_path: workspacePath,
+  usable_personas: workspacePath
+    ? [{ role, workspace_state: workspaceState, workspace_path: workspacePath }]
+    : [],
+});
+
 async function serveAccountPage(page: import("@playwright/test").Page) {
   await page.route(/^https?:\/\/[^/]+\/(?:account|admin\/organization)(?:\?.*)?$/, (route) => route.fulfill({
     contentType: "text/html",
@@ -43,6 +55,7 @@ test.describe("account profile responsive design", () => {
         account_roles: [persona],
         active_role: persona,
         default_role: persona,
+        ...workspaceContract(persona, "profile_incomplete", "/account"),
         organization_access: [],
         event_access: [],
       };
@@ -97,6 +110,7 @@ test.describe("account profile responsive design", () => {
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
+      ...workspaceContract("organizer", "ready", "/admin"),
       organization_access: [{
         organization_id: organizationId,
         organization_name: "Example Events",
@@ -184,6 +198,7 @@ test.describe("account profile responsive design", () => {
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
+      ...workspaceContract("organizer", "ready", "/admin"),
       organization_access: [{
         organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         organization_name: "Example Events",
@@ -239,6 +254,7 @@ test.describe("account profile responsive design", () => {
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
+      ...workspaceContract("organizer", "profile_incomplete", "/account"),
       organization_access: [{
         organization_id: organizationId,
         organization_name: "Example Events",
@@ -273,7 +289,11 @@ test.describe("account profile responsive design", () => {
       if (route.request().method() === "PATCH") {
         const profilePayload = route.request().postDataJSON() as Record<string, unknown>;
         savedProfile = profilePayload;
-        session.profile_complete = true;
+        Object.assign(
+          session,
+          { profile_complete: true },
+          workspaceContract("organizer", "ready", "/admin"),
+        );
         return route.fulfill({
           contentType: "application/json",
           body: JSON.stringify({
@@ -353,6 +373,7 @@ test.describe("account profile responsive design", () => {
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
+      ...workspaceContract("organizer", "ready", "/admin"),
       organization_access: [{
         organization_id: organizationId,
         organization_name: "Example Events",
@@ -458,6 +479,7 @@ test.describe("account profile responsive design", () => {
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
+      ...workspaceContract("organizer", "organizer_authority_missing", null),
       organization_access: [],
       event_access: [],
     };
@@ -530,6 +552,7 @@ test.describe("account profile responsive design", () => {
       account_roles: ["organizer"],
       active_role: "organizer",
       default_role: "organizer",
+      ...workspaceContract("organizer", "ready", "/admin"),
       organization_access: [{
         organization_id: organizationId,
         organization_name: "Example Events",

@@ -12,9 +12,8 @@ from sessionbuddy.platform.auth.demo import (
 )
 from sessionbuddy.platform.auth.demo_router import DemoSignIn
 from sessionbuddy.platform.auth.session_factory import (
-    role_compatible_redirect,
-    role_destination,
     valid_redirect,
+    workspace_compatible_redirect,
 )
 
 ORGANIZER_ID = "11111111-1111-1111-1111-111111111111"
@@ -88,17 +87,6 @@ def test_persona_ids_come_from_configuration_not_from_the_request() -> None:
     assert persona.user_id == ORGANIZER_ID
 
 
-def test_every_configured_persona_targets_its_own_workspace() -> None:
-    destinations = {
-        persona.role: persona.destination for persona in configured_personas(environment())
-    }
-    assert destinations == {
-        "organizer": "/admin",
-        "reviewer": "/reviews",
-        "speaker": "/speaker",
-    }
-
-
 def test_the_request_body_accepts_only_the_three_fixed_roles() -> None:
     for role in DEMO_ROLES:
         assert DemoSignIn(role=role).role == role
@@ -127,21 +115,12 @@ def test_offsite_redirects_are_rejected(redirect: str) -> None:
 
 
 def test_an_incompatible_redirect_is_corrected_to_the_role_workspace() -> None:
-    assert role_compatible_redirect("/admin", "reviewer") == "/reviews"
-    assert role_compatible_redirect("/reviews/queue", "speaker") == "/speaker"
-    assert role_compatible_redirect("/speaker/tasks", "organizer") == "/admin"
-    assert role_compatible_redirect("/", "organizer") == "/admin"
+    assert workspace_compatible_redirect("/admin", "/reviews") == "/reviews"
+    assert workspace_compatible_redirect("/reviews/queue", "/speaker") == "/speaker"
+    assert workspace_compatible_redirect("/speaker/tasks", "/admin") == "/admin"
+    assert workspace_compatible_redirect("/", "/admin") == "/admin"
 
 
 def test_a_compatible_redirect_is_preserved() -> None:
-    assert role_compatible_redirect("/reviews/queue", "reviewer") == "/reviews/queue"
-    assert role_compatible_redirect("/admin/events", "organizer") == "/admin/events"
-
-
-def test_an_unknown_role_has_no_destination() -> None:
-    from fastapi import HTTPException
-
-    for unknown in [None, "", "admin", "evaluator"]:
-        with pytest.raises(HTTPException) as raised:
-            role_destination(unknown)
-        assert raised.value.status_code == 403
+    assert workspace_compatible_redirect("/reviews/queue", "/reviews") == "/reviews/queue"
+    assert workspace_compatible_redirect("/admin/events", "/admin") == "/admin/events"

@@ -192,8 +192,10 @@ CONTENT_ADDRESSED_CSS_ASSETS = (
     ),
 )
 SHARED_ASSET_VERSIONS = {
+    "/product/assets/product.css": "90",
+    "/app-shell/assets/app-shell.css": "27",
     "/app-shell/assets/api-client.js": "8",
-    "/app-shell/assets/app-shell.js": "32",
+    "/app-shell/assets/app-shell.js": "34",
 }
 
 

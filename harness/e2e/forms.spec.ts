@@ -18,6 +18,9 @@ const organizerSession = {
   account_roles: ["organizer"],
   active_role: "organizer",
   default_role: "organizer",
+  workspace_state: "ready",
+  workspace_path: "/admin",
+  usable_personas: [{ role: "organizer", workspace_state: "ready", workspace_path: "/admin" }],
   organization_id: organizationId,
   event_id: eventId,
   organization_access: [{ organization_id: organizationId, organization_name: "Example Events", permissions: ["owner"] }],
@@ -536,6 +539,9 @@ test.describe("form validation and workflow wiring", () => {
       account_roles: ["reviewer"],
       active_role: "reviewer",
       default_role: "reviewer",
+      workspace_state: "ready",
+      workspace_path: "/reviews",
+      usable_personas: [{ role: "reviewer", workspace_state: "ready", workspace_path: "/reviews" }],
       organization_access: [],
       event_access: [{
         organization_id: organizationId,
@@ -902,7 +908,7 @@ test.describe("form validation and workflow wiring", () => {
 
   test("speaker custom task forms validate locally", async ({ page }) => {
     await polyfillUuid(page);
-    const speakerSession = { ...organizerSession, email: "speaker@example.com", account_roles: ["speaker"], active_role: "speaker", default_role: "speaker", organization_access: [], event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", assignments: ["speaker"] }] };
+    const speakerSession = { ...organizerSession, email: "speaker@example.com", account_roles: ["speaker"], active_role: "speaker", default_role: "speaker", workspace_state: "ready", workspace_path: "/speaker", usable_personas: [{ role: "speaker", workspace_state: "ready", workspace_path: "/speaker" }], organization_access: [], event_access: [{ organization_id: organizationId, event_id: eventId, event_name: "Conference 2030", assignments: ["speaker"] }] };
     await mockSession(page, speakerSession);
     let taskWrites = 0;
     let taskComplete = false;

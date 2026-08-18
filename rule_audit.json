@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "writer_inventories": {
     "speaker_tasks": [
       "src/sessionbuddy/competition/router.py:create_speaker_task",
@@ -10,6 +10,19 @@
       "src/sessionbuddy/speaker_operations/acceptance_tasks.py:append_acceptance_speaker_tasks"
     ]
   },
+  "derived_rule_inventories": [
+    {
+      "id": "manages_organization",
+      "symbol": "manages_organization",
+      "coverage": "Mechanical detection follows the exact Python symbol, including assignments, SQL aliases, and keyword arguments; renamed equivalents remain advisory discovery findings.",
+      "user_path": "Organizer workspace navigation and route authorization can contradict each other.",
+      "sites": [
+        "src/sessionbuddy/platform/auth/access.py:current_session",
+        "src/sessionbuddy/platform/auth/access.py:list_events",
+        "src/sessionbuddy/platform/auth/workspace.py:user_workspace_contract"
+      ]
+    }
+  ],
   "canonical_constants": [
     {
       "id": "speaker_asset_upload_policy",
@@ -19,6 +32,13 @@
       "allowed_projections": [
         "src/sessionbuddy/cfp/staged_uploads.py:STAGED_ASSET_RULES"
       ]
+    },
+    {
+      "id": "authenticated_workspace_destinations",
+      "path": "src/sessionbuddy/platform/auth/workspace.py",
+      "symbol": "ROLE_WORKSPACES",
+      "minimum_shared_entries": 2,
+      "allowed_projections": []
     }
   ],
   "persisted_enums": [

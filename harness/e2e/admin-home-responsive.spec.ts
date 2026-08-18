@@ -52,6 +52,8 @@ async function serveHome(page: Page) {
       authenticated: true, user_id: "user", email: "organizer@example.com", display_name: "User Zero",
       profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
       default_role: "organizer", organization_id: organizationId, organization_name: "Open Source Summit",
+      workspace_state: "ready", workspace_path: "/admin",
+      usable_personas: [{ role: "organizer", workspace_state: "ready", workspace_path: "/admin" }],
       organization_access: [
           { organization_id: organizationId, organization_name: "Open Source Summit", permissions: ["owner"] },
           { organization_id: secondOrganizationId, organization_name: "Design Systems Guild", permissions: ["manage"] },

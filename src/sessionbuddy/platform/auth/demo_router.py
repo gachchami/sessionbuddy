@@ -27,10 +27,11 @@ from .session_factory import (
     confirm_session_established,
     establish_session,
     revoke_session,
-    role_compatible_redirect,
     set_session_cookie,
     valid_redirect,
+    workspace_compatible_redirect,
 )
+from .workspace import user_workspace_contract
 
 demo_router = APIRouter()
 
@@ -111,12 +112,17 @@ async def list_demo_personas(request: Request) -> DemoPersonaList:
             .first()
         )
         if row is not None:
+            contract = await user_workspace_contract(
+                db, user_id=persona.user_id, active_role=persona.role
+            )
+            if contract is None or contract.resolution.path is None:
+                continue
             available.append(
                 DemoPersonaView(
                     role=persona.role,
                     label=persona.label,
                     description=persona.description,
-                    destination=persona.destination,
+                    destination=contract.resolution.path,
                 )
             )
     if not available:
@@ -167,6 +173,11 @@ async def demo_sign_in(
     )
     if account is None:
         raise HTTPException(status_code=404)
+    workspace_contract = await user_workspace_contract(
+        db, user_id=str(account["id"]), active_role=persona.role
+    )
+    if workspace_contract is None or workspace_contract.resolution.path is None:
+        raise HTTPException(status_code=409)
 
     batch = CommandBatch(db)
     # Signing into a demo persona while already authenticated replaces the
@@ -210,5 +221,7 @@ async def demo_sign_in(
     return DemoSessionCreated(
         user_id=str(account["id"]),
         csrf_token=established.csrf_token,
-        redirect_path=role_compatible_redirect(body.redirect_path, persona.role),
+        redirect_path=workspace_compatible_redirect(
+            body.redirect_path, workspace_contract.resolution.path
+        ),
     )

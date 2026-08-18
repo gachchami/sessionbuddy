@@ -17,6 +17,9 @@ const sessionBody = JSON.stringify({
   account_roles: ["organizer"],
   active_role: "organizer",
   default_role: "organizer",
+  workspace_state: "ready",
+  workspace_path: "/admin",
+  usable_personas: [{ role: "organizer", workspace_state: "ready", workspace_path: "/admin" }],
   organization_access: [{
     organization_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     organization_name: "Sign Out Organization",

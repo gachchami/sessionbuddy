@@ -369,8 +369,11 @@ html:has(> body.app-body.sb-shell-authenticated) { scroll-padding-top: var(--sb-
 .app-body.sb-shell-authenticated :where(button, a, input, select, textarea, summary) { scroll-margin-top: var(--sb-scroll-offset); }
 
 .sb-guest-header { border-bottom: 1px solid #e4e7ec; background: white; color: #182230; }
-.sb-guest-header__inner { width: min(76rem, calc(100% - 2rem)); min-height: 4.5rem; display: flex; align-items: center; margin-inline: auto; }
-.sb-guest-sign-in { margin-left: auto; color: #1d4ed8; font-weight: 600; }
+.sb-guest-header__inner { width: min(76rem, calc(100% - 2rem)); min-height: 4.5rem; display: flex; align-items: center; gap: 1rem; margin-inline: auto; }
+.sb-session-contract-error { flex: 1 1 24rem; min-width: 0; }
+.sb-guest-header__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem; }
+.app-body .sb-guest-sign-in { min-height: 2.5rem; display: inline-flex; align-items: center; gap: .4rem; border: 0; background: transparent; color: #1d4ed8; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: .2em; cursor: pointer; box-shadow: none; }
+.sb-guest-sign-in:disabled { cursor: wait; opacity: .6; }
 .sb-landing-account { display: flex; align-items: center; gap: .25rem; }
 .sb-landing-account > a { min-height: 2.7rem; display: inline-flex; align-items: center; padding: .58rem .72rem; border-radius: .5rem; color: inherit; font-size: .875rem; font-weight: 600; text-decoration: none; }
 .sb-landing-account .sb-account summary { color: inherit; }

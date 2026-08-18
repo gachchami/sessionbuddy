@@ -3500,13 +3500,20 @@
             "type": "array"
           },
           "active_role": {
-            "enum": [
-              "organizer",
-              "reviewer",
-              "speaker"
+            "anyOf": [
+              {
+                "enum": [
+                  "organizer",
+                  "reviewer",
+                  "speaker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Active Role",
-            "type": "string"
+            "title": "Active Role"
           },
           "authenticated": {
             "default": true,
@@ -3622,8 +3629,37 @@
             "title": "Profile Complete",
             "type": "boolean"
           },
+          "usable_personas": {
+            "items": {
+              "$ref": "#/components/schemas/SessionPersonaWorkspace"
+            },
+            "title": "Usable Personas",
+            "type": "array"
+          },
           "user_id": {
             "title": "User Id",
+            "type": "string"
+          },
+          "workspace_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Path"
+          },
+          "workspace_state": {
+            "enum": [
+              "ready",
+              "roleless",
+              "profile_incomplete",
+              "active_role_invalid",
+              "organizer_authority_missing"
+            ],
+            "title": "Workspace State",
             "type": "string"
           }
         },
@@ -3631,7 +3667,7 @@
           "user_id",
           "email",
           "csrf_token",
-          "active_role"
+          "workspace_state"
         ],
         "title": "CurrentSession",
         "type": "object"
@@ -10527,6 +10563,41 @@
           "permissions"
         ],
         "title": "SessionOrganizationAccess",
+        "type": "object"
+      },
+      "SessionPersonaWorkspace": {
+        "properties": {
+          "role": {
+            "enum": [
+              "organizer",
+              "reviewer",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "workspace_path": {
+            "title": "Workspace Path",
+            "type": "string"
+          },
+          "workspace_state": {
+            "enum": [
+              "ready",
+              "roleless",
+              "profile_incomplete",
+              "active_role_invalid",
+              "organizer_authority_missing"
+            ],
+            "title": "Workspace State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "workspace_state",
+          "workspace_path"
+        ],
+        "title": "SessionPersonaWorkspace",
         "type": "object"
       },
       "SessionView": {

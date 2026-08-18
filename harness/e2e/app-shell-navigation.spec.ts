@@ -34,6 +34,9 @@ function organizerSession() {
       event_name: "Example Event",
       assignments: [],
     }],
+    workspace_state: "ready",
+    workspace_path: "/admin",
+    usable_personas: [{ role: "organizer", workspace_state: "ready", workspace_path: "/admin" }],
   };
 }
 
@@ -151,24 +154,29 @@ test.describe("app shell navigation runtime", () => {
     const cached = await page.evaluate(() => JSON.parse(sessionStorage.getItem("sessionbuddy:shell-session")!));
     expect(cached.session.csrf_token).toBeUndefined();
     expect(cached.session.user_id).toBeUndefined();
-    expect(cached.session.event_access[0].event_id).toBe("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+    expect(cached.session.workspace_path).toBeUndefined();
+    expect(cached.session.organization_access).toBeUndefined();
 
-    // Delay the next session response well past the assertion window: only a
-    // cached paint can put the chrome on screen this fast on the new document.
+    // A cached identity can paint immediately, but it cannot expose workspace
+    // navigation until the authoritative response arrives.
     control.delayMs = 2500;
     await page.locator('.sb-event-nav a[href$="/cfp"]').click();
     await page.waitForURL(`**/admin/events/${eventId}/cfp`);
-    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 1200 });
-    await expect(page.locator(".sb-account")).toBeVisible({ timeout: 1200 });
-    await expect(page.locator(".sb-account summary")).toContainText("Shell Navigator");
+    await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
+    await expect(page.locator(".sb-topbar__title")).toHaveText("Checking access for Shell Navigator…");
+    await expect(page.locator(".sb-event-nav")).toHaveCount(0);
+    await expect(page.locator(".sb-account")).toHaveCount(0);
+    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 4000 });
 
-    // Durable URLs stay the browser's: Back and Forward land on real
-    // documents whose shells are equally immediate.
+    // Durable URLs stay the browser's. Back and Forward repeat the same safe
+    // identity-first, authority-after-response sequence.
     await page.goBack();
     await page.waitForURL(`**/admin/events/${eventId}`);
-    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 1200 });
+    await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
+    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 4000 });
     await page.goForward();
     await page.waitForURL(`**/admin/events/${eventId}/cfp`);
-    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 1200 });
+    await expect(page.locator(".sb-global-brand:not(a)")).toBeVisible({ timeout: 1200 });
+    await expect(page.locator(".sb-event-nav")).toBeVisible({ timeout: 4000 });
   });
 });

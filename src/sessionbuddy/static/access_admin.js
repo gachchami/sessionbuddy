@@ -17,9 +17,13 @@
     : ["revoked", "expired"].includes(status) ? "overdue" : "";
 
   function emptyRow(message) {
-    const row = document.createElement("p");
+    const row = document.createElement("div");
     row.className = "empty";
-    row.textContent = message;
+    row.setAttribute("role", "row");
+    const cell = document.createElement("span");
+    cell.setAttribute("role", "cell");
+    cell.textContent = message;
+    row.append(cell);
     return row;
   }
 

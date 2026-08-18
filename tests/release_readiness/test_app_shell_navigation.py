@@ -109,23 +109,24 @@ def test_source_wiring_shell_paints_from_the_cached_session_and_revalidates_in_t
     assert "stored_at: Date.now(), session: cacheableSession(session)" in javascript
     assert "sessionStorage.removeItem(SESSION_CACHE_KEY)" in javascript
 
-    # Cached data must satisfy the same session contract as a fresh response,
-    # and both paths route through one function so they can never disagree.
+    # Cached data paints identity only. It carries no authority-sensitive
+    # destination, and the authoritative response always replaces it.
     assert "function usableCachedSession()" in javascript
     usable = javascript.split("function usableCachedSession()", 1)[1].split(
         "function brandMark", 1
     )[0]
-    assert "activeRole(cached)" in usable
-    assert "dashboardDestination(cached)" in usable
-    assert "clearCachedSession();" in usable
+    assert "activeRole(cached)" not in usable
+    assert "dashboardDestination(cached)" not in usable
+    assert "return cached" in usable
     assert "function applySession(session, { authoritative = true } = {})" in javascript
+    assert "renderCachedShell(session);" in javascript
     assert "const cached = shell ? usableCachedSession() : null;" in javascript
 
-    # The fresh response reconciles: identical means done, different means
-    # re-render, 401 means the cache dies with the session.
-    assert "JSON.stringify(cacheableSession(session)) === JSON.stringify(cached)" in javascript
-    sign_out = javascript.split('signOut.addEventListener("click"', 1)[1].split(
-        "menu.append(signOut);", 1
+    # The fresh response always re-renders; sign-out and role switching clear
+    # every tab's identity hint.
+    assert "JSON.stringify(cacheableSession(session)) === JSON.stringify(cached)" not in javascript
+    sign_out = javascript.split("async function signOutCurrentSession", 1)[1].split(
+        "async function switchSessionRole", 1
     )[0]
     assert "clearCachedSession();" in sign_out
     assert "broadcastSessionChange();" in sign_out
@@ -159,11 +160,17 @@ def test_source_wiring_cached_session_never_stores_credentials_and_cannot_outliv
         "active_role:",
         "account_roles:",
         "profile_complete:",
-        "organization_access:",
-        "event_access:",
     ):
         assert field in cacheable
-    for excluded in ("csrf_token", "user_id", "...session", "Object.assign"):
+    for excluded in (
+        "csrf_token",
+        "user_id",
+        "workspace_path",
+        "organization_access",
+        "event_access",
+        "...session",
+        "Object.assign",
+    ):
         assert excluded not in cacheable
     assert "function sessionCsrfToken(renderedSession)" in javascript
     assert "window.SessionBuddyShellSession?.csrf_token" in javascript
@@ -261,12 +268,10 @@ def test_source_wiring_zero_link_account_shell_collapses_the_empty_navigation() 
 def test_account_brand_wiring_uses_the_active_role_destination() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    assert "const activeDestination = roleDestination(active, session)" in javascript
+    assert "const activeDestination = dashboardDestination(session)" in javascript
     assert 'link("", activeDestination)' in javascript
-    assert (
-        'organizerWorkspace ? organizerDestination(session) : roles.has("speaker")'
-        not in javascript
-    )
+    assert "organizerDestination" not in javascript
+    assert "roleDestination" not in javascript
 
 
 def test_source_wiring_single_speaker_workspace_has_no_one_item_navigation() -> None:
@@ -275,7 +280,7 @@ def test_source_wiring_single_speaker_workspace_has_no_one_item_navigation() -> 
 
     assert 'const singleSpeakerWorkspace = roles.size === 1 && roles.has("speaker")' in javascript
     assert "shell.replaceChildren(...[topbar, horizontalEventNav].filter(Boolean));" in javascript
-    assert 'speakerBrand = link("", "/speaker")' in javascript
+    assert 'speakerBrand = link("", activeDestination)' in javascript
     assert 'document.body.classList.toggle("sb-shell-single", topbarOnlyWorkspace)' in javascript
     assert ".sb-shell-single .sb-topbar {" in stylesheet
     assert ".app-body.sb-shell-authenticated.sb-shell-single > main.shell" in stylesheet
@@ -316,7 +321,7 @@ def test_source_wiring_account_settings_uses_shell_without_polluting_navigation(
     assert 'navLink("Account settings", "/account", "account")' in javascript
     assert 'make("span", "Sign out")' in javascript
     assert "return new Set(active ? [active.role] : [])" in javascript
-    assert "return organizerDestination(session)" in javascript
+    assert 'return typeof session.workspace_path === "string"' in javascript
     assert ".sb-role-option" in stylesheet
     assert ".sb-role-option__check" in stylesheet
     assert ".sb-account__menu-identity" in stylesheet
@@ -354,16 +359,13 @@ def test_source_wiring_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert "Platform status" not in primary_navigation
     assert "Speaker portal" not in hero_actions
     assert 'const label = "Open dashboard"' in javascript
-    assert 'return managesAnyOrganization(session) ? "/admin" : null' in javascript
-    assert 'return "/speaker"' in javascript
-    assert 'return "/reviews"' in javascript
-    assert 'choice.role === "speaker"' in javascript
-    assert "session.account_roles || []" in javascript
+    assert 'return typeof session.workspace_path === "string"' in javascript
+    assert "session.usable_personas || []" in javascript
     assert 'choice.role === "organization_admin"' not in javascript
     assert 'choice.role === "event_admin"' not in javascript
     assert 'if (landingAccount && location.pathname === "/")' in javascript
     assert "location.replace(destination)" in javascript
-    assert "return active ? roleDestination(active, session) : null" in javascript
+    assert "location.replace(destination)" in javascript
 
 
 def test_source_wiring_unknown_active_role_fails_closed_without_destination_guess() -> (
@@ -380,49 +382,36 @@ def test_source_wiring_unknown_active_role_fails_closed_without_destination_gues
     assert "supportedRoles.has(requested)" in active_role
     assert "return roleChoices(session).find" in active_role
 
-    destination = javascript.split("const roleDestination", 1)[1].split("function sameRole", 1)[0]
-    assert 'return "/account"' not in destination
-    assert "return null" in destination
-
-    assert "const missingActiveRole = session.active_role === null" in javascript
+    assert "const roleless = session.workspace_state === \"roleless\"" in javascript
     assert 'return location.pathname === "/calls" || location.pathname === "/account"' in javascript
-    assert "const rolelessNeutral = missingActiveRole && isPersonaNeutralPath()" in javascript
-    assert "if (!activeRole(session) && !rolelessNeutral) {" in javascript
-    assert "renderSessionContractError();" in javascript
+    assert "const rolelessNeutral = roleless && isPersonaNeutralPath()" in javascript
+    assert 'session.workspace_state === "active_role_invalid"' in javascript
+    assert "renderSessionContractError(session.workspace_state, session)" in javascript
     assert "renderLandingSessionContractError();" in javascript
-    assert "this session has no valid active role" in javascript
+    assert "This session does not have a valid active role." in javascript
     assert 'error.setAttribute("role", "alert")' in javascript
     assert 'entry.removeAttribute("href")' in javascript
     assert 'entry.setAttribute("aria-disabled", "true")' in javascript
 
 
-def test_organizer_without_manageable_resources_has_no_account_fallback() -> None:
+def test_source_wiring_organizer_without_manageable_resources_recovers_only_on_account() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    organizer_destination = javascript.split("function organizerDestination(session)", 1)[1].split(
-        "const roleDestination", 1
-    )[0]
-    assert '? "/admin" : null' in organizer_destination
-    assert "event.event_id" not in organizer_destination
-    assert 'return "/account"' not in organizer_destination
-    assert " : null" in organizer_destination
-
-    assert "const activeDestination = roleDestination(active, session)" in javascript
+    assert "function organizerDestination" not in javascript
+    assert "const roleDestination" not in javascript
+    assert "const activeDestination = dashboardDestination(session)" in javascript
     assert "if (!activeDestination) {" in javascript
-    assert 'renderSessionContractError("workspace")' in javascript
-    assert "this session has no manageable organization" in javascript
-    assert "if (!dashboardDestination(session) && !rolelessNeutral) {" in javascript
+    assert 'session.workspace_state === "organizer_authority_missing"' in javascript
+    assert 'workspaceRecovery && currentSection() === "account"' in javascript
+    assert "you no longer manage an organization" in javascript
 
 
 def test_source_wiring_organizer_destination_does_not_use_event_access() -> None:
     shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     overview = (STATIC / "event_overview.js").read_text(encoding="utf-8")
 
-    assert "function organizerDestination(session)" in shell
-    destination = shell.split("function organizerDestination(session)", 1)[1].split(
-        "const roleDestination", 1
-    )[0]
-    assert "event_access" not in destination
+    assert "function organizerDestination(session)" not in shell
+    assert "const roleDestination" not in shell
     assert "if (organizerWorkspace && !organizationWorkspace && !currentEventId)" in shell
     assert 'api("/api/v1/admin/organizations")' not in overview
     assert 'if (!organization) throw new Error("This event is not available' not in overview
@@ -440,6 +429,15 @@ def test_account_is_persona_neutral_and_same_destination_still_renders_shell() -
     assert not destination_guard.rstrip().endswith("return;\n    }")
 
 
+def test_source_wiring_recovery_states_render_the_account_shell_without_a_self_loop() -> None:
+    shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
+
+    assert 'workspaceRecovery && currentSection() === "account"' in shell
+    assert "renderRecoveryAccountShell(session);" in shell
+    assert 'if (currentSection() !== "account")' in shell
+    assert 'brandIdentity("sb-global-brand")' in shell
+
+
 def test_source_wiring_cached_identity_never_routes_an_authorization_sensitive_document() -> None:
     shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     api_client = (STATIC / "api_client.js").read_text(encoding="utf-8")
@@ -450,8 +448,12 @@ def test_source_wiring_cached_identity_never_routes_an_authorization_sensitive_d
     )[0]
     assert 'if (inWorkspace("/speaker")) return "speaker";' in persona_matcher
     assert 'location.pathname.startsWith("/speaker")' not in persona_matcher
-    assert "requiredPersona && active.role !== requiredPersona" in shell
     assert "requiredPersona && active?.role !== requiredPersona" in shell
+    cached_paint = shell.split("function renderCachedShell(session)", 1)[1].split(
+        "function applySession", 1
+    )[0]
+    assert "link(" not in cached_paint
+    assert 'brandIdentity("sb-global-brand")' in cached_paint
     assert "function prepareForSessionReplacement()" in api_client
     assert 'sessionStorage.removeItem("sessionbuddy:shell-session")' in api_client
     assert 'key?.startsWith("sessionbuddy:document-recovery:")' in api_client
@@ -499,13 +501,15 @@ def test_source_wiring_every_organizer_persona_reaches_a_navigable_workspace() -
 
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
-    # Organization links are gated on organization authority alone, so they
-    # still render on the persona-neutral /account page.
-    organization_gate = (
-        "const organizationNavigation = !onboardingLocked && organizer "
-        "&& managesAnyOrganization(session);"
+    # Organization links consume the server-resolved usable-persona contract,
+    # so they still render on the persona-neutral /account page without
+    # reconstructing organization authority in the browser.
+    assert 'choice.role === "organizer"' in javascript
+    assert (
+        "const organizationNavigation = !onboardingLocked && hasOrganizerWorkspace;"
+        in javascript
     )
-    assert organization_gate in javascript
+    assert "managesAnyOrganization" not in javascript
     assert "if (organizationNavigation) {" in javascript
 
     # Retired event grants never manufacture organizer navigation.

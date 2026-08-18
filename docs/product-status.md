@@ -425,11 +425,16 @@ Persona document boundaries now redirect an authenticated account away from a
 wrong-persona browser document and into its server-confirmed active workspace;
 matching Speaker/Reviewer sessions and anonymous sign-in shells retain their
 intended behavior. Protected APIs still return structured HTTP 403 responses
-for the wrong persona. The SessionBuddy brand follows only the explicit active
-persona. Unknown active-role state still returns 403; the server and browser no
-longer infer a destination from default roles, legacy memberships, or unrelated
-resource access. An authenticated account with no active role yet is the
-explicit exception: `/` redirects it to the persona-neutral `/calls` directory.
+for the wrong persona. One server resolver now supplies the active workspace,
+workspace state, and usable personas to `/`, sign-in, role switching, and the
+browser shell. The SessionBuddy brand becomes navigable only after that
+authoritative response; cached identity can paint chrome but cannot activate a
+workspace link. Invalid or authority-less personas can still open the
+persona-neutral Account document, where a recovery notice keeps profile editing,
+usable-role switching, and sign-out available without a protected workspace link
+or an Account self-loop. An
+authenticated account with no active role remains valid and resolves to the
+persona-neutral `/calls` directory.
 
 First-run profile onboarding preserves the exact bootstrap first and last name,
 shows legacy display-name splitting as an editable unsaved draft, and provides

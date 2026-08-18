@@ -422,15 +422,21 @@ async def test_single_event_read_denies_outsiders(
         assert denied.status_code == 401
 
 
-def test_console_gates_privileged_entry_points_by_real_permission() -> None:
+def test_source_wiring_console_gates_privileged_entry_points_by_real_permission() -> None:
     static = PROJECT_ROOT / "src" / "sessionbuddy" / "static"
     shell = (static / "app_shell.js").read_text(encoding="utf-8")
     home = (static / "admin_home.js").read_text(encoding="utf-8")
     editor = (static / "event_editor.js").read_text(encoding="utf-8")
     access = (static / "access_admin.js").read_text(encoding="utf-8")
 
-    # People directory requires organization management; nav renders only then.
-    assert "function managesAnyOrganization(session)" in shell
+    # People navigation consumes the server-resolved organizer workspace;
+    # exact organization operations still check the selected resource grant.
+    assert 'choice.role === "organizer"' in shell
+    assert "managesAnyOrganization" not in shell
+    assert (
+        "const organizationNavigation = !onboardingLocked && hasOrganizerWorkspace;"
+        in shell
+    )
     assert "function canManageOrganization(session, organizationId)" in shell
     assert shell.count('navLink("People", "/admin/people"') == 2
     # Event sub-nav comes only from organization authority; event_access is

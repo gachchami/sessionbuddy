@@ -197,11 +197,15 @@
     if (speakers.length) {
       list.append(...speakers.map(speakerCard));
     } else {
-      const empty = document.createElement("p");
+      const empty = document.createElement("div");
       empty.className = "empty";
-      empty.textContent = allSpeakers.length
+      empty.setAttribute("role", "row");
+      const message = document.createElement("span");
+      message.setAttribute("role", "cell");
+      message.textContent = allSpeakers.length
         ? "No people match this search. Try another term or clear a filter."
         : "No people yet. People appear here when they join an organization or event.";
+      empty.append(message);
       list.append(empty);
     }
     byId("speaker-count").textContent = `${speakers.length} ${speakers.length === 1 ? "person" : "people"}`;

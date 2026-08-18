@@ -159,11 +159,9 @@
   const SESSION_CACHE_KEY = "sessionbuddy:shell-session";
   const SESSION_CACHE_TTL_MS = 15 * 60 * 1000;
 
-  // An explicit allowlist of the fields the shell reads to paint chrome and
-  // choose destinations - nothing else is persisted. No tokens, no user id,
-  // no sender configuration; access entries are reduced to the permission
-  // strings and assigned-event identity/name the navigation renders. The shapes
-  // mirror the live session so both paint paths share the routing helpers.
+  // An explicit allowlist of the fields the shell reads for an identity-only
+  // cached paint. No workspace path or authority projection is persisted: only
+  // the current authoritative response may activate navigation.
   function cacheableSession(session) {
     return {
       email: String(session.email || ""),
@@ -172,14 +170,6 @@
       active_role: String(session.active_role || ""),
       account_roles: (session.account_roles || []).map(String),
       profile_complete: Boolean(session.profile_complete),
-      organization_access: (session.organization_access || []).map((item) => ({
-        permissions: (item.permissions || []).map(String)
-      })),
-      event_access: (session.event_access || []).map((item) => ({
-        event_id: String(item.event_id || ""),
-        event_name: String(item.event_name || ""),
-        assignments: (item.assignments || []).map(String)
-      }))
     };
   }
 
@@ -228,21 +218,10 @@
     try { authChannel?.postMessage("session-changed"); } catch (_) { /* best effort */ }
   }
 
-  // Cached data is only trusted when it satisfies the same session contract
-  // the fresh response must meet; anything else is dropped, never rendered.
+  // Cached data can paint identity, never authority or destinations.
   function usableCachedSession() {
     const cached = readCachedSession();
     if (!cached) return null;
-    const active = activeRole(cached);
-    const requiredPersona = personaForCurrentPath();
-    if (
-      !active
-      || !dashboardDestination(cached)
-      || (requiredPersona && active.role !== requiredPersona)
-    ) {
-      clearCachedSession();
-      return null;
-    }
     return cached;
   }
 
@@ -273,9 +252,8 @@
   const supportedRoles = new Set(["organizer", "reviewer", "speaker"]);
 
   function roleChoices(session) {
-    return (session.account_roles || [])
-      .filter((role) => supportedRoles.has(role))
-      .map((role) => ({ role, organizationId: "", eventId: "" }));
+    return (session.usable_personas || []).filter((choice) =>
+      supportedRoles.has(choice.role) && typeof choice.workspace_path === "string");
   }
 
   const roleLabel = (role) => ({
@@ -289,20 +267,8 @@
   const grants = (item) => item.permissions || [];
   const holds = (item, allowed) => grants(item).some((permission) => allowed.includes(permission));
 
-  function organizerDestination(session) {
-    return managesAnyOrganization(session) ? "/admin" : null;
-  }
-
-  const roleDestination = (choice, session) => {
-    if (!choice || !supportedRoles.has(choice.role)) return null;
-    if (choice.role === "organizer") return organizerDestination(session);
-    if (choice.role === "reviewer") return "/reviews";
-    if (choice.role === "speaker") return "/speaker";
-    return null;
-  };
-
   function sameRole(a, b) {
-    return Boolean(a && b && a.role === b.role && a.organizationId === b.organizationId && a.eventId === b.eventId);
+    return Boolean(a && b && a.role === b.role);
   }
 
   function activeRole(session) {
@@ -314,10 +280,6 @@
   function roleSet(session) {
     const active = activeRole(session);
     return new Set(active ? [active.role] : []);
-  }
-
-  function managesAnyOrganization(session) {
-    return (session.organization_access || []).some((item) => holds(item, ADMIN_PERMISSIONS));
   }
 
   function canManageOrganization(session, organizationId) {
@@ -365,6 +327,52 @@
   // session on window.SessionBuddyShellSession.
   function sessionCsrfToken(renderedSession) {
     return window.SessionBuddyShellSession?.csrf_token || renderedSession.csrf_token || "";
+  }
+
+  async function signOutCurrentSession(session, button, destination = "/") {
+    button.disabled = true;
+    clearCachedSession();
+    cancelSpeculativeLoads();
+    broadcastSessionChange();
+    try {
+      await window.SessionBuddyApi.request("/api/v1/session/logout", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
+        body: "{}"
+      });
+      location.assign(destination);
+    } catch (error) {
+      if (error && error.status === 401) {
+        location.assign(destination);
+        return;
+      }
+      button.disabled = false;
+      button.replaceChildren(icon("logout"), make("span", "Try sign out again"));
+    }
+  }
+
+  async function switchSessionRole(session, choice, button) {
+    button.disabled = true;
+    const status = button.querySelector("small");
+    if (status) status.textContent = "Switching…";
+    try {
+      const updatedSession = await window.SessionBuddyApi.request("/api/v1/session/active-role", {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
+        body: JSON.stringify({ role: choice.role })
+      });
+      clearCachedSession();
+      cancelSpeculativeLoads();
+      broadcastSessionChange();
+      if (typeof updatedSession.workspace_path !== "string") {
+        renderSessionContractError(updatedSession.workspace_state, updatedSession);
+        return;
+      }
+      location.assign(updatedSession.workspace_path);
+    } catch (error) {
+      button.disabled = false;
+      if (status) status.textContent = "Could not switch role. Try again.";
+    }
   }
 
   function accountMenu(session, roles) {
@@ -424,64 +432,23 @@
         }
         button.addEventListener("click", async () => {
           if (isActive) return;
-          button.disabled = true;
-          button.querySelector("small").textContent = "Switching…";
-          try {
-            await window.SessionBuddyApi.request("/api/v1/session/active-role", {
-              method: "PUT",
-              headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
-              body: JSON.stringify({ role: choice.role })
-            });
-            // The cached session and any prerendered documents captured the
-            // previous role; both must go - here and in every other tab -
-            // before the workspace changes hands.
-            clearCachedSession();
-            cancelSpeculativeLoads();
-            broadcastSessionChange();
-            const destination = roleDestination(choice, session);
-            if (!destination) {
-              renderSessionContractError();
-              return;
-            }
-            location.assign(destination);
-          } catch (error) {
-            button.disabled = false;
-            button.querySelector("small").textContent = "Could not switch role. Try again.";
-          }
+          await switchSessionRole(session, choice, button);
         });
         switcher.append(button);
       }
       menu.append(switcher);
     }
-    const accountSettings = navLink("Account settings", "/account", "account");
-    menu.append(accountSettings);
+    // The account document is already the recovery surface for sessions that
+    // have no usable workspace. Omitting its own destination here prevents the
+    // only persona-neutral escape hatch from becoming a self-loop.
+    if (currentSection() !== "account") {
+      const accountSettings = navLink("Account settings", "/account", "account");
+      menu.append(accountSettings);
+    }
     const signOut = make("button", undefined, "sb-account__sign-out");
     signOut.type = "button";
     signOut.append(icon("logout"), make("span", "Sign out"));
-    signOut.addEventListener("click", async () => {
-      signOut.disabled = true;
-      clearCachedSession();
-      cancelSpeculativeLoads();
-      broadcastSessionChange();
-      try {
-        await window.SessionBuddyApi.request("/api/v1/session/logout", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-csrf-token": sessionCsrfToken(session) },
-          body: "{}"
-        });
-        location.assign("/");
-      } catch (error) {
-        // A 401 (session already gone) means the user is, for all practical
-        // purposes, signed out already; retrying can never succeed, so send
-        // them home rather than trapping them in a retry loop.
-        if (error && error.status === 401) {
-          location.assign("/");
-          return;
-        }
-        signOut.disabled = false;
-        signOut.replaceChildren(icon("logout"), make("span", "Try sign out again"));
-      }
-    });
+    signOut.addEventListener("click", () => signOutCurrentSession(session, signOut));
     menu.append(signOut);
     details.append(summary, menu);
     return details;
@@ -623,9 +590,9 @@
       renderSessionContractError();
       return;
     }
-    const activeDestination = roleDestination(active, session);
+    const activeDestination = dashboardDestination(session);
     if (!activeDestination) {
-      renderSessionContractError("workspace");
+      renderSessionContractError(session.workspace_state, session);
       return;
     }
     const roles = new Set([active.role]);
@@ -638,7 +605,10 @@
     // account while the required profile was still incomplete.
     const organizerWorkspace = organizer && !["account", "speaker", "reviews", "calls"].includes(section);
     const currentEventId = eventIdFromLocation();
-    const organizationWorkspace = organizerWorkspace && managesAnyOrganization(session);
+    // Workspace availability is a server-owned contract. Reconstructing it
+    // from organization grants here can disagree with the destination resolver.
+    const hasOrganizerWorkspace = roleChoices(session).some((choice) => choice.role === "organizer");
+    const organizationWorkspace = organizerWorkspace && hasOrganizerWorkspace;
     if (organizerWorkspace && !organizationWorkspace && !currentEventId) {
       const destination = activeDestination;
       if (destination !== location.pathname) {
@@ -677,7 +647,7 @@
     // authority. They are NOT gated on
     // organizerWorkspace: /account is persona-neutral for the redirect guard,
     // but an organizer still needs a way out of it.
-    const organizationNavigation = !onboardingLocked && organizer && managesAnyOrganization(session);
+    const organizationNavigation = !onboardingLocked && hasOrganizerWorkspace;
     if (organizationNavigation) {
       nav.append(navLink("Home", "/admin", "home", organizerWorkspace && !currentEventId && section === "home"));
       nav.append(navLink("People", "/admin/people", "people", organizerWorkspace && !currentEventId && section === "speakers"));
@@ -744,7 +714,7 @@
         topbar.append(topbarBrand, globalNav, accountMenu(session, roles));
       }
     } else if (singleSpeakerWorkspace) {
-      const speakerBrand = link("", "/speaker");
+      const speakerBrand = link("", activeDestination);
       speakerBrand.className = "sb-global-brand";
       speakerBrand.append(brandMark(), make("strong", "SessionBuddy"));
       topbar.append(speakerBrand, accountMenu(session, roles));
@@ -810,8 +780,7 @@
   });
 
   function dashboardDestination(session) {
-    const active = activeRole(session);
-    return active ? roleDestination(active, session) : null;
+    return typeof session.workspace_path === "string" ? session.workspace_path : null;
   }
 
   function renderLandingAccount(session) {
@@ -931,22 +900,37 @@
     shell.replaceChildren(inner);
   }
 
-  function renderSessionContractError(reason = "active-role") {
+  function renderSessionContractError(reason = "active_role_invalid", session = null) {
     if (!shell) return;
     document.body.classList.remove("sb-shell-authenticated", "sb-shell-single", "sb-shell-global");
     document.body.classList.add("sb-shell-guest");
     const inner = make("div", undefined, "sb-guest-header__inner");
     const identity = make("span", undefined, "sb-app-brand");
     identity.append(brandMark(), make("span", "SessionBuddy"));
-    const error = make(
-      "span",
-      reason === "workspace"
-        ? "Organizer access is unavailable because this session has no manageable organization. Sign in again or ask an administrator to restore your access."
-        : "Account access is unavailable because this session has no valid active role. Sign in again or ask an administrator to restore your access.",
-      "sb-session-contract-error"
-    );
+    const copy = reason === "organizer_authority_missing"
+      ? "Your organizer workspace is unavailable because you no longer manage an organization."
+      : "This session does not have a valid active role.";
+    const error = make("span", copy, "sb-session-contract-error");
     error.setAttribute("role", "alert");
-    inner.append(identity, error);
+    const actions = make("span", undefined, "sb-guest-header__actions");
+    for (const choice of roleChoices(session || {})) {
+      if (choice.role === session?.active_role) continue;
+      const switchRole = make("button", `Use ${roleLabel(choice.role)}`, "sb-guest-sign-in");
+      switchRole.type = "button";
+      switchRole.addEventListener("click", () => switchSessionRole(session, choice, switchRole));
+      actions.append(switchRole);
+    }
+    const account = link("Account settings", "/account");
+    account.className = "sb-guest-sign-in";
+    actions.append(account);
+    if (session) {
+      const signOut = make("button", undefined, "sb-guest-sign-in");
+      signOut.type = "button";
+      signOut.append(icon("logout"), make("span", "Sign out and use another account"));
+      signOut.addEventListener("click", () => signOutCurrentSession(session, signOut, "/sign-in"));
+      actions.append(signOut);
+    }
+    inner.append(identity, error, actions);
     shell.className = "sb-guest-header";
     shell.replaceChildren(inner);
   }
@@ -964,7 +948,7 @@
     const actions = make("span", undefined, "sb-guest-header__actions");
     const account = link("Switch role", `/account?next=${encodeURIComponent(location.pathname + location.search)}`);
     account.className = "sb-guest-sign-in";
-    const workspace = link("Open current workspace", dashboardDestination(session) || "/");
+    const workspace = link("Open current workspace", dashboardDestination(session) || "/account");
     workspace.className = "sb-guest-sign-in";
     actions.append(account, workspace);
     inner.append(identity, message, actions);
@@ -993,25 +977,67 @@
     }
   }
 
+  function renderCachedShell(session) {
+    if (!shell) return;
+    document.body.classList.add("sb-shell-authenticated", "sb-shell-single");
+    document.body.classList.remove("sb-shell-global", "sb-shell-event", "sb-shell-guest");
+    const topbar = make("div", undefined, "sb-topbar");
+    topbar.append(
+      brandIdentity("sb-global-brand"),
+      make("span", `Checking access for ${displayName(session)}…`, "sb-topbar__title")
+    );
+    shell.className = "sb-app-shell sb-app-shell--single";
+    shell.replaceChildren(topbar);
+  }
+
+  function renderRecoveryAccountShell(session) {
+    if (!shell) return;
+    document.body.classList.add("sb-shell-authenticated", "sb-shell-single", "sb-shell-global");
+    document.body.classList.remove("sb-shell-event", "sb-shell-guest");
+    const topbar = make("div", undefined, "sb-topbar");
+    const crumb = make("div", undefined, "sb-topbar__title");
+    crumb.append(make("strong", "Account"));
+    topbar.append(
+      brandIdentity("sb-global-brand"),
+      crumb,
+      accountMenu(session, new Set())
+    );
+    shell.className = "sb-app-shell sb-app-shell--single";
+    shell.replaceChildren(topbar);
+  }
+
   // Routes and renders one validated session. Returns true when the shell is
   // on screen, false when the session failed its contract or the page is
   // navigating away. Shared by the instant cached paint and the fresh
   // response, so the two can never route differently.
   function applySession(session, { authoritative = true } = {}) {
-    const missingActiveRole = session.active_role === null
-      || session.active_role === undefined || session.active_role === "";
-    const rolelessNeutral = missingActiveRole && isPersonaNeutralPath();
-    if (!activeRole(session) && !rolelessNeutral) {
-      if (!authoritative) return null;
+    if (!authoritative) {
+      renderCachedShell(session);
+      return true;
+    }
+    const roleless = session.workspace_state === "roleless";
+    const rolelessNeutral = roleless && isPersonaNeutralPath();
+    if (roleless && !rolelessNeutral) {
+      location.replace(session.workspace_path || "/calls");
+      return false;
+    }
+    const workspaceRecovery = session.workspace_state === "active_role_invalid"
+      || session.workspace_state === "organizer_authority_missing";
+    if (workspaceRecovery && currentSection() === "account") {
       clearCachedSession();
-      renderSessionContractError();
+      window.SessionBuddyShellSession = session;
+      renderRecoveryAccountShell(session);
+      return true;
+    }
+    if (workspaceRecovery) {
+      clearCachedSession();
+      renderSessionContractError(session.workspace_state, session);
       renderLandingSessionContractError();
       return false;
     }
-    if (!dashboardDestination(session) && !rolelessNeutral) {
-      if (!authoritative) return null;
+    if (!dashboardDestination(session)) {
       clearCachedSession();
-      renderSessionContractError("workspace");
+      renderSessionContractError("active_role_invalid", session);
       renderLandingSessionContractError();
       return false;
     }
@@ -1021,7 +1047,6 @@
       // Cached identity is only an optimistic paint hint. A role may have
       // changed in another tab or during a replacement sign-in, so only the
       // authoritative session response may deny this document.
-      if (!authoritative) return null;
       renderPersonaAccessDenied(requiredPersona, session);
       return false;
     }
@@ -1029,8 +1054,7 @@
     // Redirect decisions run before first paint here, so onboarding and
     // dashboard hops no longer flash an intermediate page on the way through.
     if (!rolelessNeutral) writeCachedSession(session);
-    if (!session.profile_complete && location.pathname !== "/account") {
-      if (!authoritative) return null;
+    if (session.workspace_state === "profile_incomplete" && location.pathname !== "/account") {
       const next = `${location.pathname}${location.search}${location.hash}`;
       location.replace(`/account?onboarding=1&next=${encodeURIComponent(next)}`);
       return false;
@@ -1103,14 +1127,6 @@
         }
         return;
       }
-    }
-    if (shellPaintedFromCache && JSON.stringify(cacheableSession(session)) === JSON.stringify(cached)) {
-      // The cached paint was exact; refresh the entry's clock, publish the
-      // confirmed session, and stop.
-      writeCachedSession(session);
-      window.SessionBuddyShellSession = session;
-      window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));
-      return;
     }
     if (!applySession(session)) return;
     window.dispatchEvent(new CustomEvent("sessionbuddy:session", { detail: session }));

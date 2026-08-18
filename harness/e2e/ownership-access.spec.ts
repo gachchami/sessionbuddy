@@ -25,6 +25,8 @@ async function serve(page: import("@playwright/test").Page) {
     authenticated: true, user_id: "owner", email: "owner@example.test", display_name: "Owner",
     profile_complete: true, csrf_token: "csrf", account_roles: ["organizer"], active_role: "organizer",
     default_role: "organizer", organization_access: [{ organization_id: "org", organization_name: "Org", permissions: ["owner"] }],
+    workspace_state: "ready", workspace_path: "/admin",
+    usable_personas: [{ role: "organizer", workspace_state: "ready", workspace_path: "/admin" }],
     event_access: [],
   } }));
   await page.route(new RegExp(`/api/v1/admin/events/${eventId}$`), (route) => route.fulfill({

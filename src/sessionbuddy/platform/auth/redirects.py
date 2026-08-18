@@ -3,11 +3,9 @@
 from collections.abc import Collection
 from urllib.parse import unquote, urlsplit
 
-ROLE_DESTINATIONS = {
-    "organizer": "/admin",
-    "reviewer": "/reviews",
-    "speaker": "/speaker",
-}
+from .workspace import ROLE_WORKSPACES
+
+ROLE_DESTINATIONS = ROLE_WORKSPACES
 
 
 def is_allowed_redirect(value: str, allowed_paths: Collection[str]) -> bool:

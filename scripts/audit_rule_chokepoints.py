@@ -96,6 +96,79 @@ def writer_inventory_findings(root: Path, config: dict[str, Any]) -> list[Findin
     return findings
 
 
+def derived_rule_sites(root: Path, symbol: str) -> set[str]:
+    """Find production functions that derive a registered authority or policy fact."""
+    sites: set[str] = set()
+    sql_alias = re.compile(rf"\bAS\s+{re.escape(symbol)}\b", re.I)
+    for path in sorted((root / "src" / "sessionbuddy").rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        relative = _relative(path, root)
+        for function in (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ):
+            derives_by_assignment = any(
+                isinstance(node, (ast.Assign, ast.AnnAssign))
+                and any(
+                    symbol in _assigned_names(target)
+                    for target in (
+                        node.targets if isinstance(node, ast.Assign) else [node.target]
+                    )
+                )
+                for node in ast.walk(function)
+            )
+            derives_by_keyword = any(
+                isinstance(node, ast.keyword)
+                and node.arg == symbol
+                and not (isinstance(node.value, ast.Name) and node.value.id == symbol)
+                for node in ast.walk(function)
+            )
+            function_source = ast.get_source_segment(source, function) or ""
+            if derives_by_assignment or derives_by_keyword or sql_alias.search(function_source):
+                sites.add(f"{relative}:{function.name}")
+    return sites
+
+
+def derived_rule_inventory_findings(root: Path, config: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+    for declaration in config.get("derived_rule_inventories", ()):
+        symbol = str(declaration["symbol"])
+        registered = set(declaration.get("sites", ()))
+        actual = derived_rule_sites(root, symbol)
+        for site in sorted(actual - registered):
+            path, _ = site.rsplit(":", 1)
+            findings.append(
+                Finding(
+                    code="unregistered_derived_rule_site",
+                    confidence="mechanical",
+                    path=path,
+                    line=1,
+                    message=(
+                        f"{declaration['id']} has an unregistered derivation: {site}"
+                    ),
+                    user_path=str(declaration["user_path"]),
+                    severity="P1",
+                )
+            )
+        for site in sorted(registered - actual):
+            path, _ = site.rsplit(":", 1)
+            findings.append(
+                Finding(
+                    code="missing_registered_derived_rule_site",
+                    confidence="mechanical",
+                    path=path,
+                    line=1,
+                    message=(
+                        f"registered {declaration['id']} derivation no longer exists: {site}"
+                    ),
+                    user_path=str(declaration["user_path"]),
+                )
+            )
+    return findings
+
+
 def _assigned_names(node: ast.AST) -> set[str]:
     names: set[str] = set()
     for child in ast.walk(node):
@@ -589,6 +662,7 @@ def mechanical_findings(root: Path, config: dict[str, Any]) -> list[Finding]:
         [
             *source_test_name_findings(root),
             *writer_inventory_findings(root, config),
+            *derived_rule_inventory_findings(root, config),
             *session_mock_findings(root),
             *canonical_constant_findings(root, config),
             *persisted_enum_findings(root, config),

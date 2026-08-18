@@ -7,6 +7,24 @@ async function mockAccount(
   activeRole: string | null,
   organizerAccess = true,
 ) {
+  const supported = ["organizer", "reviewer", "speaker"].includes(activeRole || "");
+  const workspaceState = activeRole === null
+    ? "roleless"
+    : !supported
+      ? "active_role_invalid"
+      : activeRole === "organizer" && !organizerAccess
+        ? "organizer_authority_missing"
+        : "ready";
+  const workspacePath = workspaceState === "roleless"
+    ? "/calls"
+    : workspaceState !== "ready"
+      ? null
+      : { organizer: "/admin", reviewer: "/reviews", speaker: "/speaker" }[activeRole!];
+  const usablePersonas = [
+    ...(organizerAccess ? [{ role: "organizer", workspace_state: "ready", workspace_path: "/admin" }] : []),
+    { role: "reviewer", workspace_state: "ready", workspace_path: "/reviews" },
+    { role: "speaker", workspace_state: "ready", workspace_path: "/speaker" },
+  ];
   const session = {
     authenticated: true,
     user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -26,6 +44,9 @@ async function mockAccount(
       permissions: ["owner"],
     }] : [],
     event_access: [],
+    workspace_state: workspaceState,
+    workspace_path: workspacePath,
+    usable_personas: usablePersonas,
   };
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({
     contentType: "application/json",
@@ -65,19 +86,34 @@ test.describe("active role session contract", () => {
     await expect(page.getByRole("radio", { name: /Organizer/ })).toBeVisible();
   });
 
-  test("fails closed when active_role is unsupported", async ({ page }) => {
+  test("keeps account recovery usable when active_role is unsupported", async ({ page }) => {
     await mockAccount(page, "event_admin");
 
-    await page.goto("/account");
+    await page.goto("/account?workspace=recovery");
 
     const shell = page.locator("header[data-auth-shell]");
-    await expect(page).toHaveURL(/\/account$/);
-    await expect(shell.getByRole("alert")).toContainText(
-      "this session has no valid active role",
-    );
-    await expect(shell.locator("a")).toHaveCount(0);
-    await expect(shell.locator(".sb-account")).toHaveCount(0);
-    await expect(shell.locator('[href="/admin"], [href="/reviews"], [href="/speaker"], [href="/account"]')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/account\?workspace=recovery$/);
+    await expect(shell.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Choose an available workspace" })).toBeVisible();
+    await expect(page.locator("#workspace-recovery")).toContainText("current role is no longer available");
+    await expect(page.locator("#workspace-recovery")).toHaveAttribute("data-destination", "server-recovery");
+    await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible();
+    await shell.locator(".sb-account summary").click();
+    await expect(shell.getByRole("button", { name: /Speaker/ })).toBeVisible();
+    await expect(shell.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expect(shell.getByRole("link", { name: "Account settings" })).toHaveCount(0);
+    await expect(shell.locator(".sb-global-brand:not(a)")).toBeVisible();
+    await expect(shell.locator('[href="/admin"], [href="/reviews"], [href="/speaker"]')).toHaveCount(0);
+  });
+
+  test("keeps an unsupported active role out of protected workspaces", async ({ page }) => {
+    await mockAccount(page, "event_admin");
+
+    await page.goto("/admin");
+
+    const shell = page.locator("header[data-auth-shell]");
+    await expect(shell.getByRole("alert")).toContainText("does not have a valid active role");
+    await expect(shell.locator('[href="/admin"], [href="/reviews"], [href="/speaker"]')).toHaveCount(0);
   });
 
   for (const [activeRole, destination] of [
@@ -101,18 +137,47 @@ test.describe("active role session contract", () => {
     });
   }
 
-  test("fails closed for an Organizer without a manageable resource", async ({ page }) => {
+  test("keeps account recovery usable for an Organizer without a manageable resource", async ({ page }) => {
     await mockAccount(page, "organizer", false);
 
-    await page.goto("/account");
+    await page.goto("/account?workspace=recovery");
 
     const shell = page.locator("header[data-auth-shell]");
-    await expect(page).toHaveURL(/\/account$/);
-    await expect(shell.getByRole("alert")).toContainText(
-      "this session has no manageable organization",
-    );
-    await expect(shell.locator("a")).toHaveCount(0);
-    await expect(shell.locator(".sb-account")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/account\?workspace=recovery$/);
+    await expect(shell.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator("#workspace-recovery")).toContainText("organizer role no longer manages an organization");
+    await expect(page.getByRole("heading", { name: "Roles and Access" })).toBeVisible();
+    await shell.locator(".sb-account summary").click();
+    await expect(shell.getByRole("button", { name: /Reviewer/ })).toBeVisible();
+    await expect(shell.getByRole("button", { name: /Speaker/ })).toBeVisible();
+    await expect(shell.getByRole("link", { name: "Account settings" })).toHaveCount(0);
+  });
+
+  test("recovery switches with the server-returned workspace instead of a client map", async ({ page }) => {
+    await mockAccount(page, "organizer", false);
+    await page.route(/^https?:\/\/[^/]+\/speaker$/, (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Speaker workspace</title>",
+    }));
+    let requestedRole = "";
+    await page.route("**/api/v1/session/active-role", async (route) => {
+      requestedRole = route.request().postDataJSON().role;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          active_role: "speaker",
+          workspace_state: "ready",
+          workspace_path: "/speaker",
+        }),
+      });
+    });
+
+    await page.goto("/account?workspace=recovery");
+    await page.locator(".sb-account summary").click();
+    await page.getByRole("button", { name: /Speaker/ }).click();
+
+    await expect.poll(() => requestedRole).toBe("speaker");
+    await expect(page).toHaveURL(/\/speaker$/);
   });
 
   test("a stale reviewer cache cannot deny an organizer document", async ({ page }) => {
@@ -126,8 +191,6 @@ test.describe("active role session contract", () => {
           active_role: "reviewer",
           account_roles: ["organizer", "reviewer"],
           profile_complete: true,
-          organization_access: [{ permissions: ["owner"] }],
-          event_access: [],
         },
       }));
     });

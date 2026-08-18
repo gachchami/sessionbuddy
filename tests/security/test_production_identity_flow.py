@@ -760,11 +760,17 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
             follow_redirects=False,
         )
         assert verified.status_code == 303
-        assert verified.headers["location"] == "/speaker"
+        assert verified.headers["location"] == "/account"
 
         session = (await client.get("/api/v1/auth/session")).json()
         assert session["default_role"] == "speaker"
         assert session["active_role"] == "speaker"
+        assert session["workspace_state"] == "profile_incomplete"
+        assert session["workspace_path"] == "/account"
+        assert {item["role"]: item["workspace_path"] for item in session["usable_personas"]} == {
+            "organizer": "/account",
+            "speaker": "/account",
+        }
         switched = await client.put(
             "/api/v1/session/active-role",
             headers={"origin": "https://test", "x-csrf-token": session["csrf_token"]},
@@ -772,6 +778,8 @@ async def test_sign_in_uses_default_role_and_switching_is_server_authoritative(
         )
         assert switched.status_code == 200
         assert switched.json()["active_role"] == "organizer"
+        assert switched.json()["workspace_state"] == "profile_incomplete"
+        assert switched.json()["workspace_path"] == "/account"
         assert switched.json()["default_role"] == "speaker"
         organization_id = created.json()["organization_id"]
         event = await client.post(
@@ -865,7 +873,7 @@ async def test_password_sign_in_replaces_an_incompatible_role_workspace_redirect
         assert (await client.get("/api/v1/speaker/portal")).status_code == 404
 
 
-async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
+async def test_authenticated_session_without_an_active_role_resolves_to_open_calls(
     production_environment,
 ) -> None:
     connection, _queue, environment = production_environment
@@ -891,15 +899,17 @@ async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
             follow_redirects=False,
         )
         assert verified.status_code == 303
-        assert verified.headers["location"] == "/admin"
+        assert verified.headers["location"] == "/account"
 
         connection.execute("DELETE FROM session_active_roles")
         connection.commit()
         session = await client.get("/api/v1/auth/session")
         home = await client.get("/", follow_redirects=False)
-        assert session.status_code == 403
-        assert home.status_code == 403
-        assert "location" not in home.headers
+        assert session.status_code == 200
+        assert session.json()["workspace_state"] == "roleless"
+        assert session.json()["workspace_path"] == "/calls"
+        assert home.status_code == 303
+        assert home.headers["location"] == "/calls"
 
     async with _client(environment) as fresh_client:
         await fresh_client.post(
@@ -920,6 +930,67 @@ async def test_sign_in_and_session_fail_closed_without_an_explicit_active_role(
         )
         assert refused.status_code == 403
         assert connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == session_count
+
+
+async def test_revoked_organizer_authority_resolves_to_recovery_and_a_usable_persona_can_escape(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        created = await client.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Revocable Workspace",
+                "admin_name": "Workspace Owner",
+                "admin_email": "workspace-owner@example.com",
+            },
+        )
+        user_id = created.json()["admin_user_id"]
+        connection.execute(
+            "UPDATE users SET profile_completed_at_ms=1 WHERE id=?", (user_id,)
+        )
+        connection.execute(
+            """INSERT INTO user_roles
+               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+               VALUES(?,'speaker','active',1,1,0)""",
+            (user_id,),
+        )
+        connection.commit()
+        await client.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "workspace-owner@example.com", "redirect_path": "/"},
+        )
+        verified = await client.post(
+            "/auth/verify",
+            data={"token": _token(connection, "workspace-owner@example.com")},
+            follow_redirects=False,
+        )
+        assert verified.headers["location"] == "/admin"
+
+        connection.execute(
+            "UPDATE owned_resources SET status='archived',archived_at_ms=1 WHERE id=?",
+            (created.json()["organization_id"],),
+        )
+        connection.commit()
+        unavailable = (await client.get("/api/v1/auth/session")).json()
+        assert unavailable["workspace_state"] == "organizer_authority_missing"
+        assert unavailable["workspace_path"] is None
+        assert [item["role"] for item in unavailable["usable_personas"]] == ["speaker"]
+        home = await client.get("/", follow_redirects=False)
+        assert home.headers["location"] == "/account?workspace=recovery"
+
+        switched = await client.put(
+            "/api/v1/session/active-role",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": unavailable["csrf_token"],
+            },
+            json={"role": "speaker"},
+        )
+        assert switched.status_code == 200
+        assert switched.json()["workspace_state"] == "ready"
+        assert switched.json()["workspace_path"] == "/speaker"
 
 
 async def test_setup_completion_cannot_be_reopened_by_deleting_business_data(
@@ -1058,7 +1129,7 @@ async def test_bootstrap_magic_link_invitation_draft_and_owned_submission(
             follow_redirects=False,
         )
         assert verified.status_code == 303
-        assert verified.headers["location"] == "/admin/events"
+        assert verified.headers["location"] == "/account"
         session = (await admin.get("/api/v1/auth/session")).json()
         assert session["email"] == "admin@example.com"
         assert session["organization_access"] == [{
@@ -2362,7 +2433,7 @@ async def test_existing_user_accepts_a_new_role_invitation(production_environmen
             follow_redirects=False,
         )
         assert accepted.status_code == 303
-        assert accepted.headers["location"] == "/speaker"
+        assert accepted.headers["location"] == "/account"
         portal = await client.get("/api/v1/speaker/portal")
         assert portal.status_code == 200
         assert portal.json()["event"]["id"] == event_id

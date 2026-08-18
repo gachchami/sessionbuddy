@@ -1,8 +1,6 @@
 import sqlite3
 from types import SimpleNamespace
 
-import pytest
-from fastapi import HTTPException
 from starlette.requests import Request
 
 from sessionbuddy.api.app import _session_home_destination
@@ -197,10 +195,12 @@ async def test_public_event_without_a_call_has_no_cfp_state() -> None:
 
 
 def test_roleless_session_home_falls_back_to_public_calls() -> None:
-    assert _session_home_destination(SimpleNamespace(active_role=None)) == "/calls"
+    assert _session_home_destination(
+        SimpleNamespace(workspace_state="roleless", workspace_path="/calls")
+    ) == "/calls"
 
 
-def test_unknown_session_role_still_fails_closed() -> None:
-    with pytest.raises(HTTPException) as raised:
-        _session_home_destination(SimpleNamespace(active_role="unknown-role"))
-    assert raised.value.status_code == 403
+def test_session_without_a_workspace_routes_to_persona_neutral_recovery() -> None:
+    assert _session_home_destination(
+        SimpleNamespace(workspace_state="active_role_invalid", workspace_path=None)
+    ) == "/account?workspace=recovery"
