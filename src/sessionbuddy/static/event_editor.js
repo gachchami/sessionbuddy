@@ -79,7 +79,7 @@
 
   function updatePreview() {
     updateBrandPreview();
-    const values = snapshot(); const zone = normalizeTimeZone(values.time_zone); byId("event-time-zone").textContent = validTimeZone(zone) ? zone : "the selected event time zone";
+    const values = snapshot(); const zone = normalizeTimeZone(values.time_zone);
     const preview = byId("date-time-preview");
     if (!values.start_date || !values.end_date) { preview.textContent = "Choose a start and end date."; return; }
     try { const start = zonedDateTimeToMillis(values.start_date, values.start_time, zone); const end = zonedDateTimeToMillis(values.end_date, values.end_time, zone); preview.textContent = end <= start ? "The event must end after it starts." : `${formatDateTime(start, zone)} – ${formatDateTime(end, zone)} · ${zone}`; } catch (error) { preview.textContent = error.message; }

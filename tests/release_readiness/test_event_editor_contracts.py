@@ -26,7 +26,8 @@ def test_event_editor_discloses_and_converts_in_the_event_time_zone() -> None:
     script = source("event_editor.js")
 
     assert 'id="event-time-zone-context"' in page
-    assert 'id="event-time-zone"' in page
+    assert "Choose the event’s local time zone." in page
+    assert "Dates and deadlines use" not in page
     assert page.count('aria-describedby="event-time-zone-context"') == 5
     assert '<select name="time_zone"' in page
     assert 'list="event-time-zones"' not in page
