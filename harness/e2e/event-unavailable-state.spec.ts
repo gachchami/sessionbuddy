@@ -81,7 +81,7 @@ test("archived event overview renders context when operational APIs are unavaila
   await expect(page.getByText("The event could not be loaded. Try again.")).toHaveCount(0);
 });
 
-test("event overview renders recent activity as a table", async ({ page }) => {
+test("event overview renders recent activity as a compact list", async ({ page }) => {
   const html = pageSource("event_overview.html", "event_overview.js");
   await page.route(/^http:\/\/worker:8787\/admin\/events\/activity-event$/, (route) => route.fulfill({
     contentType: "text/html",
@@ -120,12 +120,11 @@ test("event overview renders recent activity as a table", async ({ page }) => {
   }));
 
   await page.goto("/admin/events/activity-event");
-  await expect(page.getByRole("heading", { name: "Event activity" })).toBeVisible();
-  const table = page.getByRole("table");
-  await expect(table.getByRole("columnheader", { name: "When" })).toBeVisible();
-  await expect(table.getByText("Dana Demo updated call for proposals CFP for Activity Summit")).toBeVisible();
-  await expect(table.getByText("call for proposals", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 recent event change.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent changes" })).toBeVisible();
+  const activity = page.locator("#event-activity");
+  await expect(activity.getByText("Dana Demo updated call for proposals CFP for Activity Summit")).toBeVisible();
+  await expect(activity.getByText("1 minute ago")).toBeVisible();
+  await expect(activity.getByRole("table")).toHaveCount(0);
 });
 
 test("archived reviewer access is maintenance-only", async ({ page }) => {

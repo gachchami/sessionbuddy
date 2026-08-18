@@ -26,36 +26,33 @@
 
   function renderEventActivity(result) {
     const state = byId("event-activity-state");
-    const table = byId("event-activity-table");
+    const list = byId("event-activity-list");
     const activities = result.ok && Array.isArray(result.value?.data) ? result.value.data : [];
     if (!result.ok) {
-      state.textContent = "Event activity is temporarily unavailable. Refresh to try again.";
+      state.textContent = "Recent changes are temporarily unavailable. Refresh to try again.";
       state.classList.add("error");
       return;
     }
     if (!activities.length) {
-      state.textContent = "No event changes have been recorded yet.";
+      state.textContent = "No recent changes.";
       return;
     }
-    const rows = activities.slice(0, 8).map((activity) => {
-      const row = document.createElement("tr");
-      const when = document.createElement("td");
+    const items = activities.slice(0, 8).map((activity) => {
+      const item = document.createElement("li");
+      item.className = "event-activity-item";
+      const sentence = document.createElement("strong");
+      sentence.textContent = window.SessionBuddyActivityFormat.sentence(activity);
       const time = document.createElement("time");
       const occurredAt = new Date(Number(activity.occurred_at_ms));
       time.dateTime = occurredAt.toISOString();
       time.title = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(occurredAt);
       time.textContent = window.SessionBuddyActivityFormat.relativeTime(activity.occurred_at_ms);
-      when.append(time);
-      const change = document.createElement("td");
-      change.textContent = window.SessionBuddyActivityFormat.sentence(activity);
-      const area = document.createElement("td");
-      area.textContent = window.SessionBuddyActivityFormat.resourceLabel(activity.resource_type);
-      row.append(when, change, area);
-      return row;
+      item.append(sentence, time);
+      return item;
     });
-    byId("event-activity-rows").replaceChildren(...rows);
-    state.textContent = `${activities.length} recent event change${activities.length === 1 ? "" : "s"}.`;
-    table.hidden = false;
+    list.replaceChildren(...items);
+    list.hidden = false;
+    state.hidden = true;
   }
 
   async function initialize() {

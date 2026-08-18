@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Event overview · SessionBuddy</title>
-  <link rel="stylesheet" href="/product/assets/product.css?v=87">
+  <link rel="stylesheet" href="/product/assets/product.css?v=88">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=26">
   <script src="/app-shell/assets/api-client.js?v=8" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=32" defer></script>
   <script src="/app-shell/assets/activity-format.js?v=1044747b380e" defer></script>
-  <script src="/admin/event-overview/assets/event-overview.js?v=b3f4e3edee5e" defer></script>
+  <script src="/admin/event-overview/assets/event-overview.js?v=85646b72956e" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--event-overview is-loading">
   <a class="skip-link" href="#main">Skip to event overview</a>
@@ -20,7 +20,7 @@
     </section>
     <div id="status" class="status event-overview-status" role="status" aria-live="polite">Loading event…</div>
     <section class="event-overview-now organizer-callout">
-      <div id="next-step" class="event-next-step" aria-labelledby="next-step-title"><p class="eyebrow">Up next</p><h2 id="next-step-title">Open your call for proposals</h2><p id="next-step-summary" class="result">Create and publish the proposal form speakers will use.</p><a id="next-step-action" class="button" href="#">Set up CFP</a></div>
+      <div id="next-step" class="event-next-step" aria-labelledby="next-step-title"><h2 id="next-step-title">Open your call for proposals</h2><p id="next-step-summary" class="result">Create and publish the proposal form speakers will use.</p><a id="next-step-action" class="button" href="#">Set up CFP</a></div>
       <dl class="event-signal-list organizer-metrics" aria-label="Event status">
         <div class="event-signal event-signal--proposals"><dt><a id="proposals-link" href="#">Proposals</a></dt><dd id="proposal-count">—</dd><small id="proposal-note">Loading</small></div>
         <div class="event-signal event-signal--speakers"><dt><a id="speakers-link" href="#">Speakers</a></dt><dd id="speaker-count">—</dd><small id="speaker-note">Loading</small></div>
@@ -28,15 +28,10 @@
         <div class="event-signal event-signal--cfp"><dt><a id="cfp-link" href="#">CFP</a></dt><dd id="cfp-state">—</dd><small id="cfp-note">Loading</small></div>
       </dl>
     </section>
-    <section id="event-activity" class="organizer-section" aria-labelledby="event-activity-title">
-      <div class="section-heading"><div><h2 id="event-activity-title">Event activity</h2><p class="section-summary">Recent changes to this event, its proposals, reviews, speakers, and program.</p></div></div>
-      <p id="event-activity-state" class="help" role="status" aria-live="polite">Loading event activity…</p>
-      <div id="event-activity-table" class="table-scroll" hidden>
-        <table>
-          <thead><tr><th scope="col">When</th><th scope="col">Change</th><th scope="col">Area</th></tr></thead>
-          <tbody id="event-activity-rows"></tbody>
-        </table>
-      </div>
+    <section id="event-activity" class="event-activity-card" aria-labelledby="event-activity-title">
+      <div class="event-activity-card__heading"><div><h2 id="event-activity-title">Recent changes</h2><p>Changes to this event, its proposals, reviews, speakers, and program.</p></div></div>
+      <p id="event-activity-state" class="event-activity-state" role="status" aria-live="polite">Loading recent changes…</p>
+      <ol id="event-activity-list" class="event-activity-list" hidden></ol>
     </section>
   </main>
 </body>
