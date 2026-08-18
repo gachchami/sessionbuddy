@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import sys
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from sessionbuddy.platform.upload_contracts import task_form_schema_json
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from sessionbuddy.platform.upload_contracts import task_form_schema_json  # noqa: E402
 
 BASE_MS = 1_786_154_400_000
 BATCH_SIZE = 1_000

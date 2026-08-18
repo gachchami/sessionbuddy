@@ -46,6 +46,18 @@ const portal = {
   profile: { display_name: "Priya Raman" },
   submissions: [],
   tasks: [],
+  asset_upload_rules: {
+    slides: {
+      enabled: true,
+      allowed_content_types: [
+        "application/pdf",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.oasis.opendocument.presentation",
+      ],
+      max_file_bytes: 50 * 1024 * 1024,
+    },
+  },
   notifications: [],
   activities: [],
 };
