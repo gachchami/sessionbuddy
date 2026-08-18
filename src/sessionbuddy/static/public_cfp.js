@@ -111,9 +111,7 @@
     warning.replaceChildren();
     warning.hidden = !duplicate;
     if (!duplicate) return;
-    const date = new Date(duplicate.submitted_at_ms).toLocaleDateString(undefined, {
-      day: "numeric", month: "short", year: "numeric"
-    });
+    const date = formatEventDay(duplicate.submitted_at_ms, state.form);
     warning.append(
       `You already have a proposal with this title, submitted ${date}, receipt ${duplicate.id.slice(0, 8)}. `
     );
@@ -189,13 +187,15 @@
     } catch (_) { /* website is optional */ }
   }
 
-  function renderImportantDates(dates) {
+  function renderImportantDates(dates, form) {
     const section = byId("important-dates");
     const list = byId("important-dates-list");
     const sorted = [...(dates || [])].sort((left, right) => left.at_ms - right.at_ms);
     list.replaceChildren(...sorted.map((date) => {
       const item = make("li");
-      item.append(make("strong", date.label), make("time", new Date(date.at_ms).toLocaleString()));
+      const time = make("time", formatEventDate(date.at_ms, form));
+      time.dateTime = new Date(date.at_ms).toISOString();
+      item.append(make("strong", date.label), time);
       return item;
     }));
     section.hidden = sorted.length === 0;
@@ -211,6 +211,16 @@
       hour: "numeric",
       minute: "2-digit",
       timeZoneName: "short"
+    }).format(new Date(value));
+  }
+
+  function formatEventDay(value, form) {
+    if (!value) return "";
+    return new Intl.DateTimeFormat(undefined, {
+      timeZone: form.event_time_zone || "UTC",
+      day: "numeric",
+      month: "short",
+      year: "numeric"
     }).format(new Date(value));
   }
 
@@ -464,7 +474,7 @@
       const badge = make("span", invitationStatus(invitation.invitation_status), `badge${invitation.invitation_status === "accepted" ? " success" : ""}`);
       meta.append(badge);
       if (invitation.invitation_status === "pending" && invitation.expires_at_ms) {
-        meta.append(make("span", `Expires ${new Date(invitation.expires_at_ms).toLocaleString()}`, "help"));
+        meta.append(make("span", `Expires ${formatEventDate(invitation.expires_at_ms, state.form)}`, "help"));
       }
       const actions = make("div", undefined, "actions");
       if (actionsAvailable && ["pending", "declined"].includes(invitation.invitation_status)) {
@@ -895,7 +905,7 @@
         navigation: false,
       });
       renderCallBrief(state.form);
-      renderImportantDates(state.form.important_dates);
+      renderImportantDates(state.form.important_dates, state.form);
       if (state.form.event_name) {
         document.title = workspaceMode
           ? `Proposal · ${state.form.event_name}`

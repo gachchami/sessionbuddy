@@ -28,6 +28,9 @@ For each page or workflow:
 - The account menu shows identity, assigned roles only, Account settings, and Sign out.
 - Role switching occurs from the account menu and affects the current session only.
 - Organizer pages assume the user's assigned organization; no create-organization UI is exposed.
+- Event-facing schedule and deadline times use the event's IANA time zone and
+  display a zone label. Personal activity times may use the viewer's local time
+  only when the interface explicitly labels them as local.
 
 ## Organizer Home
 

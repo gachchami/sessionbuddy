@@ -57,6 +57,7 @@ async function mockSession(page: Page, session = organizerSession) {
 
 test.describe("form validation and workflow wiring", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+  test.use({ timezoneId: "UTC", locale: "en-US" });
 
   test("organization and account forms validate before writing", async ({ page }) => {
     await mockSession(page);
@@ -314,7 +315,9 @@ test.describe("form validation and workflow wiring", () => {
           proposal_title: "A proposal",
           proposal_abstract: "Abstract",
           status: "submitted",
-          submitted_at_ms: 1_900_000_000_000,
+          // Mar 17 in the browser's UTC zone, but Mar 18 in the event's Asia/Kolkata zone.
+          // This makes the compact inbox assertion detect a browser-local regression itself.
+          submitted_at_ms: Date.UTC(2030, 2, 17, 20, 30),
           routed_category: null,
           routed_track: "Platform",
           routed_review_queue: "Technical",
@@ -418,8 +421,12 @@ test.describe("form validation and workflow wiring", () => {
     await expect(page.locator("#round-status")).toHaveText("Something went wrong on our side. Try again.");
     await expect(page.locator("#round-status")).toBeFocused();
     await expect(page.getByText(`Receipt ${assignmentId.slice(0, 8)}`, { exact: false })).toBeVisible();
+    await expect(page.locator("#submissions small").filter({ hasText: `Receipt ${assignmentId.slice(0, 8)}` })).toHaveText(
+      `Submitted Mar 18, 2030 · Receipt ${assignmentId.slice(0, 8)}`,
+    );
     await page.getByRole("button", { name: "View proposal" }).nth(1).click();
     const reviewedDetail = page.getByRole("dialog", { name: "Proposal details" });
+    await expect(reviewedDetail).toContainText("Event time (Asia/Kolkata)");
     await expect(reviewedDetail.getByText("Evaluation round", { exact: true })).toBeVisible();
     await expect(reviewedDetail.getByText("AI review", { exact: true })).toBeVisible();
     await expect(reviewedDetail.getByRole("button", { name: "Reject without review" })).toHaveCount(0);

@@ -451,8 +451,12 @@
     if (!value) return fallback;
     return new Intl.DateTimeFormat(undefined, {
       timeZone: state.eventTimeZone,
-      dateStyle: "medium",
-      timeStyle: "short"
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short"
     }).format(new Date(value));
   }
 

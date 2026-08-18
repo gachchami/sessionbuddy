@@ -40,6 +40,19 @@
     status.hidden = kind === "success" && message === "Speaker details are ready.";
   }
 
+  function viewerLocalTimeLabel(value) {
+    if (!value) return "Date unavailable";
+    try {
+      const formatted = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value));
+      return `${formatted} · Your local time`;
+    } catch (_) {
+      return "Date unavailable";
+    }
+  }
+
   function renderProposalDrafts(drafts) {
     const section = byId("saved-proposal-drafts");
     const list = byId("saved-proposal-draft-list");
@@ -51,7 +64,7 @@
       link.setAttribute("aria-label", `Continue editing ${draft.proposal_title} for ${draft.event_name}`);
       const title = make("strong", draft.proposal_title);
       const event = make("span", draft.event_name, "proposal-summary-row__event");
-      const saved = make("time", `Saved ${new Date(draft.updated_at_ms).toLocaleString()}`);
+      const saved = make("time", `Saved ${viewerLocalTimeLabel(draft.updated_at_ms)}`);
       saved.dateTime = new Date(draft.updated_at_ms).toISOString();
       link.append(title, event, saved);
       item.append(link);

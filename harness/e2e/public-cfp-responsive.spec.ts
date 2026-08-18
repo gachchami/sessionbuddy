@@ -151,6 +151,38 @@ async function parkBehindActionBar(
 
 test.describe("public CFP responsive design", () => {
   test.skip(!process.env.SESSIONBUDDY_BASE_URL, "Set SESSIONBUDDY_BASE_URL to run browser tests");
+  // Event-facing dates must not inherit the browser's zone. Keep the browser
+  // deliberately far from the New York fixture so the regression is visible.
+  test.use({ timezoneId: "Asia/Kolkata" });
+
+  test("important dates use the event timezone instead of the browser timezone", async ({ page }) => {
+    const importantDate = Date.UTC(2030, 4, 1, 3, 59);
+    const form = {
+      ...publishedForm,
+      closes_at_ms: importantDate,
+      important_dates: [{ label: "Proposal deadline", at_ms: importantDate }],
+    };
+    await servePublicCfp(page, false, [], null, form);
+    await page.goto("/cfp/mobile/responsive-conference");
+
+    const expected = await page.evaluate(({ at, timeZone }) => new Intl.DateTimeFormat(undefined, {
+      timeZone,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(new Date(at)), { at: importantDate, timeZone: form.event_time_zone });
+    const browserValue = await page.evaluate((at) => new Date(at).toLocaleString(), importantDate);
+    expect(expected).not.toBe(browserValue);
+    await expect(page.locator("#important-dates-list time")).toHaveText(expected);
+    await expect(page.locator("#call-deadline")).toHaveText(expected);
+    await expect(page.locator("#important-dates-list time")).toHaveAttribute(
+      "datetime",
+      new Date(importantDate).toISOString(),
+    );
+  });
 
   for (const width of [320, 390]) {
     test(`signed-out proposal form and event header fit a ${width}px phone`, async ({ page }) => {
@@ -288,6 +320,7 @@ test.describe("public CFP responsive design", () => {
   });
 
   test("an accepted proposal keeps answers read-only while allowing participant corrections", async ({ page }) => {
+    const invitationExpiry = Date.UTC(2030, 4, 1, 3, 59);
     const submission = {
       id: "88888888-8888-4888-8888-888888888888",
       proposal_title: "Accepted systems talk",
@@ -299,9 +332,16 @@ test.describe("public CFP responsive design", () => {
       can_manage_participants: true,
       version: 3,
       answers: {},
-      co_speakers: [],
+      co_speakers: [{
+        id: "77777777-7777-4777-8777-777777777777",
+        display_name: "Avery Chen",
+        email: "avery@example.test",
+        role_label: "Co-speaker",
+        invitation_status: "pending",
+        expires_at_ms: invitationExpiry,
+      }],
     };
-    await servePublicCfp(page, true, [submission]);
+    await servePublicCfp(page, true, [submission], null, { ...publishedForm, co_speaker_limit: 2 });
     await page.addInitScript((submissionId) => {
       localStorage.setItem(`sessionbuddy:cfp:responsive-conference:draft:${submissionId}`, JSON.stringify({
         schemaVersion: 1,
@@ -328,6 +368,7 @@ test.describe("public CFP responsive design", () => {
     await expect(page.getByLabel("Proposal title")).toBeDisabled();
     await expect(page.getByRole("button", { name: "Add participant" })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Save participants" })).toBeVisible();
+    await expect(page.getByText(/Expires .*EDT/)).toBeVisible();
     await expect(page.getByText("Marcus Okafor")).toHaveCount(0);
     await expect.poll(() => page.evaluate(
       (submissionId) => localStorage.getItem(`sessionbuddy:cfp:responsive-conference:draft:${submissionId}`),

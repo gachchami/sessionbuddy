@@ -280,6 +280,9 @@ test.describe("speaker portal responsive design", () => {
     await expect(page.getByRole("link", {
       name: "Continue editing A second proposal in progress for Applied AI Conference 2027",
     })).toBeVisible();
+    await expect(page.locator("#saved-proposal-draft-list time")).toHaveText(
+      "Saved Aug 17, 2026, 11:00 AM · Your local time",
+    );
   });
 
   test("the empty workspace keeps saved drafts alongside open-call discovery", async ({ page }) => {

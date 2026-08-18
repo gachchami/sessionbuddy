@@ -111,7 +111,7 @@ async function serveBuilder(page: Page) {
     draft = publishedForm((draft?.version || 0) + 1, { ...body, id: "draft-1", status: "draft" });
     return route.fulfill({ contentType: "application/json", body: JSON.stringify(draft) });
   });
-  await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: eventId, status: "active", time_zone: "UTC" }) }));
+  await page.route(`**/api/v1/admin/events/${eventId}`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: eventId, status: "active", time_zone: "America/New_York" }) }));
   await page.route(`**/api/v1/admin/events/${eventId}/agenda/tracks`, (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: [] }) }));
   return { updateCount: () => updates, draft: () => draft };
 }
@@ -164,6 +164,7 @@ test("a published CFP opens clean and says so, and the outline is usable after e
   await expect(actionLabel).toHaveText("Live");
   await expect(page.locator("#publish-result")).toHaveText("Your live form is up to date.");
   await expect(page.locator("#cfp-autosave-state")).not.toContainText("Unsaved");
+  await expect(page.locator("#cfp-summary-closes")).toContainText("EDT");
 
   const availability = page.getByRole("button", { name: "Availability" });
   await availability.click();

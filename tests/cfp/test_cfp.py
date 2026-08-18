@@ -547,6 +547,10 @@ def test_source_wiring_public_cfp_formats_event_dates_in_the_event_time_zone() -
 
     assert 'const timeZone = form.event_time_zone || "UTC"' in script
     assert 'year: "numeric", timeZone' in script
+    assert "renderImportantDates(state.form.important_dates, state.form)" in script
+    assert 'formatEventDate(date.at_ms, form)' in script
+    assert "formatEventDay(duplicate.submitted_at_ms, state.form)" in script
+    assert "formatEventDate(invitation.expires_at_ms, state.form)" in script
 
 
 def test_dynamic_form_conditions_skip_hidden_required_fields() -> None:

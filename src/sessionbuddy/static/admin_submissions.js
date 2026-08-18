@@ -1503,7 +1503,7 @@
       detailRow("Title", item.proposal_title),
       detailRow("Full abstract", item.proposal_abstract),
       detailRow("Status", item.status),
-      detailRow("Submitted", new Date(item.submitted_at_ms).toLocaleString()),
+      detailRow("Submitted", eventTimeLabel(item.submitted_at_ms)),
       detailRow("Routed category", item.routed_category),
       detailRow("Routed track", item.routed_track),
       detailRow("Review queue", item.routed_review_queue),
@@ -1611,6 +1611,30 @@
   function enumLabel(labels, value) { return Object.hasOwn(labels, value) ? labels[value] : String(value ?? ""); }
   function proposalStatusLabel(value) { return enumLabel(PROPOSAL_STATUS_LABELS, value); }
   function roundStatusLabel(value) { return enumLabel(ROUND_STATUS_LABELS, value); }
+  function eventTimeLabel(value) {
+    if (!value) return "Date unavailable";
+    try {
+      const formatted = new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: state.timeZone,
+      }).format(new Date(value));
+      return `${formatted} · Event time (${state.timeZone})`;
+    } catch (_) {
+      return "Date unavailable";
+    }
+  }
+  function eventDayLabel(value) {
+    if (!value) return "Date unavailable";
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeZone: state.timeZone,
+      }).format(new Date(value));
+    } catch (_) {
+      return "Date unavailable";
+    }
+  }
   function roundWindowLabel(round) {
     const options = { day: "numeric", month: "short", year: "numeric", timeZone: state.timeZone };
     const formatter = new Intl.DateTimeFormat(undefined, options);
@@ -1659,7 +1683,7 @@
             identity.className = "proposal-inbox__identity";
             identity.textContent = value;
             const metadata = document.createElement("small");
-            metadata.textContent = `Submitted ${new Date(item.submitted_at_ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · Receipt ${item.id.slice(0, 8)}`;
+            metadata.textContent = `Submitted ${eventDayLabel(item.submitted_at_ms)} · Receipt ${item.id.slice(0, 8)}`;
             cell.append(identity, metadata);
           }
           if (label === "Status") {
