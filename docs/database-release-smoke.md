@@ -41,16 +41,8 @@ the recovery point, elapsed recovery time, restored row counts, application smok
 result, operator, and date. Use roll-forward migrations and do not restore into or
 seed an active production database.
 
-## Baseline rebase notes
+## Asset version comments
 
-When `speaker_asset_versions.version_comment` is made properly nullable during a
-planned baseline rebase, remove both parts of its temporary sentinel contract:
-
-- the released `DEFAULT 'Legacy upload'` and non-empty constraint; and
-- `_version_comment()` in `speaker_operations/router.py`, which currently maps
-  that sentinel to an absent API value.
-
-After the rebase, new note-less versions should store `NULL` directly and the
-API should expose the nullable column without sentinel translation. Include the
-helper removal in the rebase equivalence review so this compatibility
-indirection does not survive after it has lost its purpose.
+`speaker_asset_versions.version_comment` is nullable in the canonical baseline.
+New note-less versions store `NULL`, and the API exposes that nullable value
+directly without a sentinel or compatibility translation.

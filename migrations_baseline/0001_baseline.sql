@@ -1122,8 +1122,10 @@ CREATE TABLE speaker_asset_versions (
   scan_started_at_ms INTEGER,
   scanned_at_ms INTEGER,
   uploaded_by_user_id TEXT REFERENCES users(id) ON DELETE RESTRICT,
-  scan_result_code TEXT CHECK (scan_result_code IS NULL OR length(scan_result_code) <= 100), version_comment TEXT NOT NULL DEFAULT 'Legacy upload'
-CHECK(length(trim(version_comment)) BETWEEN 1 AND 1000),
+  scan_result_code TEXT CHECK (scan_result_code IS NULL OR length(scan_result_code) <= 100),
+  version_comment TEXT CHECK(
+    version_comment IS NULL OR length(trim(version_comment)) BETWEEN 1 AND 1000
+  ),
   FOREIGN KEY (organization_id, event_id, event_speaker_id, asset_id)
     REFERENCES speaker_assets(organization_id, event_id, event_speaker_id, id)
       ON DELETE RESTRICT,
@@ -1775,7 +1777,7 @@ BEGIN
 END;
 CREATE TRIGGER prevent_asset_version_comment_update
 BEFORE UPDATE OF version_comment ON speaker_asset_versions
-WHEN NEW.version_comment != OLD.version_comment
+WHEN NEW.version_comment IS NOT OLD.version_comment
 BEGIN
   SELECT RAISE(ABORT, 'asset version comment is immutable');
 END;

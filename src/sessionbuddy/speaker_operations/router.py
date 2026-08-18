@@ -192,13 +192,8 @@ def _speaker_asset_version_view(row: dict[str, object]) -> SpeakerAssetVersionVi
         byte_size=int(row["byte_size"]),
         state="current" if int(row["is_current"]) == 1 else "superseded",
         uploaded_at_ms=int(row["uploaded_at_ms"]),
-        version_comment=_version_comment(row),
+        version_comment=row["version_comment"],
     )
-
-
-def _version_comment(row: dict[str, object]) -> str | None:
-    value = str(row["version_comment"])
-    return None if value == "Legacy upload" else value
 
 
 async def _asset_versions_by_asset(
@@ -1467,7 +1462,7 @@ async def list_speaker_assets(event_id: str, request: Request) -> SpeakerAssetLi
                 generation=int(row["generation"]),
                 uploaded_at_ms=int(row["uploaded_at_ms"]),
                 version_count=int(row["version_count"]),
-                version_comment=_version_comment(row),
+                version_comment=row["version_comment"],
                 versions=versions_by_asset.get(str(row["id"]), []),
             )
         )
@@ -1566,7 +1561,7 @@ async def read_speaker_asset(
         generation=int(row["generation"]),
         uploaded_at_ms=int(row["uploaded_at_ms"]),
         version_count=int(row["version_count"]),
-        version_comment=_version_comment(row),
+        version_comment=row["version_comment"],
         versions=versions_by_asset.get(str(row["id"]), []),
         comments=[AssetCommentView(**dict(comment)) for comment in comments],
     )
@@ -1856,7 +1851,7 @@ async def list_admin_speaker_assets(event_id: str, request: Request) -> AdminSpe
                     if row["profile_only"]
                     else None
                 ),
-                version_comment=_version_comment(row),
+                version_comment=row["version_comment"],
                 versions=([] if row["profile_only"] else versions_by_asset.get(str(row["id"]), [])),
             )
         )
@@ -1932,7 +1927,7 @@ async def get_admin_asset_detail(event_id: str, asset_id: str, request: Request)
         ),
         download_grant_url=f"/api/v1/admin/events/{event_id}/assets/{asset_id}/download-grants",
         direct_download_url=None,
-        version_comment=_version_comment(asset_row),
+        version_comment=asset_row["version_comment"],
         versions=versions,
     )
     rows = result_rows(

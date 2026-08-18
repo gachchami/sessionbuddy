@@ -148,7 +148,7 @@ def test_asset_history_maps_database_columns_to_public_contract() -> None:
             "byte_size": 4096,
             "is_current": 1,
             "uploaded_at_ms": 1_700_000_000_001,
-            "version_comment": "Legacy upload",
+            "version_comment": None,
         }
     )
     assert note_less.version_comment is None

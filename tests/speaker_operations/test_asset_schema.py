@@ -109,7 +109,7 @@ def test_generation_and_current_clean_constraints(db: sqlite3.Connection) -> Non
         db.execute(
             "UPDATE speaker_asset_versions SET generation=4 WHERE id='version-1'"
         )
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         db.execute(
             "UPDATE speaker_asset_versions SET version_comment='' WHERE id='version-1'"
         )
@@ -124,9 +124,12 @@ def test_asset_versions_record_the_uploader_for_inventory_metadata(
     db: sqlite3.Connection,
 ) -> None:
     columns = {
-        row[1] for row in db.execute("PRAGMA table_info(speaker_asset_versions)").fetchall()
+        row[1]: row
+        for row in db.execute("PRAGMA table_info(speaker_asset_versions)").fetchall()
     }
     assert "uploaded_by_user_id" in columns
+    assert columns["version_comment"][3] == 0
+    assert columns["version_comment"][4] is None
     headshot_columns = {
         row[1] for row in db.execute("PRAGMA table_info(user_headshots)").fetchall()
     }
