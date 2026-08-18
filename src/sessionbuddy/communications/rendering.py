@@ -22,6 +22,13 @@ ALLOWED_VARIABLES = frozenset(
 SPEAKER_MESSAGE_VARIABLES = frozenset(
     {"event.name", "speaker.name", "speaker.first_name", "submission.title", "portal.link"}
 )
+SPEAKER_MESSAGE_VARIABLE_LABELS = {
+    "event.name": "event name",
+    "speaker.name": "speaker name",
+    "speaker.first_name": "speaker first name",
+    "submission.title": "proposal title",
+    "portal.link": "speaker portal link",
+}
 DECISION_MESSAGE_VARIABLES = frozenset(
     {"event.name", "speaker.name", "submission.title"}
 )

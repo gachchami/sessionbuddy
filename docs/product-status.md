@@ -830,6 +830,12 @@ resolver table used by the distributor.
   enforcing context-specific availability. Errors distinguish invented tokens
   from known tokens that cannot be resolved in that message type; the speaker
   composer can replace the common `portal_link` mistake with `portal.link`.
+- The speaker-message composer checks the exact selected recipients as its
+  template changes. Pending invitations and speakers without usable proposal
+  titles receive distinct guidance before manual preview, while send repeats
+  the same server validation. Choosing active speakers only preserves the
+  explicit recipient set and records excluded pending invitations in the send
+  audit; organizers can also resend those invitations from the warning.
 - A successful manual speaker invitation refreshes the event roster before it
   reports completion. If that reconciliation read fails, the UI states that
   the invitation committed and tells the organizer to reload rather than

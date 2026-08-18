@@ -7,6 +7,8 @@ rejected. The recipient list already includes both — the preview now says whic
 is which, and the send path renders from this same query.
 """
 
+import json
+
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
     _client,
@@ -156,13 +158,148 @@ async def test_preview_aggregates_only_pending_invitees_and_caps_names(
         )
 
         assert response.status_code == 422, response.text
-        detail = response.json()["error"]["message"]
-        assert detail.startswith("11 invited recipients cannot receive this template")
-        assert "portal.link and submission.title" in detail
-        assert all(f"Invitee {index}" in detail for index in range(1, 11))
-        assert "Invitee 11" not in detail
-        assert "and 1 other" in detail
-        assert "Priya" not in detail
+        error = response.json()["error"]
+        assert error["message"].startswith("This message is not ready for 11 selected recipients")
+        assert "Invitee 11" not in error["message"]
+        assert "and 1 other" in error["message"]
+        details = error["metadata"]["details"]
+        assert len(details) == 11
+        assert {item["display_name"] for item in details} == {
+            f"Invitee {index}" for index in range(1, 12)
+        }
+        assert all(item["reason_codes"] == ["membership_pending"] for item in details)
+        assert all(
+            item["fields"] == [
+                {"name": "portal.link", "label": "speaker portal link"},
+                {"name": "submission.title", "label": "proposal title"},
+            ]
+            for item in details
+        )
+
+
+async def test_active_only_send_audits_the_explicitly_skipped_invitation(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        invitation_id = "30000000-0000-4000-8000-000000000001"
+        inviter_id = connection.execute(
+            "SELECT id FROM users WHERE normalized_email='admin@example.com'"
+        ).fetchone()[0]
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms,display_name)
+               VALUES(?,?,?,'pending@example.test','pending@example.test','speaker','pending',
+                      ?,9999999999999,1000,1000,'Pending Speaker')""",
+            (invitation_id, organization_id, event_id, inviter_id),
+        )
+        connection.commit()
+
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/send",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "active-only-message-audit",
+            },
+            json={
+                "event_speaker_ids": [speaker_id],
+                "excluded_recipient_ids": [invitation_id],
+                "exclusion_reason": "membership_pending",
+                "subject": "Welcome to {{event.name}}",
+                "body_text": "Hello {{speaker.name}}.",
+                "confirmed": True,
+            },
+        )
+
+        assert response.status_code == 202, response.text
+        original_ids = response.json()["message_ids"]
+        metadata = json.loads(
+            connection.execute(
+                """SELECT metadata_json FROM audit_events
+                   WHERE action='communication.speakers.queue'
+                   ORDER BY occurred_at_ms DESC,id DESC LIMIT 1"""
+            ).fetchone()[0]
+        )
+        assert metadata == {
+            "excluded_recipient_ids": [invitation_id],
+            "exclusion_reason": "membership_pending",
+            "recipient_count": 1,
+        }
+        connection.execute(
+            "UPDATE identity_invitations SET status='accepted',accepted_at_ms=2000 WHERE id=?",
+            (invitation_id,),
+        )
+        connection.commit()
+        replay = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/send",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "active-only-message-audit",
+            },
+            json={
+                "event_speaker_ids": [speaker_id],
+                "excluded_recipient_ids": [invitation_id],
+                "exclusion_reason": "membership_pending",
+                "subject": "Welcome to {{event.name}}",
+                "body_text": "Hello {{speaker.name}}.",
+                "confirmed": True,
+            },
+        )
+        assert replay.status_code == 202, replay.text
+        assert replay.json()["message_ids"] == original_ids
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='communication.speakers.queue'"
+        ).fetchone()[0] == 1
+
+
+async def test_send_rejects_an_unknown_excluded_invitation(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/send",
+            headers={
+                "origin": "https://test",
+                "x-csrf-token": csrf,
+                "idempotency-key": "invalid-active-only-exclusion",
+            },
+            json={
+                "event_speaker_ids": [speaker_id],
+                "excluded_recipient_ids": ["30000000-0000-4000-8000-999999999999"],
+                "exclusion_reason": "membership_pending",
+                "subject": "Welcome to {{event.name}}",
+                "body_text": "Hello {{speaker.name}}.",
+                "confirmed": True,
+            },
+        )
+
+        assert response.status_code == 422, response.text
+        assert "not a current pending speaker invitation" in response.json()["error"]["message"]
+        assert connection.execute(
+            "SELECT COUNT(*) FROM audit_events WHERE action='communication.speakers.queue'"
+        ).fetchone()[0] == 0
 
 
 async def test_preview_rejects_variables_unavailable_to_speaker_messages_before_recipients(
@@ -242,7 +379,9 @@ async def test_preview_rejects_a_blank_submission_title(
         response = await _preview(client, csrf, event_id, speaker_id)
 
         assert response.status_code == 422, response.text
-        assert "submission.title" in response.json()["error"]["message"]
+        detail = response.json()["error"]["metadata"]["details"][0]
+        assert detail["reason_codes"] == ["blank_title"]
+        assert detail["fields"] == [{"name": "submission.title", "label": "proposal title"}]
 
 
 async def test_preview_rejects_the_no_submission_title_fallback(
@@ -268,7 +407,51 @@ async def test_preview_rejects_the_no_submission_title_fallback(
         response = await _preview(client, csrf, event_id, speaker_id)
 
         assert response.status_code == 422, response.text
-        assert "submission.title" in response.json()["error"]["message"]
+        detail = response.json()["error"]["metadata"]["details"][0]
+        assert detail["reason_codes"] == ["no_proposal"]
+        assert detail["fields"] == [{"name": "submission.title", "label": "proposal title"}]
+
+
+async def test_withdrawn_organizer_session_is_not_a_title_source(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        connection.execute(
+            "DELETE FROM submission_speakers WHERE event_speaker_id=?", (speaker_id,)
+        )
+        connection.execute(
+            """INSERT INTO accepted_sessions
+               (id,organization_id,event_id,source_type,organizer_title,organizer_abstract,
+                created_at_ms,lifecycle_status,withdrawn_at_ms)
+               VALUES('withdrawn-session',?,?,'organizer_created','Withdrawn title',
+                      'Withdrawn abstract',1000,
+                      'withdrawn',1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO accepted_session_participants
+               (id,organization_id,event_id,accepted_session_id,event_speaker_id,
+                display_name_snapshot,created_at_ms,updated_at_ms)
+               VALUES('withdrawn-participant',?,?,'withdrawn-session',?,'Priya',1000,1000)""",
+            (organization_id, event_id, speaker_id),
+        )
+        connection.commit()
+
+        response = await _preview(client, csrf, event_id, speaker_id)
+
+        assert response.status_code == 422, response.text
+        detail = response.json()["error"]["metadata"]["details"][0]
+        assert detail["reason_codes"] == ["no_proposal"]
 
 
 async def test_preview_rejects_a_blank_display_name_without_crashing(
@@ -293,4 +476,9 @@ async def test_preview_rejects_a_blank_display_name_without_crashing(
         response = await _preview(client, csrf, event_id, speaker_id)
 
         assert response.status_code == 422, response.text
-        assert "speaker.name" in response.json()["error"]["message"]
+        detail = response.json()["error"]["metadata"]["details"][0]
+        assert detail["display_name"] == "Selected recipient"
+        assert detail["reason_codes"] == ["blank_name"]
+        assert detail["fields"] == [
+            {"name": "speaker.name", "label": "speaker name"},
+        ]

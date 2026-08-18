@@ -56,6 +56,10 @@ class SpeakerMessagePreviewRequest(BaseModel):
     event_speaker_ids: list[str] = Field(min_length=1, max_length=MAX_COMMUNICATION_RECIPIENTS)
     subject: str = Field(min_length=1, max_length=200)
     body_text: str = Field(min_length=1, max_length=10_000)
+    excluded_recipient_ids: list[str] = Field(
+        default_factory=list, max_length=MAX_COMMUNICATION_RECIPIENTS
+    )
+    exclusion_reason: Literal["membership_pending"] | None = None
 
     @model_validator(mode="after")
     def validate_speakers(self) -> "SpeakerMessagePreviewRequest":
@@ -63,6 +67,14 @@ class SpeakerMessagePreviewRequest(BaseModel):
             raise ValueError("event_speaker_ids must contain UUIDs")
         if len(self.event_speaker_ids) != len(set(self.event_speaker_ids)):
             raise ValueError("event_speaker_ids must be unique")
+        if any(len(value) != 36 for value in self.excluded_recipient_ids):
+            raise ValueError("excluded_recipient_ids must contain UUIDs")
+        if len(self.excluded_recipient_ids) != len(set(self.excluded_recipient_ids)):
+            raise ValueError("excluded_recipient_ids must be unique")
+        if set(self.event_speaker_ids) & set(self.excluded_recipient_ids):
+            raise ValueError("included and excluded recipients must not overlap")
+        if bool(self.excluded_recipient_ids) != bool(self.exclusion_reason):
+            raise ValueError("excluded recipients require an exclusion reason")
         return self
 
 

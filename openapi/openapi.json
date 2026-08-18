@@ -11461,6 +11461,26 @@
             "title": "Event Speaker Ids",
             "type": "array"
           },
+          "excluded_recipient_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Excluded Recipient Ids",
+            "type": "array"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "const": "membership_pending",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
+          },
           "subject": {
             "maxLength": 200,
             "minLength": 1,
@@ -11498,6 +11518,26 @@
             "minItems": 1,
             "title": "Event Speaker Ids",
             "type": "array"
+          },
+          "excluded_recipient_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Excluded Recipient Ids",
+            "type": "array"
+          },
+          "exclusion_reason": {
+            "anyOf": [
+              {
+                "const": "membership_pending",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Reason"
           },
           "subject": {
             "maxLength": 200,

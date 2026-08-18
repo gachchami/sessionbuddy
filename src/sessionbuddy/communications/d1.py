@@ -1,6 +1,7 @@
 """Tenant-scoped D1 communications service used by HTTP and local development."""
 
 import hashlib
+import json
 from datetime import UTC, datetime
 from html import escape
 
@@ -31,6 +32,7 @@ from .models import (
 )
 from .presentation import message_category, message_preview
 from .rendering import (
+    SPEAKER_MESSAGE_VARIABLE_LABELS,
     SPEAKER_MESSAGE_VARIABLES,
     TemplateVariableError,
     render_template,
@@ -311,7 +313,7 @@ class D1CommunicationsService:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         recipients: list[RecipientPreview] = []
-        incompatible_invitees: list[tuple[str, tuple[str, ...]]] = []
+        incompatible_recipients: list[dict[str, object]] = []
         for recipient_target_id in body.event_speaker_ids:
             row = row_mapping(
                 await self.db.prepare(
@@ -323,6 +325,19 @@ class D1CommunicationsService:
                               -- queue_speaker_message renders what it sends from this same
                               -- query, so a newest-wins title here is not a preview artefact:
                               -- it is the text mailed to the speaker.
+                              EXISTS(SELECT 1 FROM accepted_sessions title_session
+                                JOIN accepted_session_participants title_participant
+                                  ON title_participant.accepted_session_id=title_session.id
+                                WHERE title_session.organization_id=es.organization_id
+                                  AND title_session.event_id=es.event_id
+                                  AND title_participant.event_speaker_id=es.id
+                                  AND title_session.source_type='organizer_created'
+                                  AND title_session.lifecycle_status='active')
+                              OR EXISTS(SELECT 1 FROM submission_speakers title_speaker
+                                WHERE title_speaker.organization_id=es.organization_id
+                                  AND title_speaker.event_id=es.event_id
+                                  AND title_speaker.event_speaker_id=es.id)
+                                AS has_title_source,
                               COALESCE((SELECT ac.organizer_title
                                 FROM accepted_sessions ac
                                 JOIN accepted_session_participants participant
@@ -331,6 +346,7 @@ class D1CommunicationsService:
                                   AND ac.event_id=es.event_id
                                   AND participant.event_speaker_id=es.id
                                   AND ac.source_type='organizer_created'
+                                  AND ac.lifecycle_status='active'
                                 ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
                                (SELECT s.proposal_title
                                 FROM submission_speakers ss JOIN submissions s
@@ -371,7 +387,8 @@ class D1CommunicationsService:
                         """SELECT NULL AS recipient_user_id,i.id AS recipient_target_id,
                                   'invited' AS recipient_state,'invited' AS selection_status,
                                   i.email AS email,
-                                  i.display_name,e.name AS event_name,'' AS proposal_title
+                                  i.display_name,e.name AS event_name,0 AS has_title_source,
+                                  '' AS proposal_title
                            FROM identity_invitations i
                            JOIN events e ON e.organization_id=i.organization_id
                              AND e.id=i.event_id
@@ -400,6 +417,7 @@ class D1CommunicationsService:
                     ),
                 )
             display_name = str(row["display_name"])
+            display_label = display_name.strip() or "Selected recipient"
             display_name_parts = display_name.split(maxsplit=1)
             public_base = str(getattr(self.request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip(
                 "/"
@@ -432,16 +450,33 @@ class D1CommunicationsService:
                 # event_speakers identity exists (its selection_status may still
                 # be submitted or rejected). Collect every incompatible invitee
                 # so a batch never turns into one-error-per-preview whack-a-mole.
-                if row["recipient_state"] == "invited":
-                    incompatible_invitees.append((display_name, tuple(missing)))
-                    continue
-                raise HTTPException(
-                    status_code=422,
-                    detail=(
-                        f"{display_name} cannot receive this template; missing "
-                        f"{', '.join(missing)}. Remove those variables or remove this recipient."
-                    ),
+                reason_codes: list[str] = []
+                if any(variable in missing for variable in {"speaker.name", "speaker.first_name"}):
+                    reason_codes.append("blank_name")
+                if row["recipient_state"] == "invited" and any(
+                    variable in missing for variable in {"portal.link", "submission.title"}
+                ):
+                    reason_codes.append("membership_pending")
+                elif "submission.title" in missing:
+                    reason_codes.append(
+                        "blank_title" if bool(row["has_title_source"]) else "no_proposal"
+                    )
+                incompatible_recipients.append(
+                    {
+                        "recipient_target_id": str(row["recipient_target_id"]),
+                        "display_name": display_label,
+                        "recipient_state": str(row["recipient_state"]),
+                        "reason_codes": reason_codes,
+                        "fields": [
+                            {
+                                "name": variable,
+                                "label": SPEAKER_MESSAGE_VARIABLE_LABELS[variable],
+                            }
+                            for variable in missing
+                        ],
+                    }
                 )
+                continue
             try:
                 rendered_subject = render_template(body.subject, values)
                 rendered_body = render_template(body.body_text, values)
@@ -463,32 +498,29 @@ class D1CommunicationsService:
                     html_body=f"<p>{rendered_body.replace(chr(10), '<br>')}</p>",
                 )
             )
-        if incompatible_invitees:
-            names = [name for name, _missing_fields in incompatible_invitees]
+        if incompatible_recipients:
+            names = [str(item["display_name"]) for item in incompatible_recipients]
             shown_names = ", ".join(names[:_INCOMPATIBLE_RECIPIENT_NAME_LIMIT])
             remainder = len(names) - _INCOMPATIBLE_RECIPIENT_NAME_LIMIT
             if remainder > 0:
                 remainder_noun = "other" if remainder == 1 else "others"
                 shown_names = f"{shown_names}, and {remainder} {remainder_noun}"
-            missing_fields = sorted(
-                {field for _name, fields in incompatible_invitees for field in fields}
-            )
-            count = len(incompatible_invitees)
+            count = len(incompatible_recipients)
             noun = "recipient" if count == 1 else "recipients"
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"{count} invited {noun} cannot receive this template because it uses "
-                    f"{' and '.join(missing_fields)}: {shown_names}. Choose an invitation-safe "
-                    f"template or remove {'this recipient' if count == 1 else 'those recipients'}."
-                ),
+                detail={
+                    "message": (
+                        f"This message is not ready for {count} selected {noun}: {shown_names}."
+                    ),
+                    "metadata": {"details": incompatible_recipients},
+                },
             )
         return RecipientPreviewResponse(recipients=recipients)
 
     async def queue_speaker_message(
         self, event_id: str, body: SpeakerMessageSendRequest, idempotency_key: str
     ) -> ManualSendResponse:
-        preview = await self.preview_speaker_message(event_id, body)
         if self.organization_id is None:
             raise HTTPException(status_code=404)
         now = utc_now_ms()
@@ -518,7 +550,7 @@ class D1CommunicationsService:
             ):
                 raise HTTPException(status_code=409)
             ids = []
-            for recipient in preview.recipients:
+            for recipient_target_id in body.event_speaker_ids:
                 existing = await (
                     self.db.prepare(
                         """SELECT id FROM communication_messages
@@ -528,7 +560,7 @@ class D1CommunicationsService:
                     .bind(
                         self.organization_id,
                         event_id,
-                        f"speaker-bulk:{idempotency_key}:{recipient.recipient_target_id}",
+                        f"speaker-bulk:{idempotency_key}:{recipient_target_id}",
                     )
                     .first("id")
                 )
@@ -539,6 +571,27 @@ class D1CommunicationsService:
             except HTTPException:
                 pass
             return ManualSendResponse(message_ids=ids)
+        if body.excluded_recipient_ids:
+            excluded_count = await (
+                self.db.prepare(
+                    """SELECT COUNT(*) AS valid_count FROM identity_invitations
+                       WHERE id IN (SELECT value FROM json_each(?1))
+                         AND organization_id=?2 AND event_id=?3
+                         AND role='speaker' AND status='pending'
+                         AND expires_at_ms>?4"""
+                )
+                .bind(json.dumps(body.excluded_recipient_ids), self.organization_id, event_id, now)
+                .first("valid_count")
+            )
+            if int(excluded_count or 0) != len(body.excluded_recipient_ids):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "An excluded recipient is not a current pending speaker invitation. "
+                        "Refresh the recipient list and try again."
+                    ),
+                )
+        preview = await self.preview_speaker_message(event_id, body)
         batch, ids = CommandBatch(self.db), []
         batch.begin_idempotency(record, now)
         for recipient in preview.recipients:
@@ -574,7 +627,11 @@ class D1CommunicationsService:
                 result="succeeded",
                 correlation_id=self.request.state.request_id,
                 occurred_at_ms=now,
-                metadata={"recipient_count": len(ids)},
+                metadata={
+                    "recipient_count": len(ids),
+                    "excluded_recipient_ids": body.excluded_recipient_ids,
+                    "exclusion_reason": body.exclusion_reason,
+                },
             )
         )
         batch.complete_idempotency(

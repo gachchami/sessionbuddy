@@ -10,6 +10,9 @@ const pageHtml = readFileSync(resolve(root, "speaker_messages.html"), "utf8")
 
 test("blocks an active-speaker template for a pending invitee with actionable detail", async ({ page }) => {
   let previewRequests = 0;
+  let resendRequests = 0;
+  let lastPreviewBody: Record<string, unknown> | null = null;
+  let previewUnavailable = false;
   await page.route("**/admin/events/event-a/messages", (route) => route.fulfill({ contentType: "text/html", body: pageHtml }));
   await page.route("**/api/v1/auth/session", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ csrf_token: "csrf" }) }));
   await page.route("**/api/v1/admin/events/event-a", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "event-a", time_zone: "UTC" }) }));
@@ -21,16 +24,18 @@ test("blocks an active-speaker template for a pending invitee with actionable de
   await page.route("**/api/v1/admin/events/event-a/communications/speakers/preview", (route) => {
     previewRequests += 1;
     const body = route.request().postDataJSON();
-    if (body.subject.includes("Your invitation")) {
+    lastPreviewBody = body;
+    if (previewUnavailable) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "temporarily_unavailable", message: "Try again later." } }) });
+    if (body.subject.includes("Your invitation") || !body.event_speaker_ids.includes("invite-marcus")) {
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ recipients: [{
-        recipient_user_id: null,
-        recipient_target_id: "invite-marcus",
-        recipient_state: "invited",
-        selection_status: "invited",
-        display_name: "Marcus Okafor",
-        email: "marcus@example.test",
-        subject: "Your invitation to DevFlow",
-        html_body: "<p>Your invitation is waiting.</p>",
+        recipient_user_id: body.event_speaker_ids.includes("invite-marcus") ? null : "user-priya",
+        recipient_target_id: body.event_speaker_ids[0],
+        recipient_state: body.event_speaker_ids.includes("invite-marcus") ? "invited" : "active",
+        selection_status: body.event_speaker_ids.includes("invite-marcus") ? "invited" : "accepted",
+        display_name: body.event_speaker_ids.includes("invite-marcus") ? "Marcus Okafor" : "Priya Raman",
+        email: body.event_speaker_ids.includes("invite-marcus") ? "marcus@example.test" : "priya@example.test",
+        subject: body.subject,
+        html_body: "<p>Message preview.</p>",
       }] }) });
     }
     return route.fulfill({
@@ -38,9 +43,23 @@ test("blocks an active-speaker template for a pending invitee with actionable de
       contentType: "application/json",
       body: JSON.stringify({ error: {
         code: "validation_failed",
-        message: "1 invited recipient cannot receive this template because it uses portal.link and submission.title: Marcus Okafor. Choose an invitation-safe template or remove this recipient.",
+        message: "This message is not ready for 1 selected recipient: Marcus Okafor.",
+        metadata: { details: [{
+          recipient_target_id: "invite-marcus",
+          display_name: "Marcus Okafor",
+          recipient_state: "invited",
+          reason_codes: ["membership_pending"],
+          fields: [
+            { name: "portal.link", label: "speaker portal link" },
+            { name: "submission.title", label: "proposal title" },
+          ],
+        }] },
       } }),
     });
+  });
+  await page.route("**/api/v1/admin/events/event-a/invitations/invite-marcus/resend", (route) => {
+    resendRequests += 1;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: "invite-marcus", access_url: "https://example.test/invite" }) });
   });
 
   await page.goto("/admin/events/event-a/messages");
@@ -65,27 +84,53 @@ test("blocks an active-speaker template for a pending invitee with actionable de
   expect(previewRequests).toBe(0);
 
   await page.locator("#message-template").selectOption("welcome");
+  const compatibility = page.locator("#message-compatibility");
+  await expect(compatibility).toContainText("1 selected recipient cannot receive this message yet");
+  await expect(compatibility).toContainText("Invitation pending");
+  await expect(compatibility).toContainText("Portal and proposal details become available after acceptance");
+  await compatibility.getByText("Technical details").click();
+  await expect(compatibility).toContainText("Unavailable fields: portal.link, submission.title");
+  await expect(compatibility).toContainText("Marcus Okafor");
+  await expect(compatibility.getByRole("button", { name: "Send to active speakers only" })).toBeVisible();
+  await expect(compatibility.getByRole("button", { name: "Use invitation reminder" })).toBeVisible();
+  await expect(compatibility.getByRole("button", { name: "Resend 1 invitation" })).toBeVisible();
+  await expect(page.locator("#recipient-count")).toHaveText("1 selected · 1 invitation pending");
+  expect(previewRequests).toBeGreaterThanOrEqual(1);
+
   await page.locator("#preview-message").click();
+  await expect(compatibility).toBeFocused();
+  await expect(compatibility).toBeInViewport();
 
-  await expect(composeError).toContainText("1 invited recipient cannot receive this template");
-  await expect(composeError).toContainText("portal.link and submission.title");
-  await expect(composeError).toContainText("Marcus Okafor");
-  await expect(composeError).toBeFocused();
-  await expect(composeError).toBeInViewport();
-  expect(previewRequests).toBe(1);
+  await compatibility.getByRole("button", { name: "Resend 1 invitation" }).click();
+  await expect(page.locator("#status")).toContainText("1 invitation sent again");
+  expect(resendRequests).toBe(1);
 
-  // A second failure replaces the same message instead of appending another.
-  await page.locator("#preview-message").click();
-  await expect(composeError).toHaveText(/^[^\n]*1 invited recipient[^\n]*$/);
-  expect(previewRequests).toBe(2);
+  await compatibility.getByRole("button", { name: "Use invitation reminder" }).click();
+  await expect(compatibility).toBeHidden();
+  await page.locator("#message-template").selectOption("welcome");
+  await expect(compatibility).toBeVisible();
 
-  // Changing the template clears the focused error without dropping focus to
-  // body, and the invitation-safe request can then preview normally.
+  await page.getByText("Priya Raman").click();
+  await expect(page.locator("#recipient-count")).toHaveText("2 selected · 1 invitation pending");
+  await compatibility.getByRole("button", { name: "Send to active speakers only" }).click();
+  await expect(page.locator("#recipient-count")).toHaveText("1 selected");
+  await expect(compatibility).toBeHidden();
+  expect(lastPreviewBody).toMatchObject({
+    event_speaker_ids: ["speaker-priya"],
+    excluded_recipient_ids: ["invite-marcus"],
+    exclusion_reason: "membership_pending",
+  });
+
+  // The invitation-safe template can still preview normally after resolving
+  // the audience incompatibility.
   await page.locator("#message-template").selectOption("invitation");
   await expect(composeError).toBeEmpty();
-  await expect(page.locator("#preview-message")).toBeFocused();
   await page.locator("#preview-message").click();
   await expect(page.locator("#message-preview")).toBeVisible();
   await expect(page.locator("#status")).toContainText("Preview ready for 1 recipient");
-  expect(previewRequests).toBe(3);
+  expect(previewRequests).toBeGreaterThanOrEqual(3);
+
+  previewUnavailable = true;
+  await page.locator("#message-template").selectOption("deadline");
+  await expect(compatibility).toContainText("Automatic recipient check is unavailable");
 });
