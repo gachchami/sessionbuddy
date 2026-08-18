@@ -3761,19 +3761,19 @@ async def create_invitation(
     audit = CommandBatch(db)
     if body.role == "speaker":
         default_tasks = (
-            ("profile", "Complete your speaker profile", "profile"),
-            ("headshot", "Upload your headshot", "headshot"),
-            ("slides", "Upload your presentation slides", "slides"),
+            ("profile", "Complete your speaker profile"),
+            ("headshot", "Upload your headshot"),
+            ("slides", "Upload your presentation slides"),
         )
-        for task_type, title, destination_type in default_tasks:
+        for task_type, title in default_tasks:
             form_schema_json = task_form_schema_json(task_type)
             audit.add_statement(
                 db.prepare(
                     """INSERT INTO speaker_tasks
                        (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
-                        task_type,title,help_text,destination_type,state,
+                        task_type,title,help_text,state,
                         form_schema_json,created_at_ms,updated_at_ms)
-                       SELECT ?1,?2,?3,NULL,?4,?5,?6,'',?7,'open',?8,?9,?9
+                       SELECT ?1,?2,?3,NULL,?4,?5,?6,'','open',?7,?8,?8
                        WHERE NOT EXISTS (
                          SELECT 1 FROM speaker_tasks
                          WHERE organization_id=?2 AND event_id=?3
@@ -3786,7 +3786,6 @@ async def create_invitation(
                     row["id"],
                     task_type,
                     title,
-                    destination_type,
                     form_schema_json,
                     now,
                 )
@@ -3947,19 +3946,19 @@ async def _create_bulk_speaker_invitation(
             row.biography,
         )
     )
-    for task_type, title, destination_type in (
-        ("profile", "Complete your speaker profile", "profile"),
-        ("headshot", "Upload your headshot", "headshot"),
-        ("slides", "Upload your presentation slides", "slides"),
+    for task_type, title in (
+        ("profile", "Complete your speaker profile"),
+        ("headshot", "Upload your headshot"),
+        ("slides", "Upload your presentation slides"),
     ):
         form_schema_json = task_form_schema_json(task_type)
         batch.add_statement(
             db.prepare(
                 """INSERT INTO speaker_tasks
                    (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
-                    task_type,title,help_text,destination_type,state,
+                    task_type,title,help_text,state,
                     form_schema_json,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,NULL,?4,?5,?6,'',?7,'open',?8,?9,?9)"""
+                   VALUES(?1,?2,?3,NULL,?4,?5,?6,'','open',?7,?8,?8)"""
             ).bind(
                 new_id(),
                 organization_id,
@@ -3967,7 +3966,6 @@ async def _create_bulk_speaker_invitation(
                 invitation_id,
                 task_type,
                 title,
-                destination_type,
                 form_schema_json,
                 now,
             )

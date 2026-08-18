@@ -33,7 +33,6 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
             None,
             "profile" if number % 2 else "slides",
             f"Task {number}",
-            "profile" if number % 2 else "slides",
             "open" if number % 3 else "completed",
             None if number % 20 == 0 else 2_000 + number,
             1_000 if number % 3 == 0 else None,
@@ -51,9 +50,9 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
     db.executemany(
         """INSERT INTO speaker_tasks
            (id, organization_id, event_id, event_speaker_id, submission_id,
-            task_type, title, destination_type, state, due_at_ms, completed_at_ms,
+            task_type, title, state, due_at_ms, completed_at_ms,
             created_at_ms, updated_at_ms, content_fingerprint, form_schema_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
 

@@ -182,9 +182,9 @@ def test_database_rejects_oversized_schema_driven_task_response(
     database.execute(
         """INSERT INTO speaker_tasks
            (id,organization_id,event_id,event_speaker_id,task_type,title,
-            destination_type,state,version,created_at_ms,updated_at_ms,form_schema_json)
+            state,version,created_at_ms,updated_at_ms,form_schema_json)
            VALUES('task-a','org-a','event-a','speaker-a','custom','Task',
-                  'custom','open',1,1,1,?)""",
+                  'open',1,1,1,?)""",
         (schema,),
     )
     database.execute(

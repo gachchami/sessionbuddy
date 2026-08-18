@@ -778,7 +778,7 @@ async def get_speaker_portal(
             request,
             db.prepare(
                 """SELECT id, task_type, title, COALESCE(help_text, '') AS help_text,
-                          destination_type, state, due_at_ms, completed_at_ms,
+                          state, due_at_ms, completed_at_ms,
                           form_schema_json,response_json,version
                    FROM speaker_tasks
                    WHERE organization_id = ?1 AND event_id = ?2 AND event_speaker_id = ?3
@@ -846,7 +846,7 @@ async def get_speaker_portal(
             task_type=str(task["task_type"]),
             title=str(task["title"]),
             help_text=str(task["help_text"]),
-            destination_path=f"#{task['destination_type']}",
+            destination_path=f"#{task['task_type']}",
             state=str(task["state"]),
             due_at_ms=int(task["due_at_ms"]) if task["due_at_ms"] is not None else None,
             completed_at_ms=(

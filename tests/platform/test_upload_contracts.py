@@ -29,14 +29,21 @@ def test_file_task_schemas_are_derived_from_the_canonical_asset_policy() -> None
 
 
 def test_migration_upload_ceiling_matches_the_canonical_asset_policy() -> None:
-    migration = (
-        Path(__file__).parents[2]
-        / "migrations_baseline"
-        / "0002_speaker_task_upload_contract.sql"
-    ).read_text(encoding="utf-8")
-    ceiling_values = re.findall(r"max_file_bytes'\) > (\d+)", migration)
-    # Repair selector, post-backfill guard, and insert/update triggers.
-    assert len(ceiling_values) == 4
+    migration_dir = Path(__file__).parents[2] / "migrations_baseline"
+    ceiling_values = [
+        value
+        for migration_name in (
+            "0002_speaker_task_upload_contract.sql",
+            "0003_remove_speaker_task_destination_type.sql",
+        )
+        for value in re.findall(
+            r"max_file_bytes'\) > (\d+)",
+            (migration_dir / migration_name).read_text(encoding="utf-8"),
+        )
+    ]
+    # 0002: repair selector, post-backfill guard, insert/update triggers.
+    # 0003: replacement insert/update triggers after dropping the column.
+    assert len(ceiling_values) == 6
     ceilings = {int(value) for value in ceiling_values}
     assert ceilings == {MAX_ASSET_UPLOAD_BYTES}
 

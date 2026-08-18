@@ -191,6 +191,57 @@ def test_upload_contract_migration_rejects_an_incomplete_backfill() -> None:
         connection.close()
 
 
+def test_destination_type_removal_preserves_tasks_and_upload_enforcement() -> None:
+    connection = apply_baseline()
+    try:
+        seed_platform(connection)
+        add_speaker(connection, "a")
+        connection.execute(
+            """INSERT INTO speaker_tasks
+               (id,organization_id,event_id,event_speaker_id,task_type,title,
+                destination_type,state,version,created_at_ms,updated_at_ms,form_schema_json)
+               VALUES('existing-headshot','org-a','event-a','speaker-a','headshot','Upload',
+                      'headshot','open',3,1000,2000,?)""",
+            (task_form_schema_json("headshot"),),
+        )
+        for migration_name in (
+            "0002_speaker_task_upload_contract.sql",
+            "0003_remove_speaker_task_destination_type.sql",
+        ):
+            connection.executescript(
+                (BASELINE.parent / migration_name).read_text(encoding="utf-8")
+            )
+
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(speaker_tasks)")
+        }
+        assert "destination_type" not in columns
+        assert connection.execute(
+            """SELECT task_type,state,version,created_at_ms,updated_at_ms,form_schema_json
+               FROM speaker_tasks WHERE id='existing-headshot'"""
+        ).fetchone() == (
+            "headshot",
+            "open",
+            3,
+            1000,
+            2000,
+            task_form_schema_json("headshot"),
+        )
+        with pytest.raises(
+            sqlite3.IntegrityError, match="speaker task upload contract invalid"
+        ):
+            connection.execute(
+                """INSERT INTO speaker_tasks
+                   (id,organization_id,event_id,event_speaker_id,task_type,title,state,
+                    created_at_ms,updated_at_ms,form_schema_json)
+                   VALUES('invalid-headshot','org-a','event-a','speaker-a','headshot','Upload',
+                          'open',3000,3000,'{}')"""
+            )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()
+
+
 def test_database_rejects_speaker_tasks_that_bypass_the_upload_contract() -> None:
     connection = sqlite3.connect(":memory:")
     connection.execute("PRAGMA foreign_keys = ON")
@@ -204,31 +255,20 @@ def test_database_rejects_speaker_tasks_that_bypass_the_upload_contract() -> Non
         ):
             connection.execute(
                 """INSERT INTO speaker_tasks
-                   (id,organization_id,event_id,task_type,title,destination_type,state,
+                   (id,organization_id,event_id,task_type,title,state,
                     created_at_ms,updated_at_ms,form_schema_json)
-                   VALUES('bad-upload','org-a','event-a','headshot','Upload','headshot',
-                          'open',1000,1000,'{}')"""
+                   VALUES('bad-upload','org-a','event-a','headshot','Upload','open',
+                          1000,1000,'{}')"""
             )
         with pytest.raises(
             sqlite3.IntegrityError, match="speaker task upload contract invalid"
         ):
             connection.execute(
                 """INSERT INTO speaker_tasks
-                   (id,organization_id,event_id,task_type,title,destination_type,state,
+                   (id,organization_id,event_id,task_type,title,state,
                     created_at_ms,updated_at_ms,form_schema_json)
-                   VALUES('mismatch','org-a','event-a','headshot','Upload','slides',
-                          'open',1000,1000,?)""",
-                (task_form_schema_json("headshot"),),
-            )
-        with pytest.raises(
-            sqlite3.IntegrityError, match="speaker task upload contract invalid"
-        ):
-            connection.execute(
-                """INSERT INTO speaker_tasks
-                   (id,organization_id,event_id,task_type,title,destination_type,state,
-                    created_at_ms,updated_at_ms,form_schema_json)
-                   VALUES('profile-upload','org-a','event-a','profile','Profile','profile',
-                          'open',1000,1000,?)""",
+                   VALUES('profile-upload','org-a','event-a','profile','Profile','open',
+                          1000,1000,?)""",
                 (task_form_schema_json("headshot"),),
             )
     finally:

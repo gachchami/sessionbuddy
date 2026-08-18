@@ -81,9 +81,9 @@ def database() -> AsyncSqlite:
     connection.execute(
         """INSERT INTO speaker_tasks
            (id,organization_id,event_id,event_speaker_id,submission_id,task_type,title,
-            destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
+            state,created_at_ms,updated_at_ms,form_schema_json)
            VALUES ('task-a','org-a','event-a','speaker-a','submission-a','headshot',
-                   'Upload','headshot','open',1000,1000,?)""",
+                   'Upload','open',1000,1000,?)""",
         (task_form_schema_json("headshot"),),
     )
     return AsyncSqlite(connection)

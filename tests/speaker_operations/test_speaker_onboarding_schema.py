@@ -238,24 +238,24 @@ def test_task_state_constraints_and_tenant_safe_parentage(db: sqlite3.Connection
     db.execute(
         "INSERT INTO speaker_tasks "
         "(id,organization_id,event_id,event_speaker_id,submission_id,task_type,title,"
-        "destination_type,state,due_at_ms,created_at_ms,updated_at_ms) "
+        "state,due_at_ms,created_at_ms,updated_at_ms) "
         "VALUES ('task-a','org-a','event-a','speaker-a','submission-a','profile',"
-        "'Complete profile','profile','open',2000,1000,1000)"
+        "'Complete profile','open',2000,1000,1000)"
     )
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
             "INSERT INTO speaker_tasks "
-            "(id,organization_id,event_id,event_speaker_id,task_type,title,destination_type,"
+            "(id,organization_id,event_id,event_speaker_id,task_type,title,"
             "state,completed_at_ms,created_at_ms,updated_at_ms) "
             "VALUES ('invalid-state','org-a','event-a','speaker-a','profile','Profile',"
-            "'profile','open',1000,1000,1000)"
+            "'open',1000,1000,1000)"
         )
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
             "INSERT INTO speaker_tasks "
-            "(id,organization_id,event_id,event_speaker_id,task_type,title,destination_type,"
+            "(id,organization_id,event_id,event_speaker_id,task_type,title,"
             "state,created_at_ms,updated_at_ms) VALUES "
-            "('cross-task','org-b','event-b','speaker-a','profile','Profile','profile','open',1000,1000)"
+            "('cross-task','org-b','event-b','speaker-a','profile','Profile','open',1000,1000)"
         )
 
 

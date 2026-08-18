@@ -211,9 +211,9 @@ def _seed_speaker_with_two_submissions(
     connection.execute(
         """INSERT INTO speaker_tasks
            (id,organization_id,event_id,event_speaker_id,task_type,title,
-            destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
+            state,due_at_ms,created_at_ms,updated_at_ms)
            VALUES (?,?,?,?,'profile','Complete bio and profile',
-                   'profile','open',1900000000000,3000,3000)""",
+                   'open',1900000000000,3000,3000)""",
         (f"task-{speaker_id}", organization_id, event_id, speaker_id),
     )
     connection.commit()
@@ -238,9 +238,9 @@ async def test_organizer_headshot_upload_persists_preview_and_completes_task(
         connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,task_type,title,
-                destination_type,state,due_at_ms,created_at_ms,updated_at_ms,form_schema_json)
+                state,due_at_ms,created_at_ms,updated_at_ms,form_schema_json)
                VALUES ('headshot-task',?,?,?,'headshot','Upload your headshot',
-                       'headshot','open',1900000000000,3000,3000,?)""",
+                       'open',1900000000000,3000,3000,?)""",
             (organization_id, event_id, speaker_id, task_form_schema_json("headshot")),
         )
         connection.commit()
@@ -730,11 +730,11 @@ async def test_organizer_can_create_enforceable_file_request_task(
         )
 
         assert created.status_code == 201, created.text
-        task_type, destination_type, schema_json = connection.execute(
-            "SELECT task_type,destination_type,form_schema_json FROM speaker_tasks WHERE id=?",
+        task_type, schema_json = connection.execute(
+            "SELECT task_type,form_schema_json FROM speaker_tasks WHERE id=?",
             (created.json()["id"],),
         ).fetchone()
-        assert (task_type, destination_type) == ("slides", "slides")
+        assert task_type == "slides"
         assert json.loads(schema_json)["upload"] == {
             "enabled": True,
             "allowed_content_types": ["application/pdf"],
@@ -803,9 +803,9 @@ async def test_organizer_headshot_request_reuses_existing_system_task(
         connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                title,destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
+                title,state,created_at_ms,updated_at_ms,form_schema_json)
                VALUES('system-headshot',?,?,?,'submission-accepted','headshot',
-                      'Upload your headshot','headshot','open',1,1,?)""",
+                      'Upload your headshot','open',1,1,?)""",
             (organization_id, event_id, speaker_id, task_form_schema_json("headshot")),
         )
         connection.commit()

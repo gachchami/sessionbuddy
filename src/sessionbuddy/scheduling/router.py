@@ -711,9 +711,9 @@ async def create_organizer_session(
                     db.prepare(
                         """INSERT INTO speaker_tasks
                            (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
-                            submission_id,task_type,title,help_text,destination_type,state,
+                            submission_id,task_type,title,help_text,state,
                             due_at_ms,completed_at_ms,created_at_ms,updated_at_ms,form_schema_json)
-                           SELECT ?1,?2,?3,?4,NULL,NULL,?5,?6,'',?5,
+                           SELECT ?1,?2,?3,?4,NULL,NULL,?5,?6,'',
                              CASE
                                WHEN ?5='profile' AND NULLIF(TRIM(p.biography),'') IS NOT NULL
                                  THEN 'completed'

@@ -549,10 +549,10 @@ async def test_reminder_consumer_materializes_due_version_once_and_marks_dispatc
     add_speaker(connection, "a")
     connection.execute(
         """INSERT INTO speaker_tasks
-           (id,organization_id,event_id,event_speaker_id,task_type,title,destination_type,
+           (id,organization_id,event_id,event_speaker_id,task_type,title,
             state,due_at_ms,created_at_ms,updated_at_ms)
            VALUES ('task','org-a','event-a','speaker-a','profile','Complete profile',
-                   'profile','open',2000,1,1)"""
+                   'open',2000,1,1)"""
     )
     connection.execute(
         """INSERT INTO communication_templates VALUES

@@ -101,9 +101,9 @@ def test_reminder_recompute_slot_is_unique_and_due_query_indexed(db) -> None:
     )
     db.execute(
         """INSERT INTO speaker_tasks
-           (id,organization_id,event_id,event_speaker_id,task_type,title,destination_type,
+           (id,organization_id,event_id,event_speaker_id,task_type,title,
             state,created_at_ms,updated_at_ms)
-           VALUES ('task','org','event','speaker','profile','Profile','profile','open',1,1)"""
+           VALUES ('task','org','event','speaker','profile','Profile','open',1,1)"""
     )
     db.execute(
         """INSERT INTO communication_templates VALUES

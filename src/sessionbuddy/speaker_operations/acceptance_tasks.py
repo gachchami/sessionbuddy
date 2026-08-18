@@ -121,9 +121,9 @@ def append_acceptance_speaker_tasks(
             db.prepare(
                 """INSERT INTO speaker_tasks
                    (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                    title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms,
+                    title,help_text,state,due_at_ms,created_at_ms,updated_at_ms,
                     form_schema_json)
-                   SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10,?11
+                   SELECT ?1,?2,?3,?4,?5,?6,?7,?8,'open',?9,?10,?10,?11
                    WHERE NOT EXISTS (
                      SELECT 1 FROM speaker_tasks existing
                       WHERE existing.organization_id=?2 AND existing.event_id=?3

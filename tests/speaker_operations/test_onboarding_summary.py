@@ -53,9 +53,9 @@ def _seed_tasks(connection: sqlite3.Connection, organization_id: str, event_id: 
         connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,task_type,title,
-                destination_type,state,due_at_ms,completed_at_ms,waived_at_ms,
+                state,due_at_ms,completed_at_ms,waived_at_ms,
                 created_at_ms,updated_at_ms)
-               VALUES (?,?,?,?,'custom',?,'custom',?,?,?,?,3000,3000)""",
+               VALUES (?,?,?,?,'custom',?,?,?,?,?,3000,3000)""",
             (
                 task_id,
                 organization_id,
