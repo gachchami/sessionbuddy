@@ -3,7 +3,11 @@
   "name": "sessionbuddy",
   "main": "src/entry.py",
   "compatibility_date": "2026-08-01",
-  "compatibility_flags": ["python_workers", "python_workflows"],
+  "compatibility_flags": [
+    "python_workers",
+    "python_workflows",
+    "disable_python_external_sdk"
+  ],
   "placement": {
     "mode": "smart"
   },
