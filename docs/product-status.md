@@ -250,6 +250,13 @@ each event without loading cover imagery; portfolios above eight memberships
 defer inactive event detail until the speaker expands it. The speaker portal's
 event response therefore exposes additive nullable `accent_color` and `logo_url`
 fields; it does not perform a public branding fetch per membership.
+The portal projects active accepted sessions from program participation as well
+as CFP history. Organizer-created sessions appear independently; proposal-backed
+sessions enrich their existing proposal row. Speakers see only approved session
+content and slots from the latest published schedule, never organizer working
+copy or an unpublished agenda. When newer content is still in draft, the portal
+keeps the last approved copy visible while truthfully marking the content as
+being finalised.
 Post-acceptance
 participation is tracked independently from proposal selection, and organizers
 can persist awaiting-confirmation, confirmed, or declined status. Organizers can

@@ -959,6 +959,23 @@ async def test_password_sign_in_leaves_invitation_pending_until_explicit_accepta
             json={"email": "speaker@example.com", "role": "speaker"},
         )
         assert invitation.status_code == 201
+        connection.execute(
+            """INSERT INTO accepted_sessions
+               (id,organization_id,event_id,source_type,organizer_title,
+                organizer_abstract,created_at_ms)
+               VALUES('explicit-organizer-session',?,?,'organizer_created',
+                      'Directly assigned session','Organizer working abstract',1000)""",
+            (organization_id, event_id),
+        )
+        connection.execute(
+            """INSERT INTO accepted_session_participants
+               (id,organization_id,event_id,accepted_session_id,pending_invitation_id,
+                display_name_snapshot,created_at_ms,updated_at_ms)
+               VALUES('explicit-pending-participant',?,?,'explicit-organizer-session',?,
+                      'Invited Speaker',1000,1000)""",
+            (organization_id, event_id, invitation.json()["id"]),
+        )
+        connection.commit()
         declined_invitation = await admin.post(
             f"/api/v1/admin/events/{event_id}/invitations",
             headers=admin_headers,
@@ -1077,7 +1094,20 @@ async def test_password_sign_in_leaves_invitation_pending_until_explicit_accepta
             },
         )
         assert replay.status_code == 200
-        assert (await speaker.get("/api/v1/speaker/portal")).status_code == 200
+        portal = await speaker.get("/api/v1/speaker/portal")
+        assert portal.status_code == 200
+        assert portal.json()["sessions"] == [
+            {
+                "id": "explicit-organizer-session",
+                "title": "Directly assigned session",
+                "abstract": None,
+                "source": "organizer_created",
+                "submission_id": None,
+                "participant_role": "speaker",
+                "content_status": "draft",
+                "schedule": None,
+            }
+        ]
         organizer_acceptance = await speaker.post(
             f"/api/v1/account/invitations/{organizer_invitation.json()['id']}/accept",
             headers={

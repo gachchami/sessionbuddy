@@ -490,13 +490,62 @@
     return fields;
   }
 
-  function renderSubmissions(submissions, list, timezone) {
+  function participantRoleLabel(role) {
+    const roles = {
+      primary: "Primary speaker", speaker: "Speaker", co_speaker: "Co-speaker",
+      co_author: "Co-author", moderator: "Moderator", panelist: "Panelist",
+      other: "Additional participant"
+    };
+    return roles[role] || "Speaker";
+  }
+
+  function sessionScheduleLabel(session, timezone) {
+    if (!session.schedule) return "Not yet scheduled";
+    const place = [session.schedule.room_name, session.schedule.track_name].filter(Boolean).join(" · ");
+    const timing = `${formatDate(session.schedule.starts_at_ms, timezone)} – ${formatDate(session.schedule.ends_at_ms, timezone)} · Event time (${timezone})`;
+    return place ? `${timing} · ${place}` : timing;
+  }
+
+  function appendSessionDetails(container, session, timezone) {
+    if (!session) return;
+    container.append(
+      make("small", `Your role: ${participantRoleLabel(session.participant_role)}`),
+      make("small", sessionScheduleLabel(session, timezone))
+    );
+    if (session.abstract) {
+      container.append(make("p", session.abstract, "proposal-summary-row__abstract"));
+    }
+    if (session.content_status === "draft") {
+      container.append(make("small", "Content is being finalised."));
+    }
+  }
+
+  function renderSessions(sessions, list, timezone) {
+    list.replaceChildren();
+    if (!sessions.length) {
+      list.append(make("li", "No sessions assigned yet.", "empty"));
+      return;
+    }
+    sessions.forEach((session) => {
+      const item = make("li", undefined, "proposal-summary-row");
+      const card = make("div", undefined, "proposal-summary-row__link is-read-only");
+      const identity = make("span", undefined, "proposal-summary-row__identity");
+      identity.append(make("strong", session.title));
+      appendSessionDetails(identity, session, timezone);
+      card.append(identity, make("span", "Session", "state-badge success"));
+      item.append(card);
+      list.append(item);
+    });
+  }
+
+  function renderSubmissions(submissions, sessions, list, timezone) {
     list.replaceChildren();
     if (!submissions.length) {
       list.append(make("li", "No proposals are connected to this account yet.", "empty"));
       return;
     }
     submissions.forEach((submission) => {
+      const linkedSession = sessions.find((session) => session.submission_id === submission.id) || null;
       const item = make("li", undefined, "proposal-summary-row");
       const isPrimarySubmitter = submission.is_primary_submitter !== false;
       const link = make(isPrimarySubmitter ? "a" : "div", undefined, "proposal-summary-row__link");
@@ -518,12 +567,9 @@
         make("small", `Submitted ${submitted} · Receipt ${submission.id.slice(0, 8)}`)
       );
       if (!isPrimarySubmitter) {
-        const roles = {
-          co_speaker: "Co-speaker", co_author: "Co-author", moderator: "Moderator",
-          panelist: "Panelist", other: "Additional participant"
-        };
-        identity.append(make("small", `Your role: ${roles[submission.participant_role] || "Additional participant"}`));
+        identity.append(make("small", `Your role: ${participantRoleLabel(submission.participant_role)}`));
       }
+      appendSessionDetails(identity, linkedSession, timezone);
       link.append(
         identity,
         make("span", statusLabel, `state-badge${tone ? ` ${tone}` : ""}`)
@@ -1206,6 +1252,7 @@
     );
     copy.append(title, meta);
     const submissions = portal?.submissions || [];
+    const sessions = portal?.sessions || [];
     identity.append(mark, copy);
     heading.append(identity);
     if (!active && state.eventOrder.length > COMPACT_EVENT_THRESHOLD) {
@@ -1236,18 +1283,28 @@
     const assets = entry.assets || [];
     const activities = portal.activities || [];
     const tasks = portal.tasks || [];
-    if (!submissions.length && !tasks.length && !notifications.length
+    if (!submissions.length && !sessions.length && !tasks.length && !notifications.length
         && !resources.length && !assets.length && !activities.length) {
       section.classList.add("is-empty-event");
       section.append(make("p", "No proposals or actions for this event.", "event-group__empty"));
       return section;
     }
 
+    const independentSessions = sessions.filter((session) => !session.submission_id);
+    if (independentSessions.length || !sessions.length) {
+      const sessionBlock = make("section", undefined, "event-group__primary");
+      sessionBlock.append(subHeading("Your sessions", independentSessions.length));
+      const assignedSessionList = make("ul", undefined, "item-list submission-list");
+      renderSessions(independentSessions, assignedSessionList, event.time_zone);
+      sessionBlock.append(assignedSessionList);
+      section.append(sessionBlock);
+    }
+
     const proposalBlock = make("section", undefined, "event-group__primary");
     proposalBlock.append(subHeading("Your proposals", submissions.length));
     const sessionList = make("ul", undefined, "item-list submission-list");
     sessionList.dataset.eventId = event.id;
-    renderSubmissions(submissions, sessionList, event.time_zone);
+    renderSubmissions(submissions, sessions, sessionList, event.time_zone);
     proposalBlock.append(sessionList);
     section.append(proposalBlock);
 

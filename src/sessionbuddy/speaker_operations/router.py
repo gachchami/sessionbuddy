@@ -79,6 +79,8 @@ from .models import (
     SpeakerOpenCallView,
     SpeakerPortalView,
     SpeakerProfileView,
+    SpeakerSessionScheduleView,
+    SpeakerSessionView,
     SpeakerSubmissionView,
     SpeakerTaskResponseCreate,
     SpeakerTaskResponseView,
@@ -88,6 +90,50 @@ from .models import (
     UploadCompletionView,
 )
 from .scanner_adapter import SignedScannerAdapter
+
+SPEAKER_SESSION_PROJECTION_SQL = """SELECT ac.id,
+          CASE WHEN approved.id IS NOT NULL THEN approved.title
+               ELSE COALESCE(ac.organizer_title,s.proposal_title) END AS title,
+          CASE WHEN approved.id IS NOT NULL THEN approved.abstract ELSE NULL END AS abstract,
+          ac.source_type,ac.submission_id,
+          CASE WHEN ac.source_type='organizer_created' THEN 'speaker'
+               ELSE COALESCE(ss.role,'speaker') END AS participant_role,
+          ac.content_status,
+          ai.starts_at_ms,ai.ends_at_ms,r.name AS room_name,t.name AS track_name
+   FROM accepted_session_participants participant
+   JOIN accepted_sessions ac
+     ON ac.organization_id=participant.organization_id
+    AND ac.event_id=participant.event_id
+    AND ac.id=participant.accepted_session_id
+   LEFT JOIN submissions s
+     ON s.organization_id=ac.organization_id AND s.event_id=ac.event_id
+    AND s.id=ac.submission_id
+   LEFT JOIN submission_speakers ss
+     ON ss.organization_id=ac.organization_id AND ss.event_id=ac.event_id
+    AND ss.submission_id=ac.submission_id
+    AND ss.event_speaker_id=participant.event_speaker_id
+   LEFT JOIN session_content_versions approved
+     ON approved.id=(SELECT version.id FROM session_content_versions version
+                     WHERE version.organization_id=ac.organization_id
+                       AND version.event_id=ac.event_id
+                       AND version.accepted_session_id=ac.id
+                       AND version.content_status='approved'
+                     ORDER BY version.version DESC,version.id DESC LIMIT 1)
+   LEFT JOIN agenda_items ai
+     ON ai.organization_id=ac.organization_id AND ai.event_id=ac.event_id
+    AND ai.accepted_session_id=ac.id
+    AND ai.revision_id=(SELECT revision.id FROM schedule_revisions revision
+                        WHERE revision.organization_id=ac.organization_id
+                          AND revision.event_id=ac.event_id
+                          AND revision.status='published'
+                        ORDER BY revision.revision_number DESC LIMIT 1)
+   LEFT JOIN event_rooms r
+     ON r.organization_id=ai.organization_id AND r.event_id=ai.event_id AND r.id=ai.room_id
+   LEFT JOIN event_tracks t
+     ON t.organization_id=ai.organization_id AND t.event_id=ai.event_id AND t.id=ai.track_id
+   WHERE participant.organization_id=?1 AND participant.event_id=?2
+     AND participant.event_speaker_id=?3 AND ac.lifecycle_status='active'
+   ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 100"""
 
 speaker_operations_router = APIRouter()
 
@@ -787,6 +833,14 @@ async def get_speaker_portal(
             ).bind(row["organization_id"], row["event_id"], row["event_speaker_id"]),
         )
     )
+    sessions = result_rows(
+        await _timed_all(
+            request,
+            db.prepare(SPEAKER_SESSION_PROJECTION_SQL).bind(
+                row["organization_id"], row["event_id"], row["event_speaker_id"]
+            ),
+        )
+    )
     submissions = result_rows(
         await _timed_all(
             request,
@@ -907,6 +961,36 @@ async def get_speaker_portal(
         profile=_profile(row),
         tasks=task_views,
         asset_upload_rules=asset_upload_rule_views(),
+        sessions=[
+            SpeakerSessionView(
+                id=str(session["id"]),
+                title=str(session["title"]),
+                abstract=(str(session["abstract"]) if session["abstract"] is not None else None),
+                source=str(session["source_type"]),
+                submission_id=(
+                    str(session["submission_id"])
+                    if session["submission_id"] is not None
+                    else None
+                ),
+                participant_role=str(session["participant_role"]),
+                content_status=str(session["content_status"]),
+                schedule=(
+                    SpeakerSessionScheduleView(
+                        starts_at_ms=int(session["starts_at_ms"]),
+                        ends_at_ms=int(session["ends_at_ms"]),
+                        room_name=str(session["room_name"]),
+                        track_name=(
+                            str(session["track_name"])
+                            if session["track_name"] is not None
+                            else None
+                        ),
+                    )
+                    if session["starts_at_ms"] is not None
+                    else None
+                ),
+            )
+            for session in sessions
+        ],
         submissions=[
             SpeakerSubmissionView(
                 id=str(submission["id"]),

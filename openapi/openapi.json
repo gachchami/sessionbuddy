@@ -11730,6 +11730,13 @@
             "title": "Recipient State",
             "type": "string"
           },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SpeakerSessionView"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
           "submissions": {
             "items": {
               "$ref": "#/components/schemas/SpeakerSubmissionView"
@@ -11998,6 +12005,130 @@
           "edit_path"
         ],
         "title": "SpeakerProposalDraftSummary",
+        "type": "object"
+      },
+      "SpeakerSessionScheduleView": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at_ms": {
+            "title": "Ends At Ms",
+            "type": "integer"
+          },
+          "room_name": {
+            "title": "Room Name",
+            "type": "string"
+          },
+          "schedule_state": {
+            "const": "published",
+            "default": "published",
+            "title": "Schedule State",
+            "type": "string"
+          },
+          "starts_at_ms": {
+            "title": "Starts At Ms",
+            "type": "integer"
+          },
+          "track_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Name"
+          }
+        },
+        "required": [
+          "starts_at_ms",
+          "ends_at_ms",
+          "room_name"
+        ],
+        "title": "SpeakerSessionScheduleView",
+        "type": "object"
+      },
+      "SpeakerSessionView": {
+        "additionalProperties": false,
+        "properties": {
+          "abstract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abstract"
+          },
+          "content_status": {
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "title": "Content Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "participant_role": {
+            "enum": [
+              "primary",
+              "co_speaker",
+              "co_author",
+              "moderator",
+              "panelist",
+              "other",
+              "speaker"
+            ],
+            "title": "Participant Role",
+            "type": "string"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerSessionScheduleView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "organizer_created",
+              "accepted_proposal"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "source",
+          "participant_role",
+          "content_status"
+        ],
+        "title": "SpeakerSessionView",
         "type": "object"
       },
       "SpeakerSubmissionView": {

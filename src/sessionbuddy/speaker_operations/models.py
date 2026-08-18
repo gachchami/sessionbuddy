@@ -137,6 +137,31 @@ class SpeakerNotificationView(BaseModel):
     links: list[str] = Field(default_factory=list)
 
 
+class SpeakerSessionScheduleView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    starts_at_ms: int
+    ends_at_ms: int
+    room_name: str
+    track_name: str | None = None
+    schedule_state: Literal["published"] = "published"
+
+
+class SpeakerSessionView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    abstract: str | None = None
+    source: Literal["organizer_created", "accepted_proposal"]
+    submission_id: str | None = None
+    participant_role: Literal[
+        "primary", "co_speaker", "co_author", "moderator", "panelist", "other", "speaker"
+    ]
+    content_status: Literal["draft", "approved"]
+    schedule: SpeakerSessionScheduleView | None = None
+
+
 class SpeakerPortalView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -149,6 +174,7 @@ class SpeakerPortalView(BaseModel):
     profile: SpeakerProfileView
     tasks: list[SpeakerTaskView]
     asset_upload_rules: dict[str, dict[str, object]]
+    sessions: list[SpeakerSessionView] = Field(default_factory=list)
     submissions: list[SpeakerSubmissionView]
     notifications: list[SpeakerNotificationView] = Field(default_factory=list)
     open_call: SpeakerOpenCallView | None = None

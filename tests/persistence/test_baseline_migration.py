@@ -84,7 +84,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 117, "table": 83, "trigger": 117}
+        assert object_counts == {"index": 118, "table": 83, "trigger": 117}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
@@ -114,6 +114,10 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
         assert connection.execute(
             "SELECT declined_at_ms FROM identity_invitations LIMIT 0"
         ).description is not None
+        assert connection.execute(
+            """SELECT sql FROM sqlite_master WHERE type='index'
+               AND name='idx_accepted_session_participants_speaker'"""
+        ).fetchone() is not None
     finally:
         connection.close()
 
@@ -163,6 +167,57 @@ def test_invitation_decline_migration_preserves_referenced_pending_rows() -> Non
                WHERE id='invite-a'"""
         )
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()
+
+
+def test_speaker_session_lookup_migration_upgrades_0004_without_data_loss() -> None:
+    connection = apply_baseline()
+    try:
+        seed_platform(connection)
+        connection.commit()
+        for migration_name in (
+            "0002_speaker_task_upload_contract.sql",
+            "0003_remove_speaker_task_destination_type.sql",
+            "0004_identity_invitation_decline.sql",
+        ):
+            execute_migration_in_transaction(connection, BASELINE.parent / migration_name)
+        connection.execute(
+            """INSERT INTO accepted_sessions
+               (id,organization_id,event_id,source_type,organizer_title,
+                organizer_abstract,created_at_ms)
+               VALUES('session-a','org-a','event-a','organizer_created',
+                      'Direct session','Stable abstract',1000)"""
+        )
+        add_speaker(connection, "a")
+        connection.execute(
+            """INSERT INTO accepted_session_participants
+               (id,organization_id,event_id,accepted_session_id,event_speaker_id,
+                display_name_snapshot,created_at_ms,updated_at_ms)
+               VALUES('participant-a','org-a','event-a','session-a','speaker-a',
+                      'Speaker A',1000,1000)"""
+        )
+        connection.commit()
+
+        execute_migration_in_transaction(
+            connection,
+            BASELINE.parent / "0005_speaker_session_participant_lookup.sql",
+        )
+
+        assert connection.execute(
+            "SELECT accepted_session_id FROM accepted_session_participants"
+        ).fetchall() == [("session-a",)]
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        plan = " ".join(
+            str(row[3])
+            for row in connection.execute(
+                """EXPLAIN QUERY PLAN
+                   SELECT accepted_session_id FROM accepted_session_participants
+                   WHERE organization_id='org-a' AND event_id='event-a'
+                     AND event_speaker_id='speaker-a'"""
+            )
+        )
+        assert "idx_accepted_session_participants_speaker" in plan
     finally:
         connection.close()
 

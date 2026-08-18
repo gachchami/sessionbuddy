@@ -264,6 +264,76 @@ test.describe("speaker portal responsive design", () => {
     await expect(proposal.locator(".proposal-summary-row__arrow")).toHaveCount(0);
   });
 
+  test("program sessions stay distinct from proposal history", async ({ page }) => {
+    const sessionPortal = {
+      ...portal,
+      submissions: [{ ...portal.submissions[0], status: "accepted" }],
+      sessions: [
+        {
+          id: "proposal-session",
+          title: portal.submissions[0].proposal_title,
+          abstract: "The approved program abstract.",
+          source: "accepted_proposal",
+          submission_id: portal.submissions[0].id,
+          participant_role: "co_speaker",
+          content_status: "approved",
+          schedule: null,
+        },
+        {
+          id: "organizer-session",
+          title: "Opening the model evaluation workshop",
+          abstract: null,
+          source: "organizer_created",
+          submission_id: null,
+          participant_role: "speaker",
+          content_status: "draft",
+          schedule: {
+            starts_at_ms: Date.UTC(2026, 9, 12, 14),
+            ends_at_ms: Date.UTC(2026, 9, 12, 15),
+            room_name: "Workshop room",
+            track_name: "Applied systems",
+            schedule_state: "published",
+          },
+        },
+      ],
+    };
+    await servePortal(page, sessionPortal);
+    await page.goto("/speaker");
+
+    const event = page.locator('.event-group[data-event-id="event-responsive"]');
+    await expect(event.getByRole("heading", { name: "Your sessions" })).toBeVisible();
+    await expect(event.getByText("Opening the model evaluation workshop", { exact: true })).toHaveCount(1);
+    await expect(event.getByText(portal.submissions[0].proposal_title, { exact: true })).toHaveCount(1);
+    await expect(event.getByText("Your role: Co-speaker", { exact: true })).toBeVisible();
+    await expect(event.getByText("Content is being finalised.", { exact: true })).toBeVisible();
+    await expect(event.getByText("Not yet scheduled", { exact: true })).toHaveCount(1);
+    await expect(event.getByText(/Event time \(America\/New_York\).*Workshop room.*Applied systems/)).toBeVisible();
+    await expect(event.locator(".proposal-summary-row")).toHaveCount(2);
+  });
+
+  test("proposal-backed sessions do not create a second sessions block", async ({ page }) => {
+    await servePortal(page, {
+      ...portal,
+      submissions: [{ ...portal.submissions[0], status: "accepted" }],
+      sessions: [{
+        id: "proposal-session",
+        title: portal.submissions[0].proposal_title,
+        abstract: "Approved program copy.",
+        source: "accepted_proposal",
+        submission_id: portal.submissions[0].id,
+        participant_role: "primary",
+        content_status: "approved",
+        schedule: null,
+      }],
+    });
+    await page.goto("/speaker");
+
+    const event = page.locator('.event-group[data-event-id="event-responsive"]');
+    await expect(event.getByRole("heading", { name: "Your sessions" })).toHaveCount(0);
+    await expect(event.locator(".proposal-summary-row")).toHaveCount(1);
+    await expect(event.getByText("Approved program copy.", { exact: true })).toBeVisible();
+  });
+
   test("saved drafts remain visible alongside submitted proposals", async ({ page }) => {
     await servePortal(page);
     await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
