@@ -30,7 +30,12 @@ from .models import (
     SpeakerMessageSendRequest,
 )
 from .presentation import message_category, message_preview
-from .rendering import SPEAKER_MESSAGE_VARIABLES, render_template, validate_template
+from .rendering import (
+    SPEAKER_MESSAGE_VARIABLES,
+    TemplateVariableError,
+    render_template,
+    validate_template,
+)
 
 _INCOMPATIBLE_RECIPIENT_NAME_LIMIT = 10
 _STATUS_CURSOR = SignedCursorContract(
@@ -287,6 +292,22 @@ class D1CommunicationsService:
             required = validate_template(
                 body.subject, allowed_variables=SPEAKER_MESSAGE_VARIABLES
             ) | validate_template(body.body_text, allowed_variables=SPEAKER_MESSAGE_VARIABLES)
+        except TemplateVariableError as exc:
+            suggestion = next(iter(exc.suggestions.items()), None)
+            metadata = (
+                {
+                    "template_suggestion": {
+                        "source": suggestion[0],
+                        "replacement": suggestion[1],
+                    }
+                }
+                if suggestion
+                else None
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={"message": str(exc), "metadata": metadata},
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         recipients: list[RecipientPreview] = []

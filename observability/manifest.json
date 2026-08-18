@@ -117,6 +117,19 @@
         "p95_ms": 300
       }
     },
+    "GET /api/v1/account/invitations": {
+      "benchmark": "identity-account-invitations",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 300
+      }
+    },
     "GET /api/v1/account/profile": {
       "benchmark": "identity-account-profile",
       "dashboards": [
@@ -1131,6 +1144,32 @@
       "slo": {
         "error_rate_max": 0.001,
         "p95_ms": 800
+      }
+    },
+    "POST /api/v1/account/invitations/{invitation_id}/accept": {
+      "benchmark": "identity-accept-account-invitation",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 700
+      }
+    },
+    "POST /api/v1/account/invitations/{invitation_id}/decline": {
+      "benchmark": "identity-decline-account-invitation",
+      "dashboards": [
+        "release-health",
+        "api-explorer"
+      ],
+      "owner": "identity",
+      "runbook": "docs/debugging-runbook.md#identity",
+      "slo": {
+        "error_rate_max": 0.001,
+        "p95_ms": 500
       }
     },
     "POST /api/v1/admin/evaluation-assignments/{assignment_id}/reassign": {

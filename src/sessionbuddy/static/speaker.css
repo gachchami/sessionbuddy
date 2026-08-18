@@ -406,6 +406,12 @@ body.speaker-portal-page {
 .speaker-call-card h3,.speaker-call-card p { margin: 0; }
 .speaker-call-card__state { color: #5e4a91; font-size: .75rem; font-weight: 800; text-transform: uppercase; }
 .speaker-call-card__action { width: fit-content; margin-top: .45rem; font-weight: 800; }
+.speaker-invitation-list { display: grid; gap: .75rem; margin-top: 1rem; }
+.speaker-invitation { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1rem; border-top: 1px solid var(--speaker-rule); }
+.speaker-invitation__copy { min-width: 0; }
+.speaker-invitation__copy h2,.speaker-invitation__copy p { margin: 0; overflow-wrap: anywhere; }
+.speaker-invitation__copy p { margin-top: .25rem; }
+.speaker-invitation__actions { flex: 0 0 auto; }
 
 @media (max-width: 48rem) {
   main { padding-top: .5rem; }
@@ -430,6 +436,9 @@ body.speaker-portal-page {
   .notification-list time { grid-column: 1; grid-row: auto; }
   .notification-list summary::after { grid-column: 1; grid-row: 1 / span 2; justify-self: end; }
   .notification-summary__copy { padding-right: 1.6rem; }
+  .speaker-invitation { align-items: stretch; flex-direction: column; }
+  .speaker-invitation__actions { width: 100%; }
+  .speaker-invitation__actions button { flex: 1 1 10rem; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }

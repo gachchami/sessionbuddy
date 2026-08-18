@@ -272,7 +272,10 @@ def test_source_wiring_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() 
     assert "Accepted speaker" in messages
     assert 'byId("recipient-status")' in messages
     assert 'showComposeError("Select at least one recipient.")' in messages
-    assert "showComposeError(window.SessionBuddyApi.message(error))" in messages
+    assert (
+        "showComposeError(window.SessionBuddyApi.message(error), error.suggestion)"
+        in messages
+    )
     assert 'aria-describedby="message-compose-error"' in message_page
 
 

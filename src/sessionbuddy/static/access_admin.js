@@ -55,7 +55,13 @@
     status.setAttribute("role", "cell");
     status.dataset.label = "Eligibility";
     status.className = `state-badge ${statusTone(invitation.status)}`.trim();
-    status.textContent = invitation.status === "accepted" ? "Eligible" : "Invitation pending";
+    status.textContent = ({
+      accepted: "Eligible",
+      declined: "Declined by invitee",
+      revoked: "Invitation revoked",
+      expired: "Invitation expired",
+      pending: "Invitation pending"
+    })[invitation.status] || "Invitation unavailable";
     const actions = document.createElement("div");
     actions.setAttribute("role", "cell");
     actions.dataset.label = "Actions";

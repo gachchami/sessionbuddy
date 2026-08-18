@@ -6,9 +6,9 @@
   <title>Event messages · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=90">
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=27">
-  <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=34" defer></script>
-  <script src="/admin/speakers/assets/messages.js?v=e72e7a4bb506" defer></script>
+  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=35" defer></script>
+  <script src="/admin/speakers/assets/messages.js?v=aca154c88fda" defer></script>
 </head>
 <body class="app-body workflow-page workflow-page--messages communication-workspace-page">
   <a class="skip-link" href="#main">Skip to event messages</a>
@@ -26,7 +26,7 @@
         <div class="section-heading"><div><h2 id="compose-title">Compose</h2></div></div>
         <form id="message-form">
           <label>Template<select id="message-template"><option value="">Write from scratch</option><option value="invitation">Invitation reminder (invited people)</option><option value="welcome">Speaker welcome (active speakers)</option><option value="deadline">Deadline reminder (active speakers)</option></select></label>
-          <div class="personalization-toolbar" aria-label="Insert a personalized field"><span>Insert field</span><button class="secondary" type="button" data-merge-field="{{speaker.name}}">Speaker name</button><button class="secondary" type="button" data-merge-field="{{submission.title}}">Session title</button><button class="secondary" type="button" data-merge-field="{{event.name}}">Event name</button><button class="secondary" type="button" data-merge-field="{{portal.link}}">Portal link</button></div>
+          <div class="personalization-toolbar" aria-label="Insert a personalized field"><span>Insert field</span><button class="secondary" type="button" data-merge-field="{{speaker.name}}">Speaker name</button><button class="secondary" type="button" data-merge-field="{{speaker.first_name}}">First name</button><button class="secondary" type="button" data-merge-field="{{submission.title}}">Session title</button><button class="secondary" type="button" data-merge-field="{{event.name}}">Event name</button><button class="secondary" type="button" data-merge-field="{{portal.link}}">Portal link</button></div>
           <p class="personalization-note">Each selected speaker will see their own details. Preview before sending.</p>
           <label>Subject<input name="subject" maxlength="200" required></label>
           <label>Message<textarea name="body_text" rows="8" maxlength="10000" required></textarea></label>

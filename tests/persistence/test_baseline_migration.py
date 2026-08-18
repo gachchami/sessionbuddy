@@ -18,6 +18,28 @@ def apply_baseline(path: Path = BASELINE) -> sqlite3.Connection:
     return connection
 
 
+def execute_migration_in_transaction(
+    connection: sqlite3.Connection, migration: Path
+) -> None:
+    """Exercise D1's migration shape without executescript's implicit commit."""
+    statements: list[str] = []
+    buffered = ""
+    for line in migration.read_text(encoding="utf-8").splitlines(keepends=True):
+        buffered += line
+        if sqlite3.complete_statement(buffered):
+            statements.append(buffered)
+            buffered = ""
+    assert not buffered.strip()
+    connection.execute("BEGIN")
+    try:
+        for statement in statements:
+            connection.execute(statement)
+    except BaseException:
+        connection.rollback()
+        raise
+    connection.commit()
+
+
 def test_canonical_baseline_remains_immutable_and_first() -> None:
     assert sorted(BASELINE.parent.glob("*.sql"))[0] == BASELINE
     validate(BASELINE)
@@ -62,7 +84,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 117, "table": 82, "trigger": 115}
+        assert object_counts == {"index": 117, "table": 83, "trigger": 117}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
@@ -89,6 +111,58 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
             "SELECT id,round_id,applied_changes,created_at_ms "
             "FROM evaluation_round_write_guards LIMIT 0"
         ).description is not None
+        assert connection.execute(
+            "SELECT declined_at_ms FROM identity_invitations LIMIT 0"
+        ).description is not None
+    finally:
+        connection.close()
+
+
+def test_invitation_decline_migration_preserves_referenced_pending_rows() -> None:
+    connection = apply_baseline()
+    try:
+        seed_platform(connection)
+        for migration_name in (
+            "0002_speaker_task_upload_contract.sql",
+            "0003_remove_speaker_task_destination_type.sql",
+        ):
+            connection.executescript(
+                (BASELINE.parent / migration_name).read_text(encoding="utf-8")
+            )
+        connection.execute(
+            """INSERT INTO identity_invitations
+               (id,organization_id,event_id,normalized_email,email,role,status,
+                invited_by_user_id,expires_at_ms,created_at_ms,updated_at_ms)
+               VALUES('invite-a','org-a','event-a','guest@example.test',
+                      'guest@example.test','speaker','pending','user-a',5000,1000,1000)"""
+        )
+        connection.execute(
+            """INSERT INTO speaker_tasks
+               (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
+                task_type,title,state,form_schema_json,created_at_ms,updated_at_ms)
+               VALUES('pending-task','org-a','event-a',NULL,'invite-a','profile',
+                      'Complete profile','open','{}',1000,1000)"""
+        )
+        connection.commit()
+
+        execute_migration_in_transaction(
+            connection,
+            BASELINE.parent / "0004_identity_invitation_decline.sql",
+        )
+
+        assert connection.execute(
+            "SELECT id,status,declined_at_ms FROM identity_invitations"
+        ).fetchall() == [("invite-a", "pending", None)]
+        assert connection.execute(
+            "SELECT pending_invitation_id FROM speaker_tasks WHERE id='pending-task'"
+        ).fetchone() == ("invite-a",)
+        connection.execute(
+            """UPDATE identity_invitations
+               SET status='revoked',declined_at_ms=2000,revoked_at_ms=2000,
+                   updated_at_ms=2000
+               WHERE id='invite-a'"""
+        )
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         connection.close()
 

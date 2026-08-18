@@ -15,7 +15,7 @@
   };
 
   class ApiError extends Error {
-    constructor(message, { status = 0, code = "request_failed", requestId = "", retryable = false, field = "", details = [], cause } = {}) {
+    constructor(message, { status = 0, code = "request_failed", requestId = "", retryable = false, field = "", details = [], suggestion = null, cause } = {}) {
       super(message, cause ? { cause } : undefined);
       this.name = "ApiError";
       this.status = status;
@@ -24,6 +24,7 @@
       this.retryable = retryable;
       this.field = field;
       this.details = details;
+      this.suggestion = suggestion;
     }
   }
 
@@ -74,7 +75,11 @@
         requestId: bodyRequestId,
         retryable: response.status === 408 || response.status === 429 || response.status >= 500,
         field: typeof body?.error?.field === "string" ? body.error.field : "",
-        details: Array.isArray(body?.error?.metadata?.details) ? body.error.metadata.details : []
+        details: Array.isArray(body?.error?.metadata?.details) ? body.error.metadata.details : [],
+        suggestion: (
+          typeof body?.error?.metadata?.template_suggestion?.source === "string"
+          && typeof body?.error?.metadata?.template_suggestion?.replacement === "string"
+        ) ? body.error.metadata.template_suggestion : null
       });
     }
     return body;

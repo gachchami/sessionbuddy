@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign in · SessionBuddy</title>
   <link rel="stylesheet" href="/product/assets/product.css?v=90">
-  <script src="/app-shell/assets/api-client.js?v=8" defer></script>
+  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
   <script src="/auth/assets/sign-in.js?v=10" defer></script>
   <script src="/auth/assets/demo-access.js?v=4" defer></script>
 </head>
@@ -20,6 +20,14 @@
   <main id="main" class="auth-main sign-in-shell" tabindex="-1">
     <div class="sign-in-layout">
       <section class="auth-card sign-in-card" aria-labelledby="sign-in-title">
+        <div id="active-session" class="auth-confirmation" tabindex="-1" hidden>
+          <h1>Already signed in</h1>
+          <p id="active-session-message"></p>
+          <div class="actions">
+            <button id="continue-session" type="button">Continue</button>
+            <button id="replace-session" class="secondary" type="button">Sign out and use another account</button>
+          </div>
+        </div>
         <div id="sign-in-entry">
           <h1 id="sign-in-title">Sign in</h1>
           <p class="auth-intro">Continue to SessionBuddy.</p>

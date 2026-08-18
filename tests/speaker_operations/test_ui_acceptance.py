@@ -173,15 +173,16 @@ def test_portal_covers_safe_asset_scan_states_and_major_sections() -> None:
     assert "this file is not public or current yet" in javascript
     assert "You do not need to choose or upload the file again" in javascript
     assert 'id="empty-state"' in html
-    assert "Your speaker workspace is ready" in html
-    assert "You do not have any proposals yet" in html
-    assert "Browse calls below to find one that is open or opening soon" in html
+    assert "Your speaker workspace is ready" not in html
+    assert "No speaker events yet" in html
+    assert "Browse open calls below" in html
+    assert "Invitations awaiting your response" in html
     assert "Explore open calls" not in html
     assert 'id="saved-proposal-drafts"' in html
     assert 'api("/api/v1/speaker/proposal-drafts")' in javascript
     assert "renderProposalDrafts(drafts)" in javascript
     assert "connected events" not in html
-    assert ': "No proposals yet.");' in javascript
+    assert "No proposals are connected to this account yet." in javascript
     assert "error.status === 404 && state.csrf" in javascript
     assert 'byId("empty-state").hidden = false' in javascript
 

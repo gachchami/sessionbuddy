@@ -59,7 +59,13 @@ from .session_factory import set_session_cookie as _set_session_cookie
 from .session_factory import valid_redirect as _valid_redirect
 from .session_factory import workspace_compatible_redirect as _workspace_compatible_redirect
 from .tokens import generate_token, hash_token, normalize_email
-from .workspace import WorkspaceState, resolve_workspace, usable_personas, user_workspace_contract
+from .workspace import (
+    WorkspaceRole,
+    WorkspaceState,
+    resolve_workspace,
+    usable_personas,
+    user_workspace_contract,
+)
 
 access_router = APIRouter()
 
@@ -537,7 +543,7 @@ class InvitationView(BaseModel):
     event_id: str
     email: str
     role: InvitationRole
-    status: Literal["pending", "accepted", "revoked", "expired"] = "pending"
+    status: Literal["pending", "accepted", "declined", "revoked", "expired"] = "pending"
     display_name: str = ""
     job_title: str = ""
     company: str = ""
@@ -550,6 +556,48 @@ class InvitationIssued(InvitationView):
 
 class InvitationList(BaseModel):
     data: list[InvitationView]
+
+
+AccountInvitationRole = Literal["organization_admin", "evaluator", "speaker"]
+_INVITATION_PERSONAS: dict[AccountInvitationRole, WorkspaceRole] = {
+    "organization_admin": "organizer",
+    "evaluator": "reviewer",
+    "speaker": "speaker",
+}
+
+
+class AccountInvitationView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    event_id: str
+    event_name: str
+    role: AccountInvitationRole
+    expires_at_ms: int
+
+
+class AccountParticipationView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    event_name: str
+    role: Literal["evaluator", "speaker"]
+
+
+class AccountInvitationList(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pending_invitations: list[AccountInvitationView]
+    linked_events: list[AccountParticipationView]
+
+
+class AccountInvitationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invitation_id: str
+    status: Literal["accepted", "declined"]
+    role: AccountInvitationRole
+    workspace_path: str | None = None
 
 
 SpeakerImportDisposition = Literal["import", "skip", "separate_person"]
@@ -1273,6 +1321,277 @@ async def bootstrap_tenant(
 async def account_profile(request: Request) -> AccountProfileView:
     authenticated = await authenticate_request(request)
     return await _account_profile_for_user(database(request), authenticated.actor.user_id)
+
+
+@access_router.get(
+    "/api/v1/account/invitations",
+    response_model=AccountInvitationList,
+    operation_id="listAccountInvitations",
+    tags=["authentication"],
+)
+async def account_invitations(request: Request) -> AccountInvitationList:
+    """Return invitation decisions and existing event links for this identity.
+
+    Authentication establishes who the person is; it never implies acceptance
+    of a particular organizer invitation. The page uses the linked-event facts
+    independently so a failed portal request is not mislabeled as an empty
+    workspace.
+    """
+    authenticated = await authenticate_request(request)
+    db, now = database(request), utc_now_ms()
+    pending = result_rows(
+        await db.prepare(
+            """SELECT invitation.id,invitation.event_id,event.name AS event_name,
+                      invitation.role,invitation.expires_at_ms
+               FROM users account
+               JOIN identity_invitations invitation
+                 ON invitation.normalized_email=account.normalized_email
+               JOIN events event
+                 ON event.organization_id=invitation.organization_id
+                AND event.id=invitation.event_id
+               WHERE account.id=?1 AND account.status='active'
+                 AND invitation.status='pending' AND invitation.expires_at_ms>?2
+               ORDER BY invitation.created_at_ms DESC,invitation.id DESC"""
+        )
+        .bind(authenticated.actor.user_id, now)
+        .all()
+    )
+    linked = result_rows(
+        await db.prepare(
+            """SELECT membership.event_id,event.name AS event_name,membership.role
+               FROM event_memberships membership
+               JOIN events event
+                 ON event.organization_id=membership.organization_id
+                AND event.id=membership.event_id
+               WHERE membership.user_id=?1 AND membership.status='active'
+                 AND membership.role IN ('evaluator','speaker')
+               ORDER BY event.starts_at_ms DESC,event.id DESC,membership.role"""
+        )
+        .bind(authenticated.actor.user_id)
+        .all()
+    )
+    return AccountInvitationList(
+        pending_invitations=[AccountInvitationView(**row) for row in pending],
+        linked_events=[AccountParticipationView(**row) for row in linked],
+    )
+
+
+async def _accepted_invitation_workspace(
+    db: D1Database, *, user_id: str, role: AccountInvitationRole
+) -> str | None:
+    """Resolve the post-accept destination from the authoritative workspace contract."""
+    persona = _INVITATION_PERSONAS[role]
+    contract = await user_workspace_contract(db, user_id=user_id, active_role=persona)
+    return contract.resolution.path if contract is not None else None
+
+
+async def _account_invitation_action(
+    request: Request,
+    response: Response,
+    *,
+    invitation_id: str,
+    action: Literal["accept", "decline"],
+    idempotency_key: str | None,
+) -> AccountInvitationResponse:
+    authenticated = await authenticate_request(request)
+    guard_mutation(request, authenticated.session_id)
+    if not isinstance(idempotency_key, str) or not 16 <= len(idempotency_key) <= 255:
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key must contain between 16 and 255 characters",
+        )
+    db, now = database(request), utc_now_ms()
+    route = "POST /api/v1/account/invitations/{invitation_id}/response"
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "user_id": authenticated.actor.user_id,
+                "invitation_id": invitation_id,
+                "action": action,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).digest()
+    key_hash = hashlib.sha256(idempotency_key.encode()).digest()
+    replay = row_mapping(
+        await db.prepare(
+            """SELECT request_fingerprint FROM idempotency_records
+               WHERE principal_key=?1 AND route_key=?2 AND idempotency_key_hash=?3
+                 AND state='completed' LIMIT 1"""
+        )
+        .bind(authenticated.actor.user_id, route, key_hash)
+        .first()
+    )
+    if replay is not None:
+        stored = to_python(replay["request_fingerprint"])
+        stored_bytes = stored if isinstance(stored, bytes) else bytes(stored)
+        if stored_bytes != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency-Key was already used for a different invitation response",
+            )
+        replayed = row_mapping(
+            await db.prepare("SELECT role FROM identity_invitations WHERE id=?1 LIMIT 1")
+            .bind(invitation_id)
+            .first()
+        )
+        if replayed is None:
+            raise HTTPException(status_code=404)
+        replay_role = cast(AccountInvitationRole, str(replayed["role"]))
+        replay_path = (
+            await _accepted_invitation_workspace(
+                db, user_id=authenticated.actor.user_id, role=replay_role
+            )
+            if action == "accept"
+            else None
+        )
+        return AccountInvitationResponse(
+            invitation_id=invitation_id,
+            status="accepted" if action == "accept" else "declined",
+            role=replay_role,
+            workspace_path=replay_path,
+        )
+    invitation = row_mapping(
+        await db.prepare(
+            """SELECT invitation.id,invitation.organization_id,invitation.event_id,
+                      invitation.role,invitation.status,invitation.expires_at_ms
+               FROM identity_invitations invitation JOIN users account
+                 ON account.normalized_email=invitation.normalized_email
+               WHERE invitation.id=?1 AND account.id=?2 AND account.status='active'
+               LIMIT 1"""
+        )
+        .bind(invitation_id, authenticated.actor.user_id)
+        .first()
+    )
+    if invitation is None:
+        raise HTTPException(status_code=404)
+    if str(invitation["status"]) != "pending" or int(invitation["expires_at_ms"]) <= now:
+        raise HTTPException(
+            status_code=409,
+            detail="This invitation is no longer awaiting your response",
+        )
+    record = IdempotencyRecord(
+        principal_key=authenticated.actor.user_id,
+        organization_id=str(invitation["organization_id"]),
+        event_id=str(invitation["event_id"]),
+        route_key=route,
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        expires_at_ms=now + 7 * 86_400_000,
+    )
+    if action == "accept":
+        try:
+            return await _claim_identity_invitation(
+                db=db,
+                request=request,
+                response=response,
+                invitation_id=invitation_id,
+                user_id=authenticated.actor.user_id,
+                now=now,
+                idempotency_record=record,
+                replacement_session_id=authenticated.session_id,
+                current_persona=authenticated.actor.active_persona.value,
+            )
+        except PersistenceError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="This invitation received another response first; refresh to continue",
+            ) from exc
+
+    declined_invitation_status = "revoked"
+    batch = CommandBatch(db)
+    batch.begin_idempotency(record, now)
+    batch.add_statement(
+        db.prepare(
+            """UPDATE identity_invitations
+               SET status=?3,declined_at_ms=?1,accepted_at_ms=NULL,
+                   revoked_at_ms=?1,updated_at_ms=?1
+               WHERE id=?2 AND status='pending' AND expires_at_ms>?1"""
+        ).bind(now, invitation_id, declined_invitation_status)
+    )
+    batch.add_statement(
+        db.prepare(
+            """INSERT INTO identity_invitation_write_guards
+               (id,invitation_id,applied_changes,created_at_ms)
+               VALUES(?1,?2,changes(),?3)"""
+        ).bind(new_id(), invitation_id, now)
+    )
+    batch.audit(
+        AuditEvent(
+            actor_type="user",
+            actor_user_id=authenticated.actor.user_id,
+            action="identity.invitation.decline",
+            target_type="identity_invitation",
+            target_id=invitation_id,
+            result="succeeded",
+            correlation_id=request.state.request_id,
+            occurred_at_ms=now,
+            organization_id=str(invitation["organization_id"]),
+            event_id=str(invitation["event_id"]),
+        )
+    )
+    batch.complete_idempotency(
+        record,
+        status=200,
+        resource_type="identity_invitation",
+        resource_id=invitation_id,
+        completed_at_ms=now,
+    )
+    try:
+        await batch.execute()
+    except PersistenceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This invitation received another response first; refresh to continue",
+        ) from exc
+    return AccountInvitationResponse(
+        invitation_id=invitation_id,
+        status="declined",
+        role=cast(AccountInvitationRole, str(invitation["role"])),
+    )
+
+
+@access_router.post(
+    "/api/v1/account/invitations/{invitation_id}/accept",
+    response_model=AccountInvitationResponse,
+    operation_id="acceptAccountInvitation",
+    tags=["authentication"],
+)
+async def accept_account_invitation(
+    invitation_id: str,
+    request: Request,
+    response: Response,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> AccountInvitationResponse:
+    return await _account_invitation_action(
+        request,
+        response,
+        invitation_id=invitation_id,
+        action="accept",
+        idempotency_key=idempotency_key,
+    )
+
+
+@access_router.post(
+    "/api/v1/account/invitations/{invitation_id}/decline",
+    response_model=AccountInvitationResponse,
+    operation_id="declineAccountInvitation",
+    tags=["authentication"],
+)
+async def decline_account_invitation(
+    invitation_id: str,
+    request: Request,
+    response: Response,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> AccountInvitationResponse:
+    return await _account_invitation_action(
+        request,
+        response,
+        invitation_id=invitation_id,
+        action="decline",
+        idempotency_key=idempotency_key,
+    )
 
 
 async def _account_profile_for_user(db: D1Database, user_id: str) -> AccountProfileView:
@@ -3803,6 +4122,7 @@ async def create_invitation(
         )
     email, normalized = _email(body.email)
     now, invitation_id = utc_now_ms(), new_id()
+    declined_invitation_status = "pending"
     if body.role == "speaker":
         existing_event_speaker_id = await (
             db.prepare(
@@ -3838,10 +4158,11 @@ async def create_invitation(
             """INSERT INTO identity_invitations
          (id,organization_id,event_id,normalized_email,email,role,status,invited_by_user_id,
           expires_at_ms,created_at_ms,updated_at_ms,display_name,job_title,company,biography)
-         VALUES(?1,?2,?3,?4,?5,?6,'pending',?7,?8,?9,?9,?10,?11,?12,?13)
+         VALUES(?1,?2,?3,?4,?5,?6,?14,?7,?8,?9,?9,?10,?11,?12,?13)
          ON CONFLICT(organization_id,event_id,normalized_email,role) DO UPDATE SET
-           email=excluded.email,status='pending',invited_by_user_id=excluded.invited_by_user_id,
-           expires_at_ms=excluded.expires_at_ms,accepted_at_ms=NULL,revoked_at_ms=NULL,
+           email=excluded.email,status=?14,invited_by_user_id=excluded.invited_by_user_id,
+           expires_at_ms=excluded.expires_at_ms,accepted_at_ms=NULL,declined_at_ms=NULL,
+           revoked_at_ms=NULL,
            updated_at_ms=excluded.updated_at_ms,display_name=excluded.display_name,
            job_title=excluded.job_title,company=excluded.company,
            biography=excluded.biography"""
@@ -3860,6 +4181,7 @@ async def create_invitation(
             body.job_title,
             body.company,
             body.biography,
+            declined_invitation_status,
         )
         .run()
     )
@@ -4543,13 +4865,15 @@ async def list_invitations(event_id: str, request: Request) -> InvitationList:
     db, organization_id, _ = await _managed_event(
         request, event_id, mutation=False, include_archived=True
     )
+    declined_invitation_status = "declined_at_ms IS NOT NULL"
     result = await (
         db.prepare(
-            """SELECT id,event_id,email,role,display_name,job_title,company,
-                      CASE WHEN status='pending' AND expires_at_ms<=?3
+            f"""SELECT id,event_id,email,role,display_name,job_title,company,
+                      CASE WHEN {declined_invitation_status} THEN 'declined'
+                           WHEN status='pending' AND expires_at_ms<=?3
                            THEN 'expired' ELSE status END AS status
                FROM identity_invitations WHERE organization_id=?1 AND event_id=?2
-               ORDER BY created_at_ms DESC,id DESC"""
+               ORDER BY created_at_ms DESC,id DESC"""  # noqa: S608 - fixed projection
         )
         .bind(organization_id, event_id, utc_now_ms())
         .all()
@@ -5305,15 +5629,6 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
         .bind(normalized)
         .first()
     )
-    invitation = row_mapping(
-        await db.prepare(
-            """SELECT id,organization_id,event_id FROM identity_invitations
-               WHERE normalized_email=?1 AND status='pending' AND expires_at_ms>?2
-               ORDER BY created_at_ms DESC LIMIT 1"""
-        )
-        .bind(normalized, utc_now_ms())
-        .first()
-    )
     submission_context = None
     if body.form_slug is not None:
         submission_context = row_mapping(
@@ -5324,10 +5639,7 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
             .bind(body.form_slug)
             .first()
         )
-    if invitation is not None:
-        context = invitation
-        provisioning_context = "invitation"
-    elif submission_context is not None:
+    if submission_context is not None:
         context = submission_context
         provisioning_context = "submission"
     elif user is not None:
@@ -5354,7 +5666,7 @@ async def request_magic_link(body: MagicLinkRequest, request: Request) -> Generi
             user["id"] if user is not None else None,
             context["organization_id"],
             context["event_id"],
-            invitation["id"] if invitation is not None else None,
+            None,
         )
         .run()
     )
@@ -5593,6 +5905,41 @@ async def _redeem_magic_link(
         raise
 
 
+async def _claim_identity_invitation(
+    *,
+    db,
+    request: Request,
+    response: Response,
+    invitation_id: str,
+    user_id: str,
+    now: int,
+    idempotency_record: IdempotencyRecord,
+    replacement_session_id: str,
+    current_persona: str,
+) -> AccountInvitationResponse:
+    """Claim one explicit invitation through the canonical atomic writer.
+
+    Password and live-session authentication prove identity only. This service
+    is the deliberate acceptance boundary; it supplies the same minimal claim
+    facts consumed by invitation-issued magic links without making the account
+    endpoint manufacture an authentication challenge. Keep new acceptance
+    behavior here rather than adding another mode flag to the lower-level
+    sign-in engine; that engine should be split before its contract grows.
+    """
+    result = await _finish_magic_link_sign_in(
+        db,
+        request,
+        response,
+        {"user_id": user_id, "invitation_id": invitation_id},
+        now,
+        acceptance_only=True,
+        idempotency_record=idempotency_record,
+        replacement_session_id=replacement_session_id,
+        current_persona=current_persona,
+    )
+    return cast(AccountInvitationResponse, result)
+
+
 async def _finish_magic_link_sign_in(
     db,
     request: Request,
@@ -5601,7 +5948,11 @@ async def _finish_magic_link_sign_in(
     now: int,
     *,
     registration: SubmissionRegistration | None = None,
-) -> SessionCreated:
+    acceptance_only: bool = False,
+    idempotency_record: IdempotencyRecord | None = None,
+    replacement_session_id: str | None = None,
+    current_persona: str | None = None,
+) -> SessionCreated | AccountInvitationResponse:
     user_id = challenge["user_id"]
     invited_persona: str | None = None
     provisioned_persona: str | None = None
@@ -5636,6 +5987,8 @@ async def _finish_magic_link_sign_in(
             raise HTTPException(status_code=404)
         user_id = str(existing_user["id"]) if existing_user is not None else new_id()
         batch = CommandBatch(db)
+        if idempotency_record is not None:
+            batch.begin_idempotency(idempotency_record, now)
         if existing_user is None:
             batch.add_statement(
                 db.prepare(
@@ -5738,16 +6091,9 @@ async def _finish_magic_link_sign_in(
                     now,
                 )
             )
-        persona = {
-            "organization_admin": "organizer",
-            "evaluator": "reviewer",
-            "speaker": "speaker",
-        }.get(invitation_role)
-        if persona is None:
-            raise HTTPException(
-                status_code=409,
-                detail="This invitation role is no longer supported",
-            )
+        persona = _INVITATION_PERSONAS[
+            cast(AccountInvitationRole, invitation_role)
+        ]
         invited_persona = persona
         batch.add_statement(
             db.prepare(
@@ -5870,6 +6216,17 @@ async def _finish_magic_link_sign_in(
                WHERE id=?2 AND status='pending'"""
             ).bind(now, invitation["id"])
         )
+        # The authenticated response endpoints can race with a different
+        # action and invitation links can be redeemed concurrently. A zero-row
+        # compare-and-set must abort every membership, reassignment, audit and
+        # idempotency write in this D1 batch rather than report false success.
+        batch.add_statement(
+            db.prepare(
+                """INSERT INTO identity_invitation_write_guards
+                   (id,invitation_id,applied_changes,created_at_ms)
+                   VALUES(?1,?2,changes(),?3)"""
+            ).bind(new_id(), invitation["id"], now)
+        )
         batch.audit(
             AuditEvent(
                 actor_type="user",
@@ -5885,6 +6242,14 @@ async def _finish_magic_link_sign_in(
                 metadata={"role": str(invitation["role"])},
             )
         )
+        if idempotency_record is not None:
+            batch.complete_idempotency(
+                idempotency_record,
+                status=200,
+                resource_type="identity_invitation",
+                resource_id=str(invitation["id"]),
+                completed_at_ms=now,
+            )
         session_batch = batch
     elif challenge["provisioning_context"] == "submission":
         existing_user = row_mapping(
@@ -6021,6 +6386,49 @@ async def _finish_magic_link_sign_in(
                 )
             )
         session_batch = batch
+    if acceptance_only:
+        if session_batch is None or challenge["invitation_id"] is None:
+            raise HTTPException(status_code=409)
+        if invited_persona is None or replacement_session_id is None:
+            raise HTTPException(status_code=409)
+        if invited_persona == current_persona and invited_persona != "organizer":
+            await session_batch.execute()
+            invitation_role = cast(AccountInvitationRole, str(invitation["role"]))
+            return AccountInvitationResponse(
+                invitation_id=str(challenge["invitation_id"]),
+                status="accepted",
+                role=invitation_role,
+                workspace_path=await _accepted_invitation_workspace(
+                    db, user_id=str(user_id), role=invitation_role
+                ),
+            )
+        _revoke_session(
+            session_batch,
+            db,
+            replacement_session_id,
+            "invitation_persona_selected",
+            now,
+        )
+        replacement = establish_session_with_current_authorization_version(
+            batch=session_batch,
+            db=db,
+            request=request,
+            user_id=str(user_id),
+            role=invited_persona,
+            now_ms=now,
+        )
+        results = await session_batch.execute()
+        await _confirm_session_established(results, replacement, db)
+        _set_session_cookie(response, request, replacement.session_token)
+        invitation_role = cast(AccountInvitationRole, str(invitation["role"]))
+        return AccountInvitationResponse(
+            invitation_id=str(challenge["invitation_id"]),
+            status="accepted",
+            role=invitation_role,
+            workspace_path=await _accepted_invitation_workspace(
+                db, user_id=str(user_id), role=invitation_role
+            ),
+        )
     if user_id is None:
         raise HTTPException(status_code=404)
     session_role = (

@@ -1,7 +1,9 @@
 import pytest
 
 from sessionbuddy.communications.rendering import (
+    DECISION_MESSAGE_VARIABLES,
     SPEAKER_MESSAGE_VARIABLES,
+    TemplateVariableError,
     render_template,
     validate_template,
 )
@@ -47,6 +49,40 @@ def test_speaker_message_error_lists_only_fields_available_in_the_composer() -> 
     assert "portal.link" in message
     assert "speaker.name" in message
     assert "schedule.room" not in message
+
+
+def test_known_but_context_inapplicable_variable_has_a_distinct_error_code() -> None:
+    with pytest.raises(TemplateVariableError) as error:
+        validate_template(
+            "Meet in {{schedule.room}}",
+            allowed_variables=SPEAKER_MESSAGE_VARIABLES,
+        )
+
+    assert error.value.code == "template_variable_unavailable"
+    assert error.value.variables == ("schedule.room",)
+
+
+def test_alias_suggestions_are_structured_and_context_aware() -> None:
+    with pytest.raises(TemplateVariableError) as speaker_error:
+        validate_template(
+            "Open {{portal_link}}",
+            allowed_variables=SPEAKER_MESSAGE_VARIABLES,
+        )
+    assert speaker_error.value.suggestions == {"portal_link": "portal.link"}
+
+    with pytest.raises(TemplateVariableError) as namespaced_error:
+        validate_template(
+            "Open {{event.portal_link}}",
+            allowed_variables=SPEAKER_MESSAGE_VARIABLES,
+        )
+    assert namespaced_error.value.suggestions == {"event.portal_link": "portal.link"}
+
+    with pytest.raises(TemplateVariableError) as decision_error:
+        validate_template(
+            "Open {{portal_link}}",
+            allowed_variables=DECISION_MESSAGE_VARIABLES,
+        )
+    assert decision_error.value.suggestions == {}
 
 
 def test_missing_value_is_rejected_instead_of_silently_blank() -> None:

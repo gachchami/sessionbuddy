@@ -32,14 +32,35 @@
     // Do not remove the focused node from the accessibility tree. User edits
     // normally move focus first; synthetic changes get a stable fallback.
     const restorePreviewFocus = document.activeElement === error;
-    error.textContent = "";
+    error.replaceChildren();
     error.classList.remove("error");
     if (restorePreviewFocus) byId("preview-message").focus();
   }
 
-  function showComposeError(message) {
+  function showComposeError(message, suggestion = null) {
     const error = byId("message-compose-error");
-    error.textContent = message;
+    error.replaceChildren(document.createTextNode(message));
+    if (suggestion?.source && suggestion?.replacement) {
+      const replace = document.createElement("button");
+      replace.type = "button";
+      replace.className = "secondary";
+      const replacementLabel = suggestion.replacement
+        .split(/[._]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+      replace.textContent = `Replace with ${replacementLabel}`;
+      replace.addEventListener("click", () => {
+        const form = byId("message-form");
+        const escaped = suggestion.source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const source = new RegExp(`{{\\s*${escaped}\\s*}}`, "g");
+        [form.elements.subject, form.elements.body_text].forEach((field) => {
+          field.value = field.value.replace(source, `{{${suggestion.replacement}}}`);
+          field.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        form.elements.body_text.focus();
+      });
+      error.append(document.createTextNode(" "), replace);
+    }
     error.classList.add("error");
     error.focus();
   }
@@ -238,7 +259,7 @@
       byId("message-preview").hidden = false;
       byId("send-message").disabled = false;
       setStatus(`Preview ready for ${result.recipients.length} recipient${result.recipients.length === 1 ? "" : "s"}.`);
-    } catch (error) { showComposeError(window.SessionBuddyApi.message(error)); }
+    } catch (error) { showComposeError(window.SessionBuddyApi.message(error), error.suggestion); }
   });
   async function sendPreviewedMessage() {
     const form = byId("message-form");

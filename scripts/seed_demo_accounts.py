@@ -2,9 +2,10 @@
 """Create and repair the three demo personas used by password-free sign-in.
 
 This is a data seed, never a migration. It creates one synthetic organizer and
-validates that the configured reviewer and speaker identities are usable, so a
-demo control is only ever offered for an account that can actually sign in and
-land on a populated workspace.
+validates that the configured reviewer and speaker identities can sign in and
+reach their persona workspaces. Credentials establish identity and role only;
+scenario fixtures that need event participation must invite and explicitly
+accept the persona instead of relying on this seed.
 
 The synthetic organizer receives a ``manage`` grant on the demo organization
 rather than ownership. Ownership cannot be revoked through the product, so a

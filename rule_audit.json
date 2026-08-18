@@ -1,6 +1,10 @@
 {
   "version": 2,
   "writer_inventories": {
+    "identity_invitations": [
+      "src/sessionbuddy/platform/auth/access.py:_create_bulk_speaker_invitation",
+      "src/sessionbuddy/platform/auth/access.py:create_invitation"
+    ],
     "speaker_tasks": [
       "src/sessionbuddy/competition/router.py:create_speaker_task",
       "src/sessionbuddy/competition/router.py:restore_admin_speaker",
@@ -20,6 +24,17 @@
         "src/sessionbuddy/platform/auth/access.py:current_session",
         "src/sessionbuddy/platform/auth/access.py:list_events",
         "src/sessionbuddy/platform/auth/workspace.py:user_workspace_contract"
+      ]
+    },
+    {
+      "id": "declined_identity_invitation_status",
+      "symbol": "declined_invitation_status",
+      "coverage": "The API projection is mechanically registered; migration triggers enforce marker consistency and audit events retain actor attribution.",
+      "user_path": "An invitee decline can be mislabeled as an organizer revocation.",
+      "sites": [
+        "src/sessionbuddy/platform/auth/access.py:_account_invitation_action",
+        "src/sessionbuddy/platform/auth/access.py:create_invitation",
+        "src/sessionbuddy/platform/auth/access.py:list_invitations"
       ]
     }
   ],

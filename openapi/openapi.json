@@ -26,6 +26,142 @@
         "title": "AcceptedSubmissionParticipantsUpdate",
         "type": "object"
       },
+      "AccountInvitationList": {
+        "additionalProperties": false,
+        "properties": {
+          "linked_events": {
+            "items": {
+              "$ref": "#/components/schemas/AccountParticipationView"
+            },
+            "title": "Linked Events",
+            "type": "array"
+          },
+          "pending_invitations": {
+            "items": {
+              "$ref": "#/components/schemas/AccountInvitationView"
+            },
+            "title": "Pending Invitations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "pending_invitations",
+          "linked_events"
+        ],
+        "title": "AccountInvitationList",
+        "type": "object"
+      },
+      "AccountInvitationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "invitation_id": {
+            "title": "Invitation Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "organization_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "accepted",
+              "declined"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "workspace_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Path"
+          }
+        },
+        "required": [
+          "invitation_id",
+          "status",
+          "role"
+        ],
+        "title": "AccountInvitationResponse",
+        "type": "object"
+      },
+      "AccountInvitationView": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "expires_at_ms": {
+            "title": "Expires At Ms",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "organization_admin",
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "event_name",
+          "role",
+          "expires_at_ms"
+        ],
+        "title": "AccountInvitationView",
+        "type": "object"
+      },
+      "AccountParticipationView": {
+        "additionalProperties": false,
+        "properties": {
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_name": {
+            "title": "Event Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "evaluator",
+              "speaker"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_name",
+          "role"
+        ],
+        "title": "AccountParticipationView",
+        "type": "object"
+      },
       "AccountProfileUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -7306,6 +7442,7 @@
             "enum": [
               "pending",
               "accepted",
+              "declined",
               "revoked",
               "expired"
             ],
@@ -7387,6 +7524,7 @@
             "enum": [
               "pending",
               "accepted",
+              "declined",
               "revoked",
               "expired"
             ],
@@ -13750,6 +13888,144 @@
           }
         },
         "summary": "Upload Account Headshot",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/account/invitations": {
+      "get": {
+        "description": "Return invitation decisions and existing event links for this identity.\n\nAuthentication establishes who the person is; it never implies acceptance\nof a particular organizer invitation. The page uses the linked-event facts\nindependently so a failed portal request is not mislabeled as an empty\nworkspace.",
+        "operationId": "listAccountInvitations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountInvitationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Account Invitations",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/account/invitations/{invitation_id}/accept": {
+      "post": {
+        "operationId": "acceptAccountInvitation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountInvitationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Account Invitation",
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/api/v1/account/invitations/{invitation_id}/decline": {
+      "post": {
+        "operationId": "declineAccountInvitation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountInvitationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline Account Invitation",
         "tags": [
           "authentication"
         ]

@@ -395,7 +395,8 @@ def test_share_builder_initializes_before_account_access_finishes() -> None:
 def test_source_wiring_speaker_message_personalization_hides_template_syntax() -> None:
     page = (STATIC / "speaker_messages.html").read_text()
     assert "Merge fields:" not in page
-    assert "speaker.first_name" not in page
+    assert 'data-merge-field="{{speaker.first_name}}"' in page
+    assert ">First name</button>" in page
     assert 'data-merge-field="{{speaker.name}}"' in page
     assert ">Speaker name</button>" in page
     assert ">Portal link</button>" in page

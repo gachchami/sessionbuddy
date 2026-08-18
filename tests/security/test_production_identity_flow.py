@@ -98,6 +98,36 @@ class GatedCfpDraftD1(SQLiteD1):
         return await super().batch(statements)
 
 
+class GatedInvitationResponseD1(SQLiteD1):
+    """Pause one invitation response after it reads pending state, before its batch."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        super().__init__(connection)
+        self.invitation_read = asyncio.Event()
+        self.allow_batch = asyncio.Event()
+
+    def prepare(self, sql: str) -> SQLiteStatement:
+        statement = super().prepare(sql)
+        if "FROM identity_invitations invitation JOIN users account" in sql:
+            original_first = statement.first
+
+            async def first(column: str | None = None):
+                result = await original_first(column)
+                self.invitation_read.set()
+                return result
+
+            statement.first = first
+        return statement
+
+    async def batch(self, statements: list[SQLiteStatement]):
+        if any(
+            "UPDATE identity_invitations" in statement.sql
+            for statement in statements
+        ):
+            await self.allow_batch.wait()
+        return await super().batch(statements)
+
+
 class AllowingRateLimiter:
     async def limit(self, options: dict[str, str]) -> dict[str, bool]:
         assert options["key"]
@@ -871,6 +901,211 @@ async def test_password_sign_in_replaces_an_incompatible_role_workspace_redirect
         # An unlinked speaker sees the UI onboarding state; the domain API
         # remains opaque so no event or tenant data crosses the boundary.
         assert (await client.get("/api/v1/speaker/portal")).status_code == 404
+
+
+async def test_password_sign_in_leaves_invitation_pending_until_explicit_acceptance(
+    production_environment,
+) -> None:
+    connection, _queue, environment = production_environment
+    password = "explicit invitation response password"  # noqa: S105 - test fixture
+    async with _client(environment) as admin:
+        bootstrap = await admin.post(
+            "/api/v1/bootstrap",
+            headers={"x-bootstrap-token": _deployment_key(connection)},
+            json={
+                "organization_name": "Explicit Invitations",
+                "admin_name": "Admin",
+                "admin_email": "admin@example.com",
+            },
+        )
+        organization_id = bootstrap.json()["organization_id"]
+        await admin.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "admin@example.com", "redirect_path": "/admin"},
+        )
+        await admin.post(
+            "/auth/verify",
+            data={"token": _token(connection, "admin@example.com")},
+            follow_redirects=False,
+        )
+        admin_session = (await admin.get("/api/v1/auth/session")).json()
+        admin_headers = {
+            "origin": "https://test",
+            "x-csrf-token": admin_session["csrf_token"],
+        }
+        event = await admin.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers=admin_headers,
+            json={
+                "name": "Invitation Summit",
+                "starts_at_ms": 1_900_000_000_000,
+                "ends_at_ms": 1_900_086_400_000,
+                "time_zone": "UTC",
+                "location": "Online",
+                "delivery_mode": "virtual",
+                "description": "Explicit response regression event.",
+            },
+        )
+        event_id = event.json()["id"]
+        _insert_password_speaker(
+            connection,
+            user_id="explicit-speaker",
+            email="speaker@example.com",
+            password=password,
+        )
+        invitation = await admin.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=admin_headers,
+            json={"email": "speaker@example.com", "role": "speaker"},
+        )
+        assert invitation.status_code == 201
+        declined_invitation = await admin.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=admin_headers,
+            json={"email": "speaker@example.com", "role": "evaluator"},
+        )
+        assert declined_invitation.status_code == 201
+        organizer_invitation = await admin.post(
+            f"/api/v1/admin/events/{event_id}/invitations",
+            headers=admin_headers,
+            json={"email": "speaker@example.com", "role": "organization_admin"},
+        )
+        assert organizer_invitation.status_code == 201
+
+    async with _client(environment) as speaker:
+        challenge_count = connection.execute(
+            "SELECT COUNT(*) FROM authentication_challenges WHERE normalized_email=?",
+            ("speaker@example.com",),
+        ).fetchone()[0]
+        requested_link = await speaker.post(
+            "/api/v1/auth/magic-links",
+            json={"email": "speaker@example.com", "redirect_path": "/speaker"},
+        )
+        assert requested_link.status_code == 202
+        assert connection.execute(
+            "SELECT COUNT(*) FROM authentication_challenges WHERE normalized_email=?",
+            ("speaker@example.com",),
+        ).fetchone()[0] == challenge_count
+        assert connection.execute(
+            "SELECT status FROM identity_invitations WHERE id=?",
+            (invitation.json()["id"],),
+        ).fetchone()[0] == "pending"
+        signed_in = await speaker.post(
+            "/api/v1/auth/password/sign-in",
+            json={
+                "email": "speaker@example.com",
+                "password": password,
+                "redirect_path": "/speaker",
+            },
+        )
+        assert signed_in.status_code == 200
+        session = (await speaker.get("/api/v1/auth/session")).json()
+        invitations = await speaker.get("/api/v1/account/invitations")
+        assert invitations.status_code == 200
+        assert {item["id"] for item in invitations.json()["pending_invitations"]} == {
+            invitation.json()["id"],
+            declined_invitation.json()["id"],
+            organizer_invitation.json()["id"],
+        }
+        assert invitations.json()["linked_events"] == []
+        assert (await speaker.get("/api/v1/speaker/portal")).status_code == 404
+
+        shared_key = "explicit-invitation-response-0001"
+        racing_environment = SimpleNamespace(**vars(environment))
+        racing_environment.DB = GatedInvitationResponseD1(connection)
+        async with _client(racing_environment) as second_tab:
+            for cookie in speaker.cookies.jar:
+                second_tab.cookies.set(cookie.name, cookie.value, domain=cookie.domain)
+            losing_accept = asyncio.create_task(
+                second_tab.post(
+                    f"/api/v1/account/invitations/{declined_invitation.json()['id']}/accept",
+                    headers={
+                        "origin": "https://test",
+                        "content-type": "application/json",
+                        "x-csrf-token": session["csrf_token"],
+                        "idempotency-key": "racing-invitation-accept-0001",
+                    },
+                    json={},
+                )
+            )
+            await asyncio.wait_for(racing_environment.DB.invitation_read.wait(), 10)
+            declined = await speaker.post(
+                f"/api/v1/account/invitations/{declined_invitation.json()['id']}/decline",
+                headers={
+                    "origin": "https://test",
+                    "content-type": "application/json",
+                    "x-csrf-token": session["csrf_token"],
+                    "idempotency-key": shared_key,
+                },
+                json={},
+            )
+            assert declined.status_code == 200
+            racing_environment.DB.allow_batch.set()
+            lost_race = await asyncio.wait_for(losing_accept, 10)
+            assert lost_race.status_code == 409
+            assert "another response first" in lost_race.json()["error"]["message"]
+        mismatched_reuse = await speaker.post(
+            f"/api/v1/account/invitations/{invitation.json()['id']}/accept",
+            headers={
+                "origin": "https://test",
+                "content-type": "application/json",
+                "x-csrf-token": session["csrf_token"],
+                "idempotency-key": shared_key,
+            },
+            json={},
+        )
+        assert mismatched_reuse.status_code == 409
+        key = "accept-explicit-invitation-0002"
+        accepted = await speaker.post(
+            f"/api/v1/account/invitations/{invitation.json()['id']}/accept",
+            headers={
+                "origin": "https://test",
+                "content-type": "application/json",
+                "x-csrf-token": session["csrf_token"],
+                "idempotency-key": key,
+            },
+        )
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["status"] == "accepted"
+        replay = await speaker.post(
+            f"/api/v1/account/invitations/{invitation.json()['id']}/accept",
+            headers={
+                "origin": "https://test",
+                "content-type": "application/json",
+                "x-csrf-token": session["csrf_token"],
+                "idempotency-key": key,
+            },
+        )
+        assert replay.status_code == 200
+        assert (await speaker.get("/api/v1/speaker/portal")).status_code == 200
+        organizer_acceptance = await speaker.post(
+            f"/api/v1/account/invitations/{organizer_invitation.json()['id']}/accept",
+            headers={
+                "origin": "https://test",
+                "content-type": "application/json",
+                "x-csrf-token": session["csrf_token"],
+                "idempotency-key": "accept-explicit-organizer-invitation-0003",
+            },
+        )
+        assert organizer_acceptance.status_code == 200, organizer_acceptance.text
+        assert organizer_acceptance.json()["workspace_path"] == "/admin"
+        replacement_session = (await speaker.get("/api/v1/auth/session")).json()
+        assert replacement_session["active_role"] == "organizer"
+        assert replacement_session["workspace_path"] == "/admin"
+        linked = (await speaker.get("/api/v1/account/invitations")).json()
+        assert linked["pending_invitations"] == []
+        assert linked["linked_events"] == [
+            {"event_id": event_id, "event_name": "Invitation Summit", "role": "speaker"}
+        ]
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM audit_events WHERE action='identity.invitation.accept'"
+    ).fetchone()[0] == 2
+    declined_row = connection.execute(
+        "SELECT status,declined_at_ms IS NOT NULL FROM identity_invitations WHERE id=?",
+        (declined_invitation.json()["id"],),
+    ).fetchone()
+    assert declined_row is not None and tuple(declined_row) == ("revoked", 1)
 
 
 async def test_authenticated_session_without_an_active_role_resolves_to_open_calls(

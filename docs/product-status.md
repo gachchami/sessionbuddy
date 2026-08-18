@@ -781,6 +781,29 @@ resolver table used by the distributor.
 
 ## Speaker operations feedback and task history
 
+- Authentication proves account ownership but never silently accepts an event
+  invitation. Invitation-email links carry one exact invitation; ordinary
+  password and magic-link sign-in leave pending invitations untouched. Signed-in
+  people accept or decline each invitation explicitly from their workspace,
+  with idempotent, race-guarded persistence and distinct acceptance, decline,
+  and organizer-revocation audits.
+- Invitee declines use the existing revoked persistence state plus a
+  `declined_at_ms` marker. This keeps every authorization reader fail-closed
+  without rebuilding a D1 table referenced through restrictive foreign keys;
+  user-facing projections derive `declined` from the marker, while audit events
+  remain the authority for who performed the transition.
+- An existing account with no organization membership, evaluator assignment,
+  or accepted evaluator invitation is not issued a generic magic-link
+  challenge merely because an invitation is pending. Invitation-specific links
+  come only from invitation delivery, and ordinary sign-in never claims them.
+- The speaker workspace distinguishes pending invitations, a genuinely unlinked
+  account, and a linked event whose portal data failed to load. The sign-in page
+  likewise preserves deliberate account replacement by offering an existing
+  session a choice between continuing and signing out.
+- Demo persona credentials establish identity and role only; they do not imply
+  participation in an arbitrary event. Evaluation fixtures that need a speaker
+  or reviewer inside an event must create an invitation and explicitly accept
+  it before asserting workspace data.
 - File-based speaker tasks are created from one upload-policy contract across
   invitations, accepted proposals, restored participation, organizer sessions,
   and organizer-authored requests. The database rejects file tasks without
@@ -796,6 +819,10 @@ resolver table used by the distributor.
 - Event-message validation identifies the invalid merge token and lists only
   the merge fields available in that composer, so organizers can correct a
   message without consulting an internal renderer catalog.
+- Speaker and decision messages share one canonical merge-token catalog while
+  enforcing context-specific availability. Errors distinguish invented tokens
+  from known tokens that cannot be resolved in that message type; the speaker
+  composer can replace the common `portal_link` mistake with `portal.link`.
 - A successful manual speaker invitation refreshes the event roster before it
   reports completion. If that reconciliation read fails, the UI states that
   the invitation committed and tells the organizer to reload rather than

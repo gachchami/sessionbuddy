@@ -11,6 +11,10 @@
   const passwordToggle = document.getElementById("toggle-password");
   const linkButton = document.getElementById("send-sign-in-link");
   const changeEmail = document.getElementById("change-sign-in-email");
+  const activeSession = document.getElementById("active-session");
+  const activeSessionMessage = document.getElementById("active-session-message");
+  const continueSession = document.getElementById("continue-session");
+  const replaceSession = document.getElementById("replace-session");
   const requested = new URLSearchParams(location.search).get("redirect") || "/";
   const redirect = requested.startsWith("/") && !requested.startsWith("//") && !requested.includes("\\") ? requested : "/";
 
@@ -115,4 +119,44 @@
       setSending(false);
     }
   });
+
+  async function showExistingSession() {
+    try {
+      const session = await window.SessionBuddyApi.request("/api/v1/auth/session");
+      if (!session.csrf_token) return;
+      entry.hidden = true;
+      confirmation.hidden = true;
+      activeSession.hidden = false;
+      activeSessionMessage.textContent = `${session.display_name || session.email || "This account"} is already signed in.`;
+      const destination = typeof session.workspace_path === "string"
+        ? session.workspace_path
+        : "/account?workspace=recovery";
+      continueSession.addEventListener("click", () => location.assign(destination), { once: true });
+      replaceSession.addEventListener("click", async () => {
+        if (replaceSession.disabled) return;
+        replaceSession.disabled = true;
+        replaceSession.textContent = "Signing out…";
+        try {
+          await window.SessionBuddyApi.request("/api/v1/session/logout", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-csrf-token": session.csrf_token },
+            body: "{}"
+          });
+          window.SessionBuddyApi.prepareForSessionReplacement();
+          activeSession.hidden = true;
+          entry.hidden = false;
+          email.focus();
+        } catch (error) {
+          showStatus(window.SessionBuddyApi.message(error, "We could not sign out. Try again."), true);
+          replaceSession.disabled = false;
+          replaceSession.textContent = "Sign out and use another account";
+        }
+      });
+      activeSession.focus();
+    } catch (error) {
+      if (error.status !== 401) showStatus("We could not check the current session. You can still sign in below.", true);
+    }
+  }
+
+  void showExistingSession();
 })();

@@ -7,8 +7,8 @@
   <title>Speaker home · SessionBuddy</title>
   <link rel="stylesheet" href="/app-shell/assets/app-shell.css?v=27">
   <link rel="stylesheet" href="/speaker/assets/speaker.css?v=26">
-  <script src="/app-shell/assets/api-client.js?v=8" defer></script>
-  <script src="/app-shell/assets/app-shell.js?v=34" defer></script>
+  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
+  <script src="/app-shell/assets/app-shell.js?v=35" defer></script>
   <script src="/speaker/assets/speaker-portal.js?v=29" defer></script>
 </head>
 <body class="app-body speaker-portal-page">
@@ -27,8 +27,20 @@
     </section>
 
     <section id="empty-state" class="state-panel" hidden aria-labelledby="empty-title">
-      <h1 id="empty-title">Your speaker workspace is ready</h1>
-      <p>You do not have any proposals yet. Browse calls below to find one that is open or opening soon.</p>
+      <h1 id="empty-title">No speaker events yet</h1>
+      <p>No event has connected this account as a speaker. Browse open calls below, or ask the organizer to send an invitation to this account’s email address.</p>
+    </section>
+
+    <section id="invitation-state" class="state-panel" hidden aria-labelledby="invitation-title">
+      <h1 id="invitation-title">Invitations awaiting your response</h1>
+      <p>Review each invitation before joining an event. Signing in alone never accepts it.</p>
+      <div id="account-invitation-list" class="speaker-invitation-list"></div>
+    </section>
+
+    <section id="portal-failure-state" class="state-panel" hidden aria-labelledby="portal-failure-title">
+      <h1 id="portal-failure-title">Your event could not be loaded</h1>
+      <p>This account is linked to a speaker event, but its details are temporarily unavailable.</p>
+      <button id="retry-speaker-portal" type="button">Try again</button>
     </section>
 
     <section id="calls" class="state-panel speaker-calls" aria-labelledby="calls-title" aria-busy="true" tabindex="-1">

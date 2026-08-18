@@ -411,18 +411,24 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
     code, message = errors.get(
         exception.status_code, ("request_failed", "The request could not be processed")
     )
-    if (
-        exception.status_code < 500
-        and isinstance(exception.detail, str)
-        and exception.detail.strip()
-    ):
-        message = exception.detail.strip()
+    metadata: dict[str, object] | None = None
+    if exception.status_code < 500:
+        if isinstance(exception.detail, str) and exception.detail.strip():
+            message = exception.detail.strip()
+        elif isinstance(exception.detail, dict):
+            detail_message = exception.detail.get("message")
+            detail_metadata = exception.detail.get("metadata")
+            if isinstance(detail_message, str) and detail_message.strip():
+                message = detail_message.strip()
+            if isinstance(detail_metadata, dict):
+                metadata = detail_metadata
     return _error_response(
         request,
         exception.status_code,
         code,
         message,
         headers=exception.headers,
+        metadata=metadata,
     )
 
 

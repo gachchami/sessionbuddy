@@ -183,12 +183,38 @@ async def test_preview_rejects_variables_unavailable_to_speaker_messages_before_
 
         assert response.status_code == 422, response.text
         detail = response.json()["error"]["message"]
-        assert "unknown template variable(s): schedule.room, schedule.start" in detail
+        assert "unavailable here template variable(s): schedule.room, schedule.start" in detail
         assert "Available variables:" in detail
         assert "portal.link" in detail
         assert "task.title" not in detail
         assert "schedule.room, schedule.start" in detail
         assert "22222222-2222-4222-8222-222222222222" not in detail
+
+
+async def test_preview_returns_a_structured_context_safe_template_suggestion(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, _organization_id, event_id = await _admin(client, connection)
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/communications/speakers/preview",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={
+                "event_speaker_ids": ["22222222-2222-4222-8222-222222222222"],
+                "subject": "Your portal",
+                "body_text": "Open {{portal_link}}.",
+            },
+        )
+
+        assert response.status_code == 422, response.text
+        error = response.json()["error"]
+        assert "x-template-suggestion" not in response.headers
+        assert "portal_link" in error["message"]
+        assert error["metadata"]["template_suggestion"] == {
+            "source": "portal_link",
+            "replacement": "portal.link",
+        }
 
 
 async def test_preview_rejects_a_blank_submission_title(

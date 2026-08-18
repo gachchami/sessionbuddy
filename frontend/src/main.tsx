@@ -1,4 +1,4 @@
-import { FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { formatRecommendationChoice } from "./presentation";
@@ -109,6 +109,7 @@ type RoundResults = {
 };
 
 type ApiClient = {
+  prepareForSessionReplacement(): void;
   isStaleCursor(error: unknown): boolean;
   message(error: unknown, fallback?: string): string;
   messageWithReference(message: string, error: unknown): string;
@@ -265,6 +266,8 @@ function ReviewWorkspace() {
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
+  const [invitations, setInvitations] = useState<AccountInvitation[]>([]);
+  const [invitationStatus, setInvitationStatus] = useState("");
 
   const dirtyCount = Object.values(dirty).filter(Boolean).length;
   useEffect(() => {
@@ -325,9 +328,34 @@ function ReviewWorkspace() {
     try {
       const session = await api<{ csrf_token: string }>("/api/v1/auth/session");
       setCsrf(session.csrf_token);
-      await loadAssignments();
+      const [, invitationResult] = await Promise.all([
+        loadAssignments(),
+        api<{ pending_invitations: AccountInvitation[] }>("/api/v1/account/invitations")
+          .catch(() => null),
+      ]);
+      setInvitations(invitationResult?.pending_invitations || []);
     } catch (error) {
       if (!window.SessionBuddyApi.redirectIfSignedOut(error)) throw error;
+    }
+  }
+
+  async function respondToInvitation(invitation: AccountInvitation, action: "accept" | "decline") {
+    setInvitationStatus(action === "accept" ? "Accepting invitation…" : "Declining invitation…");
+    try {
+      const result = await api<{ workspace_path: string | null }>(
+        `/api/v1/account/invitations/${encodeURIComponent(invitation.id)}/${action}`,
+        { method: "POST", headers: mutationHeaders(csrf), body: "{}" },
+      );
+      if (action === "accept") {
+        setInvitationStatus("Invitation accepted. Opening your workspace…");
+        window.SessionBuddyApi.prepareForSessionReplacement();
+        location.assign(result.workspace_path || "/account");
+        return;
+      }
+      setInvitations((current) => current.filter((item) => item.id !== invitation.id));
+      setInvitationStatus("Invitation declined.");
+    } catch (error) {
+      setInvitationStatus(errorMessage(error));
     }
   }
   useEffect(() => {
@@ -579,6 +607,20 @@ function ReviewWorkspace() {
           <p>Open a proposal to record or revisit your assessment.</p>
         </div>
       </section>
+      {invitations.length > 0 && (
+        <section className="review-state" aria-labelledby="review-invitations-title">
+          <h2 id="review-invitations-title">Invitations awaiting your response</h2>
+          <p>Review an invitation before joining another event or role.</p>
+          {invitations.map((invitation) => (
+            <div className="actions" key={invitation.id}>
+              <strong>{invitation.event_name} · {invitation.role === "evaluator" ? "Reviewer" : invitation.role === "speaker" ? "Speaker" : "Organizer"}</strong>
+              <button className="secondary" onClick={() => void respondToInvitation(invitation, "decline")}>Decline</button>
+              <button onClick={() => void respondToInvitation(invitation, "accept")}>Accept invitation</button>
+            </div>
+          ))}
+          <p role="status">{invitationStatus}</p>
+        </section>
+      )}
       {loadState === "loading" && assignments.length === 0 ? (
         <section className="review-state" aria-busy="true" aria-live="polite">
           <span className="review-state__icon" aria-hidden="true">…</span>
@@ -930,6 +972,14 @@ type DecisionMessagePreview = {
   recipient_available: boolean;
 };
 
+type AccountInvitation = {
+  id: string;
+  event_id: string;
+  event_name: string;
+  role: "organization_admin" | "evaluator" | "speaker";
+  expires_at_ms: number;
+};
+
 function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [csrf, setCsrf] = useState("");
   const [results, setResults] = useState<RoundResults | null>(null);
@@ -945,6 +995,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
   const [sendEmail, setSendEmail] = useState(true);
   const [speakerSubject, setSpeakerSubject] = useState("");
   const [speakerMessage, setSpeakerMessage] = useState("");
+  const speakerMessageRef = useRef<HTMLTextAreaElement>(null);
   const [messagePreview, setMessagePreview] = useState<DecisionMessagePreview | null>(null);
   const [defaultMessagePreview, setDefaultMessagePreview] = useState<DecisionMessagePreview | null>(null);
   const [messagePreviewError, setMessagePreviewError] = useState("");
@@ -953,6 +1004,19 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
     useState<Record<string, string>>({});
   const [assigningSubmissionId, setAssigningSubmissionId] = useState<string | null>(null);
   const [exporting, setExporting] = useState<"results" | "reviews" | null>(null);
+
+  function insertDecisionToken(token: string) {
+    const field = speakerMessageRef.current;
+    if (!field) return;
+    const start = field.selectionStart ?? speakerMessage.length;
+    const end = field.selectionEnd ?? start;
+    setMessagePreview(null);
+    setSpeakerMessage(`${speakerMessage.slice(0, start)}${token}${speakerMessage.slice(end)}`);
+    requestAnimationFrame(() => {
+      field.focus();
+      field.setSelectionRange(start + token.length, start + token.length);
+    });
+  }
 
   function handleRoundError(error: unknown, focusStatus = false) {
     if (window.SessionBuddyApi.redirectIfSignedOut(error)) return;
@@ -1895,9 +1959,29 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                                 />
                               </label>
                               <p className="help"><strong>Default message:</strong> {defaultMessagePreview?.resolved_body || messagePreview.resolved_body}</p>
+                              <div className="template-token-toolbar" role="group" aria-label="Insert message placeholder">
+                                <span>Insert:</span>
+                                {[
+                                  ["Speaker name", "{{speaker.name}}"],
+                                  ["Proposal title", "{{submission.title}}"],
+                                  ["Event name", "{{event.name}}"],
+                                ].map(([label, token]) => (
+                                  <button
+                                    key={token}
+                                    type="button"
+                                    className="tertiary"
+                                    onClick={() => {
+                                      insertDecisionToken(token);
+                                    }}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
                               <label>
                                 Custom message <span className="optional">Optional</span>
                                 <textarea
+                                  ref={speakerMessageRef}
                                   rows={3}
                                   maxLength={4000}
                                   value={speakerMessage}
@@ -1908,9 +1992,7 @@ function AdminRoundDashboard({ roundId }: { roundId: string }) {
                                   placeholder="Leave blank to use the default message."
                                 />
                               </label>
-                              <p className="help">
-                                Available placeholders: {"{{speaker.name}}"}, {"{{submission.title}}"}, {"{{event.name}}"}. The preview shows the delivered text.
-                              </p>
+                              <p className="help">The preview shows the text that will be delivered.</p>
                               <div className="review-email-preview" aria-label="Decision email preview">
                                 <strong>Subject: {messagePreview.resolved_subject}</strong>
                                 <p>{messagePreview.resolved_body}</p>

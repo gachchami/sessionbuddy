@@ -145,6 +145,32 @@ test.describe("demo persona access", () => {
     await expect(page.getByRole("heading", { name: "Choose an available workspace" })).toBeVisible();
   });
 
+  test("an existing session offers continue or deliberate account replacement", async ({ page }) => {
+    await withDemoMode(page, false);
+    await page.route("**/api/v1/auth/session", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        display_name: "Alex Speaker",
+        csrf_token: "existing-csrf",
+        workspace_path: "/speaker",
+      }),
+    }));
+    let signedOut = false;
+    await page.route("**/api/v1/session/logout", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-csrf-token"]).toBe("existing-csrf");
+      signedOut = true;
+      await route.fulfill({ status: 204 });
+    });
+
+    await page.goto("/sign-in");
+    await expect(page.getByRole("heading", { name: "Already signed in" })).toBeVisible();
+    await expect(page.locator("#sign-in-form")).toBeHidden();
+    await page.getByRole("button", { name: "Sign out and use another account" }).click();
+    await expect.poll(() => signedOut).toBe(true);
+    await expect(page.locator("#sign-in-form")).toBeVisible();
+  });
+
   test("only the clicked control enters a loading state", async ({ page }) => {
     await withDemoMode(page, true);
     let release: () => void = () => {};

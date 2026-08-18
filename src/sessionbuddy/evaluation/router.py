@@ -15,6 +15,12 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from sessionbuddy.communications.queue_publish import publish_committed_messages
+from sessionbuddy.communications.rendering import (
+    DECISION_MESSAGE_VARIABLES,
+    VARIABLE,
+    TemplateVariableError,
+    validate_template,
+)
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
 from sessionbuddy.observability import record_conflict, record_degradation, record_timing
@@ -176,14 +182,30 @@ def _decision_composition(
     }
 
     def resolve(value: str) -> str:
-        canonical_pattern = r"{{\s*([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\s*}}"
-        unknown = sorted(set(re.findall(canonical_pattern, value)) - tokens.keys())
-        if unknown:
+        try:
+            validate_template(value, allowed_variables=DECISION_MESSAGE_VARIABLES)
+        except TemplateVariableError as exc:
+            token = exc.variables[0]
+            reason = (
+                "not available in decision messages"
+                if exc.code == "template_variable_unavailable"
+                else "unknown"
+            )
             raise HTTPException(
                 status_code=422,
-                detail=f"Unknown decision-message token: {{{{{unknown[0]}}}}}.",
-            )
-        pattern = canonical_pattern + r"|({(?:event_name|speaker_name|talk_title)})"
+                detail={
+                    "message": f"Decision-message token {{{{{token}}}}} is {reason}.",
+                    "metadata": {
+                        "template_suggestion": {
+                            "source": next(iter(exc.suggestions.items()))[0],
+                            "replacement": next(iter(exc.suggestions.items()))[1],
+                        }
+                    }
+                    if exc.suggestions
+                    else None,
+                },
+            ) from exc
+        pattern = VARIABLE.pattern + r"|({(?:event_name|speaker_name|talk_title)})"
         return re.sub(
             pattern,
             lambda match: (

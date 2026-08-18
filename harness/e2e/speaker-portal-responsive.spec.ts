@@ -110,6 +110,12 @@ async function servePortal(page: Page, portalResponse = portal) {
     contentType: "application/json",
     body: JSON.stringify({ email: "alex@example.test", display_name: "Alex Speaker", csrf_token: "responsive-csrf" }),
   }));
+  await page.route("**/api/v1/account/invitations", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ pending_invitations: [], linked_events: [
+      { event_id: "event-responsive", event_name: "AI Engineering Summit 2026", role: "speaker" },
+    ] }),
+  }));
   await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify({ data: [] }),
@@ -287,6 +293,10 @@ test.describe("speaker portal responsive design", () => {
 
   test("the empty workspace keeps saved drafts alongside open-call discovery", async ({ page }) => {
     await servePortal(page);
+    await page.route("**/api/v1/account/invitations", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ pending_invitations: [], linked_events: [] }),
+    }));
     await page.route("**/api/v1/speaker/proposal-drafts", (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ data: [{
@@ -309,12 +319,93 @@ test.describe("speaker portal responsive design", () => {
 
     await expect(page.locator("#empty-state")).toBeVisible();
     await expect(page.locator("#empty-state")).toContainText(
-      "Browse calls below to find one that is open or opening soon.",
+      "Browse open calls below, or ask the organizer to send an invitation",
     );
     const draft = page.getByRole("link", { name: "Continue editing A saved proposal draft for AI Engineering Summit 2026" });
     await expect(draft).toBeVisible();
     await expect(draft).toHaveAttribute("href", "/cfp/eventr/engineering-summit");
     await expect(page.locator("#status")).toHaveText("1 saved proposal draft.");
+  });
+
+  test("a pending invitation requires an explicit accepted response before the portal opens", async ({ page }) => {
+    await servePortal(page);
+    let accepted = false;
+    await page.route("**/api/v1/account/invitations", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(accepted
+        ? { pending_invitations: [], linked_events: [
+            { event_id: "event-responsive", event_name: "AI Engineering Summit 2026", role: "speaker" },
+          ] }
+        : { pending_invitations: [{
+            id: "invitation-responsive",
+            event_id: "event-responsive",
+            event_name: "AI Engineering Summit 2026",
+            role: "speaker",
+            expires_at_ms: Date.UTC(2026, 9, 10),
+          }], linked_events: [] }),
+    }));
+    await page.route("**/api/v1/account/invitations/invitation-responsive/accept", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      expect(route.request().headers()["x-csrf-token"]).toBe("responsive-csrf");
+      expect(route.request().headers()["idempotency-key"]?.length).toBeGreaterThanOrEqual(16);
+      accepted = true;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          invitation_id: "invitation-responsive",
+          status: "accepted",
+          role: "speaker",
+          workspace_path: "/speaker",
+        }),
+      });
+    });
+    await page.route("**/api/v1/speaker/portal*", (route) => accepted
+      ? route.fulfill({ contentType: "application/json", body: JSON.stringify(portal) })
+      : route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "not_found", message: "Not found" } }) }));
+
+    await page.goto("/speaker");
+    await expect(page.getByRole("heading", { name: "Invitations awaiting your response" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Your speaker workspace is ready" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Accept invitation" }).click();
+    await expect(page.locator(".portal-hero__title")).toContainText("Welcome, Alex Speaker");
+  });
+
+  test("accepting a reviewer invitation follows the server workspace instead of reloading the speaker portal", async ({ page }) => {
+    await servePortal(page);
+    await page.route("**/api/v1/account/invitations", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ pending_invitations: [{
+        id: "reviewer-invitation-responsive",
+        event_id: "event-responsive",
+        event_name: "AI Engineering Summit 2026",
+        role: "evaluator",
+        expires_at_ms: Date.UTC(2026, 9, 10),
+      }], linked_events: [] }),
+    }));
+    await page.route("**/api/v1/account/invitations/reviewer-invitation-responsive/accept", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        invitation_id: "reviewer-invitation-responsive",
+        status: "accepted",
+        role: "evaluator",
+        workspace_path: "/reviews",
+      }),
+    }));
+    await page.route("**/reviews", (route) => route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Reviews</title><h1>Reviewer workspace</h1>",
+    }));
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "not_found", message: "Not found" } }),
+    }));
+
+    await page.goto("/speaker");
+    await page.getByRole("button", { name: "Accept invitation" }).click();
+
+    await expect(page).toHaveURL(/\/reviews$/);
+    await expect(page.getByRole("heading", { name: "Reviewer workspace" })).toBeVisible();
   });
 
   test("every event the speaker belongs to is grouped on one page", async ({ page }) => {

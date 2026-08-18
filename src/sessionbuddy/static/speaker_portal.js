@@ -7,7 +7,7 @@
     // "active" event is the one the proposal composer and uploads act on.
     portfolio: new Map(), eventOrder: [], activeEventId: "", resources: [],
     expandedEventIds: new Set(),
-    sessionEmail: "", sessionName: "",
+    sessionEmail: "", sessionName: "", accountInvitations: null,
     // Proposal composer: the published schema plus the files chosen for its
     // upload fields and the staged references already accepted for them.
     form: null, composerEventId: null,
@@ -163,6 +163,75 @@
         behavior.onResponse?.(response);
       }
     });
+  }
+
+  function hideWorkspaceStates() {
+    ["auth-state", "empty-state", "invitation-state", "portal-failure-state", "portal"]
+      .forEach((id) => { byId(id).hidden = true; });
+  }
+
+  function renderAccountInvitations(data) {
+    const invitations = data?.pending_invitations || [];
+    const list = byId("account-invitation-list");
+    list.replaceChildren();
+    for (const invitation of invitations) {
+      const card = make("article", undefined, "speaker-invitation");
+      const copy = make("div", undefined, "speaker-invitation__copy");
+      copy.append(
+        make("h2", invitation.event_name),
+        make("p", invitation.role === "evaluator" ? "Reviewer invitation" : "Speaker invitation"),
+        make("p", `Respond by ${viewerLocalTimeLabel(invitation.expires_at_ms)}.`, "help")
+      );
+      const actions = make("div", undefined, "actions speaker-invitation__actions");
+      const decline = make("button", "Decline", "secondary");
+      const accept = make("button", "Accept invitation");
+      decline.type = accept.type = "button";
+      const respond = async (action) => {
+        accept.disabled = decline.disabled = true;
+        const chosen = action === "accept" ? accept : decline;
+        chosen.textContent = action === "accept" ? "Accepting…" : "Declining…";
+        try {
+          const response = await api(`/api/v1/account/invitations/${encodeURIComponent(invitation.id)}/${action}`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-csrf-token": state.csrf,
+              "idempotency-key": idempotencyKey()
+            },
+            body: "{}"
+          });
+          state.accountInvitations = await api("/api/v1/account/invitations");
+          if (action === "accept") {
+            if (!response.workspace_path) {
+              setStatus("Invitation accepted. Reload to open the new workspace.", "success");
+              return;
+            }
+            setStatus(`Invitation to ${invitation.event_name} accepted. Opening your workspace…`, "success");
+            window.SessionBuddyApi.prepareForSessionReplacement();
+            location.assign(response.workspace_path);
+            return;
+          } else {
+            renderAccountInvitations(state.accountInvitations);
+            if (!(state.accountInvitations.pending_invitations || []).length) {
+              hideWorkspaceStates();
+              byId("empty-state").hidden = false;
+            }
+            setStatus(`Invitation to ${invitation.event_name} declined.`, "success");
+          }
+        } catch (error) {
+          accept.disabled = decline.disabled = false;
+          accept.textContent = "Accept invitation";
+          decline.textContent = "Decline";
+          setStatus(window.SessionBuddyApi.message(error, "The invitation response could not be saved. Refresh and try again."), "error");
+        }
+      };
+      accept.addEventListener("click", () => respond("accept"));
+      decline.addEventListener("click", () => respond("decline"));
+      actions.append(decline, accept);
+      card.append(copy, actions);
+      list.append(card);
+    }
+    byId("invitation-state").hidden = invitations.length === 0;
   }
 
   function formatDate(value, timezone) {
@@ -1073,7 +1142,7 @@
     if (portal.public_profile_url) publicProfile.href = portal.public_profile_url;
     renderOpenCall(portal.open_call || null);
     renderPortfolio();
-    byId("auth-state").hidden = true;
+    hideWorkspaceStates();
     byId("portal").hidden = false;
   }
 
@@ -1675,9 +1744,13 @@
       // email, so the composer needs the account address. /api/v1/session
       // deliberately omits it; the account view is the endpoint that carries it.
       try {
-        const account = await api("/api/v1/auth/session");
+        const [account, invitations] = await Promise.all([
+          api("/api/v1/auth/session"),
+          api("/api/v1/account/invitations")
+        ]);
         state.sessionEmail = account.email || "";
         state.sessionName = account.display_name || "";
+        state.accountInvitations = invitations;
       } catch (_) {
         state.sessionEmail = "";
         state.sessionName = "";
@@ -1688,16 +1761,27 @@
       setStatus("Speaker details are ready.", "success");
     } catch (error) {
       if (error.status === 404 && state.csrf) {
-        byId("portal").hidden = true;
-        byId("auth-state").hidden = true;
-        byId("empty-state").hidden = false;
+        hideWorkspaceStates();
+        const pending = state.accountInvitations?.pending_invitations || [];
+        const linked = state.accountInvitations?.linked_events || [];
+        if (pending.length) {
+          renderAccountInvitations(state.accountInvitations);
+          byId("invitation-state").hidden = false;
+        } else if (linked.some((item) => item.role === "speaker")) {
+          byId("portal-failure-state").hidden = false;
+        } else {
+          byId("empty-state").hidden = false;
+        }
         const draftCount = byId("saved-proposal-draft-list").children.length;
-        setStatus(draftCount
-          ? `${draftCount} saved proposal draft${draftCount === 1 ? "" : "s"}.`
-          : "No proposals yet.");
+        setStatus(pending.length
+          ? `${pending.length} invitation${pending.length === 1 ? "" : "s"} awaiting your response.`
+          : linked.some((item) => item.role === "speaker")
+            ? "Your speaker event could not be loaded. Try again."
+            : draftCount
+              ? `${draftCount} saved proposal draft${draftCount === 1 ? "" : "s"}.`
+              : "No speaker events yet.");
       } else if (error.status === 401 || error.status === 404) {
-        byId("portal").hidden = true;
-        byId("empty-state").hidden = true;
+        hideWorkspaceStates();
         byId("auth-state").hidden = false;
         setStatus("Speaker access is required to view this portal.", "error");
       } else {
@@ -1759,6 +1843,7 @@
   byId("speaker-sign-in").addEventListener("click", () => {
     location.assign(`/sign-in?redirect=${encodeURIComponent(location.pathname)}`);
   });
+  byId("retry-speaker-portal").addEventListener("click", () => load());
 
   function safeUploadUrl(value) {
     try {

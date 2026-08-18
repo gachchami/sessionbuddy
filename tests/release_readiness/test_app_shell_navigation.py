@@ -457,7 +457,7 @@ def test_source_wiring_cached_identity_never_routes_an_authorization_sensitive_d
     assert "function prepareForSessionReplacement()" in api_client
     assert 'sessionStorage.removeItem("sessionbuddy:shell-session")' in api_client
     assert 'key?.startsWith("sessionbuddy:document-recovery:")' in api_client
-    for source_name in ("demo_access.js", "sign_in.js", "public_cfp.js"):
+    for source_name in ("demo_access.js", "sign_in.js", "public_cfp.js", "speaker_portal.js"):
         source = (STATIC / source_name).read_text(encoding="utf-8")
         assert "SessionBuddyApi.prepareForSessionReplacement();" in source
 

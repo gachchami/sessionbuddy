@@ -946,7 +946,10 @@
     const message = make("span", `This page requires the ${requiredPersona} role. Your current role is ${session.active_role}.`, "sb-session-contract-error");
     message.setAttribute("role", "alert");
     const actions = make("span", undefined, "sb-guest-header__actions");
-    const account = link("Switch role", `/account?next=${encodeURIComponent(location.pathname + location.search)}`);
+    const alternatives = roleChoices(session).filter((choice) => choice.role !== session.active_role);
+    const account = alternatives.length
+      ? link("Switch role", `/account?next=${encodeURIComponent(location.pathname + location.search)}`)
+      : link("Account settings", "/account");
     account.className = "sb-guest-sign-in";
     const workspace = link("Open current workspace", dashboardDestination(session) || "/account");
     workspace.className = "sb-guest-sign-in";
@@ -959,7 +962,10 @@
       main.replaceChildren();
       const panel = make("section", undefined, "card unavailable-state");
       panel.setAttribute("role", "alert");
-      panel.append(make("h1", "You do not have access in this role"), make("p", `Switch to the ${requiredPersona} role to open this page, or return to your current workspace.`), account.cloneNode(true), document.createTextNode(" "), workspace.cloneNode(true));
+      const guidance = alternatives.length
+        ? `Switch to the ${requiredPersona} role to open this page, or return to your current workspace.`
+        : `This account does not have the ${requiredPersona} role. Return to your current workspace or review account settings.`;
+      panel.append(make("h1", "You do not have access in this role"), make("p", guidance), account.cloneNode(true), document.createTextNode(" "), workspace.cloneNode(true));
       main.append(panel);
     }
   }
