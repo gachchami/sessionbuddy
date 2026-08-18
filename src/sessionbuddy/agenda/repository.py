@@ -4,6 +4,20 @@ from sessionbuddy.platform.db.d1 import D1Database, PersistenceError, result_row
 
 from .domain import AgendaConflict, AgendaSlot
 
+_PUBLIC_SESSION_CONTENT_MARKER = "/* public_session_content */"
+_PUBLIC_SESSION_CONTENT_PREDICATE = (
+    "ac.content_status='approved' AND ac.lifecycle_status='active'"
+)
+
+
+def public_session_content_sql(statement: str) -> str:
+    """Install the canonical public-content predicate into one SQL statement."""
+    if statement.count(_PUBLIC_SESSION_CONTENT_MARKER) != 1:
+        raise ValueError("public session SQL must contain exactly one visibility marker")
+    return statement.replace(
+        _PUBLIC_SESSION_CONTENT_MARKER, _PUBLIC_SESSION_CONTENT_PREDICATE
+    )
+
 
 class AgendaRepository:
     def __init__(self, db: D1Database) -> None:

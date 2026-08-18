@@ -20,6 +20,7 @@ SAFE_DEGRADATIONS = (
     "account_stale_session_cleanup_failed",
     "accepted_participant_reconciliation_failed",
     "asset_scan_queue_publish_failed",
+    "calendar_projection_failed",
     "communication_queue_publish_failed",
     "decision_correction_conflict",
     "submission_decision_concurrent_reconciled",

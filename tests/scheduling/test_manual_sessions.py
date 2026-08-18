@@ -435,6 +435,20 @@ async def test_organizer_creates_session_for_pending_invitee_without_activating_
             item for item in gallery.json()["data"] if item["display_name"] == "Marcus Okafor"
         )
         assert any(item["title"] == "DevFlow live" for item in marcus["sessions"])
+        connection.execute(
+            "UPDATE accepted_sessions SET lifecycle_status='withdrawn',withdrawn_at_ms=2000 "
+            "WHERE id=?",
+            (session["session_id"],),
+        )
+        connection.commit()
+        withdrawn_gallery = await public_client.get(
+            f"/api/v1/public/events/{event_id}/speakers"
+        )
+        assert withdrawn_gallery.status_code == 200, withdrawn_gallery.text
+        assert all(
+            item["display_name"] != "Marcus Okafor"
+            for item in withdrawn_gallery.json()["data"]
+        )
 
 
 def test_source_wiring_manual_session_controls_are_exposed_in_the_agenda_editor() -> None:

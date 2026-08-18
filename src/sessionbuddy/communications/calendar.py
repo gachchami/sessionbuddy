@@ -13,6 +13,7 @@ class CalendarInvitation:
     location: str
     organizer_email: str
     attendee_email: str
+    cancelled: bool = False
 
 
 def _escape(value: str) -> str:
@@ -46,7 +47,7 @@ def render_ics(invitation: CalendarInvitation, *, generated_at: datetime) -> str
         "VERSION:2.0",
         "PRODID:-//Sessionbuddy//Events//EN",
         "CALSCALE:GREGORIAN",
-        "METHOD:REQUEST",
+        "METHOD:CANCEL" if invitation.cancelled else "METHOD:REQUEST",
         "BEGIN:VEVENT",
         f"UID:{_escape(invitation.uid)}",
         f"SEQUENCE:{invitation.sequence}",
@@ -58,6 +59,7 @@ def render_ics(invitation: CalendarInvitation, *, generated_at: datetime) -> str
         f"LOCATION:{_escape(invitation.location)}",
         f"ORGANIZER:mailto:{invitation.organizer_email}",
         f"ATTENDEE;RSVP=TRUE:mailto:{invitation.attendee_email}",
+        *(["STATUS:CANCELLED"] if invitation.cancelled else []),
         "END:VEVENT",
         "END:VCALENDAR",
     ]

@@ -7,8 +7,6 @@ rejected. The recipient list already includes both — the preview now says whic
 is which, and the send path renders from this same query.
 """
 
-import pytest
-
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
     _client,
@@ -193,11 +191,35 @@ async def test_preview_rejects_variables_unavailable_to_speaker_messages_before_
         assert "22222222-2222-4222-8222-222222222222" not in detail
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="An active recipient without a proposal title currently renders a blank merge field.",
-)
-async def test_preview_rejects_an_empty_submission_title(
+async def test_preview_rejects_a_blank_submission_title(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        # The schema rejects the empty string but permits whitespace-only
+        # historical content, which is equally blank once rendered.
+        connection.execute(
+            "UPDATE submissions SET proposal_title='   ' WHERE event_id=?",
+            (event_id,),
+        )
+        connection.commit()
+
+        response = await _preview(client, csrf, event_id, speaker_id)
+
+        assert response.status_code == 422, response.text
+        assert "submission.title" in response.json()["error"]["message"]
+
+
+async def test_preview_rejects_the_no_submission_title_fallback(
     production_environment,  # noqa: F811 - pytest fixture
 ) -> None:
     connection, _queue, environment = production_environment
@@ -212,8 +234,8 @@ async def test_preview_rejects_an_empty_submission_title(
             link_user=True,
         )
         connection.execute(
-            "UPDATE submissions SET proposal_title='' WHERE event_id=?",
-            (event_id,),
+            "DELETE FROM submission_speakers WHERE event_speaker_id=?",
+            (speaker_id,),
         )
         connection.commit()
 
@@ -221,3 +243,28 @@ async def test_preview_rejects_an_empty_submission_title(
 
         assert response.status_code == 422, response.text
         assert "submission.title" in response.json()["error"]["message"]
+
+
+async def test_preview_rejects_a_blank_display_name_without_crashing(
+    production_environment,  # noqa: F811 - pytest fixture
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        speaker_id = _seed_speaker_with_two_submissions(
+            connection,
+            organization_id,
+            event_id,
+            speaker_id=SPEAKER_UUID,
+            person_id="person-priya",
+            link_user=True,
+        )
+        connection.execute(
+            "UPDATE people SET display_name='   ' WHERE id='person-priya'"
+        )
+        connection.commit()
+
+        response = await _preview(client, csrf, event_id, speaker_id)
+
+        assert response.status_code == 422, response.text
+        assert "speaker.name" in response.json()["error"]["message"]

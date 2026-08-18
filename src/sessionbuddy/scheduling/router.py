@@ -12,11 +12,14 @@ from sessionbuddy.agenda import (
     AgendaRepository,
     AgendaSlot,
     ScheduleSpeaker,
+    public_session_content_sql,
     queue_calendar_changes,
+    reconcile_calendar_projection,
 )
 from sessionbuddy.cfp.availability import public_form_path
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
+from sessionbuddy.observability import record_degradation
 from sessionbuddy.platform.auth.http import (
     authenticate_request,
     require_document_event,
@@ -80,6 +83,14 @@ from .models import (
 )
 
 scheduling_router = APIRouter()
+
+
+def _content_is_public_after_publish(
+    row: dict[str, object], *, approve_drafts: bool
+) -> bool:
+    """Project the content status after the atomic publication batch."""
+    return approve_drafts or str(row["content_status"]) == "approved"
+
 
 _RESOURCE_SELECT_BY_NAME = {
     "room": """SELECT id,status,version FROM event_rooms
@@ -2493,27 +2504,35 @@ async def publish_agenda(
         raise HTTPException(status_code=409) from exc
 
     organizer = str(getattr(request.scope.get("env"), "CALENDAR_FROM", "events@local.invalid"))
+    public_session_ids: set[str] = set()
     for row in item_rows:
-        recipients = result_rows(
-            await db.prepare(
-                """SELECT u.id AS user_id,u.email,p.display_name
-                   FROM agenda_item_speakers ais
-                   JOIN event_speakers es ON es.id=ais.event_speaker_id
-                   JOIN people p ON p.id=es.person_id JOIN users u ON u.id=p.user_id
-                   WHERE ais.organization_id=?1 AND ais.event_id=?2
-                     AND ais.revision_id=?3 AND ais.agenda_item_id=?4
-                     AND u.status='active' ORDER BY u.id"""
-            )
-            .bind(organization_id, event_id, body.revision_id, row["id"])
-            .all()
+        content_is_public = _content_is_public_after_publish(
+            row, approve_drafts=body.approve_draft_sessions
         )
+        if not content_is_public:
+            continue
+        public_session_ids.add(str(row["accepted_session_id"]))
         try:
+            recipients = result_rows(
+                await db.prepare(
+                    """SELECT u.id AS user_id,u.email,p.display_name
+                       FROM agenda_item_speakers ais
+                       JOIN event_speakers es ON es.id=ais.event_speaker_id
+                       JOIN people p ON p.id=es.person_id JOIN users u ON u.id=p.user_id
+                       WHERE ais.organization_id=?1 AND ais.event_id=?2
+                         AND ais.revision_id=?3 AND ais.agenda_item_id=?4
+                         AND u.status='active' ORDER BY u.id"""
+                )
+                .bind(organization_id, event_id, body.revision_id, row["id"])
+                .all()
+            )
             await queue_calendar_changes(
                 db,
                 AgendaCalendarChange(
                     organization_id=organization_id,
                     event_id=event_id,
                     agenda_item_id=str(row["id"]),
+                    accepted_session_id=str(row["accepted_session_id"]),
                     starts_at_ms=int(row["starts_at_ms"]),
                     ends_at_ms=int(row["ends_at_ms"]),
                     title=str(row["proposal_title"]),
@@ -2532,10 +2551,24 @@ async def publish_agenda(
                 ],
                 now_ms=now,
             )
-        except PersistenceError:
-            # Publication already committed durable sync intent. A consumer can
-            # safely replay it using deterministic calendar keys.
+        except Exception:  # Post-commit provider reads are not uniformly wrapped.
+            # Publication already committed, so the response must not claim it
+            # failed. A later agenda publication safely retries this projection.
+            record_degradation(request, "calendar_projection_failed")
             continue
+    try:
+        await reconcile_calendar_projection(
+            db,
+            organization_id=organization_id,
+            event_id=event_id,
+            public_session_ids=public_session_ids,
+            organizer_email=organizer,
+            now_ms=now,
+        )
+    except Exception:  # Post-commit provider reads are not uniformly wrapped.
+        # Publication is durable. A later agenda publication reruns this
+        # reconciliation, whose invitation UID and sequence writes are retry-safe.
+        record_degradation(request, "calendar_projection_failed")
     return response
 
 
@@ -2609,7 +2642,8 @@ async def get_schedule(event_id: str, request: Request) -> ScheduleView:
     items = result_rows(
         await _db(request)
         .prepare(
-            """SELECT ai.id,ac.id AS session_id,
+            public_session_content_sql(
+                """SELECT ai.id,ac.id AS session_id,
                   COALESCE(s.proposal_title,ac.organizer_title) AS title,
                   ai.starts_at_ms AS start_at_ms,
                   ai.ends_at_ms AS end_at_ms,r.name AS room_name,t.name AS track_name,
@@ -2623,8 +2657,9 @@ async def get_schedule(event_id: str, request: Request) -> ScheduleView:
            LEFT JOIN event_tracks t ON t.id=ai.track_id
            LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
            WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
-             AND ac.lifecycle_status='active'
+             AND /* public_session_content */
            GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
+            )
         )
         .bind(event["organization_id"], event_id, revision["id"])
         .all()
@@ -2701,7 +2736,8 @@ async def get_public_schedule(
         )
     items = result_rows(
         await db.prepare(
-            """SELECT ai.id,ac.id AS session_id,
+            public_session_content_sql(
+                """SELECT ai.id,ac.id AS session_id,
                       COALESCE(s.proposal_title,ac.organizer_title) AS title,
                       COALESCE(s.proposal_abstract,ac.organizer_abstract) AS description,
                       COALESCE(NULLIF(json_extract(s.answers_json,'$.format'),''),
@@ -2740,8 +2776,9 @@ async def get_public_schedule(
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                LEFT JOIN submission_speakers ss ON ss.submission_id=ac.submission_id
                WHERE ai.organization_id=?1 AND ai.event_id=?2 AND ai.revision_id=?3
-                 AND ac.content_status='approved' AND ac.lifecycle_status='active'
+                 AND /* public_session_content */
                GROUP BY ai.id ORDER BY ai.starts_at_ms,ai.id"""
+            )
         )
         .bind(event["organization_id"], event_id, revision["id"])
         .all()

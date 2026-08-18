@@ -379,13 +379,14 @@ class D1CommunicationsService:
                     ),
                 )
             display_name = str(row["display_name"])
+            display_name_parts = display_name.split(maxsplit=1)
             public_base = str(getattr(self.request.scope.get("env"), "PUBLIC_BASE_URL", "")).rstrip(
                 "/"
             )
             values = {
                 "event.name": str(row["event_name"]),
                 "speaker.name": display_name,
-                "speaker.first_name": display_name.split(maxsplit=1)[0],
+                "speaker.first_name": display_name_parts[0] if display_name_parts else "",
             }
             if row["recipient_state"] == "active":
                 values.update(
@@ -396,7 +397,14 @@ class D1CommunicationsService:
                         ),
                     }
                 )
-            missing = sorted(required - values.keys())
+            # A merge field with no usable content is as unsafe as an absent
+            # field: preview and delivery must never turn a persisted blank
+            # proposal title into an apparently valid message.
+            missing = sorted(
+                variable
+                for variable in required
+                if variable not in values or not str(values[variable]).strip()
+            )
             if missing:
                 # recipient_state is the compatibility fact: "invited" is the
                 # pending-invitation query branch, while "active" only means an

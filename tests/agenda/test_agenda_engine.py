@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from sessionbuddy.agenda import AgendaRepository, AgendaSlot
+from sessionbuddy.agenda import AgendaRepository, AgendaSlot, public_session_content_sql
 from sessionbuddy.platform.db.d1 import PersistenceError
 from tests.speaker_operations.test_asset_boundary import AsyncSqlite
 from tests.speaker_operations.test_speaker_onboarding_schema import (
@@ -10,6 +10,21 @@ from tests.speaker_operations.test_speaker_onboarding_schema import (
     add_speaker,
     seed_platform,
 )
+
+
+def test_public_session_content_sql_installs_exactly_one_canonical_predicate() -> None:
+    statement = public_session_content_sql(
+        "SELECT ac.id FROM accepted_sessions ac WHERE /* public_session_content */"
+    )
+    assert "ac.content_status='approved' AND ac.lifecycle_status='active'" in statement
+    assert "public_session_content" not in statement
+
+    with pytest.raises(ValueError, match="exactly one visibility marker"):
+        public_session_content_sql("SELECT ac.id FROM accepted_sessions ac")
+    with pytest.raises(ValueError, match="exactly one visibility marker"):
+        public_session_content_sql(
+            "SELECT /* public_session_content */ /* public_session_content */"
+        )
 
 
 @pytest.fixture

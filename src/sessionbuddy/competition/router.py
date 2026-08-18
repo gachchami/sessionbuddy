@@ -6,6 +6,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
+from sessionbuddy.agenda.repository import public_session_content_sql
 from sessionbuddy.cfp.availability import form_availability, public_form_path
 from sessionbuddy.console import embedded_assets
 from sessionbuddy.console.asset_response import content_addressed_asset
@@ -2119,7 +2120,8 @@ async def sessionboard_compatible_sessions(
     rows = result_rows(
         await _db(request)
         .prepare(
-            """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+            public_session_content_sql(
+                """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
                       COALESCE(s.proposal_abstract,ac.organizer_abstract) AS proposal_abstract,
                       ai.starts_at_ms,ai.ends_at_ms,
                       r.name AS room_name,t.name AS track_name
@@ -2131,8 +2133,9 @@ async def sessionboard_compatible_sessions(
                LEFT JOIN event_rooms r ON r.id=ai.room_id
                LEFT JOIN event_tracks t ON t.id=ai.track_id
                WHERE ac.organization_id=?1 AND ac.event_id=?2
-                 AND ac.lifecycle_status='active'
+                 AND /* public_session_content */
                ORDER BY ai.starts_at_ms,s.proposal_title"""
+            )
         )
         .bind(event["organization_id"], event_id)
         .all()
@@ -2212,21 +2215,22 @@ async def sessionboard_compatible_speakers(
     rows = result_rows(
         await _db(request)
         .prepare(
-            """SELECT DISTINCT es.id,p.display_name,p.job_title,p.company,p.biography,p.location,
-                      p.links_json,u.email,p.created_at_ms,p.updated_at_ms
+            public_session_content_sql(
+                """SELECT DISTINCT es.id,p.display_name,p.job_title,p.company,p.biography,
+                      p.location,p.links_json,u.email,p.created_at_ms,p.updated_at_ms
                FROM event_speakers es JOIN people p ON p.id=es.person_id
                LEFT JOIN users u ON u.id=p.user_id
                WHERE es.organization_id=?1 AND es.event_id=?2 AND (
                  es.selection_status='accepted' OR EXISTS (
                    SELECT 1 FROM accepted_session_participants participant
-                   JOIN accepted_sessions session ON session.id=participant.accepted_session_id
-                   JOIN agenda_items item ON item.accepted_session_id=session.id
+                   JOIN accepted_sessions ac ON ac.id=participant.accepted_session_id
+                   JOIN agenda_items item ON item.accepted_session_id=ac.id
                    JOIN schedule_revisions revision ON revision.id=item.revision_id
                    WHERE participant.event_speaker_id=es.id
-                     AND session.content_status='approved'
-                     AND session.lifecycle_status='active'
+                     AND /* public_session_content */
                      AND revision.status='published'))
                ORDER BY p.display_name,es.id"""
+            )
         )
         .bind(event["organization_id"], event_id)
         .all()
@@ -2288,8 +2292,9 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
     rows = result_rows(
         await _db(request)
         .prepare(
-            """SELECT DISTINCT es.id,p.display_name,p.job_title,p.company,p.biography,p.location,
-                      p.links_json,(EXISTS(SELECT 1 FROM speaker_assets a
+            public_session_content_sql(
+                """SELECT DISTINCT es.id,p.display_name,p.job_title,p.company,p.biography,
+                      p.location,p.links_json,(EXISTS(SELECT 1 FROM speaker_assets a
                         JOIN speaker_asset_versions av
                         ON av.asset_id=a.id AND av.is_current=1 AND av.scan_state='clean'
                         WHERE a.event_speaker_id=es.id AND a.kind='headshot')
@@ -2299,13 +2304,14 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                WHERE es.organization_id=?1 AND es.event_id=?2 AND (
                  es.selection_status='accepted' OR EXISTS (
                    SELECT 1 FROM accepted_session_participants participant
-                   JOIN accepted_sessions session ON session.id=participant.accepted_session_id
-                   JOIN agenda_items item ON item.accepted_session_id=session.id
+                   JOIN accepted_sessions ac ON ac.id=participant.accepted_session_id
+                   JOIN agenda_items item ON item.accepted_session_id=ac.id
                    JOIN schedule_revisions revision ON revision.id=item.revision_id
                    WHERE participant.event_speaker_id=es.id
-                     AND session.content_status='approved'
+                     AND /* public_session_content */
                      AND revision.status='published'))
                ORDER BY p.display_name,es.id"""
+            )
         )
         .bind(event["organization_id"], event_id)
         .all()
@@ -2315,7 +2321,8 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
         sessions = result_rows(
             await _db(request)
             .prepare(
-                """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
+                public_session_content_sql(
+                    """SELECT ac.id,COALESCE(s.proposal_title,ac.organizer_title) AS proposal_title,
                           ai.starts_at_ms,ai.ends_at_ms,
                           r.name AS room_name,COALESCE(t.name,'') AS track_name
                    FROM accepted_sessions ac
@@ -2324,8 +2331,7 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                    JOIN schedule_revisions sr ON sr.id=ai.revision_id
                    JOIN event_rooms r ON r.id=ai.room_id
                    LEFT JOIN event_tracks t ON t.id=ai.track_id
-                   WHERE ac.content_status='approved'
-                     AND ac.lifecycle_status='active' AND (
+                   WHERE /* public_session_content */ AND (
                      EXISTS(SELECT 1 FROM submission_speakers ss
                        WHERE ss.submission_id=ac.submission_id AND ss.event_speaker_id=?1)
                      OR EXISTS(SELECT 1 FROM accepted_session_participants participant
@@ -2333,6 +2339,7 @@ async def public_speakers(event_id: str, request: Request) -> PublicSpeakerGalle
                          AND participant.event_speaker_id=?1))
                      AND sr.status='published'
                    ORDER BY ai.starts_at_ms,s.proposal_title"""
+                )
             )
             .bind(row["id"])
             .all()

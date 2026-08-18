@@ -2,7 +2,13 @@ import sqlite3
 
 import pytest
 
-from sessionbuddy.agenda import AgendaCalendarChange, ScheduleSpeaker, queue_calendar_changes
+from sessionbuddy.agenda import (
+    AgendaCalendarChange,
+    ScheduleSpeaker,
+    queue_calendar_changes,
+    reconcile_calendar_projection,
+)
+from sessionbuddy.agenda import calendar_delivery as calendar_delivery_module
 from tests.speaker_operations.test_asset_boundary import AsyncSqlite
 from tests.speaker_operations.test_speaker_onboarding_schema import MIGRATIONS, seed_platform
 
@@ -64,6 +70,7 @@ def change(**values) -> AgendaCalendarChange:
         "organization_id": "org-a",
         "event_id": "event-a",
         "agenda_item_id": "agenda-a",
+        "accepted_session_id": "accepted-a",
         "starts_at_ms": 2_000,
         "ends_at_ms": 3_000,
         "title": "Opening Session",
@@ -78,6 +85,30 @@ def change(**values) -> AgendaCalendarChange:
 
 def speaker() -> ScheduleSpeaker:
     return ScheduleSpeaker("user-a", "user-a@example.test", "Speaker <One>")
+
+
+def add_legacy_duplicate(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """INSERT INTO schedule_revisions
+           (id,organization_id,event_id,revision_number,name,status,created_by_user_id,
+            created_at_ms,updated_at_ms)
+           VALUES ('revision-b','org-a','event-a',2,'Next draft','draft','user-a',2,2)"""
+    )
+    connection.execute(
+        """INSERT INTO agenda_items
+           (id,organization_id,event_id,revision_id,accepted_session_id,room_id,event_date,
+            event_time_zone,starts_at_ms,ends_at_ms,created_at_ms,updated_at_ms)
+           VALUES ('agenda-b','org-a','event-a','revision-b','accepted-a','room-a',
+                   '1970-01-01','UTC',1100,1900,2,2)"""
+    )
+    connection.execute(
+        """INSERT INTO calendar_invitations
+           (id,organization_id,event_id,agenda_item_id,recipient_user_id,calendar_uid,
+            sequence,last_content_hash,updated_at_ms)
+           VALUES ('legacy-duplicate','org-a','event-a','agenda-b','user-a',
+                   'legacy-duplicate@example.test',0,X'00',999)"""
+    )
+    connection.commit()
 
 
 @pytest.mark.asyncio
@@ -105,6 +136,109 @@ async def test_stable_uid_sequence_and_retry_safe_delivery(database) -> None:
     assert f"UID:{uid}\r\n" in versions[1]["ics_content"]
     assert "SEQUENCE:1\r\n" in versions[1]["ics_content"]
     assert connection.execute("SELECT count(*) FROM communication_messages").fetchone()[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_hidden_content_cancels_prior_delivery_across_revision_item_ids(database) -> None:
+    db, connection = database
+    await queue_calendar_changes(db, change(), [speaker()], now_ms=1_000)
+    add_legacy_duplicate(connection)
+
+    cancelled = await reconcile_calendar_projection(
+        db,
+        organization_id="org-a",
+        event_id="event-a",
+        public_session_ids=set(),
+        organizer_email="events@example.test",
+        now_ms=1_001,
+    )
+
+    assert len(cancelled) == 2
+    versions = connection.execute(
+        "SELECT sequence,ics_content FROM calendar_invitation_versions ORDER BY sequence"
+    ).fetchall()
+    assert [row["sequence"] for row in versions] == [0, 1, 1]
+    assert all("METHOD:CANCEL\r\n" in row["ics_content"] for row in versions[1:])
+    assert all("STATUS:CANCELLED\r\n" in row["ics_content"] for row in versions[1:])
+    message = connection.execute(
+        "SELECT subject,html_body FROM communication_messages ORDER BY queued_at_ms DESC LIMIT 1"
+    ).fetchone()
+    assert message["subject"] == "Schedule cancellation: Talk a"
+    assert "no longer on the published schedule" in message["html_body"]
+    assert (
+        await reconcile_calendar_projection(
+            db,
+            organization_id="org-a",
+            event_id="event-a",
+            public_session_ids=set(),
+            organizer_email="events@example.test",
+            now_ms=1_002,
+        )
+        == []
+    )
+
+
+def test_reconciliation_lookup_uses_tenant_scoped_invitation_index(database) -> None:
+    _db, connection = database
+    plan = connection.execute(
+        "EXPLAIN QUERY PLAN " + calendar_delivery_module._HIDDEN_CALENDAR_SESSIONS_SQL,
+        ("org-a", "event-a", "[]"),
+    ).fetchall()
+    detail = "\n".join(str(row[3]) for row in plan)
+
+    assert "uq_calendar_invitation_tenant_id" in detail
+    assert "SCAN invitation" not in detail
+
+
+@pytest.mark.asyncio
+async def test_cancellation_survives_a_missing_historical_room(database) -> None:
+    db, connection = database
+    await queue_calendar_changes(db, change(), [speaker()], now_ms=1_000)
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys=OFF")
+    connection.execute("DELETE FROM event_rooms WHERE id='room-a'")
+    connection.commit()
+
+    cancelled = await reconcile_calendar_projection(
+        db,
+        organization_id="org-a",
+        event_id="event-a",
+        public_session_ids=set(),
+        organizer_email="events@example.test",
+        now_ms=1_001,
+    )
+
+    assert len(cancelled) == 1
+    content = connection.execute(
+        "SELECT ics_content FROM calendar_invitation_versions ORDER BY sequence DESC LIMIT 1"
+    ).fetchone()[0]
+    assert "METHOD:CANCEL\r\n" in content
+    assert "LOCATION:\r\n" in content
+
+
+@pytest.mark.asyncio
+async def test_live_session_updates_newest_uid_and_cancels_legacy_duplicates(database) -> None:
+    db, connection = database
+    await queue_calendar_changes(db, change(), [speaker()], now_ms=1_000)
+    add_legacy_duplicate(connection)
+
+    queued = await queue_calendar_changes(db, change(room="Room 2"), [speaker()], now_ms=1_001)
+
+    assert len(queued) == 2
+    versions = connection.execute(
+        """SELECT invitation.calendar_uid,version.ics_content
+           FROM calendar_invitation_versions version
+           JOIN calendar_invitations invitation ON invitation.id=version.invitation_id
+           WHERE version.sequence=1 ORDER BY invitation.calendar_uid"""
+    ).fetchall()
+    assert len(versions) == 2
+    by_uid = {row["calendar_uid"]: row["ics_content"] for row in versions}
+    assert "METHOD:CANCEL\r\n" in by_uid["legacy-duplicate@example.test"]
+    current = next(
+        content for uid, content in by_uid.items() if uid != "legacy-duplicate@example.test"
+    )
+    assert "METHOD:REQUEST\r\n" in current
+    assert "LOCATION:Room 2\r\n" in current
 
 
 @pytest.mark.asyncio

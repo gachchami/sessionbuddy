@@ -308,9 +308,16 @@ The agenda editor's authenticated unschedule action includes the required JSON
 media type, and the public schedule identifies the published revision number
 rather than exposing an internal optimistic-lock version.
 The published revision continues to resolve session content from live accepted-session
-rows rather than snapshotting it. Aligning every non-organizer schedule projection
-around the same draft-content rule remains a separate follow-up; calendar descriptions
-are unchanged by publication approval.
+rows rather than snapshotting it. Every non-organizer schedule projection now applies
+the same approved-and-active content rule: authenticated attendee schedules, public
+JSON/ICS/XML schedules, and calendar delivery hide scheduled drafts unless publication
+atomically approves them. If a previously delivered session is later hidden, calendar
+delivery issues an RFC 5545 cancellation against the session's stable invitation identity.
+The Accelevents-compatible session feed and public speaker gallery apply the same rule,
+so draft or withdrawn titles and abstracts are no longer part of those external contracts.
+Calendar fingerprints now use the stable accepted-session identity and publication state;
+the first agenda publication after this change can therefore emit one schedule-change
+refresh for previously delivered invitations before subsequent unchanged publishes settle.
 
 ## Release readiness
 

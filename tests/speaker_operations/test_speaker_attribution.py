@@ -379,6 +379,12 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
                        'Aaron Co-speaker',1000)""",
             (organization_id, event_id),
         )
+        connection.execute(
+            """UPDATE accepted_sessions SET content_status='approved'
+               WHERE organization_id=? AND event_id=?
+                 AND submission_id='submission-accepted'""",
+            (organization_id, event_id),
+        )
         connection.commit()
         token = await client.post(
             f"/api/v1/admin/events/{event_id}/integrations/accelevents/tokens",
