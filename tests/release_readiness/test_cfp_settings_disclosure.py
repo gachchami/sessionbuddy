@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_cfp_settings_use_an_always_visible_question_focused_editor() -> None:
+def test_source_wiring_cfp_settings_use_an_always_visible_question_focused_editor() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
 
@@ -22,7 +22,7 @@ def test_cfp_settings_use_an_always_visible_question_focused_editor() -> None:
     assert ".cfp-editor-actions { z-index: 3;" in stylesheet
 
 
-def test_cfp_url_keeps_the_application_route_fixed() -> None:
+def test_source_wiring_cfp_url_keeps_the_application_route_fixed() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
@@ -33,7 +33,9 @@ def test_cfp_url_keeps_the_application_route_fixed() -> None:
     assert 'name="slug" type="url"' not in page
 
 
-def test_published_cfp_opens_in_the_editor_and_returns_to_summary_after_save() -> None:
+def test_source_wiring_published_cfp_opens_in_the_editor_and_returns_to_summary_after_save() -> (
+    None
+):
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
@@ -44,8 +46,8 @@ def test_published_cfp_opens_in_the_editor_and_returns_to_summary_after_save() -
     assert 'byId("publish-settings").hidden = Boolean(published) && !state.editing;' in script
     assert 'byId("cfp-summary").hidden = false;' in script
     assert 'id="cfp-share-dialog"' in page
-    assert 'state.editing = true;' in script
-    assert 'state.editing = false;' in script
+    assert "state.editing = true;" in script
+    assert "state.editing = false;" in script
 
 
 def test_cfp_save_and_public_submission_have_clear_progress_and_completion() -> None:
@@ -61,14 +63,14 @@ def test_cfp_save_and_public_submission_have_clear_progress_and_completion() -> 
     assert 'id="receipt"' in public_page and 'tabindex="-1"' in public_page
     assert '"Submitting…"' in public_script
     assert '"Submitted ✓"' in public_script
-    assert 'receipt.focus({ preventScroll: true });' in public_script
+    assert "receipt.focus({ preventScroll: true });" in public_script
     assert 'id="change-cfp-email"' not in public_page
-    assert 'form.hidden = true;' in public_script
+    assert "form.hidden = true;" in public_script
     assert 'byId("call-details").hidden = true;' in public_script
     assert '"Submission confirmed"' in public_script
 
 
-def test_published_cfp_does_not_report_phantom_unpublished_changes() -> None:
+def test_source_wiring_published_cfp_does_not_report_phantom_unpublished_changes() -> None:
     # CFP-S1 eval (2026-08-21, observation 4): a clean, freshly loaded
     # published form said "Unpublished changes" and told the organizer nothing
     # changes publicly until they update the live CFP. They obeyed, the

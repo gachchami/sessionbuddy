@@ -11,6 +11,8 @@ from pydantic import (
     model_validator,
 )
 
+from sessionbuddy.platform.upload_contracts import FILE_TASK_TYPES, MAX_ASSET_UPLOAD_BYTES
+
 
 def _absolute_web_link(value: str) -> str:
     parsed = urlparse(value)
@@ -256,7 +258,7 @@ class SpeakerTaskCreate(BaseModel):
     task_type: Literal["custom", "headshot", "slides", "supporting_document"] = "custom"
     upload_enabled: bool = False
     allowed_content_types: tuple[str, ...] = Field(default=(), max_length=12)
-    max_file_bytes: int | None = Field(default=None, ge=1, le=50 * 1024 * 1024)
+    max_file_bytes: int | None = Field(default=None, ge=1, le=MAX_ASSET_UPLOAD_BYTES)
     fields: tuple[TaskFormField, ...] = Field(default=(), max_length=40)
 
     @model_validator(mode="after")
@@ -264,7 +266,7 @@ class SpeakerTaskCreate(BaseModel):
         keys = [field.key for field in self.fields]
         if len(keys) != len(set(keys)):
             raise ValueError("task form field keys must be unique")
-        file_task = self.task_type in {"headshot", "slides", "supporting_document"}
+        file_task = self.task_type in FILE_TASK_TYPES
         if file_task != self.upload_enabled:
             raise ValueError("file request tasks must enable uploads")
         if file_task and (not self.allowed_content_types or self.max_file_bytes is None):

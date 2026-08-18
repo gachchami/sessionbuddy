@@ -37,6 +37,7 @@ from sessionbuddy.platform.db.commands import (
 )
 from sessionbuddy.platform.db.d1 import PersistenceError, result_rows, row_mapping, to_python
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 
 from .models import (
     AdminAgendaView,
@@ -705,6 +706,7 @@ async def create_organizer_session(
                 ("headshot", "Upload your headshot", 7),
                 ("slides", "Upload your presentation slides", 10),
             ):
+                form_schema_json = task_form_schema_json(task_type)
                 batch.add_statement(
                     db.prepare(
                         """INSERT INTO speaker_tasks
@@ -745,7 +747,7 @@ async def create_organizer_session(
                                ) THEN ?8
                                ELSE NULL
                              END,
-                             ?8,?8,'{}'
+                             ?8,?8,?9
                            FROM event_speakers es
                            JOIN people p ON p.organization_id=es.organization_id
                             AND p.id=es.person_id
@@ -766,6 +768,7 @@ async def create_organizer_session(
                         title,
                         now + due_days * 86_400_000,
                         now,
+                        form_schema_json,
                     )
                 )
     batch.add_statement(

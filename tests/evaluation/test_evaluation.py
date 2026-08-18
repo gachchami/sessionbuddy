@@ -343,7 +343,7 @@ def test_assignment_strategies_are_deterministic() -> None:
     assert RoundSubmissionAdd(submission_ids=["a" * 36]).submission_ids == ["a" * 36]
 
 
-def test_round_workspaces_support_late_submissions_and_audited_force_close() -> None:
+def test_source_wiring_round_workspaces_support_late_submissions_and_audited_force_close() -> None:
     root = Path(__file__).parents[2]
     submissions = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
     reviews = (root / "frontend/src/main.tsx").read_text()
@@ -354,7 +354,7 @@ def test_round_workspaces_support_late_submissions_and_audited_force_close() -> 
     assert "Organizer closed the round before every review was final." in reviews
 
 
-def test_evaluation_rounds_are_owned_by_events() -> None:
+def test_source_wiring_evaluation_rounds_are_owned_by_events() -> None:
     root = Path(__file__).parents[2]
     router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
     models = (root / "src/sessionbuddy/evaluation/models.py").read_text()
@@ -372,7 +372,7 @@ def test_evaluation_rounds_are_owned_by_events() -> None:
     assert "/admin/events/${encodeURIComponent(results.event_id)}/submissions" in reviews
 
 
-def test_reviewers_use_exact_assignments_not_hidden_event_memberships() -> None:
+def test_source_wiring_reviewers_use_exact_assignments_not_hidden_event_memberships() -> None:
     root = Path(__file__).parents[2]
     router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
     access = (root / "src/sessionbuddy/platform/auth/access.py").read_text()
@@ -387,7 +387,7 @@ def test_reviewers_use_exact_assignments_not_hidden_event_memberships() -> None:
     assert 'invitation["role"] != "evaluator"' in access
 
 
-def test_withdrawn_submissions_cannot_enter_review_assignments() -> None:
+def test_source_wiring_withdrawn_submissions_cannot_enter_review_assignments() -> None:
     router = (
         Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"
     ).read_text()
@@ -402,7 +402,7 @@ def test_withdrawn_submissions_cannot_enter_review_assignments() -> None:
     assert "AND status='submitted'" in add_submissions
 
 
-def test_decision_readiness_ignores_revoked_conflict_assignments() -> None:
+def test_source_wiring_decision_readiness_ignores_revoked_conflict_assignments() -> None:
     router = (
         Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"
     ).read_text()
@@ -419,7 +419,7 @@ def test_decision_readiness_ignores_revoked_conflict_assignments() -> None:
     assert "AND status='assigned'" in decision
 
 
-def test_direct_rejection_is_unreviewed_audited_and_round_independent() -> None:
+def test_source_wiring_direct_rejection_is_unreviewed_audited_and_round_independent() -> None:
     root = Path(__file__).parents[2]
     router = (root / "src/sessionbuddy/evaluation/router.py").read_text()
     baseline = (root / "migrations_baseline/0001_baseline.sql").read_text()

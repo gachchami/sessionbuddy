@@ -160,7 +160,7 @@ def test_every_static_required_control_has_a_label_and_marker_support() -> None:
     assert not failures, "Required-control errors:\n" + "\n".join(failures)
 
 
-def test_runtime_required_markers_wrap_text_for_nested_and_for_labels() -> None:
+def test_source_wiring_runtime_required_markers_wrap_text_for_nested_and_for_labels() -> None:
     client = (STATIC / "api_client.js").read_text(encoding="utf-8")
     assert 'control.closest("label")' in client
     assert 'document.querySelector(`label[for="${escaped}"]`)' in client

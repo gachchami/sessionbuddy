@@ -399,23 +399,27 @@ async def test_successful_submission_claims_staged_file_atomically(cfp_environme
     )
     intent_reference = stored_answers["paper"]
     assert intent_reference.startswith("upload:")
-    assert connection.execute(
-        "SELECT consumed_at_ms FROM upload_intents WHERE id=?",
-        (intent_reference.removeprefix("upload:"),),
-    ).fetchone()[0] is not None
+    assert (
+        connection.execute(
+            "SELECT consumed_at_ms FROM upload_intents WHERE id=?",
+            (intent_reference.removeprefix("upload:"),),
+        ).fetchone()[0]
+        is not None
+    )
     for table in ("people", "event_speakers", "organization_memberships", "event_memberships"):
         assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1, table  # noqa: S608
-    assert connection.execute(
-        "SELECT status FROM event_memberships WHERE user_id=(SELECT id FROM users "
-        "WHERE normalized_email='speaker@example.test')"
-    ).fetchone()[0] == "active"
+    assert (
+        connection.execute(
+            "SELECT status FROM event_memberships WHERE user_id=(SELECT id FROM users "
+            "WHERE normalized_email='speaker@example.test')"
+        ).fetchone()[0]
+        == "active"
+    )
 
 
 async def test_submission_replay_precedes_limit_and_claim_validation(cfp_environment) -> None:
     connection, environment = cfp_environment
-    connection.execute(
-        "UPDATE call_for_speaker_forms SET submission_limit=1 WHERE id='form'"
-    )
+    connection.execute("UPDATE call_for_speaker_forms SET submission_limit=1 WHERE id='form'")
     connection.commit()
     async with _client(environment) as client:
         csrf = await _sign_in(client, connection, "speaker@example.test")
@@ -568,9 +572,12 @@ async def test_revoked_user_cannot_regain_access_through_staged_uploads(cfp_envi
     assert {row["id"] for row in memberships} == {"revoked-org", "revoked-event"}
     assert {row["status"] for row in memberships} == {"revoked"}
     assert connection.execute("SELECT COUNT(*) FROM submissions").fetchone()[0] == 0
-    assert connection.execute(
-        "SELECT status FROM cfp_staged_assets WHERE id=?", (staged_id,)
-    ).fetchone()[0] == "staged"
+    assert (
+        connection.execute(
+            "SELECT status FROM cfp_staged_assets WHERE id=?", (staged_id,)
+        ).fetchone()[0]
+        == "staged"
+    )
 
 
 async def test_editing_retains_existing_attachment_and_supports_replacement(
@@ -633,10 +640,13 @@ async def test_editing_retains_existing_attachment_and_supports_replacement(
            ORDER BY generation"""
     ).fetchall()
     assert [tuple(row) for row in versions] == [(1, "superseded", 0), (2, "clean", 1)]
-    assert connection.execute(
-        "SELECT status,claimed_submission_id FROM cfp_staged_assets WHERE id=?",
-        (replacement_id,),
-    ).fetchone()["status"] == "claimed"
+    assert (
+        connection.execute(
+            "SELECT status,claimed_submission_id FROM cfp_staged_assets WHERE id=?",
+            (replacement_id,),
+        ).fetchone()["status"]
+        == "claimed"
+    )
     assert connection.execute("SELECT COUNT(*) FROM speaker_assets").fetchone()[0] == 1
 
 
@@ -665,9 +675,9 @@ async def test_lost_concurrent_edit_cannot_claim_its_staged_file(cfp_environment
     event_speaker_id = connection.execute(
         "SELECT event_speaker_id FROM submission_speakers WHERE role='primary'"
     ).fetchone()[0]
-    versions_before = connection.execute(
-        "SELECT COUNT(*) FROM speaker_asset_versions"
-    ).fetchone()[0]
+    versions_before = connection.execute("SELECT COUNT(*) FROM speaker_asset_versions").fetchone()[
+        0
+    ]
     claim = await build_staged_claim(
         db,
         organization_id="org",
@@ -693,15 +703,22 @@ async def test_lost_concurrent_edit_cannot_claim_its_staged_file(cfp_environment
         await db.batch([stale_update, write_guard, *claim.statements])
 
     # The whole batch rolled back: nothing claimed, no versions added.
-    assert connection.execute(
-        "SELECT status FROM cfp_staged_assets WHERE id=?", (loser_staged_id,)
-    ).fetchone()[0] == "staged"
-    assert connection.execute(
-        "SELECT COUNT(*) FROM speaker_asset_versions"
-    ).fetchone()[0] == versions_before
-    assert connection.execute(
-        "SELECT proposal_title FROM submissions WHERE id=?", (submission_id,)
-    ).fetchone()[0] != "Loser title"
+    assert (
+        connection.execute(
+            "SELECT status FROM cfp_staged_assets WHERE id=?", (loser_staged_id,)
+        ).fetchone()[0]
+        == "staged"
+    )
+    assert (
+        connection.execute("SELECT COUNT(*) FROM speaker_asset_versions").fetchone()[0]
+        == versions_before
+    )
+    assert (
+        connection.execute(
+            "SELECT proposal_title FROM submissions WHERE id=?", (submission_id,)
+        ).fetchone()[0]
+        != "Loser title"
+    )
 
     # And the router wires the guard between the UPDATE and the claim.
     router = (PROJECT_ROOT / "src" / "sessionbuddy" / "cfp" / "router.py").read_text(
@@ -734,8 +751,7 @@ class _GatedD1(SQLiteD1):
 
     async def batch(self, statements):
         if self.allow_claim_batch is not None and any(
-            "UPDATE submissions SET" in getattr(statement, "sql", "")
-            for statement in statements
+            "UPDATE submissions SET" in getattr(statement, "sql", "") for statement in statements
         ):
             await self.allow_claim_batch.wait()
         return await super().batch(statements)
@@ -797,9 +813,12 @@ async def test_two_tab_race_over_http_rolls_back_the_losing_claim(cfp_environmen
     assert stored["proposal_title"] == "Tab A title"
     winner_reference = json.loads(stored["answers_json"])["paper"]
     assert winner_reference.startswith("upload:")
-    assert connection.execute(
-        "SELECT status,claimed_submission_id FROM cfp_staged_assets WHERE id=?", (staged_a,)
-    ).fetchone()["status"] == "claimed"
+    assert (
+        connection.execute(
+            "SELECT status,claimed_submission_id FROM cfp_staged_assets WHERE id=?", (staged_a,)
+        ).fetchone()["status"]
+        == "claimed"
+    )
     loser = connection.execute(
         "SELECT status,claimed_submission_id FROM cfp_staged_assets WHERE id=?", (staged_b,)
     ).fetchone()
@@ -860,9 +879,10 @@ async def test_hourly_authorization_quota_counts_claimed_rows(cfp_environment) -
         )
         assert denied.status_code == 429, denied.text
         assert denied.headers.get("retry-after") == "3600"
-    assert connection.execute(
-        "SELECT COUNT(*) FROM cfp_staged_assets"
-    ).fetchone()[0] == MAX_STAGED_AUTHORIZATIONS_PER_HOUR
+    assert (
+        connection.execute("SELECT COUNT(*) FROM cfp_staged_assets").fetchone()[0]
+        == MAX_STAGED_AUTHORIZATIONS_PER_HOUR
+    )
 
 
 async def test_staged_endpoints_use_separate_rate_limit_buckets(cfp_environment) -> None:
@@ -999,9 +1019,12 @@ async def test_scan_gating_honors_malware_scan_mode(cfp_environment) -> None:
             environment.DB, bucket, CleanScanner(), scan_queue.messages[0], now_ms=3_000_000
         )
         assert disposition.ack and disposition.reason == "clean"
-        assert connection.execute(
-            "SELECT status,scan_result_code FROM cfp_staged_assets WHERE id=?", (staged_id,)
-        ).fetchone()["status"] == "staged"
+        assert (
+            connection.execute(
+                "SELECT status,scan_result_code FROM cfp_staged_assets WHERE id=?", (staged_id,)
+            ).fetchone()["status"]
+            == "staged"
+        )
 
         polled = await client.post(
             f"/api/v1/cfp/forms/form/upload-authorizations/{staged_id}/complete",
@@ -1139,9 +1162,7 @@ async def test_completion_polling_survives_a_scan_queue_outage(
             if '"event":"http.request.completed"' in line
         ]
         assert completion_events[-1]["level"] == "warning"
-        assert completion_events[-1]["degradations"] == [
-            "asset_scan_queue_publish_failed"
-        ]
+        assert completion_events[-1]["degradations"] == ["asset_scan_queue_publish_failed"]
         # The claim is released so the next poll may retry, and the committed
         # upload is not misreported as failed.
         row = connection.execute(
@@ -1163,9 +1184,13 @@ async def test_completion_polling_survives_a_scan_queue_outage(
         assert polled.status_code == 200
         assert polled.json()["state"] == "uploaded"
         assert len(recovered_queue.messages) == 1
-        assert connection.execute(
-            "SELECT scan_result_code FROM cfp_staged_assets WHERE id=?", (staged_id,)
-        ).fetchone()[0].startswith("enqueue:")
+        assert (
+            connection.execute(
+                "SELECT scan_result_code FROM cfp_staged_assets WHERE id=?", (staged_id,)
+            )
+            .fetchone()[0]
+            .startswith("enqueue:")
+        )
 
 
 async def test_expiry_purges_rows_and_r2_objects(cfp_environment) -> None:
@@ -1188,9 +1213,7 @@ async def test_expiry_purges_rows_and_r2_objects(cfp_environment) -> None:
         ).fetchone()[0]
         for staged_id in (abandoned_id, claimed_id)
     )
-    result = await purge_expired_staged_assets(
-        environment.DB, bucket, 9_999_999_999_999, limit=50
-    )
+    result = await purge_expired_staged_assets(environment.DB, bucket, 9_999_999_999_999, limit=50)
     assert result.deleted_rows == 2
     assert result.deleted_objects == 1
     assert result.delete_failures == 0
@@ -1239,11 +1262,12 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         assert "Continue to your account" in page.text
         assert 'name="first_name"' not in page.text
         assert 'name="password_confirmation"' not in page.text
-        assert 'auth-link-confirm.js?v=3' in page.text
+        assert "auth-link-confirm.js?v=3" in page.text
         assert token not in page.text
-        assert connection.execute(
-            "SELECT consumed_at_ms FROM authentication_challenges"
-        ).fetchone()[0] is None
+        assert (
+            connection.execute("SELECT consumed_at_ms FROM authentication_challenges").fetchone()[0]
+            is None
+        )
 
         incomplete = await client.post(
             "/auth/verify", data={"token": token}, follow_redirects=False
@@ -1252,9 +1276,7 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         assert "Create your speaker account" in incomplete.text
         assert 'name="first_name"' in incomplete.text
         assert 'name="password_confirmation"' in incomplete.text
-        assert connection.execute(
-            "SELECT COUNT(*) FROM users WHERE id!='owner'"
-        ).fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM users WHERE id!='owner'").fetchone()[0] == 0
 
         confirmed = await client.post(
             "/auth/verify",
@@ -1272,17 +1294,19 @@ async def test_magic_link_get_renders_confirmation_without_consuming(cfp_environ
         session = await client.get("/api/v1/auth/session")
         assert session.status_code == 200
         assert session.json()["active_role"] == "speaker"
-        assert connection.execute(
-            "SELECT consumed_at_ms FROM authentication_challenges"
-        ).fetchone()[0] is not None
-        assert connection.execute(
-            "SELECT public_profile_enabled FROM users WHERE normalized_email=?",
-            ("speaker@example.test",),
-        ).fetchone()[0] == 1
-
-        replayed = await client.post(
-            "/auth/verify", data={"token": token}, follow_redirects=False
+        assert (
+            connection.execute("SELECT consumed_at_ms FROM authentication_challenges").fetchone()[0]
+            is not None
         )
+        assert (
+            connection.execute(
+                "SELECT public_profile_enabled FROM users WHERE normalized_email=?",
+                ("speaker@example.test",),
+            ).fetchone()[0]
+            == 1
+        )
+
+        replayed = await client.post("/auth/verify", data={"token": token}, follow_redirects=False)
         assert replayed.status_code == 404
 
 
@@ -1307,16 +1331,17 @@ async def test_existing_speaker_magic_link_requires_confirmation(cfp_environment
         assert 'data-auto-submit="true"' not in page.text
         assert '<form method="post" action="/auth/verify"' in page.text
         assert f'value="{token}"' not in page.text
-        assert 'auth-link-confirm.js?v=3' in page.text
+        assert "auth-link-confirm.js?v=3" in page.text
         assert "Create your speaker account" not in page.text
-        assert connection.execute(
-            "SELECT consumed_at_ms FROM authentication_challenges "
-            "WHERE normalized_email=? ORDER BY created_at_ms DESC LIMIT 1",
-            ("returning-speaker@example.test",),
-        ).fetchone()[0] is None
-        confirmed = await client.post(
-            "/auth/verify", data={"token": token}, follow_redirects=False
+        assert (
+            connection.execute(
+                "SELECT consumed_at_ms FROM authentication_challenges "
+                "WHERE normalized_email=? ORDER BY created_at_ms DESC LIMIT 1",
+                ("returning-speaker@example.test",),
+            ).fetchone()[0]
+            is None
         )
+        confirmed = await client.post("/auth/verify", data={"token": token}, follow_redirects=False)
         assert confirmed.status_code == 303
         assert confirmed.headers["location"] == "/cfp/event-cfp"
 
@@ -1356,7 +1381,7 @@ async def test_passwordless_speaker_must_finish_registration(cfp_environment) ->
         assert page.status_code == 200
         assert "Continue to your account" in page.text
         assert 'name="password_confirmation"' not in page.text
-        assert 'auth-link-confirm.js?v=3' in page.text
+        assert "auth-link-confirm.js?v=3" in page.text
         assert "Signing you in…" not in page.text
 
         completed = await client.post(
@@ -1381,10 +1406,13 @@ async def test_passwordless_speaker_must_finish_registration(cfp_environment) ->
     ).fetchone()
     assert profile[0:2] == ("Legacy", "Speaker")
     assert profile[2] is not None
-    assert connection.execute(
-        "SELECT COUNT(*) FROM password_credentials WHERE user_id=? AND status='active'",
-        ("legacy-passwordless-speaker",),
-    ).fetchone()[0] == 1
+    assert (
+        connection.execute(
+            "SELECT COUNT(*) FROM password_credentials WHERE user_id=? AND status='active'",
+            ("legacy-passwordless-speaker",),
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def _seed_inactive_password_speaker(
@@ -1392,8 +1420,7 @@ def _seed_inactive_password_speaker(
 ) -> str:
     now = utc_now_ms()
     original_verifier = (
-        "$pbkdf2-sha256$i=600000$MDAwMDAwMDAwMDAwMDAwMA$"
-        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA"
+        "$pbkdf2-sha256$i=600000$MDAwMDAwMDAwMDAwMDAwMA$MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA"
     )
     connection.execute(
         """INSERT INTO users
@@ -1478,9 +1505,12 @@ async def test_reset_required_speaker_can_finish_cfp_registration(cfp_environmen
     ).fetchone()
     assert credential["status"] == "active"
     assert credential["verifier_phc"] != original_verifier
-    assert connection.execute(
-        "SELECT authorization_version FROM users WHERE id=?", (user_id,)
-    ).fetchone()[0] == 2
+    assert (
+        connection.execute(
+            "SELECT authorization_version FROM users WHERE id=?", (user_id,)
+        ).fetchone()[0]
+        == 2
+    )
     old_session = connection.execute(
         "SELECT revoked_at_ms,revoke_reason FROM sessions WHERE id=?", (f"old-{user_id}",)
     ).fetchone()
@@ -1543,14 +1573,20 @@ async def test_disabled_password_cannot_be_reactivated_by_cfp_registration(
         (user_id,),
     ).fetchone()
     assert tuple(user) == ("Original", "Speaker", "Original Speaker", 1)
-    assert connection.execute(
-        "SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at_ms IS NULL", (user_id,)
-    ).fetchone()[0] == 1
-    assert connection.execute(
-        """SELECT consumed_at_ms FROM authentication_challenges
+    assert (
+        connection.execute(
+            "SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at_ms IS NULL", (user_id,)
+        ).fetchone()[0]
+        == 1
+    )
+    assert (
+        connection.execute(
+            """SELECT consumed_at_ms FROM authentication_challenges
            WHERE normalized_email=? ORDER BY created_at_ms DESC LIMIT 1""",
-        (email,),
-    ).fetchone()[0] is None
+            (email,),
+        ).fetchone()[0]
+        is None
+    )
 
 
 async def test_local_https_magic_link_is_queued_for_local_mail_inbox(cfp_environment) -> None:
@@ -1577,19 +1613,21 @@ async def test_local_https_magic_link_is_queued_for_local_mail_inbox(cfp_environ
     assert message[1] == "queued"
 
 
-def test_magic_link_confirmation_page_is_packaged_csp_safe_and_not_automatic() -> None:
+def test_source_wiring_magic_link_confirmation_page_is_packaged_csp_safe_and_not_automatic() -> (
+    None
+):
     page = (STATIC / "auth_link_confirm.html").read_text(encoding="utf-8")
     helper = (STATIC / "auth_link_confirm.js").read_text(encoding="utf-8")
-    access = (
-        PROJECT_ROOT / "src" / "sessionbuddy" / "platform" / "auth" / "access.py"
-    ).read_text(encoding="utf-8")
+    access = (PROJECT_ROOT / "src" / "sessionbuddy" / "platform" / "auth" / "access.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "<style>" not in page
     assert 'style="' not in page
-    assert '__CONFIRM_ACTION__' in page
-    assert '__REGISTRATION_FIELDS__' in page
-    assert '__AUTO_SUBMIT_ATTRIBUTE__' in page
-    assert '__CONFIRM_SCRIPT__' in page
+    assert "__CONFIRM_ACTION__" in page
+    assert "__REGISTRATION_FIELDS__" in page
+    assert "__AUTO_SUBMIT_ATTRIBUTE__" in page
+    assert "__CONFIRM_SCRIPT__" in page
     assert '<meta name="robots" content="noindex">' in page
     assert '_asset("auth_link_confirm.html")' in access
     assert 'data-auto-submit="true"' not in access
@@ -1606,9 +1644,9 @@ def test_magic_link_confirmation_page_is_packaged_csp_safe_and_not_automatic() -
 
 
 def test_provisioning_fallback_is_fully_reverted() -> None:
-    router = (
-        PROJECT_ROOT / "src" / "sessionbuddy" / "speaker_operations" / "router.py"
-    ).read_text(encoding="utf-8")
+    router = (PROJECT_ROOT / "src" / "sessionbuddy" / "speaker_operations" / "router.py").read_text(
+        encoding="utf-8"
+    )
     cfp = (PROJECT_ROOT / "src" / "sessionbuddy" / "cfp" / "router.py").read_text(encoding="utf-8")
 
     assert "_provision_cfp_uploader" not in router
@@ -1640,19 +1678,20 @@ def test_public_cfp_resets_file_state_between_proposals() -> None:
     assert 'control.required = control.dataset.required === "true"' in script
 
 
-def test_public_cfp_uploads_through_the_staged_endpoint() -> None:
+def test_source_wiring_public_cfp_uploads_through_the_staged_endpoint() -> None:
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
     page = (STATIC / "public_cfp.html").read_text(encoding="utf-8")
 
     assert "/api/v1/cfp/forms/${encodeURIComponent(state.form.id)}/upload-authorizations" in script
     assert "staged:${authorization.staged_id}" in script
-    assert "/api/v1/speaker/events/" not in script.split("function uploadAnswer", 1)[1].split(
-        "async function uploadFiles", 1
-    )[0]
+    assert (
+        "/api/v1/speaker/events/"
+        not in script.split("function uploadAnswer", 1)[1].split("async function uploadFiles", 1)[0]
+    )
     assert "public-cfp.js?v=31" in page
 
 
-def test_sbek_helper_completes_the_confirmation_page() -> None:
+def test_source_wiring_sbek_helper_completes_the_confirmation_page() -> None:
     launcher = (PROJECT_ROOT / "scripts" / "run_sbek.sh").read_text(encoding="utf-8")
     helper = (PROJECT_ROOT / "scripts" / "sbek_auth_link.mjs").read_text(encoding="utf-8")
 
@@ -1689,15 +1728,13 @@ def test_run_sbek_auth_explains_the_sessionbuddy_magic_link_capture(tmp_path: Pa
     assert "scripts/run_sbek.sh auth-link organizer '<magic-link-url>'" in completed.stderr
 
 
-def test_sbek_launcher_matches_the_current_persona_contract() -> None:
+def test_source_wiring_sbek_launcher_matches_the_current_persona_contract() -> None:
     launcher = (PROJECT_ROOT / "scripts" / "run_sbek.sh").read_text(encoding="utf-8")
-    checker = (PROJECT_ROOT / "scripts" / "check_sbek_sessions.mjs").read_text(
-        encoding="utf-8"
-    )
+    checker = (PROJECT_ROOT / "scripts" / "check_sbek_sessions.mjs").read_text(encoding="utf-8")
 
     assert 'required_personas="organizer speaker reviewer"' in launcher
     assert "check_sbek_config.mjs" in launcher
-    assert 'using configured password credentials' in launcher
+    assert "using configured password credentials" in launcher
     assert '[ -z "$missing_personas" ]' in launcher
     assert "body?.profile_complete === true" in checker
     assert "profile onboarding is incomplete" in checker
@@ -1706,10 +1743,7 @@ def test_sbek_launcher_matches_the_current_persona_contract() -> None:
         'dependencies_volume="${SBEK_NODE_MODULES_VOLUME:-sessionbuddy-sbek-node-modules-v2}"'
         in launcher
     )
-    assert (
-        'store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"'
-        in launcher
-    )
+    assert 'store_volume="${SBEK_PNPM_STORE_VOLUME:-sessionbuddy-sbek-pnpm-store-v2}"' in launcher
     installer = (PROJECT_ROOT / "scripts" / "install_sbek_dependencies.sh").read_text(
         encoding="utf-8"
     )

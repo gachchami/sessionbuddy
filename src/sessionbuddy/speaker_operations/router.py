@@ -49,6 +49,11 @@ from sessionbuddy.platform.storage import (
     malware_scan_disabled,
     presign_r2_put,
 )
+from sessionbuddy.platform.upload_contracts import (
+    ASSET_UPLOAD_RULES,
+    UploadPolicyError,
+    asset_upload_rule_views,
+)
 
 from .asset_boundary import AssetAccessScope, AssetRepository, ScanJob
 from .models import (
@@ -901,6 +906,7 @@ async def get_speaker_portal(
         ),
         profile=_profile(row),
         tasks=task_views,
+        asset_upload_rules=asset_upload_rule_views(),
         submissions=[
             SpeakerSubmissionView(
                 id=str(submission["id"]),
@@ -1211,19 +1217,6 @@ async def complete_custom_speaker_task(
     return SpeakerTaskResponseView(id=task_id, response=body.answers, version=body.version + 1)
 
 
-ASSET_RULES = {
-    "headshot": ({"image/jpeg", "image/png", "image/webp"}, 5 * 1024 * 1024),
-    "slides": (
-        {
-            "application/pdf",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "application/vnd.oasis.opendocument.presentation",
-        },
-        50 * 1024 * 1024,
-    ),
-    "supporting_document": ({"application/pdf"}, 20 * 1024 * 1024),
-}
 _SPEAKER_UPLOAD_PENDING_LIMIT = 3
 _SPEAKER_UPLOAD_STORAGE_LIMIT_BYTES = 250 * 1024 * 1024
 
@@ -2461,9 +2454,19 @@ async def authorize_speaker_upload(
         ),
         mutation=True,
     )
-    allowed_types, max_bytes = ASSET_RULES[body.kind]
-    if body.content_type not in allowed_types or body.byte_size > max_bytes:
-        raise HTTPException(status_code=400)
+    allowed_types, max_bytes = ASSET_UPLOAD_RULES[body.kind]
+    if body.content_type not in allowed_types:
+        raise UploadPolicyError(
+            415,
+            "upload_type_not_allowed",
+            "This file type is not allowed for that upload.",
+        )
+    if body.byte_size > max_bytes:
+        raise UploadPolicyError(
+            413,
+            "upload_too_large",
+            f"This file is larger than the {max_bytes // 1024 // 1024} MB limit.",
+        )
     db = _db(request)
     if body.submission_id is not None:
         owned = (
@@ -2505,13 +2508,33 @@ async def authorize_speaker_upload(
             task_types = set(upload_rules.get("allowed_content_types", ()))
             task_max_bytes = int(upload_rules.get("max_file_bytes") or 0)
         except (TypeError, ValueError, json.JSONDecodeError):
-            raise HTTPException(status_code=409) from None
+            raise UploadPolicyError(
+                409,
+                "upload_task_not_configured",
+                "This upload request is not configured. Ask an organizer to update it.",
+            ) from None
         if (
             upload_rules.get("enabled") is not True
-            or body.content_type not in task_types
-            or body.byte_size > task_max_bytes
+            or not task_types
+            or task_max_bytes <= 0
         ):
-            raise HTTPException(status_code=400)
+            raise UploadPolicyError(
+                409,
+                "upload_task_not_configured",
+                "This upload request is not configured. Ask an organizer to update it.",
+            )
+        if body.content_type not in task_types:
+            raise UploadPolicyError(
+                415,
+                "upload_type_not_allowed",
+                "This file type is not allowed for this request.",
+            )
+        if body.byte_size > task_max_bytes:
+            raise UploadPolicyError(
+                413,
+                "upload_too_large",
+                f"This request allows files up to {task_max_bytes // 1024 // 1024} MB.",
+            )
     key = _key(idempotency_key)
     route = "POST /api/v1/speaker/events/{event_id}/upload-authorizations"
     fingerprint = _fingerprint(body)

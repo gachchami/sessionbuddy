@@ -147,7 +147,7 @@ def test_event_creation_defaults_are_explained_and_not_demo_data() -> None:
     assert "zonedDateTimeToMillis" in javascript
 
 
-def test_authenticated_pages_share_navigation_and_account_menu() -> None:
+def test_source_wiring_authenticated_pages_share_navigation_and_account_menu() -> None:
     pages = (
         "admin_home.html",
         "event_editor.html",
@@ -219,7 +219,7 @@ def test_core_styles_include_focus_touch_motion_and_mobile_rules() -> None:
     "name",
     ["public_cfp.js", "speaker_portal.js", "admin_onboarding.js", "agenda.js", "schedule.js"],
 )
-def test_core_browser_code_avoids_unsafe_html_injection(name: str) -> None:
+def test_source_wiring_core_browser_code_avoids_unsafe_html_injection(name: str) -> None:
     javascript = (STATIC / name).read_text()
     assert "innerHTML" not in javascript
     assert "document.write" not in javascript

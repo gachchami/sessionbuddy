@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_profile_form_is_registration_ready_without_editable_roles() -> None:
+def test_source_wiring_profile_form_is_registration_ready_without_editable_roles() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
 
     assert 'name="first_name" autocomplete="given-name"' in markup
@@ -27,7 +27,7 @@ def test_profile_form_is_registration_ready_without_editable_roles() -> None:
     assert 'name="role"' not in markup
 
 
-def test_profile_password_is_optional_matched_and_never_repopulated() -> None:
+def test_source_wiring_profile_password_is_optional_matched_and_never_repopulated() -> None:
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
     assert 'password.value === confirmation.value' in javascript
@@ -49,7 +49,7 @@ def test_password_rotation_keeps_the_current_page_authenticated() -> None:
     assert "Sign in again to continue." not in javascript
 
 
-def test_profile_password_configuration_failure_has_an_actionable_recovery() -> None:
+def test_source_wiring_profile_password_configuration_failure_has_an_actionable_recovery() -> None:
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
     assert "error.status === 503 && values.password" in javascript
@@ -57,7 +57,7 @@ def test_profile_password_configuration_failure_has_an_actionable_recovery() -> 
     assert "ask the administrator to check password configuration" in javascript
 
 
-def test_profile_access_section_selects_a_default_account_role() -> None:
+def test_source_wiring_profile_access_section_selects_a_default_account_role() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
@@ -70,7 +70,7 @@ def test_profile_access_section_selects_a_default_account_role() -> None:
     assert ".default-role-list { grid-template-columns: 1fr; }" in stylesheet
 
 
-def test_headshot_has_preview_upload_and_remove_controls() -> None:
+def test_source_wiring_headshot_has_preview_upload_and_remove_controls() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
@@ -83,7 +83,7 @@ def test_headshot_has_preview_upload_and_remove_controls() -> None:
     assert 'id="upload-headshot"' not in markup
 
 
-def test_profile_load_is_quiet_and_mobile_layout_is_single_column() -> None:
+def test_source_wiring_profile_load_is_quiet_and_mobile_layout_is_single_column() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")

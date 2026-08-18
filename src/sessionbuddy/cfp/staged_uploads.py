@@ -16,11 +16,13 @@ from fastapi import HTTPException
 from sessionbuddy.platform.auth import generate_token, hash_token
 from sessionbuddy.platform.db.d1 import result_rows, row_mapping
 from sessionbuddy.platform.db.types import new_id
+from sessionbuddy.platform.upload_contracts import ASSET_UPLOAD_RULES
 
-STAGED_ASSET_RULES = {
-    "headshot": ({"image/jpeg", "image/png", "image/webp"}, 5 * 1024 * 1024),
-    "supporting_document": ({"application/pdf"}, 20 * 1024 * 1024),
-}
+# Anonymous staging intentionally supports only these two reviewed kinds. Keep
+# the surface explicit while sharing each kind's policy with authenticated
+# uploads; adding a canonical asset kind must not expand this endpoint.
+STAGED_ASSET_KINDS = frozenset({"headshot", "supporting_document"})
+STAGED_ASSET_RULES = {kind: ASSET_UPLOAD_RULES[kind] for kind in STAGED_ASSET_KINDS}
 
 # Enforced per (form, user) across live (not yet claimed or expired) rows.
 MAX_ACTIVE_STAGED_FILES = 10

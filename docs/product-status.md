@@ -760,6 +760,20 @@ resolver table used by the distributor.
 
 ## Speaker operations feedback and task history
 
+- File-based speaker tasks are created from one upload-policy contract across
+  invitations, accepted proposals, restored participation, organizer sessions,
+  and organizer-authored requests. The database rejects file tasks without
+  actionable rules and repairs older task rows during upgrade.
+- Follow-up task: remove the redundant `speaker_tasks.destination_type` column.
+  First audit every reader, writer, API model, fixture, and query to prove that
+  it has no meaning distinct from `task_type`; then deliver the removal through
+  an incremental migration with fresh-install and populated-upgrade coverage.
+  Until that task lands, the database continues to require the two values to
+  match so no independent semantics can emerge accidentally.
+- The Speaker portal renders an upload control only when the task response
+  carries valid type and size rules. Upload refusals distinguish an
+  unconfigured task, a disallowed type, and an oversized file with stable error
+  codes rather than an undiagnosable 400.
 - Event-message validation identifies the invalid merge token and lists only
   the merge fields available in that composer, so organizers can correct a
   message without consulting an internal renderer catalog.

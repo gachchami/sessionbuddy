@@ -53,14 +53,16 @@ class _CallDatabase:
 
 
 def _call_request() -> Request:
-    return Request({
-        "type": "http",
-        "method": "GET",
-        "path": "/api/v1/speaker/portal",
-        "headers": [],
-        "query_string": b"",
-        "state": {"timings": {}},
-    })
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/speaker/portal",
+            "headers": [],
+            "query_string": b"",
+            "state": {"timings": {}},
+        }
+    )
 
 
 async def _call_view(database):
@@ -112,9 +114,9 @@ def test_speaker_event_branding_is_optional_and_portal_ui_is_lazy() -> None:
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
     portal = (static / "speaker_portal.js").read_text()
     styles = (static / "speaker.css").read_text()
-    assert 'expandedEventIds: new Set()' in portal
+    assert "expandedEventIds: new Set()" in portal
     assert "const COMPACT_EVENT_THRESHOLD = 8;" in portal
-    assert 'logo.dataset.src = event.logo_url' in portal
+    assert "logo.dataset.src = event.logo_url" in portal
     assert 'section.classList.toggle("is-collapsed", !expanded)' in portal
     assert "if (!expanded) return section;" in portal
     assert "--event-group-accent" in styles
@@ -221,7 +223,7 @@ def test_dashboard_cursor_is_signed_and_filter_bound() -> None:
         )
 
 
-def test_asset_slot_versions_by_speaker_session_and_kind_not_task_id() -> None:
+def test_source_wiring_asset_slot_versions_by_speaker_session_and_kind_not_task_id() -> None:
     source = (
         Path(__file__).parents[2] / "src/sessionbuddy/speaker_operations/router.py"
     ).read_text()
@@ -231,7 +233,7 @@ def test_asset_slot_versions_by_speaker_session_and_kind_not_task_id() -> None:
     assert "COALESCE(submission_id, '') = COALESCE(?6, '')" in source
 
 
-def test_speaker_portal_supports_explicit_multi_event_selection() -> None:
+def test_source_wiring_speaker_portal_supports_explicit_multi_event_selection() -> None:
     source = (
         Path(__file__).parents[2] / "src/sessionbuddy/speaker_operations/router.py"
     ).read_text()
@@ -240,7 +242,7 @@ def test_speaker_portal_supports_explicit_multi_event_selection() -> None:
     assert "events=[" in source
 
 
-def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
+def test_source_wiring_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
     portal = (static / "speaker_portal.js").read_text()
     content = (static / "speaker_content.js").read_text()
@@ -255,7 +257,7 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     assert "notification-category" in portal
     assert "Event time (${state.timeZone})" in content
     assert "Event time (${eventTimeZone})" not in messages
-    assert "Times use <strong id=\"message-time-zone\"" in message_page
+    assert 'Times use <strong id="message-time-zone"' in message_page
     assert "your local time: ${zone}" in invitation
     assert 'byId("confirm-message-send").showModal()' in messages
     assert "await sendPreviewedMessage()" in messages
@@ -270,7 +272,7 @@ def test_speaker_dates_and_bulk_delivery_are_explicit_in_the_ui() -> None:
     assert "Accepted speaker" in messages
     assert 'byId("recipient-status")' in messages
     assert 'showComposeError("Select at least one recipient.")' in messages
-    assert 'showComposeError(window.SessionBuddyApi.message(error))' in messages
+    assert "showComposeError(window.SessionBuddyApi.message(error))" in messages
     assert 'aria-describedby="message-compose-error"' in message_page
 
 
@@ -355,7 +357,9 @@ async def test_open_call_only_considers_published_forms_on_active_events() -> No
     assert "f.organization_id=?1" in form_query and "f.event_id=?2" in form_query
 
 
-def test_portal_links_rows_to_exact_proposals_and_new_work_to_the_public_cfp() -> None:
+def test_source_wiring_portal_links_rows_to_exact_proposals_and_new_work_to_the_public_cfp() -> (
+    None
+):
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
     portal = (static / "speaker_portal.js").read_text()
     page = (static / "speaker_portal.html").read_text()
@@ -372,7 +376,7 @@ def test_portal_links_rows_to_exact_proposals_and_new_work_to_the_public_cfp() -
     assert "innerHTML" not in portal
 
 
-def test_proposal_surfaces_hold_the_idempotency_key_across_retries() -> None:
+def test_source_wiring_proposal_surfaces_hold_the_idempotency_key_across_retries() -> None:
     # A lost response leaves the proposal stored. Retrying under a fresh key
     # would be a second proposal rather than a replay of the first.
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
@@ -442,13 +446,15 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
                 self.database.notification_scope = self.values
                 self.database.notification_query = self.query
                 return {
-                    "results": [{
-                        "id": "message-a",
-                        "subject": "Speaker briefing",
-                        "deterministic_key": "speaker-bulk:briefing:speaker-a",
-                        "html_body": '<p>Bring your badge.</p><a href="https://safe.example/brief">Brief</a>',
-                        "delivered_at_ms": 1_700_000_000_000,
-                    }]
+                    "results": [
+                        {
+                            "id": "message-a",
+                            "subject": "Speaker briefing",
+                            "deterministic_key": "speaker-bulk:briefing:speaker-a",
+                            "html_body": '<p>Bring your badge.</p><a href="https://safe.example/brief">Brief</a>',
+                            "delivered_at_ms": 1_700_000_000_000,
+                        }
+                    ]
                 }
             return {"results": []}
 
@@ -498,15 +504,17 @@ async def test_speaker_notifications_are_scoped_to_authenticated_owner(monkeypat
 
     monkeypatch.setattr(speaker_router, "_speaker_row", speaker_row)
     monkeypatch.setattr(speaker_router, "require_permission", allow)
-    request = Request({
-        "type": "http",
-        "method": "GET",
-        "path": "/api/v1/speaker/portal",
-        "headers": [],
-        "query_string": b"event_id=event-a",
-        "env": SimpleNamespace(DB=database),
-        "state": {"timings": {}},
-    })
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/speaker/portal",
+            "headers": [],
+            "query_string": b"event_id=event-a",
+            "env": SimpleNamespace(DB=database),
+            "state": {"timings": {}},
+        }
+    )
 
     result = await get_speaker_portal(request, "event-a")
 

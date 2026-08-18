@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path("src/sessionbuddy/static")
 
 
-def test_evaluation_round_selection_is_explicit_and_counted() -> None:
+def test_source_wiring_evaluation_round_selection_is_explicit_and_counted() -> None:
     markup = (STATIC / "admin_submissions.html").read_text()
     javascript = (STATIC / "admin_submissions.js").read_text()
 
@@ -25,7 +25,7 @@ def test_evaluation_round_selection_is_explicit_and_counted() -> None:
     assert 'byId("configure-round").disabled = count === 0' in javascript
 
 
-def test_a_round_with_nothing_assigned_cannot_be_saved_from_the_form() -> None:
+def test_source_wiring_a_round_with_nothing_assigned_cannot_be_saved_from_the_form() -> None:
     """The matrix is the payload, so an empty one has to be refused before the POST.
 
     The API stores an explicit `assignments` list verbatim, so an empty list is saved as
@@ -48,7 +48,7 @@ def test_a_round_with_nothing_assigned_cannot_be_saved_from_the_form() -> None:
     )
 
 
-def test_editing_a_draft_keeps_proposals_the_table_cannot_show() -> None:
+def test_source_wiring_editing_a_draft_keeps_proposals_the_table_cannot_show() -> None:
     """The proposal table pages at 100; a draft may hold proposals past the first page.
 
     Rebuilding the selection from rendered checkboxes alone dropped them from the payload,
@@ -67,7 +67,7 @@ def test_editing_a_draft_keeps_proposals_the_table_cannot_show() -> None:
     assert "already in this draft, not on this page" in javascript
 
 
-def test_round_errors_open_the_disclosure_and_receive_focus() -> None:
+def test_source_wiring_round_errors_open_the_disclosure_and_receive_focus() -> None:
     markup = (STATIC / "admin_submissions.html").read_text()
     javascript = (STATIC / "admin_submissions.js").read_text()
 
@@ -77,7 +77,7 @@ def test_round_errors_open_the_disclosure_and_receive_focus() -> None:
     assert 'byId("round-status").focus()' in javascript
 
 
-def test_round_history_distinguishes_work_by_status() -> None:
+def test_source_wiring_round_history_distinguishes_work_by_status() -> None:
     markup = (STATIC / "admin_submissions.html").read_text()
     javascript = (STATIC / "admin_submissions.js").read_text()
 
@@ -98,7 +98,7 @@ def test_round_history_distinguishes_work_by_status() -> None:
     assert "addToRound.disabled = count === 0" in javascript
 
 
-def test_draft_round_configuration_has_read_and_update_contracts() -> None:
+def test_source_wiring_draft_round_configuration_has_read_and_update_contracts() -> None:
     router = Path("src/sessionbuddy/evaluation/router.py").read_text()
 
     assert '"/api/v1/admin/events/{event_id}/evaluation-rounds/{round_id}/draft"' in router
@@ -133,7 +133,7 @@ def test_assignment_matrix_follows_the_proposal_selection() -> None:
     assert 'box.addEventListener("change", markRoundFormDirty);' not in javascript
 
 
-def test_round_payload_lists_cannot_contradict_each_other() -> None:
+def test_source_wiring_round_payload_lists_cannot_contradict_each_other() -> None:
     """assignments is filtered by the membership lists sent alongside it.
 
     The API rejects an assignment naming a proposal or a reviewer that is not in the

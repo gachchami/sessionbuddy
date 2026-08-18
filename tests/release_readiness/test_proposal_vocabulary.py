@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def test_review_surfaces_use_proposal_until_acceptance() -> None:
+def test_source_wiring_review_surfaces_use_proposal_until_acceptance() -> None:
     markup = Path("src/sessionbuddy/static/admin_submissions.html").read_text()
     javascript = Path("src/sessionbuddy/static/admin_submissions.js").read_text()
     reviewer = Path("frontend/src/main.tsx").read_text()

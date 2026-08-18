@@ -47,7 +47,9 @@ def test_worker_scheduled_entrypoint_accepts_cloudflare_runtime_arguments() -> N
     ]
 
 
-def test_r2_scanner_adapter_uses_fixed_length_stream_not_full_body_buffering() -> None:
+def test_source_wiring_r2_scanner_adapter_uses_fixed_length_stream_not_full_body_buffering() -> (
+    None
+):
     source = (
         ROOT / "src" / "sessionbuddy" / "speaker_operations" / "scanner_adapter.py"
     ).read_text()

@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_public_event_accent_drives_shared_action_tokens() -> None:
+def test_source_wiring_public_event_accent_drives_shared_action_tokens() -> None:
     styles = (STATIC / "product.css").read_text()
 
     assert ":where(.cfp-public-page, .schedule-page, .speaker-gallery-page)" in styles
@@ -13,7 +13,7 @@ def test_public_event_accent_drives_shared_action_tokens() -> None:
     assert "--blue: var(--action-primary)" in styles
 
 
-def test_distillation_does_not_hide_every_eyebrow_or_section_summary() -> None:
+def test_source_wiring_distillation_does_not_hide_every_eyebrow_or_section_summary() -> None:
     styles = (STATIC / "product.css").read_text()
 
     assert ".eyebrow,\n.portal-hero__eyebrow" not in styles
@@ -21,7 +21,7 @@ def test_distillation_does_not_hide_every_eyebrow_or_section_summary() -> None:
     assert ".workflow-page .section-heading .section-summary" not in styles
 
 
-def test_landing_demo_promise_is_gated_with_demo_personas() -> None:
+def test_source_wiring_landing_demo_promise_is_gated_with_demo_personas() -> None:
     markup = (STATIC / "landing.html").read_text()
     scripts = (STATIC / "demo_access.js").read_text()
 

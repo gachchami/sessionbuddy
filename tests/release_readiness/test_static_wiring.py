@@ -138,7 +138,7 @@ def test_browser_api_parsing_is_centralized() -> None:
     assert not violations, f"API calls bypass the shared response handler: {violations}"
 
 
-def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
+def test_source_wiring_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
     gallery = (STATIC / "speaker_gallery.js").read_text()
     markup = (STATIC / "speaker_gallery.html").read_text()
     assert 'dataset.layout = galleryLayout ? "gallery" : "directory"' in gallery
@@ -154,13 +154,13 @@ def test_public_speaker_directory_and_gallery_have_distinct_depth() -> None:
     assert 'id="speaker-gallery-link"' in markup
 
 
-def test_custom_speaker_task_retries_reuse_idempotency_keys() -> None:
+def test_source_wiring_custom_speaker_task_retries_reuse_idempotency_keys() -> None:
     script = (STATIC / "speaker_content.js").read_text()
     assert "taskMutation" in script
     assert "the same request will not be duplicated" in script
 
 
-def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> None:
+def test_source_wiring_admin_file_history_shows_comments_and_downloads_exact_versions() -> None:
     script = (STATIC / "speaker_content.js").read_text()
     assert "version.version_comment" in script
     assert "/versions/${encodeURIComponent(version.id)}/download-grants" in script
@@ -173,7 +173,7 @@ def test_admin_file_history_shows_comments_and_downloads_exact_versions() -> Non
     assert "downloadProfileHeadshot" in script
 
 
-def test_changed_speaker_workflows_bust_cached_assets() -> None:
+def test_source_wiring_changed_speaker_workflows_bust_cached_assets() -> None:
     for html_name, script_name, asset_path in CONTENT_ADDRESSED_ASSETS:
         page = (STATIC / html_name).read_text(encoding="utf-8")
         script = (STATIC / script_name).read_bytes()
@@ -184,14 +184,14 @@ def test_changed_speaker_workflows_bust_cached_assets() -> None:
         )
 
 
-def test_speaker_message_retries_reuse_idempotency_key() -> None:
+def test_source_wiring_speaker_message_retries_reuse_idempotency_key() -> None:
     script = (STATIC / "speaker_messages.js").read_text()
     assert "messageMutation" in script
     assert "already queued recipients will not be duplicated" in script
     assert "Delivery was confirmed from message history" in script
 
 
-def test_event_branding_uses_a_validated_logo_upload() -> None:
+def test_source_wiring_event_branding_uses_a_validated_logo_upload() -> None:
     page = (STATIC / "event_editor.html").read_text()
     script = (STATIC / "event_editor.js").read_text()
     assert "Logo URL" not in page
@@ -339,7 +339,7 @@ def test_event_branding_upload_cards_keep_controls_and_previews_in_flow() -> Non
     assert ".event-editor__cover-preview:not([hidden])" in stylesheet
 
 
-def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
+def test_source_wiring_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
     # The 404-retry loop papered over the missing single-event read endpoint;
     # both are gone now, so the workspace loads in one call.
     script = (STATIC / "admin_programs.js").read_text()
@@ -351,7 +351,7 @@ def test_cfp_workspace_loads_directly_without_retry_workarounds() -> None:
     assert "/api/v1/admin/events/${encodeURIComponent(workspace.event_id)}" in restore
 
 
-def test_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> None:
+def test_source_wiring_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> None:
     script = (STATIC / "admin_programs.js").read_text()
 
     assert "editor.elements.confirmation_subject.value = form.confirmation_subject" in script
@@ -363,7 +363,7 @@ def test_live_cfp_updates_submit_and_reload_confirmation_email_settings() -> Non
     assert "confirmation_body: current.confirmation_body" in slug_update
 
 
-def test_public_event_pages_render_cover_images() -> None:
+def test_source_wiring_public_event_pages_render_cover_images() -> None:
     assert 'id="event-cover"' in (STATIC / "public_cfp.html").read_text()
     assert "cover_image_url" in (STATIC / "public_cfp.js").read_text()
     masthead = (STATIC / "public_event_masthead.js").read_text()
@@ -376,7 +376,7 @@ def test_public_event_pages_render_cover_images() -> None:
     assert "public-event-masthead__cover" in masthead
 
 
-def test_share_tools_do_not_inherit_the_workflow_progress_rail() -> None:
+def test_source_wiring_share_tools_do_not_inherit_the_workflow_progress_rail() -> None:
     page = (STATIC / "event_workspace.html").read_text()
     assert 'class="grid workspace-grid"' in page
     assert 'class="grid workspace-grid workflow-grid"' not in page
@@ -392,7 +392,7 @@ def test_share_builder_initializes_before_account_access_finishes() -> None:
     assert 'byId("generate-token").disabled = false' in script
 
 
-def test_speaker_message_personalization_hides_template_syntax() -> None:
+def test_source_wiring_speaker_message_personalization_hides_template_syntax() -> None:
     page = (STATIC / "speaker_messages.html").read_text()
     assert "Merge fields:" not in page
     assert "speaker.first_name" not in page
@@ -402,7 +402,7 @@ def test_speaker_message_personalization_hides_template_syntax() -> None:
     assert "Each selected speaker will see their own details" in page
 
 
-def test_organizer_message_history_is_filterable_compact_and_expandable() -> None:
+def test_source_wiring_organizer_message_history_is_filterable_compact_and_expandable() -> None:
     page = (STATIC / "speaker_messages.html").read_text()
     script = (STATIC / "speaker_messages.js").read_text()
     assert 'id="message-history-filter"' in page
@@ -414,7 +414,7 @@ def test_organizer_message_history_is_filterable_compact_and_expandable() -> Non
     assert "Event time (${eventTimeZone})" not in script
 
 
-def test_public_schedule_export_reports_success() -> None:
+def test_source_wiring_public_schedule_export_reports_success() -> None:
     script = (STATIC / "schedule.js").read_text()
     assert "Downloaded ${selected.length} session" in script
     assert "weekday" in script
@@ -425,12 +425,12 @@ def test_public_schedule_export_reports_success() -> None:
     assert "All session times use ${timezoneName}." in script
 
 
-def test_cfp_signed_in_email_help_is_not_duplicated() -> None:
+def test_source_wiring_cfp_signed_in_email_help_is_not_duplicated() -> None:
     script = (STATIC / "public_cfp.js").read_text()
     assert 'let help = byId("signed-in-email-help")' in script
 
 
-def test_public_pages_use_the_current_sessionbuddy_mark() -> None:
+def test_source_wiring_public_pages_use_the_current_sessionbuddy_mark() -> None:
     pages = (
         "auth_link_confirm.html",
         "auth_link_error.html",
@@ -448,7 +448,7 @@ def test_public_pages_use_the_current_sessionbuddy_mark() -> None:
         assert legacy_mark not in page, page_name
 
 
-def test_event_header_has_one_renderer_for_previews_and_public_pages() -> None:
+def test_source_wiring_event_header_has_one_renderer_for_previews_and_public_pages() -> None:
     consumers = (
         "admin_programs.html",
         "event_editor.html",

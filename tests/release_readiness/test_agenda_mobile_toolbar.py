@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_agenda_toolbar_groups_view_and_actions_for_responsive_layout() -> None:
+def test_source_wiring_agenda_toolbar_groups_view_and_actions_for_responsive_layout() -> None:
     page = (STATIC / "agenda_admin.html").read_text()
 
     assert 'class="agenda-toolbar__view"' in page
@@ -12,7 +12,9 @@ def test_agenda_toolbar_groups_view_and_actions_for_responsive_layout() -> None:
     assert ">Public schedule<" in page
 
 
-def test_agenda_mobile_toolbar_keeps_publish_as_the_primary_full_width_action() -> None:
+def test_source_wiring_agenda_mobile_toolbar_keeps_publish_as_the_primary_full_width_action() -> (
+    None
+):
     styles = (STATIC / "agenda.css").read_text()
     mobile = styles.split("@media (max-width:48rem)", 1)[1]
 

@@ -95,7 +95,7 @@ def test_every_static_long_text_control_has_the_expected_limit_and_counter() -> 
     }
 
 
-def test_shared_counter_is_live_accessible_and_handles_dynamic_controls() -> None:
+def test_source_wiring_shared_counter_is_live_accessible_and_handles_dynamic_controls() -> None:
     client = (STATIC / "api_client.js").read_text(encoding="utf-8")
     assert 'textarea[maxlength]:not([readonly])' in client
     assert 'counter.setAttribute("aria-live", "polite")' in client
@@ -161,7 +161,7 @@ def test_api_long_text_limits_match_the_user_interface_contract() -> None:
     } == limits
 
 
-def test_database_schema_covers_each_persisted_long_text_contract() -> None:
+def test_source_wiring_database_schema_covers_each_persisted_long_text_contract() -> None:
     schema = "\n".join(
         path.read_text(encoding="utf-8")
         for path in sorted((ROOT / "migrations_baseline").glob("*.sql"))

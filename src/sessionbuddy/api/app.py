@@ -29,6 +29,7 @@ from sessionbuddy.platform.auth.demo_router import demo_router
 from sessionbuddy.platform.auth.http import session_cookie_value
 from sessionbuddy.platform.auth.redirects import ROLE_DESTINATIONS
 from sessionbuddy.platform.signed_cursors import StaleCursorError
+from sessionbuddy.platform.upload_contracts import UploadPolicyError
 from sessionbuddy.scheduling import scheduling_router
 from sessionbuddy.security import SecurityHeadersMiddleware
 from sessionbuddy.speaker_operations import speaker_operations_router
@@ -389,6 +390,14 @@ async def http_error(request: Request, exception: HTTPException) -> Response:
             "stale_cursor",
             "This list changed or the continuation expired. Refresh the list to continue.",
             metadata={"reason": exception.reason},
+            headers=exception.headers,
+        )
+    if isinstance(exception, UploadPolicyError):
+        return _error_response(
+            request,
+            exception.status_code,
+            exception.code,
+            str(exception.detail),
             headers=exception.headers,
         )
     errors = {

@@ -18,6 +18,17 @@ const portalHtml = html
   .replace(/<script src="\/speaker\/assets\/speaker-portal\.js\?v=\d+" defer><\/script>/, "")
   .replace("</body>", `<script>${apiClient}</script><script>${portalScript}</script></body>`);
 
+const headshotRules = {
+  enabled: true,
+  allowed_content_types: ["image/jpeg", "image/png", "image/webp"],
+  max_file_bytes: 5 * 1024 * 1024,
+};
+const supportingDocumentRules = {
+  enabled: true,
+  allowed_content_types: ["application/pdf"],
+  max_file_bytes: 20 * 1024 * 1024,
+};
+
 const portal = {
   event: {
     id: "event-responsive",
@@ -54,6 +65,10 @@ const portal = {
     version: 1,
   },
   tasks: [],
+  asset_upload_rules: {
+    headshot: headshotRules,
+    supporting_document: supportingDocumentRules,
+  },
   completed_tasks: 0,
   total_tasks: 0,
   notifications: [{
@@ -332,6 +347,7 @@ test.describe("speaker portal responsive design", () => {
           version: 1,
           due_at_ms: null,
           form_fields: [],
+          upload_rules: supportingDocumentRules,
         }],
       }),
     }));
@@ -414,6 +430,7 @@ test.describe("speaker portal responsive design", () => {
           version: 1,
           due_at_ms: null,
           form_fields: [],
+          upload_rules: supportingDocumentRules,
         }],
       }),
     }));
@@ -450,7 +467,7 @@ test.describe("speaker portal responsive design", () => {
       ...portal,
       tasks: [
         { id: "task-profile", task_type: "profile", title: "Confirm profile", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] },
-        { id: "task-headshot", task_type: "headshot", title: "Upload headshot", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] },
+        { id: "task-headshot", task_type: "headshot", title: "Upload headshot", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [], upload_rules: headshotRules },
       ],
     };
     await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
@@ -460,6 +477,36 @@ test.describe("speaker portal responsive design", () => {
     await expect(page.getByRole("link", { name: "Edit profile" })).toHaveAttribute("href", "/account");
     await expect(page.getByRole("button", { name: "Upload headshot" })).toBeVisible();
     await expect(page.locator("#speaker-profile-tools")).toHaveCount(0);
+  });
+
+  test("a malformed upload task explains the problem without rendering a dead control", async ({ page }) => {
+    await servePortal(page);
+    await page.route("**/api/v1/speaker/portal*", (route) => route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...portal,
+        events: [portal.event],
+        tasks: [{
+          id: "task-headshot-malformed",
+          event_id: "event-responsive",
+          task_type: "headshot",
+          title: "Upload headshot",
+          help_text: "",
+          state: "open",
+          version: 1,
+          due_at_ms: null,
+          form_fields: [],
+          upload_rules: {},
+        }],
+      }),
+    }));
+
+    await page.goto("/speaker");
+    await expect(page.getByText(
+      "This upload request isn’t configured. Ask an organizer to update it.",
+    )).toBeVisible();
+    await expect(page.getByRole("button", { name: "Upload headshot" })).toHaveCount(0);
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
   });
 
   const customTask = { id: "task-custom", task_type: "custom", title: "Confirm travel details", help_text: "", state: "open", version: 1, due_at_ms: null, form_fields: [] };

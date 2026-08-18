@@ -159,7 +159,7 @@ def test_missing_version_has_a_distinct_allowlisted_conflict_class() -> None:
     assert request.state.conflicts == ["evaluation_round_version_absent"]
 
 
-def test_request_handlers_publish_only_through_the_shared_helper() -> None:
+def test_source_wiring_request_handlers_publish_only_through_the_shared_helper() -> None:
     """Every post-commit communication publish must route through
     publish_committed_messages, so no handler can reintroduce the
     commit-then-500 shape by touching the queue binding directly."""

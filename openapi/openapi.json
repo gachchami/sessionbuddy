@@ -11409,6 +11409,13 @@
       "SpeakerPortalView": {
         "additionalProperties": false,
         "properties": {
+          "asset_upload_rules": {
+            "additionalProperties": {
+              "type": "object"
+            },
+            "title": "Asset Upload Rules",
+            "type": "object"
+          },
           "completed_tasks": {
             "title": "Completed Tasks",
             "type": "integer"
@@ -11509,6 +11516,7 @@
           "events",
           "profile",
           "tasks",
+          "asset_upload_rules",
           "submissions",
           "completed_tasks",
           "total_tasks"

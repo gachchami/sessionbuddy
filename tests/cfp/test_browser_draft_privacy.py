@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[2]
 
 
-def test_public_cfp_browser_draft_expires_and_requires_verified_owner() -> None:
+def test_source_wiring_public_cfp_browser_draft_expires_and_requires_verified_owner() -> None:
     script = (ROOT / "src/sessionbuddy/static/public_cfp.js").read_text()
 
     assert "BROWSER_DRAFT_TTL_MS = 30 * 60 * 1000" in script
@@ -16,7 +16,7 @@ def test_public_cfp_browser_draft_expires_and_requires_verified_owner() -> None:
     assert "clearBrowserDraft();" in script
 
 
-def test_public_cfp_autosaves_and_warns_about_unsaved_changes() -> None:
+def test_source_wiring_public_cfp_autosaves_and_warns_about_unsaved_changes() -> None:
     script = (ROOT / "src/sessionbuddy/static/public_cfp.js").read_text()
 
     assert 'addEventListener("input", queueBrowserDraft)' in script
@@ -27,7 +27,7 @@ def test_public_cfp_autosaves_and_warns_about_unsaved_changes() -> None:
     assert "refreshCharacterCounters?." in script
 
 
-def test_public_cfp_core_field_limits_match_the_api_contract() -> None:
+def test_source_wiring_public_cfp_core_field_limits_match_the_api_contract() -> None:
     script = (ROOT / "src/sessionbuddy/static/public_cfp.js").read_text()
 
     assert 'field.key === "speaker_email" || field.type === "email"' in script

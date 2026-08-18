@@ -12,6 +12,8 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
+
 BASE_MS = 1_786_154_400_000
 BATCH_SIZE = 1_000
 
@@ -166,8 +168,8 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,submission_id,task_type,title,
                 destination_type,state,due_at_ms,completed_at_ms,created_at_ms,updated_at_ms,
-                content_fingerprint)
-               VALUES(?,'load-org','load-event',?,?,?,?,?,?,?,?,?,?,?)""",
+                content_fingerprint,form_schema_json)
+               VALUES(?,'load-org','load-event',?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 (
                     f"load-task-{n:05d}", f"load-speaker-{n % scale.speakers:04d}",
@@ -177,6 +179,7 @@ def seed_large(db: sqlite3.Connection, scale: SeedScale | None = None) -> None:
                     "completed" if n % 5 == 0 else "open", BASE_MS + (n % 30) * 86_400_000,
                     BASE_MS + n if n % 5 == 0 else None, BASE_MS, BASE_MS,
                     f"synthetic-task:{n}".encode(),
+                    task_form_schema_json("slides" if n % 2 == 0 else "profile"),
                 )
                 for n in range(scale.tasks)
             ),

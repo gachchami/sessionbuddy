@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_home_is_the_filterable_paginated_event_ledger() -> None:
+def test_source_wiring_home_is_the_filterable_paginated_event_ledger() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     styles = (STATIC / "admin_home.css").read_text(encoding="utf-8")
 
@@ -19,7 +19,7 @@ def test_home_is_the_filterable_paginated_event_ledger() -> None:
     assert ".organizer-home-event-row" in styles
 
 
-def test_home_has_visible_low_density_event_actions() -> None:
+def test_source_wiring_home_has_visible_low_density_event_actions() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
@@ -32,7 +32,7 @@ def test_home_has_visible_low_density_event_actions() -> None:
     assert "/metrics" not in script
 
 
-def test_home_uses_url_selected_organization_and_exact_permissions() -> None:
+def test_source_wiring_home_uses_url_selected_organization_and_exact_permissions() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
@@ -43,7 +43,7 @@ def test_home_uses_url_selected_organization_and_exact_permissions() -> None:
     assert "Create organization" not in page + script
 
 
-def test_home_mirrors_server_list_state_and_handles_stale_cursors() -> None:
+def test_source_wiring_home_mirrors_server_list_state_and_handles_stale_cursors() -> None:
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
     assert "new URLSearchParams({ view: state.view, order: state.order })" in script
@@ -74,7 +74,7 @@ def test_home_keeps_one_semantic_dom_for_table_cards_and_activity() -> None:
     assert "display:none" not in mobile_header_rule.replace(" ", "")
 
 
-def test_home_recent_changes_is_manager_only_and_uses_shared_formatter() -> None:
+def test_source_wiring_home_recent_changes_is_manager_only_and_uses_shared_formatter() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
     formatter = (STATIC / "activity_format.js").read_text(encoding="utf-8")

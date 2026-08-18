@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_overview_keeps_cfp_prominent_and_links_each_status_row() -> None:
+def test_source_wiring_overview_keeps_cfp_prominent_and_links_each_status_row() -> None:
     page = (STATIC / "event_overview.html").read_text(encoding="utf-8")
     script = (STATIC / "event_overview.js").read_text(encoding="utf-8")
 
@@ -26,7 +26,7 @@ def test_overview_keeps_cfp_prominent_and_links_each_status_row() -> None:
     assert 'byId("edit-event").href' in script
 
 
-def test_overview_defers_navigation_to_the_horizontal_event_bar() -> None:
+def test_source_wiring_overview_defers_navigation_to_the_horizontal_event_bar() -> None:
     script = (STATIC / "event_overview.js").read_text(encoding="utf-8")
     page = (STATIC / "event_overview.html").read_text(encoding="utf-8")
 
@@ -41,7 +41,7 @@ def test_overview_defers_navigation_to_the_horizontal_event_bar() -> None:
     assert 'function tool(' not in script
 
 
-def test_live_cfp_does_not_present_reviewing_as_an_organizer_next_step() -> None:
+def test_source_wiring_live_cfp_does_not_present_reviewing_as_an_organizer_next_step() -> None:
     script = (STATIC / "event_overview.js").read_text(encoding="utf-8")
 
     assert '"Review incoming proposals"' not in script
@@ -50,7 +50,7 @@ def test_live_cfp_does_not_present_reviewing_as_an_organizer_next_step() -> None
     assert '`${selected.name} is ready.`' not in script
 
 
-def test_event_overview_keeps_public_brand_preview_in_event_settings() -> None:
+def test_source_wiring_event_overview_keeps_public_brand_preview_in_event_settings() -> None:
     page = (STATIC / "event_overview.html").read_text(encoding="utf-8")
     editor = (STATIC / "event_editor.html").read_text(encoding="utf-8")
     assert "data-public-event-masthead" not in page

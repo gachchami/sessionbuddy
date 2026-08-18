@@ -156,6 +156,14 @@ async def test_bulk_speaker_import_continues_past_bad_rows_and_retry_sends_no_em
             "SELECT COUNT(*) FROM speaker_tasks WHERE event_id=?", (event_id,)
         ).fetchone()[0] == 6
         assert connection.execute(
+            """SELECT COUNT(*) FROM speaker_tasks
+               WHERE event_id=? AND task_type IN ('headshot','slides')
+                 AND json_extract(form_schema_json,'$.upload.enabled')=1
+                 AND json_array_length(form_schema_json,'$.upload.allowed_content_types')>0
+                 AND json_extract(form_schema_json,'$.upload.max_file_bytes')>0""",
+            (event_id,),
+        ).fetchone()[0] == 4
+        assert connection.execute(
             "SELECT COUNT(*) FROM audit_events "
             "WHERE event_id=? AND action='identity.invitation.bulk.create'",
             (event_id,),

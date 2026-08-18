@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "writer_inventories": {
+    "speaker_tasks": [
+      "src/sessionbuddy/competition/router.py:create_speaker_task",
+      "src/sessionbuddy/competition/router.py:restore_admin_speaker",
+      "src/sessionbuddy/platform/auth/access.py:_create_bulk_speaker_invitation",
+      "src/sessionbuddy/platform/auth/access.py:create_invitation",
+      "src/sessionbuddy/scheduling/router.py:create_organizer_session",
+      "src/sessionbuddy/speaker_operations/acceptance_tasks.py:append_acceptance_speaker_tasks"
+    ]
+  },
+  "canonical_constants": [
+    {
+      "id": "speaker_asset_upload_policy",
+      "path": "src/sessionbuddy/platform/upload_contracts.py",
+      "symbol": "ASSET_UPLOAD_RULES",
+      "minimum_shared_entries": 2,
+      "allowed_projections": [
+        "src/sessionbuddy/cfp/staged_uploads.py:STAGED_ASSET_RULES"
+      ]
+    }
+  ],
+  "persisted_enums": [
+    {
+      "id": "resource_grant",
+      "path": "src/sessionbuddy/platform/authorization/types.py",
+      "symbol": "ResourceGrant"
+    }
+  ],
+  "temporary_duplications": [],
+  "waivers": []
+}

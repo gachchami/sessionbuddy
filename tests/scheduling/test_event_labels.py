@@ -312,7 +312,7 @@ async def test_event_labels_are_owned_assignable_and_public(
         assert "agenda.session_labels.update" in actions
 
 
-def test_label_schema_rejects_cross_event_assignments() -> None:
+def test_source_wiring_label_schema_rejects_cross_event_assignments() -> None:
     schema = BASELINE.read_text(encoding="utf-8")
     assert "FOREIGN KEY (organization_id,event_id,accepted_session_id)" in schema
     assert "REFERENCES accepted_sessions(organization_id,event_id,id)" in schema

@@ -69,7 +69,7 @@ def test_r2_presigned_put_is_single_object_and_header_bound() -> None:
     assert headers == {"content-length": "12345", "content-type": "application/pdf"}
 
 
-def test_speaker_completion_requires_the_exact_authorized_object_size() -> None:
+def test_source_wiring_speaker_completion_requires_the_exact_authorized_object_size() -> None:
     router = (
         PROJECT_ROOT / "src" / "sessionbuddy" / "speaker_operations" / "router.py"
     ).read_text(encoding="utf-8")

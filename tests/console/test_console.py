@@ -95,7 +95,7 @@ def test_browser_telemetry_contract_rejects_private_or_arbitrary_dimensions() ->
         BrowserTelemetryPayload.model_validate({**valid, "page_template": "/events/secret"})
 
 
-def test_static_page_has_no_external_dependencies() -> None:
+def test_source_wiring_static_page_has_no_external_dependencies() -> None:
     static_dir = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
     html = (static_dir / "engine_room.html").read_text()
     assert "https://" not in html

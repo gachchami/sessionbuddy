@@ -106,7 +106,7 @@ def test_schema_snapshot_compares_setup_key_semantics_not_random_value(
         changed.close()
 
 
-def test_generated_candidate_is_equivalent_and_has_no_transaction_wrapper(
+def test_source_wiring_generated_candidate_is_equivalent_and_has_no_transaction_wrapper(
     tmp_path: Path,
 ) -> None:
     migrations = tmp_path / "migrations"

@@ -6,7 +6,7 @@ ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 
 
-def test_public_cfp_collects_repeatable_distinct_co_speaker_contacts() -> None:
+def test_source_wiring_public_cfp_collects_repeatable_distinct_co_speaker_contacts() -> None:
     page = (STATIC / "public_cfp.html").read_text(encoding="utf-8")
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
 
@@ -25,11 +25,11 @@ def test_public_cfp_collects_repeatable_distinct_co_speaker_contacts() -> None:
     assert "&& !needsFiles" in script
     assert '&& byId("proposal-form").checkValidity()' in script
     assert "showReview(readyToReview)" in script
-    assert "queueMicrotask(() => byId(\"proposal-form\").requestSubmit())" not in script
+    assert 'queueMicrotask(() => byId("proposal-form").requestSubmit())' not in script
     assert "validateCoSpeakers(form)" in script
 
 
-def test_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> None:
+def test_source_wiring_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
@@ -42,7 +42,7 @@ def test_admin_cfp_builder_discloses_system_managed_co_speaker_question() -> Non
     assert "admin-programs.js?v=" in page
 
 
-def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:
+def test_source_wiring_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:
     page = (STATIC / "public_cfp.html").read_text(encoding="utf-8")
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
 
@@ -55,7 +55,7 @@ def test_primary_speaker_can_manage_co_speaker_invitation_statuses() -> None:
     assert "`${invitationEndpoint(submission, invitation)}/resend`" in script
     assert 'method: "DELETE"' in script
     assert 'submission.status === "accepted"' in script
-    assert 'submission.can_manage_participants === true' in script
+    assert "submission.can_manage_participants === true" in script
     assert "const actionsAvailable = submission.editable === true" in script
     assert 'id="save-participants"' in page
     assert "/participants`" in script
@@ -65,8 +65,7 @@ def test_stale_co_speaker_save_reloads_the_authoritative_proposal() -> None:
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
 
     assert (
-        "async function recoverOptimisticConflict(error, "
-        "submission = state.editingSubmission)"
+        "async function recoverOptimisticConflict(error, submission = state.editingSubmission)"
     ) in script
     assert "error.status !== 409" in script
     assert "await reloadSubmissions(submissionId)" in script
@@ -75,7 +74,7 @@ def test_stale_co_speaker_save_reloads_the_authoritative_proposal() -> None:
     assert "await recoverOptimisticConflict(error, submission)" in script
 
 
-def test_accepted_participant_validation_and_conflicts_are_not_silent() -> None:
+def test_source_wiring_accepted_participant_validation_and_conflicts_are_not_silent() -> None:
     script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
 
     assert "const participantsValid = validateCoSpeakers(form)" in script
@@ -83,7 +82,7 @@ def test_accepted_participant_validation_and_conflicts_are_not_silent() -> None:
     assert "Invitations were sent only to newly added participants" in script
 
 
-def test_co_speaker_rows_and_statuses_have_scoped_layout_styles() -> None:
+def test_source_wiring_co_speaker_rows_and_statuses_have_scoped_layout_styles() -> None:
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
 
     assert ".co-speaker-row__actions" in stylesheet
@@ -91,7 +90,9 @@ def test_co_speaker_rows_and_statuses_have_scoped_layout_styles() -> None:
     assert "grid-template-columns: minmax(0, 1fr) auto auto" in stylesheet
 
 
-def test_duplicate_titles_warn_inline_without_blocking_and_are_disambiguated() -> None:
+def test_source_wiring_duplicate_titles_warn_inline_without_blocking_and_are_disambiguated() -> (
+    None
+):
     cfp_script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
     portal_script = (STATIC / "speaker_portal.js").read_text(encoding="utf-8")
     admin_script = (STATIC / "admin_submissions.js").read_text(encoding="utf-8")
@@ -110,7 +111,7 @@ def test_duplicate_titles_warn_inline_without_blocking_and_are_disambiguated() -
     assert "Receipt ${item.id.slice(0, 8)}" in admin_script
 
 
-def test_speaker_portal_editor_preserves_additional_participant_roles() -> None:
+def test_source_wiring_speaker_portal_editor_preserves_additional_participant_roles() -> None:
     script = (STATIC / "speaker_portal.js").read_text(encoding="utf-8")
 
     assert 'role: row.querySelector("[data-co-speaker-role]").value' in script
@@ -121,11 +122,9 @@ def test_speaker_portal_editor_preserves_additional_participant_roles() -> None:
     assert 'make("h4", "Additional participants")' in script
 
 
-def test_clients_render_server_supplied_participant_role_labels() -> None:
+def test_source_wiring_clients_render_server_supplied_participant_role_labels() -> None:
     public_script = (STATIC / "public_cfp.js").read_text(encoding="utf-8")
-    invitation_script = (STATIC / "co_speaker_invitation.js").read_text(
-        encoding="utf-8"
-    )
+    invitation_script = (STATIC / "co_speaker_invitation.js").read_text(encoding="utf-8")
     admin_script = (STATIC / "admin_submissions.js").read_text(encoding="utf-8")
 
     assert "invitation.role_label" in public_script
@@ -136,20 +135,18 @@ def test_clients_render_server_supplied_participant_role_labels() -> None:
 
 
 def test_fresh_schema_persists_additional_participant_roles() -> None:
-    baseline = (ROOT / "migrations_baseline/0001_baseline.sql").read_text(
-        encoding="utf-8"
-    )
+    baseline = (ROOT / "migrations_baseline/0001_baseline.sql").read_text(encoding="utf-8")
 
     role_check = "'co_speaker','co_author','moderator','panelist','other'"
     assert baseline.count(role_check) == 2
 
 
-def test_public_invitation_page_uses_token_detail_and_response_endpoints() -> None:
+def test_source_wiring_public_invitation_page_uses_token_detail_and_response_endpoints() -> None:
     page = (STATIC / "co_speaker_invitation.html").read_text(encoding="utf-8")
     script = (STATIC / "co_speaker_invitation.js").read_text(encoding="utf-8")
-    routes = (
-        ROOT / "src" / "sessionbuddy" / "platform" / "auth" / "access.py"
-    ).read_text(encoding="utf-8")
+    routes = (ROOT / "src" / "sessionbuddy" / "platform" / "auth" / "access.py").read_text(
+        encoding="utf-8"
+    )
 
     assert 'id="accept-invitation"' in page
     assert 'id="decline-invitation"' in page
@@ -159,7 +156,7 @@ def test_public_invitation_page_uses_token_detail_and_response_endpoints() -> No
     assert "/api/v1/co-speaker-invitations/${encodeURIComponent(token)}" in script
     assert 'respond("accept")' in script
     assert 'respond("decline")' in script
-    assert 'declineDialog.showModal()' in script
+    assert "declineDialog.showModal()" in script
     assert 'declineDialog.addEventListener("close"' in script
     assert '"/co-speaker-invitations/{token}"' in routes
     assert '"/co-speaker-invitations/assets/invitation.js"' in routes

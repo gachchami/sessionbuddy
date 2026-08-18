@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException, Request
 
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 from sessionbuddy.speaker_operations.asset_boundary import (
     SCANNING_RECOVERY_AFTER_MS,
     ScanJob,
@@ -65,9 +66,10 @@ def scan_database() -> tuple[sqlite3.Connection, AsyncSqlite]:
     connection.execute(
         """INSERT INTO speaker_tasks
            (id,organization_id,event_id,event_speaker_id,submission_id,task_type,title,
-            destination_type,state,created_at_ms,updated_at_ms)
+            destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
            VALUES ('task-a','org-a','event-a','speaker-a','submission-a','headshot',
-                   'Upload','headshot','open',1000,1000)"""
+                   'Upload','headshot','open',1000,1000,?)""",
+        (task_form_schema_json("headshot"),),
     )
     add_asset(connection)
     # seed_platform() already provides call_for_speaker_forms row 'form-a'.
@@ -650,7 +652,7 @@ async def test_upload_completion_still_fails_loudly_without_a_queue_binding() ->
     assert missing.value.status_code == 503
 
 
-def test_entry_routes_suffixed_scan_queues_and_schedules_recovery() -> None:
+def test_source_wiring_entry_routes_suffixed_scan_queues_and_schedules_recovery() -> None:
     """Environment-suffixed queues (sessionbuddy-asset-scans-development-2)
     must reach the scan consumer instead of being acked as malformed
     communication envelopes, and the cron must run the scan re-dispatcher."""

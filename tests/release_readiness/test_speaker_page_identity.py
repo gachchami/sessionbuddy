@@ -19,12 +19,12 @@ def test_speaker_pages_keep_specific_document_titles_and_stable_workspace_headin
         assert "<h1" in markup and f">{heading}</h1>" in markup
 
 
-def test_shared_muted_utility_uses_the_product_token() -> None:
+def test_source_wiring_shared_muted_utility_uses_the_product_token() -> None:
     stylesheet = (STATIC / "product.css").read_text()
     assert ".muted { color: var(--muted); }" in stylesheet
 
 
-def test_onboarding_uses_product_tokens_and_complete_focus_selector() -> None:
+def test_source_wiring_onboarding_uses_product_tokens_and_complete_focus_selector() -> None:
     markup = (STATIC / "admin_onboarding.html").read_text()
     stylesheet = (STATIC / "admin_onboarding.css").read_text()
     product = (STATIC / "product.css").read_text()
@@ -36,7 +36,7 @@ def test_onboarding_uses_product_tokens_and_complete_focus_selector() -> None:
     assert ":where(a, button, input, textarea, select, summary):focus-visible" in product
 
 
-def test_event_messages_has_exactly_one_home_in_navigation() -> None:
+def test_source_wiring_event_messages_has_exactly_one_home_in_navigation() -> None:
     """Messages is an event destination, not a speaker-hub area.
 
     It was reachable only through the Speakers hub, which is why an organizer

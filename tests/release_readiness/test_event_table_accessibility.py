@@ -29,7 +29,9 @@ def test_event_empty_state_is_outside_the_aria_table_and_live() -> None:
     assert "empty.textContent = state.query" in javascript
 
 
-def test_mobile_cards_keep_the_table_headers_available_to_assistive_technology() -> None:
+def test_source_wiring_mobile_cards_keep_the_table_headers_available_to_assistive_technology() -> (
+    None
+):
     styles = (STATIC / "admin_home.css").read_text()
 
     mobile_header = styles.split(".organizer-home-table__header { position:absolute;", 1)[1].split(

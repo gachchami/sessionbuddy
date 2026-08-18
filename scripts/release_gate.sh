@@ -43,6 +43,7 @@ release_compose run --rm --no-deps worker uv run python scripts/embed_console_as
 release_compose run --rm --no-deps worker uv run python \
   scripts/render_private_cloudflare_config.py --check
 release_compose run --rm --no-deps worker uv run ruff check .
+release_compose run --rm --no-deps worker uv run python scripts/audit_rule_chokepoints.py
 release_compose run --rm --no-deps worker uv run pytest -q
 release_compose run --rm --no-deps worker uv run python scripts/release_db_smoke.py --large
 

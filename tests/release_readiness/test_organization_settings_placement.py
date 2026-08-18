@@ -4,7 +4,7 @@ ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 
 
-def test_home_switches_organization_without_editing_organization_settings() -> None:
+def test_source_wiring_home_switches_organization_without_editing_organization_settings() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
@@ -18,7 +18,7 @@ def test_home_switches_organization_without_editing_organization_settings() -> N
     assert 'history.replaceState(null, ""' in script
 
 
-def test_organization_settings_has_a_dedicated_organizer_surface() -> None:
+def test_source_wiring_organization_settings_has_a_dedicated_organizer_surface() -> None:
     home = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     page = (STATIC / "organization_admin.html").read_text(encoding="utf-8")
     script = (STATIC / "organization_admin.js").read_text(encoding="utf-8")

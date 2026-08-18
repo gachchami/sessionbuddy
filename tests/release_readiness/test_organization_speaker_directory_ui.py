@@ -4,7 +4,7 @@ ROOT = Path(__file__).parents[2]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 
 
-def test_general_people_directory_is_platform_scoped_and_filterable() -> None:
+def test_source_wiring_general_people_directory_is_platform_scoped_and_filterable() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
@@ -26,15 +26,14 @@ def test_general_people_directory_is_platform_scoped_and_filterable() -> None:
     assert "speaker.participations || speaker.events || []" in script
     assert "function uniquePeople(items)" in script
     assert (
-        "item.organization_id}:${item.user_id || item.email?.toLowerCase() || "
-        "item.person_id}"
+        "item.organization_id}:${item.user_id || item.email?.toLowerCase() || item.person_id}"
     ) in script
     assert "participation.event_id === eventId" in script
     assert 'row.className = "people-table-row"' in script
-    assert 'window.SessionBuddyPeopleSearch.matches' in script
+    assert "window.SessionBuddyPeopleSearch.matches" in script
 
 
-def test_only_an_explicit_event_route_changes_the_directory_context() -> None:
+def test_source_wiring_only_an_explicit_event_route_changes_the_directory_context() -> None:
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
     assert "const eventScoped = Boolean(pathMatch);" in script
@@ -44,18 +43,13 @@ def test_only_an_explicit_event_route_changes_the_directory_context() -> None:
     assert 'byId("role-filter-field").hidden = true;' in script
     assert "/api/v1/admin/events/${encodeURIComponent(selectedEventId)}/speaker-targets" in script
     assert "if (selectedSpeakerId)" in script
-    assert (
-        "/speakers/${encodeURIComponent(selectedSpeakerId)}" in script
-    )
+    assert "/speakers/${encodeURIComponent(selectedSpeakerId)}" in script
     assert "[organizations, event, targetsResponse] = await Promise.all" not in script
-    update_path = (
-        "/api/v1/admin/events/"
-        "${encodeURIComponent(selectedSpeaker.event.id)}/speakers/"
-    )
+    update_path = "/api/v1/admin/events/${encodeURIComponent(selectedSpeaker.event.id)}/speakers/"
     assert update_path in script
 
 
-def test_each_reusable_profile_exposes_all_matching_event_participations() -> None:
+def test_source_wiring_each_reusable_profile_exposes_all_matching_event_participations() -> None:
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
     assert "renderSpeakerSummary(profile, profile.participations || [])" in script
@@ -66,7 +60,7 @@ def test_each_reusable_profile_exposes_all_matching_event_participations() -> No
     assert "known.has(part.event_speaker_id)" in script
 
 
-def test_people_rows_link_activated_users_to_public_profiles() -> None:
+def test_source_wiring_people_rows_link_activated_users_to_public_profiles() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
@@ -81,26 +75,25 @@ def test_people_rows_link_activated_users_to_public_profiles() -> None:
     assert "View ${item.display_name}'s public profile" in script
 
 
-def test_event_speaker_edit_route_remains_separate_from_public_profiles() -> None:
+def test_source_wiring_event_speaker_edit_route_remains_separate_from_public_profiles() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
     assert 'id="speaker-profile-view"' in page
     assert "const profileMatch = location.pathname.match" in script
     assert "`/api/v1/speaker-profiles/${encodeURIComponent(selectedPersonId)}`" in script
-    assert 'form.hidden = !profile.can_edit;' in script
+    assert "form.hidden = !profile.can_edit;" in script
     assert 'setSpeakerDetailMode("summary")' in script
     assert 'byId("speaker-edit-tab").hidden = !profile.can_edit;' in script
     legacy_redirect = (
-        "location.replace(`/speakers/"
-        "${encodeURIComponent(selection.person.person_id)}`)"
+        "location.replace(`/speakers/${encodeURIComponent(selection.person.person_id)}`)"
     )
     assert legacy_redirect not in script
     assert "Edit ${item.display_name}'s speaker details" in script
     assert "showSpeakerDetail(selection.person, selection.participation)" in script
 
 
-def test_speaker_detail_distills_summary_from_explicit_editing() -> None:
+def test_source_wiring_speaker_detail_distills_summary_from_explicit_editing() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
@@ -109,13 +102,15 @@ def test_speaker_detail_distills_summary_from_explicit_editing() -> None:
     assert 'id="speaker-edit-tab"' in page
     assert 'id="speaker-edit-view" class="speaker-edit-view" hidden' in page
     assert 'id="speaker-biography-toggle"' in page
-    assert '/public/assets/biography-disclosure.js' in page
-    assert 'function setSpeakerDetailMode(mode' in script
-    assert 'function renderSpeakerSummary(person, participations = [])' in script
+    assert "/public/assets/biography-disclosure.js" in page
+    assert "function setSpeakerDetailMode(mode" in script
+    assert "function renderSpeakerSummary(person, participations = [])" in script
     assert 'setSpeakerDetailMode("summary")' in script
 
 
-def test_event_speaker_profile_supports_private_configurable_organizer_notes() -> None:
+def test_source_wiring_event_speaker_profile_supports_private_configurable_organizer_notes() -> (
+    None
+):
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 
@@ -126,7 +121,7 @@ def test_event_speaker_profile_supports_private_configurable_organizer_notes() -
     assert "/organizer-notes`" in script
 
 
-def test_event_directory_offers_validated_csv_invitation_import() -> None:
+def test_source_wiring_event_directory_offers_validated_csv_invitation_import() -> None:
     page = (STATIC / "speaker_directory.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_directory.js").read_text(encoding="utf-8")
 

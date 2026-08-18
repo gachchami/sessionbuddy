@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path("src/sessionbuddy/static")
 
 
-def test_reviewer_reminders_are_reachable_from_the_proposal_inbox() -> None:
+def test_source_wiring_reviewer_reminders_are_reachable_from_the_proposal_inbox() -> None:
     """The nudge exists on the round detail page; organizers work the inbox.
 
     ``POST .../evaluators/{id}/reminder`` and its per-reviewer button on the round
@@ -29,7 +29,7 @@ def test_reviewer_reminders_are_reachable_from_the_proposal_inbox() -> None:
     assert "else failures.push(window.SessionBuddyApi.message(error));" in javascript
 
 
-def test_the_proposal_inbox_filters_by_routed_track() -> None:
+def test_source_wiring_the_proposal_inbox_filters_by_routed_track() -> None:
     """Track already travels on every submission row; only the filter was missing.
 
     ``submissions.routed_track`` is written by the form's routing rules and already
@@ -51,7 +51,7 @@ def test_the_proposal_inbox_filters_by_routed_track() -> None:
     assert "stay in the round" in javascript
 
 
-def test_assignments_can_be_distributed_across_reviewers() -> None:
+def test_source_wiring_assignments_can_be_distributed_across_reviewers() -> None:
     """Auto-distribution seeds the matrix; it never becomes the saved payload.
 
     The API stores the explicit pair list verbatim, which is what lets a hand-edited
@@ -82,7 +82,7 @@ def test_assignments_can_be_distributed_across_reviewers() -> None:
     assert "markRoundFormDirty();\n    renderEvaluatorChoices();" in javascript
 
 
-def test_distribution_is_a_client_side_seed_not_a_new_api_contract() -> None:
+def test_source_wiring_distribution_is_a_client_side_seed_not_a_new_api_contract() -> None:
     """Guards the boundary the round builder is built on.
 
     ``roundAssignments()`` returns an explicit matrix on every save, so the server's

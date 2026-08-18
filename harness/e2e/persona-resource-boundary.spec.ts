@@ -90,7 +90,6 @@ test.describe("persona and resource boundary", () => {
           organization_id: organizationId,
           event_id: eventId,
           event_name: "World's Fair Test",
-          permissions: ["manage"],
           assignments: ["speaker"],
         }],
       }),

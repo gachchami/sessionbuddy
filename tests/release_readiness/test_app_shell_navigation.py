@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_global_navigation_is_separate_from_the_scrollable_event_navigation() -> None:
+def test_source_wiring_global_navigation_is_separate_from_the_scrollable_event_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert "`sb-sidebar__group sb-sidebar__primary${organizerWorkspace" in javascript
@@ -23,7 +23,7 @@ def test_global_navigation_is_separate_from_the_scrollable_event_navigation() ->
     assert '["Overview", prefix, "overview"' in javascript
 
 
-def test_event_navigation_stays_in_one_scrollable_row() -> None:
+def test_source_wiring_event_navigation_stays_in_one_scrollable_row() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     event_nav_rule = stylesheet.split(".sb-event-nav {", 1)[1].split("}", 1)[0]
@@ -35,7 +35,9 @@ def test_event_navigation_stays_in_one_scrollable_row() -> None:
     assert "min-height: var(--sb-event-nav-height);" in compact_event_nav
 
 
-def test_event_navigation_warms_documents_and_transitions_without_hijacking_links() -> None:
+def test_source_wiring_event_navigation_warms_documents_without_hijacking_links() -> (
+    None
+):
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
@@ -74,8 +76,7 @@ def test_event_navigation_warms_documents_and_transitions_without_hijacking_link
     assert "preventDefault" not in warm_function
     assert "document.write" not in javascript
     intercepted_click = (
-        'document.addEventListener("click", (event) => {\n'
-        "    if (event.defaultPrevented"
+        'document.addEventListener("click", (event) => {\n    if (event.defaultPrevented'
     )
     assert intercepted_click not in javascript
     assert "@view-transition { navigation: auto; }" in stylesheet
@@ -84,7 +85,7 @@ def test_event_navigation_warms_documents_and_transitions_without_hijacking_link
     assert "::view-transition-group(*)" in reduced_motion
 
 
-def test_shell_chrome_is_pinned_across_document_navigations() -> None:
+def test_source_wiring_shell_chrome_is_pinned_across_document_navigations() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     sidebar_rule = stylesheet.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
@@ -95,7 +96,9 @@ def test_shell_chrome_is_pinned_across_document_navigations() -> None:
     assert "view-transition-name: sessionbuddy-event-navigation;" in event_nav_rule
 
 
-def test_shell_paints_from_the_cached_session_and_revalidates_in_the_background() -> None:
+def test_source_wiring_shell_paints_from_the_cached_session_and_revalidates_in_the_background() -> (
+    None
+):
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     # The per-tab cache lets the shell join the page's first frame instead of
@@ -138,7 +141,9 @@ def test_shell_paints_from_the_cached_session_and_revalidates_in_the_background(
     assert "shell ? usableCachedSession() : null" in javascript
 
 
-def test_cached_session_never_stores_credentials_and_cannot_outlive_its_welcome() -> None:
+def test_source_wiring_cached_session_never_stores_credentials_and_cannot_outlive_its_welcome() -> (
+    None
+):
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     # Only an explicit allowlist of presentation fields is persisted. Tokens,
@@ -184,7 +189,7 @@ def test_cached_session_never_stores_credentials_and_cannot_outlive_its_welcome(
     assert "cancelSpeculativeLoads();" in listener
 
 
-def test_csp_permits_only_the_inline_speculation_rules_the_shell_emits() -> None:
+def test_source_wiring_csp_permits_only_the_inline_speculation_rules_the_shell_emits() -> None:
     security = (STATIC.parent / "security.py").read_text(encoding="utf-8")
 
     # Without this source, script-src falls back to default-src 'self' and
@@ -194,7 +199,7 @@ def test_csp_permits_only_the_inline_speculation_rules_the_shell_emits() -> None
     assert "'unsafe-inline'" not in security.split("style-src-attr", 1)[0]
 
 
-def test_global_pages_use_the_approved_horizontal_navigation() -> None:
+def test_source_wiring_global_pages_use_the_approved_horizontal_navigation() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert ".sb-shell-global .sb-sidebar { display: none; }" in stylesheet
@@ -216,7 +221,7 @@ def test_global_pages_use_the_approved_horizontal_navigation() -> None:
     assert "background:" in primary_rule
 
 
-def test_account_menu_layer_stays_above_workflow_content() -> None:
+def test_source_wiring_account_menu_layer_stays_above_workflow_content() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     assert "z-index: 100;" in stylesheet.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
@@ -231,7 +236,7 @@ def test_account_menu_layer_stays_above_workflow_content() -> None:
     assert "z-index: 95;" in mobile_backdrop.split("}", 1)[0]
 
 
-def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
+def test_source_wiring_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
@@ -240,7 +245,7 @@ def test_role_portals_do_not_render_an_empty_primary_navigation_group() -> None:
     assert "if (utilityNav.children.length) sidebar.append(utilityGroup);" in javascript
 
 
-def test_zero_link_account_shell_collapses_the_empty_navigation() -> None:
+def test_source_wiring_zero_link_account_shell_collapses_the_empty_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert (
@@ -264,7 +269,7 @@ def test_account_brand_wiring_uses_the_active_role_destination() -> None:
     )
 
 
-def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
+def test_source_wiring_single_speaker_workspace_has_no_one_item_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
@@ -276,7 +281,7 @@ def test_single_speaker_workspace_has_no_one_item_navigation() -> None:
     assert ".app-body.sb-shell-authenticated.sb-shell-single > main.shell" in stylesheet
 
 
-def test_account_navigation_exposes_one_active_role_and_role_switching() -> None:
+def test_source_wiring_account_navigation_exposes_one_active_role_and_role_switching() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert '"/api/v1/session/active-role"' in javascript
@@ -284,7 +289,9 @@ def test_account_navigation_exposes_one_active_role_and_role_switching() -> None
     assert "` · ${roleLabel(active.role)}`" in javascript
 
 
-def test_account_settings_uses_the_global_shell_without_polluting_primary_navigation() -> None:
+def test_source_wiring_account_settings_uses_shell_without_polluting_navigation() -> (
+    None
+):
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
@@ -317,7 +324,7 @@ def test_account_settings_uses_the_global_shell_without_polluting_primary_naviga
     assert ":focus-visible" in stylesheet
 
 
-def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
+def test_source_wiring_shell_uses_brand_asset_and_organizer_navigation() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert 'mark.src = "/landing/assets/sessionbuddy-favicon.svg"' in javascript
@@ -326,7 +333,7 @@ def test_shell_uses_brand_asset_and_organizer_navigation() -> None:
     assert 'navLink("Events", "/admin/events", "calendar"' not in javascript
 
 
-def test_single_speaker_shell_has_no_redundant_page_heading() -> None:
+def test_source_wiring_single_speaker_shell_has_no_redundant_page_heading() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     branch = javascript.split("} else if (singleSpeakerWorkspace) {", 1)[1].split(
         '} else if (!hasSidebarNavigation || section === "reviews") {', 1
@@ -335,7 +342,7 @@ def test_single_speaker_shell_has_no_redundant_page_heading() -> None:
     assert "topbar.append(speakerBrand, accountMenu(session, roles));" in branch
 
 
-def test_landing_uses_one_role_aware_dashboard_entry() -> None:
+def test_source_wiring_landing_uses_one_role_aware_dashboard_entry() -> None:
     landing = (STATIC / "landing.html").read_text(encoding="utf-8")
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
@@ -359,7 +366,9 @@ def test_landing_uses_one_role_aware_dashboard_entry() -> None:
     assert "return active ? roleDestination(active, session) : null" in javascript
 
 
-def test_missing_or_unknown_active_role_fails_closed_without_a_destination_guess() -> None:
+def test_source_wiring_unknown_active_role_fails_closed_without_destination_guess() -> (
+    None
+):
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     active_role = javascript.split("function activeRole(session)", 1)[1].split(
@@ -405,7 +414,7 @@ def test_organizer_without_manageable_resources_has_no_account_fallback() -> Non
     assert "if (!dashboardDestination(session) && !rolelessNeutral) {" in javascript
 
 
-def test_organizer_destination_does_not_use_event_access() -> None:
+def test_source_wiring_organizer_destination_does_not_use_event_access() -> None:
     shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     overview = (STATIC / "event_overview.js").read_text(encoding="utf-8")
 
@@ -431,7 +440,7 @@ def test_account_is_persona_neutral_and_same_destination_still_renders_shell() -
     assert not destination_guard.rstrip().endswith("return;\n    }")
 
 
-def test_cached_identity_never_routes_an_authorization_sensitive_document() -> None:
+def test_source_wiring_cached_identity_never_routes_an_authorization_sensitive_document() -> None:
     shell = (STATIC / "app_shell.js").read_text(encoding="utf-8")
     api_client = (STATIC / "api_client.js").read_text(encoding="utf-8")
 
@@ -451,7 +460,7 @@ def test_cached_identity_never_routes_an_authorization_sensitive_document() -> N
         assert "SessionBuddyApi.prepareForSessionReplacement();" in source
 
 
-def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
+def test_source_wiring_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
 
@@ -459,7 +468,7 @@ def test_organization_context_does_not_use_an_ambiguous_letter_tile() -> None:
     assert ".context-bar__icon" not in stylesheet
 
 
-def test_only_event_navigation_scrolls_inside_the_sidebar_on_all_viewports() -> None:
+def test_source_wiring_only_event_navigation_scrolls_inside_the_sidebar_on_all_viewports() -> None:
     stylesheet = (STATIC / "app_shell.css").read_text(encoding="utf-8")
 
     sidebar_rule = stylesheet.split(".sb-sidebar {", 1)[1].split("}", 1)[0]
@@ -479,7 +488,7 @@ def test_only_event_navigation_scrolls_inside_the_sidebar_on_all_viewports() -> 
     assert ".sb-sidebar { overflow" not in mobile_rules
 
 
-def test_every_organizer_persona_reaches_a_navigable_workspace() -> None:
+def test_source_wiring_every_organizer_persona_reaches_a_navigable_workspace() -> None:
     """An organizer must never be shown an empty navigation rail.
 
     Three separate gates each used to empty the sidebar: the organization links
@@ -511,7 +520,7 @@ def test_every_organizer_persona_reaches_a_navigable_workspace() -> None:
     assert "if (nav.children.length) sidebar.append(primaryGroup);" in javascript
 
 
-def test_event_navigation_comes_only_from_organization_authority() -> None:
+def test_source_wiring_event_navigation_comes_only_from_organization_authority() -> None:
     """Event assignments never manufacture organizer navigation."""
 
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
@@ -524,7 +533,7 @@ def test_event_navigation_comes_only_from_organization_authority() -> None:
     assert "eventNav(currentEventId, true)" in javascript
 
 
-def test_event_navigation_does_not_duplicate_proposal_sections() -> None:
+def test_source_wiring_event_navigation_does_not_duplicate_proposal_sections() -> None:
     javascript = Path("src/sessionbuddy/static/app_shell.js").read_text()
 
     assert '["Rounds", `${prefix}/submissions#rounds-title`' not in javascript
@@ -532,7 +541,7 @@ def test_event_navigation_does_not_duplicate_proposal_sections() -> None:
     assert "if (canAdministerAccess) {" in javascript
 
 
-def test_event_settings_and_new_event_have_stable_shell_destinations() -> None:
+def test_source_wiring_event_settings_and_new_event_have_stable_shell_destinations() -> None:
     javascript = (STATIC / "app_shell.js").read_text(encoding="utf-8")
 
     assert 'return value === "new" ? "" : value;' in javascript

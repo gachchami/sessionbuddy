@@ -64,7 +64,7 @@ def test_no_console_page_ships_a_static_optgroup() -> None:
     assert not offenders, f"{', '.join(offenders)} contain a literal <optgroup>"
 
 
-def test_the_display_rule_trigger_lists_its_options_directly() -> None:
+def test_source_wiring_the_display_rule_trigger_lists_its_options_directly() -> None:
     """Pin the specific control the eval lost turns to."""
     source = _without_comments((STATIC / "admin_programs.js").read_text())
     trigger = source[source.index('conditionQuestion.name = "condition_source"'):][:2000]

@@ -67,7 +67,7 @@ def test_day_n_fixture_uses_personas_exact_grants_and_assignments() -> None:
     assert {item["event"] for item in accounts["reviewer_assignments"]} <= event_keys
 
 
-def test_day_n_ui_worksheets_have_no_legacy_admin_subroles() -> None:
+def test_source_wiring_day_n_ui_worksheets_have_no_legacy_admin_subroles() -> None:
     ui_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in sorted((FIXTURES / "ui").glob("*"))

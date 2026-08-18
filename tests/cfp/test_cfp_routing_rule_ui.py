@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_routing_rules_use_compact_addable_rows() -> None:
+def test_source_wiring_routing_rules_use_compact_addable_rows() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
     stylesheet = (STATIC / "product.css").read_text(encoding="utf-8")
@@ -18,7 +18,7 @@ def test_routing_rules_use_compact_addable_rows() -> None:
     assert ".routing-rule { display: grid;" in stylesheet
 
 
-def test_each_rule_has_one_clear_destination() -> None:
+def test_source_wiring_each_rule_has_one_clear_destination() -> None:
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
     assert 'destinationType.name = "routing_destination_type"' in script

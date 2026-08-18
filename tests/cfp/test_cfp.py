@@ -82,7 +82,7 @@ def test_cfp_description_sanitizes_rich_text_and_keeps_important_dates() -> None
         slug="event-cfp",
         welcome_text="Safe fallback",
         description_html=(
-            '<h2>What we want</h2><p>Hello <strong>speaker</strong><script>alert(1)</script>'
+            "<h2>What we want</h2><p>Hello <strong>speaker</strong><script>alert(1)</script>"
             '<a href="javascript:alert(2)">bad link</a></p>'
         ),
         important_dates=[{"label": "Wave 1 decisions", "at_ms": 1_900_000_000_000}],
@@ -255,9 +255,10 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     assert 'id="cfp-routing"' in page
     assert 'id="add-field"' in page
     assert page.index('id="add-field"') < page.index('id="form-fields"')
-    assert ".cfp-editor-section--single-question > #add-field" not in (
-        static / "product.css"
-    ).read_text()
+    assert (
+        ".cfp-editor-section--single-question > #add-field"
+        not in (static / "product.css").read_text()
+    )
     assert 'const add = byId("add-field")' in script
     assert 'make("button", "Done editing question")' in script
     assert 'state.selectedOutline = "custom"' in script
@@ -270,10 +271,8 @@ def test_event_owned_cfp_builder_has_no_program_creation_step() -> None:
     assert 'if (!system) summaryIdentity.append(make("small", field.key))' in script
 
 
-def test_cfp_builder_uses_configurable_formats_for_display_rules() -> None:
-    script = (
-        Path(__file__).parents[2] / "src/sessionbuddy/static/admin_programs.js"
-    ).read_text()
+def test_source_wiring_cfp_builder_uses_configurable_formats_for_display_rules() -> None:
+    script = (Path(__file__).parents[2] / "src/sessionbuddy/static/admin_programs.js").read_text()
 
     for session_format in (
         "Keynote (45 min)",
@@ -287,13 +286,13 @@ def test_cfp_builder_uses_configurable_formats_for_display_rules() -> None:
     assert '"Session formats",' in script
     assert 'conditionQuestion.addEventListener("change", () => {' in script
     assert 'conditionWarning.setAttribute("role", "alert")' in script
-    assert 'renderConditionAnswer();' in script
-    assert 'state.fields[index].choices = choices.value' in script
+    assert "renderConditionAnswer();" in script
+    assert "state.fields[index].choices = choices.value" in script
     assert 'choiceConditionValue.name = "condition_value"' in script
-    assert 'choiceConditionValue.disabled = true' in script
-    assert 'const option = new Option(candidate.label, candidate.label)' in script
-    assert 'option.dataset.sourceKey = candidate.key' in script
-    assert 'sourceControl?.selectedOptions[0]?.dataset.sourceKey' in script
+    assert "choiceConditionValue.disabled = true" in script
+    assert "const option = new Option(candidate.label, candidate.label)" in script
+    assert "option.dataset.sourceKey = candidate.key" in script
+    assert "sourceControl?.selectedOptions[0]?.dataset.sourceKey" in script
     assert "const eventFields = [];" in script
     assert "const customFields = [];" in script
     assert "for (const option of [...eventFields, ...customFields])" in script
@@ -413,9 +412,7 @@ def test_private_cfp_draft_allows_an_unwritten_description() -> None:
         success_message="",
         confirmation_subject="",
         confirmation_body="",
-        fields=(
-            {"key": "duplicate", "type": "select", "choices": ["Same", "Same"]},
-        ),
+        fields=({"key": "duplicate", "type": "select", "choices": ["Same", "Same"]},),
         routing_rules=({"source_key": "missing"},),
     )
 
@@ -488,31 +485,27 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     assert "const workspacePath" not in public_script
 
 
-def test_admin_submission_inbox_uses_open_round_membership_for_decisions() -> None:
+def test_source_wiring_admin_submission_inbox_uses_open_round_membership_for_decisions() -> None:
     root = Path(__file__).parents[2]
     router = (root / "src/sessionbuddy/cfp/router.py").read_text()
     script = (root / "src/sessionbuddy/static/admin_submissions.js").read_text()
 
-    admin_list = router.split("async def list_submissions(", 1)[1].split(
-        "@cfp_router", 1
-    )[0]
+    admin_list = router.split("async def list_submissions(", 1)[1].split("@cfp_router", 1)[0]
     assert "er.id AS evaluation_round_id" in admin_list
     assert "candidate.status='open'" in admin_list
     assert "FROM evaluation_round_submissions membership" in admin_list
     assert "membership.status='active'" in admin_list
     assert "a.status!='revoked'" not in admin_list
-    assert "item.status === \"submitted\" && item.evaluation_round_id" in script
-    assert "Open ${item.evaluation_round_name || \"evaluation round\"} to decide" in script
+    assert 'item.status === "submitted" && item.evaluation_round_id' in script
+    assert 'Open ${item.evaluation_round_name || "evaluation round"} to decide' in script
     assert 'error.code === "round_conflict"' in script
 
 
-def test_duplicate_title_lookup_is_owned_and_not_limited_to_recent_submissions() -> None:
-    router = (
-        Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py"
-    ).read_text()
-    lookup = router.split("async def find_my_submission_by_title", 1)[1].split(
-        "@cfp_router", 1
-    )[0]
+def test_source_wiring_duplicate_title_lookup_is_owned_and_not_limited_to_recent_submissions() -> (
+    None
+):
+    router = (Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py").read_text()
+    lookup = router.split("async def find_my_submission_by_title", 1)[1].split("@cfp_router", 1)[0]
 
     assert "s.submitter_user_id=?2" in lookup
     assert "lower(trim(s.proposal_title))=lower(trim(?3))" in lookup
@@ -537,7 +530,7 @@ def test_cfp_contributors_have_an_explicit_role_and_edits_save_the_submission() 
     assert 'method: "PATCH"' in script
 
 
-def test_public_cfp_offers_password_and_email_link_sign_in() -> None:
+def test_source_wiring_public_cfp_offers_password_and_email_link_sign_in() -> None:
     static = Path(__file__).parents[2] / "src/sessionbuddy/static"
     page = (static / "public_cfp.html").read_text()
     script = (static / "public_cfp.js").read_text()
@@ -549,7 +542,7 @@ def test_public_cfp_offers_password_and_email_link_sign_in() -> None:
     assert '"/api/v1/auth/magic-links"' in script
 
 
-def test_public_cfp_formats_event_dates_in_the_event_time_zone() -> None:
+def test_source_wiring_public_cfp_formats_event_dates_in_the_event_time_zone() -> None:
     script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
 
     assert 'const timeZone = form.event_time_zone || "UTC"' in script
@@ -634,7 +627,7 @@ def test_public_cfp_defers_authentication_until_final_submission() -> None:
     assert '<button id="cfp-password-sign-in">Sign in</button>' in page
 
 
-def test_public_cfp_shows_the_form_to_a_visitor_who_is_not_signed_in() -> None:
+def test_source_wiring_public_cfp_shows_the_form_to_a_visitor_who_is_not_signed_in() -> None:
     """A signed-out visitor reads the real questions, not only a sign-in card.
 
     ``GET /api/v1/forms/{slug}`` is public and already returns every field, its
@@ -663,7 +656,7 @@ def test_public_cfp_shows_the_form_to_a_visitor_who_is_not_signed_in() -> None:
     assert "signIn.requestSubmit()" not in script
 
 
-def test_cfp_summary_excludes_conditional_questions_until_they_apply() -> None:
+def test_source_wiring_cfp_summary_excludes_conditional_questions_until_they_apply() -> None:
     script = (Path(__file__).parents[2] / "src/sessionbuddy/static/public_cfp.js").read_text()
 
     assert "conditionalTargets" in script
@@ -674,7 +667,7 @@ def test_cfp_summary_excludes_conditional_questions_until_they_apply() -> None:
     )
 
 
-def test_organizer_can_view_but_cannot_edit_speaker_proposals() -> None:
+def test_source_wiring_organizer_can_view_but_cannot_edit_speaker_proposals() -> None:
     router = (Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py").read_text()
     admin = (Path(__file__).parents[2] / "src/sessionbuddy/static/admin_submissions.js").read_text()
 
@@ -774,12 +767,10 @@ def test_proposal_limit_is_per_speaker_not_a_global_cfp_cap() -> None:
     assert availability.accepting is True
     assert availability.message == "Applications are open."
 
-    source = (
-        Path(__file__).parents[2] / "src" / "sessionbuddy" / "cfp" / "router.py"
-    ).read_text(encoding="utf-8")
-    create = source.split("async def create_submission", 1)[1].split(
-        "SUBMISSIONS_PAGE_LIMIT", 1
-    )[0]
+    source = (Path(__file__).parents[2] / "src" / "sessionbuddy" / "cfp" / "router.py").read_text(
+        encoding="utf-8"
+    )
+    create = source.split("async def create_submission", 1)[1].split("SUBMISSIONS_PAGE_LIMIT", 1)[0]
     assert "WHERE form_id=?1 AND submitter_user_id=?2 AND status='submitted'" in create
     assert "WHERE form_id=?4 AND submitter_user_id=?11 AND status='submitted'" in create
     assert "You have reached the proposal limit for this Call for Proposals." in create
@@ -878,13 +869,13 @@ async def test_final_cfp_submission_requires_verified_session() -> None:
     assert response.status_code == 401
 
 
-def test_public_submission_uses_csrf_guard_and_server_controlled_rate_limit_key() -> None:
-    source = (
-        Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py"
-    ).read_text(encoding="utf-8")
-    create = source.split("async def create_submission", 1)[1].split(
-        "SUBMISSIONS_PAGE_LIMIT", 1
-    )[0]
+def test_source_wiring_public_submission_uses_csrf_guard_and_server_controlled_rate_limit_key() -> (
+    None
+):
+    source = (Path(__file__).parents[2] / "src/sessionbuddy/cfp/router.py").read_text(
+        encoding="utf-8"
+    )
+    create = source.split("async def create_submission", 1)[1].split("SUBMISSIONS_PAGE_LIMIT", 1)[0]
 
     assert "guard_mutation(request, authenticated.session_id)" in create
     assert 'subject=f"{authenticated.actor.user_id}:{_request_source(request)}"' in create
@@ -986,7 +977,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert auth_link_confirm_js.headers["content-type"].startswith("text/javascript")
     assert "form.requestSubmit()" not in auth_link_confirm_js.text
     assert "window.history.replaceState" in auth_link_confirm_js.text
-    assert 'window.location.hash.slice(1)' in auth_link_confirm_js.text
+    assert "window.location.hash.slice(1)" in auth_link_confirm_js.text
     assert "Create the first organization and administrator" in setup.text
     assert {
         admin_home.status_code,
@@ -1034,7 +1025,7 @@ async def test_product_pages_are_separate_safe_surfaces() -> None:
     assert "@media (max-width: 48rem)" in css.text
 
 
-def test_organizer_proposal_listing_resolves_the_speakers_company() -> None:
+def test_source_wiring_organizer_proposal_listing_resolves_the_speakers_company() -> None:
     """A proposal has no company of its own, so the listing resolves one.
 
     The organizer view could show everything the form asked for and still not answer
@@ -1103,7 +1094,7 @@ def test_speaker_company_sql_prefers_account_then_scoped_person_fallback() -> No
     ]
 
 
-def test_the_proposal_detail_shows_the_company_beside_the_speaker() -> None:
+def test_source_wiring_the_proposal_detail_shows_the_company_beside_the_speaker() -> None:
     javascript = (
         Path(__file__).parents[2] / "src/sessionbuddy/static/admin_submissions.js"
     ).read_text()
@@ -1146,7 +1137,7 @@ def test_speaker_company_reaches_the_published_contract() -> None:
         assert "speaker_company" not in schema.get("required", [])
 
 
-def test_a_repeated_reviewer_reminder_replays_instead_of_failing() -> None:
+def test_source_wiring_a_repeated_reviewer_reminder_replays_instead_of_failing() -> None:
     """The hourly key makes the send idempotent; it must not make the call fail.
 
     `deterministic_key` is unique per `(organization_id, event_id, ...)`, so a second
@@ -1159,9 +1150,7 @@ def test_a_repeated_reviewer_reminder_replays_instead_of_failing() -> None:
     the message that already exists. It does not republish: that row is still queued
     and the scheduled dispatcher republishes anything that stays queued.
     """
-    router = (
-        Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py"
-    ).read_text()
+    router = (Path(__file__).parents[2] / "src/sessionbuddy/evaluation/router.py").read_text()
     javascript = (
         Path(__file__).parents[2] / "src/sessionbuddy/static/admin_submissions.js"
     ).read_text()

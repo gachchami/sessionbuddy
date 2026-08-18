@@ -32,6 +32,7 @@ from sessionbuddy.platform.db.types import new_id, utc_now_ms
 from sessionbuddy.platform.rate_limits import RateLimitPolicy, enforce_rate_limit
 from sessionbuddy.platform.signed_cursors import BOUNDED_ID, STRICT_INT, SignedCursorContract
 from sessionbuddy.platform.storage import malware_scan_disabled
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 from sessionbuddy.speaker_operations.asset_boundary import ScanJob
 from sessionbuddy.speaker_operations.scanner_adapter import SignedScannerAdapter
 
@@ -3765,13 +3766,14 @@ async def create_invitation(
             ("slides", "Upload your presentation slides", "slides"),
         )
         for task_type, title, destination_type in default_tasks:
+            form_schema_json = task_form_schema_json(task_type)
             audit.add_statement(
                 db.prepare(
                     """INSERT INTO speaker_tasks
                        (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
                         task_type,title,help_text,destination_type,state,
                         form_schema_json,created_at_ms,updated_at_ms)
-                       SELECT ?1,?2,?3,NULL,?4,?5,?6,'',?7,'open','{}',?8,?8
+                       SELECT ?1,?2,?3,NULL,?4,?5,?6,'',?7,'open',?8,?9,?9
                        WHERE NOT EXISTS (
                          SELECT 1 FROM speaker_tasks
                          WHERE organization_id=?2 AND event_id=?3
@@ -3785,6 +3787,7 @@ async def create_invitation(
                     task_type,
                     title,
                     destination_type,
+                    form_schema_json,
                     now,
                 )
             )
@@ -3949,13 +3952,14 @@ async def _create_bulk_speaker_invitation(
         ("headshot", "Upload your headshot", "headshot"),
         ("slides", "Upload your presentation slides", "slides"),
     ):
+        form_schema_json = task_form_schema_json(task_type)
         batch.add_statement(
             db.prepare(
                 """INSERT INTO speaker_tasks
                    (id,organization_id,event_id,event_speaker_id,pending_invitation_id,
                     task_type,title,help_text,destination_type,state,
                     form_schema_json,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,NULL,?4,?5,?6,'',?7,'open','{}',?8,?8)"""
+                   VALUES(?1,?2,?3,NULL,?4,?5,?6,'',?7,'open',?8,?9,?9)"""
             ).bind(
                 new_id(),
                 organization_id,
@@ -3964,6 +3968,7 @@ async def _create_bulk_speaker_invitation(
                 task_type,
                 title,
                 destination_type,
+                form_schema_json,
                 now,
             )
         )

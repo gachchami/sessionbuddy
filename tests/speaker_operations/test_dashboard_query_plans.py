@@ -1,5 +1,6 @@
 import sqlite3
 
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 from tests.speaker_operations.test_speaker_onboarding_schema import (
     add_speaker,
     link_submission_speaker,
@@ -39,6 +40,11 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
             1_000,
             1_000,
             f"fingerprint-{number}".encode(),
+            (
+                task_form_schema_json("profile")
+                if number % 2
+                else task_form_schema_json("slides")
+            ),
         )
         for number in range(TASK_COUNT)
     )
@@ -46,8 +52,8 @@ def seed_task_envelope(db: sqlite3.Connection) -> None:
         """INSERT INTO speaker_tasks
            (id, organization_id, event_id, event_speaker_id, submission_id,
             task_type, title, destination_type, state, due_at_ms, completed_at_ms,
-            created_at_ms, updated_at_ms, content_fingerprint)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            created_at_ms, updated_at_ms, content_fingerprint, form_schema_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
 

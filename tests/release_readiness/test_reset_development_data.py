@@ -102,7 +102,9 @@ def test_local_recreation_drops_migration_ledger_but_not_cloudflare_state() -> N
     )
 
 
-def test_remote_recreation_updates_only_the_exact_old_database_id(tmp_path: Path) -> None:
+def test_source_wiring_remote_recreation_updates_only_the_exact_old_database_id(
+    tmp_path: Path,
+) -> None:
     config = tmp_path / "wrangler.jsonc"
     old_id = "11111111-1111-4111-8111-111111111111"
     new_id = "22222222-2222-4222-8222-222222222222"
@@ -159,16 +161,17 @@ def test_remote_recreation_rebinds_both_workers(
         del timeout
         calls.append(arguments)
         if arguments[:3] == ["d1", "list", "--json"]:
-            return json.dumps(
-                [{"name": "sessionbuddy-development-clean", "uuid": new_id}]
-            )
+            return json.dumps([{"name": "sessionbuddy-development-clean", "uuid": new_id}])
         return ""
 
     monkeypatch.setattr(reset_module, "run_checked", fake_run)
 
-    assert reset_module.recreate_remote_database(
-        "sessionbuddy-development-clean", old_id, location="apac", configs=configs
-    ) == new_id
+    assert (
+        reset_module.recreate_remote_database(
+            "sessionbuddy-development-clean", old_id, location="apac", configs=configs
+        )
+        == new_id
+    )
     assert calls[:2] == [
         [
             "d1",
@@ -288,9 +291,7 @@ def test_bootstrap_bundle_restores_complete_credential_with_explicit_columns(
         "instance_setup": {"singleton_key": "'primary'"},
     }
 
-    def fake_execute(
-        environment_name: str, sql: str, *, local: bool = False
-    ) -> list[dict]:
+    def fake_execute(environment_name: str, sql: str, *, local: bool = False) -> list[dict]:
         del environment_name, local
         for table, row in required.items():
             if sql.startswith(f'PRAGMA table_info("{table}")'):

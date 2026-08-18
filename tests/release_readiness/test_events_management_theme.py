@@ -29,7 +29,7 @@ def test_home_uses_an_operational_event_management_layout() -> None:
     assert ".organizer-home-event-actions" in styles
 
 
-def test_event_editor_keeps_runtime_failures_with_the_form() -> None:
+def test_source_wiring_event_editor_keeps_runtime_failures_with_the_form() -> None:
     page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
     script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
 
@@ -85,7 +85,7 @@ def test_event_editor_uses_the_operate_layout_and_lifecycle_controls() -> None:
     assert "grid-template-columns: minmax(0, 46rem) minmax(16rem, 22rem)" in styles
 
 
-def test_event_branding_uploads_have_live_preview_and_save_boundary() -> None:
+def test_source_wiring_event_branding_uploads_have_live_preview_and_save_boundary() -> None:
     page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
     script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
     styles = (STATIC / "event_editor.css").read_text(encoding="utf-8")

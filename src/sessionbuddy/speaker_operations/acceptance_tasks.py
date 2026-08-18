@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from sessionbuddy.platform.db.commands import CommandBatch
 from sessionbuddy.platform.db.d1 import result_rows
 from sessionbuddy.platform.db.types import new_id
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 
 SPEAKER_TASK_FLAGS_SQL = """
                       EXISTS(
@@ -115,12 +116,14 @@ def append_acceptance_speaker_tasks(
     """Append missing accepted-speaker tasks and return how many were requested."""
     tasks = acceptance_speaker_tasks(speaker, include_slides=include_slides)
     for task_type, title, help_text, days in tasks:
+        form_schema_json = task_form_schema_json(task_type)
         batch.add_statement(
             db.prepare(
                 """INSERT INTO speaker_tasks
                    (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                    title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
-                   SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10
+                    title,help_text,destination_type,state,due_at_ms,created_at_ms,updated_at_ms,
+                    form_schema_json)
+                   SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10,?11
                    WHERE NOT EXISTS (
                      SELECT 1 FROM speaker_tasks existing
                       WHERE existing.organization_id=?2 AND existing.event_id=?3
@@ -139,6 +142,7 @@ def append_acceptance_speaker_tasks(
                 help_text,
                 now + days * 86_400_000,
                 now,
+                form_schema_json,
             )
         )
     return len(tasks)

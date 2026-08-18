@@ -38,7 +38,7 @@ def test_review_named_side_effect_routes_require_scoped_idempotency() -> None:
         assert "complete_idempotency" in implementation
 
 
-def test_ui_reuses_the_same_key_for_an_uncertain_retry() -> None:
+def test_source_wiring_ui_reuses_the_same_key_for_an_uncertain_retry() -> None:
     agenda = (ROOT / "src/sessionbuddy/static/agenda.js").read_text(encoding="utf-8")
     submissions = (ROOT / "src/sessionbuddy/static/admin_submissions.js").read_text(
         encoding="utf-8"
@@ -55,7 +55,7 @@ def test_ui_reuses_the_same_key_for_an_uncertain_retry() -> None:
     assert '"idempotency-key"' in workspace
 
 
-def test_one_time_secret_replay_never_persists_or_returns_plaintext() -> None:
+def test_source_wiring_one_time_secret_replay_never_persists_or_returns_plaintext() -> None:
     router = (ROOT / "src/sessionbuddy/competition/router.py").read_text(
         encoding="utf-8"
     )
@@ -70,7 +70,7 @@ def test_one_time_secret_replay_never_persists_or_returns_plaintext() -> None:
     assert "IntegrationTokenView(" not in replay_branch
 
 
-def test_inline_upload_completion_cannot_supersede_the_version_it_promotes() -> None:
+def test_source_wiring_inline_upload_completion_cannot_supersede_the_version_it_promotes() -> None:
     """The completion route is replayable, and its inline branch is a state machine.
 
     Two requests that both read scan_state='pending_upload' before either batch

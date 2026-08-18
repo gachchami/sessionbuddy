@@ -45,7 +45,7 @@ def test_evaluation_round_dates_use_the_event_time_zone() -> None:
     assert "new Date(String(values.get(\"review_" not in script
 
 
-def test_speaker_task_due_date_uses_the_event_time_zone() -> None:
+def test_source_wiring_speaker_task_due_date_uses_the_event_time_zone() -> None:
     page = (STATIC / "speaker_content.html").read_text(encoding="utf-8")
     script = (STATIC / "speaker_content.js").read_text(encoding="utf-8")
 

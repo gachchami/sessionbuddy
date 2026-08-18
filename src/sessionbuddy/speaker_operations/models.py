@@ -148,6 +148,7 @@ class SpeakerPortalView(BaseModel):
     public_profile_url: str | None = None
     profile: SpeakerProfileView
     tasks: list[SpeakerTaskView]
+    asset_upload_rules: dict[str, dict[str, object]]
     submissions: list[SpeakerSubmissionView]
     notifications: list[SpeakerNotificationView] = Field(default_factory=list)
     open_call: SpeakerOpenCallView | None = None

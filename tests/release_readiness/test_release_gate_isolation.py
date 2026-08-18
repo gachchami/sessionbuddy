@@ -25,7 +25,7 @@ def test_release_gate_uses_disposable_d1_state_and_isolated_compose_project() ->
     assert "name: sessionbuddy_wrangler-config" in override
 
 
-def test_release_gate_rejects_noncanonical_fixture_assets() -> None:
+def test_source_wiring_release_gate_rejects_noncanonical_fixture_assets() -> None:
     script = (ROOT / "scripts/release_gate.sh").read_text()
 
     assert "npm run fixtures:check-assets" in script

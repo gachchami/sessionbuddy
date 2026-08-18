@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_home_links_to_the_dedicated_event_editor() -> None:
+def test_source_wiring_home_links_to_the_dedicated_event_editor() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 
@@ -19,7 +19,7 @@ def test_home_links_to_the_dedicated_event_editor() -> None:
     assert "openEventDialog" not in script
 
 
-def test_home_only_offers_creation_to_organization_owners_or_managers() -> None:
+def test_source_wiring_home_only_offers_creation_to_organization_owners_or_managers() -> None:
     page = (STATIC / "admin_home.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_home.js").read_text(encoding="utf-8")
 

@@ -707,13 +707,13 @@ async def test_active_event_speaker_cannot_be_reinvited_but_pending_and_other_ev
         assert other_event.status_code == 201, other_event.text
 
 
-def test_reviewer_eligibility_revoke_fails_closed_with_active_assignments() -> None:
+def test_source_wiring_reviewer_eligibility_revoke_fails_closed_with_active_assignments() -> None:
     source = (PROJECT_ROOT / "src/sessionbuddy/platform/auth/access.py").read_text()
     assert "Remove this reviewer from active evaluation assignments first" in source
     assert "a.evaluator_user_id=?3 AND a.status!='revoked'" in source
 
 
-def test_reactivation_never_restores_revoked_roles_in_sql() -> None:
+def test_source_wiring_reactivation_never_restores_revoked_roles_in_sql() -> None:
     """Both membership upserts demote a revoked row to member on reactivation."""
     access = (
         PROJECT_ROOT / "src" / "sessionbuddy" / "platform" / "auth" / "access.py"

@@ -1,3 +1,4 @@
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
     _client,
@@ -56,7 +57,7 @@ async def test_organizer_session_provisions_active_speaker_onboarding_once(
             assert created.status_code == 201, created.text
 
         tasks = connection.execute(
-            """SELECT task_type,state,completed_at_ms
+            """SELECT task_type,state,completed_at_ms,form_schema_json
                  FROM speaker_tasks
                 WHERE organization_id=? AND event_id=? AND event_speaker_id='manual-speaker'
                 ORDER BY task_type""",
@@ -70,6 +71,9 @@ async def test_organizer_session_provisions_active_speaker_onboarding_once(
         assert tasks[0][2] is None
         assert tasks[1][2] is not None
         assert tasks[2][2] is None
+        assert tasks[0][3] == task_form_schema_json("headshot")
+        assert tasks[1][3] == task_form_schema_json("profile")
+        assert tasks[2][3] == task_form_schema_json("slides")
 
 
 async def test_organizer_headshot_completes_active_speaker_task(
@@ -103,8 +107,8 @@ async def test_organizer_headshot_completes_active_speaker_task(
                (id,organization_id,event_id,event_speaker_id,task_type,title,
                 destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
                VALUES ('headshot-task',?,?,'headshot-speaker','headshot','Upload headshot',
-                       'headshot','open',1000,1000,'{}')""",
-            (organization_id, event_id),
+                       'headshot','open',1000,1000,?)""",
+                (organization_id, event_id, task_form_schema_json("headshot")),
         )
         connection.commit()
 
@@ -433,7 +437,7 @@ async def test_organizer_creates_session_for_pending_invitee_without_activating_
         assert any(item["title"] == "DevFlow live" for item in marcus["sessions"])
 
 
-def test_manual_session_controls_are_exposed_in_the_agenda_editor() -> None:
+def test_source_wiring_manual_session_controls_are_exposed_in_the_agenda_editor() -> None:
     from pathlib import Path
 
     static = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"

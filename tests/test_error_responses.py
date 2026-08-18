@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette.requests import Request
 
 from sessionbuddy.api.app import app, http_error, validation_error
+from sessionbuddy.platform.upload_contracts import UploadPolicyError
 
 
 def error_request(path: str = "/api/v1/example") -> Request:
@@ -35,6 +36,25 @@ async def test_http_exception_preserves_actionable_server_detail() -> None:
 
     assert json.loads(response.body) == {
         "error": {"code": "conflict", "message": "Applications are closed."},
+        "request_id": "actionable-error-test",
+    }
+
+
+async def test_upload_refusals_preserve_their_stable_recovery_code() -> None:
+    response = await http_error(
+        error_request("/api/v1/speaker/events/event-a/upload-authorizations"),
+        UploadPolicyError(
+            415,
+            "upload_type_not_allowed",
+            "This file type is not allowed for that upload.",
+        ),
+    )
+
+    assert json.loads(response.body) == {
+        "error": {
+            "code": "upload_type_not_allowed",
+            "message": "This file type is not allowed for that upload.",
+        },
         "request_id": "actionable-error-test",
     }
 

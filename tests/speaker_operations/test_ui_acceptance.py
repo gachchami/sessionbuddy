@@ -246,15 +246,24 @@ def test_replacement_upload_form_is_reachable_without_a_second_disclosure() -> N
 def test_replacement_upload_form_carries_a_stable_asset_scoped_identity() -> None:
     javascript = source("speaker_portal.js")
     assert (
-        "function createUploadForm(kind, submissionId, task = null, "
+        "function createUploadForm(kind, submissionId, rules, task = null, "
         "isReplacement = false, assetId = null, eventId = null)" in javascript
     )
     assert "form.id = `asset-upload-form-${assetId}`" in javascript
     assert "form.dataset.assetId = assetId" in javascript
     assert (
-        "createUploadForm(asset.kind, asset.submission_id, null, true, asset.id, eventId)"
+        "createUploadForm(asset.kind, asset.submission_id, rules, null, true, asset.id, eventId)"
         in javascript
     )
+
+
+def test_portal_only_renders_upload_controls_for_actionable_server_rules() -> None:
+    javascript = source("speaker_portal.js")
+    assert "function uploadContract(value)" in javascript
+    assert "const rules = uploadContract(task.upload_rules)" in javascript
+    assert "if (rules)" in javascript
+    assert "This upload request isn’t configured. Ask an organizer to update it." in javascript
+    assert "const uploadRules" not in javascript
 
 
 def test_repeat_task_assignment_replays_instead_of_duplicating() -> None:
@@ -363,7 +372,7 @@ def test_speaker_task_dedup_indexes_enforce_system_and_organizer_identity() -> N
     add("t11", "sp1", None, "custom", fingerprint=b"fingerprint-b")
 
 
-def test_organizer_task_creation_matches_on_request_content() -> None:
+def test_source_wiring_organizer_task_creation_matches_on_request_content() -> None:
     router = (ROOT / "src" / "sessionbuddy" / "competition" / "router.py").read_text(
         encoding="utf-8"
     )
@@ -400,7 +409,7 @@ def test_asset_comment_visibility_defaults_to_internal() -> None:
     assert "CHECK (visibility IN ('internal', 'shared'))" in table
 
 
-def test_speaker_comment_permission_is_defined_and_granted() -> None:
+def test_source_wiring_speaker_comment_permission_is_defined_and_granted() -> None:
     types = (ROOT / "src" / "sessionbuddy" / "platform" / "authorization" / "types.py").read_text(
         encoding="utf-8"
     )
@@ -414,7 +423,7 @@ def test_speaker_comment_permission_is_defined_and_granted() -> None:
     assert "Permission.SPEAKER_ASSET_COMMENT," not in speaker_block
 
 
-def test_speaker_asset_endpoints_are_scoped_to_shared_comments() -> None:
+def test_source_wiring_speaker_asset_endpoints_are_scoped_to_shared_comments() -> None:
     router = (ROOT / "src" / "sessionbuddy" / "speaker_operations" / "router.py").read_text(
         encoding="utf-8"
     )

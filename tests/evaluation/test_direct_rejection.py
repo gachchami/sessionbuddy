@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from sessionbuddy.evaluation import router as evaluation_router_module
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 from tests.agenda.test_session_content_history import _admin
 from tests.security.test_production_identity_flow import (
     _client,
@@ -418,8 +419,8 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
             connection.execute(
                 """INSERT INTO speaker_tasks
                    (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                    title,destination_type,state,created_at_ms,updated_at_ms)
-                   VALUES (?,?,?,?,?,?,?,?, 'open',900,900)""",
+                        title,destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
+                       VALUES (?,?,?,?,?,?,?,?, 'open',900,900,?)""",
                 (
                     task_id,
                     organization_id,
@@ -427,9 +428,10 @@ async def test_final_decision_corrections_are_append_only_and_manage_session_lif
                     "correction-speaker",
                     "already-accepted-submission",
                     task_type,
-                    f"Existing {task_type} task",
-                    task_type,
-                ),
+                        f"Existing {task_type} task",
+                        task_type,
+                        task_form_schema_json(task_type),
+                    ),
             )
         rejected = await client.post(
             f"/api/v1/admin/events/{event_id}/submissions/corrected-submission/reject",

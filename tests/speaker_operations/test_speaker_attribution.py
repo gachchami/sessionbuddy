@@ -11,6 +11,7 @@ these surfaces at once.
 import json
 import sqlite3
 
+from sessionbuddy.platform.upload_contracts import task_form_schema_json
 from tests.security.test_production_identity_flow import (
     _client,
     _deployment_key,
@@ -237,10 +238,10 @@ async def test_organizer_headshot_upload_persists_preview_and_completes_task(
         connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,task_type,title,
-                destination_type,state,due_at_ms,created_at_ms,updated_at_ms)
+                destination_type,state,due_at_ms,created_at_ms,updated_at_ms,form_schema_json)
                VALUES ('headshot-task',?,?,?,'headshot','Upload your headshot',
-                       'headshot','open',1900000000000,3000,3000)""",
-            (organization_id, event_id, speaker_id),
+                       'headshot','open',1900000000000,3000,3000,?)""",
+            (organization_id, event_id, speaker_id, task_form_schema_json("headshot")),
         )
         connection.commit()
 
@@ -802,10 +803,10 @@ async def test_organizer_headshot_request_reuses_existing_system_task(
         connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
-                title,destination_type,state,created_at_ms,updated_at_ms)
+                title,destination_type,state,created_at_ms,updated_at_ms,form_schema_json)
                VALUES('system-headshot',?,?,?,'submission-accepted','headshot',
-                      'Upload your headshot','headshot','open',1,1)""",
-            (organization_id, event_id, speaker_id),
+                      'Upload your headshot','headshot','open',1,1,?)""",
+            (organization_id, event_id, speaker_id, task_form_schema_json("headshot")),
         )
         connection.commit()
 

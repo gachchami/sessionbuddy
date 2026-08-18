@@ -148,6 +148,10 @@ architecture.
 - Test the test: confirm that a regression test reaches the behavior it names,
   fails when the defect is restored, and does not pass from string presence,
   an inert fake, or an unreachable branch.
+- A test made exclusively from literal membership assertions over source text
+  must identify itself as a `wiring`, `source`, `declaration`, or `packaging`
+  test. Its name must not claim a rendered, authorized, persisted, delivered,
+  or otherwise user-visible outcome.
 - Prefer assertions that identify routes, states, or outcomes over unexplained
   event counts and other brittle magic numbers.
 - Review generated artifacts and served assets when they are part of the

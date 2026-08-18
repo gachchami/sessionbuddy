@@ -16,11 +16,6 @@
   };
   const COMPACT_EVENT_THRESHOLD = 8;
   const PROPOSAL_UPLOAD_TYPES = ["file", "image"];
-  const uploadRules = {
-    headshot: { max: 5 * 1024 * 1024, types: new Set(["image/jpeg", "image/png", "image/webp"]) },
-    slides: { max: 50 * 1024 * 1024, types: new Set(["application/pdf", "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.oasis.opendocument.presentation"]) },
-    supporting_document: { max: 20 * 1024 * 1024, types: new Set(["application/pdf"]) }
-  };
   const byId = (id) => document.getElementById(id);
   // The proposal composer moved to the shared CFP workspace. These helpers
   // remain only for an in-flight page instance that may finish unloading.
@@ -332,7 +327,16 @@
         item.append(customTaskForm(task, list.dataset.eventId));
       } else if (["headshot", "slides", "supporting_document"].includes(task.task_type)) {
         const submissionId = submissions.length === 1 ? submissions[0].id : "";
-        item.append(createUploadForm(task.task_type, submissionId, task, false, null, list.dataset.eventId));
+        const rules = uploadContract(task.upload_rules);
+        if (rules) {
+          item.append(createUploadForm(task.task_type, submissionId, rules, task, false, null, list.dataset.eventId));
+        } else {
+          item.append(make(
+            "p",
+            "This upload request isn’t configured. Ask an organizer to update it.",
+            "status warning"
+          ));
+        }
       } else {
         const action = make("a", task.action_label || "Complete task", "task-link");
         action.href = taskDestination(task);
@@ -972,7 +976,17 @@
     }
   }
 
-  function createUploadForm(kind, submissionId, task = null, isReplacement = false, assetId = null, eventId = null) {
+  function uploadContract(value) {
+    const types = Array.isArray(value?.allowed_content_types)
+      ? value.allowed_content_types.filter((type) => typeof type === "string" && type.includes("/"))
+      : [];
+    const max = Number(value?.max_file_bytes);
+    return value?.enabled === true && types.length && Number.isFinite(max) && max > 0
+      ? { types, max }
+      : null;
+  }
+
+  function createUploadForm(kind, submissionId, rules, task = null, isReplacement = false, assetId = null, eventId = null) {
     const slides = kind === "slides";
     const headshot = kind === "headshot";
     const form = make("form", undefined, "session-upload-card");
@@ -988,16 +1002,13 @@
       form.id = `asset-upload-form-${assetId}`;
       form.dataset.assetId = assetId;
     }
-    if (task?.upload_rules?.max_file_bytes) form.dataset.maxFileBytes = String(task.upload_rules.max_file_bytes);
+    form.dataset.maxFileBytes = String(rules.max);
+    form.dataset.allowedContentTypes = JSON.stringify(rules.types);
     const title = headshot ? "Headshot" : slides ? "Slides" : "Supporting document";
     const fileLabel = make("label", `Choose ${headshot ? "headshot" : slides ? "slides" : "document"}`);
     const file = document.createElement("input");
     file.name = "file"; file.type = "file"; file.required = true;
-    file.accept = headshot
-      ? "image/jpeg,image/png,image/webp"
-      : slides
-      ? "application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.oasis.opendocument.presentation"
-      : "application/pdf";
+    file.accept = rules.types.join(",");
     fileLabel.append(file);
     const commentLabel = make("label", isReplacement ? "What changed?" : "Upload note");
     commentLabel.append(make("span", " Optional", "optional"));
@@ -1420,8 +1431,11 @@
       if (["slides", "supporting_document"].includes(asset.kind)) {
         const replace = make("section", undefined, "asset-replace");
         replace.setAttribute("aria-label", `Upload a new version of ${asset.filename}`);
-        replace.append(createUploadForm(asset.kind, asset.submission_id, null, true, asset.id, eventId));
-        details.append(replace);
+        const rules = uploadContract(portal?.asset_upload_rules?.[asset.kind]);
+        if (rules) {
+          replace.append(createUploadForm(asset.kind, asset.submission_id, rules, null, true, asset.id, eventId));
+          details.append(replace);
+        }
       }
       details.append(versions);
       list.append(details);
@@ -1772,11 +1786,13 @@
     return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   }
 
-  function validateFile(kind, file) {
-    const rule = uploadRules[kind];
+  function validateFile(form, file) {
+    let types = [];
+    try { types = JSON.parse(form.dataset.allowedContentTypes || "[]"); } catch (_) { /* invalid contract is handled below */ }
+    const max = Number(form.dataset.maxFileBytes || 0);
     if (!file) return "Choose a file to upload.";
-    if (!rule.types.has(file.type)) return "This file type is not allowed.";
-    if (file.size <= 0 || file.size > rule.max) return `File must be larger than zero and no more than ${Math.round(rule.max / 1024 / 1024)} MB.`;
+    if (!types.includes(file.type)) return "This file type is not allowed for this request.";
+    if (file.size <= 0 || file.size > max) return `File must be larger than zero and no more than ${Math.round(max / 1024 / 1024)} MB.`;
     return null;
   }
 
@@ -1831,10 +1847,7 @@
     const progress = form.querySelector("progress");
     const button = form.querySelector("button[type=submit]");
     const versionComment = form.elements.version_comment.value.trim();
-    const taskLimit = Number(form.dataset.maxFileBytes || 0);
-    const validation = validateFile(kind, file)
-      || (taskLimit && file?.size > taskLimit
-        ? `This request allows files up to ${Math.round(taskLimit / 1024 / 1024)} MB.` : null);
+    const validation = validateFile(form, file);
     if (validation) { status.textContent = validation; status.classList.add("error"); return; }
     button.disabled = true; progress.hidden = false; progress.value = 0;
     status.classList.remove("error"); status.textContent = "Checking file integrity…";

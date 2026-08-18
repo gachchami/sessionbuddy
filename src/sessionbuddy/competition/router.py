@@ -27,6 +27,7 @@ from sessionbuddy.platform.db.d1 import (
     to_python,
 )
 from sessionbuddy.platform.db.types import new_id, utc_now_ms
+from sessionbuddy.platform.upload_contracts import task_form_schema, task_form_schema_json
 from sessionbuddy.speaker_operations.acceptance_tasks import (
     SPEAKER_TASK_FLAGS_SQL,
     acceptance_speaker_tasks,
@@ -1216,13 +1217,14 @@ async def restore_admin_speaker(
             dict(candidate), include_slides=str(candidate["role"]) == "primary"
         )
         for task_type, title, help_text, days in tasks:
+            form_schema_json = task_form_schema_json(task_type)
             batch.add_statement(
                 db.prepare(
                     """INSERT INTO speaker_tasks
                        (id,organization_id,event_id,event_speaker_id,submission_id,task_type,
                         title,help_text,destination_type,state,due_at_ms,created_at_ms,
-                        updated_at_ms)
-                       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10
+                        updated_at_ms,form_schema_json)
+                       SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?6,'open',?9,?10,?10,?11
                        WHERE NOT EXISTS (SELECT 1 FROM speaker_tasks existing
                          WHERE existing.organization_id=?2 AND existing.event_id=?3
                            AND existing.event_speaker_id=?4
@@ -1239,6 +1241,7 @@ async def restore_admin_speaker(
                     help_text,
                     now + days * 86_400_000,
                     now,
+                    form_schema_json,
                 )
             )
     # Deferred work created above means the restored speaker is onboarding,
@@ -1709,14 +1712,13 @@ async def create_speaker_task(
         json.dumps(identity_payload, separators=(",", ":"), sort_keys=True).encode()
     ).digest()
     form_schema_json = json.dumps(
-        {
-            "fields": [field.model_dump() for field in body.fields],
-            "upload": {
-                "enabled": body.upload_enabled,
-                "allowed_content_types": list(body.allowed_content_types),
-                "max_file_bytes": body.max_file_bytes,
-            },
-        },
+        task_form_schema(
+            body.task_type,
+            fields=(field.model_dump() for field in body.fields),
+            upload_enabled=body.upload_enabled,
+            allowed_content_types=body.allowed_content_types,
+            max_file_bytes=body.max_file_bytes,
+        ),
         separators=(",", ":"),
     )
 

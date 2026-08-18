@@ -3,7 +3,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_account_organizers_are_organization_scoped_and_cascade_to_events() -> None:
+def test_source_wiring_account_organizers_are_organization_scoped_and_cascade_to_events() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
@@ -44,7 +44,7 @@ def test_reviewer_page_excludes_legacy_admin_and_resource_grant_controls() -> No
     assert 'method: "DELETE"' in javascript
 
 
-def test_account_has_no_event_ownership_recovery_surface() -> None:
+def test_source_wiring_account_has_no_event_ownership_recovery_surface() -> None:
     javascript = (STATIC / "account.js").read_text(encoding="utf-8")
 
     assert "Event ownership recovery" not in javascript

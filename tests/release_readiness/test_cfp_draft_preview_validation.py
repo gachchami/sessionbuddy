@@ -5,7 +5,7 @@ from pathlib import Path
 STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 
-def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> None:
+def test_source_wiring_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
@@ -51,7 +51,7 @@ def test_cfp_working_copy_has_focused_preview_and_recoverable_validation() -> No
     assert "currentEvent.draft_delivery_mode" in script
 
 
-def test_cfp_drafts_and_unsaved_live_edits_have_browser_recovery() -> None:
+def test_source_wiring_cfp_drafts_and_unsaved_live_edits_have_browser_recovery() -> None:
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
     assert "if (!state.context) return;" in script
@@ -64,7 +64,7 @@ def test_cfp_drafts_and_unsaved_live_edits_have_browser_recovery() -> None:
     assert "state.userId" in script
 
 
-def test_published_cfp_edit_action_is_outside_the_closed_share_dialog() -> None:
+def test_source_wiring_published_cfp_edit_action_is_outside_the_closed_share_dialog() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
 
     page_heading = page.split('id="main"', 1)[1].split('id="cfp-share-dialog"', 1)[0]
@@ -73,7 +73,7 @@ def test_published_cfp_edit_action_is_outside_the_closed_share_dialog() -> None:
     assert 'id="edit-cfp"' not in dialog
 
 
-def test_cfp_rich_text_editor_is_named_and_link_dialog_is_keyboard_safe() -> None:
+def test_source_wiring_cfp_rich_text_editor_is_named_and_link_dialog_is_keyboard_safe() -> None:
     page = (STATIC / "admin_programs.html").read_text(encoding="utf-8")
     script = (STATIC / "admin_programs.js").read_text(encoding="utf-8")
 
@@ -94,7 +94,7 @@ def test_cfp_rich_text_editor_is_named_and_link_dialog_is_keyboard_safe() -> Non
     assert "pendingLinkRange.surroundContents(link)" in script
 
 
-def test_event_editor_preserves_unsaved_work_only_for_recovery() -> None:
+def test_source_wiring_event_editor_preserves_unsaved_work_only_for_recovery() -> None:
     page = (STATIC / "event_editor.html").read_text(encoding="utf-8")
     script = (STATIC / "event_editor.js").read_text(encoding="utf-8")
 
