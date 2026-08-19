@@ -178,14 +178,12 @@ async def test_organization_grants_only_create_manage_authority(
             headers=_mutation(csrf),
             json={"email": "editor@example.com", "permission": "edit"},
         )
-        assert rejected.status_code == 422
-        granted = await root.post(
-            f"/api/v1/admin/organizations/{organization_id}/access-grants",
-            headers=_mutation(csrf),
-            json={"email": "editor@example.com"},
-        )
-        assert granted.status_code == 201, granted.text
-        assert granted.json()["permission"] == "manage"
+        assert rejected.status_code == 405
+        from tests.security.organization_invitation_helpers import invite_and_accept
+        granted = await invite_and_accept(root, connection, environment, organization_id,
+                                         csrf, "editor@example.com")
+        assert granted.status_code == 200, granted.text
+        assert any(item["permission"] == "manage" for item in granted.json()["data"])
         update = await root.patch(
             f"/api/v1/admin/organizations/{organization_id}/access-grants/editor-user",
             headers=_mutation(csrf),
@@ -242,6 +240,13 @@ async def _accept_invitation(client, connection, email: str) -> dict[str, object
     response (it would let the inviter sign in as the invitee), so tests
     read it from the queued invitation email like a real invitee would.
     """
+    pending_org = connection.execute(
+        "SELECT id FROM organization_admin_invitations "
+        "WHERE normalized_email=? AND status='pending'", (email,)
+    ).fetchone()
+    if pending_org:
+        from tests.security.organization_invitation_helpers import accept_organization_invitation
+        return await accept_organization_invitation(client, connection, email)
     confirmed = await client.post(
         "/auth/verify",
         data={"token": _token(connection, email)},
@@ -290,11 +295,11 @@ async def test_organization_admin_is_invitable_and_shares_org_control(
         assert created.status_code == 201
         event_id = created.json()["id"]
         invited = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=_mutation(csrf),
-            json={"email": "co-owner@example.com", "role": "organization_admin"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations",
+            headers={**_mutation(csrf), "Idempotency-Key": "invite-co-owner@example.com"},
+            json={"email": "co-owner@example.com"},
         )
-        assert invited.status_code == 201, invited.text
+        assert invited.status_code == 200, invited.text
 
         async with _client(environment) as co_owner:
             session = await _accept_invitation(co_owner, connection, "co-owner@example.com")
@@ -485,11 +490,11 @@ async def test_event_invitation_cannot_restore_revoked_org_admin(
         )
         event_id = created.json()["id"]
         co_owner_invite = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=_mutation(csrf),
-            json={"email": "former@example.com", "role": "organization_admin"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations",
+            headers={**_mutation(csrf), "Idempotency-Key": "invite-former@example.com"},
+            json={"email": "former@example.com"},
         )
-        assert co_owner_invite.status_code == 201, co_owner_invite.text
+        assert co_owner_invite.status_code == 200, co_owner_invite.text
         async with _client(environment) as former:
             await _accept_invitation(former, connection, "former@example.com")
         # Offboard the delegated manager (no dedicated endpoint yet: direct revocation).
@@ -551,27 +556,29 @@ async def test_organization_admin_can_resend_and_revoke_org_admin_invitations(
             headers=_mutation(csrf),
             json=EVENT_PAYLOAD,
         )
-        event_id = created.json()["id"]
+        assert created.status_code == 201
         co_owner_invite = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=_mutation(csrf),
-            json={"email": "co-owner@example.com", "role": "organization_admin"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations",
+            headers={**_mutation(csrf), "Idempotency-Key": "invite-co-owner@example.com"},
+            json={"email": "co-owner@example.com"},
         )
-        assert co_owner_invite.status_code == 201
+        assert co_owner_invite.status_code == 200
         invitation_id = co_owner_invite.json()["id"]
         resent = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations/{invitation_id}/resend",
-            headers={**_mutation(csrf), "content-type": "application/json"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations/{invitation_id}/resend",
+            headers={**_mutation(csrf), "content-type": "application/json",
+                     "Idempotency-Key": "org-invite-action-unique"},
             json={},
         )
         assert resent.status_code == 200, resent.text
         revoked = await root.delete(
-            f"/api/v1/admin/events/{event_id}/invitations/{invitation_id}",
-            headers={**_mutation(csrf), "content-type": "application/json"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations/{invitation_id}",
+            headers={**_mutation(csrf), "content-type": "application/json",
+                     "Idempotency-Key": "org-invite-revoke-unique"},
         )
-        assert revoked.status_code == 204, revoked.text
+        assert revoked.status_code == 200, revoked.text
     assert connection.execute(
-        "SELECT status FROM identity_invitations WHERE id=?", (invitation_id,)
+        "SELECT status FROM organization_admin_invitations WHERE id=?", (invitation_id,)
     ).fetchone()[0] == "revoked"
 
 
@@ -865,11 +872,11 @@ async def test_events_list_includes_all_events_for_organization_admins(
         event_id = created.json()["id"]
         _seed_events(connection, 10)
         invited = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=_mutation(csrf),
-            json={"email": "helper@example.com", "role": "organization_admin"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations",
+            headers={**_mutation(csrf), "Idempotency-Key": "invite-helper@example.com"},
+            json={"email": "helper@example.com"},
         )
-        assert invited.status_code == 201, invited.text
+        assert invited.status_code == 200, invited.text
         async with _client(environment) as helper:
             await _accept_invitation(helper, connection, "helper@example.com")
             listed = await helper.get(
@@ -926,7 +933,7 @@ async def test_organization_metrics_are_aggregated_and_admin_scoped(
             headers=_mutation(csrf),
             json=EVENT_PAYLOAD,
         )
-        event_id = created.json()["id"]
+        assert created.status_code == 201
         _seed_events(connection, 55)
 
         metrics = await root.get(f"/api/v1/admin/organizations/{organization_id}/metrics")
@@ -949,11 +956,11 @@ async def test_organization_metrics_are_aggregated_and_admin_scoped(
         assert overview.json()["next_cursor"]
 
         invited = await root.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=_mutation(csrf),
-            json={"email": "helper@example.com", "role": "organization_admin"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations",
+            headers={**_mutation(csrf), "Idempotency-Key": "invite-helper@example.com"},
+            json={"email": "helper@example.com"},
         )
-        assert invited.status_code == 201, invited.text
+        assert invited.status_code == 200, invited.text
         async with _client(environment) as helper:
             await _accept_invitation(helper, connection, "helper@example.com")
             scoped = await helper.get(

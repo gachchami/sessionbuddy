@@ -540,6 +540,14 @@ test.describe("account profile responsive design", () => {
   });
 
   test("organization owner manages the owner and admin grid on its dedicated page", async ({ page }) => {
+    // The isolated harness uses http://worker, unlike the HTTPS product origin.
+    // Supply the secure-context UUID API for this mocked UI contract test.
+    await page.addInitScript(() => {
+      if (!crypto.randomUUID) Object.defineProperty(crypto, "randomUUID", {
+        value: () => Array.from(crypto.getRandomValues(new Uint8Array(16)),
+          (byte) => byte.toString(16).padStart(2, "0")).join(""),
+      });
+    });
     await serveAccountPage(page);
     const organizationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const session = {
@@ -583,6 +591,20 @@ test.describe("account profile responsive design", () => {
       { user_id: "manager-user", email: "manager@example.test", permission: "manage", status: "active" },
     ];
     const mutations: { method: string; path: string; body: Record<string, unknown> | null }[] = [];
+    const invitations: Record<string, unknown>[] = [];
+    await page.route(`**/api/v1/admin/organizations/${organizationId}/admin-invitations`, (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({ json: { data: invitations } });
+      }
+      const body = route.request().postDataJSON();
+      mutations.push({ method: "POST", path: new URL(route.request().url()).pathname, body });
+      const invitation = {
+        id: "pending-admin", email: body.email, status: "pending", needs_reissue: false,
+        expires_at_ms: Date.now() + 259200000, delivery: { status: "queued", reason: null },
+      };
+      invitations.push(invitation);
+      return route.fulfill({ json: invitation });
+    });
     let transferBody: Record<string, unknown> | null = null;
     await page.route("**/api/v1/auth/session", (route) => route.fulfill({
       contentType: "application/json",
@@ -663,9 +685,9 @@ test.describe("account profile responsive design", () => {
     await expect(ownerRow.locator("select")).toHaveCount(0);
     await expect(page.locator("li", { hasText: "manager@example.test" })).toContainText("Admin");
 
-    await page.getByLabel("Account email").fill("new@example.test");
-    await page.getByRole("button", { name: "Add admin" }).click();
-    await expect(page.getByText("new@example.test", { exact: true })).toBeVisible();
+    await page.getByRole("textbox", { name: "Email", exact: true }).fill("new@example.test");
+    await page.getByRole("button", { name: "Invite admin" }).click();
+    await expect(page.locator("li", { hasText: "new@example.test" })).toContainText("pending");
     expect(mutations[0]).toMatchObject({
       method: "POST",
       body: { email: "new@example.test" },

@@ -5,6 +5,26 @@ are no longer used as product or architecture terminology.
 
 ## Platform and Engine Room
 
+In progress: organization-scoped admin invitations separate the fixed three-day
+invitation from fifteen-minute email verification and require explicit acceptance
+before granting access. The implementation includes additive migration `0006`,
+authority-checked acceptance/reissue, and identity-only registration. The full
+local release gate passes and the additive upgrade is deployed to Dev2 with
+backup, restore rehearsal, and post-deployment checks. Full invitation UAT is
+partially verified: the real local in-app email, wrong-account recovery,
+registration, password sign-in, and acceptance journey passes, including zero
+grants before acceptance and one intended manage grant afterward. The complete
+adversarial in-app matrix remains pending. Existing event-keyed invitations remain
+compatible; new organization admins use the organization invitation route.
+
+Wrong-account invitation lookup returns only an identity mismatch, without
+organization, role, recipient, expiry, or invitation identifiers. The invitation
+page signs out in place and retains its lookup token only in page memory, so
+the recipient can continue with verification or password sign-in. Failed logout
+remains retryable without revealing invitation details. These behaviors have
+backend and desktop/mobile rendered regression coverage, plus the primary real
+in-app authenticated journey noted above. The adversarial matrix remains pending.
+
 Implemented: a public, role-oriented SessionBuddy homepage, Cloudflare Worker packaging, D1/R2 boundaries, guarded browser-based first-run setup that preserves the administrator's exact first and last name and shows an in-place first-link confirmation, magic-link and password identity, invitation and
 submission-context provisioning, opaque sessions, RBAC, CSRF/origin protection,
 rate limiting, structured API errors, safe shared browser error handling,
@@ -651,6 +671,14 @@ pending URLs once the same 24-hour deadline has elapsed. Before attachment,
 possession of the unguessable URL is sufficient to fetch the otherwise uncached
 image; immediate deletion on editor Discard is a follow-up rather than a release
 requirement.
+
+The organization invitation landing page separates first-time email verification
+from existing-account password sign-in. Signed-out visitors are not shown the
+Account and invitations navigation; authentication remains separate from acceptance.
+Both organization-invitation lists retrieve delivery state in one bounded query
+per page, using tenant-scoped invitation-key ranges. Verification emails never
+replace the invitation delivery status; latest-message ordering and allowlisted
+failure reasons are preserved.
 
 Administration: organization administrators are now invitable (with
 organization-level permission required to create, resend, or revoke such

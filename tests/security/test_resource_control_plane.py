@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+from tests.security.organization_invitation_helpers import invite_and_accept
 from tests.security.test_organizer_workflow import EVENT_PAYLOAD, _bootstrap_admin, _mutation
 from tests.security.test_production_identity_flow import (
     _client,
@@ -69,7 +70,7 @@ async def test_retired_organization_grant_levels_are_rejected(
             headers=_mutation(owner_csrf),
             json={"email": email, "permission": permission},
         )
-        assert granted.status_code == 422
+        assert granted.status_code == 405
         assert connection.execute(
             "SELECT COUNT(*) FROM resource_access_grants WHERE user_id=?",
             (f"organization-{permission}",),
@@ -97,13 +98,10 @@ async def test_organization_grant_lifecycle_is_exact_revocable_and_owner_immutab
             email="organization-delegate@example.com",
         )
 
-        manager_grant = await owner.post(
-            f"/api/v1/admin/organizations/{organization_id}/access-grants",
-            headers=_mutation(owner_csrf),
-            json={"email": "organization-manager@example.com"},
-        )
-        assert manager_grant.status_code == 201, manager_grant.text
-        assert manager_grant.json()["permission"] == "manage"
+        manager_grant = await invite_and_accept(owner, connection, environment,
+            organization_id, owner_csrf, "organization-manager@example.com")
+        assert manager_grant.status_code == 200, manager_grant.text
+        assert any(item["permission"] == "manage" for item in manager_grant.json()["data"])
         assert tuple(connection.execute(
             """SELECT role,status FROM organization_memberships
                WHERE organization_id=? AND user_id='organization-manager'""",
@@ -137,12 +135,9 @@ async def test_organization_grant_lifecycle_is_exact_revocable_and_owner_immutab
                 manager, connection, "organization-manager@example.com"
             )
             manager_headers = _mutation(str(manager_session["csrf_token"]))
-            delegated = await manager.post(
-                f"/api/v1/admin/organizations/{organization_id}/access-grants",
-                headers=manager_headers,
-                json={"email": "organization-delegate@example.com"},
-            )
-            assert delegated.status_code == 201, delegated.text
+            delegated = await invite_and_accept(manager, connection, environment,
+            organization_id, manager_headers["x-csrf-token"], "organization-delegate@example.com")
+            assert delegated.status_code == 200, delegated.text
             changed = await manager.patch(
                 f"/api/v1/admin/organizations/{organization_id}/access-grants/"
                 "organization-delegate",
@@ -190,7 +185,7 @@ async def test_organization_grant_lifecycle_is_exact_revocable_and_owner_immutab
            WHERE organization_id=? AND target_type='organization'
              AND action LIKE 'resource_access_grant.%'""",
         (organization_id,),
-    ).fetchone()[0] == 4
+    ).fetchone()[0] == 2
 
 
 async def test_only_exact_owner_can_transfer_organization_to_an_existing_admin(
@@ -203,12 +198,9 @@ async def test_only_exact_owner_can_transfer_organization_to_an_existing_admin(
             "SELECT owner_user_id FROM owned_resources WHERE id=?", (organization_id,)
         ).fetchone()[0]
         _insert_user(connection, user_id="next-owner", email="next-owner@example.com")
-        granted = await owner.post(
-            f"/api/v1/admin/organizations/{organization_id}/access-grants",
-            headers=_mutation(owner_csrf),
-            json={"email": "next-owner@example.com"},
-        )
-        assert granted.status_code == 201, granted.text
+        granted = await invite_and_accept(owner, connection, environment,
+            organization_id, owner_csrf, "next-owner@example.com")
+        assert granted.status_code == 200, granted.text
 
         async with _client(environment) as admin:
             admin_session = await _sign_in(admin, connection, "next-owner@example.com")

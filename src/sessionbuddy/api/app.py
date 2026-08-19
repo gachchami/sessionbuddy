@@ -27,6 +27,9 @@ from sessionbuddy.platform.auth.access import (
 )
 from sessionbuddy.platform.auth.demo_router import demo_router
 from sessionbuddy.platform.auth.http import session_cookie_value
+from sessionbuddy.platform.auth.organization_invitations import (
+    router as organization_invitations_router,
+)
 from sessionbuddy.platform.signed_cursors import StaleCursorError
 from sessionbuddy.platform.upload_contracts import UploadPolicyError
 from sessionbuddy.scheduling import scheduling_router
@@ -51,6 +54,7 @@ app.include_router(engine_room_router)
 app.include_router(session_router)
 app.include_router(demo_router)
 app.include_router(access_router)
+app.include_router(organization_invitations_router)
 app.include_router(cfp_router)
 app.include_router(evaluation_router)
 app.include_router(speaker_operations_router)

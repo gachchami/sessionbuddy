@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Organization invitation · SessionBuddy</title>
+  <link rel="stylesheet" href="/product/assets/product.css?v=90">
+  <script src="/app-shell/assets/api-client.js?v=10" defer></script>
+  <script src="/organization-admin-invitations/assets/invitation.js" defer></script>
+</head>
+<body class="auth-body invitation-page">
+  <a class="skip-link" href="#main">Skip to invitation</a>
+  <header class="app-header invitation-header"><div class="shell app-header__inner"><a class="brand" href="/"><img class="brand-mark" src="/landing/assets/sessionbuddy-favicon.svg" alt=""><span>SessionBuddy</span></a></div></header>
+  <main id="main" class="invitation-shell" tabindex="-1">
+    <section class="invitation-card" aria-labelledby="invitation-title" aria-busy="true">
+      <h1 id="invitation-title">Organization invitation</h1>
+      <p id="invitation-description" class="invitation-description"></p>
+      <p id="invitation-expiry" class="invitation-expiry" hidden></p>
+      <div id="invitation-status" class="invitation-status" role="status" aria-live="polite" tabindex="-1">Loading your invitation…</div>
+      <div id="invitation-actions" class="invitation-actions"></div>
+      <noscript><p>Enable JavaScript to review this invitation.</p></noscript>
+      <footer id="invitation-footer" class="invitation-footer" hidden><a href="/account">Your account and invitations</a></footer>
+    </section>
+  </main>
+</body>
+</html>

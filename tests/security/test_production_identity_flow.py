@@ -983,11 +983,11 @@ async def test_password_sign_in_leaves_invitation_pending_until_explicit_accepta
         )
         assert declined_invitation.status_code == 201
         organizer_invitation = await admin.post(
-            f"/api/v1/admin/events/{event_id}/invitations",
-            headers=admin_headers,
-            json={"email": "speaker@example.com", "role": "organization_admin"},
+            f"/api/v1/admin/organizations/{organization_id}/admin-invitations",
+            headers={**admin_headers, "idempotency-key": "explicit-organizer-invite-0001"},
+            json={"email": "speaker@example.com"},
         )
-        assert organizer_invitation.status_code == 201
+        assert organizer_invitation.status_code == 200
 
     async with _client(environment) as speaker:
         challenge_count = connection.execute(
@@ -1022,6 +1022,8 @@ async def test_password_sign_in_leaves_invitation_pending_until_explicit_accepta
         assert {item["id"] for item in invitations.json()["pending_invitations"]} == {
             invitation.json()["id"],
             declined_invitation.json()["id"],
+        }
+        assert {item["id"] for item in invitations.json()["pending_organization_invitations"]} == {
             organizer_invitation.json()["id"],
         }
         assert invitations.json()["linked_events"] == []
@@ -1109,7 +1111,7 @@ async def test_password_sign_in_leaves_invitation_pending_until_explicit_accepta
             }
         ]
         organizer_acceptance = await speaker.post(
-            f"/api/v1/account/invitations/{organizer_invitation.json()['id']}/accept",
+            f"/api/v1/account/organization-invitations/{organizer_invitation.json()['id']}/accept",
             headers={
                 "origin": "https://test",
                 "content-type": "application/json",
@@ -1130,7 +1132,7 @@ async def test_password_sign_in_leaves_invitation_pending_until_explicit_accepta
 
     assert connection.execute(
         "SELECT COUNT(*) FROM audit_events WHERE action='identity.invitation.accept'"
-    ).fetchone()[0] == 2
+    ).fetchone()[0] == 1
     declined_row = connection.execute(
         "SELECT status,declined_at_ms IS NOT NULL FROM identity_invitations WHERE id=?",
         (declined_invitation.json()["id"],),

@@ -5,16 +5,17 @@ STATIC = Path(__file__).parents[2] / "src" / "sessionbuddy" / "static"
 
 def test_source_wiring_account_organizers_are_organization_scoped_and_cascade_to_events() -> None:
     markup = (STATIC / "account.html").read_text(encoding="utf-8")
-    javascript = (STATIC / "account.js").read_text(encoding="utf-8")
+    javascript = (STATIC / "organization_admin.js").read_text(encoding="utf-8")
 
     assert "Organization details and admins." in markup
-    assert 'accessTitle.textContent = "Organizers"' in javascript
+    assert '<h4>Organizers</h4>' in javascript
     assert "can manage every event in this organization" in javascript
-    assert 'body: JSON.stringify({ email: values.email })' in javascript
+    assert 'body: JSON.stringify({ email })' in javascript
     assert 'permission.value = "manage"' not in javascript
-    assert 'grant.textContent = "Add admin"' in javascript
+    assert '>Invite admin</button>' in javascript
     assert "data-organization-grant-create" in javascript
     assert "/access-grants`" in javascript
+    assert "/admin-invitations`" in javascript
     assert "/access-grants/${encodeURIComponent(grant.user_id)}`" in javascript
     assert 'method: "POST"' in javascript
     assert 'method: "DELETE"' in javascript

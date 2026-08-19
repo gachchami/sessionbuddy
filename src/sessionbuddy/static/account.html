@@ -9,6 +9,7 @@
   <script src="/app-shell/assets/api-client.js?v=10" defer></script>
   <script src="/app-shell/assets/app-shell.js?v=35" defer></script>
   <script src="/account/assets/account.js?v=16" defer></script>
+  <script src="/account/assets/organization-invitations.js" defer></script>
 </head>
 <body class="app-body organizer-page organizer-page--account">
   <a class="skip-link" href="#main">Skip to account</a>
@@ -20,6 +21,10 @@
       <p id="workspace-recovery-copy">Your current role no longer opens a workspace. You can still update your account here, choose another available role from the account menu, or sign out.</p>
     </section>
     <div id="status" class="status status-compact" role="status" aria-live="polite" tabindex="-1" hidden></div>
+    <section id="account-organization-invitations" aria-labelledby="organization-invitations-title" hidden>
+      <h2 id="organization-invitations-title">Organization invitations</h2>
+      <div role="status" aria-live="polite"></div><ul class="item-list"></ul>
+    </section>
     <section class="card organizer-panel organizer-panel--profile account-profile-panel" aria-labelledby="profile-title" hidden>
       <div class="account-profile-heading"><div><h2 id="profile-title">Profile</h2></div><div id="profile-roles" class="account-role-list"></div></div>
       <form id="profile-form">

@@ -1,6 +1,7 @@
 """Revoked organization authority stays revoked after fresh authentication."""
 
 from sessionbuddy.platform.auth.passwords import hash_password
+from tests.security.organization_invitation_helpers import invite_and_accept
 from tests.security.test_organizer_workflow import (
     EVENT_PAYLOAD,
     _bootstrap_admin,
@@ -42,12 +43,9 @@ async def test_revoked_organization_grant_fails_after_reauthentication(
             ("revoked-manager", hash_password(password, b"p" * 32)),
         )
         connection.commit()
-        organization_grant = await owner.post(
-            f"/api/v1/admin/organizations/{organization_id}/access-grants",
-            headers=_mutation(owner_csrf),
-            json={"email": "revoked-manager@example.com"},
-        )
-        assert organization_grant.status_code == 201
+        organization_grant = await invite_and_accept(owner, connection, environment,
+            organization_id, owner_csrf, "revoked-manager@example.com")
+        assert organization_grant.status_code == 200
 
         async with _client(environment) as delegate:
             initial = await _sign_in(

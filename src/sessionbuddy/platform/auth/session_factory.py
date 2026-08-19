@@ -182,6 +182,26 @@ def establish_session_with_current_authorization_version(
     return EstablishedSession(session_id, session_token, csrf_token, statement_index)
 
 
+def establish_identity_session(*, batch, db, request: Request, user_id: str, now_ms: int):
+    """Authenticate an active identity without adding any persona or authorization.
+
+    Invitation verification must work before an account has a workspace. No
+    session_active_roles row is created; authorization continues to fail closed.
+    """
+    session_id, token = new_id(), generate_token()
+    csrf = issue_csrf_token(session_id, secret(request, "CSRF_HMAC_KEY"))
+    index = batch.statement_count
+    batch.add_statement(db.prepare(
+        """INSERT INTO sessions
+           (id,user_id,token_hash,csrf_secret_hash,authorization_version,created_at_ms,
+            last_seen_at_ms,idle_expires_at_ms,absolute_expires_at_ms)
+           SELECT ?1,id,?3,?4,authorization_version,?5,?5,?6,?7 FROM users
+           WHERE id=?2 AND status='active' AND deleted_at_ms IS NULL"""
+    ).bind(session_id, user_id, hash_token(token), hash_token(csrf), now_ms,
+           now_ms + IDLE_SESSION_MS, now_ms + ABSOLUTE_SESSION_MS))
+    return EstablishedSession(session_id, token, csrf, index)
+
+
 async def confirm_session_established(
     results: object, session: EstablishedSession, db
 ) -> None:

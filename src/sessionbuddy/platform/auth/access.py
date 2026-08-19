@@ -51,9 +51,14 @@ from .http import (
     require_permission,
     secret,
 )
+from .organization_grants import append_organization_manage_grant
 from .passwords import PasswordPolicyError, hash_password, verify_password
 from .session_factory import confirm_session_established as _confirm_session_established
-from .session_factory import establish_session, establish_session_with_current_authorization_version
+from .session_factory import (
+    establish_identity_session,
+    establish_session,
+    establish_session_with_current_authorization_version,
+)
 from .session_factory import revoke_session as _revoke_session
 from .session_factory import set_session_cookie as _set_session_cookie
 from .session_factory import valid_redirect as _valid_redirect
@@ -589,6 +594,7 @@ class AccountInvitationList(BaseModel):
 
     pending_invitations: list[AccountInvitationView]
     linked_events: list[AccountParticipationView]
+    pending_organization_invitations: list[dict] = Field(default_factory=list)
 
 
 class AccountInvitationResponse(BaseModel):
@@ -1373,7 +1379,21 @@ async def account_invitations(request: Request) -> AccountInvitationList:
     return AccountInvitationList(
         pending_invitations=[AccountInvitationView(**row) for row in pending],
         linked_events=[AccountParticipationView(**row) for row in linked],
+        pending_organization_invitations=await _pending_organization_invitations(
+            db, authenticated.actor.user_id, now
+        ),
     )
+
+
+async def _pending_organization_invitations(db, user_id, now):
+    from .organization_invitations import SELECT, views
+    rows = result_rows(
+        await db.prepare(SELECT + """ JOIN users recipient
+          ON recipient.normalized_email=i.normalized_email WHERE recipient.id=?1
+          AND i.status='pending' AND i.expires_at_ms>?2
+          ORDER BY i.created_at_ms DESC LIMIT 100""").bind(user_id, now).all()
+    )
+    return await views(db, rows, now)
 
 
 async def _accepted_invitation_workspace(
@@ -1491,7 +1511,8 @@ async def _account_invitation_action(
                 now=now,
                 idempotency_record=record,
                 replacement_session_id=authenticated.session_id,
-                current_persona=authenticated.actor.active_persona.value,
+                current_persona=(authenticated.actor.active_persona.value
+                                 if authenticated.actor.active_persona else None),
             )
         except PersistenceError as exc:
             raise HTTPException(
@@ -4126,14 +4147,10 @@ async def create_invitation(
         mutation=True,
     )
     if body.role == "organization_admin":
-        # Organization administration can only be delegated by an existing
-        # organization authority; event-scoped administration is unsupported.
-        await require_permission(
-            request,
-            Permission.RESOURCE_ACCESS_MANAGE,
-            ResourceContext(str(event["organization_id"])),
-            mutation=True,
-        )
+        raise HTTPException(422, detail={
+            "message": "Use organization invitations to invite an admin.",
+            "metadata": {"cause": "use_organization_admin_invitations"},
+        })
     email, normalized = _email(body.email)
     now, invitation_id = utc_now_ms(), new_id()
     declined_invitation_status = "pending"
@@ -5421,70 +5438,8 @@ async def _upsert_organization_access_grant(
         raise HTTPException(status_code=409, detail="Resource ownership cannot be changed")
     now = utc_now_ms()
     batch = CommandBatch(db)
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO organization_memberships
-               (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'member','active',?4,?4)
-               ON CONFLICT(organization_id,user_id) DO UPDATE SET status='active',
-                 revoked_at_ms=NULL,
-                 role=CASE WHEN organization_memberships.status='revoked'
-                      THEN 'member' ELSE organization_memberships.role END,
-                 version=version+1,updated_at_ms=excluded.updated_at_ms"""
-        ).bind(new_id(), organization_id, user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO user_roles
-               (user_id,role,status,created_at_ms,updated_at_ms,is_default)
-               VALUES(?1,'organizer','active',?2,?2,
-                 CASE WHEN EXISTS(SELECT 1 FROM user_roles
-                                  WHERE user_id=?1 AND status='active') THEN 0 ELSE 1 END)
-               ON CONFLICT(user_id,role) DO UPDATE SET status='active',revoked_at_ms=NULL,
-                 is_default=CASE WHEN NOT EXISTS(
-                   SELECT 1 FROM user_roles other
-                   WHERE other.user_id=?1 AND other.status='active'
-                     AND other.role!='organizer'
-                 ) THEN 1 ELSE user_roles.is_default END,
-                 updated_at_ms=excluded.updated_at_ms"""
-        ).bind(user_id, now)
-    )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE resource_access_grants SET status='revoked',revoked_at_ms=?1,
-                 revoked_by_user_id=?2,version=version+1,updated_at_ms=?1
-               WHERE resource_id=?3 AND user_id=?4 AND status='active' AND permission!='manage'"""
-        ).bind(
-            now,
-            authenticated.actor.user_id,
-            organization_id,
-            user_id,
-        )
-    )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO resource_access_grants
-               (id,resource_id,user_id,permission,status,granted_by_user_id,
-                created_at_ms,updated_at_ms)
-               VALUES(?1,?2,?3,'manage','active',?4,?5,?5)
-               ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET status='active',
-                 granted_by_user_id=excluded.granted_by_user_id,revoked_at_ms=NULL,
-                 revoked_by_user_id=NULL,version=version+1,
-                 updated_at_ms=excluded.updated_at_ms"""
-        ).bind(
-            new_id(),
-            organization_id,
-            user_id,
-            authenticated.actor.user_id,
-            now,
-        )
-    )
-    batch.add_statement(
-        db.prepare(
-            """UPDATE users SET authorization_version=authorization_version+1,
-               updated_at_ms=?1 WHERE id=?2"""
-        ).bind(now, user_id)
-    )
+    append_organization_manage_grant(batch, db, organization_id=organization_id,
+        user_id=user_id, granted_by_user_id=authenticated.actor.user_id, now=now)
     batch.audit(
         AuditEvent(
             actor_type="user",
@@ -5508,12 +5463,6 @@ async def _upsert_organization_access_grant(
     )
 
 
-@access_router.post(
-    "/api/v1/admin/organizations/{organization_id}/access-grants",
-    response_model=ResourceGrantView,
-    status_code=201,
-    tags=["administration"],
-)
 async def create_organization_access_grant(
     organization_id: str, body: ResourceGrantCreate, request: Request
 ) -> ResourceGrantView:
@@ -5791,10 +5740,10 @@ async def password_sign_in(
         raise HTTPException(status_code=401)
 
     default_role = await _default_account_role(db, str(credential["id"]))
-    if default_role is None:
-        raise HTTPException(status_code=403)
     batch = CommandBatch(db)
-    established = establish_session(
+    established = establish_identity_session(
+        batch=batch, db=db, request=request, user_id=str(credential["id"]), now_ms=now,
+    ) if default_role is None else establish_session(
         batch=batch,
         db=db,
         request=request,
@@ -5845,9 +5794,11 @@ async def password_sign_in(
     workspace_contract = await user_workspace_contract(
         db, user_id=str(credential["id"]), active_role=default_role
     )
-    if workspace_contract is None:
+    if workspace_contract is None and default_role is not None:
         raise HTTPException(status_code=403)
-    workspace_path = workspace_contract.resolution.path or "/account?workspace=recovery"
+    workspace_path = (
+        workspace_contract.resolution.path if workspace_contract else None
+    ) or "/account?workspace=recovery"
     _set_session_cookie(response, request, session_token)
     return SessionCreated(
         user_id=str(credential["id"]),
@@ -6028,50 +5979,9 @@ async def _finish_magic_link_sign_in(
                 ).bind(str(invitation["display_name"]).strip(), now, user_id)
             )
         if invitation_role == "organization_admin":
-            # Keep a non-authorizing affiliation row for legacy composite
-            # foreign keys. Administrative authority is the exact resource
-            # grant below, never this membership.
-            batch.add_statement(
-                db.prepare(
-                    """INSERT INTO organization_memberships
-                   (id,organization_id,user_id,role,status,created_at_ms,updated_at_ms)
-                   VALUES(?1,?2,?3,'member','active',?4,?4)
-                   ON CONFLICT(organization_id,user_id) DO UPDATE SET
-                     role='member',status='active',revoked_at_ms=NULL,
-                     version=version+1,updated_at_ms=excluded.updated_at_ms"""
-                ).bind(new_id(), invitation["organization_id"], user_id, now)
-            )
-            resource_id = invitation["organization_id"]
-            # An administrative invitation replaces the invitee's exact-
-            # resource access level. Do not leave an older view/edit row
-            # active beside the new manage grant.
-            batch.add_statement(
-                db.prepare(
-                    """UPDATE resource_access_grants
-                       SET status='revoked',revoked_at_ms=?1,revoked_by_user_id=?2,
-                           version=version+1,updated_at_ms=?1
-                       WHERE resource_id=?3 AND user_id=?4 AND status='active'
-                         AND permission!='manage'"""
-                ).bind(now, invitation["invited_by_user_id"], resource_id, user_id)
-            )
-            batch.add_statement(
-                db.prepare(
-                    """INSERT INTO resource_access_grants
-                       (id,resource_id,user_id,permission,status,granted_by_user_id,
-                        created_at_ms,updated_at_ms)
-                       VALUES(?1,?2,?3,'manage','active',?4,?5,?5)
-                       ON CONFLICT(resource_id,user_id,permission) DO UPDATE SET
-                         status='active',revoked_at_ms=NULL,revoked_by_user_id=NULL,
-                         version=version+1,updated_at_ms=excluded.updated_at_ms"""
-                ).bind(new_id(), resource_id, user_id, invitation["invited_by_user_id"], now)
-            )
-            if existing_user is not None:
-                batch.add_statement(
-                    db.prepare(
-                        """UPDATE users SET authorization_version=authorization_version+1,
-                           updated_at_ms=?1 WHERE id=?2"""
-                    ).bind(now, user_id)
-                )
+            append_organization_manage_grant(batch, db,
+                organization_id=str(invitation['organization_id']), user_id=user_id,
+                granted_by_user_id=str(invitation['invited_by_user_id']), now=now)
         elif invitation["role"] != "evaluator":
             # Reactivating a revoked membership through an event-level
             # invitation must never restore a previously revoked admin role:
@@ -6109,17 +6019,18 @@ async def _finish_magic_link_sign_in(
             cast(AccountInvitationRole, invitation_role)
         ]
         invited_persona = persona
-        batch.add_statement(
-            db.prepare(
-                """INSERT INTO user_roles
-                   (user_id,role,status,created_at_ms,updated_at_ms,is_default)
-                   VALUES(?1,?2,'active',?3,?3,
-                     CASE WHEN EXISTS(SELECT 1 FROM user_roles
-                                      WHERE user_id=?1 AND status='active') THEN 0 ELSE 1 END)
-                   ON CONFLICT(user_id,role) DO UPDATE SET status='active',
-                     revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
-            ).bind(user_id, persona, now)
-        )
+        if invitation_role != 'organization_admin':
+            batch.add_statement(
+                db.prepare(
+                    """INSERT INTO user_roles
+                       (user_id,role,status,created_at_ms,updated_at_ms,is_default)
+                       VALUES(?1,?2,'active',?3,?3,
+                         CASE WHEN EXISTS(SELECT 1 FROM user_roles
+                                          WHERE user_id=?1 AND status='active') THEN 0 ELSE 1 END)
+                       ON CONFLICT(user_id,role) DO UPDATE SET status='active',
+                         revoked_at_ms=NULL,updated_at_ms=excluded.updated_at_ms"""
+                ).bind(user_id, persona, now)
+            )
         if invitation["role"] == "speaker":
             event_speaker_id = await _add_speaker_profile(
                 batch,
@@ -6690,6 +6601,10 @@ async def verify_magic_link_in_browser(*, request: Request) -> Response:
     parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
     submitted_values = {key: values[-1] for key, values in parsed.items()}
     token = submitted_values.pop("token", "")
+    from .organization_invitation_identity import verify_organization_identity
+    organization_response = await verify_organization_identity(request, token, submitted_values)
+    if organization_response is not None:
+        return organization_response
     cookie_response = Response()
     registration_challenge = await _requires_submission_registration(request, token)
     registration = None

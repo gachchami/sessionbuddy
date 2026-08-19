@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "sessionbuddy" / "static"
 OUTPUT = ROOT / "src" / "sessionbuddy" / "console" / "embedded_assets.py"
 ASSETS = {
+    "account_organization_invitations.js": "ACCOUNT_ORGANIZATION_INVITATIONS_JS",
+    "organization_invitation.html": "ORGANIZATION_INVITATION_HTML",
+    "organization_invitation.js": "ORGANIZATION_INVITATION_JS",
     "landing.html": "LANDING_HTML",
     "landing.css": "LANDING_CSS",
     "sessionbuddy-favicon.svg": "SESSIONBUDDY_FAVICON_SVG",

@@ -84,7 +84,7 @@ def test_complete_migration_chain_builds_the_current_schema() -> None:
                    WHERE name NOT LIKE 'sqlite_%' GROUP BY type"""
             ).fetchall()
         )
-        assert object_counts == {"index": 118, "table": 83, "trigger": 117}
+        assert object_counts == {"index": 122, "table": 86, "trigger": 123}
         assert connection.execute(
             "SELECT lifecycle_status,withdrawn_at_ms FROM accepted_sessions LIMIT 0"
         ).description is not None
