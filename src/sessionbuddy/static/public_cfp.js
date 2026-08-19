@@ -1242,22 +1242,26 @@
       state.pendingSubmission = null;
       setStep("done");
       form.hidden = true;
+      byId("proposal-form-heading").hidden = true;
       byId("call-details").hidden = true;
       byId("sign-in-card").hidden = true;
       const receipt = byId("receipt");
-      receipt.className = "empty-state";
-      receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : state.form.success_title || "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
-      if (workspaceMode) {
-        const proposalLink = make("a", "Back to speaker portal", "button");
+      const heading = make("h2", state.editingSubmission ? "Proposal updated" : state.form.success_title || "Submission confirmed");
+      heading.id = "receipt-title";
+      receipt.replaceChildren(heading, make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message));
+      byId("proposal-card").setAttribute("aria-labelledby", heading.id);
+      if (workspaceMode || state.form.redirect_to_portal) {
+        const proposalLink = make("a", workspaceMode ? "Back to speaker portal" : "Open speaker portal", "button");
         proposalLink.href = "/speaker";
         receipt.append(proposalLink);
       }
-      if (state.form.redirect_to_portal) {
-        const link = make("a", "Open speaker portal", "button secondary");
-        link.href = "/speaker";
-        receipt.append(link);
-      }
-      setStatus(state.editingSubmission ? "Proposal updated." : "Proposal submitted.", "success");
+      const reference = make("details", "", "cfp-receipt__reference");
+      reference.append(make("summary", "Receipt details"), make("p", `Receipt ${submission.id}`));
+      receipt.append(reference);
+      receipt.hidden = false;
+      // The focused receipt is the single success announcement; form guidance
+      // and the transient status banner no longer describe the completed task.
+      setStatus("");
       completed = true;
       state.draftDirty = false;
       button.textContent = state.editingSubmission ? "Saved ✓" : "Submitted ✓";

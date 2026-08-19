@@ -48,7 +48,7 @@ for (const scenario of [
   { name: "empty heading fallback", heading: "", editing: false, expected: "Submission confirmed" },
   { name: "edit preserves update heading", heading: "Custom submission heading", editing: true, expected: "Proposal updated" },
 ]) {
-  test(`receipt success heading: ${scenario.name}`, async ({ page }) => {
+  test(`receipt success heading: ${scenario.name}`, async ({ page }, testInfo) => {
     await serveWorkspace(page, { form: { success_title: scenario.heading } });
     await page.goto(scenario.editing ? "/speaker/proposals/devflow-2027/proposal-a" : "/cfp/devflow/devflow-2027");
     if (!scenario.editing) {
@@ -62,6 +62,30 @@ for (const scenario of [
     await page.getByRole("button", { name: scenario.editing ? "Save changes" : "Confirm submission", exact: true }).click();
     await expect(page.locator("#receipt h2")).toHaveText(scenario.expected);
     await expect(page.locator("#receipt img")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Proposal details", exact: true })).toBeHidden();
+    await expect(page.locator(".cfp-form-heading")).toBeHidden();
+    await expect(page.locator("#proposal-form")).toBeHidden();
+    await expect(page.locator("#status")).toBeHidden();
+    const receipt = page.locator("#receipt");
+    await expect(receipt).toHaveClass(/cfp-receipt/);
+    await expect(receipt.getByRole("heading", { name: scenario.expected, exact: true })).toBeVisible();
+    await expect.poll(() => receipt.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    await expect(receipt.locator('a[href="/speaker"]').first()).toBeVisible();
+    const reference = receipt.locator("details");
+    await expect(reference).toHaveCount(1);
+    await expect(reference).not.toHaveAttribute("open", "");
+    if (scenario.name === "missing heading fallback") {
+      const screenshotPath = testInfo.outputPath("completed-receipt.png");
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      await testInfo.attach("Completed receipt", { path: screenshotPath, contentType: "image/png" });
+    }
+    const accessibility = await new AxeBuilder({ page }).include("#proposal-card").analyze();
+    expect(accessibility.violations.filter((item) => ["critical", "serious"].includes(item.impact || ""))).toEqual([]);
+    await reference.locator("summary").click();
+    await expect(reference).toContainText(scenario.editing ? "proposal-a" : "proposal-c");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      await page.evaluate(() => window.innerWidth),
+    );
   });
 }
 
@@ -394,7 +418,8 @@ test.describe("speaker proposal workspace", () => {
       "Second collaborator — Co-speaker (second@example.test)",
     );
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator("#status")).toHaveText("Proposal updated.");
+    await expect(page.locator("#receipt h2")).toHaveText("Proposal updated");
+    await expect(page.locator("#receipt h2")).toBeVisible();
     expect((harness.patches.at(-1)?.body.co_speakers as Array<{ role: string }>)[0].role).toBe("moderator");
   });
 
@@ -408,7 +433,8 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.getByLabel("Proposal title")).toHaveValue("Retry-safe proposal");
     await expect(page.locator("#status")).toBeFocused();
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator("#status")).toHaveText("Proposal updated.");
+    await expect(page.locator("#receipt h2")).toHaveText("Proposal updated");
+    await expect(page.locator("#receipt h2")).toBeVisible();
     expect(harness.patches).toHaveLength(2);
     expect(harness.patches[0].idempotencyKey).toBe(harness.patches[1].idempotencyKey);
     expect(harness.patches[1].body.proposal_title).toBe("Retry-safe proposal");
@@ -432,7 +458,8 @@ test.describe("speaker proposal workspace", () => {
     await expect(page.locator("#status")).toHaveClass(/error/);
     expect(harness.counts()).toEqual({ uploadAuthorizations: 2, uploadPuts: 1, uploadCompletions: 1 });
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator("#status")).toHaveText("Proposal updated.");
+    await expect(page.locator("#receipt h2")).toHaveText("Proposal updated");
+    await expect(page.locator("#receipt h2")).toBeVisible();
     expect(harness.counts()).toEqual({ uploadAuthorizations: 3, uploadPuts: 2, uploadCompletions: 2 });
     expect(harness.patches.at(-1)?.body.answers).toMatchObject({
       supporting: "staged:staged-1", diagram: "staged:staged-3",

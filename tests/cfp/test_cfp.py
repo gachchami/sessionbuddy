@@ -481,7 +481,7 @@ def test_private_submission_access_distinguishes_primary_and_co_speaker() -> Non
     assert "state.submissions.find((submission) => submission.id === selectedId)" in public_script
     assert 'make("h2", "Your proposals")' not in public_script
     assert 'make("a", "Open in My proposals", "button")' not in public_script
-    assert 'make("a", "Back to speaker portal", "button")' in public_script
+    assert 'workspaceMode ? "Back to speaker portal" : "Open speaker portal"' in public_script
     assert "const workspacePath" not in public_script
 
 

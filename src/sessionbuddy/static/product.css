@@ -1670,6 +1670,14 @@ body.embedded .gallery-event-branding { display: none; }
 .cfp-form-heading { padding: 1.35rem 1.5rem 1.15rem; border-bottom: 1px solid var(--cfp-rule); background: #fff; }
 .cfp-form-heading h2 { margin: 0; color: var(--cfp-ink); font-size: 1.375rem; font-weight: 800; letter-spacing: -.025em; }
 .cfp-form-heading p:last-child { margin: .25rem 0 0; color: #687386; font-size: .75rem; }
+.cfp-receipt { padding: clamp(1.25rem, 4vw, 2rem); overflow-wrap: anywhere; }
+.cfp-receipt h2 { margin: 0; color: var(--cfp-ink); font-size: 1.375rem; line-height: 1.2; letter-spacing: -.025em; }
+.cfp-receipt > p { max-width: 65ch; margin: .75rem 0 1.5rem; color: var(--muted); line-height: 1.6; }
+.cfp-receipt > .button { max-width: 100%; white-space: normal; }
+.cfp-receipt__reference { margin-top: 1.5rem; color: var(--muted); font-size: .8125rem; }
+.cfp-receipt__reference summary { width: fit-content; min-height: 44px; padding-block: .65rem; cursor: pointer; text-underline-offset: .2em; }
+.cfp-receipt__reference summary:hover { text-decoration: underline; }
+.cfp-receipt__reference p { margin: .5rem 0 0; }
 .cfp-public-scroll { scroll-padding-bottom: calc(var(--cfp-action-bar-height, 0px) + 1rem); }
 .cfp-public-page #proposal-form { padding: 1.35rem 1.5rem 1.5rem; }
 .cfp-public-page #proposal-form :where(button, a, input, label, select, textarea, summary) {
