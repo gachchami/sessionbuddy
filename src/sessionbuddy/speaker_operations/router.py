@@ -617,32 +617,15 @@ async def get_admin_onboarding_dashboard(
                            i.id AS invitation_id,
                            COALESCE(es.last_activity_at_ms,i.updated_at_ms) AS last_activity_at_ms,
                            COALESCE(p.display_name,i.display_name,i.email) AS display_name,
-                           COALESCE(
-                             (SELECT ac.organizer_title FROM accepted_sessions ac
-                               JOIN accepted_session_participants participant
-                                 ON participant.accepted_session_id=ac.id
-                               WHERE ac.organization_id=t.organization_id
-                                 AND ac.event_id=t.event_id
-                                 AND participant.event_speaker_id=t.event_speaker_id
-                                 AND ac.source_type='organizer_created'
-                               ORDER BY ac.created_at_ms DESC,ac.id DESC LIMIT 1),
-                             -- Prefer the ACCEPTED submission; fall back to newest.
-                             (SELECT s.proposal_title FROM submission_speakers ss
-                               JOIN submissions s ON s.organization_id = ss.organization_id
-                                AND s.event_id = ss.event_id AND s.id = ss.submission_id
-                               JOIN accepted_sessions ac ON ac.organization_id = s.organization_id
-                                AND ac.event_id = s.event_id AND ac.submission_id = s.id
-                               WHERE ss.organization_id = t.organization_id
-                                 AND ss.event_id = t.event_id
-                                 AND ss.event_speaker_id = t.event_speaker_id
-                               ORDER BY ac.created_at_ms DESC, ac.id DESC LIMIT 1),
-                             (SELECT s.proposal_title FROM submission_speakers ss
-                               JOIN submissions s ON s.organization_id = ss.organization_id
-                                AND s.event_id = ss.event_id AND s.id = ss.submission_id
-                               WHERE ss.organization_id = t.organization_id
-                                 AND ss.event_id = t.event_id
-                                 AND ss.event_speaker_id = t.event_speaker_id
-                               ORDER BY s.submitted_at_ms DESC, s.id DESC LIMIT 1), '')
+                           -- A roster's preferred proposal is not a task association.
+                           COALESCE((SELECT s.proposal_title FROM submissions s
+                               WHERE s.organization_id=t.organization_id
+                                 AND s.event_id=t.event_id AND s.id=t.submission_id
+                                 AND EXISTS (SELECT 1 FROM submission_speakers ss
+                                   WHERE ss.organization_id=t.organization_id
+                                     AND ss.event_id=t.event_id
+                                     AND ss.submission_id=s.id
+                                     AND ss.event_speaker_id=t.event_speaker_id)), '')
                              AS proposal_title
                     FROM speaker_tasks t
                     LEFT JOIN event_speakers es ON es.organization_id = t.organization_id

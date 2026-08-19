@@ -107,13 +107,15 @@
 
   function isOverdue(row) { return row.state === "overdue"; }
 
+  function taskProposalTitle(row) { return row.proposal_title || "General speaker task"; }
+
   function addTableRow(row) {
     const tr = document.createElement("tr");
     tr.className = "organizer-task-row";
     const speaker = document.createElement("td");
     const link = make("a", row.display_name); link.href = speakerLink(row); speaker.append(link);
     tr.append(speaker);
-    [row.proposal_title, row.task_title, formatDate(row.due_at_ms), formatDate(row.last_activity_at_ms)].forEach((value, index) => {
+    [taskProposalTitle(row), row.task_title, formatDate(row.due_at_ms), formatDate(row.last_activity_at_ms)].forEach((value, index) => {
       const td = make("td", value, index === 1 ? "task-name" : index === 2 && isOverdue(row) ? "overdue" : ""); tr.append(td);
     });
     const action = document.createElement("td");
@@ -133,7 +135,7 @@
     const heading = document.createElement("h3");
     const speaker = make("a", row.display_name); speaker.href = speakerLink(row); heading.append(speaker); item.append(heading);
     const list = document.createElement("dl");
-    [["Session", row.proposal_title], ["Missing", row.task_title], ["Due", formatDate(row.due_at_ms)], ["Last activity", formatDate(row.last_activity_at_ms)]].forEach(([label, value]) => {
+    [["Session", taskProposalTitle(row)], ["Missing", row.task_title], ["Due", formatDate(row.due_at_ms)], ["Last activity", formatDate(row.last_activity_at_ms)]].forEach(([label, value]) => {
       list.append(make("dt", label), make("dd", value, label === "Due" && isOverdue(row) ? "overdue" : ""));
     });
     item.append(list);

@@ -1,7 +1,7 @@
 """Speaker ↔ submission attribution, driven over HTTP.
 
 Pins the eval-run P0: every surface that shows "the speaker's proposal"
-(speaker targets, the single speaker record, the onboarding dashboard, the
+(speaker targets, the single speaker record, the
 home recent-speakers cards) must show the ACCEPTED submission when one
 exists — not whichever submission happens to be newest. In the eval run a
 later-submitted rejected proposal displaced the accepted session on all of
@@ -338,13 +338,14 @@ async def test_speaker_surfaces_attribute_the_accepted_submission(
         )
         assert refreshed["confirmation_status"] == "confirmed"
 
-        # Onboarding dashboard rows: the SESSION column.
+        # Speaker-wide tasks have no session association; the roster's preferred
+        # accepted proposal must not be repurposed as a task association.
         dashboard = await client.get(f"/api/v1/admin/events/{event_id}/onboarding")
         assert dashboard.status_code == 200, dashboard.text
         rows = [row for row in dashboard.json()["data"] if row["event_speaker_id"] == speaker_id]
         assert rows, dashboard.text
-        assert all(row["proposal_title"] == "Accepted talk" for row in rows), (
-            "onboarding tasks are attributed to the rejected submission"
+        assert all(row["proposal_title"] == "" for row in rows), (
+            "speaker-wide tasks must not infer a session from the speaker roster"
         )
 
         # Home metrics recent-speakers cards.

@@ -227,6 +227,10 @@ cannot show.
 
 ## Speaker operations
 
+The onboarding task list labels only a task's explicit proposal association,
+scoped to its organization and event. Unlinked tasks show "General speaker task"
+instead of borrowing the speaker's newest session.
+
 Implemented: multi-event speaker portal, decision-aware status, default and custom form
 tasks, Account-owned profile and headshot management, organizer-published resources/wiki content with
 allowlisted embeds, public branded speaker galleries, quarantined asset uploads,
