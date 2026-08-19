@@ -1,0 +1,62 @@
+{
+  "run_id": null,
+  "target_url": null,
+  "deployment_version": null,
+  "run_date": null,
+  "organization_id": null,
+  "primary_event_id": null,
+  "secondary_event_id": null,
+  "cfp_url": null,
+  "fixture_preflight_evidence": [],
+  "personas": {
+    "organizer": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    },
+    "speaker": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    },
+    "reviewer": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    },
+    "speaker2": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    },
+    "import_contact": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    },
+    "reviewer2": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    },
+    "attendee": {
+      "account_id": null,
+      "email": null,
+      "display_name": null,
+      "verified_role": null,
+      "evidence": []
+    }
+  }
+}

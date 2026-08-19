@@ -1,0 +1,101 @@
+{
+  "purpose": "Document permanent credential-only sanitization of the imported evaluation snapshot",
+  "lifecycle": "implemented",
+  "authority": "Repository security rules; original feature assertions and scenario/step/rubric inventory remain unchanged",
+  "version": 1,
+  "source": {
+    "repository": "SessionBoard Eval Kit",
+    "commit": "81099583ff4c878f310dc3c48e4916318678425d"
+  },
+  "policy": "Original plaintext credential values are not retained. Upstream hashes identify provenance, packaged hashes pin the permanently sanitized derivative. Null and [RUNTIME_ONLY] are noncredential placeholders and must never be used to authenticate.",
+  "files": {
+    "specs/01-call-for-papers.yaml": {
+      "upstream_sha256": "225a5b18a405cded11ed35a4379836a1c30e06558ddd14cbf9020214c564e42c",
+      "packaged_sha256": "225a5b18a405cded11ed35a4379836a1c30e06558ddd14cbf9020214c564e42c",
+      "redactions": []
+    },
+    "specs/02-abstract-management.yaml": {
+      "upstream_sha256": "3e55a38d1f4c7a34870f8d4eb13eb43cfb06f259dd4aac9db84459f546dfd6d6",
+      "packaged_sha256": "3e55a38d1f4c7a34870f8d4eb13eb43cfb06f259dd4aac9db84459f546dfd6d6",
+      "redactions": []
+    },
+    "specs/03-speaker-management.yaml": {
+      "upstream_sha256": "203459248ca58ebe37af3aba8675890f9b1efe88a5cd696ea5759d0b9573524f",
+      "packaged_sha256": "203459248ca58ebe37af3aba8675890f9b1efe88a5cd696ea5759d0b9573524f",
+      "redactions": []
+    },
+    "specs/04-content-management.yaml": {
+      "upstream_sha256": "171335037b2fb4aeaa93f32f7b8d033f975a598e3f70d74d189c6db16b66b8de",
+      "packaged_sha256": "171335037b2fb4aeaa93f32f7b8d033f975a598e3f70d74d189c6db16b66b8de",
+      "redactions": []
+    },
+    "specs/05-ai-agenda.yaml": {
+      "upstream_sha256": "0de0bc8ad3e57ea48fbd285e725ccd34ce716c22165265839221b267fd498ef2",
+      "packaged_sha256": "0de0bc8ad3e57ea48fbd285e725ccd34ce716c22165265839221b267fd498ef2",
+      "redactions": []
+    },
+    "specs/06-public-widgets.yaml": {
+      "upstream_sha256": "af5f8e3f4cd748486291059029cc8065172dc9add4e06d7cc038c25610d81dfd",
+      "packaged_sha256": "8f98d5641db737c196e88842dbe472468e055dada2c9c9a11595a5cde2bc6f0a",
+      "redactions": [
+        {
+          "source_ref": "EMB-S1:2",
+          "selector": "inline credential immediately following password",
+          "replacement": "[RUNTIME_ONLY]"
+        },
+        {
+          "source_ref": "EMB-S2:1",
+          "selector": "inline credential immediately following password",
+          "replacement": "[RUNTIME_ONLY]"
+        }
+      ]
+    },
+    "specs/07-speaker-crm.yaml": {
+      "upstream_sha256": "60e8f47b69046d3b66df5913d1e2c254b2f1fb8b130851ef325bc5b46a1b5f3d",
+      "packaged_sha256": "60e8f47b69046d3b66df5913d1e2c254b2f1fb8b130851ef325bc5b46a1b5f3d",
+      "redactions": []
+    },
+    "fixtures/aie-europe.json": {
+      "upstream_sha256": "bc0cc3a240410242e6752546a5042c678d4fdc371d2569ae663afe31d095e4eb",
+      "packaged_sha256": "bc0cc3a240410242e6752546a5042c678d4fdc371d2569ae663afe31d095e4eb",
+      "redactions": []
+    },
+    "fixtures/headshot.png": {
+      "upstream_sha256": "9727e98b19375716494cffa46f09edc60624d8a381199cc63a420a6c0f7174fc",
+      "packaged_sha256": "9727e98b19375716494cffa46f09edc60624d8a381199cc63a420a6c0f7174fc",
+      "redactions": []
+    },
+    "fixtures/sample-data.json": {
+      "upstream_sha256": "14d93a843e060be18f6341058b4e994d0d7c16c46c5419904df04484ea4c6564",
+      "packaged_sha256": "f93a35599fcc850908a4c46498c714a87c10b51ddbeaf7e501f9ee53206c6073",
+      "redactions": [
+        {
+          "json_pointer": "/identities/organizer/password",
+          "replacement": null
+        },
+        {
+          "json_pointer": "/identities/speaker/password",
+          "replacement": null
+        },
+        {
+          "json_pointer": "/identities/speaker2/password",
+          "replacement": null
+        },
+        {
+          "json_pointer": "/identities/reviewer/password",
+          "replacement": null
+        }
+      ]
+    },
+    "fixtures/slides.pdf": {
+      "upstream_sha256": "ffc81c3487a25fb311ecba34beaa9a99e88815e87fd9d7b7a46e7c301da42484",
+      "packaged_sha256": "ffc81c3487a25fb311ecba34beaa9a99e88815e87fd9d7b7a46e7c301da42484",
+      "redactions": []
+    },
+    "fixtures/speakers.csv": {
+      "upstream_sha256": "bc27669313590e0730f8bb976ba231e9576f56c28f73f9f82e5fdb48ce6dcfbc",
+      "packaged_sha256": "bc27669313590e0730f8bb976ba231e9576f56c28f73f9f82e5fdb48ce6dcfbc",
+      "redactions": []
+    }
+  }
+}

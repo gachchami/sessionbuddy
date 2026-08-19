@@ -1,0 +1,282 @@
+{
+  "source": {
+    "repository": "SessionBoard Eval Kit",
+    "commit": "81099583ff4c878f310dc3c48e4916318678425d",
+    "representation": "permanently-credential-sanitized-derivative",
+    "derivation_manifest": "derivation.json"
+  },
+  "areas": {
+    "call-for-papers": {
+      "file": "01-call-for-papers.yaml",
+      "personas": [
+        "organizer",
+        "speaker",
+        "reviewer"
+      ],
+      "scenarios": [
+        {
+          "id": "CFP-S1",
+          "steps": 12
+        },
+        {
+          "id": "CFP-S2",
+          "steps": 11
+        },
+        {
+          "id": "CFP-S3",
+          "steps": 8
+        },
+        {
+          "id": "CFP-S4",
+          "steps": 8
+        }
+      ],
+      "rubric_ids": [
+        "CFP-01",
+        "CFP-02",
+        "CFP-03",
+        "CFP-04",
+        "CFP-05",
+        "CFP-06",
+        "CFP-07",
+        "CFP-08",
+        "CFP-09",
+        "CFP-10",
+        "CFP-11",
+        "CFP-12",
+        "CFP-13",
+        "CFP-14",
+        "CFP-15",
+        "CFP-16",
+        "CFP-17",
+        "CFP-18"
+      ],
+      "manual_rubric_ids": [
+        "CFP-08"
+      ]
+    },
+    "abstract-management": {
+      "file": "02-abstract-management.yaml",
+      "personas": [
+        "organizer",
+        "speaker",
+        "reviewer"
+      ],
+      "scenarios": [
+        {
+          "id": "ABS-S1",
+          "steps": 7
+        },
+        {
+          "id": "ABS-S2",
+          "steps": 10
+        },
+        {
+          "id": "ABS-S3",
+          "steps": 13
+        }
+      ],
+      "rubric_ids": [
+        "ABS-01",
+        "ABS-02",
+        "ABS-03",
+        "ABS-04",
+        "ABS-05",
+        "ABS-06",
+        "ABS-07",
+        "ABS-08",
+        "ABS-09",
+        "ABS-10",
+        "ABS-11",
+        "ABS-12",
+        "ABS-13",
+        "ABS-14"
+      ],
+      "manual_rubric_ids": []
+    },
+    "speaker-management": {
+      "file": "03-speaker-management.yaml",
+      "personas": [
+        "organizer",
+        "speaker"
+      ],
+      "scenarios": [
+        {
+          "id": "SPK-S1",
+          "steps": 12
+        },
+        {
+          "id": "SPK-S2",
+          "steps": 11
+        },
+        {
+          "id": "SPK-S3",
+          "steps": 9
+        }
+      ],
+      "rubric_ids": [
+        "SPK-01",
+        "SPK-02",
+        "SPK-03",
+        "SPK-04",
+        "SPK-05",
+        "SPK-06",
+        "SPK-07",
+        "SPK-08",
+        "SPK-09",
+        "SPK-10",
+        "SPK-11",
+        "SPK-12",
+        "SPK-13",
+        "SPK-14",
+        "SPK-15",
+        "SPK-16"
+      ],
+      "manual_rubric_ids": [
+        "SPK-16"
+      ]
+    },
+    "content-management": {
+      "file": "04-content-management.yaml",
+      "personas": [
+        "organizer",
+        "speaker"
+      ],
+      "scenarios": [
+        {
+          "id": "CNT-S1",
+          "steps": 8
+        },
+        {
+          "id": "CNT-S2",
+          "steps": 9
+        },
+        {
+          "id": "CNT-S3",
+          "steps": 15
+        }
+      ],
+      "rubric_ids": [
+        "CNT-01",
+        "CNT-02",
+        "CNT-03",
+        "CNT-04",
+        "CNT-05",
+        "CNT-06",
+        "CNT-07",
+        "CNT-08",
+        "CNT-09",
+        "CNT-10",
+        "CNT-11",
+        "CNT-12",
+        "CNT-13",
+        "CNT-14"
+      ],
+      "manual_rubric_ids": []
+    },
+    "ai-agenda": {
+      "file": "05-ai-agenda.yaml",
+      "personas": [
+        "organizer"
+      ],
+      "scenarios": [
+        {
+          "id": "AIA-S1",
+          "steps": 11
+        },
+        {
+          "id": "AIA-S2",
+          "steps": 6
+        }
+      ],
+      "rubric_ids": [
+        "AIA-01",
+        "AIA-02",
+        "AIA-03",
+        "AIA-04",
+        "AIA-05",
+        "AIA-06",
+        "AIA-07",
+        "AIA-08"
+      ],
+      "manual_rubric_ids": []
+    },
+    "public-widgets": {
+      "file": "06-public-widgets.yaml",
+      "personas": [
+        "organizer",
+        "attendee"
+      ],
+      "scenarios": [
+        {
+          "id": "EMB-S1",
+          "steps": 11
+        },
+        {
+          "id": "EMB-S2",
+          "steps": 10
+        },
+        {
+          "id": "EMB-S3",
+          "steps": 10
+        }
+      ],
+      "rubric_ids": [
+        "EMB-01",
+        "EMB-02",
+        "EMB-03",
+        "EMB-04",
+        "EMB-05",
+        "EMB-06",
+        "EMB-07",
+        "EMB-08",
+        "EMB-09",
+        "EMB-10",
+        "EMB-11",
+        "EMB-12",
+        "EMB-13",
+        "EMB-14",
+        "EMB-15",
+        "EMB-16"
+      ],
+      "manual_rubric_ids": []
+    },
+    "speaker-crm": {
+      "file": "07-speaker-crm.yaml",
+      "personas": [
+        "organizer"
+      ],
+      "scenarios": [
+        {
+          "id": "CRM-S1",
+          "steps": 11
+        },
+        {
+          "id": "CRM-S2",
+          "steps": 9
+        }
+      ],
+      "rubric_ids": [
+        "CRM-01",
+        "CRM-02",
+        "CRM-03",
+        "CRM-04",
+        "CRM-05",
+        "CRM-06",
+        "CRM-07",
+        "CRM-08",
+        "CRM-09",
+        "CRM-10",
+        "CRM-11",
+        "CRM-12"
+      ],
+      "manual_rubric_ids": []
+    }
+  },
+  "totals": {
+    "scenarios": 20,
+    "scenario_steps": 201,
+    "rubric_tests": 98,
+    "manual_rubric_tests": 2
+  }
+}

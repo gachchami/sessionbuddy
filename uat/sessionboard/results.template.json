@@ -1,0 +1,4837 @@
+{
+  "overlay_version": 3,
+  "context": {
+    "run_id": null,
+    "target_url": null,
+    "deployment_version": null,
+    "run_date": null,
+    "organization_id": null,
+    "primary_event_id": null,
+    "secondary_event_id": null,
+    "cfp_url": null,
+    "fixture_preflight_evidence": [],
+    "personas": {
+      "organizer": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      },
+      "speaker": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      },
+      "reviewer": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      },
+      "speaker2": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      },
+      "import_contact": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      },
+      "reviewer2": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      },
+      "attendee": {
+        "account_id": null,
+        "email": null,
+        "display_name": null,
+        "verified_role": null,
+        "evidence": []
+      }
+    }
+  },
+  "scenario_results": [
+    {
+      "scenario_id": "CFP-S1A",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CFP-S1:1",
+          "source_ref": "CFP-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:2",
+          "source_ref": "CFP-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CFP-S1B",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CFP-S1:3",
+          "source_ref": "CFP-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:4",
+          "source_ref": "CFP-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:5",
+          "source_ref": "CFP-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:6",
+          "source_ref": "CFP-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:7",
+          "source_ref": "CFP-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:8",
+          "source_ref": "CFP-S1:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CFP-S1C",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CFP-S1:9",
+          "source_ref": "CFP-S1:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:10",
+          "source_ref": "CFP-S1:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:11",
+          "source_ref": "CFP-S1:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S1:12",
+          "source_ref": "CFP-S1:12",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CFP-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CFP-S2:1",
+          "source_ref": "CFP-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:2",
+          "source_ref": "CFP-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:3",
+          "source_ref": "CFP-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:4",
+          "source_ref": "CFP-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:5",
+          "source_ref": "CFP-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:6",
+          "source_ref": "CFP-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:7",
+          "source_ref": "CFP-S2:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:8",
+          "source_ref": "CFP-S2:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:9",
+          "source_ref": "CFP-S2:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:10",
+          "source_ref": "CFP-S2:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S2:11",
+          "source_ref": "CFP-S2:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CFP-S3",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CFP-S3:1",
+          "source_ref": "CFP-S3:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:2",
+          "source_ref": "CFP-S3:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:3",
+          "source_ref": "CFP-S3:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:4",
+          "source_ref": "CFP-S3:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:5",
+          "source_ref": "CFP-S3:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:6",
+          "source_ref": "CFP-S3:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:7",
+          "source_ref": "CFP-S3:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S3:8",
+          "source_ref": "CFP-S3:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CFP-S4",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CFP-S4:1",
+          "source_ref": "CFP-S4:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:2",
+          "source_ref": "CFP-S4:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:3",
+          "source_ref": "CFP-S4:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:4",
+          "source_ref": "CFP-S4:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:5",
+          "source_ref": "CFP-S4:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:6",
+          "source_ref": "CFP-S4:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:7",
+          "source_ref": "CFP-S4:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CFP-S4:8",
+          "source_ref": "CFP-S4:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "ABS-S1",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "ABS-S1:1",
+          "source_ref": "ABS-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S1:2",
+          "source_ref": "ABS-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S1:3",
+          "source_ref": "ABS-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S1:4",
+          "source_ref": "ABS-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S1:5",
+          "source_ref": "ABS-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S1:6",
+          "source_ref": "ABS-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S1:7",
+          "source_ref": "ABS-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "ABS-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "ABS-S2:1",
+          "source_ref": "ABS-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:2",
+          "source_ref": "ABS-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:3",
+          "source_ref": "ABS-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:4",
+          "source_ref": "ABS-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:5",
+          "source_ref": "ABS-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:6",
+          "source_ref": "ABS-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:7",
+          "source_ref": "ABS-S2:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:8",
+          "source_ref": "ABS-S2:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:9",
+          "source_ref": "ABS-S2:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S2:10",
+          "source_ref": "ABS-S2:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "ABS-S3",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "ABS-S3:1",
+          "source_ref": "ABS-S3:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:2",
+          "source_ref": "ABS-S3:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:3",
+          "source_ref": "ABS-S3:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:4",
+          "source_ref": "ABS-S3:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:5",
+          "source_ref": "ABS-S3:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:6",
+          "source_ref": "ABS-S3:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:7",
+          "source_ref": "ABS-S3:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:8",
+          "source_ref": "ABS-S3:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:9",
+          "source_ref": "ABS-S3:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:10",
+          "source_ref": "ABS-S3:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:11",
+          "source_ref": "ABS-S3:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:12",
+          "source_ref": "ABS-S3:12",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "ABS-S3:13",
+          "source_ref": "ABS-S3:13",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "SPK-S1",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "SPK-S1:1",
+          "source_ref": "SPK-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:2",
+          "source_ref": "SPK-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:3",
+          "source_ref": "SPK-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:4",
+          "source_ref": "SPK-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:5",
+          "source_ref": "SPK-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:6",
+          "source_ref": "SPK-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:7",
+          "source_ref": "SPK-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:8",
+          "source_ref": "SPK-S1:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:9",
+          "source_ref": "SPK-S1:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:10",
+          "source_ref": "SPK-S1:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:11",
+          "source_ref": "SPK-S1:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S1:12",
+          "source_ref": "SPK-S1:12",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "SPK-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "SPK-S2:1",
+          "source_ref": "SPK-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:2",
+          "source_ref": "SPK-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:3",
+          "source_ref": "SPK-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:4",
+          "source_ref": "SPK-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:5",
+          "source_ref": "SPK-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:6",
+          "source_ref": "SPK-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:7",
+          "source_ref": "SPK-S2:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:8",
+          "source_ref": "SPK-S2:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:9",
+          "source_ref": "SPK-S2:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:10",
+          "source_ref": "SPK-S2:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S2:11",
+          "source_ref": "SPK-S2:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "SPK-S3",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "SPK-S3:1",
+          "source_ref": "SPK-S3:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:2",
+          "source_ref": "SPK-S3:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:3",
+          "source_ref": "SPK-S3:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:4",
+          "source_ref": "SPK-S3:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:5",
+          "source_ref": "SPK-S3:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:6",
+          "source_ref": "SPK-S3:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:7",
+          "source_ref": "SPK-S3:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:8",
+          "source_ref": "SPK-S3:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SPK-S3:9",
+          "source_ref": "SPK-S3:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CNT-S1",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CNT-S1:1",
+          "source_ref": "CNT-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:2",
+          "source_ref": "CNT-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:3",
+          "source_ref": "CNT-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:4",
+          "source_ref": "CNT-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:5",
+          "source_ref": "CNT-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:6",
+          "source_ref": "CNT-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:7",
+          "source_ref": "CNT-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S1:8",
+          "source_ref": "CNT-S1:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CNT-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CNT-S2:1",
+          "source_ref": "CNT-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:2",
+          "source_ref": "CNT-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:3",
+          "source_ref": "CNT-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:4",
+          "source_ref": "CNT-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:5",
+          "source_ref": "CNT-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:6",
+          "source_ref": "CNT-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:7",
+          "source_ref": "CNT-S2:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:8",
+          "source_ref": "CNT-S2:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S2:9",
+          "source_ref": "CNT-S2:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CNT-S3",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CNT-S3:1",
+          "source_ref": "CNT-S3:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:2",
+          "source_ref": "CNT-S3:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:3",
+          "source_ref": "CNT-S3:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:4",
+          "source_ref": "CNT-S3:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:5",
+          "source_ref": "CNT-S3:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:6",
+          "source_ref": "CNT-S3:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:7",
+          "source_ref": "CNT-S3:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:8",
+          "source_ref": "CNT-S3:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:9",
+          "source_ref": "CNT-S3:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:10",
+          "source_ref": "CNT-S3:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:11",
+          "source_ref": "CNT-S3:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:12",
+          "source_ref": "CNT-S3:12",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:13",
+          "source_ref": "CNT-S3:13",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:14",
+          "source_ref": "CNT-S3:14",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CNT-S3:15",
+          "source_ref": "CNT-S3:15",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "AIA-S1",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "AIA-S1:1",
+          "source_ref": "AIA-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:2",
+          "source_ref": "AIA-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:3",
+          "source_ref": "AIA-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:4",
+          "source_ref": "AIA-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:5",
+          "source_ref": "AIA-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:6",
+          "source_ref": "AIA-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:7",
+          "source_ref": "AIA-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:8",
+          "source_ref": "AIA-S1:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:9",
+          "source_ref": "AIA-S1:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:10",
+          "source_ref": "AIA-S1:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S1:11",
+          "source_ref": "AIA-S1:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "AIA-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "AIA-S2:1",
+          "source_ref": "AIA-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S2:2",
+          "source_ref": "AIA-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S2:3",
+          "source_ref": "AIA-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S2:4",
+          "source_ref": "AIA-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S2:5",
+          "source_ref": "AIA-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "AIA-S2:6",
+          "source_ref": "AIA-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "EMB-S1",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "EMB-S1:1",
+          "source_ref": "EMB-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:2",
+          "source_ref": "EMB-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:3",
+          "source_ref": "EMB-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:4",
+          "source_ref": "EMB-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:5",
+          "source_ref": "EMB-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:6",
+          "source_ref": "EMB-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:7",
+          "source_ref": "EMB-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:8",
+          "source_ref": "EMB-S1:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:9",
+          "source_ref": "EMB-S1:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:10",
+          "source_ref": "EMB-S1:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S1:11",
+          "source_ref": "EMB-S1:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "EMB-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "EMB-S2:1",
+          "source_ref": "EMB-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:2",
+          "source_ref": "EMB-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:3",
+          "source_ref": "EMB-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:4",
+          "source_ref": "EMB-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:5",
+          "source_ref": "EMB-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:6",
+          "source_ref": "EMB-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:7",
+          "source_ref": "EMB-S2:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:8",
+          "source_ref": "EMB-S2:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:9",
+          "source_ref": "EMB-S2:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S2:10",
+          "source_ref": "EMB-S2:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "EMB-S3",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "EMB-S3:1",
+          "source_ref": "EMB-S3:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:2",
+          "source_ref": "EMB-S3:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:3",
+          "source_ref": "EMB-S3:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:4",
+          "source_ref": "EMB-S3:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:5",
+          "source_ref": "EMB-S3:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:6",
+          "source_ref": "EMB-S3:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:7",
+          "source_ref": "EMB-S3:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:8",
+          "source_ref": "EMB-S3:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:9",
+          "source_ref": "EMB-S3:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "EMB-S3:10",
+          "source_ref": "EMB-S3:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CRM-S1",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CRM-S1:1",
+          "source_ref": "CRM-S1:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:2",
+          "source_ref": "CRM-S1:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:3",
+          "source_ref": "CRM-S1:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:4",
+          "source_ref": "CRM-S1:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:5",
+          "source_ref": "CRM-S1:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:6",
+          "source_ref": "CRM-S1:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:7",
+          "source_ref": "CRM-S1:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:8",
+          "source_ref": "CRM-S1:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:9",
+          "source_ref": "CRM-S1:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:10",
+          "source_ref": "CRM-S1:10",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S1:11",
+          "source_ref": "CRM-S1:11",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "CRM-S2",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "CRM-S2:1",
+          "source_ref": "CRM-S2:1",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:2",
+          "source_ref": "CRM-S2:2",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:3",
+          "source_ref": "CRM-S2:3",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:4",
+          "source_ref": "CRM-S2:4",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:5",
+          "source_ref": "CRM-S2:5",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:6",
+          "source_ref": "CRM-S2:6",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:7",
+          "source_ref": "CRM-S2:7",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:8",
+          "source_ref": "CRM-S2:8",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "CRM-S2:9",
+          "source_ref": "CRM-S2:9",
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "SB-TZ-01",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "SB-TZ-01:1",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-TZ-01:2",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-TZ-01:3",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-TZ-01:4",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-TZ-01:5",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-TZ-01:6",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "SB-EMBED-01",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "SB-EMBED-01:1",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-EMBED-01:2",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-EMBED-01:3",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-EMBED-01:4",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-EMBED-01:5",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "scenario_id": "SB-SCORE-01",
+      "status": "pending",
+      "precondition": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "handoff": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "steps": [
+        {
+          "step_id": "SB-SCORE-01:1",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-SCORE-01:2",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-SCORE-01:3",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-SCORE-01:4",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        },
+        {
+          "step_id": "SB-SCORE-01:5",
+          "source_ref": null,
+          "identity_used": null,
+          "event_id": null,
+          "no_event_reason": null,
+          "status": "pending",
+          "failure_class": null,
+          "block_cause": null,
+          "notes": "",
+          "evidence": []
+        }
+      ]
+    }
+  ],
+  "rubric_results": [
+    {
+      "rubric_id": "CFP-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": null,
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "CFP-09",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-10",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-11",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-12",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-13",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-14",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "CFP-15",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-16",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-17",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CFP-18",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "ABS-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "ABS-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-09",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "ABS-10",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-11",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-12",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "ABS-13",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "ABS-14",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "SPK-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "SPK-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "SPK-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-09",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-10",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "SPK-11",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-12",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-13",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "SPK-14",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-15",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "SPK-16",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": null,
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "CNT-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "CNT-09",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-10",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-11",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-12",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-13",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CNT-14",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "AIA-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "AIA-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-09",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-10",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-11",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "EMB-12",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-13",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-14",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "EMB-15",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "EMB-16",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "CRM-01",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-02",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-03",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-04",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-05",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-06",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-07",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-08",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-09",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-10",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    },
+    {
+      "rubric_id": "CRM-11",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      }
+    },
+    {
+      "rubric_id": "CRM-12",
+      "status": "pending",
+      "failure_class": null,
+      "block_cause": null,
+      "notes": "",
+      "evidence": [],
+      "automatic": {
+        "status": "pending",
+        "failure_class": null,
+        "block_cause": null,
+        "notes": "",
+        "evidence": []
+      },
+      "manual": null
+    }
+  ]
+}

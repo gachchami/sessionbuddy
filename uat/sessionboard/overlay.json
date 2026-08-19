@@ -1,0 +1,111 @@
+{
+  "version": 3,
+  "default_precondition": "Before any step, verify the mapped starting account (or explicitly required anonymous context), canonical organization/event binding if already created, and each upstream handoff. Record observed state and safe evidence in precondition; no special before instruction does not mean no preflight. Missing prerequisites block execution.",
+  "conditional_rubrics": {
+    "ABS-14": "Not applicable only after inspecting available UI and product claims and recording evidence that AI review/triage is not claimed. An advertised but absent or broken feature fails; an inaccessible surface blocks. Record the absence in overall, automatic and manual verdicts."
+  },
+  "authority": "SessionBuddy UAT execution policy; supersedes conflicting snapshot instructions only where explicitly stated",
+  "identity_policy": {
+    "organizer": "Use the provisioned organizer selected at preflight; Jordan Alvarez is the fixture alias, not a request to create another organizer.",
+    "speaker": "Priya Raman and Sasha Speaker both denote the one provisioned primary speaker, normally demo-speaker@sessionbuddy.demo. Never sign up a second Priya to enter the portal.",
+    "reviewer": "Sam Whitfield denotes the provisioned reviewer, normally demo-reviewer@sessionbuddy.demo. Invite that exact account and explicitly accept the invitation.",
+    "speaker2": "Marcus Okafor is a distinct invitation-only secondary speaker until a scenario explicitly requires acceptance. Do not reuse the primary speaker account.",
+    "import_contact": "Dana Kowalski is a distinct CRM/import contact, not retained organizer Dana. Keep these identities separate.",
+    "reviewer2": "Not supplied by the default reset. Reserve a distinct controlled address at preflight. Before the cross-reviewer isolation checks in ABS-S3, invite it through organizer UI, explicitly accept in a separate browser context, and record account ID and verified reviewer role. If provisioning is unavailable, block those checks; never reuse the primary reviewer.",
+    "attendee": "Not supplied by the default reset. Browse anonymously first. Reserve a distinct controlled address at preflight; if attendee login is required, provision through supported signup and record account ID and verified role before use. Otherwise keep it reserved and record anonymous use; never substitute the organizer."
+  },
+  "global_rules": [
+    "Calendar substitutions apply everywhere, including source success signals: May 12/13/14 2027 mean calendar.day_1/day_2/day_3; April 1 means confirmation_due/biography_due; April 14 means headshot_due; April 15 means release_due; May 1 means slides_due. Event names containing 2027 remain stable labels, not calendar instructions. Existing-event fallback creation in source prose is superseded by canonical event binding.",
+    "Run only on an explicitly authorized disposable UAT target. This pack does not authorize resets, deployments, paid model runs, or messages to real recipients.",
+    "Before executing, fill the persona-to-account table in the result context with observed account IDs, emails, display names and role. Never store passwords, cookies, magic-link tokens, or private asset URLs in results.",
+    "Fixture names are semantic aliases. Substitute the mapped account consistently in signup/login, invites, CSV import, search, assertions and recipient checks. Snapshot passwords and conflicting snapshot email addresses are never execution credentials.",
+    "Record the organization UUID and primary event UUID when created. Subsequent steps must navigate to that exact event; do not identify a target by title alone or silently create a replacement. CFP-S1 step 12 uses a separate recorded secondary event UUID and must leave the primary event intact.",
+    "Gate chained scenarios on the preceding scenario's evidenced handoff. Missing upstream records block dependent steps; do not fabricate them through APIs or database writes. An optional unsupported feature may fail its rubric without blocking a handoff whose required records were genuinely created.",
+    "Within each step record the account actually used, event UUID or explicit no-event scope, result, failure class when applicable, observations and safe evidence references. Persona switches in the original steps remain mandatory.",
+    "Keep all original pass criteria. Corrections change execution identity, scheduling or safe sequencing, not the product bar. A workaround is not a pass. Record unsupported features as failures or evidenced absences exactly as the criterion permits.",
+    "Execute every manual_instructions block, including conditional blocks on auto criteria. Record not_applicable only with evidence that the source condition is false; never use it for an unavailable required feature.",
+    "Use the supplied materialization command to generate an isolated run packet with resolved fixture identities, CSV rows and relative review dates. Retain the original read-only snapshot for comparison."
+  ],
+  "splits": {
+    "CFP-S1": [
+      {"id": "CFP-S1A", "steps": [1, 2], "purpose": "Resolve organizer and create the canonical primary event"},
+      {"id": "CFP-S1B", "steps": [3, 4, 5, 6, 7, 8], "purpose": "Configure and publish the CFP; record its public URL"},
+      {"id": "CFP-S1C", "steps": [9, 10, 11, 12], "purpose": "Verify logged-out behavior and secondary-event isolation"}
+    ]
+  },
+  "before_scenarios": {
+    "ABS-S1": "CFP-S4 closed the call and finalized decisions. Through supported organizer UI reopen the primary event's CFP for the ABS submissions. Record the action. If immutable earlier decisions prevent establishing the exact ABS fixture, block and request an explicit fixture plan; do not silently reuse incompatible submissions or create another event.",
+    "SPK-S1": "Use the mapped primary speaker already linked by the CFP flow. Do not add a second Priya. Import is tested using the run packet CSV; an existing primary speaker must be reported as existing/skipped, not duplicated.",
+    "SPK-S2": "Sign in as the mapped existing speaker. Open the pending invitation for the recorded organization/event and click Accept. Capture the accepted state and resulting speaker workspace. If already accepted, capture that state; do not create another identity or bypass acceptance. Only then execute source step 1's portal navigation; its signup fallback is superseded.",
+    "CRM-S1": "Use the materialized run CSV, not the provenance CSV. Its primary speaker, Marcus and Dana rows must correspond to the persona table. Existing contacts are a duplicate-handling test, not a reason to invent new accounts."
+  },
+  "step_corrections": {
+    "CFP-S1:2": "Create DevFlow using America/Los_Angeles. Record primary event ID and organization ID immediately. Resolve fixture event dates relative to run_date using the run packet; do not silently inherit the account time zone.",
+    "CFP-S1:7": "Use run_date minus 1 day as opening and run_date plus 30 days as closing, in America/Los_Angeles; capture saved deadline and public rendering.",
+    "CFP-S1:12": "Record a distinct secondary event ID, verify its empty state, then restore navigation to the primary event ID.",
+    "CFP-S2:2": "Sign in as the existing mapped primary speaker; never sign up another Priya or Sasha. Verify account ID before submitting either proposal.",
+    "ABS-S1:1": "If reopening is required, use calendar.cfp_close in the run packet, not the source's fixed April date. Preserve the existing canonical event and record the organizer action before returning to the speaker.",
+    "ABS-S1:2": "Sign in as the existing mapped primary speaker. The source signup fallback is superseded; do not create another Priya.",
+    "SPK-S1:4": "Find the existing mapped primary speaker by exact email/account ID and use that linked person. Do not add another Priya. If the existing person is missing, block and record the identity/fixture defect instead of manufacturing a replacement.",
+    "SPK-S1:10": "Use calendar.day_1 for the source's session date, keeping its room and local time unchanged.",
+    "SPK-S1:11": "Use calendar.confirmation_due for Confirm participation, calendar.biography_due for Complete bio/profile, and calendar.release_due for Sign speaker release. All are before the event; preserve the source task types and all other assertions.",
+    "CNT-S1:6": "Use calendar.slides_due for Upload Session Presentation; preserve the requested file type, title and task assertions.",
+    "CNT-S1:7": "Use calendar.headshot_due for Upload Final Headshot (print quality); preserve all other requirements.",
+    "AIA-S1:4": "Configure calendar.day_1, day_2 and day_3 instead of May 12/13/14. Preserve the source rooms, tracks and configurability checks.",
+    "AIA-S1:7": "Place the CI session on calendar.day_1 at 10:00 in Room 2A.",
+    "AIA-S1:8": "Use calendar.day_1 at 10:00 in Room 2B to preserve the deliberate speaker overlap.",
+    "AIA-S1:9": "Use calendar.day_1 at 10:00 in Room 2A to preserve the deliberate room conflict.",
+    "AIA-S1:10": "Move AI Pair Programmer to calendar.day_1 at 14:00 in Room 2B and Docs to calendar.day_2 at 11:00 in Room 2B; verify both conflict indicators clear.",
+    "CFP-S3:4": "Invite the mapped reviewer account. If acceptance is required, switch to that exact reviewer, explicitly accept the invitation, then return to the organizer and assign the intended submission. Record both transitions; no replacement reviewer signup.",
+    "ABS-S2:4": "Initial Review opens run_date minus 1 day and closes run_date plus 14 days. Record exact timestamps and time zone from the materialized run packet.",
+    "ABS-S2:5": "Final Review opens run_date plus 15 days and closes run_date plus 30 days. Preserve the distinct scorecard and round pool assertions; only stale calendar literals are replaced.",
+    "ABS-S2:6": "Use the mapped reviewer; explicitly accept a pending invitation before attempting membership/assignments when required. Never create another Sam.",
+    "SPK-S2:1": "Use the existing mapped speaker after the explicit-accept precondition above. Never execute the source signup fallback."
+  },
+  "area_dependencies": {
+    "ABS-S1": ["CFP-S4"],
+    "SPK-S1": ["CFP-S4"],
+    "CNT-S1": ["SPK-S3"],
+    "AIA-S1": ["CNT-S3"],
+    "EMB-S1": ["AIA-S2"]
+  },
+  "acceptance_checks": [
+    {
+      "id": "SB-TZ-01",
+      "depends_on": ["AIA-S2", "ABS-S2"],
+      "name": "Time-zone preview, update and persistence",
+      "steps": [
+        "After AIA-S2 has published an agenda, capture the canonical event zone, each agenda item's local date/start/end, CFP and review deadline UTC instants, and current audit entries. Missing agenda or deadline records block this check. Record IDs and sanitized evidence, not private form content.",
+        "Preview changing America/Los_Angeles to Asia/Kolkata without applying. The confirmation must explicitly list both effects: agenda wall-clock dates/times are preserved (their UTC instants change), while CFP/review deadline UTC instants are unchanged (their local display may change). Capture before/after values per surface and confirm preview itself made no persisted changes.",
+        "Apply the fresh preview, reload the editor, public CFP and published agenda. Every agenda item keeps its local date/start/end under the new zone; every CFP/review deadline keeps its exact UTC instant. Verify confirmation agrees with persistence and public rendering. Capture exactly one successful time-zone-change audit event for this operation, not one per item.",
+        "Preview a reverse change, then edit one agenda item through supported UI in another browser context. Applying the earlier preview digest must return HTTP 409 and leave zone, agenda and deadlines unchanged from immediately before that rejected apply. Obtain a new preview before retrying; capture sanitized request status and affected values.",
+        "Exercise the conflict rejection with an explicitly recorded conflicting fixture through supported UI (a time-zone conversion conflict, not merely a stale digest). Preview/apply must report the conflict and applying must return HTTP 409, with no partial zone, agenda or deadline writes and no successful-change audit event. If the UI cannot construct a conflict or expose apply, mark this step blocked with the missing prerequisite; never claim conflict safety from the stale-digest test alone.",
+        "Restore the original agenda item values and America/Los_Angeles using a fresh preview. Verify editor, public agenda, public CFP and review deadlines against the baseline. Record restoration separately from the single successful update being counted above. Missing preview, wrong semantics or missing confirmation is a product failure, not an assumed pass."
+      ]
+    },
+    {
+      "id": "SB-EMBED-01",
+      "depends_on": ["AIA-S2"],
+      "name": "Canonical track IDs and fail-closed embeds",
+      "steps": [
+        "Publish approved sessions on two tracks in the canonical event and obtain their track UUIDs from supported UI/network responses. Generate a track-filtered embed. Inspect all five generated outputs individually: iframe, Basic HTML link, JSON feed, XML feed and iCal calendar feed. Each must carry the same canonical track_id parameter; record the URL or snippet and filtered result for each. Verify only selected-track published sessions and eligible speakers appear.",
+        "Rename that track without changing its UUID, reload the same embed URL and verify selection still follows the ID. Exercise a second track with a colliding display name if the product permits it; names must not widen ID selection.",
+        "Replace track_id with an unknown UUID, then one belonging to the secondary event, across all five outputs. JSON must include matched:false in its filter envelope and no sessions/speakers; other outputs must fail closed without an unfiltered list or cross-event data. Record each response, not only a screenshot of one widget.",
+        "Inspect the public_speakers response for selected and unmatched track requests: Cache-Control must include no-store and results must stay track-scoped. Record sanitized header evidence without cookies or authorization headers.",
+        "Save the embed and inspect its registry row: it must show the selected track, not just an unqualified event embed. Clear the filter deliberately and prove an unfiltered request is distinct. Restore the track name and temporary edits."
+      ]
+    },
+    {
+      "id": "SB-SCORE-01",
+      "depends_on": ["ABS-S2"],
+      "name": "Scorecard type switching and saved semantics",
+      "steps": [
+        "Create a draft scorecard with Score weights 40, 35 and 25. Confirm the displayed total is 100; change the first weight to 10 and confirm 70 immediately.",
+        "Switch the second criterion to Text and confirm 35. Switch the first to Select and the third to Text; confirm No Score criteria and absence of stale numeric weight controls. Switch a criterion back to Score and verify appropriate required numeric constraints return.",
+        "On a separate draft card, enter weight 0 on a Score criterion, switch that criterion to Free text, then save. Saving must succeed and the submitted/persisted weight must be null, not zero or an omitted validation error. Capture sanitized payload and reload evidence; do not accept a successful toast alone.",
+        "Before saving another draft, set a Score weight to 35, switch to Free text, then switch back to Score: the weight control must restore draft value 35. Repeat with 0: switching back must restore 0 and Score validation must reject it; switching to Free text again must allow save with null. Do not conflate preservation of an unsaved draft with restoring an old numeric value after reloading a saved Free text field.",
+        "Configure a valid mixed Score/Select/Text card, save and reload. Verify field types, options and score weights persist. Open the assigned reviewer form and verify each type renders and submits correctly; non-Score fields must not contribute stale weights. Do not alter finalized evaluations."
+      ]
+    }
+  ]
+}

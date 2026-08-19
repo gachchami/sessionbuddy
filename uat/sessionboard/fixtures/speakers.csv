@@ -1,0 +1,4 @@
+name,email,title,company,bio
+Sasha Speaker,demo-speaker@sessionbuddy.demo,Principal Engineer,SessionBuddy Labs,"Demo speaker used for authenticated end-to-end evaluation."
+Marcus Okafor,marcus.speaker@sbek-test.example.com,Staff Developer Advocate,Cloudreach Labs,"Focused on AI agents in production; writes Agents Weekly."
+Dana Kowalski,dana.speaker@sbek-test.example.com,Engineering Manager,Substrate,"Runs the developer-experience org at Substrate; ex-CI lead at a fintech."
