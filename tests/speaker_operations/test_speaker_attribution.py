@@ -235,6 +235,21 @@ async def test_organizer_headshot_upload_persists_preview_and_completes_task(
             event_id,
             link_user=True,
         )
+        speaker_user_id = connection.execute(
+            "SELECT user_id FROM people WHERE id='person-1'"
+        ).fetchone()[0]
+        account_bytes = b"\x89PNG\r\n\x1a\naccount-original-headshot"
+        account_key = "private/user-headshots/original.png"
+        await environment.ASSETS.put(account_key, account_bytes)
+        connection.execute(
+            "UPDATE users SET public_profile_enabled=1 WHERE id=?", (speaker_user_id,)
+        )
+        connection.execute(
+            """INSERT INTO user_headshots
+               (user_id,object_key,content_type,byte_size,checksum_sha256,updated_at_ms)
+               VALUES (?,?,'image/png',?,?,1000)""",
+            (speaker_user_id, account_key, len(account_bytes), bytes(32)),
+        )
         connection.execute(
             """INSERT INTO speaker_tasks
                (id,organization_id,event_id,event_speaker_id,task_type,title,
@@ -262,17 +277,51 @@ async def test_organizer_headshot_upload_persists_preview_and_completes_task(
         assert preview.status_code == 200, preview.text
         assert preview.content == PNG
 
+        gallery_photo = await client.get(
+            f"/api/v1/public/events/{event_id}/speakers/{speaker_id}/headshot"
+        )
+        assert gallery_photo.status_code == 200, gallery_photo.text
+        assert gallery_photo.content == PNG
+        personal_photo = await client.get(f"/api/v1/public/people/{speaker_user_id}/headshot")
+        assert personal_photo.status_code == 200, personal_photo.text
+        assert personal_photo.content == account_bytes
+        other_event = await client.post(
+            f"/api/v1/admin/organizations/{organization_id}/events",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={**EVENT_PAYLOAD, "name": "Another event"},
+        )
+        assert other_event.status_code == 201, other_event.text
+        other_event_id = other_event.json()["id"]
+        connection.execute(
+            """INSERT INTO event_speakers
+               (id,organization_id,event_id,person_id,status,selection_status,
+                accepted_at_ms,last_activity_at_ms,created_at_ms,updated_at_ms)
+               VALUES ('other-event-speaker',?,?,'person-1','onboarding','accepted',
+                       3000,3000,1000,1000)""",
+            (organization_id, other_event_id),
+        )
+        connection.commit()
+        for prefix in ("admin", "public"):
+            fallback = await client.get(
+                f"/api/v1/{prefix}/events/{other_event_id}/speakers/other-event-speaker/headshot"
+            )
+            assert fallback.status_code == 200, fallback.text
+            assert fallback.content == account_bytes
+
     headshot = connection.execute(
-        """SELECT h.speaker_asset_version_id,h.object_key,v.scan_state,v.is_current
-           FROM user_headshots h
-           JOIN people p ON p.user_id=h.user_id
-           JOIN event_speakers es ON es.person_id=p.id
-           JOIN speaker_asset_versions v ON v.id=h.speaker_asset_version_id
-           WHERE es.id=?""",
+        """SELECT v.id,v.object_key,v.scan_state,v.is_current
+           FROM speaker_assets a JOIN speaker_asset_versions v ON v.asset_id=a.id
+           WHERE a.event_speaker_id=? AND a.kind='headshot' AND v.is_current=1""",
         (speaker_id,),
     ).fetchone()
     assert headshot is not None
     assert headshot[2:] == ("clean", 1)
+    assert tuple(
+        connection.execute(
+            "SELECT object_key,speaker_asset_version_id FROM user_headshots WHERE user_id=?",
+            (speaker_user_id,),
+        ).fetchone()
+    ) == (account_key, None)
     task = connection.execute(
         "SELECT state,completed_at_ms FROM speaker_tasks WHERE id='headshot-task'"
     ).fetchone()

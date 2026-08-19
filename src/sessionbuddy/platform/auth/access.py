@@ -2199,8 +2199,20 @@ async def admin_speaker_headshot(
     _, target = await _managed_speaker_headshot_target(request, event_id, event_speaker_id)
     row = row_mapping(
         await database(request)
-        .prepare("SELECT object_key,content_type FROM user_headshots WHERE user_id=?1 LIMIT 1")
-        .bind(target["user_id"])
+        .prepare(
+            """SELECT object_key,content_type FROM (
+                 SELECT v.object_key,v.content_type,0 AS priority
+                 FROM speaker_assets a JOIN speaker_asset_versions v
+                   ON v.asset_id=a.id AND v.organization_id=a.organization_id
+                   AND v.event_id=a.event_id AND v.event_speaker_id=a.event_speaker_id
+                 WHERE a.organization_id=?1 AND a.event_id=?2 AND a.event_speaker_id=?3
+                   AND a.kind='headshot' AND v.is_current=1 AND v.scan_state='clean'
+                 UNION ALL
+                 SELECT object_key,content_type,1 AS priority FROM user_headshots
+                 WHERE user_id=?4
+               ) ORDER BY priority LIMIT 1"""
+        )
+        .bind(target["organization_id"], event_id, event_speaker_id, target["user_id"])
         .first()
     )
     if row is None:
@@ -2324,27 +2336,7 @@ async def upload_admin_speaker_headshot(
             authenticated.actor.user_id,
         )
     )
-    batch.add_statement(
-        db.prepare(
-            """INSERT INTO user_headshots
-               (user_id,speaker_asset_version_id,object_key,content_type,byte_size,
-                checksum_sha256,updated_at_ms)
-               VALUES(?1,?2,?3,?4,?5,?6,?7)
-               ON CONFLICT(user_id) DO UPDATE SET object_key=excluded.object_key,
-                 content_type=excluded.content_type,byte_size=excluded.byte_size,
-                 checksum_sha256=excluded.checksum_sha256,
-                 speaker_asset_version_id=excluded.speaker_asset_version_id,
-                 updated_at_ms=excluded.updated_at_ms"""
-        ).bind(
-            target["user_id"],
-            asset_version_id,
-            object_key,
-            content_type,
-            len(body),
-            checksum,
-            now,
-        )
-    )
+    # Organizer authority ends at this event profile; the account photo is speaker-owned.
     batch.add_statement(
         db.prepare(
             """UPDATE speaker_tasks SET state='completed',completed_at_ms=?1,

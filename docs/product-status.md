@@ -437,11 +437,14 @@ image. Public profiles are private by default and require an explicit account op
 Organization People rows link to a public profile only while that opt-in remains enabled;
 disabling it makes both the anonymous profile and headshot unavailable immediately.
 Profile and headshot tasks link to that Account flow and reconcile when the
-canonical data is saved. Organizers can preview and replace a linked speaker's headshot from
-the event-scoped directory; the route requires exact event speaker-management
+canonical data is saved. Organizers can preview and replace a linked speaker's event-specific
+headshot from the event-scoped directory without changing the account-owned photo.
+Event previews prefer the event's current clean headshot and otherwise borrow the
+account photo; personal profiles and other events retain their own image sources.
+The route requires exact event speaker-management
 authority, validates and scans the image when a scanner is configured, and emits
 an audit record. Organizer-uploaded headshots are stored as speaker asset versions,
-so the profile and organizer file inventory reference the same scanned object and
+so the event profile and organizer file inventory reference the same scanned object and
 the inventory exposes uploader, upload time, scan state, preview, and download history.
 Explicit development scanner-disable mode performs no scanner
 request, while production remains fail closed.
