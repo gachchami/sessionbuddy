@@ -901,6 +901,9 @@ resolver table used by the distributor.
 
 ## Public event surfaces
 
+- Successful CFP submissions display the organizer-configured confirmation
+  heading as plain text. Proposal edits retain their distinct update confirmation;
+  older form payloads without a heading retain the existing fallback.
 - Public discovery cards format event dates and CFP opening/closing dates in
   the event time zone, not the viewer's zone. Unknown zones omit the boundary
   date rather than inventing a local date.

@@ -1246,7 +1246,7 @@
       byId("sign-in-card").hidden = true;
       const receipt = byId("receipt");
       receipt.className = "empty-state";
-      receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
+      receipt.replaceChildren(make("h2", state.editingSubmission ? "Proposal updated" : state.form.success_title || "Submission confirmed"), make("p", state.editingSubmission ? "Your changes were saved to the existing proposal." : state.form.success_message), make("p", `Receipt ${submission.id}`));
       if (workspaceMode) {
         const proposalLink = make("a", "Back to speaker portal", "button");
         proposalLink.href = "/speaker";

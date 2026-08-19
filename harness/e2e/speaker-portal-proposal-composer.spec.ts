@@ -42,6 +42,29 @@ const proposal = (id: string, title: string, version = 1) => ({
   co_speakers: [],
 });
 
+for (const scenario of [
+  { name: "custom literal HTML heading", heading: "Received <img src=x onerror=alert(1)>", editing: false, expected: "Received <img src=x onerror=alert(1)>" },
+  { name: "missing heading fallback", heading: undefined, editing: false, expected: "Submission confirmed" },
+  { name: "empty heading fallback", heading: "", editing: false, expected: "Submission confirmed" },
+  { name: "edit preserves update heading", heading: "Custom submission heading", editing: true, expected: "Proposal updated" },
+]) {
+  test(`receipt success heading: ${scenario.name}`, async ({ page }) => {
+    await serveWorkspace(page, { form: { success_title: scenario.heading } });
+    await page.goto(scenario.editing ? "/speaker/proposals/devflow-2027/proposal-a" : "/cfp/devflow/devflow-2027");
+    if (!scenario.editing) {
+      await page.getByLabel("Speaker name").fill("Priya Raman");
+      await page.locator('#proposal-form').getByLabel("Email").fill("priya@example.test");
+      await page.getByLabel("Proposal title").fill("Receipt heading check");
+      await page.getByLabel("Proposal abstract").fill("A complete proposal for receipt verification.");
+      await page.getByLabel("Format").selectOption("Talk");
+    }
+    await page.getByRole("button", { name: "Review proposal", exact: true }).click();
+    await page.getByRole("button", { name: scenario.editing ? "Save changes" : "Confirm submission", exact: true }).click();
+    await expect(page.locator("#receipt h2")).toHaveText(scenario.expected);
+    await expect(page.locator("#receipt img")).toHaveCount(0);
+  });
+}
+
 interface WorkspaceOptions {
   form?: Record<string, unknown>;
   draft?: Record<string, unknown> | null;
