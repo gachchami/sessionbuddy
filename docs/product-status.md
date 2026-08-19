@@ -163,6 +163,10 @@ so a newly saved round displays the same dates before and after reloading.
 Switching a scorecard criterion away from Score excludes its hidden weight from
 browser validation while retaining the unsaved value for switching back. Non-Score
 responses submit a null weight, including when the previous numeric value was zero.
+The server accepts null or an omitted non-Score weight equivalently and omits optional
+null fields in the stored rubric. Typed API responses may reintroduce explicit null:
+both representations mean no weight, not zero. Numeric non-Score weights are rejected;
+Score requires a positive weight.
 
 Implemented: evaluation rounds, balanced assignments, blind review, conflict
 declaration and reassignment, immutable final decisions, results, and audit

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -206,6 +207,53 @@ def test_evaluation_contracts_are_strict_and_bounded() -> None:
     ).conflict_type == "same_company"
     with pytest.raises(ValidationError):
         ConflictDeclaration(conflict_type="other", explanation="")
+
+
+@pytest.mark.parametrize("response_type", ["text", "select"])
+def test_non_score_null_and_omitted_weights_share_serialized_roundtrip(response_type) -> None:
+    criterion = {"key": "feedback", "label": "Feedback", "response_type": response_type}
+    if response_type == "select":
+        criterion["options"] = ["Accept", "Reject"]
+    rubrics = []
+    for optional_weight in ({}, {"weight": None}):
+        body = EvaluationRoundCreate(
+            name="Weight normalization",
+            rating_min=1,
+            rating_max=5,
+            recommendations=["Accept", "Reject"],
+            assignment_strategy="balanced",
+            status="draft",
+            criteria=[
+                {"key": "quality", "label": "Quality", "weight": 100},
+                {**criterion, **optional_weight},
+            ],
+        )
+        rubric = _build_round_rubric(body)
+        assert "weight" not in rubric["criteria"][1]
+        assert rubric["criteria"][0]["weight"] == 100
+        assert _full_round_criteria(json.dumps(rubric)) == rubric["criteria"]
+        # Historical explicit JSON null normalizes to the same internal reader output.
+        explicit_null = json.loads(json.dumps(rubric))
+        explicit_null["criteria"][1]["weight"] = None
+        assert _full_round_criteria(json.dumps(explicit_null)) == rubric["criteria"]
+        rubrics.append(rubric)
+    assert rubrics[0] == rubrics[1]
+
+
+@pytest.mark.parametrize("response_type", ["text", "select"])
+@pytest.mark.parametrize("weight", [0, 1, 100])
+def test_non_score_numeric_weights_are_rejected(response_type, weight) -> None:
+    with pytest.raises(ValidationError):
+        EvaluationCriterion(
+            key="feedback", label="Feedback", response_type=response_type, weight=weight,
+            options=["Accept", "Reject"] if response_type == "select" else [],
+        )
+
+
+@pytest.mark.parametrize("optional_weight", [{}, {"weight": None}, {"weight": 0}])
+def test_score_criterion_requires_positive_weight(optional_weight) -> None:
+    with pytest.raises(ValidationError):
+        EvaluationCriterion(key="quality", label="Quality", **optional_weight)
 
 
 def test_criterion_purposes_are_typed_unique_and_drive_legacy_compatibility() -> None:

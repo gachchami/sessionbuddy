@@ -249,7 +249,9 @@ def test_overlay_source_wiring_covers_review_regressions_and_preconditions() -> 
         "SB-TZ-01": ["wall-clock", "UTC instants", "409", "digest", "audit event"],
         "SB-EMBED-01": ["Basic HTML link", "iframe", "JSON", "XML", "calendar",
                         "matched:false", "no-store", "registry row"],
-        "SB-SCORE-01": ["weight 0", "Free text", "null", "restore draft value 35"],
+        "SB-SCORE-01": ["weight 0", "Free text", "null", "restore draft value 35",
+                        "absent optional key", "Zero or any retained numeric weight",
+                        "persisted rubric evidence plus reload evidence"],
     }
     for scenario_id, phrases in required.items():
         instructions = " ".join(s["source_instruction"] for s in scenarios[scenario_id]["steps"])

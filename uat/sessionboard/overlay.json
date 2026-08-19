@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "default_precondition": "Before any step, verify the mapped starting account (or explicitly required anonymous context), canonical organization/event binding if already created, and each upstream handoff. Record observed state and safe evidence in precondition; no special before instruction does not mean no preflight. Missing prerequisites block execution.",
   "conditional_rubrics": {
     "ABS-14": "Not applicable only after inspecting available UI and product claims and recording evidence that AI review/triage is not claimed. An advertised but absent or broken feature fails; an inaccessible surface blocks. Record the absence in overall, automatic and manual verdicts."
@@ -106,8 +106,8 @@
       "steps": [
         "Create a draft scorecard with Score weights 40, 35 and 25. Confirm the displayed total is 100; change the first weight to 10 and confirm 70 immediately.",
         "Switch the second criterion to Text and confirm 35. Switch the first to Select and the third to Text; confirm No Score criteria and absence of stale numeric weight controls. Switch a criterion back to Score and verify appropriate required numeric constraints return.",
-        "On a separate draft card, enter weight 0 on a Score criterion, switch that criterion to Free text, then save. Saving must succeed and the submitted/persisted weight must be null, not zero or an omitted validation error. Capture sanitized payload and reload evidence; do not accept a successful toast alone.",
-        "Before saving another draft, set a Score weight to 35, switch to Free text, then switch back to Score: the weight control must restore draft value 35. Repeat with 0: switching back must restore 0 and Score validation must reject it; switching to Free text again must allow save with null. Do not conflate preservation of an unsaved draft with restoring an old numeric value after reloading a saved Free text field.",
+        "On a separate draft card, enter weight 0 on a Score criterion, switch that criterion to Free text, then save. Saving must succeed: the browser submits weight null, and persisted non-Score criteria have no numeric weight (null or an absent optional key are equivalent under the API contract). Zero or any retained numeric weight must fail this check. Capture sanitized payload or persisted rubric evidence plus reload evidence; do not accept a successful toast alone or a hidden validation error.",
+        "Before saving another draft, set a Score weight to 35, switch to Free text, then switch back to Score: the weight control must restore draft value 35. Repeat with 0: switching back must restore 0 and Score validation must reject it; switching to Free text again must allow save with null in the browser request and no numeric weight in persistence (null or an absent optional key). Do not conflate preservation of an unsaved draft with restoring an old numeric value after reloading a saved Free text field.",
         "Configure a valid mixed Score/Select/Text card, save and reload. Verify field types, options and score weights persist. Open the assigned reviewer form and verify each type renders and submits correctly; non-Score fields must not contribute stale weights. Do not alter finalized evaluations."
       ]
     }
