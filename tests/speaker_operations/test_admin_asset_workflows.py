@@ -16,8 +16,10 @@ from tests.speaker_operations.test_speaker_attribution import (
 class _Bucket:
     def __init__(self, objects: dict[str, bytes]) -> None:
         self.objects = objects
+        self.reads: list[str] = []
 
     async def get(self, key: str):
+        self.reads.append(key)
         return self.objects.get(key)
 
 
@@ -295,3 +297,71 @@ async def test_deliverables_export_uses_stored_zip_and_suffixes_collisions(
             assert archive.compression == zipfile.ZIP_STORED
             assert archive.namelist() == ["Priya Raman/file.pdf", "Priya Raman/2-file.pdf"]
             assert {archive.read(name) for name in archive.namelist()} == {b"first", b"second"}
+
+
+async def test_deliverables_export_reads_only_selected_current_clean_version(
+    production_environment,  # noqa: F811
+) -> None:
+    connection, _queue, environment = production_environment
+    async with _client(environment) as client:
+        csrf, organization_id, event_id = await _admin(client, connection)
+        _seed_speaker_with_two_submissions(connection, organization_id, event_id)
+        previous_bytes = b"%PDF-1.4 superseded slides version one"
+        current_bytes = b"%PDF-1.4 current slides version two with revised content"
+        unselected_bytes = b"%PDF-1.4 unselected supporting document"
+        previous_key = _asset(
+            connection,
+            organization_id,
+            event_id,
+            "asset-selected",
+            "version-one",
+            "slides",
+            filename="slides.pdf",
+            byte_size=len(previous_bytes),
+        )
+        connection.execute(
+            "UPDATE speaker_asset_versions SET is_current=0,scan_state='superseded' "
+            "WHERE id='version-one'"
+        )
+        current_key = f"private/{organization_id}/{event_id}/version-two"
+        connection.execute(
+            """INSERT INTO speaker_asset_versions
+               (id,organization_id,event_id,event_speaker_id,asset_id,generation,
+                object_key,original_filename,content_type,byte_size,checksum_sha256,
+                scan_state,is_current,created_at_ms,uploaded_at_ms,scan_started_at_ms,
+                scanned_at_ms,version_comment)
+               VALUES ('version-two',?,?,'speaker-1','asset-selected',2,?,
+                       'slides.pdf','application/pdf',?,?,'clean',1,
+                       2000,2100,2200,2300,'Revised slides')""",
+            (organization_id, event_id, current_key, len(current_bytes), bytes(32)),
+        )
+        connection.commit()
+        unselected_key = _asset(
+            connection,
+            organization_id,
+            event_id,
+            "asset-unselected",
+            "version-unselected",
+            "supporting_document",
+            byte_size=len(unselected_bytes),
+        )
+        bucket = _Bucket(
+            {
+                previous_key: previous_bytes,
+                current_key: current_bytes,
+                unselected_key: unselected_bytes,
+            }
+        )
+        environment.ASSETS = bucket
+
+        response = await client.post(
+            f"/api/v1/admin/events/{event_id}/deliverables/export",
+            headers={"origin": "https://test", "x-csrf-token": csrf},
+            json={"asset_ids": ["asset-selected"]},
+        )
+
+        assert response.status_code == 200, response.text
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            assert archive.namelist() == ["Priya Raman/slides.pdf"]
+            assert archive.read("Priya Raman/slides.pdf") == current_bytes
+        assert bucket.reads == [current_key]
